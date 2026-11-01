@@ -85,6 +85,11 @@ type PreparedMidiTimeOperation = PreparedTimeOperation & {
 };
 
 export type TimeOperationDependencies = {
+    savedRestorePlanValidators: {
+        automation: (value: unknown) => boolean;
+        midi: (value: unknown) => boolean;
+        timelineMap: (value: unknown) => boolean;
+    };
     prepareAutomationTimeOperation: (input: {
         operation: InsertTimeOperation | DeleteTimeOperation;
         owners: readonly AutomationOwnerSnapshot[];

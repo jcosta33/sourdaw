@@ -193,10 +193,11 @@ describe('clip edits on a comped loop recording', () => {
 
         await dispatch({ type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 2 } });
         expect(resolvedComp()).toEqual(trimmed);
+        const capturedTakes = readTakes();
 
         await dispatch({ type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 0 } });
         expect(resolvedComp()).toEqual(asRecorded);
-        expect(readTakes()).toEqual(takes);
+        expect(readTakes()).toEqual(capturedTakes);
 
         await undo();
         flushAutomergeStorageWrites();
@@ -204,6 +205,7 @@ describe('clip edits on a comped loop recording', () => {
         await undo();
         flushAutomergeStorageWrites();
         expect(resolvedComp()).toEqual(asRecorded);
+        expect(readTakes()).toEqual(takes);
 
         await redo();
         flushAutomergeStorageWrites();
@@ -211,22 +213,73 @@ describe('clip edits on a comped loop recording', () => {
         await redo();
         flushAutomergeStorageWrites();
         expect(resolvedComp()).toEqual(asRecorded);
-        expect(readTakes()).toEqual(takes);
+        expect(readTakes()).toEqual(capturedTakes);
     });
 
     it('keeps every trim of a comped clip in the session mirror and undoes it after a reload', async () => {
+        const snapshot = (): unknown => {
+            const clip = trackStore.value?.tracks[0]?.clips[0];
+            if (!clip) {
+                throw new Error('Expected the trimmed clip');
+            }
+            return Object.fromEntries(Object.entries(clip).filter(([, value]) => value !== undefined));
+        };
+        const before = snapshot();
+        const beforeTakes = readTakes();
+        const regions = structuredClone(takeLaneStore.value!.lanes[0]!.activeCompRegions);
         await dispatch({ type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 2 } });
+        const first = snapshot();
+        const firstTakes = readTakes();
         await dispatch({ type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 1 } });
+        const second = snapshot();
         await vi.waitFor(() => expect(mirroredPast()).toHaveLength(2));
 
         expect(mirroredPast().map((entry) => [entry.action, entry.inverseAction])).toEqual([
             [
                 { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 2 } },
-                { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 0, loopOriginBeat: null } },
+                {
+                    type: 'restoreAudioClipStartTrim',
+                    payload: {
+                        clipId: 'clip-1',
+                        before,
+                        after: first,
+                        clock: { tempo: 120, changes: [] },
+                        takeSourceTransitions: [
+                            {
+                                laneId: takeLaneStore.value!.lanes[0]!.id,
+                                trackId: 'track-1',
+                                takesBefore: beforeTakes,
+                                takesAfter: firstTakes,
+                                regionsBefore: regions,
+                                regionsAfter: regions,
+                            },
+                        ],
+                        direction: 'restore',
+                    },
+                },
             ],
             [
                 { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 1 } },
-                { type: 'trimClipStart', payload: { clipId: 'clip-1', newStartBeat: 2, loopOriginBeat: null } },
+                {
+                    type: 'restoreAudioClipStartTrim',
+                    payload: {
+                        clipId: 'clip-1',
+                        before: first,
+                        after: second,
+                        clock: { tempo: 120, changes: [] },
+                        takeSourceTransitions: [
+                            {
+                                laneId: takeLaneStore.value!.lanes[0]!.id,
+                                trackId: 'track-1',
+                                takesBefore: firstTakes,
+                                takesAfter: firstTakes,
+                                regionsBefore: regions,
+                                regionsAfter: regions,
+                            },
+                        ],
+                        direction: 'restore',
+                    },
+                },
             ],
         ]);
 

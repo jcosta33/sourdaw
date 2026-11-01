@@ -31,6 +31,7 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 import { decodeReceiptContext, readReceiptSummary } from './receiptContextFixture';
 
 const provider = vi.hoisted(() => vi.fn());
@@ -138,6 +139,10 @@ afterEach(() => {
 
 it('preserves the live project while retaining 24 distinct transforms through the local window', async () => {
     provider
+        .mockImplementationOnce(async (_system, userMessage, tools) => ({
+            status: 'complete',
+            toolCalls: literalMetricIntakeTurn(userMessage, tools),
+        }))
         .mockResolvedValueOnce({
             status: 'complete',
             toolCalls: [
@@ -206,8 +211,8 @@ it('preserves the live project while retaining 24 distinct transforms through th
             .slice(12)
             .map((clip) => expect.objectContaining({ type: 'transposeNotes', clipId: clip.id, semitones: 1 })),
     ]);
-    expect(provider).toHaveBeenCalledTimes(2);
-    const [system, local, tools, maxOutput, , promptTokens] = provider.mock.calls[1]!;
+    expect(provider).toHaveBeenCalledTimes(3);
+    const [system, local, tools, maxOutput, , promptTokens] = provider.mock.calls[2]!;
     const summary = readReceiptSummary(local);
     expect(summary.truncated).toBe(false);
     expect(decodeReceiptContext(summary.value)).toEqual(result.applicationToolReceipts);

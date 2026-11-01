@@ -19,11 +19,11 @@ Run only checks that can fail because of the files you changed. Examples:
 
 - Markdown or other formatting: `pnpm format <changed-files>`
 - TypeScript or React: lint and typechecks run in pull request CI; do not run them locally.
-- A focused test: `pnpm test:run <file-or-narrow-directory>`
+- A focused test: `pnpm guard --profile focused -- pnpm test:run <file-or-narrow-directory>`
 - Electron code: the pull request's CI typechecks the desktop code.
 - Script code: the pull request's CI typechecks the scripts.
-- E2E code: `pnpm test:e2e <spec>` locally; the pull request's CI typechecks E2E code.
-- Rust code: `pnpm cargo:test --package <crate> <filter>` and
+- E2E code: `pnpm guard --profile broad -- pnpm test:e2e <spec>` locally; the pull request's CI typechecks E2E code.
+- Rust code: `pnpm guard --profile focused -- pnpm cargo:test --package <crate> <filter>` and
   `pnpm cargo:fmt --package <crate>`
 - Cross-module boundaries, repository builds, and broad test suites: use the pull request's CI checks.
 

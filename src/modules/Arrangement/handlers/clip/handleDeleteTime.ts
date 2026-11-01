@@ -4,6 +4,8 @@ import { type TimeOperationRestorePlanSnapshot } from '#/utils/handlerContract';
 import { deleteTime } from '../../useCases/timeOperations/deleteTime';
 import { reverseRestorePlan } from '../../useCases/timeOperations/reverseRestorePlan';
 
+import { isDeleteTimeSessionEntry } from './validateClipEditSessionEntries';
+
 type RestoreTimeOperationStateAction = {
     type: 'restoreTimeOperationState';
     payload: { plan: TimeOperationRestorePlanSnapshot };
@@ -40,6 +42,7 @@ function toRestorePlanSnapshot(plan: unknown): TimeOperationRestorePlanSnapshot 
 }
 
 export const handleDeleteTime = createHandler<'deleteTime'>({
+    validateSessionEntry: isDeleteTimeSessionEntry,
     execute: (action) => {
         const result = deleteTime(action.payload.startBeat, action.payload.endBeat);
         const pending = pendingDescriptions.get(action);

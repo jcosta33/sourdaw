@@ -411,4 +411,33 @@ export const masterMixRecipes: readonly MixRecipe[] = [
         ],
         source: 'The drive window sits below the mix window used on a single track because harmonics generated on a sum are audible far sooner than the same amount on one source. Pairing it with a gentle top-end roll matches the reduced bandwidth of period delivery formats without removing the presence the mix needs.',
     },
+    {
+        id: 'master-controlled',
+        descriptor: 'controlled',
+        roles: ['master'],
+        title: 'Moderate unwanted broad program-level variation',
+        steps: [
+            {
+                kind: 'insert',
+                deviceType: 'builtin-compressor',
+                parameters: [
+                    { paramId: 'comp-threshold', minimum: -14, maximum: -6 },
+                    { paramId: 'comp-ratio', minimum: 2, maximum: 3 },
+                    { paramId: 'comp-attack', minimum: 25, maximum: 30 },
+                    { paramId: 'comp-release', minimum: 150, maximum: 250 },
+                    { paramId: 'comp-knee', minimum: 6, maximum: 10 },
+                ],
+            },
+        ],
+        prerequisites: [
+            'The mix balance is settled and broad upper levels reach gentle reduction.',
+            'Wanted softer program passages remain distinct; audition for modest reduction and pumping.',
+        ],
+        contraindications: [
+            'Skip an existing equivalent mix-bus compressor, kick-only triggering, or intentionally wide program dynamics.',
+            'Skip a request for an output peak ceiling; this recipe is not a limiter.',
+        ],
+        metrics: [{ metric: 'dynamicRangeEstimate', direction: 'decrease' }],
+        source: 'The existing gentle master compression window can reduce unwanted program-level variation after balance settles. This does not certify mastering, maximize loudness, or impose a peak ceiling.',
+    },
 ];

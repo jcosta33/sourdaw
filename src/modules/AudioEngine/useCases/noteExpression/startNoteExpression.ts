@@ -44,6 +44,8 @@ type StartNoteExpressionInput = {
      * note's uncut start, `startBeat - beatsIntoNote`. Absent when the note plays from its start.
      */
     beatsIntoNote?: number;
+    /** Last own bend folded into a frozen window's scalar, on the timeline before its cropped start. */
+    recordedOwnBendBeat?: number;
     /** The frame the note's release is posted on; nothing at or after it is projected. */
     releaseFrame: number;
     /** The caller's beat-to-frame conversion, the same one that places the note's own start and release. */
@@ -135,6 +137,7 @@ type FindOwnBendFrameInput = {
     passedMoments: readonly OwnExpressionMoment[];
     /** Where the note began before any cut, where its scalar bend took hold. */
     noteStartBeat: number;
+    recordedOwnBendBeat: number | undefined;
     /** The clock the note's own bend is compared with the channel move on. */
     frameAtBeat: (beat: number) => number;
 };
@@ -147,13 +150,14 @@ function findOwnBendFrame({
     scalarBend,
     passedMoments,
     noteStartBeat,
+    recordedOwnBendBeat,
     frameAtBeat,
 }: FindOwnBendFrameInput): number | undefined {
     const lastBendMoment = passedMoments.findLast((moment) => moment.claimsBend);
     if (lastBendMoment) {
         return frameAtBeat(lastBendMoment.beat);
     }
-    return scalarBend === undefined ? undefined : frameAtBeat(noteStartBeat);
+    return scalarBend === undefined ? undefined : frameAtBeat(recordedOwnBendBeat ?? noteStartBeat);
 }
 
 /**
@@ -177,6 +181,7 @@ export function startNoteExpression({
     channelBend = [],
     startBeat,
     beatsIntoNote = 0,
+    recordedOwnBendBeat,
     releaseFrame,
     frameAtBeat,
     channelBendFrameAtBeat = frameAtBeat,
@@ -197,6 +202,7 @@ export function startNoteExpression({
         scalarBend: note.pitchBend,
         passedMoments: moments.slice(0, passedCount),
         noteStartBeat: startBeat - beatsIntoNote,
+        recordedOwnBendBeat,
         frameAtBeat: channelBendFrameAtBeat,
     });
     const channelBentLast =

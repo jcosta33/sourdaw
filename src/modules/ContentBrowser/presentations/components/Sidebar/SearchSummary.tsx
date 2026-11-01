@@ -9,10 +9,7 @@ type SearchSummaryProps = HTMLAttributes<HTMLDivElement> & {
 
 export const SearchSummary = ({ count, query, className, ...props }: SearchSummaryProps): ReactElement => (
     <div
-        className={cn(
-            'px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-widest text-muted-foreground/70',
-            className
-        )}
+        className={cn('py-0.5 text-[9px] font-medium uppercase tracking-widest text-muted-foreground/70', className)}
         {...props}
     >
         {count} result{count !== 1 ? 's' : ''} for &quot;{query}&quot;

@@ -1,3 +1,10 @@
+import {
+    findInlineMidiNoteAt,
+    resolveInlineMidiPointer,
+    resolveMidiClipFrame,
+    resolveMidiPitchWindow,
+} from '../../../models/InlineMidiGeometry';
+import { getRenderedTrackTops, VARIATION_LANE_HEIGHT } from '../../../models/TimelineTrackExtent';
 import { timelineViewStore } from '../../../stores/timelineViewStore';
 import { buildTimelineRenderModel } from '../../buildTimelineRenderModel';
 import { getTrackAtY } from '../getTrackAtY';
@@ -7,6 +14,8 @@ export type ClipHitResult = {
     trackId: string;
     noteId?: string;
     pitch?: number;
+    /** Inline MIDI clips only: the arrangement beat under the pointer. */
+    pointerBeat?: number;
     noteHeight?: number;
 };
 
@@ -33,51 +42,40 @@ export function hitTestClip(canvasX: number, canvasY: number): ClipHitResult | n
     const viewportStartBeat = scrollX / pixelsPerBeat;
     const beat = canvasX / pixelsPerBeat + viewportStartBeat;
 
-    let trackYOffset = 0;
-    for (let index = 0; index < hit.index; index++) {
-        trackYOffset += model.tracks[index]!.height;
-    }
+    const trackYOffset = getRenderedTrackTops(model.tracks)[hit.index]!;
+    const inVariationLanes = contentY >= trackYOffset + track.height;
 
-    for (const clip of track.clips) {
+    for (const clip of inVariationLanes ? [] : track.clips) {
         if (beat >= clip.startBeat && beat < clip.endBeat) {
             // R-A11: Hit test for individual notes if inline editing is active
-            if (clip.isInlineEditing && clip.type === 'midi' && clip.midiNotes.length > 0) {
-                const padding = 2;
-                const contentTop = trackYOffset + padding;
-                const contentHeight = track.height - padding * 2;
-                const notes = clip.midiNotes;
+            if (clip.isInlineEditing && clip.type === 'midi') {
+                const frame = resolveMidiClipFrame(
+                    true,
+                    (clip.startBeat - viewportStartBeat) * pixelsPerBeat,
+                    (clip.endBeat - clip.startBeat) * pixelsPerBeat,
+                    trackYOffset,
+                    track.height
+                );
 
-                // Loop to find the pitch extent — spreading (Math.min(...map()))
-                // can blow the call-stack for clips with very many notes.
-                let minPitch = 127;
-                let maxPitch = 0;
-                for (const node of notes) {
-                    if (node.pitch < minPitch) {
-                        minPitch = node.pitch;
-                    }
-                    if (node.pitch > maxPitch) {
-                        maxPitch = node.pitch;
-                    }
+                const note = findInlineMidiNoteAt(clip, frame, canvasX, contentY);
+                if (note) {
+                    return {
+                        clipId: clip.id,
+                        trackId: track.id,
+                        noteId: note.noteId,
+                        pitch: note.pitch,
+                        noteHeight: resolveMidiPitchWindow(clip.midiNotes, true, frame.contentHeight).rowHeight,
+                    };
                 }
-                minPitch -= 2;
-                maxPitch += 2;
-                const pitchRange = Math.max(maxPitch - minPitch, 1);
-                const noteHeight = contentHeight / (pitchRange + 1);
 
-                for (const note of notes) {
-                    const noteX = (note.startBeat - viewportStartBeat) * pixelsPerBeat;
-                    const noteW = note.duration * pixelsPerBeat;
-                    const pitchNorm = (note.pitch - minPitch) / (pitchRange + 1);
-                    const noteY = contentTop + contentHeight - (pitchNorm + 1 / (pitchRange + 1)) * contentHeight;
-
-                    if (
-                        canvasX >= noteX &&
-                        canvasX <= noteX + noteW &&
-                        contentY >= noteY &&
-                        contentY <= noteY + noteHeight
-                    ) {
-                        return { clipId: clip.id, trackId: track.id, noteId: note.id, pitch: note.pitch, noteHeight };
-                    }
+                const pointer = resolveInlineMidiPointer(clip, frame, canvasX, contentY);
+                if (pointer && pointer.pitch !== null) {
+                    return {
+                        clipId: clip.id,
+                        trackId: track.id,
+                        pointerBeat: pointer.pointerBeat,
+                        pitch: pointer.pitch,
+                    };
                 }
             }
             return { clipId: clip.id, trackId: track.id };
@@ -86,11 +84,10 @@ export function hitTestClip(canvasX: number, canvasY: number): ClipHitResult | n
 
     // H3: Hit testing for variation lanes
     if (track.variationLanes && track.variationLanes.length > 0) {
-        const varLaneHeight = 24;
         for (let index = 0; index < track.variationLanes.length; index++) {
             const lane = track.variationLanes[index]!;
-            const ly = trackYOffset + track.height + index * varLaneHeight;
-            if (contentY >= ly && contentY <= ly + varLaneHeight) {
+            const ly = trackYOffset + track.height + index * VARIATION_LANE_HEIGHT;
+            if (contentY >= ly && contentY < ly + VARIATION_LANE_HEIGHT) {
                 for (const clip of lane.clips) {
                     if (beat >= clip.startBeat && beat < clip.endBeat) {
                         return { clipId: clip.id, trackId: track.id };

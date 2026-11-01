@@ -2496,7 +2496,7 @@ describe('AudioEngine', () => {
     // so a reader retrying on odd/changed counters never consumes a torn snapshot.
     describe('setTransportInfo seqlock (torn-read guard)', () => {
         // Int32 index of the seqlock counter; mirrors TRANSPORT_SEQ_I32 in the impl
-        // and TRANSPORT_SEQ_I32 in services/kneadProcessor.ts.
+        // and TRANSPORT_SEQ_I32 in worklets/kneadProcessor.ts.
         const SEQ_I32 = 14;
         const F64 = {
             beat: 0,
@@ -2583,7 +2583,7 @@ describe('AudioEngine', () => {
 
         it('the engine writer produces snapshots a seqlock reader accepts as clean', () => {
             // Faithful re-implementation of the reader loop in
-            // services/kneadProcessor.ts (TRANSPORT_SEQ_MAX_RETRIES path): sample
+            // worklets/kneadProcessor.ts (TRANSPORT_SEQ_MAX_RETRIES path): sample
             // the fields between two Atomics.load of the counter; accept only when
             // the counter is unchanged and even. After a completed engine write the
             // reader must get the exact values on its first attempt — proving the

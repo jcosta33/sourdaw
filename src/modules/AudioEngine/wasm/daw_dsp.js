@@ -2572,6 +2572,62 @@ export class ToasterInstance {
 if (Symbol.dispose) ToasterInstance.prototype[Symbol.dispose] = ToasterInstance.prototype.free;
 
 /**
+ * Stereo adapter for the standalone effect. The pad shaper above keeps its
+ * historical API and block behavior; this adapter advances one state per channel.
+ */
+export class TransientShaperInstance {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        TransientShaperInstanceFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_transientshaperinstance_free(ptr, 0);
+    }
+    /**
+     * @param {number} sample_rate
+     */
+    constructor(sample_rate) {
+        const ret = wasm.transientshaperinstance_new(sample_rate);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        this.__wbg_ptr = ret[0];
+        TransientShaperInstanceFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * @param {number} input
+     * @param {number} attack_gain
+     * @param {number} sustain_gain
+     * @returns {number}
+     */
+    process_left(input, attack_gain, sustain_gain) {
+        const ret = wasm.transientshaperinstance_process_left(this.__wbg_ptr, input, attack_gain, sustain_gain);
+        return ret;
+    }
+    /**
+     * @param {number} input
+     * @param {number} attack_gain
+     * @param {number} sustain_gain
+     * @returns {number}
+     */
+    process_right(input, attack_gain, sustain_gain) {
+        const ret = wasm.transientshaperinstance_process_right(this.__wbg_ptr, input, attack_gain, sustain_gain);
+        return ret;
+    }
+    /**
+     * Reset detector history without rebuilding coefficients or changing gains.
+     */
+    reset() {
+        wasm.transientshaperinstance_reset(this.__wbg_ptr);
+    }
+}
+if (Symbol.dispose) TransientShaperInstance.prototype[Symbol.dispose] = TransientShaperInstance.prototype.free;
+
+/**
  * @param {Float32Array} samples
  * @param {number} sample_rate
  * @returns {string}
@@ -2707,6 +2763,9 @@ const ProofInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
 const ToasterInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_toasterinstance_free(ptr, 1));
+const TransientShaperInstanceFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_transientshaperinstance_free(ptr, 1));
 
 function getArrayF32FromWasm0(ptr, len) {
     ptr = ptr >>> 0;

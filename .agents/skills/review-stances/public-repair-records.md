@@ -132,3 +132,17 @@ semantic governance-classification union. Closure-only probes passed while `gitA
 was missing from `GOVERNANCE_TRANSITION_PATHS`. Run the existing `reviewRiskPolicy.spec.ts`
 union-equality and every-closure-path `native-security` assertions alongside the closure probes
 before publication; preserve their expected sets and classifications.
+
+## Escape: repair ancestry used the live tip instead of the finding revision (PR #4411 `ae4793d05f`)
+
+PR #4411 rejected a repair equal to the live PR head, forcing an unrelated follow-up commit for an ordinary
+one-commit fix, while accepting commits already present when the finding was reviewed. Both author recording
+and reviewer confirmation used the same wrong revision bound. Review accepted commit inequality as proof of a
+post-finding repair, and tests encoded the tip refusal without binding the root finding to its associated
+review's commit (2026-09-19).
+
+Probe that would have caught it: require a one-commit repair at the live tip to record and confirm; refuse the
+reviewed commit, its predecessors, and a merged sibling that does not descend it, with zero mutations for the
+whole confirmation batch. Read the root comment's review commit from GitHub in both production queries,
+preserve it across pagination, and refuse missing provenance. A reply's review or a comment's moving diff
+commit must never replace the revision that received the finding.

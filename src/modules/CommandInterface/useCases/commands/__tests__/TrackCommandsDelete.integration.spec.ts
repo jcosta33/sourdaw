@@ -199,6 +199,7 @@ describe('palette Delete Track commits capture ownership through the registered 
         await deleteSelectedTrack();
         expect(committedIds()).toEqual(['b']);
         expect(trackStore.value?.tracks.map((track) => track.id)).toEqual(['b']);
+        expect(trackStore.value?.selectedTrackId).toBeNull();
         expect(source.disconnect).toHaveBeenCalledExactlyOnceWith(gainA);
         expect(source.disconnect).not.toHaveBeenCalledWith(gainB);
         expect(stop).not.toHaveBeenCalled();

@@ -1,6 +1,11 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
 import { createAppError } from '#/infra/errors/createAppError';
+import {
+    projectPpqEndpoints,
+    restoreTimelineMapSnapshot,
+    restoreTransportSnapshot,
+} from '#/modules/Transport/useCases';
 
 import { configureOfflineMidiEventProjection } from '../configureOfflineMidiEventProjection';
 import { configureOfflinePpqEndpointProjection } from '../configureOfflinePpqEndpointProjection';
@@ -329,7 +334,7 @@ describe('exportStems', () => {
                 failureKind: 'faust-device',
                 message: expect.stringMatching(/Delay Bus.*Tape Delay.*worklet module unavailable/),
             });
-            expect(offlineRenderMocks.renderWithTimeout).toHaveBeenCalledTimes(2);
+            expect(offlineRenderMocks.renderWithTimeout).toHaveBeenCalledTimes(1);
             expect(isExportActive()).toBe(false);
         } finally {
             offlineRenderMocks.isFaustModule.mockReturnValue(false);
@@ -1214,7 +1219,7 @@ describe('exportStems — option parsing, validation & control flow', () => {
                 );
                 try {
                     await expect(exportStems(4)).rejects.toBe(failure);
-                    expect(destroy).toHaveBeenCalledTimes(2);
+                    expect(destroy).toHaveBeenCalledTimes(1);
                     expect(isExportActive()).toBe(false);
                 } finally {
                     vi.unstubAllGlobals();
@@ -1237,7 +1242,7 @@ describe('exportStems — option parsing, validation & control flow', () => {
 
     // The export's finally lowers the shared flag the moment the pool rejects. Stems still rendering
     // read their next checkpoint after that, so only the stem set's own scope signal can stop them.
-    it('stops every in-flight stem at its next checkpoint after the cancelled export lowered the flag', async () => {
+    it('stops the sole in-flight stem at its checkpoint and admits no waiting stem after cancellation', async () => {
         const stemTrack = (id: string) => ({ id, kind: 'midi', disabled: false, muted: false, devices: [] });
         offlineRenderMocks.resolveRenderContext.mockReturnValue({
             ...createRenderContext([stemTrack('bass'), stemTrack('keys'), stemTrack('lead')]),
@@ -1271,7 +1276,7 @@ describe('exportStems — option parsing, validation & control flow', () => {
                 (error: unknown) => error
             );
             await vi.waitFor(() => {
-                expect(contexts).toHaveLength(2);
+                expect(contexts).toHaveLength(1);
                 expect(contexts.every((context) => context.suspend.mock.calls.length > 0)).toBe(true);
             });
 
@@ -1282,17 +1287,10 @@ describe('exportStems — option parsing, validation & control flow', () => {
             expect(exportCancellationState.cancelFlag).toBe(false);
             const progressReportsAtCancel = onProgress.mock.calls.length;
 
-            contexts[1]!.reachCheckpoint();
-            await vi.waitFor(() => {
-                expect(contexts[1]!.close).toHaveBeenCalled();
-            });
-            // Let the cancelled stem's rejection reach the pool.
-            await new Promise((resolve) => setTimeout(resolve, 0));
-
+            expect(contexts[0]!.close).toHaveBeenCalledTimes(1);
             expect(contexts[0]!.resume).not.toHaveBeenCalled();
-            expect(contexts[1]!.resume).not.toHaveBeenCalled();
-            // The pool neither starts the waiting third stem nor reports stems settling after the cancel.
-            expect(contexts).toHaveLength(2);
+            // No waiting stem starts after the cancellation scope has settled.
+            expect(contexts).toHaveLength(1);
             expect(onProgress).toHaveBeenCalledTimes(progressReportsAtCancel);
         } finally {
             vi.unstubAllGlobals();
@@ -1333,25 +1331,21 @@ describe('exportStems — option parsing, validation & control flow', () => {
                 (error: unknown) => error
             );
             await vi.waitFor(() => {
-                expect(contexts).toHaveLength(2);
+                expect(contexts).toHaveLength(1);
                 expect(contexts.every((context) => context.suspend.mock.calls.length > 0)).toBe(true);
             });
 
             // Stem two clears its checkpoint while the export is still live, then Cancel arrives.
-            contexts[1]!.reachCheckpoint();
+            contexts[0]!.reachCheckpoint();
             await vi.waitFor(() => {
-                expect(contexts[1]!.resume).toHaveBeenCalledTimes(1);
+                expect(contexts[0]!.resume).toHaveBeenCalledTimes(1);
             });
             cancelExport();
-            contexts[0]!.reachCheckpoint();
+            contexts[0]!.finishRender();
             expect(await outcome).toMatchObject({ message: 'Export cancelled' });
             expect(exportCancellationState.cancelFlag).toBe(false);
 
-            contexts[1]!.finishRender();
-            // Let the finished stem settle in the pool.
-            await new Promise((resolve) => setTimeout(resolve, 0));
-
-            expect(contexts).toHaveLength(2);
+            expect(contexts).toHaveLength(1);
         } finally {
             vi.unstubAllGlobals();
         }
@@ -1380,5 +1374,154 @@ describe('exportStems — option parsing, validation & control flow', () => {
         expect(exportCancellationState.cancelFlag).toBe(false);
 
         vi.unstubAllGlobals();
+    });
+
+    // A region that starts after beat 0 renders from timeline zero and each stem is cropped to the
+    // region afterwards. Every sample of the rendered stem holds its own frame index, so the crop's
+    // first and last samples show which rendered frames the stem kept.
+    describe('a region that starts after beat 0', () => {
+        // The Nebula Drift demo's clock: 76 BPM, a ramp to 78 BPM from beat 148 and back from beat 232.
+        const nebulaDriftTempoMap = [
+            { id: 'open', beat: 0, tempo: 76, curve: 'instant' as const },
+            { id: 'peak', beat: 148, tempo: 78, curve: 'linear' as const },
+            { id: 'breakdown', beat: 232, tempo: 76, curve: 'linear' as const },
+        ];
+        const region = { startBeat: 165, durationBeats: 39, tailSeconds: 2, sampleRate: 44_100 };
+        const stemTrack = { id: 'keys', kind: 'midi', disabled: false, muted: false, devices: [] };
+
+        class FrameIndexBuffer {
+            readonly length: number;
+            readonly sampleRate: number;
+            readonly numberOfChannels: number;
+            private readonly channels: Float64Array[];
+
+            constructor({ length, sampleRate, numberOfChannels }: AudioBufferOptions) {
+                this.length = length;
+                this.sampleRate = sampleRate;
+                this.numberOfChannels = numberOfChannels ?? 1;
+                // Float64 holds every frame index of a long timeline exactly.
+                this.channels = Array.from({ length: this.numberOfChannels }, () =>
+                    Float64Array.from({ length }, (_, frame) => frame)
+                );
+            }
+
+            getChannelData(channel: number) {
+                return this.channels[channel]!;
+            }
+
+            copyToChannel(source: Float64Array, channel: number) {
+                this.channels[channel]!.set(source);
+            }
+        }
+
+        /** Frames each stem context was sized to render, in construction order. */
+        let renderedFrameCounts: number[];
+
+        beforeEach(async () => {
+            const { resolveRenderContext } = await vi.importActual<
+                typeof import('../offlineRender/resolveRenderContext')
+            >('../offlineRender/resolveRenderContext');
+            restoreTransportSnapshot({ tempo: 76 });
+            restoreTimelineMapSnapshot({ tempoMap: { changes: nebulaDriftTempoMap } });
+            configureOfflinePpqEndpointProjection({
+                project: projectPpqEndpoints,
+                resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
+            });
+            // The real resolver measures the render; only the project it reads is this spec's.
+            offlineRenderMocks.resolveRenderContext.mockImplementation((input: { durationBeats: number }) => {
+                const measured = resolveRenderContext(input);
+                return {
+                    ...createRenderContext([stemTrack]),
+                    defaultTempo: measured.defaultTempo,
+                    changes: measured.changes,
+                    startBeat: measured.startBeat,
+                    durationSeconds: measured.durationSeconds,
+                    tailSeconds: measured.tailSeconds,
+                    projectPpqEndpoints: measured.projectPpqEndpoints,
+                };
+            });
+            offlineRenderMocks.createOfflineTrackStrip.mockResolvedValue({
+                inputNode: {},
+                faderNode: {},
+                panNode: {},
+                outputNode: { connect: vi.fn() },
+                deviceEntries: [],
+            });
+            renderedFrameCounts = [];
+            vi.stubGlobal(
+                'OfflineAudioContext',
+                vi.fn(function OfflineContext(_channels: number, frameCount: number) {
+                    renderedFrameCounts.push(frameCount);
+                    return { destination: {} };
+                })
+            );
+            vi.stubGlobal('AudioBuffer', FrameIndexBuffer);
+            offlineRenderMocks.renderWithTimeout.mockImplementation(() =>
+                Promise.resolve(
+                    new AudioBuffer({
+                        length: renderedFrameCounts.at(-1)!,
+                        numberOfChannels: 2,
+                        sampleRate: region.sampleRate,
+                    })
+                )
+            );
+        });
+
+        afterEach(() => {
+            vi.unstubAllGlobals();
+            restoreTransportSnapshot({ tempo: 120 });
+            restoreTimelineMapSnapshot({ tempoMap: { changes: [] } });
+        });
+
+        /** The region's first frame on the absolute timeline grid the tempo map projects. */
+        function regionStartFrame() {
+            return projectPpqEndpoints({
+                startPpq: 0,
+                endPpq: region.startBeat,
+                defaultTempo: 76,
+                sampleRate: region.sampleRate,
+                changes: nebulaDriftTempoMap,
+            }).endSamples;
+        }
+
+        it('keeps each collected stem from the region start through the tail', async () => {
+            const stems = await exportStems(region);
+
+            const stem = stems.get(stemTrack.id)!;
+            const renderedFrameCount = renderedFrameCounts[0]!;
+            // Beats 165-204 and the 2 s tail, as long as the region rendered on its own.
+            expect(stem.length).toBe(1_426_122);
+            for (const channel of [0, 1]) {
+                const samples = stem.getChannelData(channel);
+                expect(samples[0]).toBe(regionStartFrame());
+                expect(samples[stem.length - 1]).toBe(renderedFrameCount - 1);
+            }
+        });
+
+        it('lends each streamed stem the same window, from the region start through the tail', async () => {
+            const lent: { length: number; first: number[]; last: number[] }[] = [];
+            const onStem = vi.fn(
+                (_trackId: string, source: Pick<AudioBuffer, 'length' | 'numberOfChannels' | 'getChannelData'>) => {
+                    const channels = [0, 1].map((channel) => source.getChannelData(channel));
+                    lent.push({
+                        length: source.length,
+                        first: channels.map((samples) => samples[0]!),
+                        last: channels.map((samples) => samples[source.length - 1]!),
+                    });
+                    return Promise.resolve();
+                }
+            );
+
+            await exportStems({ ...region, onStem });
+
+            const renderedFrameCount = renderedFrameCounts[0]!;
+            expect(lent).toEqual([
+                {
+                    length: 1_426_122,
+                    first: [regionStartFrame(), regionStartFrame()],
+                    last: [renderedFrameCount - 1, renderedFrameCount - 1],
+                },
+            ]);
+        });
     });
 });

@@ -46,3 +46,48 @@ forward replay with the exact admission arguments; never delete partial records 
 back the tooling leaves existing data unchanged and may leave admission incomplete. Removing any
 retained evidence would require a separate owner-controlled decision outside this procedure; this
 recovery has no destructive rollback or contraction stage.
+
+## Original parent already superseded
+
+On Darwin, a child whose original parent was closed without merge can explicitly register that
+original association when the main-based parent has a completed native supersession:
+
+```bash
+pnpm lane:sync-parent --lane <absolute-child-lane> --admit-historical --child-pr <child> --parent-pr <original-parent> --expected-head <full-child-sha> --superseded-parent-replacement <merged-parent-successor> [--parent-origin-main]
+```
+
+The selected successor must actually be merged into `main`. The original parent must retain
+exactly one canonical author-App supersession receipt and one canonical lineage covering its
+complete live finding set, naming that successor. The child remains open with its original base
+and no lifecycle events; the parent has exactly one author-App closure, no reopening, deletion,
+restoration or force-push, and still targets `main`. Existing actor, all-state PR uniqueness,
+creation chronology, continuous native history, ownership, clean-child and cycle checks remain.
+The cached child base must belong to both immutable histories. These are current-head and
+original-fork witnesses: a plain supersession receipt does not attest the parent's historical
+head at closure, or prove semantic replacement. The recorded parent remains the original PR;
+ordinary publication and synchronization still refuse that closed parent.
+
+`--parent-origin-main` is a separate parent-only opt-in for the exact native initial reflog
+message `branch: Created from origin/main`. Its zero old OID, concrete new OID, author actor,
+chronology and continuous history remain required. Present `origin/main` is never substituted
+for that recorded new OID. The child still requires an exact-SHA native birth. Omitting this
+option keeps exact-SHA parent birth validation, and every existing OPEN admission is unchanged.
+The closed-parent options cannot combine with `--legacy-fork`.
+
+Admission obtains canonical completion evidence through an internal read-only inspection mode
+of the existing `pr:supersede` executable, independently launched by the verified primary
+bootstrap. That mode uses the same native receipt, lineage and full-root readers as closure,
+finishes with fresh parent and successor core witnesses, takes no mutation lock, and performs
+no repository mutation. Its isolated author authentication remains ephemeral. No lane helper,
+ambient package manager, caller proof file or duplicate marker parser supplies authority. The
+nested Darwin launcher admits fixed `/bin/ps` alongside the frozen tool directories; an unsupported
+platform or missing system tool refuses. Every admission mutation boundary repeats inspection
+and rechecks the child after the parent reads. Bounded wire output and equal outer/inner source
+pins are required; a mixed-version observation refuses.
+
+This mode writes a strict version-2 admission receipt binding its flags and complete native proof,
+including its source commit. Existing version-1 records keep their format and behavior. Exact
+receipt/marker/descriptor interruptions can resume only with the same flags and proof. Changed
+source pins, completion markers, identities or findings refuse rather than overwrite the journal;
+retained records are not deletion permission. Tooling that does not understand version 2 refuses
+it. Registration itself grants neither approval, Gate, delivery nor supersession of the child.

@@ -37,7 +37,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 export const PNPM_MODULES_DIR = 'node_modules';
 export const PNPM_MODULES_MANIFEST = '.modules.yaml';
@@ -282,7 +282,12 @@ function sameDirectory(
 
 function resolvesInside(root: string, target: string): boolean {
     const relativePath = relative(canonicalPath(root, realpathSync), canonicalPath(target, realpathSync));
-    return relativePath !== '' && !relativePath.startsWith('..') && !isAbsolute(relativePath);
+    return (
+        relativePath !== '' &&
+        relativePath !== '..' &&
+        !relativePath.startsWith(`..${sep}`) &&
+        !isAbsolute(relativePath)
+    );
 }
 
 function canonicalPath(path: string, resolveExisting: (path: string) => string): string {

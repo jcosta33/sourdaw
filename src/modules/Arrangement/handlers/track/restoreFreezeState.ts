@@ -8,8 +8,9 @@ import { updateTrack } from '../../useCases/updateTrack';
  * Inverse and redo of `freezeTrack` and `unfreezeTrack`, guarded on the take the forward
  * action left behind. Restores the whole freeze aggregate rather than re-running either
  * operation: re-freezing would re-render and mint a different take, and a bare unfreeze
- * would collapse a `stale` or `error` state the freeze found. Only ever dispatched from
- * the undo engine (with `skipUndo`), so it is not itself undoable.
+ * would collapse a `stale` or `error` state the freeze found. Failed Freeze also
+ * settles its diagnostic through this action independently of its aborted render
+ * transaction. Neither a replay nor a failed render creates another undo entry.
  */
 export const handleRestoreFreezeState = createHandler<'restoreFreezeState'>({
     execute: (action) => {

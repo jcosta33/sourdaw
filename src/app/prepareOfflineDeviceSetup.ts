@@ -201,6 +201,7 @@ const OFFLINE_DEVICE_HYDRATION: Record<NativeDspDeviceType, HydrateOfflineDevice
     'dutch-oven': null,
     'native-scoring': null,
     knead: null,
+    'transient-shaper': null,
 };
 
 /**

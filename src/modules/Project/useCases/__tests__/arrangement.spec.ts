@@ -18,6 +18,12 @@ const { cancelPreparedBuffers, prepareCachedAudioBuffersFromIdb, publishPrepared
 // switchArrangement imports getAudioContext and prepareCachedAudioBuffersFromIdb;
 // runProjectLoadTransaction.activate imports cancelPendingAudioBufferImport.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    createNativeRecordingCaptureClock: vi.fn(() => ({
+        admission: null,
+        last: null,
+        read: () => ({ carrier: 'browser' as const }),
+    })),
+    ensureCachedAudioBuffersDurable: vi.fn(),
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     suspendAutoInputMonitoring: vi.fn(() => vi.fn()),
@@ -31,6 +37,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     // `#/modules/AudioEngine/useCases`; nothing this suite exercises reads it,
     // so `false` is the value with no behaviour behind it.
     nativeLiveGraphSessionOffered: vi.fn(() => false),
+    openCachedAudioBufferHold: vi.fn(() => ({ retain: vi.fn(), release: vi.fn() })),
     soundsNativeNotes: vi.fn(() => false),
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),
@@ -135,6 +142,9 @@ vi.mock('../projectPersistence/saveProject/markDirty', () => ({ markDirty: vi.fn
 vi.mock('#/modules/Command/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
     return {
+        commitRedoInverseCapture: vi.fn(),
+        readUndoEntryForInverse: vi.fn<typeof actual.readUndoEntryForInverse>(() => null),
+
         clearUndoHistory: vi.fn(),
         resetActionReplayAuthority: actual.resetActionReplayAuthority,
         executeAppAction: actual.executeAppAction,
@@ -153,6 +163,9 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         '#/modules/Arrangement/useCases'
     );
     return {
+        applyTempoAudioSources: actual.applyTempoAudioSources,
+        canApplyTempoAudioSources: actual.canApplyTempoAudioSources,
+        prepareTempoAudioSources: actual.prepareTempoAudioSources,
         acceptsExternalPluginAutomationParameter: vi.fn(),
         removeClip: vi.fn(),
         setClipAudioAssetStager: vi.fn(),
@@ -160,6 +173,9 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         addTake: vi.fn(),
         addTakeLane: vi.fn(),
         commitRecording: vi.fn(),
+        admitRecordingCaptureClock: vi.fn(),
+        observeRecordingPassEntry: vi.fn(),
+        prepareRecoveredRecording: vi.fn(),
         discardRecording: vi.fn(),
         stageRecordingTake: vi.fn(),
         applySoloLogic: vi.fn(),
@@ -200,6 +216,8 @@ vi.mock('#/modules/Automation/useCases', async () => {
         getAutomationValueAtBeat: vi.fn(),
         getClipAutomationMoveState: vi.fn(),
         getSendAutomationBusId: vi.fn(),
+        isExactAutomationLaneSnapshots: actual.isExactAutomationLaneSnapshots,
+        isExactClipAutomationMoveSnapshots: actual.isExactClipAutomationMoveSnapshots,
         isRecordingAutomation: vi.fn(),
         recordAutomationValue: vi.fn(),
         removeAutomationLane: vi.fn(),
@@ -220,8 +238,14 @@ vi.mock('#/modules/Automation/useCases', async () => {
 vi.mock('#/modules/MIDI/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
     return {
+        captureEventPositionAt: actual.captureEventPositionAt,
+        replaceFrozenMidiTakeRow: actual.replaceFrozenMidiTakeRow,
+        sealHeldRecordedMidiNotes: actual.sealHeldRecordedMidiNotes,
+        snapshotMidiClipData: actual.snapshotMidiClipData,
         projectClipControllerEvents: vi.fn(),
         projectClipControllerRestore: vi.fn(),
+        isExactMidiClipDataActionSnapshot: actual.isExactMidiClipDataActionSnapshot,
+        decodeMidiClipDataSnapshots: actual.decodeMidiClipDataSnapshots,
         projectChannelBend: vi.fn(),
         adaptGrooveTemplateForConsumer: vi.fn(),
         appendMidiNotes: vi.fn(),

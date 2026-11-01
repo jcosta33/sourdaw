@@ -2,12 +2,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { type AppAction } from '#/utils/handlerContract';
 
+import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { type Clip } from '../../../models/Track';
 import { handleSplitClip } from '../handleSplitClip';
 
 const mocks = vi.hoisted(() => ({
     getNextAppActionClipId: vi.fn(),
     prepareClipSplit: vi.fn(),
     splitClip: vi.fn(),
+    captureClipSplitSource:
+        vi.fn<typeof import('../../../useCases/clipEditing/captureClipSplitSource').captureClipSplitSource>(),
+    getTrackStoreState: vi.fn<typeof import('../../../useCases/getTrackStoreState').getTrackStoreState>(),
+    resolveZeroCrossingPosition:
+        vi.fn<typeof import('../../../useCases/timelineInteractions/snapToZeroCrossing').resolveZeroCrossingPosition>(),
 }));
 
 vi.mock('../../../useCases/clip/getNextAppActionClipId', () => ({
@@ -22,12 +29,35 @@ vi.mock('../../../useCases/clipEditing/splitClip', () => ({
     splitClip: mocks.splitClip,
 }));
 
+vi.mock('../../../useCases/clipEditing/captureClipSplitSource', () => ({
+    captureClipSplitSource: mocks.captureClipSplitSource,
+}));
+
+vi.mock('../../../useCases/getTrackStoreState', () => ({
+    getTrackStoreState: mocks.getTrackStoreState,
+}));
+
+vi.mock('../../../useCases/timelineInteractions/snapToZeroCrossing', () => ({
+    resolveZeroCrossingPosition: mocks.resolveZeroCrossingPosition,
+}));
+
 describe('handleSplitClip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.getNextAppActionClipId.mockReturnValue('right-clip');
         mocks.prepareClipSplit.mockReturnValue(null);
         mocks.splitClip.mockReturnValue('right-clip');
+        mocks.captureClipSplitSource.mockReturnValue({
+            validation: {
+                documentId: 'root',
+                beforeCommit: () => null,
+                validateDocument: () => null,
+                release: () => undefined,
+            },
+            captureWrittenState: () => true,
+        });
+        mocks.getTrackStoreState.mockReturnValue(null);
+        mocks.resolveZeroCrossingPosition.mockImplementation((_clip, beat) => ({ beat }));
     });
 
     it('executes splitClip with the provided payload', () => {
@@ -61,7 +91,7 @@ describe('handleSplitClip', () => {
             controlChanges: { present: false, value: [] },
             pitchBends: { present: false, value: [] },
         };
-        const leftClip = {
+        const leftClip: Clip = {
             id: 'c1',
             trackId: 't1',
             name: 'Intro',
@@ -75,6 +105,10 @@ describe('handleSplitClip', () => {
             locked: false,
             muted: false,
         };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [TrackDummy.create({ id: 't1', clips: [leftClip] })],
+            selectedTrackId: null,
+        });
         const rightClip = { ...leftClip, id: 'right-clip', name: 'Intro (R)', startBeat: 2.5 };
         const previous = {
             trackId: 't1',
@@ -128,6 +162,8 @@ describe('handleSplitClip', () => {
         const redo = desc.redoAction as Extract<AppAction, { type: 'restoreClipSplitState' }>;
         expect(inverse.payload.retiredTakeLanes).toEqual([]);
         expect(inverse.payload.retiredTakeLanes).toBe(redo.payload.retiredTakeLanes);
+        expect(inverse.payload.splitSourceProof).toEqual({ changeHash: '', memberId: '' });
+        expect(inverse.payload.splitSourceProof).toBe(redo.payload.splitSourceProof);
         expect(inverse.payload.reKeyedTakeLanes).toEqual([]);
         expect(inverse.payload.reKeyedTakeLanes).toBe(redo.payload.reKeyedTakeLanes);
     });
@@ -138,7 +174,7 @@ describe('handleSplitClip', () => {
             controlChanges: { present: false, value: [] },
             pitchBends: { present: false, value: [] },
         };
-        const sourceClip = {
+        const sourceClip: Clip = {
             id: 'c1',
             trackId: 't1',
             name: 'Intro',
@@ -152,6 +188,11 @@ describe('handleSplitClip', () => {
             locked: false,
             muted: false,
         };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [TrackDummy.create({ id: 't1', clips: [sourceClip] })],
+            selectedTrackId: null,
+        });
+        mocks.resolveZeroCrossingPosition.mockReturnValue({ beat: 4.125 });
         mocks.prepareClipSplit.mockReturnValue({
             adjustedMediaSplit: 4.125,
             previous: {
@@ -180,13 +221,21 @@ describe('handleSplitClip', () => {
         };
         const description = handleSplitClip.describe(action);
 
+        expect(mocks.resolveZeroCrossingPosition).toHaveBeenCalledWith(sourceClip, 4, expect.any(Object));
+        expect(mocks.prepareClipSplit).toHaveBeenCalledWith(
+            expect.objectContaining({ admittedSplitPosition: { beat: 4.125 } })
+        );
         expect(description.label).toBe('Split clip "Intro" (c1) near requested beat 4 at beat 4.125');
         expect(action.payload.resolvedBeat).toBe(4.125);
 
         await handleSplitClip.execute(action);
         const reKeyedTakeLanes = (description.redoAction as Extract<AppAction, { type: 'restoreClipSplitState' }>)
             .payload.reKeyedTakeLanes;
-        expect(mocks.splitClip).toHaveBeenCalledWith('c1', 4, 'right-clip', [], 4.125, { reKeyedTakeLanes });
+        expect(mocks.prepareClipSplit).toHaveBeenCalledTimes(1);
+        expect(mocks.splitClip).toHaveBeenCalledWith('c1', 4, 'right-clip', [], 4.125, {
+            reKeyedTakeLanes,
+            prepared: mocks.prepareClipSplit.mock.results[0]?.value,
+        });
     });
 
     it('is undoable', () => {

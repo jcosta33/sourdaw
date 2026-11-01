@@ -1,6 +1,7 @@
 import { activeRecordingRef } from '#/modules/Arrangement/stores';
 import { stopRecording, takeOwnsRecordingRoot } from '#/modules/Arrangement/useCases';
 
+import { captureRecordingEnd } from './captureRecordingEnd';
 import { recordingLifecycle } from './recordingLifecycle';
 
 /**
@@ -21,7 +22,9 @@ import { recordingLifecycle } from './recordingLifecycle';
  */
 export function finalizeAutomaticRecording(atBeat: number): void {
     const closesTake = activeRecordingRef.current.length > 0 && takeOwnsRecordingRoot();
-    const finalized = stopRecording(atBeat);
+    const ending = captureRecordingEnd();
+    recordingLifecycle.endRecording();
+    const finalized = stopRecording(atBeat, ending);
     if (closesTake) {
         recordingLifecycle.trackTakeCommit(finalized);
     }

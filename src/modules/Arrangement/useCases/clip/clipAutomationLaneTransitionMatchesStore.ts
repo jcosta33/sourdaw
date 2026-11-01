@@ -2,8 +2,6 @@ import { getAutomationLanes } from '#/modules/Automation/useCases';
 import { type ClipAutomationLaneSnapshot } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
-import { readClipScopedAutomationLanes } from './readClipScopedAutomationLanes';
-
 function sortById(lanes: readonly ClipAutomationLaneSnapshot[]): ClipAutomationLaneSnapshot[] {
     return [...lanes].sort((left, right) => left.id.localeCompare(right.id));
 }
@@ -34,14 +32,17 @@ function sortById(lanes: readonly ClipAutomationLaneSnapshot[]): ClipAutomationL
 export function clipAutomationLaneTransitionMatchesStore(
     affectedClipIds: readonly string[],
     expectedLanes: readonly ClipAutomationLaneSnapshot[],
-    replacementLanes: readonly ClipAutomationLaneSnapshot[]
+    replacementLanes: readonly ClipAutomationLaneSnapshot[],
+    liveLanes: readonly ClipAutomationLaneSnapshot[] = getAutomationLanes()
 ): boolean {
-    const liveScopedLanes = readClipScopedAutomationLanes(affectedClipIds);
+    const liveScopedLanes = liveLanes.filter(
+        (lane) => lane.clipId !== undefined && affectedClipIds.includes(lane.clipId)
+    );
     if (!valuesEqual(sortById(liveScopedLanes), sortById(expectedLanes))) {
         return false;
     }
 
     const expectedIds = new Set(expectedLanes.map((lane) => lane.id));
-    const liveLaneIds = new Set(getAutomationLanes().map((lane) => lane.id));
+    const liveLaneIds = new Set(liveLanes.map((lane) => lane.id));
     return !replacementLanes.some((lane) => !expectedIds.has(lane.id) && liveLaneIds.has(lane.id));
 }

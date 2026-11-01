@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createMono, createStereo, toAudioBufferMono, toAudioBufferStereo } from '../bufferCreation';
+import { createMono, createStereo, monoPcm, stereoPcm, toAudioBuffer } from '../bufferCreation';
 
 function createMockAudioContext() {
     const channelData: Float32Array[] = [];
@@ -80,37 +80,49 @@ describe('createStereo', () => {
     });
 });
 
-describe('toAudioBufferMono', () => {
+describe('monoPcm and stereoPcm', () => {
+    it('wrap rendered data as channels at the factory sample rate without copying', () => {
+        const mono = new Float32Array([0.1]);
+        const left = new Float32Array([0.5]);
+        const right = new Float32Array([0.7]);
+
+        expect(monoPcm(mono)).toEqual({ channels: [mono], sampleRate: 44100 });
+        expect(monoPcm(mono).channels[0]).toBe(mono);
+        const stereo = stereoPcm([left, right]);
+        expect(stereo.sampleRate).toBe(44100);
+        expect(stereo.channels[0]).toBe(left);
+        expect(stereo.channels[1]).toBe(right);
+    });
+});
+
+describe('toAudioBuffer', () => {
     it('creates a mono AudioBuffer and copies the source data into channel 0', () => {
         const ctx = createMockAudioContext();
         const data = new Float32Array([0.1, 0.2, 0.3]);
 
-        const buf = toAudioBufferMono(ctx as never, data, 44100);
+        const buf = toAudioBuffer(ctx as unknown as AudioContext, { channels: [data], sampleRate: 44100 });
 
         expect(ctx.createBuffer).toHaveBeenCalledWith(1, 3, 44100);
         expect(buf.length).toBe(3);
-        // Channel 0 should contain the source data.
-        const ch0 = buf.getChannelData(0);
-        expect(ch0[0]).toBeCloseTo(0.1, 5);
-        expect(ch0[1]).toBeCloseTo(0.2, 5);
-        expect(ch0[2]).toBeCloseTo(0.3, 5);
+        expect(Array.from(buf.getChannelData(0))).toEqual(Array.from(data));
     });
-});
 
-describe('toAudioBufferStereo', () => {
     it('creates a stereo AudioBuffer and copies both channels', () => {
         const ctx = createMockAudioContext();
         const left = new Float32Array([0.5, 0.6]);
         const right = new Float32Array([0.7, 0.8]);
 
-        const buf = toAudioBufferStereo(ctx as never, [left, right], 48000);
+        const buf = toAudioBuffer(ctx as unknown as AudioContext, { channels: [left, right], sampleRate: 48000 });
 
         expect(ctx.createBuffer).toHaveBeenCalledWith(2, 2, 48000);
-        const ch0 = buf.getChannelData(0);
-        const ch1 = buf.getChannelData(1);
-        expect(ch0[0]).toBeCloseTo(0.5, 5);
-        expect(ch0[1]).toBeCloseTo(0.6, 5);
-        expect(ch1[0]).toBeCloseTo(0.7, 5);
-        expect(ch1[1]).toBeCloseTo(0.8, 5);
+        expect(Array.from(buf.getChannelData(0))).toEqual(Array.from(left));
+        expect(Array.from(buf.getChannelData(1))).toEqual(Array.from(right));
+    });
+
+    it('refuses a sample with no channels instead of creating an empty buffer', () => {
+        const ctx = createMockAudioContext();
+
+        expect(() => toAudioBuffer(ctx as unknown as AudioContext, { channels: [], sampleRate: 44100 })).toThrow();
+        expect(ctx.createBuffer).not.toHaveBeenCalled();
     });
 });

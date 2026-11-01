@@ -334,3 +334,52 @@ describe('resolveClipsWithComping off the beat grid at a constant tempo', () => 
         expect(gap?.audioOffsetBeats).toBe(0.1 + (5 - 3.3));
     });
 });
+
+describe('invalid modern take source ownership', () => {
+    afterEach(() => {
+        mocks.takeLaneStoreValue.value = null;
+    });
+
+    it('omits an invalid placed owner and continues resolving a valid take', () => {
+        transportStore.set({ ...transportStore.value!, tempo: 120 });
+        const clip = { ...recording(0, 4), audioOffsetSeconds: 0, audioUnwrappedOffsetSeconds: 0 };
+        mocks.takeLaneStoreValue.value = {
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [
+                        {
+                            id: 'invalid',
+                            clipId: 'rec',
+                            name: 'Invalid',
+                            startBeat: 0,
+                            endBeat: 2,
+                            selected: false,
+                            sourceOffsetBeats: 0,
+                            passAnchorSeconds: 0,
+                            passDepthSeconds: 0,
+                            passOriginBeat: 0,
+                        },
+                        {
+                            id: 'valid',
+                            clipId: 'rec',
+                            name: 'Valid',
+                            startBeat: 2,
+                            endBeat: 4,
+                            selected: false,
+                            sourceOffsetSeconds: 1,
+                        },
+                    ],
+                    activeCompRegions: [
+                        { startBeat: 0, endBeat: 2, takeId: 'invalid' },
+                        { startBeat: 2, endBeat: 4, takeId: 'valid' },
+                    ],
+                },
+            ],
+        };
+        const resolved = resolveClipsWithComping('t1', [clip]);
+        expect(resolved).toHaveLength(1);
+        expect(resolved[0]).toMatchObject({ startBeat: 2, endBeat: 4, audioOffsetSeconds: 2 });
+    });
+});

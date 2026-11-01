@@ -381,10 +381,8 @@ describe('Inspector continuous parameter gestures through real history', () => {
         fireEvent.pointerMove(root, { pointerId: 2, clientX: 20, clientY: 10 });
         expect(writes(compressor.id)).toEqual([-36, expect.closeTo(-12, 12), -48]);
         const readouts = screen.getAllByText('-48.0 dB');
-        expect(readouts).toHaveLength(2);
-        for (const readout of readouts) {
-            expect(readout).toBeVisible();
-        }
+        expect(readouts).toHaveLength(1);
+        expect(readouts[0]).toBeVisible();
         expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-20);
         expect(settlePendingProjectWritesAndCaptureRevision()).toBe(revision);
         expect(depth()).toBe(0);
@@ -405,7 +403,7 @@ describe('Inspector continuous parameter gestures through real history', () => {
 
         fireEvent.keyDown(slider, { key: 'End' });
         await expectCommitted('comp-threshold', 0, 1, compressor.id);
-        expect(screen.getAllByText('0.0 dB')).toHaveLength(2);
+        expect(screen.getAllByText('0.0 dB')).toHaveLength(1);
         expect(writes(compressor.id).at(-1)).toBe(0);
 
         await act(() => undo());
@@ -431,12 +429,12 @@ describe('Inspector continuous parameter gestures through real history', () => {
         fireEvent.pointerMove(root, { pointerId: 2, clientX: 20, clientY: 10 });
         expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-20);
         expect(values(compressor.id)['comp-threshold']).toBe(-20);
-        expect(screen.getAllByText('-48.0 dB')).toHaveLength(2);
+        expect(screen.getAllByText('-48.0 dB')).toHaveLength(1);
         expect(depth()).toBe(0);
 
         fireEvent.keyDown(slider, { key: 'End' });
         await expectCommitted('comp-threshold', 0, 1, compressor.id);
-        expect(screen.getAllByText('0.0 dB')).toHaveLength(2);
+        expect(screen.getAllByText('0.0 dB')).toHaveLength(1);
         expect(writes(compressor.id)).toEqual([-36, -48, -20, 0, 0, 0]);
         await act(() => undo());
         expect(rawValues(compressor.id)?.['comp-threshold']).toBe(-20);
@@ -445,7 +443,7 @@ describe('Inspector continuous parameter gestures through real history', () => {
         await act(() => redo());
         expect(rawValues(compressor.id)?.['comp-threshold']).toBe(0);
         expect(values(compressor.id)['comp-threshold']).toBe(0);
-        expect(screen.getAllByText('0.0 dB')).toHaveLength(2);
+        expect(screen.getAllByText('0.0 dB')).toHaveLength(1);
         expect(writes(compressor.id).at(-1)).toBe(0);
         const completedWrites = writes(compressor.id);
 
@@ -761,6 +759,115 @@ describe('Inspector continuous parameter gestures through real history', () => {
             });
         }
     });
+
+    it.each(['touch', 'read', 'latch', 'write'] as const)(
+        'accepts physical knob release after an intervening runtime write in %s mode',
+        async (automationMode) => {
+            let beat = 1;
+            const recording = vi.spyOn(automationUseCases, 'recordAutomationValue');
+            setGestureClockSource({ getAudioTimeSeconds: () => 0, readNativeCursorBeats: () => beat });
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: [{ ...testTrack([structuredClone(synth)]), automationMode }],
+            });
+            transportStore.set({ ...defaultTransportState, isPlaying: true });
+            render(<Control />);
+            beginKnob();
+            moveKnob(85);
+            updateDeviceParam('track-1', synth.id, 'detune', 65);
+            expect(writes()).toEqual([25, 65]);
+            expect(rawValues()?.detune).toBe(5);
+            expect(depth()).toBe(0);
+
+            const entered = Promise.withResolvers<void>();
+            const release = Promise.withResolvers<void>();
+            const snapshot = transactSnapshot(async () => {
+                entered.resolve();
+                await release.promise;
+            });
+            try {
+                await entered.promise;
+                beat = 2;
+                endKnob();
+                const expectedSamples: unknown[][] = [];
+                if (automationMode !== 'read') {
+                    expectedSamples.push(
+                        ['track-1', 'synth-1:detune', 25, 1, expect.any(Symbol)],
+                        ['track-1', 'synth-1:detune', 25, 2, expect.any(Symbol)]
+                    );
+                }
+                expect(recording.mock.calls).toEqual(expectedSamples);
+                expect(automationUseCases.isRecordingAutomation('track-1', 'synth-1:detune')).toBe(
+                    automationMode === 'latch' || automationMode === 'write'
+                );
+                expect(writes()).toEqual([25, 65, 25]);
+                expect(rawValues()?.detune).toBe(5);
+                expect(depth()).toBe(0);
+
+                updateDeviceParam('track-1', synth.id, 'detune', 85);
+                beat = 19;
+                await act(async () => {
+                    release.resolve();
+                    await snapshot;
+                });
+                await expectCommitted('detune', 25, 1);
+                expect(writes()).toEqual([25, 65, 25, 85]);
+                expect(recording.mock.calls).toEqual(expectedSamples);
+                await act(() => undo());
+                expect(rawValues()?.detune).toBe(5);
+                expect(writes().at(-1)).toBe(5);
+                await act(() => redo());
+                expect(rawValues()?.detune).toBe(25);
+                expect(writes().at(-1)).toBe(25);
+                expect(depth()).toBe(1);
+                expect(recording.mock.calls).toEqual(expectedSamples);
+            } finally {
+                await act(async () => {
+                    release.resolve();
+                    await snapshot;
+                });
+            }
+        }
+    );
+
+    it.each(['read', 'touch'] as const)(
+        'admits fresh Ratio movement after an intervening runtime write in %s mode',
+        async (automationMode) => {
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: [{ ...testTrack([structuredClone(compressor)]), automationMode }],
+            });
+            transportStore.set({ ...defaultTransportState, isPlaying: true });
+            const recording = vi.spyOn(automationUseCases, 'recordAutomationValue');
+            render(<Control deviceId={compressor.id} paramId="comp-ratio" />);
+            const control = screen.getByRole('slider', { name: 'Ratio' });
+            capturePointer(control);
+            fireEvent.pointerDown(control, { button: 0, pointerId: 7, clientY: 100 });
+            fireEvent.pointerMove(control, { pointerId: 7, clientY: 80 });
+            expect(writes(compressor.id)).toEqual([6.5]);
+            updateDeviceParam('track-1', compressor.id, 'comp-ratio', 10);
+            expect(writes(compressor.id)).toEqual([6.5, 10]);
+            fireEvent.pointerMove(control, { pointerId: 7, clientY: 60 });
+            expect(writes(compressor.id)).toEqual([6.5, 10, 9.1]);
+            expect(control).toHaveAttribute('aria-valuenow', '9.1');
+            expect(rawValues(compressor.id)?.['comp-ratio']).toBe(4);
+            expect(values(compressor.id)['comp-ratio']).toBe(4);
+            expect(depth()).toBe(0);
+            fireEvent.pointerUp(control, { pointerId: 7 });
+            await expectCommitted('comp-ratio', 9.1, 1, compressor.id);
+            expect(writes(compressor.id)).toEqual([6.5, 10, 9.1, 9.1, 9.1]);
+            const samples = automationMode === 'touch' ? 3 : 0;
+            expect(recording).toHaveBeenCalledTimes(samples);
+            expect(automationUseCases.isRecordingAutomation('track-1', 'compressor-1:comp-ratio')).toBe(false);
+            await act(() => undo());
+            expect(rawValues(compressor.id)?.['comp-ratio']).toBe(4);
+            expect(writes(compressor.id).at(-1)).toBe(4);
+            await act(() => redo());
+            expect(rawValues(compressor.id)?.['comp-ratio']).toBe(9.1);
+            expect(writes(compressor.id).at(-1)).toBe(9.1);
+            expect(recording).toHaveBeenCalledTimes(samples);
+        }
+    );
 
     it('retains a carried Grinder fallback written by real Read automation when a preview unmounts', async () => {
         const grinder: Device = {

@@ -52,6 +52,7 @@ const NATIVE_SAMPLE_BANK_KEYS: Record<NativeDspDeviceType, NativeSampleBankKeyFo
     'dutch-oven': null,
     'native-scoring': null,
     knead: null,
+    'transient-shaper': null,
 };
 
 /**

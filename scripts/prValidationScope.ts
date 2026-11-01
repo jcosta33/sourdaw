@@ -7,7 +7,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { assertCollectedBrowserInventory } from './e2eCollectorInventory.ts';
 import { partitionByDuration, readSpecDurations, type SpecDurations } from './e2eShardPartition.ts';
 import { readCheckoutDiff } from './prValidationScopeCheckout.ts';
-import { isPlaywrightCollected } from './vitestCollectionPatterns.ts';
+import { isPlaywrightCollected, isVitestCollected } from './vitestCollectionPatterns.ts';
 
 import type { AffectedSelection } from './e2eAffectedGraph.ts';
 
@@ -18,6 +18,9 @@ const REVIEW_TOOLING = new Set([
     'agentDeliveryScripts',
     'acceptReview',
     'claimTrackerIssue',
+    'cleanupLanes',
+    'installCleanupLanes',
+    'laneActivity',
     'confirmReviewRepairs',
     'deliverPullRequest',
     'fileTrackerIssue',
@@ -52,10 +55,6 @@ const REVIEW_TOOLING = new Set([
     'reviewRepair',
     'reviewShadowStatus',
     'savedProjectStatePaths',
-    'semanticReview',
-    'semanticReviewContext',
-    'semanticReviewEvaluation',
-    'semanticReviewMeasurement',
     'reviewDiffSummary',
     'reviewCommentDiffPreflight',
     'reviewBundleLocator',
@@ -77,7 +76,6 @@ const REVIEW_TOOLING = new Set([
     'supersedePullRequestGh',
     'syncParentLane',
     'trustedGithubWriteBootstrap',
-    'typesafeRequest',
     'trackerIssueReconciliation',
 ]);
 
@@ -94,55 +92,11 @@ const RELEASE_TOOLING_METADATA = new Set([
     'release/dependency-license-proofs.json',
 ]);
 
-const SEMANTIC_REVIEW_TOOLING = new Set([
-    '__tests__/admissionScheduling.spec.ts',
-    '__tests__/candidateFindings.spec.ts',
-    '__tests__/changeFacts.spec.ts',
-    '__tests__/digestProbes.ts',
-    '__tests__/egressVendorShapeExtraction.spec.ts',
-    '__tests__/multiPassTransport.spec.ts',
-    '__tests__/semanticReview.spec.ts',
-    'admissionBytes.ts',
-    'candidateFindings.ts',
-    'changeFacts.ts',
-    'contractCarrying.ts',
-    'contracts.ts',
-    'egressVendorShapeExtraction.ts',
-    'egressVendorShapes.ts',
-    'egressVendorToml.ts',
-    'evaluation/__tests__/semanticEvaluation.spec.ts',
-    'evaluation/corpus.ts',
-    'evaluation/runEvaluation.ts',
-    'evaluation/semanticEvaluationCorpus.json',
-    'evidence.ts',
-    'evidenceOrdering.ts',
-    'fit.ts',
-    'gitSource.ts',
-    'interpret.ts',
-    'passes.ts',
-    'pathOrder.ts',
-    'planPublication.ts',
-    'provider.ts',
-    'report.ts',
-    'reportAssessments.ts',
-    'reporting.ts',
-    'requestPayload.ts',
-    'requiredEvidence.ts',
-    'replay.ts',
-    'rules.ts',
-    'run.ts',
-    'scopeAccounting.ts',
-    'sensitive.ts',
-    'slicing.ts',
-    'unitAssessment.ts',
-    'unitPriority.ts',
-    'verify.ts',
-    'withheldReasons.ts',
+const OPERATIONAL_PACKAGE_SCRIPTS = new Map([
+    ['retarget:plan', 'node scripts/retargetCapabilitySnapshot.ts'],
+    ['lane:cleanup', 'node scripts/cleanupLanes.ts'],
+    ['lane:cleanup:install', 'node scripts/installCleanupLanes.ts'],
 ]);
-
-const SEMANTIC_MEASUREMENT_TOOLING = new Set(['artifacts.ts', 'contracts.ts', 'gaps.ts', 'record.ts']);
-
-const OPERATIONAL_PACKAGE_SCRIPTS = new Map([['retarget:plan', 'node scripts/retargetCapabilitySnapshot.ts']]);
 
 export type BrowserMatrix = { include: { id: number; specs: string[] }[] };
 export type ValidationPlan = {
@@ -159,19 +113,67 @@ function isDocumentation(path: string): boolean {
     return path.endsWith('.md') && (path.startsWith('docs/') || path.startsWith('.agents/') || !path.includes('/'));
 }
 
+/** Per-vendor agent guidance, read by coding agents and never loaded by the product. */
+const AGENT_GUIDANCE_NAMES = new Set(['AGENTS.md', 'CLAUDE.md', 'CODEX.md', 'GEMINI.md', 'KIMI.md', 'ZCODE.md']);
+
+function isAgentGuidance(path: string): boolean {
+    return /^(?:src|tests)\//.test(path) && AGENT_GUIDANCE_NAMES.has(path.slice(path.lastIndexOf('/') + 1));
+}
+
+/**
+ * Rust sources and Cargo manifests reach the browser only as compiled WASM under public/wasm and
+ * src/modules/AudioEngine/wasm, which are changed paths that select browser coverage themselves;
+ * the broad profile's `wasm:verify` fails a Rust change that lacks regenerated artifacts. Other files
+ * under crates/ are data a Playwright spec may read directly, so they stay on the product route.
+ */
+function isRustCompilerInput(path: string): boolean {
+    return (
+        /^crates\/.+\.rs$/.test(path) ||
+        /^crates\/.+\/Cargo\.toml$/.test(path) ||
+        path === 'Cargo.toml' ||
+        path === 'Cargo.lock' ||
+        path === 'rust-toolchain.toml'
+    );
+}
+
+/** The nightly workflow answers to schedule and dispatch events alone, so no pull request runs it. */
+function isNightlyWorkflow(path: string): boolean {
+    return path === '.github/workflows/nightly.yml';
+}
+
+/** Agent-campaign corpora and manifest are read by Vitest specs and scripts, never by product or Playwright code. */
+function isAgentCampaignEvidence(path: string): boolean {
+    return path.startsWith('evidence/');
+}
+
 /**
  * Repository tooling and prose never select browser execution, though they keep broad non-browser
  * validation. Generator and build scripts reach the browser only through their outputs, which land
  * under src/ or public/ and select browser coverage there. Product trees may load Markdown, so it
- * stays classified with them.
+ * stays classified with them. Agent guidance under src/ and tests/ is the exception, because no
+ * product code loads it.
  */
 function isRepositoryTooling(path: string): boolean {
     return (
         path.startsWith('scripts/') ||
         path.startsWith('.agents/') ||
+        path === '.gitleaksignore' ||
+        path === '.gitleaks.toml' ||
+        isRustCompilerInput(path) ||
+        isNightlyWorkflow(path) ||
+        isAgentCampaignEvidence(path) ||
         /^release\/[^/]+\.json$/.test(path) ||
-        (path.endsWith('.md') && !/^(?:src|public|tests)\//.test(path))
+        (path.endsWith('.md') && (!/^(?:src|public|tests)\//.test(path) || isAgentGuidance(path)))
     );
+}
+
+/**
+ * Vitest specs under src/ never reach the browser: the production dependency graph excludes them and
+ * Playwright ignores them. Non-spec files under `__tests__/` are not matched, because a browser
+ * harness page may load them.
+ */
+function isProductUnitSpec(path: string): boolean {
+    return path.startsWith('src/') && isVitestCollected(path);
 }
 
 function needsCodeql(path: string): boolean {
@@ -188,12 +190,6 @@ function isReviewTooling(path: string): boolean {
     }
     if (RELEASE_TOOLING_METADATA.has(path)) {
         return true;
-    }
-    if (path.startsWith('scripts/semanticReview/')) {
-        return SEMANTIC_REVIEW_TOOLING.has(path.slice('scripts/semanticReview/'.length));
-    }
-    if (path.startsWith('scripts/semanticReviewMeasurement/')) {
-        return SEMANTIC_MEASUREMENT_TOOLING.has(path.slice('scripts/semanticReviewMeasurement/'.length));
     }
     const source = /^scripts\/([A-Za-z]+)\.ts$/.exec(path)?.[1];
     if (source !== undefined) {
@@ -436,6 +432,11 @@ export function selectValidationPlan(
             });
             continue;
         }
+        if (isProductUnitSpec(path)) {
+            nonBrowser = true;
+            reasons.push({ path, reason: 'unit test source; broad non-browser validation without browser execution' });
+            continue;
+        }
         browser = true;
         const selection = browserPathSelection(path, available, affected);
         for (const spec of selection.specs) {
@@ -491,7 +492,7 @@ function listSpecs(root: string): string[] {
     return specs;
 }
 
-/** Paths that need browser coverage beyond documentation, repository tooling, and collected specs. */
+/** Paths that need browser coverage beyond documentation, repository tooling, unit specs, and collected specs. */
 export function productPathsOf(
     paths: readonly string[],
     specs: readonly string[],
@@ -502,6 +503,7 @@ export function productPathsOf(
             !isDocumentation(path) &&
             toolingReason(path, packageScriptOnly) === null &&
             !isRepositoryTooling(path) &&
+            !isProductUnitSpec(path) &&
             !(isSpec(path) && specs.includes(path))
     );
 }

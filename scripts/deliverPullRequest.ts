@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
+import { runCleanup } from './cleanupLanes.ts';
 import {
     AUTHOR_BOT_NODE_ID,
     AUTHOR_MINT_PERMISSIONS,
@@ -3639,6 +3640,36 @@ export function shellPort(
 
     return {
         fetch: () => {
+            const readRef = (ref: string): string | undefined => {
+                const lines = shell.capture('git', [
+                    'for-each-ref',
+                    '--format=%(refname) %(objectname) %(symref)',
+                    ref,
+                ]);
+                const matches = lines.split('\n').filter((line) => line.startsWith(`${ref} `));
+                if (matches.length === 0) {
+                    return undefined;
+                }
+                const match = matches[0]?.trim().match(/^\S+ ([a-f0-9]{40}|[a-f0-9]{64})$/);
+                if (matches.length !== 1 || match === null || match === undefined) {
+                    fail(`cannot inspect direct Git ref ${ref}`);
+                }
+                return match[1];
+            };
+            const notes = readRef('refs/notes/ai');
+            if (notes !== undefined) {
+                if (shell.capture('git', ['cat-file', '-t', notes]).trim() !== 'commit') {
+                    fail('local authorship notes ref does not point to a commit');
+                }
+                const recoveryRef = `refs/agents/preserved-ai-notes/${notes}`;
+                const existing = readRef(recoveryRef);
+                if (existing !== undefined && existing !== notes) {
+                    fail(`authorship notes recovery ref ${recoveryRef} points to a different object`);
+                }
+                if (existing === undefined) {
+                    shell.run('git', ['update-ref', '--no-deref', recoveryRef, notes, '0'.repeat(notes.length)]);
+                }
+            }
             if (options.gitToken !== undefined) {
                 const helperDir =
                     options.helperDir ?? fail('authenticated git fetch requires a credential helper directory');
@@ -4455,6 +4486,8 @@ export type DeliverySerialization = PullRequestMutationSerialization;
 export { withPullRequestMutationLock as withPullRequestDeliveryLock };
 
 export type DeliveryCoordinatorDependencies = {
+    cleanupAfterDelivery?: (primaryRoot: string, head: string) => Promise<void>;
+    reportCleanupFailure?: (message: string) => void;
     primaryRoot: () => string;
     serializeDelivery: DeliverySerialization;
     authenticateAuthor: (primaryRoot: string, permissions: MintPermissions) => Promise<DeliveryAuthentication>;
@@ -4479,6 +4512,10 @@ export type DeliveryCoordinatorDependencies = {
 function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinatorDependencies {
     return {
         primaryRoot: () => resolvePrimaryRoot(),
+        cleanupAfterDelivery: async (primaryRoot, head) => {
+            await runCleanup(primaryRoot, head);
+        },
+        reportCleanupFailure: (message) => console.error(message),
         serializeDelivery: withPullRequestMutationLock,
         authenticateAuthor: (primaryRoot, permissions) =>
             authenticateRole({ primaryRoot, role: 'author', permissions }),
@@ -4544,6 +4581,7 @@ export async function coordinateDelivery(
     dependencies: DeliveryCoordinatorDependencies = defaultDeliveryCoordinatorDependencies(process.cwd())
 ): Promise<void> {
     const primaryRoot = dependencies.primaryRoot();
+    let deliveredHead: string | undefined;
     await dependencies.serializeDelivery(
         primaryRoot,
         number,
@@ -4596,12 +4634,23 @@ export async function coordinateDelivery(
                     },
                     markRemoteMutationKnownAbsent
                 );
+                deliveredHead = mergeSnapshot.headRefOid;
             } finally {
                 trackerAuth?.session.dispose();
                 authorAuth.session.dispose();
             }
         }
     );
+    // Cleanup is local follow-up work. A retained lane must never turn a completed merge into failure.
+    if (deliveredHead !== undefined && dependencies.cleanupAfterDelivery !== undefined) {
+        try {
+            await dependencies.cleanupAfterDelivery(primaryRoot, deliveredHead);
+        } catch {
+            dependencies.reportCleanupFailure?.(
+                'Delivery completed; lane cleanup is pending. Inspect pnpm lane:cleanup --status and worker-error.log.'
+            );
+        }
+    }
 }
 
 export type DeliverCliTrustedDependencies = {

@@ -47,6 +47,7 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
 
 type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
 
@@ -141,6 +142,7 @@ function proposeTempoChange() {
         intent: 'set tempo to 132',
         commands: [serializeVersionedCommandEnvelope(envelope)],
     });
+    const metricGoalState = configuredLiteralMetricState(commandBatch);
     proposePendingActionConfirmation({
         id: 'confirmation-checkpoints',
         prompt: 'set tempo to 132',
@@ -148,7 +150,8 @@ function proposeTempoChange() {
         actions: [action],
         actionLabels: ['Set tempo'],
         commandBatch,
-        agentApproval: compileAgentRiskApproval({ commandBatch }),
+        metricGoalState,
+        agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
         executionMode: 'atomic',
         groupId: 'approved-tempo',
         groupLabel: 'Set tempo',

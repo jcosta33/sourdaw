@@ -28,6 +28,29 @@ export const GRID_BEATS = 32;
 export const RULER_HEIGHT = 22;
 
 /**
+ * The piano roll's one vertical geometry law, in pixels from the top of the
+ * canvas (and of the key rail beside it): the ruler band, then one
+ * `ROW_HEIGHT` row per visible pitch, row 0 being the highest pitch.
+ *
+ * The canvas sizes itself and maps a click to a row through these, and the
+ * key rail positions every label from the same `getPianoRollRowTop`, so a
+ * label sits beside the row where its pitch is drawn and where a click
+ * creates it. Never let the rail's own flex layout place labels: a column of
+ * flex-shrinkable labels compresses once the dock is shorter than the roll
+ * and drifts off the canvas rows.
+ */
+export const getPianoRollContentHeight = (rowCount: number): number => RULER_HEIGHT + rowCount * ROW_HEIGHT;
+
+/** Top edge of a note row; the row's centre is `ROW_HEIGHT / 2` below it. */
+export const getPianoRollRowTop = (row: number): number => RULER_HEIGHT + row * ROW_HEIGHT;
+
+/** The row under `y`, or `null` over the ruler or past the last row. */
+export const getPianoRollRowAtY = (y: number, rowCount: number): number | null => {
+    const row = Math.floor((y - RULER_HEIGHT) / ROW_HEIGHT);
+    return row >= 0 && row < rowCount ? row : null;
+};
+
+/**
  * Width of the sticky piano-key rail down the left edge of the editor.
  *
  * Three things must agree on this number or the grid lands in the wrong

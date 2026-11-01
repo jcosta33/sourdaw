@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { canonicalJson, parseMarkerPayload } from './canonicalRecord.ts';
@@ -24,7 +24,13 @@ import {
     resolvePrimaryRoot,
     spawnCapture,
 } from './githubAppIdentity.ts';
-import { fail, PR_STATE, supersessionCommentBody } from './prContract.ts';
+import {
+    fail,
+    PR_STATE,
+    supersessionCommentBody,
+    TRUSTED_PRIMARY_ROOT_ENV,
+    TRUSTED_ORIGIN_COMMIT_ENV,
+} from './prContract.ts';
 import { withPullRequestMutationLock, type PullRequestMutationSerialization } from './pullRequestMutationLock.ts';
 import { type LaneStack } from './stackedLanes.ts';
 import {
@@ -46,11 +52,33 @@ export type SupersedePullRequestArgs = {
     parentReplacementNumber?: number;
     lineagePath?: string;
     help: boolean;
+    inspection?: { parentNumber: number; head: string; replacementNumber: number };
 };
 const usage =
     'usage: pnpm pr:supersede <old-pr-number> --head <40-hex-sha> --replacement <merged-pr-number> [--superseded-parent <closed-pr-number> [--parent-replacement <merged-parent-replacement-pr-number>]] --lineage <path-to-json>';
 
 export function parseSupersedePullRequestArgs(args: string[]): SupersedePullRequestArgs {
+    if (args[0] === '--inspect-parent-completion') {
+        const parentNumber = Number(args[2]);
+        const replacementNumber = Number(args[6]);
+        const head = args[4];
+        if (
+            args.length !== 7 ||
+            args[1] !== '--parent-pr' ||
+            args[3] !== '--expected-head' ||
+            args[5] !== '--replacement' ||
+            !/^[1-9][0-9]*$/.test(args[2] ?? '') ||
+            !/^[1-9][0-9]*$/.test(args[6] ?? '') ||
+            !Number.isSafeInteger(parentNumber) ||
+            !Number.isSafeInteger(replacementNumber) ||
+            parentNumber === replacementNumber ||
+            head === undefined ||
+            !/^[0-9a-f]{40}$/.test(head)
+        ) {
+            fail('invalid native parent completion inspection arguments');
+        }
+        return { help: false, inspection: { parentNumber, head, replacementNumber } };
+    }
     if (args[0] === '--help') {
         if (args.length !== 1) {
             fail('--help takes no other arguments');
@@ -144,7 +172,10 @@ function assertLineageBinding(lineage: FindingLineage, oldNumber: number, replac
 }
 
 /** The findings the old pull request carries: one per live review thread, keyed by its root comment. */
-function lineageFindings(number: number, port: SupersedePullRequestPort): LineageFinding[] {
+function lineageFindings(
+    number: number,
+    port: Pick<SupersedePullRequestPort, 'inspectReviewThreads'>
+): LineageFinding[] {
     return port.inspectReviewThreads(number).map((thread) => ({ findingId: thread.rootCommentId, pr: number }));
 }
 
@@ -770,7 +801,7 @@ function parentLineageRecord(
 function parentLineage(
     parent: SupersededPullRequest,
     replacementNumber: number,
-    port: SupersedePullRequestPort
+    port: Pick<SupersedePullRequestPort, 'inspectReviewThreads'>
 ): { marker: ProofMarker; findingIds: string[] } {
     const { marker, lineage } = parentLineageRecord(parent, replacementNumber);
     const findings = lineageFindings(parent.number, port);
@@ -779,6 +810,113 @@ function parentLineage(
         marker,
         findingIds: findings.map((finding) => finding.findingId).sort((left, right) => left.localeCompare(right)),
     };
+}
+
+type ParentCompletionReadPort = Pick<
+    SupersedePullRequestPort,
+    'inspect' | 'inspectReviewThreads' | 'assertCurrentPullRequest'
+>;
+
+function completionCore(value: SupersededPullRequest) {
+    return { ...pullRequestProof(value), baseRefOid: value.baseRefOid ?? null, mergeCommit: value.mergeCommit ?? null };
+}
+
+/** Read-only reuse of the same author markers and total finding coverage used by stacked closure. */
+export function inspectNativeParentCompletion(
+    input: { parentNumber: number; head: string; replacementNumber: number; sourceCommit: string },
+    port: ParentCompletionReadPort
+): string {
+    assertFullCommit(input.sourceCommit, 'native inspection source commit');
+    if (input.parentNumber === input.replacementNumber) {
+        fail('native parent and replacement must differ');
+    }
+    const parent = port.inspect(input.parentNumber);
+    assertOldBinding(parent, input.parentNumber, input.head);
+    if (
+        parent.state !== PR_STATE.CLOSED ||
+        parent.merged ||
+        parent.base !== 'main' ||
+        parent.headRepository !== REQUIRED_REPOSITORY ||
+        !parent.closedAt
+    ) {
+        fail('native inspection requires a closed unmerged main parent');
+    }
+    const replacement = port.inspect(input.replacementNumber);
+    assertReplacementIdentityAndMerge(replacement, input.replacementNumber, parent);
+    if (replacement.base !== 'main') {
+        fail('native parent replacement must be merged into main');
+    }
+    assertFullCommit(replacement.head, 'parent replacement source head');
+    assertFullCommit(replacement.mergeCommit, 'parent replacement merge');
+    const receipt = parentReceipt(parent, replacement.number);
+    const lineage = parentLineage(parent, replacement.number, port);
+    const refreshed = port.inspect(parent.number);
+    const currentReceipt = parentReceipt(refreshed, replacement.number);
+    const currentLineage = parentLineage(refreshed, replacement.number, port);
+    if (
+        JSON.stringify(completionCore(refreshed)) !== JSON.stringify(completionCore(parent)) ||
+        JSON.stringify(receipt) !== JSON.stringify(currentReceipt) ||
+        JSON.stringify(lineage) !== JSON.stringify(currentLineage)
+    ) {
+        fail('native parent completion changed during inspection');
+    }
+    // These independent core witnesses follow the final dependent marker and root reads.
+    port.assertCurrentPullRequest(parent.number, parent);
+    port.assertCurrentPullRequest(replacement.number, replacement);
+    const proof = canonicalJson({
+        version: 1,
+        sourceCommit: input.sourceCommit,
+        parent: completionCore(parent),
+        replacement: completionCore(replacement),
+        receipt,
+        lineage: lineage.marker,
+        findingIds: lineage.findingIds,
+    });
+    if (Buffer.byteLength(proof, 'utf8') > 32768) {
+        fail('native parent completion exceeds inspection bound');
+    }
+    return proof;
+}
+
+async function runParentCompletionInspection(
+    input: NonNullable<SupersedePullRequestArgs['inspection']>
+): Promise<number> {
+    const primaryRoot = resolvePrimaryRoot();
+    const boundRoot = process.env[TRUSTED_PRIMARY_ROOT_ENV];
+    const sourceCommit = process.env[TRUSTED_ORIGIN_COMMIT_ENV];
+    if (
+        boundRoot === undefined ||
+        sourceCommit === undefined ||
+        !/^[0-9a-f]{40}$/.test(sourceCommit) ||
+        realpathSync(process.cwd()) !== realpathSync(primaryRoot) ||
+        realpathSync(boundRoot) !== realpathSync(primaryRoot)
+    ) {
+        fail('parent inspection requires the protected primary launcher');
+    }
+    const source = originMainBlob('scripts/supersedePullRequest.ts', primaryRoot, undefined, 'git', sourceCommit);
+    if (source === undefined) {
+        fail('parent inspection source is unavailable');
+    }
+    assertTrustedExecutingBlob('scripts/supersedePullRequest.ts', fileURLToPath(import.meta.url), source);
+    const auth = await authenticateRole({ primaryRoot, role: 'author' });
+    try {
+        if (!isAuthorBotNodeId(auth.minted.actorNodeId)) {
+            fail('parent inspection requires the immutable author actor');
+        }
+        const port = shellPort(auth.session, primaryRoot);
+        const proof = inspectNativeParentCompletion(
+            { ...input, sourceCommit },
+            {
+                inspect: port.inspect,
+                inspectReviewThreads: port.inspectReviewThreads,
+                assertCurrentPullRequest: port.assertCurrentPullRequest,
+            }
+        );
+        process.stdout.write(`${proof}\n`);
+        return 0;
+    } finally {
+        auth.session.dispose();
+    }
 }
 
 function inspectStackedParentProof(
@@ -1703,6 +1841,9 @@ export async function runSupersedePullRequestCli(args: string[]): Promise<number
     if (parsed.help) {
         console.log(`Usage: ${usage.slice('usage: '.length)}`);
         return 0;
+    }
+    if (parsed.inspection !== undefined) {
+        return runParentCompletionInspection(parsed.inspection);
     }
     if (
         parsed.oldNumber === undefined ||

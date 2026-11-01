@@ -14,6 +14,7 @@ import {
     type ExecuteOptions,
     type HandlerAfterCommit,
     type HandlerDescribeResult,
+    type HandlerCommitValidation,
     type HandlerExecutionResult,
     type HandlerPostCommitEffect,
     type HandlerValidationContext,
@@ -21,11 +22,17 @@ import {
 
 import { AppActionConflictError } from '../errors/AppActionExecutionError';
 import { type VersionedCommandEnvelope, type VersionedCommandReceipt } from '../models/VersionedCommandEnvelope';
-import { registerActionReplayCapabilities, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
+import {
+    registerActionReplayCapabilities,
+    revokeActionReplayCapability,
+    runActionHistoryStaging,
+} from '../stores/actionReplayCapabilities';
 
 import { actionHistoryMetadataPort, type ActionHistoryMetadata } from './actionHistoryMetadataPort';
 import { appendAbortFailures } from './appendAbortFailures';
+import { captureRecordedRedoContext } from './captureRecordedRedoContext';
 import { type CommandBatchValidationPreparation } from './commandBatchValidation';
+import { commitRedoInverseCapture } from './commitRedoInverseCapture';
 import { commitUndoEntries } from './commitUndoEntries';
 import { compensateAbortedActions } from './compensateAbortedActions';
 import { createExecutionCommandEnvelope } from './createExecutionCommandEnvelope';
@@ -40,6 +47,7 @@ import { recordAction } from './macro/recording/recordAction';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
 import { materializeCommandHandlerArguments } from './materializeCommandHandlerArguments';
 import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
+import { registerHandlerCommitValidation } from './registerHandlerCommitValidation';
 import { rollbackAbortedActions } from './rollbackAbortedActions';
 import { traceAppAction } from './traceAppAction';
 
@@ -97,6 +105,8 @@ type ExecuteAppActionBatchResult =
       };
 
 type ExecuteAppActionBatchOptions = ExecuteOptions & {
+    /** Original history identities in replay execution order. */
+    undoEntryIds?: readonly string[];
     authorizeFirstHandler?: () => string | null;
     commandEnvelopes?: readonly VersionedCommandEnvelope[];
     preExecutionValidation?: () => string | null;
@@ -112,6 +122,8 @@ type ExecuteAppActionBatchOptions = ExecuteOptions & {
      * an observer that correlates a commit back to what it dispatched can do so by identity.
      */
     onCommitted?: (actions: readonly AppAction[]) => void;
+    /** Some document state published, but the transaction is ambiguous. Runs before reconciliation. */
+    onAmbiguousCommit?: () => void;
 };
 
 type ExecuteAppActionBatch = (
@@ -126,6 +138,7 @@ type PreparedBatchAction = {
     afterCommit: HandlerAfterCommit | null;
     afterAmbiguousCommit: HandlerAfterCommit | null;
     postCommitEffect: HandlerPostCommitEffect | null;
+    commitValidation: HandlerCommitValidation | null;
     requiresAbortCompensation: boolean;
     handler: ActionHandler;
     description: HandlerDescribeResult | null;
@@ -320,6 +333,7 @@ async function executeRuntimeAction(
             onDeferredEffectAttempt,
             workOwner,
         });
+        result?.commitValidation?.release();
         if (result?.status === 'no-write') {
             return { status: 'no-op', actions: [] };
         }
@@ -380,44 +394,53 @@ async function executePreparedBatch(
     authorizeFirstHandler: (() => string | null) | undefined,
     signal: AbortSignal | undefined,
     onDeferredEffectAttempt: ExecuteOptions['onDeferredEffectAttempt'] | undefined,
-    workOwner: ExecuteOptions['workOwner'] | undefined
+    workOwner: ExecuteOptions['workOwner'] | undefined,
+    undoEntryIds: readonly string[] | undefined
 ): Promise<PreparedBatchAction[]> {
     const executedActions: PreparedBatchAction[] = [];
     let approvalConsumed = false;
-    for (const [actionIndex, prepared] of preparedActions.entries()) {
-        assertExecutionAuthorized(shouldExecute);
-        if (prepared.handler.isNoop?.(prepared.action)) {
-            continue;
-        }
-        if (!approvalConsumed) {
-            const approvalFailure = authorizeFirstHandler?.() ?? null;
-            if (approvalFailure) {
-                throw new AppActionBatchApprovalError(approvalFailure);
+    try {
+        for (const [actionIndex, prepared] of preparedActions.entries()) {
+            assertExecutionAuthorized(shouldExecute);
+            if (prepared.handler.isNoop?.(prepared.action)) {
+                continue;
             }
-            approvalConsumed = true;
+            if (!approvalConsumed) {
+                const approvalFailure = authorizeFirstHandler?.() ?? null;
+                if (approvalFailure) {
+                    throw new AppActionBatchApprovalError(approvalFailure);
+                }
+                approvalConsumed = true;
+            }
+            prepared.afterAbort = prepared.handler.prepareAbort?.(prepared.action) ?? null;
+            attemptedActions.push(prepared);
+            const result: HandlerExecutionResult | void = await scope(() =>
+                prepared.handler.execute(prepared.action, {
+                    actions: preparedActions.map((candidate) => candidate.action),
+                    actionIndex,
+                    undoEntryId: undoEntryIds?.[actionIndex] ?? prepared.envelope.commandId,
+                    signal,
+                    onDeferredEffectAttempt,
+                    workOwner,
+                })
+            );
+            prepared.commitValidation = result?.commitValidation ?? null;
+            if (result?.status === 'no-write' || result?.status === 'conflict') {
+                attemptedActions.pop();
+                throw new AppActionConflictError(prepared.action.type, result.reason);
+            }
+            prepared.afterCommit = result?.afterCommit ?? null;
+            prepared.afterAmbiguousCommit = result?.afterAmbiguousCommit ?? null;
+            prepared.postCommitEffect = result?.postCommitEffect ?? null;
+            executedActions.push(prepared);
         }
-        prepared.afterAbort = prepared.handler.prepareAbort?.(prepared.action) ?? null;
-        attemptedActions.push(prepared);
-        const result: HandlerExecutionResult | void = await scope(() =>
-            prepared.handler.execute(prepared.action, {
-                actions: preparedActions.map((candidate) => candidate.action),
-                actionIndex,
-                signal,
-                onDeferredEffectAttempt,
-                workOwner,
-            })
-        );
-        if (result?.status === 'no-write' || result?.status === 'conflict') {
-            attemptedActions.pop();
-            throw new AppActionConflictError(prepared.action.type, result.reason);
+        assertExecutionAuthorized(shouldExecute);
+        return executedActions;
+    } finally {
+        for (const prepared of preparedActions) {
+            prepared.commitValidation?.release();
         }
-        prepared.afterCommit = result?.afterCommit ?? null;
-        prepared.afterAmbiguousCommit = result?.afterAmbiguousCommit ?? null;
-        prepared.postCommitEffect = result?.postCommitEffect ?? null;
-        executedActions.push(prepared);
     }
-    assertExecutionAuthorized(shouldExecute);
-    return executedActions;
 }
 
 function rollbackAttemptedBatch(
@@ -452,9 +475,35 @@ function compensateAttemptedBatch(
     );
 }
 
-function recordCommittedBatch(
+function prepareBatchHistoryMetadata(
     preparedActions: readonly PreparedBatchAction[],
     options: ExecuteOptions | undefined
+): ReadonlyMap<string, ActionHistoryMetadata> {
+    const entries = new Map<string, ActionHistoryMetadata>();
+    for (const { action, description, envelope, handler, label } of preparedActions) {
+        if (options?.skipUndo || !handler.undoable || description === null) {
+            continue;
+        }
+        const groupId = handler.batchExecution === 'singleton' ? undefined : options?.groupId;
+        entries.set(envelope.commandId, {
+            id: envelope.commandId,
+            label,
+            actionKind: action.type,
+            source: options?.source ?? 'manual',
+            timestamp: envelope.issuedAt,
+            groupId,
+            groupLabel: groupId ? options?.groupLabel : undefined,
+            reverted: false,
+        });
+    }
+    return entries;
+}
+
+function recordCommittedBatch(
+    preparedActions: readonly PreparedBatchAction[],
+    options: ExecuteOptions | undefined,
+    metadataByCommandId: ReadonlyMap<string, ActionHistoryMetadata>,
+    evictedEntryIds: readonly string[]
 ): void {
     if (!options?.skipMacroRecording) {
         for (const { action } of preparedActions) {
@@ -506,7 +555,7 @@ function recordCommittedBatch(
         undoEntry: ReturnType<typeof createUndoEntry>;
     }> = [];
     for (const prepared of historyActions) {
-        const { action, description, envelope, handler, label } = prepared;
+        const { action, description, envelope, handler } = prepared;
         if (!description) {
             throw new Error(`Missing history description for ${action.type}`);
         }
@@ -543,22 +592,17 @@ function recordCommittedBatch(
             }
         }
         const historyGroupLabel = historyGroupId ? options?.groupLabel : undefined;
-        const metadata: ActionHistoryMetadata = {
-            id: entryId,
-            label,
-            actionKind: action.type,
-            source: options?.source ?? 'manual',
-            timestamp: envelope.issuedAt,
-            groupId: historyGroupId,
-            groupLabel: historyGroupLabel,
-            reverted: false,
-        };
+        const metadata = metadataByCommandId.get(entryId);
+        if (!metadata) {
+            throw new Error(`Missing staged history metadata for ${action.type}`);
+        }
         const undoEntry = createUndoEntry(
             description.label,
             action,
             inverseAction,
             options?.source ?? 'manual',
-            description.redoAction
+            description.redoAction,
+            action.type === 'removeClip' || action.type === 'splitClip' ? envelope.commandId : undefined
         );
         if (historyGroupId) {
             undoEntry.groupId = historyGroupId;
@@ -570,7 +614,6 @@ function recordCommittedBatch(
         return;
     }
 
-    const evictedEntryIds = actionHistoryMetadataPort.recordBatch(historyUnit.map(({ metadata }) => metadata));
     registerActionReplayCapabilities(
         historyUnit.flatMap(({ metadata, inverseAction }) =>
             inverseAction ? [{ entryId: metadata.id, inverseAction, metadata }] : []
@@ -588,6 +631,15 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             actions: readonly AppAction[],
             options?: ExecuteAppActionBatchOptions
         ): Promise<ExecuteAppActionBatchResult> {
+            const recordedRedos = new Map<AppAction, HandlerValidationContext['recordedRedo']>();
+            if (options?.skipUndo) {
+                for (const action of actions) {
+                    const replay = captureRecordedRedoContext(action);
+                    if (replay) {
+                        recordedRedos.set(action, replay);
+                    }
+                }
+            }
             if (actions.length === 0) {
                 return { status: 'no-op', actions: [] };
             }
@@ -608,7 +660,19 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 }
                 try {
                     admissionMaterializedActions.push({
-                        action: materializeCommandHandlerArguments(action, handler, { actions, actionIndex }),
+                        action: materializeCommandHandlerArguments(action, handler, {
+                            actions,
+                            preparedPrefix: actions
+                                .slice(0, actionIndex)
+                                .map((prior, index) => admissionMaterializedActions[index]?.action ?? prior),
+                            actionIndex,
+                            ...(options?.undoEntryIds?.[actionIndex] !== undefined
+                                ? { undoEntryId: options.undoEntryIds[actionIndex] }
+                                : {}),
+                            ...(recordedRedos.get(action) !== undefined
+                                ? { recordedRedo: recordedRedos.get(action) }
+                                : {}),
+                        }),
                         handler,
                     });
                 } catch (error) {
@@ -686,7 +750,17 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 }
                 try {
                     if (!admissionMaterialized) {
-                        action = materializeCommandHandlerArguments(action, handler, { actions, actionIndex: index });
+                        action = materializeCommandHandlerArguments(action, handler, {
+                            actions,
+                            preparedPrefix: canonicalizedActions.map((prior) => prior.action),
+                            actionIndex: index,
+                            ...(options?.undoEntryIds?.[index] !== undefined
+                                ? { undoEntryId: options.undoEntryIds[index] }
+                                : {}),
+                            ...(recordedRedos.get(requestedAction) !== undefined
+                                ? { recordedRedo: recordedRedos.get(requestedAction) }
+                                : {}),
+                        });
                     }
                     if (
                         suppliedEnvelope &&
@@ -738,11 +812,16 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 try {
                     description = null;
                     if (handler.undoable || handler.executionKind === 'runtime') {
-                        description = handler.describe(action, {
+                        let context: HandlerValidationContext = {
                             actions: canonicalActions,
                             actionIndex: index,
                             signal: options?.signal,
-                        });
+                        };
+                        const recordedRedo = recordedRedos.get(canonicalized.requestedAction);
+                        if (recordedRedo) {
+                            context = { ...context, recordedRedo };
+                        }
+                        description = handler.describe(action, context);
                     }
                 } catch (error) {
                     return {
@@ -797,6 +876,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     afterCommit: null,
                     afterAmbiguousCommit: null,
                     postCommitEffect: null,
+                    commitValidation: null,
                     requiresAbortCompensation: handler.requiresAbortCompensation ?? true,
                     handler,
                     description,
@@ -893,7 +973,8 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     options?.authorizeFirstHandler,
                     options?.signal,
                     options?.onDeferredEffectAttempt,
-                    options?.workOwner
+                    options?.workOwner,
+                    options?.undoEntryIds
                 )
             );
             storageTransaction.validateCommit(getProjectMutationAdmissionFailure);
@@ -902,6 +983,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             );
             if (storageTransaction.status === 'threw') {
                 storageTransaction.abort();
+                commitRedoInverseCapture({ phase: 'discard', actions: validationActions });
                 clearBatchSemanticContext();
                 const reason = failureReason(storageTransaction.error);
                 logger.error(
@@ -922,6 +1004,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 const compensationFailure = await compensateAttemptedBatch(attemptedActions, storageTransaction.scope);
                 const rollbackFailure = await rollbackAttemptedBatch(attemptedActions, storageTransaction.scope);
                 storageTransaction.abort();
+                commitRedoInverseCapture({ phase: 'discard', actions: validationActions });
                 clearBatchSemanticContext();
                 const baseReason = failureReason(error);
                 const reason = appendAbortFailures(baseReason, compensationFailure, rollbackFailure);
@@ -944,6 +1027,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
 
             if (executedActions.length === 0) {
                 storageTransaction.abort();
+                commitRedoInverseCapture({ phase: 'discard', actions: validationActions });
                 clearBatchSemanticContext();
                 return { status: 'no-op', actions: [] };
             }
@@ -954,6 +1038,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 const compensationFailure = await compensateAttemptedBatch(attemptedActions, storageTransaction.scope);
                 const rollbackFailure = await rollbackAttemptedBatch(attemptedActions, storageTransaction.scope);
                 storageTransaction.abort();
+                commitRedoInverseCapture({ phase: 'discard', actions: validationActions });
                 clearBatchSemanticContext();
                 if (compensationFailure || rollbackFailure) {
                     return {
@@ -965,18 +1050,27 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 return { status: 'cancelled', reason: failureReason(error), actions: [] };
             }
 
-            if (batchValidation) {
-                storageTransaction.validateDocument(
-                    batchValidation.postconditions.documentId,
-                    batchValidation.postconditions.validate
-                );
-            }
+            registerHandlerCommitValidation(
+                storageTransaction,
+                executedActions.flatMap((prepared) => (prepared.commitValidation ? [prepared.commitValidation] : [])),
+                batchValidation?.postconditions
+            );
 
             const committedActions = executedActions.map(({ requestedAction }) => requestedAction);
+            const captureActions = executedActions.map(({ action }) => action);
             const executedBatchActions = executedActions.map(createExecutedBatchAction);
+            const historyMetadata = prepareBatchHistoryMetadata(executedActions, options);
+            let evictedEntryIds: string[] = [];
 
             try {
                 storageTransaction.scope(() => {
+                    // History metadata is durable command state; replay and Undo
+                    // capabilities remain unpublished until the commit succeeds.
+                    if (historyMetadata.size > 0) {
+                        evictedEntryIds = runActionHistoryStaging(() =>
+                            actionHistoryMetadataPort.recordBatch([...historyMetadata.values()])
+                        );
+                    }
                     const pendingEffects = executedActions.flatMap((executed): PendingPostCommitEffect[] =>
                         executed.afterCommit ? [getPreparedPendingPostCommitEffect(executed)] : []
                     );
@@ -988,14 +1082,36 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 });
                 storageTransaction.commit();
             } catch (error) {
+                let observerWarning: string | null = null;
+                if (error instanceof AutomergeStorageTransactionCommittedError) {
+                    try {
+                        options?.onAmbiguousCommit?.();
+                    } catch (observerError) {
+                        observerWarning = `Ambiguous commit observer failed: ${failureReason(observerError)}`;
+                        logger.error(new Error(observerWarning, { cause: observerError }));
+                    }
+                    commitRedoInverseCapture({ phase: 'published', actions: captureActions });
+                }
                 const cleanupWarning = clearBatchSemanticContext();
                 const reason = failureReason(error);
                 logger.error(new Error('Action batch storage commit failed', { cause: error }));
                 if (error instanceof AutomergeStorageTransactionCommittedError) {
+                    let publicationWarning: string | null = null;
+                    try {
+                        for (const executed of executedActions) {
+                            executed.commitValidation?.afterPublication?.();
+                        }
+                    } catch (publicationError) {
+                        publicationWarning = failureReason(publicationError);
+                    }
                     const reconciliationWarning = await reconcileAmbiguousRuntime(executedActions);
-                    const warnings = [cleanupWarning, reconciliationWarning].filter(
-                        (warning): warning is string => warning !== null
-                    );
+                    commitRedoInverseCapture({ phase: 'settle', actions: captureActions });
+                    const warnings = [
+                        observerWarning,
+                        cleanupWarning,
+                        publicationWarning,
+                        reconciliationWarning,
+                    ].filter((warning): warning is string => warning !== null);
                     const ambiguousReason = warnings.length > 0 ? `${reason}; ${warnings.join('; ')}` : reason;
                     return {
                         status: 'ambiguous',
@@ -1006,6 +1122,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 const compensationFailure = await compensateAttemptedBatch(attemptedActions, storageTransaction.scope);
                 const rollbackFailure = await rollbackAttemptedBatch(attemptedActions, storageTransaction.scope);
                 storageTransaction.abort();
+                commitRedoInverseCapture({ phase: 'discard', actions: validationActions });
                 if (compensationFailure || rollbackFailure) {
                     return {
                         status: 'failed',
@@ -1019,6 +1136,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 return { status: 'failed', reason, actions: [] };
             }
 
+            commitRedoInverseCapture({ phase: 'published', actions: captureActions });
             const warningDetails: BatchWarningDetail[] = [];
             const semanticCleanupWarning = clearBatchSemanticContext();
             if (semanticCleanupWarning) {
@@ -1035,7 +1153,10 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             }
 
             try {
-                recordCommittedBatch(executedActions, options);
+                for (const executed of executedActions) {
+                    executed.commitValidation?.afterPublication?.();
+                }
+                recordCommittedBatch(executedActions, options, historyMetadata, evictedEntryIds);
             } catch (error) {
                 const warning = failureReason(error);
                 logger.error(new Error('Action batch history recording failed after commit', { cause: error }));
@@ -1081,6 +1202,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 }
             }
 
+            commitRedoInverseCapture({ phase: 'settle', actions: captureActions });
             if (warningDetails.length > 0) {
                 return {
                     status: 'committed-with-warning',

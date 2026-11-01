@@ -22,11 +22,17 @@ import {
 } from '../errors/AppActionExecutionError';
 import { isActionEntry } from '../models/UndoEntry';
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
-import { registerActionReplayCapability, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
+import {
+    registerActionReplayCapability,
+    revokeActionReplayCapability,
+    runActionHistoryStaging,
+} from '../stores/actionReplayCapabilities';
 import { undoStore } from '../stores/undoStore';
 
-import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
+import { actionHistoryMetadataPort, type ActionHistoryMetadata } from './actionHistoryMetadataPort';
 import { appendAbortFailures } from './appendAbortFailures';
+import { captureRecordedRedoContext } from './captureRecordedRedoContext';
+import { commitRedoInverseCapture } from './commitRedoInverseCapture';
 import { commitUndoEntry } from './commitUndoEntry';
 import { type AbortCompensation, compensateAbortedActions } from './compensateAbortedActions';
 import { createExecutionCommandEnvelope } from './createExecutionCommandEnvelope';
@@ -38,14 +44,27 @@ import { recordAction } from './macro/recording/recordAction';
 import { materializeCommandApplicationIds } from './materializeCommandApplicationIds';
 import { materializeCommandHandlerArguments } from './materializeCommandHandlerArguments';
 import { productionBriefAdmissionPort } from './productionBriefAdmissionPort';
+import { registerHandlerCommitValidation } from './registerHandlerCommitValidation';
 import { rollbackAbortedActions } from './rollbackAbortedActions';
 import { traceAppAction } from './traceAppAction';
 
 export type ExecuteAppActionOptions = ExecuteOptions & {
+    /** Preserve the originating history identity while replay refreshes a capture. */
+    undoEntryId?: string;
     authorizeFirstHandler?: () => string | null;
     commandEnvelope?: VersionedCommandEnvelope;
     onCommitted?: () => void;
+    /** Observe an isolated copy of final owner arguments, including a successful noop's arguments.
+     * This grants no commit authority; callers consume it only after dispatch succeeds. */
+    observeMaterializedAction?: (action: Readonly<AppAction>) => void;
     deviceParameterRuntimeAuthority?: HandlerValidationContext['deviceParameterRuntimeAuthority'];
+    /**
+     * Synchronous authority check on this action's project transaction, after the
+     * handler stages its writes and immediately before storage commits them.
+     * False aborts the action without history or committed observers. Runtime-only
+     * handlers have no project transaction and do not consult this predicate.
+     */
+    shouldCommit?: () => boolean;
 };
 
 type ExecuteAppAction = (action: AppAction, options?: ExecuteAppActionOptions) => Promise<void>;
@@ -147,6 +166,7 @@ function coalesceTargetsMatch(previous: AppAction, next: AppAction): boolean {
 export const executeAppAction: ExecuteAppAction = inject({ logger })(
     ({ logger }) =>
         async function executeAppAction(action: AppAction, options?: ExecuteAppActionOptions): Promise<void> {
+            const recordedRedo = options?.skipUndo ? captureRecordedRedoContext(action) : undefined;
             const materialized = options?.commandEnvelope
                 ? { action, applicationAssignedIds: options.commandEnvelope.applicationAssignedIds }
                 : materializeCommandApplicationIds(action);
@@ -165,7 +185,18 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 logger.error(error);
                 throw error;
             }
-            action = materializeCommandHandlerArguments(action, handler);
+            type Context = NonNullable<Parameters<typeof materializeCommandHandlerArguments>[2]>;
+            let materializationContext: { -readonly [K in keyof Context]: Context[K] } | undefined;
+            if (options?.undoEntryId !== undefined || recordedRedo !== undefined) {
+                materializationContext = { actions: [action], actionIndex: 0 };
+                if (options?.undoEntryId !== undefined) {
+                    materializationContext.undoEntryId = options.undoEntryId;
+                }
+                if (recordedRedo !== undefined) {
+                    materializationContext.recordedRedo = recordedRedo;
+                }
+            }
+            action = materializeCommandHandlerArguments(action, handler, materializationContext);
             const historyGroupId = handler.batchExecution === 'singleton' ? undefined : options?.groupId;
             const historyGroupLabel = historyGroupId ? options?.groupLabel : undefined;
             if (
@@ -185,6 +216,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     return;
                 }
 
+                options?.observeMaterializedAction?.(structuredClone(action));
                 if (handler.isNoop?.(action)) {
                     return;
                 }
@@ -215,6 +247,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                         workOwner: options?.workOwner,
                     };
                     runtime_result = await handler.execute(action, runtimeContext);
+                    runtime_result?.commitValidation?.release();
                 } catch (error) {
                     logger.error(new Error(`Action handler rejected for action: ${action.type}`, { cause: error }));
                     throw error;
@@ -272,6 +305,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 throw new AppActionConflictError(action.type);
             }
 
+            options?.observeMaterializedAction?.(structuredClone(action));
             if (handler.isNoop?.(action)) {
                 return;
             }
@@ -284,7 +318,11 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 redoAction?: AppAction;
             } | null = null;
             if (handler.undoable) {
-                undoResult = handler.describe(action);
+                if (recordedRedo) {
+                    undoResult = handler.describe(action, { actions: [action], actionIndex: 0, recordedRedo });
+                } else {
+                    undoResult = handler.describe(action);
+                }
             }
 
             const command = options?.commandEnvelope
@@ -315,6 +353,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 ...runtimeAuthorityContext,
                 actions: [action],
                 actionIndex: 0,
+                undoEntryId: options?.undoEntryId ?? command.envelope.commandId,
                 signal: options?.signal,
                 onDeferredEffectAttempt: options?.onDeferredEffectAttempt,
                 workOwner: options?.workOwner,
@@ -351,6 +390,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             if (storage_transaction.status === 'threw') {
                 const error = storage_transaction.error;
                 const abortFailures = await compensateRollbackAndAbort(storage_transaction, attempted);
+                commitRedoInverseCapture({ phase: 'discard', actions: [action] });
                 try {
                     clearSemanticContext();
                 } catch (clear_error) {
@@ -374,10 +414,20 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     ? `Action conflicts with current project state: ${action.type}`
                     : null;
             });
+            let caller_commit_denied = false;
+            if (options?.shouldCommit) {
+                const shouldCommit = options.shouldCommit;
+                storage_transaction.validateCommit(() => {
+                    caller_commit_denied = !shouldCommit();
+                    return caller_commit_denied ? `Action commit authority withdrawn: ${action.type}` : null;
+                });
+            }
             try {
                 execution_result = await storage_transaction.value;
+                execution_result?.commitValidation?.release();
             } catch (error) {
                 const abortFailures = await compensateRollbackAndAbort(storage_transaction, attempted);
+                commitRedoInverseCapture({ phase: 'discard', actions: [action] });
                 try {
                     clearSemanticContext();
                 } catch (clear_error) {
@@ -399,17 +449,47 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             // rollback would also write the runtime past the eligibility checks that refused.
             if (execution_result?.status === 'no-write') {
                 storage_transaction.abort();
+                commitRedoInverseCapture({ phase: 'discard', actions: [action] });
                 clearSemanticContext();
                 return;
             }
             if (execution_result?.status === 'conflict') {
                 const refusal = execution_result.reason;
                 storage_transaction.abort();
+                commitRedoInverseCapture({ phase: 'discard', actions: [action] });
                 clearSemanticContext();
                 throw new AppActionConflictError(action.type, refusal);
             }
 
+            const historyMetadata: ActionHistoryMetadata | null =
+                !options?.skipUndo && handler.undoable
+                    ? {
+                          id: command.envelope.commandId,
+                          label,
+                          actionKind: action.type,
+                          source: options?.source ?? 'manual',
+                          timestamp: command.envelope.issuedAt,
+                          groupId: historyGroupId,
+                          groupLabel: historyGroupLabel,
+                          reverted: false,
+                      }
+                    : null;
+            let evictedEntryIds: string[] = [];
+
             try {
+                registerHandlerCommitValidation(
+                    storage_transaction,
+                    execution_result?.commitValidation ? [execution_result.commitValidation] : []
+                );
+                // Durable bookkeeping shares the command's publication owner. Session
+                // Undo/replay authority is installed only after this commit succeeds.
+                storage_transaction.scope(() => {
+                    if (historyMetadata) {
+                        evictedEntryIds = runActionHistoryStaging(() =>
+                            actionHistoryMetadataPort.record(historyMetadata)
+                        );
+                    }
+                });
                 storage_transaction.commit();
             } catch (error) {
                 // A commit that already reached storage cannot be undone by rolling the
@@ -419,11 +499,16 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     ? null
                     : await compensateRollbackAndAbort(storage_transaction, attempted);
                 if (reachedStorage) {
+                    commitRedoInverseCapture({ phase: 'published', actions: [action] });
                     storage_transaction.abort();
+                } else {
+                    commitRedoInverseCapture({ phase: 'discard', actions: [action] });
                 }
+                let semantic_cleanup_failure: { error: unknown } | null = null;
                 try {
                     clearSemanticContext();
                 } catch (clear_error) {
+                    semantic_cleanup_failure = { error: clear_error };
                     logger.error(
                         new Error(`Semantic context cleanup failed for action: ${action.type}`, {
                             cause: clear_error,
@@ -433,10 +518,12 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 if (reachedStorage) {
                     const committedFailures: unknown[] = [error.cause];
                     try {
+                        execution_result?.commitValidation?.afterPublication?.();
                         await execution_result?.afterAmbiguousCommit?.();
                     } catch (reconciliationError) {
                         committedFailures.push(reconciliationError);
                     }
+                    commitRedoInverseCapture({ phase: 'settle', actions: [action] });
                     const committedCause = collapseCommittedFailures(
                         committedFailures,
                         'Storage commit or runtime reconciliation failed'
@@ -444,6 +531,16 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     const committed_error = new AppActionCommittedError(action.type, committedCause);
                     logger.error(committed_error);
                     throw committed_error;
+                }
+                if (
+                    !hasAbortFailure(abortFailures) &&
+                    caller_commit_denied &&
+                    error instanceof AutomergeStorageTransactionValidationError
+                ) {
+                    if (semantic_cleanup_failure !== null) {
+                        throw semantic_cleanup_failure.error;
+                    }
+                    return;
                 }
                 if (
                     !hasAbortFailure(abortFailures) &&
@@ -459,6 +556,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 throw withAbortFailures(error, abortFailures);
             }
 
+            commitRedoInverseCapture({ phase: 'published', actions: [action] });
             let committed_failure: unknown;
             try {
                 clearSemanticContext();
@@ -467,6 +565,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
             }
 
             try {
+                execution_result?.commitValidation?.afterPublication?.();
                 options?.onCommitted?.();
 
                 if (!options?.skipMacroRecording) {
@@ -476,21 +575,11 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
 
                 if (!options?.skipUndo) {
                     // Record undoable actions to global history (skip UI-only actions like panel toggles)
-                    if (handler.undoable) {
+                    if (historyMetadata) {
                         const entry_id = command.envelope.commandId;
                         const inverse_action = undoResult?.inverseAction ?? null;
-                        const metadata = {
-                            id: entry_id,
-                            label,
-                            actionKind: action.type,
-                            source: options?.source ?? 'manual',
-                            timestamp: command.envelope.issuedAt,
-                            groupId: historyGroupId,
-                            groupLabel: historyGroupLabel,
-                            reverted: false,
-                        };
-                        const evicted_entry_ids = actionHistoryMetadataPort.record(metadata);
-                        for (const evicted_entry_id of evicted_entry_ids) {
+                        const metadata = historyMetadata;
+                        for (const evicted_entry_id of evictedEntryIds) {
                             revokeActionReplayCapability(evicted_entry_id);
                         }
                         if (inverse_action) {
@@ -508,7 +597,10 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                             action,
                             undoResult.inverseAction ?? null,
                             options?.source ?? 'manual',
-                            undoResult.redoAction
+                            undoResult.redoAction,
+                            action.type === 'removeClip' || action.type === 'splitClip'
+                                ? command.envelope.commandId
+                                : undefined
                         );
                         const previousEntry = undoStore.value?.past.at(-1);
                         if (
@@ -560,6 +652,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 }
             }
 
+            commitRedoInverseCapture({ phase: 'settle', actions: [action] });
             if (committed_failure) {
                 const committed_error = new AppActionCommittedError(action.type, committed_failure);
                 logger.error(committed_error);

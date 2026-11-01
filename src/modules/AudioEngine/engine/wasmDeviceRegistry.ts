@@ -38,6 +38,7 @@ import { isProofChamberDevice, createProofChamberNode, type ProofChamberNodeResu
 import { isProofDevice, createProofNode, type ProofNodeResult } from './ProofNode';
 import { isScoringDevice, createScoringNode, type ScoringNodeResult } from './ScoringNode';
 import { isToasterDevice, createToasterNode, type ToasterNodeResult } from './ToasterNode';
+import { createTransientShaperNode, isTransientShaperDevice } from './TransientShaperNode';
 
 import type { DeviceContentLoadOutcome } from './deviceReadinessDiagnostics';
 
@@ -1999,7 +2000,90 @@ const kneadDescriptor: WasmDeviceDescriptor = {
 
 // ── Registry ─────────────────────────────────────────────────────────────────
 
+const transientShaperDescriptor: WasmDeviceDescriptor = {
+    requiresContent: false,
+    matches: isTransientShaperDevice,
+    runtime: effectRuntime({ kind: 'fixed-samples', samples: 0 }),
+    create({
+        context,
+        deviceId,
+        deviceType,
+        signal,
+        isCurrent,
+        onLoaded,
+        onRuntimeFailure: replaceFailure,
+        onRuntimeRecovery: recover,
+    }) {
+        const placeholder = loadingBypassNode(context, deviceId, deviceType);
+        let loaded: BuiltinDeviceNode | null = null;
+        let result: Awaited<ReturnType<typeof createTransientShaperNode>> | null = null;
+        let failure: string | null = null;
+        let failureHandled = false;
+        const applyFailure = (): void => {
+            if (failureHandled || failure === null || !loaded?.controller) {
+                return;
+            }
+            failureHandled = true;
+            loaded.controller.ready = false;
+            const replaced = replaceFailure?.(loaded, placeholder) === true;
+            result?.destroy();
+            if (replaced) {
+                recover?.(placeholder);
+            }
+        };
+        const fail = (message: string): void => {
+            if (failure !== null) {
+                return;
+            }
+            failure = message;
+            applyFailure();
+        };
+        const loadPromise = createTransientShaperNode(context, signal, fail)
+            .then(async (node) => {
+                result = node;
+                if (
+                    !(await waitForDeviceReady({ deviceType, result: node, signal })) ||
+                    isCurrent?.() === false ||
+                    failure !== null
+                ) {
+                    node.destroy();
+                    return;
+                }
+                const candidate: BuiltinDeviceNode = {
+                    deviceId,
+                    type: deviceType,
+                    nodes: [node.workletNode],
+                    inputNode: node.workletNode,
+                    outputNode: node.workletNode,
+                    dispose: node.destroy,
+                    controller: {
+                        ready: true,
+                        setParam: node.setParam,
+                        setBypass: node.setBypass,
+                        destroy: node.destroy,
+                    },
+                    nativeDspControls: { setParam: node.setParam, setBypass: node.setBypass },
+                };
+                if (onLoaded(candidate) === false) {
+                    node.destroy();
+                    return;
+                }
+                loaded = candidate;
+                applyFailure();
+                if (failureHandled) {
+                    return;
+                }
+                getAudioDeviceRuntimeSink().emitDeviceLoaded({ deviceId, deviceType });
+            })
+            .catch((error) => {
+                logger.warn(`[WebAudioEngine] ${deviceType} failed: ${String(error)}`);
+            });
+        return { placeholder, loadPromise };
+    },
+};
+
 const WASM_DEVICE_DESCRIPTORS: WasmDeviceDescriptor[] = [
+    transientShaperDescriptor,
     faustDescriptor,
     fermenterDescriptor,
     toasterDescriptor,

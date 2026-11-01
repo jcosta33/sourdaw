@@ -1,0 +1,61 @@
+diff --git a/dist/client/bundledDevClient.mjs b/dist/client/bundledDevClient.mjs
+index ceb0ca308d8631ba8f9d10c6a51f57eb200eaed2..1b9fa12745677b96c5f5de619eab5d75fcd10783 100644
+--- a/dist/client/bundledDevClient.mjs
++++ b/dist/client/bundledDevClient.mjs
+@@ -1223,6 +1223,7 @@ const socketHost = `${__HMR_HOSTNAME__ || importMetaUrl.hostname}:${hmrPort || i
+ const directSocketHost = __HMR_DIRECT_TARGET__;
+ const base = __BASE__ || "/";
+ const hmrTimeout = __HMR_TIMEOUT__;
++const hmrEnabled = __HMR_ENABLED__;
+ const wsToken = __WS_TOKEN__;
+ const forwardConsole = __SERVER_FORWARD_CONSOLE__;
+ const transport = normalizeModuleRunnerTransport((() => {
+@@ -1360,7 +1361,7 @@ async function handleMessage(payload) {
+ 		case "custom":
+ 			await activeHmrClient.notifyListeners(payload.event, payload.data);
+ 			if (payload.event === "vite:ws:disconnect") {
+-				if (hasDocument && !willUnload) {
++				if (hmrEnabled && hasDocument && !willUnload) {
+ 					console.log(`[vite] server connection lost. Polling for restart...`);
+ 					const socket = payload.data.webSocket;
+ 					const url = new URL(socket.url);
+diff --git a/dist/client/client.mjs b/dist/client/client.mjs
+index 62df91b57c8510b34fa26472a94b771263bd90d5..cc50d491dee031c40509d907659b613dbd5a2875 100644
+--- a/dist/client/client.mjs
++++ b/dist/client/client.mjs
+@@ -952,6 +952,7 @@ const socketHost = `${__HMR_HOSTNAME__ || importMetaUrl.hostname}:${hmrPort || i
+ const directSocketHost = __HMR_DIRECT_TARGET__;
+ const base = __BASE__ || "/";
+ const hmrTimeout = __HMR_TIMEOUT__;
++const hmrEnabled = __HMR_ENABLED__;
+ const wsToken = __WS_TOKEN__;
+ const forwardConsole = __SERVER_FORWARD_CONSOLE__;
+ const transport = normalizeModuleRunnerTransport((() => {
+@@ -1086,7 +1087,7 @@ async function handleMessage(payload) {
+ 		case "custom":
+ 			await activeHmrClient.notifyListeners(payload.event, payload.data);
+ 			if (payload.event === "vite:ws:disconnect") {
+-				if (hasDocument && !willUnload) {
++				if (hmrEnabled && hasDocument && !willUnload) {
+ 					console.log(`[vite] server connection lost. Polling for restart...`);
+ 					const socket = payload.data.webSocket;
+ 					const url = new URL(socket.url);
+diff --git a/dist/node/chunks/node.js b/dist/node/chunks/node.js
+index 797794fd975e746a691212c9fe265fca28167242..ec9d5f4360ec3261a91b8da117da3660f35b7128 100644
+--- a/dist/node/chunks/node.js
++++ b/dist/node/chunks/node.js
+@@ -17265,12 +17265,13 @@ async function createClientConfigValueReplacer(config) {
+ 	const hmrDirectTargetReplacement = escapeReplacement(directTarget);
+ 	const hmrBaseReplacement = escapeReplacement(hmrBase);
+ 	const hmrTimeoutReplacement = escapeReplacement(timeout);
++	const hmrEnabledReplacement = escapeReplacement(config.server.hmr !== false);
+ 	const hmrEnableOverlayReplacement = escapeReplacement(overlay);
+ 	const hmrConfigNameReplacement = escapeReplacement(hmrConfigName);
+ 	const hmrPartialAcceptReplacement = escapeReplacement(config.experimental.hmrPartialAccept);
+ 	const wsTokenReplacement = escapeReplacement(config.webSocketToken);
+ 	const serverForwardConsoleReplacement = escapeReplacement(config.server.forwardConsole);
+-	return (code) => code.replace(`__MODE__`, modeReplacement).replace(/__BASE__/g, baseReplacement).replace(`__SERVER_HOST__`, serverHostReplacement).replace(`__HMR_PROTOCOL__`, hmrProtocolReplacement).replace(`__HMR_HOSTNAME__`, hmrHostnameReplacement).replace(`__HMR_PORT__`, hmrPortReplacement).replace(`__HMR_DIRECT_TARGET__`, hmrDirectTargetReplacement).replace(`__HMR_BASE__`, hmrBaseReplacement).replace(`__HMR_TIMEOUT__`, hmrTimeoutReplacement).replace(`__HMR_ENABLE_OVERLAY__`, hmrEnableOverlayReplacement).replace(`__HMR_CONFIG_NAME__`, hmrConfigNameReplacement).replace(`__HMR_PARTIAL_ACCEPT__`, hmrPartialAcceptReplacement).replace(`__WS_TOKEN__`, wsTokenReplacement).replace(`__SERVER_FORWARD_CONSOLE__`, serverForwardConsoleReplacement);
++	return (code) => code.replace(`__MODE__`, modeReplacement).replace(/__BASE__/g, baseReplacement).replace(`__SERVER_HOST__`, serverHostReplacement).replace(`__HMR_PROTOCOL__`, hmrProtocolReplacement).replace(`__HMR_HOSTNAME__`, hmrHostnameReplacement).replace(`__HMR_PORT__`, hmrPortReplacement).replace(`__HMR_DIRECT_TARGET__`, hmrDirectTargetReplacement).replace(`__HMR_BASE__`, hmrBaseReplacement).replace(`__HMR_TIMEOUT__`, hmrTimeoutReplacement).replace(`__HMR_ENABLED__`, hmrEnabledReplacement).replace(`__HMR_ENABLE_OVERLAY__`, hmrEnableOverlayReplacement).replace(`__HMR_CONFIG_NAME__`, hmrConfigNameReplacement).replace(`__HMR_PARTIAL_ACCEPT__`, hmrPartialAcceptReplacement).replace(`__WS_TOKEN__`, wsTokenReplacement).replace(`__SERVER_FORWARD_CONSOLE__`, serverForwardConsoleReplacement);
+ }
+ const ROLLDOWN_DEV_RUNTIME_ENTRY = "rolldown/experimental/runtime";
+ async function getHmrImplementation(config) {

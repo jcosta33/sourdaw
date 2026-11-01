@@ -1,4 +1,4 @@
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
     appendFileSync,
@@ -410,7 +410,7 @@ function expectMarkedRecovery(
     if (diagnostics.length > 0) {
         expectedDiagnostics.push(
             expect.stringMatching(
-                /^guard storage file-use proof unavailable: (?:lsof-live-pid-missing:count=[1-9]\d*:pid\/uid\/state=\S+|lsof-missed-pid-(?:exited|heir):count=[1-9]\d*:pid=\S+|lsof-fields-unusable:(?:descriptor-type-missing|file-inspection-diagnostic))$/
+                /^guard storage file-use proof unavailable: (?:lsof-live-pid-missing:count=[1-9]\d*:pid\/uid\/state=\S+|lsof-missed-pid-(?:exited|heir):count=[1-9]\d*:pid=\S+|lsof-fields-unusable:descriptor-type-missing|lsof-fields-unusable:file-inspection-diagnostic:pid=[1-9]\d*:fd=[a-z0-9.]+:type=[a-zA-Z0-9]+:name=(?:absolute-path|text):match=(?:permission-denied|operation-not-permitted|no-info|stat|readlink))$/
             )
         );
     }
@@ -1284,8 +1284,7 @@ setInterval(() => {}, 1000);
         20_000
     );
 
-    async function verifyEmptyProcessCensusAdmission(holdPreparedRecord: boolean): Promise<void> {
-        const deadline = Date.now() + 20_000;
+    function emptyProcessCensusFixture(holdPreparedRecord: boolean) {
         const root = fixture();
         const marker = join(root, 'empty.json');
         const resultPath = join(root, 'result.json');
@@ -1306,11 +1305,11 @@ setInterval(() => {}, 1000);
 const fs=require('node:fs');const {execFileSync}=require('node:child_process');
 const args=process.argv.slice(2),marker=${JSON.stringify(marker)},rootMarker=${JSON.stringify(rootMarker)},childMarker=${JSON.stringify(childMarker)};
 if(!args.includes('pid=,ppid=,pgid=,rss=,command=')){
- process.stdout.write(execFileSync('/bin/ps',args,{encoding:'utf8'}));
+ process.stdout.write(execFileSync('/bin/ps',args,{encoding:'utf8',maxBuffer:16*1024*1024}));
 }else if(fs.existsSync(marker)){
  fs.appendFileSync(${JSON.stringify(samplesPath)},JSON.stringify({empty:true})+'\\n');
 }else{
- const output=execFileSync('/bin/ps',args,{encoding:'utf8'});
+ const output=execFileSync('/bin/ps',args,{encoding:'utf8',maxBuffer:16*1024*1024});
  const rootPid=fs.existsSync(rootMarker)?Number(fs.readFileSync(rootMarker,'utf8')):undefined;
  const rows=output.trimEnd().split('\\n').map(line=>{
   const match=/^\\s*(\\d+)\\s+(\\d+)\\s+(\\d+)\\s+/.exec(line);
@@ -1346,6 +1345,104 @@ if(!args.includes('pid=,ppid=,pgid=,rss=,command=')){
 `
         );
         chmodSync(fakePs, 0o700);
+        return {
+            root,
+            marker,
+            resultPath,
+            rootMarker,
+            childMarker,
+            admitted,
+            prepared,
+            preparationReady,
+            publishPrepared,
+            samplesPath,
+            bin,
+            fakePs,
+        };
+    }
+
+    function syntheticProcessCatalog(
+        input: ReturnType<typeof emptyProcessCensusFixture>,
+        catalog: string,
+        args: string[]
+    ) {
+        const producer = join(input.root, 'catalog.cjs');
+        const preload = join(input.root, 'catalog-transport.cjs');
+        writeFileSync(producer, `process.stdout.write(${JSON.stringify(catalog)});\n`);
+        writeFileSync(
+            preload,
+            `const cp=require('node:child_process');const execute=cp.execFileSync;
+cp.execFileSync=(file,args,options)=>{
+ if(file!=='/bin/ps')throw new Error('Unexpected fixture transport');
+ return execute(process.execPath,[${JSON.stringify(producer)}],options);
+};\n`
+        );
+        return spawnSync(process.execPath, ['--require', preload, input.fakePs, ...args], {
+            encoding: 'utf8',
+            timeout: 5_000,
+            maxBuffer: 20 * 1024 * 1024,
+        });
+    }
+
+    it.each(['catalog', 'forwarded'])(
+        'forwards a valid process catalog above one MiB through the %s fixture route',
+        (route) => {
+            const input = emptyProcessCensusFixture(false);
+            const catalog = `${process.pid} 1 ${process.pid} 1 ${'synthetic-opaque-command '.repeat(50_000)}end\n`;
+            expect(Buffer.byteLength(catalog)).toBeGreaterThan(1024 * 1024);
+            const args = route === 'catalog' ? ['-axo', 'pid=,ppid=,pgid=,rss=,command='] : ['-p', String(process.pid)];
+            const result = syntheticProcessCatalog(input, catalog, args);
+            expect(result.error).toBeUndefined();
+            expect(result.status, result.stderr.slice(0, 512)).toBe(0);
+            expect(Buffer.byteLength(result.stdout)).toBe(Buffer.byteLength(catalog));
+            expect(Buffer.from(result.stdout).equals(Buffer.from(catalog))).toBe(true);
+            expect(result.stderr).toBe('');
+        }
+    );
+
+    it.each(['catalog', 'forwarded'])(
+        'refuses an over-ceiling process catalog without forwarding partial %s output',
+        (route) => {
+            const input = emptyProcessCensusFixture(false);
+            const catalog = `${process.pid} 1 ${process.pid} 1 ${'x'.repeat(16 * 1024 * 1024 + 65_536)}\n`;
+            const args = route === 'catalog' ? ['-axo', 'pid=,ppid=,pgid=,rss=,command='] : ['-p', String(process.pid)];
+            const result = syntheticProcessCatalog(input, catalog, args);
+            expect(result.error).toBeUndefined();
+            expect(result.status).not.toBe(0);
+            expect(result.stdout).toBe('');
+            expect(result.stderr).toContain('ENOBUFS');
+        }
+    );
+
+    it('refuses opaque process catalog output before publishing a readiness record', () => {
+        const input = emptyProcessCensusFixture(false);
+        const result = syntheticProcessCatalog(input, 'not a process catalog\n', [
+            '-axo',
+            'pid=,ppid=,pgid=,rss=,command=',
+        ]);
+        expect(result.error).toBeUndefined();
+        expect(result.status).not.toBe(0);
+        expect(result.stdout).toBe('');
+        expect(result.stderr).toContain('unusable controlled monitor row');
+        expect(existsSync(input.admitted)).toBe(false);
+        expect(existsSync(input.preparationReady)).toBe(false);
+    });
+
+    async function verifyEmptyProcessCensusAdmission(holdPreparedRecord: boolean): Promise<void> {
+        const deadline = Date.now() + 20_000;
+        const {
+            root,
+            marker,
+            resultPath,
+            rootMarker,
+            childMarker,
+            admitted,
+            prepared,
+            preparationReady,
+            publishPrepared,
+            samplesPath,
+            bin,
+        } = emptyProcessCensusFixture(holdPreparedRecord);
         const descendant = `
 const fs=require('node:fs');const {execFileSync}=require('node:child_process');
 fs.writeFileSync(${JSON.stringify(childMarker)},String(process.pid));
@@ -2816,7 +2913,7 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
                 const storage=createGuardStorage({root:${JSON.stringify(join(root, 'storage'))},token:${JSON.stringify(randomUUID())},owner:${JSON.stringify(fakeOwner)},ports});
                 temp=storage.tempDirectory;
                 const state=storageFileState([temp],[],reason=>reasons.push(reason));
-                const initial={state,reasons:[...reasons],samples,scopedSamples,processSamples,reads:[...reads],timeouts:[...timeouts],elapsed:now};
+                const initial={state,reasons:[...reasons],diagnosticPid:missed,samples,scopedSamples,processSamples,reads:[...reads],timeouts:[...timeouts],elapsed:now};
                 now=0;samples=0;scopedSamples=0;processSamples=0;reads=[];timeouts=[];
                 const released=await storage.release(true);
                 console.log(JSON.stringify({initial,released,retained:existsSync(temp)}));
@@ -2825,6 +2922,7 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
                 initial: {
                     state: string;
                     reasons: string[];
+                    diagnosticPid: number;
                     samples: number;
                     scopedSamples: number;
                     processSamples: number;
@@ -2849,7 +2947,7 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
                 Array.from({ length: samples + scopedSamples }, (_, index) => 5000 - index * 100)
             );
             expect(initial.elapsed).toBe(state === 'unknown' ? 5000 : (samples + scopedSamples) * 100);
-            const reason = `lsof-${route === 'scoped' ? 'scoped-' : ''}fields-unusable:file-inspection-diagnostic`;
+            const reason = `lsof-${route === 'scoped' ? 'scoped-' : ''}fields-unusable:file-inspection-diagnostic:pid=${initial.diagnosticPid}:fd=3:type=REG:name=text:match=permission-denied`;
             expect(initial.reasons).toEqual(state === 'unknown' ? [reason] : []);
             expect(observed.released).toBe(state === 'dead');
             expect(observed.retained).toBe(state !== 'dead');
@@ -2950,7 +3048,7 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
             const ports={identityState:()=> 'dead',sessionState:(_owner,original,current=original)=>storageFileState([original,current],[],reason=>reasons.push(reason))};
             const storage=createGuardStorage({root:${JSON.stringify(join(root, 'storage'))},token:${JSON.stringify(randomUUID())},owner:${JSON.stringify(fakeOwner)},ports});
             const state=storageFileState([storage.tempDirectory],[],reason=>reasons.push(reason));
-            const initial={state,reasons:[...reasons],failureReached,transient:areTransientProofReasons(reasons)};
+            const initial={state,reasons:[...reasons],diagnosticPid:missed,failureReached,transient:areTransientProofReasons(reasons)};
             diagnosed=false;userLists=0;failureReached=false;
             const released=await storage.release(true);
             console.log(JSON.stringify({initial,released,retained:existsSync(storage.tempDirectory)}));
@@ -2964,7 +3062,10 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
         );
         expect(observed.initial).toEqual({
             state: 'unknown',
-            reasons: [`lsof-${route === 'scoped' ? 'scoped-' : ''}fields-unusable:file-inspection-diagnostic`],
+            reasons: [
+                `lsof-${route === 'scoped' ? 'scoped-' : ''}fields-unusable:file-inspection-diagnostic:pid=${observed.initial.diagnosticPid}:fd=3:type=REG:name=text:match=permission-denied`,
+            ],
+            diagnosticPid: observed.initial.diagnosticPid,
             failureReached: true,
             transient: false,
         });
@@ -4457,15 +4558,22 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
         }
     });
 
-    it.skipIf(process.platform !== 'darwin').each([
-        { payload: 'outside', type: 'REG', expected: 'dead' },
-        { payload: 'original', type: 'REG', expected: 'alive' },
-        { payload: 'moved claim', type: 'REG', expected: 'alive' },
-        { payload: 'original', type: 'DIR', expected: 'alive' },
-        { payload: 'moved claim', type: 'DIR', expected: 'alive' },
-    ])(
-        'inspects complete Darwin fileport paths: $type $payload',
-        async ({ payload, type, expected }) => {
+    it.skipIf(process.platform !== 'darwin').each(
+        [
+            { payload: 'outside', type: 'REG', expected: 'dead' },
+            { payload: 'original', type: 'REG', expected: 'alive' },
+            { payload: 'moved claim', type: 'REG', expected: 'alive' },
+            { payload: 'original', type: 'DIR', expected: 'alive' },
+            { payload: 'moved claim', type: 'DIR', expected: 'alive' },
+            { payload: 'outside', type: 'LINK', expected: 'dead' },
+            { payload: 'original', type: 'LINK', expected: 'alive' },
+            { payload: 'moved claim', type: 'LINK', expected: 'alive' },
+            { payload: 'original', type: 'LINK', expected: 'alive', deleted: true },
+            { payload: 'moved claim', type: 'LINK', expected: 'alive', deleted: true },
+        ].map((testCase) => ({ deleted: false, ...testCase }))
+    )(
+        'inspects complete Darwin fileport paths: $type $payload deleted=$deleted',
+        async ({ payload, type, expected, deleted }) => {
             const root = fixture();
             const bin = join(root, 'bin');
             mkdirSync(bin);
@@ -4497,7 +4605,8 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
                     const claims=join(root,'.claims');const claim=join(claims,readdirSync(claims)[0]);
                     current=join(claim,readdirSync(claim).find(name=>name!=='claim.json'),'tmp');
                 }
-                const path=${JSON.stringify(payload)}==='outside'?${JSON.stringify(root)}:${JSON.stringify(type)}==='DIR'?current:join(current,'held');
+                const name=${JSON.stringify(type === 'LINK' ? `held link ${'long '.repeat(30)}` : 'held')};
+                const path=(${JSON.stringify(payload)}==='outside'?${JSON.stringify(root)}:${JSON.stringify(type)}==='DIR'?current:join(current,name))+${JSON.stringify(deleted ? ' (deleted)' : '')};
                 writeFileSync(${JSON.stringify(catalogPath)},JSON.stringify({path,type:${JSON.stringify(type)}}));
                 const state=storageFileState([storage.tempDirectory,current],[]);
                 let released;
@@ -4528,6 +4637,101 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
         },
         15_000
     );
+
+    it.each(['REG', 'DIR', 'LINK'])(
+        'keeps diagnostic words in absolute Darwin $type paths as storage references',
+        async (type) => {
+            const root = fixture();
+            const storage = ownedStorage(root, {
+                identityState: () => 'dead',
+                sessionState: (_owner, temp) => {
+                    const census = parseLsofCensus(`p123\0\nf3\0t${type}\0n${temp}/no info.txt\0\n`);
+                    if (census === undefined) {
+                        return 'unknown';
+                    }
+                    return census.paths.some((path) => referencesStoragePath(path, [temp])) ? 'alive' : 'dead';
+                },
+            });
+            for (const name of ['no info.txt', 'Permission denied', 'Operation not permitted']) {
+                const path = `${storage.tempDirectory}/${name}`;
+                const reasons: string[] = [];
+                expect(parseLsofCensus(`p123\0\nf3\0t${type}\0n${path}\0\n`, (reason) => reasons.push(reason))).toEqual(
+                    {
+                        pids: new Set([123]),
+                        paths: [path],
+                    }
+                );
+                expect(reasons).toEqual([]);
+            }
+            expect(await storage.release(true)).toBe(false);
+            expect(existsSync(storage.tempDirectory)).toBe(true);
+        }
+    );
+
+    it.each([
+        { type: 'REG', name: 'vnode: Permission denied', match: 'permission-denied', kind: 'text' },
+        { type: 'REG', name: 'vnode: Operation not permitted', match: 'operation-not-permitted', kind: 'text' },
+        { type: 'unix', name: 'no info', match: 'no-info', kind: 'text' },
+        { type: 'LINK', name: 'vnode: Permission denied', match: 'permission-denied', kind: 'text' },
+        { type: 'LINK', name: '/private/held (readlink: Permission denied)', match: 'readlink', kind: 'absolute-path' },
+        { type: undefined, name: 'vnode: Permission denied', match: 'permission-denied', kind: 'text' },
+        { type: 'REG', name: '/private/held (stat: Permission denied)', match: 'stat', kind: 'absolute-path' },
+        { type: 'REG', name: '/private/held (readlink: Permission denied)', match: 'readlink', kind: 'absolute-path' },
+    ])('reports bounded Darwin inspection context for $type $match $kind', ({ type, name, match, kind }) => {
+        const fields = `f3\0${type === undefined ? '' : `t${type}\0`}n${name}${' unrelated-name-text'.repeat(1000)}`;
+        const reports: { reason: string; detail: string | undefined }[] = [];
+        expect(
+            parseLsofCensus(`p123\0\n${fields}\0\n`, (reason, detail) => reports.push({ reason, detail }))
+        ).toBeUndefined();
+        expect(reports).toEqual([
+            {
+                reason: 'file-inspection-diagnostic',
+                detail: `pid=123:fd=3:type=${type ?? 'missing'}:name=${kind}:match=${match}`,
+            },
+        ]);
+        expect(JSON.stringify(reports).length).toBeLessThan(180);
+        expect(JSON.stringify(reports)).not.toContain('unrelated-name-text');
+        expect(JSON.stringify(reports)).not.toContain('/private/held');
+    });
+
+    it.each([
+        { descriptor: 'fp.', reported: 'fp.' },
+        { descriptor: '3'.repeat(1000), reported: 'oversized' },
+    ])('bounds Darwin diagnostic descriptor identity to $reported', ({ descriptor, reported }) => {
+        const reports: string[] = [];
+        expect(
+            parseLsofCensus(`p123\0\nf${descriptor}\0tREG\0nvnode: Permission denied\0\n`, (_reason, detail) => {
+                if (detail !== undefined) {
+                    reports.push(detail);
+                }
+            })
+        ).toBeUndefined();
+        expect(reports).toEqual([`pid=123:fd=${reported}:type=REG:name=text:match=permission-denied`]);
+    });
+
+    it('retains absolute symbolic-link paths in a complete census', () => {
+        const link = `/outside/held link ${'long '.repeat(30)} (deleted)`;
+        const catalog = `p10\0\nf5\0tLINK\0n${link}\0\nf6\0tREG\0n/outside/file\0\nf7\0tDIR\0n/outside/directory\0\n`;
+        expect(parseLsofCensus(catalog)).toEqual({
+            pids: new Set([10]),
+            paths: [link, '/outside/file', '/outside/directory'],
+        });
+    });
+
+    it.each([
+        { fields: 'f5\0tLINK', reason: 'missing-file-path' },
+        { fields: 'f5\0tLINK\0n', reason: 'missing-file-path' },
+        { fields: 'f5\0tLINK\0nrelative/link', reason: 'missing-file-path' },
+        { fields: 'f5\0tLINK\0n/denied (readlink: Permission denied)', reason: 'file-inspection-diagnostic' },
+        { fields: 'f5\0tLINK\0n/held\0n/other', reason: 'invalid-file-fields' },
+        { fields: 'f5\0tLINK\0n/held\0xopaque', reason: 'invalid-file-fields' },
+        { fields: 'f5\0n/held', reason: 'descriptor-type-missing' },
+        { fields: 'f5\0tunknown\0n/held', reason: 'unknown-file-type' },
+    ])('rejects uncertain symbolic-link evidence: $reason', ({ fields, reason }) => {
+        const reasons: string[] = [];
+        expect(parseLsofCensus(`p10\0\n${fields}\0\n`, (value) => reasons.push(value))).toBeUndefined();
+        expect(reasons).toEqual([reason]);
+    });
 
     it('parses complete NUL file records and rejects malformed, truncated or opaque file evidence', () => {
         const valid = 'p10\0\nfcwd\0tDIR\0n/owned/tmp\0\nf3\0tREG\0n/owned/tmp/held\0\n';
@@ -4578,6 +4782,8 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
         for (const reason of [
             'lsof-fields-unusable:file-inspection-diagnostic',
             'lsof-scoped-fields-unusable:file-inspection-diagnostic',
+            'lsof-fields-unusable:file-inspection-diagnostic:pid=123:fd=3:type=REG:name=text:match=permission-denied',
+            'lsof-scoped-fields-unusable:file-inspection-diagnostic:pid=123:fd=3:type=REG:name=text:match=permission-denied',
         ]) {
             expect(areTransientProofReasons([reason])).toBe(false);
             expect(areTransientProofReasons(['file-census-time-bound', reason])).toBe(false);
@@ -5041,14 +5247,20 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         {
             name: 'a stable unusable-inspection reason',
             script: 'process.exitCode=0',
-            host: censusReporting('unknown', 'lsof-fields-unusable:file-inspection-diagnostic'),
-            census: 'unknown lsof-fields-unusable:file-inspection-diagnostic',
+            host: censusReporting(
+                'unknown',
+                'lsof-fields-unusable:file-inspection-diagnostic:pid=123:fd=3:type=REG:name=text:match=permission-denied'
+            ),
+            census: 'unknown lsof-fields-unusable:file-inspection-diagnostic:pid=123:fd=3:type=REG:name=text:match=permission-denied',
         },
         {
             name: 'a stable unusable scoped-inspection reason',
             script: 'process.exitCode=0',
-            host: censusReporting('unknown', 'lsof-scoped-fields-unusable:file-inspection-diagnostic'),
-            census: 'unknown lsof-scoped-fields-unusable:file-inspection-diagnostic',
+            host: censusReporting(
+                'unknown',
+                'lsof-scoped-fields-unusable:file-inspection-diagnostic:pid=123:fd=3:type=REG:name=text:match=permission-denied'
+            ),
+            census: 'unknown lsof-scoped-fields-unusable:file-inspection-diagnostic:pid=123:fd=3:type=REG:name=text:match=permission-denied',
         },
         {
             name: 'a transient reason mixed with a stable one',

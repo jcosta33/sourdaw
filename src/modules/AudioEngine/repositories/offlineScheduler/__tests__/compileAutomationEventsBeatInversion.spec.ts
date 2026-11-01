@@ -1,0 +1,352 @@
+import { describe, expect, it } from 'vitest';
+
+import { projectPpqEndpoints, secondsBetweenBeats } from '#/modules/Transport/useCases';
+import { evaluateAutomationCurve } from '#/utils/automationCurve';
+
+import { type AutomationPoint } from '../../../models/AutomationViewTypes';
+import { compileAutomationEvents } from '../compileAutomationEvents';
+
+/**
+ * A sampled automation segment is evaluated every 10 ms, and each sample needs
+ * the beat its time falls on. The render's projector is quantised to whole
+ * samples, so the full-range bisection every sample used to run only finds the
+ * edge of a one-sample rounding step. A straight stretch of projection is now
+ * interpolated and a ramp is bisected from the previous sample's bracket, the
+ * segment cut at every tempo change inside it. These cases pin that against the
+ * old bisection, kept here as the oracle: every sample keeps its exact time, its
+ * value is one the curve takes within one sample of beat of the bisected beat,
+ * and the number of projections no longer grows by forty per sample.
+ */
+type TempoChange = { id: string; beat: number; tempo: number; curve: 'instant' | 'linear' };
+type Projector = (beat: number) => number;
+
+const SAMPLE_RATE = 48_000;
+const BASE_TEMPO = 76;
+const AUTOMATION_SAMPLE_INTERVAL_SEC = 0.01;
+const NON_LINEAR_CURVES = ['smooth', 'bezier', 'exponential', 's-curve'] as const;
+
+/** The inversion every sample used before, copied as the oracle. */
+function bisectedBeatAtTime(firstBeat: number, secondBeat: number, time: number, projectBeat: Projector): number {
+    if (time <= projectBeat(firstBeat)) {
+        return firstBeat;
+    }
+    if (time >= projectBeat(secondBeat)) {
+        return secondBeat;
+    }
+    let lower = firstBeat;
+    let upper = secondBeat;
+    for (let iteration = 0; iteration < 40; iteration++) {
+        const middle = (lower + upper) / 2;
+        if (projectBeat(middle) < time) {
+            lower = middle;
+        } else {
+            upper = middle;
+        }
+    }
+    return (lower + upper) / 2;
+}
+
+function renderProjector(changes: readonly TempoChange[]): Projector {
+    return (beat) =>
+        projectPpqEndpoints({
+            startPpq: beat,
+            endPpq: beat,
+            defaultTempo: BASE_TEMPO,
+            sampleRate: SAMPLE_RATE,
+            changes,
+        }).startSeconds;
+}
+
+function countingProjector(projectBeat: Projector): { project: Projector; count: () => number } {
+    let projections = 0;
+    return {
+        project: (beat) => {
+            projections++;
+            return projectBeat(beat);
+        },
+        count: () => projections,
+    };
+}
+
+function lane(curve: AutomationPoint['curve'], beats: readonly number[]): AutomationPoint[] {
+    const values = [0.1, 0.85, 0.2, 0.6, 0.4];
+    const tensions = [0.42, -0.3, 0.7, 0.38, 0];
+    return beats.map((beat, index) => ({ beat, value: values[index]!, curve, tension: tensions[index]! }));
+}
+
+type ExpectedSample = {
+    time: number;
+    oracleBeat: number;
+    first: AutomationPoint;
+    second: AutomationPoint;
+    previous?: AutomationPoint;
+    next?: AutomationPoint;
+};
+
+/** Every per-sample event the compiler emits for a fully visible lane, with the beat the old bisection gave it. */
+function expectedSamples(points: readonly AutomationPoint[], projectBeat: Projector): ExpectedSample[] {
+    const samples: ExpectedSample[] = [];
+    for (let index = 0; index < points.length - 1; index++) {
+        const first = points[index]!;
+        const second = points[index + 1]!;
+        const visibleStart = projectBeat(first.beat);
+        const visibleEnd = projectBeat(second.beat);
+        const steps = Math.max(1, Math.ceil((visibleEnd - visibleStart) / AUTOMATION_SAMPLE_INTERVAL_SEC));
+        for (let step = 1; step <= steps; step++) {
+            const time = visibleStart + ((visibleEnd - visibleStart) * step) / steps;
+            samples.push({
+                time,
+                oracleBeat: bisectedBeatAtTime(first.beat, second.beat, time, projectBeat),
+                first,
+                second,
+                previous: points[index - 1],
+                next: points[index + 2],
+            });
+        }
+    }
+    return samples;
+}
+
+function curveValue(sample: ExpectedSample, beat: number): number {
+    return evaluateAutomationCurve({
+        firstPoint: sample.first,
+        secondPoint: sample.second,
+        beat,
+        previousPoint: sample.previous,
+        nextPoint: sample.next,
+    });
+}
+
+function compileLane(points: AutomationPoint[], changes: readonly TempoChange[], projectBeat: Projector) {
+    return compileAutomationEvents(points, 600, [...changes], 0, projectBeat).filter(
+        (event) => event.type === 'linear'
+    );
+}
+
+/**
+ * Compiles the lane and checks every sample against the oracle: the same time,
+ * bit for bit, and a value the curve takes within one sample of beat (at the
+ * fastest tempo the map reaches) of the bisected beat.
+ */
+function expectWithinOneSampleOfBisection(
+    points: AutomationPoint[],
+    changes: readonly TempoChange[],
+    fastestTempo: number
+): void {
+    const projectBeat = renderProjector(changes);
+    const oneSampleOfBeat = fastestTempo / 60 / SAMPLE_RATE;
+    const events = compileLane(points, changes, projectBeat);
+    const expected = expectedSamples(points, projectBeat);
+
+    expect(events.map((event) => event.timeSeconds)).toEqual(expected.map((sample) => sample.time));
+    const checked = events.map((event, index) => ({
+        event,
+        reachable: valuesWithinBeats(expected[index]!, oneSampleOfBeat),
+    }));
+    const outOfBound = checked
+        .filter(({ event, reachable }) => liesOutside(event.value, reachable, 1e-9))
+        .map(
+            ({ event, reachable }) =>
+                `t=${event.timeSeconds}: ${event.value} outside [${Math.min(...reachable)}, ${Math.max(...reachable)}]`
+        );
+    expect(outOfBound.slice(0, 5)).toEqual([]);
+}
+
+/** Values the sample's curve takes within `beats` of the beat the old bisection gave it. */
+function valuesWithinBeats(sample: ExpectedSample, beats: number): number[] {
+    const low = Math.max(sample.first.beat, sample.oracleBeat - beats);
+    const high = Math.min(sample.second.beat, sample.oracleBeat + beats);
+    return Array.from({ length: 17 }, (_, probe) => curveValue(sample, low + ((high - low) * probe) / 16));
+}
+
+function liesOutside(value: number, reachable: readonly number[], slack: number): boolean {
+    return value < Math.min(...reachable) - slack || value > Math.max(...reachable) + slack;
+}
+
+describe('compileAutomationEvents — beat inversion on a straight projection', () => {
+    const changes: TempoChange[] = [{ id: 'base', beat: 0, tempo: BASE_TEMPO, curve: 'instant' }];
+
+    it.each(NON_LINEAR_CURVES)('keeps every %s sample within one sample of beat of the bisection', (curve) => {
+        expectWithinOneSampleOfBisection(lane(curve, [0, 3.7, 9, 14.25]), changes, BASE_TEMPO);
+    });
+
+    it('projects only a handful of beats per segment instead of bisecting every sample', () => {
+        const counter = countingProjector(renderProjector(changes));
+        const points = lane('smooth', [0, 3.7, 9, 14.25]);
+        const events = compileLane(points, changes, counter.project);
+
+        // The full-range bisection spent over forty projections on each of these samples.
+        expect(events.length).toBeGreaterThan(500);
+        expect(counter.count()).toBeLessThan(10 * points.length);
+    });
+});
+
+describe('compileAutomationEvents — beat inversion on a ramp or across a tempo change', () => {
+    // Nebula Drift's shape: steady, then a linear ramp 78 → 76 over beats 4 → 12,
+    // steady after it. The lane's segments cross 4 and 12 and ride the ramp between.
+    const rampChanges: TempoChange[] = [
+        { id: 'base', beat: 0, tempo: BASE_TEMPO, curve: 'instant' },
+        { id: 'peak', beat: 4, tempo: 78, curve: 'linear' },
+        { id: 'breakdown', beat: 12, tempo: BASE_TEMPO, curve: 'linear' },
+    ];
+
+    it.each([...NON_LINEAR_CURVES, 'linear' as const])(
+        'keeps every %s sample on and across the ramp within one sample of beat of the bisection',
+        (curve) => {
+            expectWithinOneSampleOfBisection(lane(curve, [0, 5, 11, 14.25]), rampChanges, 78);
+        }
+    );
+
+    it('splits a segment at the change where a steady stretch meets a ramp', () => {
+        // One segment, beats 1 → 9: steady at 76 up to beat 4, then on the ramp.
+        const points = lane('smooth', [1, 9]);
+        expectWithinOneSampleOfBisection(points, rampChanges, 78);
+
+        // Cut at beat 4, the steady side is interpolated: beyond the straightness probes,
+        // nothing projects a beat inside it, though about two hundred samples fall there.
+        // Bisecting the whole span as one ramp would project dozens of beats per sample there.
+        const projectBeat = renderProjector(rampChanges);
+        const steadySideBeats: number[] = [];
+        const events = compileLane(points, rampChanges, (beat) => {
+            if (beat > 1 && beat < 4) {
+                steadySideBeats.push(beat);
+            }
+            return projectBeat(beat);
+        });
+        const steadySideSamples = events.filter((event) => event.timeSeconds < projectBeat(4)).length;
+
+        expect(steadySideSamples).toBeGreaterThan(200);
+        expect(steadySideBeats.length).toBeLessThanOrEqual(2);
+    });
+
+    it('brackets a steep ramp, 40 → 400 BPM over one beat', () => {
+        const steepChanges: TempoChange[] = [
+            { id: 'slow', beat: 0, tempo: 40, curve: 'linear' },
+            { id: 'fast', beat: 1, tempo: 400, curve: 'instant' },
+        ];
+        expectWithinOneSampleOfBisection(lane('exponential', [0, 1, 3]), steepChanges, 400);
+        expectWithinOneSampleOfBisection(lane('smooth', [0, 0.4, 2]), steepChanges, 400);
+    });
+
+    it.each(['linear', 'smooth'] as const)(
+        'ends a cropped %s segment on the boundary beat the full bisection solved, on an unquantised projector',
+        (curve) => {
+            // Not quantised, so the warm start's bracket shows: interior samples sit within it of
+            // the full bisection, and the cropped end must be the full bisection's own beat.
+            const projectSquare: Projector = (beat) => beat * beat;
+            const points = lane(curve, [0, 4, 6]);
+            const regionStart = 4;
+            for (const duration of [5, 5.3, 6.71]) {
+                const events = compileAutomationEvents(points, duration, [], regionStart, projectSquare).filter(
+                    (event) => event.type === 'linear'
+                );
+                const visibleStart = regionStart;
+                const visibleEnd = regionStart + duration;
+                const visibleStartBeat = bisectedBeatAtTime(0, 4, visibleStart, projectSquare);
+                const visibleEndBeat = bisectedBeatAtTime(0, 4, visibleEnd, projectSquare);
+                const steps = Math.ceil((visibleEnd - visibleStart) / AUTOMATION_SAMPLE_INTERVAL_SEC);
+                const bracket =
+                    (((visibleEndBeat - visibleStartBeat) * ((visibleEnd - visibleStart) / steps)) /
+                        (visibleEnd - visibleStart)) *
+                    2 ** -12;
+                const segment = { first: points[0]!, second: points[1]!, next: points[2] };
+                const valueAt = (beat: number) => curveValue({ ...segment, time: 0, oracleBeat: beat }, beat);
+
+                expect(events.map((event) => event.timeSeconds)).toEqual(
+                    Array.from(
+                        { length: steps },
+                        (_, offset) => visibleStart + ((visibleEnd - visibleStart) * (offset + 1)) / steps - regionStart
+                    )
+                );
+                expect(Object.is(events.at(-1)!.value, valueAt(visibleEndBeat))).toBe(true);
+                const outsideBracket = events
+                    .slice(0, -1)
+                    .filter((event) => {
+                        const oracleBeat = bisectedBeatAtTime(
+                            visibleStartBeat,
+                            visibleEndBeat,
+                            event.timeSeconds + regionStart,
+                            projectSquare
+                        );
+                        const reachable = [valueAt(oracleBeat - bracket), valueAt(oracleBeat + bracket)];
+                        return liesOutside(event.value, reachable, 1e-12);
+                    })
+                    .map((event) => `${duration}s t=${event.timeSeconds}: ${event.value}`);
+                expect(outsideBracket.slice(0, 5)).toEqual([]);
+            }
+        }
+    );
+
+    it('spends far fewer projections per ramp sample than a full-range bisection', () => {
+        const counter = countingProjector(renderProjector(rampChanges));
+        const points = lane('smooth', [4, 8, 12]);
+        const events = compileLane(points, rampChanges, counter.project);
+
+        // The full-range bisection spent at least forty-two projections on each sample.
+        expect(events.length).toBeGreaterThan(500);
+        expect(counter.count()).toBeLessThan(20 * events.length);
+    });
+});
+
+/** The beat in `[first, second]` where a strictly monotone curve segment takes `value`, by deep bisection. */
+function beatWithValue(first: AutomationPoint, second: AutomationPoint, value: number): number {
+    const valueAt = (beat: number) => evaluateAutomationCurve({ firstPoint: first, secondPoint: second, beat });
+    const rising = valueAt(second.beat) > valueAt(first.beat);
+    let lower = first.beat;
+    let upper = second.beat;
+    for (let iteration = 0; iteration < 80; iteration++) {
+        const middle = (lower + upper) / 2;
+        if (valueAt(middle) < value === rising) {
+            lower = middle;
+        } else {
+            upper = middle;
+        }
+    }
+    return (lower + upper) / 2;
+}
+
+describe('compileAutomationEvents — a gently curved ramp stretch taken as straight', () => {
+    // Nebula Drift's map. Short stretches of its ramp pass the straightness test and are
+    // interpolated along their chord, which strays from the curve by up to that test's bound.
+    const changes: TempoChange[] = [
+        { id: 'base', beat: 0, tempo: BASE_TEMPO, curve: 'instant' },
+        { id: 'peak', beat: 4, tempo: 78, curve: 'linear' },
+        { id: 'breakdown', beat: 12, tempo: BASE_TEMPO, curve: 'linear' },
+    ];
+    const projectBeat = renderProjector(changes);
+
+    /** How far, in seconds, each sample's beat projects from its grid time on the exact, unquantised map. */
+    function sampleTimeDeviations(beats: readonly number[], regionStart: number, duration: number): number[] {
+        // An exponential curve is strictly monotone, so each emitted value names the beat it was taken at.
+        const points: AutomationPoint[] = beats.map((beat, index) => ({
+            beat,
+            value: [0.1, 0.85, 0.2, 0.6][index]!,
+            curve: 'exponential',
+            tension: 0.3,
+        }));
+        const events = compileAutomationEvents(points, duration, [...changes], regionStart, projectBeat).filter(
+            (event) => event.type === 'linear'
+        );
+        const pointTimes = points.map((point) => projectBeat(point.beat));
+        return events.map((event) => {
+            const gridTime = event.timeSeconds + regionStart;
+            const segment = pointTimes.findIndex(
+                (time, index) => time < gridTime && gridTime <= pointTimes[index + 1]!
+            );
+            const beat = beatWithValue(points[segment]!, points[segment + 1]!, event.value);
+            return Math.abs(secondsBetweenBeats(changes, 0, beat, BASE_TEMPO) - gridTime);
+        });
+    }
+
+    it('keeps every sample within the 0.1 ms straightness tolerance of its grid time', () => {
+        // The review's window, opening on the ramp.
+        const cropped = sampleTimeDeviations([0, 5, 11, 14.25], 0.3 * projectBeat(15), 4.704175);
+        // A 0.8-beat segment on the ramp: its chord strays about 0.2 ms, so only a bound kept
+        // at 0.1 ms sends it to the bisection.
+        const shortStretch = sampleTimeDeviations([5, 5.8], 0, 30);
+
+        expect(cropped.length).toBeGreaterThan(400);
+        expect(shortStretch.length).toBeGreaterThan(50);
+        expect(Math.max(...cropped, ...shortStretch)).toBeLessThan(1e-4);
+    });
+});

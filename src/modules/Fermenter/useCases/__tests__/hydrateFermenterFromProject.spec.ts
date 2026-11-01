@@ -107,6 +107,35 @@ describe('hydrateFermenterFromProject', () => {
         expect(patch?.filterCutoff).toBe(600);
     });
 
+    it.each(['filterModel', 'filterMode'] as const)(
+        'restores an absent %s leaf without resetting other live state',
+        (paramId) => {
+            const other = paramId === 'filterModel' ? 'filterMode' : 'filterModel';
+            trackStore.set({
+                tracks: [makeTrack({ [paramId]: 1, [other]: 2, oscEngine: 3, filterCutoff: 600 })],
+                selectedTrackId: 'track-1',
+                ghostClips: [],
+            });
+            hydrateFermenterFromProject(DEVICE_ID);
+            const current = getFermenterState(DEVICE_ID).patch;
+            const macros: FermenterPatch['macros'] = [...current.macros];
+            macros[0] = 0.84;
+            loadFermenterPatch(DEVICE_ID, { ...current, macros, filterDrive: 0.31 });
+            trackStore.set({
+                tracks: [makeTrack({ [other]: 2, oscEngine: 3, filterCutoff: 600 })],
+                selectedTrackId: 'track-1',
+                ghostClips: [],
+            });
+            const patch = hydrateFermenterFromProject(DEVICE_ID);
+            expect(patch?.[paramId]).toBe(DEFAULT_PATCH[paramId]);
+            expect(patch?.[other]).toBe(2);
+            expect(patch?.oscEngine).toBe(3);
+            expect(patch?.filterCutoff).toBe(600);
+            expect(patch?.filterDrive).toBe(0.31);
+            expect(patch?.macros[0]).toBe(0.84);
+        }
+    );
+
     it('ignores non-numeric or non-finite values', () => {
         trackStore.set({
             tracks: [

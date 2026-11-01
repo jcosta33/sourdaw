@@ -62,17 +62,13 @@ const reverbImpulseCache = new WeakMap<BaseAudioContext, Map<string, AudioBuffer
 /** Owning context of each factory-built convolver, so later writes can render. */
 const reverbContexts = new WeakMap<ConvolverNode, BaseAudioContext>();
 
-/** Last shape rendered into each convolver, so partial parameter writes merge. */
+/** Latest accepted shape after a successful installation, so partial writes merge. */
 const reverbShapes = new WeakMap<ConvolverNode, ReverbImpulseShape>();
 
 function impulseCacheKey(shape: ReverbImpulseShape): string {
     // Millisecond quantisation: repeated writes of a drifted float reuse the cache.
     const thousandths = (value: number): number => Math.round(value * 1000);
     return `${thousandths(shape.size)}|${thousandths(shape.decay)}|${thousandths(shape.damping)}`;
-}
-
-function sameShape(a: ReverbImpulseShape, b: ReverbImpulseShape): boolean {
-    return a.size === b.size && a.decay === b.decay && a.damping === b.damping;
 }
 
 function resolveConvolver(dn: OfflineDeviceNode): ConvolverNode | null {
@@ -125,9 +121,8 @@ function renderReverbImpulse(ctx: BaseAudioContext, shape: ReverbImpulseShape): 
 /**
  * Rebuild the convolver impulse of a reverb device from a partial
  * size/decay/damping write. Absent keys merge with the shape already
- * installed (descriptor defaults before the first write), a shape change
- * renders and installs the new buffer, and an unchanged shape is a no-op —
- * so repeated writes of the same value cost nothing. The context is only
+ * installed (descriptor defaults before the first write), a cache-key change
+ * installs the new buffer, and an unchanged cache key is a no-op. The context is only
  * required the first time a factory introduces its convolver; later writes
  * reuse the remembered one.
  */
@@ -150,19 +145,21 @@ export function applyReverbImpulseShape(
     if (!context) {
         throw new Error('reverb convolver has no owning context; pass it from the factory');
     }
-    const current = reverbShapes.get(convolver) ?? DEFAULT_REVERB_SHAPE;
+    const installed = reverbShapes.get(convolver);
+    const current = installed ?? DEFAULT_REVERB_SHAPE;
     const merged: ReverbImpulseShape = {
         size: shape.size !== undefined ? clamp(shape.size, REVERB_SIZE_RANGE) : current.size,
         decay: shape.decay !== undefined ? clamp(shape.decay, REVERB_DECAY_RANGE) : current.decay,
         damping: shape.damping !== undefined ? clamp(shape.damping, REVERB_DAMPING_RANGE) : current.damping,
     };
-    if (sameShape(merged, current) && reverbContexts.has(convolver)) {
+    const key = impulseCacheKey(merged);
+    if (installed && key === impulseCacheKey(installed)) {
+        reverbShapes.set(convolver, merged);
         return;
     }
     reverbContexts.set(convolver, context);
     const cache = reverbImpulseCache.get(context) ?? new Map<string, AudioBuffer>();
     reverbImpulseCache.set(context, cache);
-    const key = impulseCacheKey(merged);
     let buffer = cache.get(key);
     if (!buffer) {
         buffer = renderReverbImpulse(context, merged);

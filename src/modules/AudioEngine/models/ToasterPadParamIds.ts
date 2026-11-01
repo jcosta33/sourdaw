@@ -18,7 +18,7 @@
  *
  * Lives in `models/` for the same reason as `ToasterAutomationParams`:
  * `engine/ToasterNode` translates names to ids on the main thread and
- * `services/toasterProcessor.ts` — AudioWorklet code that may not import
+ * `worklets/toasterProcessor.ts` — AudioWorklet code that may not import
  * `engine/` — dispatches them to the engine's lock overlay.
  *
  * The table is a `Record`; consumers must not assume the ids stay dense

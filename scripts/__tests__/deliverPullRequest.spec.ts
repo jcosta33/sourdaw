@@ -13,7 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 
 import {
@@ -65,6 +65,30 @@ const WORKFLOW_PATH = '.github/workflows/health-gates.yml';
 // Cases that spawn git or node, or create and remove real fixture directories, pass an explicit 30 s ceiling
 // because they measured up to ~6 s on a loaded machine (#5229). In-memory cases keep vitest's 5 s default so an
 // injected delay in them still fails.
+
+// Fixture repositories must not inherit the host's global git config. A global trace2 consumer (git-ai) keeps writing
+// refs/notes/ai and working logs into a fixture's .git after `git commit` returns, which raced fixture teardown into
+// ENOTEMPTY and moved refs/notes/ai under assertions (#5933). Assigned directly because per-test
+// `vi.unstubAllEnvs()` would drop a stub.
+const HERMETIC_GIT_ENV = { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } as const;
+const hostGitEnv = new Map<string, string | undefined>();
+
+beforeAll(() => {
+    for (const [name, value] of Object.entries(HERMETIC_GIT_ENV)) {
+        hostGitEnv.set(name, process.env[name]);
+        process.env[name] = value;
+    }
+});
+
+afterAll(() => {
+    for (const [name, value] of hostGitEnv) {
+        if (value === undefined) {
+            delete process.env[name];
+        } else {
+            process.env[name] = value;
+        }
+    }
+});
 
 /**
  * A throwaway mint key composed at runtime, so no credential-shaped literal is committed: the
@@ -436,6 +460,9 @@ function stackedDeliveryPort(finalSettings: MergeSettings, primaryRoot: string) 
         capture: (command, args) => {
             captures.push({ command, args });
             const joined = args.join(' ');
+            if (args[0] === 'for-each-ref') {
+                return '';
+            }
             if (command === 'git' && joined === 'rev-parse HEAD') {
                 return 'head';
             }
@@ -9875,6 +9902,90 @@ describe('delivery author authentication', () => {
             'dispose',
         ]);
     }, 30_000);
+    it.each(['success', 'already merged', 'delivery failure', 'cleanup failure'])(
+        'post-delivery cleanup: %s preserves the delivery boundary',
+        async (scenario) => {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-deliver-cleanup-'));
+            const events: string[] = [];
+            try {
+                const { baseSha, headSha } = commitRange(root, undefined);
+                const { dependencies } = classificationDependencies({
+                    root,
+                    baseSha,
+                    headSha,
+                    events,
+                    authorMints: [],
+                });
+                let locked = false;
+                dependencies.serializeDelivery = async (_root, _number, operation) => {
+                    locked = true;
+                    try {
+                        return await operation({
+                            markRemoteMutationAttempt: () => {},
+                            ownerOid: '',
+                            registerSuccessfulCompletion: () => {},
+                        });
+                    } finally {
+                        locked = false;
+                        events.push('released');
+                    }
+                };
+                if (scenario === 'already merged') {
+                    const snapshot = pullRequest({
+                        state: 'MERGED',
+                        body: relationshipBody('None.'),
+                        mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                        baseRefOid: baseSha,
+                        headRefOid: headSha,
+                    });
+                    const merged = fakePort({
+                        // Classification consumes one snapshot before the real merged-recovery route.
+                        primary: [snapshot, snapshot],
+                        dependentSets: [[]],
+                        receipts: [],
+                        persistedReceiptAuthority: undefined,
+                    });
+                    dependencies.deliveryPort = () => merged.port;
+                    dependencies.deliver = (number, port) => {
+                        deliverPullRequest(number, port, merged.tracker);
+                        expect(merged.calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+                        events.push('recovered merged delivery');
+                    };
+                } else {
+                    dependencies.deliver = () => {
+                        events.push('delivered');
+                        if (scenario === 'delivery failure') {
+                            throw new Error('delivery refused');
+                        }
+                    };
+                }
+                dependencies.cleanupAfterDelivery = async (primary, head) => {
+                    expect(locked).toBe(false);
+                    expect(primary).toBe(root);
+                    expect(head).toBe(headSha);
+                    expect(events.at(-1)).toBe('released');
+                    events.push('cleanup queued');
+                    if (scenario === 'cleanup failure') {
+                        throw new Error('cleanup pending');
+                    }
+                };
+                dependencies.reportCleanupFailure = (message) => events.push(message);
+                if (scenario === 'delivery failure') {
+                    await expect(coordinateDelivery(PR_NUMBER, dependencies)).rejects.toThrow('delivery refused');
+                    expect(events).not.toContain('cleanup queued');
+                } else {
+                    await expect(coordinateDelivery(PR_NUMBER, dependencies)).resolves.toBeUndefined();
+                    expect(events).toContain('cleanup queued');
+                    if (scenario === 'cleanup failure') {
+                        expect(events.at(-1)).toContain('Delivery completed; lane cleanup is pending');
+                    }
+                }
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        },
+        30_000
+    );
 });
 
 describe('delivery shell boundary', () => {
@@ -10458,6 +10569,9 @@ describe('delivery shell boundary', () => {
             {
                 capture: (_command, args) => {
                     const joined = args.join(' ');
+                    if (args[0] === 'for-each-ref') {
+                        return '';
+                    }
                     if (joined.includes('pr view')) {
                         return JSON.stringify(
                             shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
@@ -10524,6 +10638,9 @@ describe('delivery shell boundary', () => {
             {
                 capture: (_command, args) => {
                     const joined = args.join(' ');
+                    if (args[0] === 'for-each-ref') {
+                        return '';
+                    }
                     captures.push(joined);
                     if (joined.includes('pr view')) {
                         return JSON.stringify(shellPullRequest(pullRequest({ state: 'MERGED', body: closes })));
@@ -10603,6 +10720,9 @@ describe('delivery shell boundary', () => {
             const port = shellPort('jcosta33/sourdaw', {
                 capture: (_command, args) => {
                     const joined = args.join(' ');
+                    if (args[0] === 'for-each-ref') {
+                        return '';
+                    }
                     if (joined.includes('pr view')) {
                         return JSON.stringify(shellPullRequest(shellSnapshot));
                     }
@@ -10661,6 +10781,9 @@ describe('delivery shell boundary', () => {
             {
                 capture: (_command, args) => {
                     const joined = args.join(' ');
+                    if (args[0] === 'for-each-ref') {
+                        return '';
+                    }
                     captures.push(joined);
                     if (joined.includes('pr view')) {
                         return JSON.stringify(shellPullRequest(pullRequest({ state: 'MERGED' })));
@@ -10718,6 +10841,9 @@ describe('delivery shell boundary', () => {
             {
                 capture: (_command, args) => {
                     const joined = args.join(' ');
+                    if (args[0] === 'for-each-ref') {
+                        return '';
+                    }
                     if (joined.includes('pr view 42')) {
                         return JSON.stringify(shellPullRequest(pullRequest({ state: 'MERGED', body: closes })));
                     }
@@ -11175,6 +11301,9 @@ describe('delivery shell boundary', () => {
                 {
                     capture: (_command, args) => {
                         const joined = args.join(' ');
+                        if (args[0] === 'for-each-ref') {
+                            return '';
+                        }
                         captures.push(joined);
                         if (joined.includes('pr view 42')) {
                             return JSON.stringify(shellPullRequest(pullRequest({ body: closes })));
@@ -11732,6 +11861,9 @@ describe('delivery shell boundary', () => {
             {
                 capture: (_command, args) => {
                     const joined = args.join(' ');
+                    if (args[0] === 'for-each-ref') {
+                        return '';
+                    }
                     if (joined.includes('pr view')) {
                         return JSON.stringify(
                             shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
@@ -11787,6 +11919,9 @@ describe('delivery shell boundary', () => {
             {
                 capture: (_command, args) => {
                     const joined = args.join(' ');
+                    if (args[0] === 'for-each-ref') {
+                        return '';
+                    }
                     if (joined.includes('pr view')) {
                         return JSON.stringify(
                             shellPullRequest(pullRequest({ state: 'MERGED', body: relationshipBody('None.') }))
@@ -12406,6 +12541,109 @@ describe('delivery shell boundary', () => {
         );
     });
 
+    it.each([false, true])(
+        'preserves the observed notes preimage before a forced refresh (authenticated: %s)',
+        (authenticated) => {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-notes-refresh-'));
+            const local = join(root, 'local');
+            const remote = join(root, 'remote.git');
+            const git = (cwd: string, args: string[]) =>
+                execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+            try {
+                mkdirSync(local);
+                git(root, ['init', '--bare', '--quiet', remote]);
+                git(local, ['init', '--quiet']);
+                git(local, ['config', 'user.name', 'Fixture']);
+                git(local, ['config', 'user.email', 'fixture@example.test']);
+                git(local, ['remote', 'add', 'origin', remote]);
+                writeFileSync(join(local, 'file'), 'fixture');
+                git(local, ['add', 'file']);
+                git(local, ['commit', '--quiet', '-m', 'fixture']);
+                const target = git(local, ['rev-parse', 'HEAD']);
+                git(local, ['notes', '--ref=ai', 'add', '-m', 'local-only', target]);
+                const preimage = git(local, ['rev-parse', 'refs/notes/ai']);
+                const localBlob = git(local, ['rev-parse', `refs/notes/ai:${target}`]);
+                git(local, ['update-ref', '-d', 'refs/notes/ai']);
+                git(local, ['notes', '--ref=ai', 'add', '-m', 'remote-only', target]);
+                const remoteNotes = git(local, ['rev-parse', 'refs/notes/ai']);
+                expect(git(local, ['rev-parse', `refs/notes/ai:${target}`])).not.toBe(localBlob);
+                expect(() => git(local, ['merge-base', '--is-ancestor', preimage, remoteNotes])).toThrow();
+                expect(() => git(local, ['merge-base', '--is-ancestor', remoteNotes, preimage])).toThrow();
+                git(local, ['push', '--quiet', 'origin', 'refs/notes/ai:refs/notes/ai']);
+                git(local, ['update-ref', 'refs/notes/ai', preimage]);
+                const port = shellPort(
+                    'jcosta33/sourdaw',
+                    {
+                        capture: (command, args) =>
+                            execFileSync(command, args, {
+                                cwd: local,
+                                encoding: 'utf8',
+                                stdio: ['ignore', 'pipe', 'pipe'],
+                            }).trim(),
+                        run: (command, args) => {
+                            const actual =
+                                authenticated && args.includes(GITHUB_HTTPS_REMOTE)
+                                    ? args.map((arg) => (arg === GITHUB_HTTPS_REMOTE ? remote : arg))
+                                    : args;
+                            execFileSync(command, actual, { cwd: local, stdio: 'pipe' });
+                        },
+                    },
+                    authenticated ? { gitToken: 'ghs_minted', helperDir: root } : {}
+                );
+                port.fetch();
+                const recovery = `refs/agents/preserved-ai-notes/${preimage}`;
+                expect(git(local, ['rev-parse', recovery])).toBe(preimage);
+                expect(git(local, ['rev-parse', `${recovery}:${target}`])).toBe(localBlob);
+                expect(git(local, ['rev-parse', 'refs/notes/ai'])).toBe(remoteNotes);
+            } finally {
+                removeTemporaryGitRepository(root);
+            }
+        },
+        30_000
+    );
+
+    it('refuses a conflicting recovery ref or inspection and pin failures before fetch', () => {
+        const notes = 'a'.repeat(40);
+        const recovery = `refs/agents/preserved-ai-notes/${notes}`;
+        for (const failure of ['collision', 'inspect', 'pin']) {
+            const runs: string[][] = [];
+            const port = shellPort('jcosta33/sourdaw', {
+                capture: (_command, args) => {
+                    if (args[0] === 'cat-file') {
+                        return 'commit';
+                    }
+                    if (args[2] === 'refs/notes/ai') {
+                        if (failure === 'inspect') {
+                            throw new Error('inspection failed');
+                        }
+                        return `refs/notes/ai ${notes} `;
+                    }
+                    return failure === 'collision' ? `${recovery} ${'b'.repeat(40)} ` : '';
+                },
+                run: (_command, args) => {
+                    runs.push(args);
+                    if (args[0] === 'update-ref' && failure === 'pin') {
+                        throw new Error('pin failed');
+                    }
+                },
+            });
+            expect(() => port.fetch()).toThrow();
+            expect(runs.some((args) => args.includes('fetch'))).toBe(false);
+        }
+    });
+
+    it('replays an identical recovery ref without rewriting it', () => {
+        const notes = 'a'.repeat(40);
+        const runs: string[][] = [];
+        const port = shellPort('jcosta33/sourdaw', {
+            capture: (_command, args) => (args[0] === 'cat-file' ? 'commit' : `${args[2] ?? ''} ${notes} `),
+            run: (_command, args) => runs.push(args),
+        });
+        port.fetch();
+        expect(runs).toHaveLength(1);
+        expect(runs[0]?.[0]).toBe('fetch');
+    });
+
     it('authenticates fetch by pruning all origin heads over HTTPS', () => {
         const helperDir = mkdtempSync(join(tmpdir(), 'sourdaw-git-helper-'));
         const runs: Array<{ command: string; args: string[] }> = [];
@@ -12626,7 +12864,7 @@ describe('delivery shell boundary', () => {
         const captures: string[][] = [];
         const latestUnrelatedReviews = Array.from({ length: 100 }, (_, index) => ({
             id: `review-unrelated-${index}`,
-            databaseId: 1,
+            databaseId: 100 + index,
             state: 'COMMENTED',
             submittedAt: null,
             author: {
@@ -12697,7 +12935,7 @@ describe('delivery shell boundary', () => {
         { label: 'null', submittedAt: null },
         { label: 'equal', submittedAt: '2026-08-19T00:00:00Z' },
     ])(
-        'uses GitHub connection order for opposite same-head reviewer states with $label timestamps',
+        'uses database id order, not list order, for opposite same-head reviewer states with $label timestamps',
         ({ submittedAt }) => {
             const captures: string[][] = [];
             const shell: ShellRunner = {
@@ -12709,9 +12947,9 @@ describe('delivery shell boundary', () => {
                             {
                                 nodes: [
                                     {
-                                        id: 'review-newest',
+                                        id: 'review-listed-last',
                                         databaseId: 1,
-                                        state: 'CHANGES_REQUESTED',
+                                        state: 'APPROVED',
                                         submittedAt,
                                         author: {
                                             id: REVIEWER_BOT_NODE_ID,
@@ -12732,9 +12970,9 @@ describe('delivery shell boundary', () => {
                             {
                                 nodes: [
                                     {
-                                        id: 'review-older',
-                                        databaseId: 1,
-                                        state: 'APPROVED',
+                                        id: 'review-greatest-id',
+                                        databaseId: 2,
+                                        state: 'CHANGES_REQUESTED',
                                         submittedAt,
                                         author: {
                                             id: REVIEWER_BOT_NODE_ID,

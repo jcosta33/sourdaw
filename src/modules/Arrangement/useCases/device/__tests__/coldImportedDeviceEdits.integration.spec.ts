@@ -127,10 +127,7 @@ describe('device edits on an imported track before first Play', () => {
         expect(initialize.mock.calls[0]?.[0]).toMatchObject({
             nodes: [
                 expect.objectContaining({
-                    devices: [
-                        expect.objectContaining({ id: synth?.id, type: 'builtin-synth' }),
-                        expect.objectContaining({ id: 'retained-synth-eq', type: 'builtin-eq' }),
-                    ],
+                    devices: [expect.objectContaining({ id: 'retained-synth-eq', type: 'builtin-eq' })],
                 }),
             ],
         });

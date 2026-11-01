@@ -16,6 +16,7 @@ export { disableLooping } from './setLooping';
 export { setMasterGain } from './setMasterGain';
 export { replaceMasterGain } from './replaceMasterGain';
 export { setTempo } from './setTempo';
+export { getTempoWriteTarget } from './transportQueries/getTempoWriteTarget';
 export { setTimeSignature } from './setTimeSignature';
 export { secondsBetweenBeats } from './secondsBetweenBeats';
 export { restoreTransportSnapshot } from './restoreTransportSnapshot';
@@ -26,6 +27,7 @@ export { createMusicalPositionProjector } from './createMusicalPositionProjector
 export { createSamplePositionProjector } from './createSamplePositionProjector';
 
 export { addTempoChange } from './tempoMap/addTempoChange';
+export { isValidTimelineMapStateRestorePlan } from './tempoMap/isValidTimelineMapStateRestorePlan';
 export { prepareTimelineMapStateRestore } from './tempoMap/prepareTimelineMapStateRestore';
 export { prepareTimelineMapTimeOperation } from './tempoMap/prepareTimelineMapTimeOperation';
 export { removeTempoChange } from './tempoMap/removeTempoChange';
@@ -75,4 +77,5 @@ export { getTempoMapState } from './transportQueries/getTempoMapState';
 export { resolveTempoFieldState } from './transportQueries/resolveTempoFieldState';
 export { getTimeSignatureAtBeat } from './transportQueries/getTimeSignatureAtBeat';
 export { getBarStartBeat } from './transportQueries/getBarStartBeat';
+export { getTimelineRulerGrid } from './transportQueries/getTimelineRulerGrid';
 export { updateTransportState } from './transportQueries/updateTransportState';

@@ -149,7 +149,7 @@ vi.mock('../../../useCases/timelineInteractions/snapToGrid', () => ({ snapToGrid
 vi.mock('../../../useCases/timelineInteractions/snapToGridOrClips', () => ({
     snapToGridOrClips: mocks.snapToGridOrClips,
 }));
-vi.mock('../../../useCases/timelineInteractions/snapToZeroCrossing', () => ({
+vi.mock('../../../useCases/timelineInteractions/snapToZeroCrossingBeat', () => ({
     snapToZeroCrossing: mocks.snapToZeroCrossing,
 }));
 vi.mock('../../../useCases/timelineInteractions/setPlayheadFromClick', () => ({

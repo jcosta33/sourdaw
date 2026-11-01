@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     configureAutomergeStoragePort,
@@ -18,6 +18,7 @@ import {
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -26,12 +27,14 @@ import {
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { createAcceptanceFixtureLifetime } from '../../__tests__/acceptanceFixtureLifetime';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../../models/LlmActionLimits';
 import { agentRunStore } from '../../stores/agentRunStore';
 import { aiActionHistoryStore, clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore, stopGenerating } from '../../stores/chatStore';
 import {
     clearPendingActionConfirmations,
+    getPendingActionConfirmation,
     pendingActionConfirmationStore,
 } from '../../stores/pendingActionConfirmationStore';
 import { readLastCommitRequest } from '../../transformers/readLastCommitRequest';
@@ -42,6 +45,7 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getProjectContext } from '../getProjectContext';
 import { parsePromptToActions } from '../parsePromptToActions';
 import { planLastCommitContinuation } from '../planLastCommitContinuation';
+import { type planPromptActions } from '../planPromptActions';
 import { readChatThreadContext } from '../readChatThreadContext';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
@@ -50,6 +54,7 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 
 /**
  * AC-003 (#4380): a request relative to the thread's last commit compiles a new batch from the
@@ -79,6 +84,23 @@ const runtimeMocks = vi.hoisted(() => ({
     setTrackPan: vi.fn(),
     setTrackSoloGate: vi.fn(),
 }));
+
+const scriptState = { requestTurn: 0, planningTurn: 0 };
+const chatPlanning = vi.hoisted(() => ({
+    last: null as Awaited<ReturnType<typeof planPromptActions>>['result'] | null,
+}));
+
+vi.mock('../planPromptActions', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../planPromptActions')>();
+    return {
+        ...actual,
+        planPromptActions: async (input: Parameters<typeof actual.planPromptActions>[0]) => {
+            const planned = await actual.planPromptActions(input);
+            chatPlanning.last = planned.result;
+            return planned;
+        },
+    };
+});
 
 type GroupRevert = Awaited<ReturnType<typeof import('#/modules/Command/useCases').revertActionGroupAtomically>>;
 type GroupRevertOptions = Parameters<typeof import('#/modules/Command/useCases').revertActionGroupAtomically>[1];
@@ -179,8 +201,8 @@ function decibelsOf(trackId: string): number {
     return Math.round(20 * Math.log10(getTrack(trackId).gain) * 1000) / 1000;
 }
 
-function asCommandBatchProposal(calls: readonly ProviderCall[]): ProviderCall {
-    return {
+function asCommandBatchProposal(calls: readonly ProviderCall[], refines?: string): ProviderCall {
+    const proposal: ProviderCall = {
         name: 'command.batch.propose',
         arguments: {
             commands: calls.map((call) => ({ name: call.name, arguments: call.arguments })),
@@ -210,30 +232,50 @@ function asCommandBatchProposal(calls: readonly ProviderCall[]): ProviderCall {
             },
         },
     };
+    if (refines !== undefined) {
+        proposal.arguments.refines = refines;
+    }
+    return proposal;
 }
 
 /**
- * Each planning run the provider answers is a discovery turn and a proposal turn; the runs take the
- * plans in order, and any later run takes the last plan again.
+ * The first provider turn admits the whole request; subsequent planning attempts discover command
+ * schemas and propose. The attempts take the plans in order, and later attempts repeat the last plan.
  */
-function scriptProvider(plans: ReadonlyArray<readonly ProviderCall[]>): void {
-    let turn = 0;
-    runtimeMocks.generateWebLlmCompletion.mockImplementation(async () => {
-        turn += 1;
-        const plan = plans[Math.min(Math.floor((turn - 1) / 2), plans.length - 1)];
+function scriptProvider(
+    plans: ReadonlyArray<readonly ProviderCall[]>,
+    refinement?: { planIndex: number; id: () => string }
+): void {
+    scriptState.requestTurn = 0;
+    scriptState.planningTurn = 0;
+    runtimeMocks.generateWebLlmCompletion.mockImplementation(async (systemPrompt: string, userMessage: string) => {
+        if (scriptState.requestTurn === 0) {
+            scriptState.requestTurn += 1;
+            return JSON.stringify(literalMetricIntakeTurn(userMessage, systemPrompt));
+        }
+        scriptState.requestTurn += 1;
+        const planIndex = Math.min(Math.floor(scriptState.planningTurn / 2), plans.length - 1);
+        const plan = plans[planIndex];
         if (plan === undefined) {
             throw new Error('Expected a scripted planning run.');
         }
-        if (turn % 2 === 1) {
+        if (scriptState.planningTurn % 2 === 0) {
+            scriptState.planningTurn += 1;
             const names = [...new Set(plan.map((call) => call.name))];
             return JSON.stringify([{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }]);
         }
-        return JSON.stringify([asCommandBatchProposal(plan)]);
+        scriptState.planningTurn += 1;
+        return JSON.stringify([
+            asCommandBatchProposal(plan, refinement?.planIndex === planIndex ? refinement.id() : undefined),
+        ]);
     });
 }
 
 async function sendChatMessage(prompt: string, options?: Parameters<typeof sendChatMessageWithoutDocumentFlush>[1]) {
     flushAutomergeStorageWrites();
+    // Each chat request has its own required first-turn intake; planning corrections stay scripted in sequence.
+    scriptState.requestTurn = 0;
+    chatPlanning.last = null;
     await sendChatMessageWithoutDocumentFlush(prompt, options);
 }
 
@@ -315,59 +357,130 @@ async function expectAnsweredWithoutChange(prompt: string, text: string): Promis
     expect(proposedIds()).toEqual([]);
 }
 
-describe('relative to the last commit', () => {
-    beforeEach(() => {
-        configureAiWorkflowCommandPreflightFixture();
-        vi.clearAllMocks();
-        configureAutomergeStoragePort(null);
-        resetCrdtProjectAuthority('relative to last commit test');
-        removeCrdtDoc('root');
-        createCrdtDoc('root');
-        registerCrdtStorageRuntime();
-        clearHandlerRegistry();
-        registerHandlerMap(getArrangementHandlers());
-        clearUndoHistory();
-        resetActionReplayAuthority();
-        setActionHistoryMetadataPort({
-            record: () => [],
-            markReverted: () => ({ status: 'unavailable' as const }),
-            clear: () => undefined,
-        });
-        clearAiHistory();
-        clearPendingActionConfirmations();
-        setArrangementEventBus({ emit: () => Promise.resolve() });
-        setNotificationEventBus(notificationEventBus);
-        macroStore.set({ macros: [], recording: false, currentRecording: [] });
-        trackStore.set({
-            tracks: [
-                createTrack('track-vocals', 'Vocals'),
-                createTrack('track-guitars', 'Guitars'),
-                createTrack('track-bass', 'Bass'),
-                createTrack('track-keys', 'Keys'),
-            ],
-            selectedTrackId: null,
-            ghostClips: [],
-        });
-        automationStore.set({ lanes: [] });
-        transportStore.set(defaultTransportState);
-        chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
-    });
+const fixtureLifetime = createAcceptanceFixtureLifetime();
+const admittedFixtures = new Set<string>();
 
-    afterEach(() => {
-        revertMocks.outcome = null;
-        vi.restoreAllMocks();
-        setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
-        clearUndoHistory();
-        resetAiWorkflowCommandPreflightFixture();
-        resetActionReplayAuthority();
-        clearHandlerRegistry();
-        clearAiHistory();
-        clearPendingActionConfirmations();
-        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
-        automationStore.set({ lanes: [] });
-        transportStore.set(defaultTransportState);
-        configureAutomergeStoragePort(null);
-        removeCrdtDoc('root');
+type FixtureControlPhase = 'setup' | 'body' | 'cleanup';
+let fixtureControl: {
+    phase: FixtureControlPhase;
+    gate: Promise<void>;
+    release: () => void;
+    snapshot: { tracks: typeof trackStore.value; document: ReturnType<typeof getCrdtDoc>; calls: number } | null;
+    observed: {
+        sameTracks: boolean;
+        sameDocument: boolean;
+        sameCalls: boolean;
+        error: string;
+        absentAfterCleanup?: boolean;
+    } | null;
+    events: string[];
+} | null = null;
+
+async function holdFixtureControl(phase: FixtureControlPhase): Promise<void> {
+    const control = fixtureControl;
+    if (control?.phase !== phase) {
+        return;
+    }
+    control.snapshot = { tracks: trackStore.value, document: getCrdtDoc('root'), calls: providerCallCount() };
+    control.events.push(`${phase} held`);
+    await control.gate;
+    control.events.push(`${phase} settled`);
+}
+
+describe('relative to the last commit', () => {
+    beforeEach(() => fixtureLifetime.drain());
+    beforeEach((context) =>
+        fixtureLifetime.track(async () => {
+            admittedFixtures.add(context.task.id);
+            configureAiWorkflowCommandPreflightFixture();
+            vi.clearAllMocks();
+            configureAutomergeStoragePort(null);
+            resetCrdtProjectAuthority('relative to last commit test');
+            removeCrdtDoc('root');
+            createCrdtDoc('root');
+            registerCrdtStorageRuntime();
+            clearHandlerRegistry();
+            registerHandlerMap(getArrangementHandlers());
+            clearUndoHistory();
+            resetActionReplayAuthority();
+            setActionHistoryMetadataPort({
+                record: () => [],
+                markReverted: () => ({ status: 'unavailable' as const }),
+                clear: () => undefined,
+            });
+            clearAiHistory();
+            clearPendingActionConfirmations();
+            setArrangementEventBus({ emit: () => Promise.resolve() });
+            setNotificationEventBus(notificationEventBus);
+            macroStore.set({ macros: [], recording: false, currentRecording: [] });
+            trackStore.set({
+                tracks: [
+                    createTrack('track-vocals', 'Vocals'),
+                    createTrack('track-guitars', 'Guitars'),
+                    createTrack('track-bass', 'Bass'),
+                    createTrack('track-keys', 'Keys'),
+                ],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
+            automationStore.set({ lanes: [] });
+            transportStore.set(defaultTransportState);
+            chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
+        })
+    );
+
+    afterEach((context) => {
+        const control = fixtureControl;
+        if (control && context.task.name === 'blocked successor') {
+            try {
+                const snapshot = control.snapshot;
+                control.observed = {
+                    sameTracks: snapshot !== null && trackStore.value === snapshot.tracks,
+                    sameDocument: snapshot !== null && getCrdtDoc('root') === snapshot.document,
+                    sameCalls: snapshot !== null && providerCallCount() === snapshot.calls,
+                    error: context.task.result?.errors?.map((error) => error.message).join(' ') ?? '',
+                };
+                control.events.push('successor teardown');
+            } finally {
+                control.release();
+            }
+        }
+        if (!admittedFixtures.has(context.task.id)) {
+            if (control && context.task.name === 'blocked successor') {
+                return fixtureLifetime.drain().then(() => {
+                    if (control.observed) {
+                        control.observed.absentAfterCleanup =
+                            !admittedFixtures.has(context.task.id) &&
+                            getCrdtDoc('root') === undefined &&
+                            (trackStore.value?.tracks.length ?? 0) === 0;
+                    }
+                });
+            }
+            return undefined;
+        }
+        return fixtureLifetime.cleanup(async () => {
+            if (context.task.name === 'held owner') {
+                await holdFixtureControl('cleanup');
+            }
+            revertMocks.outcome = null;
+            vi.restoreAllMocks();
+            setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
+            clearUndoHistory();
+            resetAiWorkflowCommandPreflightFixture();
+            resetActionReplayAuthority();
+            clearHandlerRegistry();
+            clearAiHistory();
+            clearPendingActionConfirmations();
+            trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+            automationStore.set({ lanes: [] });
+            transportStore.set(defaultTransportState);
+            configureAutomergeStoragePort(null);
+            removeCrdtDoc('root');
+            admittedFixtures.delete(context.task.id);
+            if (control && context.task.name === 'held owner') {
+                control.events.push('owner cleanup settled');
+            }
+        });
     });
 
     describe('continues a committed level relative to the committed value', () => {
@@ -1051,17 +1164,58 @@ describe('relative to the last commit', () => {
             await expectAnsweredWithoutChange('now Guitars and Keys too', text);
         });
 
-        it('leaves a pending card to its own refinement, never continuing the commit beneath it', async () => {
-            scriptProvider([[VOCALS_DOWN_3_DB], [VOCALS_DOWN_3_DB, MUTE_BASS], [REDERIVED_VOCALS_LEVEL]]);
-            await commitVocalsDown3Db();
-            await sendChatMessage('Turn Vocals down 3 dB and mute Bass');
-            expect(proposedIds()).toHaveLength(1);
-            const calls = providerCallCount();
+        describe('pending card refinement', () => {
+            let pendingId = '';
+            let pendingCard: ReturnType<typeof getPendingActionConfirmation>;
+            let calls: number;
+            let revision: ReturnType<typeof settlePendingProjectWritesAndCaptureRevision>;
+            let entries: number;
 
-            await sendChatMessage('another 2 dB');
+            beforeEach(
+                () =>
+                    fixtureLifetime.track(async () => {
+                        const refinedVocals: ProviderCall = {
+                            name: 'setTrackGain',
+                            arguments: { trackId: 'track-vocals', deltaDb: -5 },
+                        };
+                        scriptProvider(
+                            [[VOCALS_DOWN_3_DB], [VOCALS_DOWN_3_DB, MUTE_BASS], [refinedVocals, MUTE_BASS]],
+                            {
+                                planIndex: 2,
+                                id: () => pendingId,
+                            }
+                        );
+                        await commitVocalsDown3Db();
+                        await sendChatMessage('Turn Vocals down 3 dB and mute Bass');
+                        expect(proposedIds()).toHaveLength(1);
+                        pendingId = proposedIds()[0]!;
+                        pendingCard = structuredClone(getPendingActionConfirmation(pendingId));
+                        calls = providerCallCount();
+                        revision = settlePendingProjectWritesAndCaptureRevision();
+                        entries = undoHistoryStore.value?.past.length ?? 0;
+                    }),
+                15_000
+            );
 
-            expect(providerCallCount()).toBeGreaterThan(calls);
-            expect(decibelsOf('track-vocals')).toBe(-3);
+            it('leaves a pending card to its own refinement, never continuing the commit beneath it', () =>
+                fixtureLifetime.track(async () => {
+                    await sendChatMessage('another 2 dB');
+
+                    expect(providerCallCount()).toBeGreaterThan(calls);
+                    expect(decibelsOf('track-vocals')).toBe(-3);
+                    expect(chatPlanning.last?.planningOutcome).toEqual({
+                        kind: 'clarify',
+                        reason: 'The refinement leaves part of the change it asks for open.',
+                        questions: [
+                            'What should the value be? "another" beside 2 dB does not say; state the new value alone, as in "make it 2 dB".',
+                        ],
+                    });
+                    expect(getTrack('track-bass').muted).toBe(false);
+                    expect(settlePendingProjectWritesAndCaptureRevision()).toBe(revision);
+                    expect(undoHistoryStore.value?.past ?? []).toHaveLength(entries);
+                    expect(proposedIds()).toHaveLength(1);
+                    expect(getPendingActionConfirmation(pendingId)).toEqual(pendingCard);
+                }));
         });
     });
 
@@ -1603,6 +1757,7 @@ describe('relative to the last commit', () => {
             await commitVocalsDown3Db();
             const calls = providerCallCount();
 
+            scriptState.requestTurn = 0;
             await submitAdmittedPromptRequest({ prompt: 'undo that', source: 'prompt-bar' });
 
             expect(providerCallCount()).toBeGreaterThan(calls);
@@ -1629,6 +1784,65 @@ describe('relative to the last commit', () => {
                 },
             ]);
             expect(getTrack('track-too').muted).toBe(false);
+        });
+    });
+    describe.each(['setup', 'body', 'cleanup'] as const)('fixture deadline ownership: %s', (phase) => {
+        beforeAll(() => {
+            let release = () => {};
+            const gate = new Promise<void>((resolve) => {
+                release = resolve;
+            });
+            fixtureControl = { phase, gate, release, snapshot: null, observed: null, events: [] };
+        });
+        afterAll(async () => {
+            fixtureControl?.release();
+            await fixtureLifetime.drain();
+            fixtureControl = null;
+        });
+        beforeEach((context) => {
+            if (context.task.name !== 'held owner' || phase !== 'setup') {
+                return undefined;
+            }
+            return fixtureLifetime.track(async () => {
+                scriptProvider([[VOCALS_DOWN_3_DB]]);
+                await commitVocalsDown3Db();
+                await holdFixtureControl('setup');
+            });
+        });
+        it.fails(
+            'held owner',
+            async () => {
+                if (phase === 'setup') {
+                    return;
+                }
+                await fixtureLifetime.track(async () => {
+                    scriptProvider([[VOCALS_DOWN_3_DB]]);
+                    await commitVocalsDown3Db();
+                    await holdFixtureControl('body');
+                });
+            },
+            1000
+        );
+        it.fails('blocked successor', () => {});
+        it('keeps the successor out until the owner and cleanup settle', async () => {
+            const control = fixtureControl;
+            expect(control).not.toBeNull();
+            if (!control) {
+                throw new Error('Missing fixture control');
+            }
+            expect(control.observed).toEqual({
+                sameTracks: true,
+                sameDocument: true,
+                sameCalls: true,
+                error: expect.stringContaining('Hook timed out'),
+                absentAfterCleanup: true,
+            });
+            expect(control.events).toEqual([
+                `${phase} held`,
+                'successor teardown',
+                `${phase} settled`,
+                'owner cleanup settled',
+            ]);
         });
     });
 });

@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn<(typeof trackStateRepo)['getTrackState']>(),
     setTrackState: vi.fn<(typeof trackSetRepo)['setTrackState']>(),
     getNextClipId: vi.fn(() => 'new-clip-right'),
-    snapToZeroCrossing: vi.fn<(typeof snapModule)['snapToZeroCrossing']>(),
+    snapToZeroCrossing: vi.fn<(typeof snapModule)['resolveZeroCrossingPosition']>(),
     prepareMidiClipSplit: vi.fn(),
     splitMidiNotesAtBeat: vi.fn(),
     resolveEligibleClipWriteTarget: vi.fn<(typeof resolverModule)['resolveEligibleClipWriteTarget']>(),
@@ -13,11 +13,25 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../../repositories/track/getTrackState', () => ({ getTrackState: mocks.getTrackState }));
 vi.mock('../../../repositories/track/setTrackState', () => ({ setTrackState: mocks.setTrackState }));
 vi.mock('../../../repositories/clipIdCounter', () => ({ getNextClipId: mocks.getNextClipId }));
-vi.mock('#/modules/MIDI/useCases', () => ({
-    prepareMidiClipSplit: mocks.prepareMidiClipSplit,
-    splitMidiNotesAtBeat: mocks.splitMidiNotesAtBeat,
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
+    return {
+        getMidiStoreState: actual.getMidiStoreState,
+        snapshotMidiClipData: actual.snapshotMidiClipData,
+        adaptGrooveTemplateForConsumer: actual.adaptGrooveTemplateForConsumer,
+        getGrooveTemplate: actual.getGrooveTemplate,
+        getScopedGrooveAssignment: actual.getScopedGrooveAssignment,
+        getScopedGrooveConsumerId: actual.getScopedGrooveConsumerId,
+        getStraightGrooveTemplateId: actual.getStraightGrooveTemplateId,
+        prepareMidiClipSplit: mocks.prepareMidiClipSplit,
+        projectDrumPreviewCandidateNotes: actual.projectDrumPreviewCandidateNotes,
+        restoreGrooveAssignment: actual.restoreGrooveAssignment,
+        splitMidiNotesAtBeat: mocks.splitMidiNotesAtBeat,
+    };
+});
+vi.mock('../../timelineInteractions/snapToZeroCrossing', () => ({
+    resolveZeroCrossingPosition: mocks.snapToZeroCrossing,
 }));
-vi.mock('../../timelineInteractions/snapToZeroCrossing', () => ({ snapToZeroCrossing: mocks.snapToZeroCrossing }));
 vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
     resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
 }));
@@ -31,6 +45,7 @@ import { type Clip } from '../../../models/Track';
 import { type TrackState } from '../../../repositories/track/getTrackState';
 import { __resetGainEnvelopesForTest, getEnvelope, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { setWarpState, warpStates } from '../../../stores/warpStates';
+import { liveTempoTimeline } from '../../liveTempoTimeline';
 import { splitClip } from '../splitClip';
 
 import type * as trackStateRepo from '../../../repositories/track/getTrackState';
@@ -60,7 +75,7 @@ describe('splitClip', () => {
         warpStates.clear();
         __resetGainEnvelopesForTest();
         mocks.getNextClipId.mockReturnValue('new-clip-right');
-        mocks.snapToZeroCrossing.mockImplementation((_clip, beat) => beat);
+        mocks.snapToZeroCrossing.mockImplementation((_clip, beat) => ({ beat }));
         mocks.prepareMidiClipSplit.mockImplementation(() => {
             const emptyMidi = {
                 notes: { present: false, value: [] },
@@ -232,14 +247,59 @@ describe('splitClip', () => {
             fadeInBeats: 0,
             audioOffsetBeats: 2,
         });
+        for (const fragment of [left, right]) {
+            expect(Object.hasOwn(fragment!, 'overrides')).toBe(false);
+            expect(Object.hasOwn(fragment!, 'kneadState')).toBe(false);
+        }
+    });
+
+    it('clones populated override and knead payloads independently for both split fragments', () => {
+        const source = makeClip('c1', 0, 4);
+        source.overrides = { gain: true };
+        source.kneadState = {
+            blobs: [
+                {
+                    id: 'blob-a',
+                    startTime: 0,
+                    endTime: 1,
+                    pitchCenterCents: 12,
+                    originalPitchCenterCents: 10,
+                    pitchCurveCents: [0, 3],
+                    voicedConfidence: 0.9,
+                },
+            ],
+            retuneSpeedMs: 50,
+            humanizePercent: 10,
+            formantPreserve: true,
+        };
+        mocks.getTrackState.mockReturnValue(makeState([source]));
+
+        expect(splitClip('c1', 2)).toBe('new-clip-right');
+        const [left, right] = newTrackState().tracks[0]!.clips;
+        expect(left?.overrides).toEqual({ gain: true });
+        expect(right?.overrides).toEqual({ gain: true });
+        expect(left?.kneadState).toEqual(source.kneadState);
+        expect(right?.kneadState).toEqual(source.kneadState);
+        expect(left?.kneadState?.blobs[0]?.pitchCurveCents).not.toBe(source.kneadState.blobs[0]?.pitchCurveCents);
+        expect(right?.kneadState?.blobs[0]?.pitchCurveCents).not.toBe(source.kneadState.blobs[0]?.pitchCurveCents);
+        left!.overrides!.gain = false;
+        left!.kneadState!.blobs[0]!.pitchCurveCents[0] = 99;
+        expect(source.overrides).toEqual({ gain: true });
+        expect(source.kneadState.blobs[0]?.pitchCurveCents).toEqual([0, 3]);
+        expect(right?.overrides).toEqual({ gain: true });
+        expect(right?.kneadState?.blobs[0]?.pitchCurveCents).toEqual([0, 3]);
     });
 
     it('uses snapToZeroCrossing to adjust the split point of audio clips', () => {
-        mocks.snapToZeroCrossing.mockReturnValue(2.5);
+        mocks.snapToZeroCrossing.mockReturnValue({ beat: 2.5 });
         mocks.getTrackState.mockReturnValue(makeState([makeClip('c1', 0, 4, 'audio')]));
 
         splitClip('c1', 2);
-        expect(mocks.snapToZeroCrossing).toHaveBeenCalledWith(expect.objectContaining({ id: 'c1' }), 2);
+        expect(mocks.snapToZeroCrossing).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 'c1' }),
+            2,
+            liveTempoTimeline
+        );
 
         const clips = newTrackState().tracks[0]?.clips ?? [];
         expect(clips.find((context) => context.id === 'c1')?.endBeat).toBe(2.5);
@@ -267,11 +327,25 @@ describe('splitClip', () => {
     });
 
     it('returns null when snap pushes split outside clip', () => {
-        mocks.snapToZeroCrossing.mockReturnValue(0);
+        mocks.snapToZeroCrossing.mockReturnValue({ beat: 0 });
         mocks.getTrackState.mockReturnValue(makeState([makeClip('c1', 0, 4)]));
 
         expect(splitClip('c1', 2)).toBeNull();
         expect(mocks.setTrackState).not.toHaveBeenCalled();
+    });
+
+    it.each([0, 108002 / 48000])('preserves a selected canonical source entry of %s', (sourceSeconds) => {
+        mocks.snapToZeroCrossing.mockReturnValue({ beat: 2.5000416666666663, sourceSeconds });
+        mocks.getTrackState.mockReturnValue(
+            makeState([
+                ClipDummy.create({ id: 'c1', audioOffsetSeconds: 0.25, stretchMode: 'repitch', stretchRatio: 2 }),
+            ])
+        );
+
+        expect(splitClip('c1', 2.5)).toBe('new-clip-right');
+        expect(newTrackState().tracks[0]?.clips.find((clip) => clip.id === 'new-clip-right')?.audioOffsetSeconds).toBe(
+            sourceSeconds
+        );
     });
 
     it('leaves unrelated tracks untouched while splitting the owner track', () => {

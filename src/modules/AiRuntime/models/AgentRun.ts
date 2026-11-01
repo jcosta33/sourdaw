@@ -60,10 +60,12 @@ export type AgentRunBudgetAttempt = {
 };
 
 export type AgentRunPlan = {
+    metricGoalState?: string;
     summary: string;
     commandIds: string[];
     serializedBatchIdentity: string | null;
     applicationToolReceipts?: ApplicationToolReceipt[];
+    terminalMeasurementSettlement?: string;
     revision: string | null;
     classification: 'simple' | 'complex';
     showPlanPanel: boolean;
@@ -97,6 +99,8 @@ export type AgentRunBatchScheduleSlice = {
  * while a later position remains.
  */
 export type AgentRunBatchSchedule = {
+    /** Original semantic obligations persist across every slice; proof is rebound per batch. */
+    metricGoalState?: string;
     schemaVersion: 1;
     scheduleId: string;
     position: number;

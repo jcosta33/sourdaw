@@ -205,10 +205,29 @@ struct WorkerResponse<T> {
     result: Result<T, String>,
 }
 struct ResponseDirectory(PathBuf);
+#[test]
+fn scoped_scan_response_directory() {
+    crate::host::runtime_scope::RuntimeScope::test_in_process(
+        concat!(module_path!(), "::scoped_scan_response_directory"),
+        |root| {
+            let directory = ResponseDirectory::create().unwrap();
+            let path = directory.0.clone();
+            assert_eq!(
+                path.parent().unwrap(),
+                root.join("native/data/private/scan-responses")
+            );
+            assert!(path.is_dir());
+            drop(directory);
+            assert!(!path.exists());
+        },
+    );
+}
 impl ResponseDirectory {
     fn create() -> Result<Self, String> {
-        let path =
-            std::env::temp_dir().join(format!("sourdaw-plugin-scan-{}", uuid::Uuid::new_v4()));
+        let parent =
+            crate::host::runtime_scope::RuntimeScope::path("native/data/private/scan-responses")
+                .unwrap_or_else(std::env::temp_dir);
+        let path = parent.join(format!("sourdaw-plugin-scan-{}", uuid::Uuid::new_v4()));
         let mut builder = fs::DirBuilder::new();
         #[cfg(unix)]
         {

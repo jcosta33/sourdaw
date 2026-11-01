@@ -1,6 +1,5 @@
 import { duplicateClipAutomation } from '#/modules/Automation/useCases';
 import { duplicateClipNotes } from '#/modules/MIDI/useCases';
-import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 
 import { type Clip } from '../../models/Track';
 import { getNextClipId } from '../../repositories/clipIdCounter';
@@ -10,6 +9,7 @@ import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClip
 import { getWarpState, isDefaultWarpState, setWarpState } from '../../stores/warpStates';
 
 import { addClip } from './addClip';
+import { buildDuplicateClipInput } from './buildDuplicateClipInput';
 import { isClipDropCompatible } from './isClipDropCompatible';
 
 type DuplicateClipCoreInput = {
@@ -18,6 +18,7 @@ type DuplicateClipCoreInput = {
     /** Track the copy is added to. Defaults to the source clip's own track. */
     destinationTrackId?: string;
     computeStartBeat: (clip: Clip) => number;
+    captureMidiOutput?: (capture: NonNullable<ReturnType<typeof duplicateClipNotes>>) => void;
 };
 
 export function duplicateClipCore(input: DuplicateClipCoreInput): boolean;
@@ -74,35 +75,14 @@ export function duplicateClipCore(
         return false;
     }
 
-    const duration = clip.endBeat - clip.startBeat;
     const startBeat = computeStartBeat(clip);
-    const newClip = addClip({
-        id: effectiveTargetClipId,
-        trackId: effectiveDestinationTrackId,
-        startBeat,
-        endBeat: startBeat + duration,
-        name: `${clip.name} (copy)`,
-        type: clip.type,
-        audioBufferId: clip.audioBufferId,
-        assetHash: clip.assetHash,
-        audioOffsetBeats: clip.audioOffsetBeats,
-        midiOffsetBeats: clip.midiOffsetBeats,
-        fadeInBeats: clip.fadeInBeats,
-        fadeOutBeats: clip.fadeOutBeats,
-        gain: clip.gain,
-        color: clip.color,
-        locked: clip.locked,
-        muted: clip.muted,
-        stretchMode: clip.stretchMode,
-        stretchRatio: clip.stretchRatio,
-        loopEnabled: clip.loopEnabled,
-        loopLength: clip.loopLength,
-        // The copy is the same looped clip elsewhere: the anchor shifts to the
-        // copy's placement so the loop window and pass count read identically
-        // (#4988). An unanchored source copies unanchored.
-        ...shiftLoopOriginEntry(clip, startBeat - clip.startBeat),
-        followAction: clip.followAction,
-    });
+    const newClip = addClip(
+        buildDuplicateClipInput(clip, {
+            targetClipId: effectiveTargetClipId,
+            destinationTrackId: effectiveDestinationTrackId,
+            startBeat,
+        })
+    );
     if (!newClip) {
         return false;
     }
@@ -142,7 +122,10 @@ export function duplicateClipCore(
     }
 
     if (clip.type === 'midi') {
-        duplicateClipNotes(clipId, newClip.id);
+        const capture = duplicateClipNotes(clipId, newClip.id);
+        if (capture && typeof input !== 'string') {
+            input.captureMidiOutput?.(capture);
+        }
     }
 
     return true;

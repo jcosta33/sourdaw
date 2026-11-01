@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     setLoading: vi.fn(),
@@ -13,14 +13,24 @@ vi.mock('#/infra/logger/appLogger', () => ({
     logger: { warn: mocks.warn },
 }));
 
-vi.mock('../../stores/crumbsStore', async (importOriginal) => ({
-    // The load-sequence guard is the module's own real bookkeeping; only the
-    // store mutators are stand-ins so the assertions observe the writes.
-    ...(await importOriginal<typeof import('../../stores/crumbsStore')>()),
-    setLoading: mocks.setLoading,
-    setActiveSample: mocks.setActiveSample,
-    setWaveformPeaks: mocks.setWaveformPeaks,
-}));
+vi.mock('../../stores/crumbsStore', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../stores/crumbsStore')>();
+    return {
+        ...actual,
+        setLoading: (...args: Parameters<typeof actual.setLoading>) => {
+            mocks.setLoading(...args);
+            actual.setLoading(...args);
+        },
+        setActiveSample: (...args: Parameters<typeof actual.setActiveSample>) => {
+            mocks.setActiveSample(...args);
+            actual.setActiveSample(...args);
+        },
+        setWaveformPeaks: (...args: Parameters<typeof actual.setWaveformPeaks>) => {
+            mocks.setWaveformPeaks(...args);
+            actual.setWaveformPeaks(...args);
+        },
+    };
+});
 
 vi.mock('../../repositories/crumbsBridge/loadSample', () => ({
     loadSample: mocks.loadSample,
@@ -30,6 +40,8 @@ vi.mock('../../repositories/crumbsBridge/getWaveformPeaks', () => ({
     getWaveformPeaks: mocks.getWaveformPeaks,
 }));
 
+import { crumbsStore, ensureInstance } from '../../stores/crumbsStore';
+import { configureCrumbsSampleProjectAccess } from '../configureCrumbsSampleProjectAccess';
 import { loadSampleFromPath } from '../loadSample';
 
 import type { CrumbsLoadResult } from '../../models/CrumbsTypes';
@@ -51,7 +63,17 @@ function makeLoadResult(overrides: Partial<CrumbsLoadResult> = {}): CrumbsLoadRe
 }
 
 describe('loadSampleFromPath', () => {
-    beforeEach(() => vi.clearAllMocks());
+    let disposeAccess: () => void;
+    beforeEach(() => {
+        vi.clearAllMocks();
+        crumbsStore.set({});
+        ensureInstance('inst1');
+        disposeAccess = configureCrumbsSampleProjectAccess(() => 1);
+    });
+    afterEach(() => {
+        disposeAccess();
+        crumbsStore.set({});
+    });
 
     it('orchestrates loading process', async () => {
         mocks.loadSample.mockResolvedValue(makeLoadResult());

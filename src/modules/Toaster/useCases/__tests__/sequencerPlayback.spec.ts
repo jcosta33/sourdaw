@@ -139,6 +139,44 @@ describe('startSequencer', () => {
         );
     });
 
+    it('plays the effective B step at the midpoint and keeps A as the groove identity', () => {
+        const kit = kitWithStep(activeStep({ active: false }));
+        kit.patterns[0]!.stepsPerBar = 16;
+        kit.patterns.push({
+            id: 'B1',
+            name: 'Pattern B1',
+            stepsPerBar: 16,
+            bars: 1,
+            tracks: [{ padIndex: 0, steps: [activeStep({ soundLock: 'snare-808' })] }],
+        });
+        kit.morph = { enabled: true, targetPatternId: 'B1', position: 0.5 };
+        toasterStore.set({ [DEVICE]: { ...defaultToasterState, kit } });
+        createGrooveTemplate({
+            id: 'morph-groove',
+            name: 'Morph groove',
+            subdivision: '1/16',
+            slots: [{ index: 0, timingOffset: 0.2, dynamicsOffset: 0 }],
+            provenance: { type: 'user', sourceId: 'test' },
+        });
+        assignGrooveTemplate({
+            consumerType: 'toaster-pattern',
+            consumerId: `groove-consumer:${DEVICE}:A1`,
+            templateId: 'morph-groove',
+            amount: 1,
+        });
+
+        startSequencer(DEVICE, 120);
+
+        expect(scheduleToasterHit).toHaveBeenCalledWith(
+            expect.objectContaining({
+                deviceId: DEVICE,
+                padIndex: 0,
+                targetTimeSeconds: 0.025,
+                padParams: expect.arrayContaining([expect.objectContaining({ name: 'engineType' })]),
+            })
+        );
+    });
+
     // Regression — tick must trigger and route locks to ITS OWN deviceId, not
     // the first toaster device. Previously triggers used the sequencer's id but
     // sound/param locks were routed to getFirstToasterDeviceId(), so instance B

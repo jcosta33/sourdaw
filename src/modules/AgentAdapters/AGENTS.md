@@ -4,13 +4,7 @@ Normalized external-client contracts and the ephemeral session state behind them
 
 ## Public Contract Surface
 
-- `stores`:
-    - `externalClientSessionStore` (`ExternalClientSessionState`), `resetExternalClientSession`.
-- `useCases`:
-    - **Manifest**: `externalClientManifestPort` (the composition root registers the published protocol manifest), `normalizeExternalClientContract`.
-    - **Local Approval**: `enableExternalClientTransport`, `disableExternalClientTransport`, `setExternalClientActiveProject`.
-    - **Grants**: `issueExternalClientGrant`, `revokeExternalClientGrant`.
-    - **Admission & Routing**: `admitExternalClientRequest`, `runCliClientRequest`.
+Public surface: `useCases/index.ts`, `stores/index.ts`.
 
 ## Key Subsystems
 
@@ -31,11 +25,12 @@ Normalized external-client contracts and the ephemeral session state behind them
 - **Grants Are Project-Scoped Both Ways**: admission compares the request's project and the session's active project against the grant. A grant outlives neither the project it was issued against nor a request that names another one.
 - **Adapters Never Execute, Commit Or Confirm**: no file in this module may reach `executeVersionedCommandBatchEnvelope`, import `@automerge`, or import `#/modules/CrdtDocument`. `command.approval` returns `approval-required` and stops; approval belongs to the local pending-action confirmation flow, where a person sees it. A previewed batch's isolated workspace is released here and its live project document never crosses the boundary.
 - **Desktop IPC Only In `repositories/`**: `#/utils/desktopBridge` is imported by `repositories/` and nowhere else in this module.
+- **Manifest Registered By The Composition Root**: the composition root registers the published protocol manifest through `externalClientManifestPort`; this module reads it through the port and registers nothing itself.
 
 ## Verification
 
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
 ```bash
-pnpm test:run <changed-spec>
+pnpm guard --profile focused -- pnpm test:run <changed-spec>
 ```

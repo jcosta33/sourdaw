@@ -175,6 +175,7 @@ function registerDependencies(input?: {
     const prepareTimelineMapTimeOperation = vi.fn(() => transport);
     const prepareMidiGlobalTimeTransaction = vi.fn(() => midi);
     setTimeOperationDependencies({
+        savedRestorePlanValidators: { automation: () => false, midi: () => false, timelineMap: () => false },
         prepareAutomationTimeOperation,
         prepareAutomationTimeStateRestore: vi.fn(() => createHandle('automation-restore', false)),
         prepareTimelineMapTimeOperation,
@@ -415,6 +416,7 @@ describe('executeGlobalTimeOperation', () => {
         const transport = createHandle('transport', false);
         const midi = createHandle('midi', false);
         setTimeOperationDependencies({
+            savedRestorePlanValidators: { automation: () => false, midi: () => false, timelineMap: () => false },
             prepareAutomationTimeOperation,
             prepareAutomationTimeStateRestore,
             prepareTimelineMapTimeOperation: vi.fn(() => transport),
@@ -805,6 +807,7 @@ describe('executeGlobalTimeOperation', () => {
             replayPlan: input.replayPlan ?? midi.replayPlan,
         }));
         setTimeOperationDependencies({
+            savedRestorePlanValidators: { automation: () => false, midi: () => false, timelineMap: () => false },
             prepareAutomationTimeOperation: vi.fn(() => automation),
             prepareAutomationTimeStateRestore: vi.fn(() => createHandle('automation-restore', false)),
             prepareTimelineMapTimeOperation: vi.fn(() => transport),

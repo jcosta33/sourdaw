@@ -776,11 +776,27 @@ impl PluginRegistryStore {
 }
 
 fn default_registry_location() -> Option<PathBuf> {
+    if let Some(data) = crate::host::runtime_scope::RuntimeScope::path("native/data") {
+        return Some(data.join(REGISTRY_FILE_NAME));
+    }
     Some(
         dirs::data_dir()?
             .join(APP_DIR_NAME)
             .join(REGISTRY_FILE_NAME),
     )
+}
+
+#[test]
+fn scoped_plugin_registry_location() {
+    crate::host::runtime_scope::RuntimeScope::test_in_process(
+        concat!(module_path!(), "::scoped_plugin_registry_location"),
+        |root| {
+            assert_eq!(
+                default_registry_location().unwrap(),
+                root.join("native/data").join(REGISTRY_FILE_NAME)
+            );
+        },
+    );
 }
 
 /// Whether the file this entry describes is still the file that was scanned.

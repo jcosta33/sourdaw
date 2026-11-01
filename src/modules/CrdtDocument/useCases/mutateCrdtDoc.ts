@@ -7,6 +7,8 @@ import { type DocId } from './crdtDocumentTypes';
 export type MutateCrdtDocInput<DocShape> = {
     id: DocId;
     changeFn: ChangeFn<DocShape>;
+    /** Synchronous inspection of published truth before the candidate change opens. */
+    beforeChange?: (document: Readonly<DocShape>) => void;
     /**
      * Optional Automerge change message. Used by the snapshot/undo layer and
      * the storage adapter to annotate changes with semantic context.
@@ -35,6 +37,7 @@ export function mutateCrdtDoc<DocShape = Record<string, unknown>>(input: MutateC
         input.changeFn,
         input.message,
         input.snapshotTransaction,
-        input.localSlots
+        input.localSlots,
+        input.beforeChange
     );
 }

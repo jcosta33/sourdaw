@@ -8,12 +8,6 @@ import { createStore } from '#/infra/store/createStore';
 
 import { type ToasterKit, type PadState, createDefaultKit } from '../models/ToasterKit';
 
-export type MorphState = {
-    enabled: boolean;
-    targetPatternId: string | null;
-    position: number;
-};
-
 export type ToasterState = {
     kit: ToasterKit;
     selectedPadIndex: number;
@@ -22,7 +16,6 @@ export type ToasterState = {
     uiLevel: 1 | 2 | 3 | 4 | 5;
     engineReady: boolean;
     activeVoices: number;
-    morph: MorphState;
 };
 
 export const defaultToasterState: ToasterState = {
@@ -33,7 +26,6 @@ export const defaultToasterState: ToasterState = {
     uiLevel: 1,
     engineReady: false,
     activeVoices: 0,
-    morph: { enabled: false, targetPatternId: null, position: 0 },
 };
 
 type ToasterInstances = Record<string, ToasterState>;
@@ -96,6 +88,19 @@ export function getToasterViewState(
 // must not reach the device's next reload: a reload rehydrates project truth,
 // and a stale queued write would corrupt it. Only never-seen ids may queue.
 const retiredDeviceIds = new Set<string>();
+const deviceLifetimes = new Map<string, object>();
+
+export function captureToasterDeviceLifetime(deviceId: string): object | null {
+    if (!toasterStore.value?.[deviceId]) {
+        return null;
+    }
+    let lifetime = deviceLifetimes.get(deviceId);
+    if (!lifetime) {
+        lifetime = {};
+        deviceLifetimes.set(deviceId, lifetime);
+    }
+    return lifetime;
+}
 
 /**
  * The single creation point for a Toaster instance record.
@@ -126,6 +131,7 @@ export function registerToasterDevice(deviceId: string, initialKit?: ToasterKit)
     // holding its saved kit, so nothing ever observes this device carrying a default
     // kit it did not have, and a load produces no store change that looks like an edit.
     const kit = initialKit ?? createDefaultKit();
+    deviceLifetimes.set(deviceId, {});
     const pendingSelection = pendingPadSelectionStore.value?.[deviceId];
     // A selection made while loading was checked against the default kit's pad
     // count; the registered kit may be shorter, so it is checked again here.
@@ -161,6 +167,7 @@ export function unregisterToasterDevice(deviceId: string): void {
     pendingKitUpdates.delete(deviceId);
     clearPendingPadSelection(deviceId);
     retiredDeviceIds.add(deviceId);
+    deviceLifetimes.delete(deviceId);
 }
 
 /**
@@ -173,6 +180,7 @@ export function resetToasterDeviceLifecycleState(): void {
     pendingKitUpdates.clear();
     pendingPadSelectionStore.set({});
     retiredDeviceIds.clear();
+    deviceLifetimes.clear();
 }
 
 function queuePadSelection(deviceId: string, index: number): void {

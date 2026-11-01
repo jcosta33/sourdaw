@@ -13,7 +13,7 @@ description: >-
 
 Unclassified state is how DAW truth corrupts: a store field that is half project / half UI, a foreign slice write that breaks undo, a React handle sitting where serialized truth belongs. Classify first, then place the write.
 
-## Core rules
+## Rules
 
 ### 1. Classify every value into exactly one category before placing it
 
@@ -32,17 +32,23 @@ Never invent a new category: fit the value or split it.
 
 **Why:** two categories “fitting” means the design is mixed; split the value or the owner before coding.
 
+**Enforced by:** review only.
+
 ### 2. One owner per authoritative write
 
 Feature A never mutates feature B’s project slice. Cross-feature intent goes through a command or the owning module’s use case.
 
 **Why:** multi-writer truth makes undo, CRDT, and collaboration undefined.
 
+**Enforced by:** ESLint `sourdaw/no-foreign-store-write` (warn) for store writes; otherwise review only.
+
 ### 3. Stores are a public read contract, not a write API for business truth
 
-Foreign modules may `useStore` / select. `store.set` only inside the owning module’s write path (use cases / handlers); everyone else goes through use cases or `executeAppAction` (**policy** — the foreign-write ESLint rule is **warn** only). Leaf components must not **directly** import business stores (**error** `components-no-business-store-access`).
+Foreign modules may `useStore` / select. `store.set` only inside the owning module’s write path (use cases / handlers); everyone else goes through use cases or `executeAppAction`. Leaf components must not **directly** import business stores.
 
 **Why:** write discipline is what prevents global mutability.
+
+**Enforced by:** ESLint `sourdaw/no-foreign-store-write` (**warn** only, so the foreign-write rule is policy); dependency-cruiser `components-no-business-store-access` (**error**).
 
 ### 4. Project truth is serializable; engine/runtime state is not
 
@@ -50,21 +56,23 @@ Never put `AudioContext`, `AudioNode`, worklet handles, or other runtime objects
 
 **Why:** save/load and collaboration cannot round-trip live native handles; the engine owns runtime objects.
 
+**Enforced by:** review only.
+
 ### 5. Undo/history only for intentional project writes
 
 Ephemeral UI and query-cache churn never create undo entries. Continuous gestures coalesce into one meaningful write.
 
 **Why:** undo that rewinds hover state or network cache is unusable; missing undo on project edits is data loss.
 
-When a committed command must update another module's transient state such as Project `dirty`, return paired `afterCommit` and `afterAmbiguousCommit` effects that publish a dedicated nonpersistent revision notification owned by the command's module. The receiving module subscribes through the public stores contract and owns its local write and subscription disposal. Do not import the receiver's business barrel, set transient state inside the transaction, or subscribe broadly to mixed project/runtime stores: no-write, refusal, conflict, and isolated preview paths must remain clean. The notification is shared runtime state, never persisted project truth or undo state.
-
-**Why:** the command runtime is the commit witness; a store observer cannot distinguish a durable user edit from hydration, playback, or preview.
+**Enforced by:** review only.
 
 ### 6. Commands express intent; events report outcomes
 
-Events never replace commands as the write API. Subscribers react; they do not become a second owner of truth. Event contracts stay pure (`events-are-pure`).
+Events never replace commands as the write API. Subscribers react; they do not become a second owner of truth. Event contracts stay pure.
 
 **Why:** “notify by event” that mutates foreign state is a hidden write path.
+
+**Enforced by:** dependency-cruiser `events-are-pure`; subscriber behavior is review only.
 
 ### 7. Projections and selectors are derived and disposable
 
@@ -72,26 +80,7 @@ Never persist a derivative as truth. Selectors stay read-only — no write side 
 
 **Why:** stored derivatives drift from source truth and become a second model.
 
-### Command entry must prove normalized state reaches every authority
-
-For a normalized project-state command, test the authoritative terminal projection through the public command entry: raw document, owning store projection, visible control state, and engine projection must agree on the same committed value. #4082 (commit `418906`, merged as `dcb995a`) showed that a Loop control could update a visible flag while leaving an invalid loop region that the document decoder rejected. A direct use-case or static-prop fixture cannot prove this agreement.
-
-### Identity-scoped replay must prove owner and empty-state recovery
-
-Attack undo and redo after replacing an aggregate with a new owner that reuses the same track and child identities, and
-exercise a forward write whose prior state is empty. Persistence evidence must create history through the real producer,
-persist and reload the document, hydrate that saved history, then replay it; an injected undo entry proves neither the
-producer nor the saved contract.
-
-### Grouped inverse capture must read the owning action prefix
-
-`executeAppActionBatch` describes every member before any member executes. When a handler's description captures an
-inverse from project state, project the earlier siblings through the owning domain before reading that state, then use
-the same projection for batch validation. PR #4083 introduced guarded take-selection replay with green single-handler
-coverage but captured each grouped inverse from the same live pre-batch selection; PR #4073 added projected validation
-for heterogeneous grouped replay without closing that description-time capture route. Prove prefix-dependent capture
-through real grouped undo and redo, inspecting both raw CRDT authority and the owning store projection; independently
-green handler tests do not establish sibling-state capture.
+**Enforced by:** `src/modules/CrdtDocument/useCases/projection/__tests__/projectionIsReadOnly.spec.ts` for projections (document writes only in slots declaring `derivedFromSiblingSlot`); selectors are review only.
 
 ### 8. Async fetch/cache is not editable business state
 
@@ -99,38 +88,23 @@ Edit project truth through domain writes, then invalidate or refetch. The query 
 
 **Why:** cache-as-truth reimplements a worse store without ownership or undo.
 
-## Anti-patterns
+**Enforced by:** review only.
 
-### Durable ownership must authenticate the exact current source
+### 9. Cross-module transient state follows a paired commit notification
 
-PR #3943 acquired checkpoint retention from raw audio buffer IDs, so a replaced runtime source could publish ownership
-over stale disk PCM. Review every acquisition route with a genuine durability receipt and active storage scope, then
-change the source after retention commits and prove exact-token cleanup either removes the row or reports retained
-ownership explicitly.
+When a committed command must update another module's transient state such as Project `dirty`, return paired `afterCommit` and `afterAmbiguousCommit` effects that publish a dedicated nonpersistent revision notification owned by the command's module. The receiving module subscribes through the public stores contract and owns its local write and subscription disposal. Do not import the receiver's business barrel, set transient state inside the transaction, or subscribe broadly to mixed project/runtime stores. The notification is shared runtime state, never persisted project truth or undo state.
 
-### Async cache admission must stay release-visible before every await
+**Why:** the command runtime is the commit witness; a store observer cannot distinguish a durable user edit from hydration, playback, or preview, and no-write, refusal, conflict, and isolated preview paths must stay clean.
 
-Review the path from request admission through every await before cache registration. Release or cancel while transfer
-data is pending, then admit a fresh request and prove late cleanup affects only its exact former entry. Tests must
-observe release-visible ownership before provider creation begins.
+**Enforced by:** review only.
 
-## Prepared settlement review crosses module instances
+### 10. A grouped inverse is captured from the owning action prefix
 
-Use a strongest-tier integrity review with two module instances sharing IndexedDB and the named storage lock. Test
-known durable, hydrated, and evicted PCM, and attack fresh durability checks separately from acquisition through an
-older receipt. Reuse one buffer ID and lease with different PCM and persistence revisions, then exercise promotion and
-discard over temporary and already-settled durable owners. Local object identity, runtime tokens, lease equality, and
-scope locks do not establish persistent PCM identity; the source map introduced by #3877 and receipt authentication
-added by #4051 each require this cross-instance proof. Compose eviction with an explicit retained project reset and
-hydration in one attack: isolated eviction and hydration cases do not prove that the retained transition preserves an
-identity witness when no decoded runtime remains.
+`executeAppActionBatch` describes every member before any member executes. When a handler's description captures an inverse from project state, project the earlier siblings through the owning domain before reading that state, and use the same projection for batch validation.
 
-Treat any pre-commit cache invalidation as an identity transition, not cleanup. A cold module can authenticate an exact
-prepared row from its durable revision, stage deletion and then observe an aborted transaction; the unchanged row must
-remain readable and recoverable in that same module. Carry explicit preserved, read-origin and admitted-commit
-witnesses through invalidation, and attack each with a later source replacement before accepting retry or recovery.
-Capture a prepared release's publication authority at mutation admission, before it waits for the storage lock; recapturing
-inside the queued storage phase can authenticate an intervening ordinary replacement as the older prepared commit.
+**Why:** capturing from the live pre-batch state restores the wrong value on grouped undo and redo.
+
+**Enforced by:** review only (probe in `review-stances/project-integrity.md`).
 
 ## References
 
@@ -138,3 +112,4 @@ inside the queued storage phase can authenticate an intervening ordinary replace
 - [docs/architecture/01-system.md](../../../docs/architecture/01-system.md) — canonical state-category taxonomy (§6).
 - [docs/architecture/03-typescript-module.md](../../../docs/architecture/03-typescript-module.md) — stores as contract surfaces.
 - [docs/04-events.md](../../../docs/04-events.md) — event contracts vs commands.
+- Review probes for this area: `../review-stances/project-integrity.md` (command entry, identity-scoped replay, grouped inverses) and `../review-stances/asset-cache-publication.md` (durable ownership, async cache admission, prepared settlement).

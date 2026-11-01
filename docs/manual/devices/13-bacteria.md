@@ -220,16 +220,23 @@ Modes print as **lowpass**, **highpass**, **bandpass**, **notch**, **formant**, 
 
 ### Body
 
-| Control     | Range    | Default | What it does        |
-| ----------- | -------- | ------- | ------------------- |
-| **Enabled** | on / off | off     | Intended body stage |
-| **Mix**     | 0 to 1   | 0.3     | Body mix            |
-| **Spread**  | 0 to 1   | 0.5     | Stereo spread       |
+| Control     | Range                              | Default | What it does                           |
+| ----------- | ---------------------------------- | ------- | -------------------------------------- |
+| **Enabled** | on / off                           | off     | Runs the selected body on this band    |
+| **Body**    | None, Ceramic, Wood, Metal, Spring | None    | Chooses the resonant body              |
+| **Mix**     | 0 to 1                             | 0.3     | Blends dry and body sound              |
+| **Spread**  | 0 to 1                             | 0.5     | Widens the wet signal's stereo content |
 
-> [!WARNING]
-> **Not yet active.** **Body** has **Enabled**, **Mix**, and **Spread**, and no way to load a body
-> impulse. Enabling it does not change the sound.
-> [#2391](https://github.com/jcosta33/sourdaw/issues/2391)
+Choose a body as well as enabling the stage; **None** passes the signal through unchanged.
+Ceramic, Wood and Metal have short resonant responses. Spring has its own dispersive chirp and
+feedback tail, lasting substantially longer than Metal. It is a fixed, stylized spring character,
+not an emulation of a particular physical tank, and adds no extra controls. The bodies target
+matched broadband energy at 48 kHz, but resonant material and increased Spread can still get louder.
+
+Body choices belong to each band and follow undo, redo and the saved device parameters. Changing
+between bodies keeps their current input history; choosing None and then a body starts it fresh.
+Re-enabling a skipped, muted or bypassed Spring starts fresh too, so an old frozen tail does not
+reappear. A normal transport stop leaves the effect tail free to decay.
 
 ### Fast movers
 

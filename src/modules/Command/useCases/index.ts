@@ -9,6 +9,7 @@ export { commandProjectDivergencePort } from './commandProjectDivergencePort';
 export { commandBatchPreflightPort } from './commandBatchPreflightPort';
 export { commandBatchPreviewPort } from './commandBatchPreviewPort';
 export { commandRuntimeRepairPort } from './commandRuntimeRepairPort';
+export { undoReplayPreparationPort } from './undoReplayPreparationPort';
 export { configureCommandBatchIdempotency } from './configureCommandBatchIdempotency';
 export { resetCommandBatchIdempotency } from './resetCommandBatchIdempotency';
 export { canExecuteCommandBatchEffects } from './canExecuteCommandBatchEffects';
@@ -101,6 +102,7 @@ export { startMacroRecording } from './macro/recording/startMacroRecording';
 export { stopMacroRecording } from './macro/recording/stopMacroRecording';
 
 export { undo } from './undo';
+export { readUndoEntryForInverse } from './readUndoEntryForInverse';
 export { redo } from './redo';
 export { REDO_NOT_APPLIED } from './redoResult';
 export { revertActionGroup } from './revertActionGroup';
@@ -127,3 +129,5 @@ export { normalizeLegacyLoopAnchorInverse } from './normalizeLegacyLoopAnchorInv
 // shortcut store) now live in CommandInterface/* — that module owns the
 // palette/shortcut interface and depends on this dispatch kernel. See ADR
 // 0011 Wave 3.
+
+export { commitRedoInverseCapture } from './commitRedoInverseCapture';

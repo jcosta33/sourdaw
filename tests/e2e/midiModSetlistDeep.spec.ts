@@ -1,5 +1,4 @@
-import { expect, test } from '@playwright/test';
-
+import { expect, test } from './e2eTest';
 import { launch_from_template, launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -114,6 +113,7 @@ test.describe('Loop station — arm/disarm', () => {
     });
 
     test('Arming flips the button to Disarm and reveals the slots grid', async ({ page }) => {
+        await add_track(page, 'MIDI');
         const arm = page.getByRole('button', { name: /Arm loop station/i });
         await expect(arm).toBeVisible();
 

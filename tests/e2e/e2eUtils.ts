@@ -1,8 +1,9 @@
-import { expect, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
 import { DIRECT_E2E_VIEWPORT_NAME } from '../../src/app/resolveAppComposition';
 
+import { expect } from './e2eTest';
 import { attach_first_paint_console, format_first_paint_timeout_diagnosis } from './firstPaintDiagnostics';
 
 export const LAUNCH_SCREEN_NAME = 'Sourdaw — start a project';
@@ -35,8 +36,6 @@ const ALPHA_NOTICE_DISMISSED_STORAGE_KEY = 'sourdaw-alpha-notice-dismissed';
 export const PREFERENCES_STORAGE_KEY = 'sourdaw-preferences';
 export const RECENT_PROJECTS_STORAGE_KEY = 'sourdaw-recent-projects';
 
-type LaunchOverlayState = 'active' | 'exited';
-
 type LaunchFromTemplateInput = {
     page: Page;
     template_name: string | RegExp;
@@ -47,6 +46,8 @@ type LaunchNewProjectOptions = {
 };
 
 type SetupWorkspaceOptions = {
+    /** Fresh-context persistence proofs must keep their own saved data across reload. */
+    clearLocalStorage?: boolean;
     localStorage?: Array<{ name: string; value: string }>;
 };
 
@@ -89,8 +90,10 @@ export async function setupWorkspace(page: Page, options: SetupWorkspaceOptions 
 
     await enable_direct_e2e_viewport(page);
     await page.addInitScript(
-        ({ alphaDismissed, alphaNoticeKey, localStorage }) => {
-            window.localStorage.clear();
+        ({ alphaDismissed, alphaNoticeKey, clearLocalStorage, localStorage }) => {
+            if (clearLocalStorage) {
+                window.localStorage.clear();
+            }
             window.localStorage.setItem('wd:onboarding-completed', '1');
             window.localStorage.setItem(alphaNoticeKey, alphaDismissed);
             window.localStorage.setItem('wd:first-load-hint-shown', '1');
@@ -101,6 +104,7 @@ export async function setupWorkspace(page: Page, options: SetupWorkspaceOptions 
         {
             alphaDismissed,
             alphaNoticeKey: ALPHA_NOTICE_DISMISSED_STORAGE_KEY,
+            clearLocalStorage: options.clearLocalStorage ?? true,
             localStorage: options.localStorage ?? [],
         }
     );
@@ -109,31 +113,15 @@ export async function setupWorkspace(page: Page, options: SetupWorkspaceOptions 
     await page.waitForLoadState('domcontentloaded');
 }
 
-async function get_launch_overlay_state(page: Page): Promise<LaunchOverlayState> {
-    const launch_screen = page.getByLabel(LAUNCH_SCREEN_NAME);
-
-    return launch_screen.evaluateAll((elements): LaunchOverlayState => {
-        const element = elements[0];
-        if (!element) {
-            return 'exited';
-        }
-
-        const style = window.getComputedStyle(element);
-        if (style.opacity === '0' && style.pointerEvents === 'none') {
-            return 'exited';
-        }
-
-        return 'active';
-    });
-}
-
 export async function wait_for_workspace_ready(page: Page): Promise<void> {
-    // Launch loading text is transient; wait for the stable exited-overlay contract instead.
+    // Launch loading text is transient; wait for the overlay to unmount instead.
+    // A transparent overlay is still an aria-modal dialog, so an unscoped
+    // getByRole('dialog') right after launch would also match it.
     // The overlay-exit waits on WASM DSP boot + template instantiation. Under
     // full-suite worker contention a heavy template (e.g. the full demo project)
-    // can take well past the 5s default poll bound; match the panel-open bound
+    // can take well past the 5s default bound; match the panel-open bound
     // so a slow-but-healthy boot is not mistaken for a hang.
-    await expect.poll(async () => get_launch_overlay_state(page), { timeout: 30_000 }).toBe('exited');
+    await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toHaveCount(0, { timeout: 30_000 });
     await expect(page.getByRole('group', { name: PLAYBACK_CONTROLS_NAME })).toBeVisible();
 }
 
@@ -235,7 +223,7 @@ type OpenBrowserInstrumentInput = {
  */
 export async function open_browser_instrument({ page, instrument }: OpenBrowserInstrumentInput): Promise<void> {
     const browser = page.getByRole('complementary', { name: 'Browser panel' });
-    await browser.getByRole('button', { name: 'Instruments', exact: true }).click();
+    await browser.getByRole('tab', { name: 'Instruments', exact: true }).click();
     // The InstrumentCard is a real <button> (DawChooserCard) whose accessible
     // name begins with the instrument label, e.g. "Levain Orchestra …". Target it
     // by role + name-prefix, not a bare getByText: a text-node click can resolve

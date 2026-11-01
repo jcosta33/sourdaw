@@ -6,7 +6,10 @@ import { getInternalUndoSessionReplayContracts } from './getInternalUndoSessionR
 
 type HandlerMap = Parameters<typeof registerHandlerMap>[0];
 
-export function registerProductionCommandHandlers(handlerMaps: readonly HandlerMap[]): void {
+export function registerProductionCommandHandlers(
+    handlerMaps: readonly HandlerMap[],
+    { deferSessionRestore = false }: { deferSessionRestore?: boolean } = {}
+): void {
     for (const handlerMap of handlerMaps) {
         registerHandlerMap(handlerMap);
     }
@@ -14,14 +17,17 @@ export function registerProductionCommandHandlers(handlerMaps: readonly HandlerM
     for (const registration of registrations) {
         void registration.handler;
     }
-    hydrateUndoStoreFromSession([
-        ...registrations.map((registration) => ({
-            actionType: registration.actionType,
-            operationVersion: registration.operationVersion,
-            role: 'forward' as const,
-            validateArguments: registration.runtimeSchema.validate,
-            validateEntry: registration.sessionEntryValidator,
-        })),
-        ...getInternalUndoSessionReplayContracts(),
-    ]);
+    hydrateUndoStoreFromSession(
+        [
+            ...registrations.map((registration) => ({
+                actionType: registration.actionType,
+                operationVersion: registration.operationVersion,
+                role: 'forward' as const,
+                validateArguments: registration.runtimeSchema.validate,
+                validateEntry: registration.sessionEntryValidator,
+            })),
+            ...getInternalUndoSessionReplayContracts(),
+        ],
+        deferSessionRestore
+    );
 }

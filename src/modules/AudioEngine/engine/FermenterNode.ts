@@ -16,7 +16,7 @@ import { logger } from '#/infra/logger/appLogger';
 
 import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
 import { FERMENTER_AUTOMATION_PARAM_IDS } from '../models/FermenterAutomationParams';
-import fermenterProcessorUrl from '../services/fermenterProcessor.ts?worker&url';
+import fermenterProcessorUrl from '../worklets/fermenterProcessor.ts?worker&url';
 
 import {
     createTelemetryReader,

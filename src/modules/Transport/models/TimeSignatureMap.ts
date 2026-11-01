@@ -143,12 +143,12 @@ export function getMetricalBeatsBetween(
     defaultDenominator: number
 ): number[] {
     const beats: number[] = [];
+    if (!Number.isFinite(fromBeat) || !Number.isFinite(toBeat) || toBeat < fromBeat) {
+        return beats;
+    }
     let segment = getTimeSignatureSegmentAtBeat(changes, fromBeat, defaultNumerator, defaultDenominator);
 
-    // A beat unit that is not a positive finite number never advances the walk:
-    // a zero denominator gives Infinity, a negative one steps backwards. Only a
-    // corrupt map produces either, and silence beats a hang.
-    if (!Number.isFinite(segment.beatUnit) || segment.beatUnit <= 0) {
+    if (!hasAdvancingMetricalGrid(segment, fromBeat)) {
         return beats;
     }
 
@@ -156,20 +156,39 @@ export function getMetricalBeatsBetween(
         segment.startBeat +
         Math.ceil((fromBeat - segment.startBeat) / segment.beatUnit - GRID_EPSILON) * segment.beatUnit;
 
-    while (beat <= toBeat + GRID_EPSILON) {
-        if (beat >= segment.endBeat - GRID_EPSILON) {
-            segment = getTimeSignatureSegmentAtBeat(changes, segment.endBeat, defaultNumerator, defaultDenominator);
-            // The change's own beat is always a beat, so the walk resumes there
-            // rather than carrying the outgoing grid across the seam. `endBeat`
-            // is strictly above `startBeat` for every segment, so this advances.
+    while (beat <= toBeat + GRID_EPSILON || segment.endBeat <= toBeat + GRID_EPSILON) {
+        // A visible change must be visited even when the outgoing next tick is
+        // outside the window. An origin is emitted before a nearby next seam.
+        if (beat >= segment.endBeat || (beat !== segment.startBeat && beat >= segment.endBeat - GRID_EPSILON)) {
+            const boundary = segment.endBeat;
+            segment = getTimeSignatureSegmentAtBeat(changes, boundary, defaultNumerator, defaultDenominator);
+            if (segment.startBeat !== boundary || !hasAdvancingMetricalGrid(segment, boundary)) {
+                break;
+            }
             beat = segment.startBeat;
-            continue;
+        }
+        if (!Number.isFinite(beat) || beat > toBeat + GRID_EPSILON) {
+            break;
         }
         beats.push(beat);
-        beat += segment.beatUnit;
+        const nextBeat = beat + segment.beatUnit;
+        if (!Number.isFinite(nextBeat) || nextBeat <= beat) {
+            break;
+        }
+        beat = nextBeat;
     }
 
     return beats;
+}
+
+function hasAdvancingMetricalGrid(segment: TimeSignatureSegment, position: number): boolean {
+    return (
+        Number.isFinite(segment.startBeat) &&
+        Number.isFinite(segment.beatUnit) &&
+        segment.beatUnit > 0 &&
+        segment.endBeat >= segment.startBeat &&
+        segment.endBeat > position
+    );
 }
 
 export function getBarBeatAtPosition(

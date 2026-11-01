@@ -251,8 +251,8 @@ describe('prepareOfflineDeviceSetup — hydration table routing', () => {
         // control it owns is a `parameterValue` — taking the table to 13 rows
         // and the non-hydrating count to 9. Bacteria then moved off `null` for
         // its modulation-routing table, taking the non-hydrating count to 7.
-        expect(NON_HYDRATING_TYPES).toHaveLength(7);
-        expect(NATIVE_DSP_DEVICE_TYPES).toHaveLength(13);
+        expect(NON_HYDRATING_TYPES).toHaveLength(8);
+        expect(NATIVE_DSP_DEVICE_TYPES).toHaveLength(14);
     });
 
     // Pins the table entry itself, not just the module function behind it. Written

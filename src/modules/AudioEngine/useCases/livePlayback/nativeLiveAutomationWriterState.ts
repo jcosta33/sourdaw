@@ -43,7 +43,11 @@
 
 import { type Track } from '#/modules/Arrangement/stores';
 
-import { type AudioGraphParameterTarget, type AudioGraphParameterWrite } from '../../models/AudioGraphBackend';
+import {
+    type AudioGraphBackend,
+    type AudioGraphParameterTarget,
+    type AudioGraphParameterWrite,
+} from '../../models/AudioGraphBackend';
 
 /** How far ahead of the engine's own clock one pump admits writes. */
 export const AUTOMATION_WINDOW_SECONDS = 0.1;
@@ -154,6 +158,16 @@ type InputProjection = Readonly<{
 }>;
 
 export type LiveAutomationWriterPass = {
+    /** Latest pump observed while this pass's batch was unanswered. */
+    pendingBusy?: Readonly<{
+        backend: AudioGraphBackend;
+        input: Readonly<{
+            positionSeconds: number;
+            loopWraps: number | null;
+            batchesApplied: number | null;
+            writerEpoch: number;
+        }>;
+    }> | null;
     /** Disposable source observations and accepted canonical projections belong to this pass alone. */
     inputs: {
         revision: number;

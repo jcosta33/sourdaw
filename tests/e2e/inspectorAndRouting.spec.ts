@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './e2eTest';
 import { launch_from_template, launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -79,7 +79,11 @@ test.describe('Inspector — Signal Flow section', () => {
         await setupWorkspace(page);
         await launch_from_template({ page, template_name: /EDM/i });
         // Select the first track so the inspector renders track sections.
-        await page.getByRole('grid', { name: /Track list/i }).getByRole('row').first().click();
+        await page
+            .getByRole('grid', { name: /Track list/i })
+            .getByRole('row')
+            .first()
+            .click();
     });
 
     test('Signal Flow button toggles aria-expanded and reveals the routing graph', async ({ page }) => {

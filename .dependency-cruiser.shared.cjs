@@ -5,15 +5,14 @@ const SOURCE_FILE_RE = '[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
 const SPEC_FILE_RE = '[.](?:spec|test)[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
 const STORY_FILE_RE = '[.]stories[.](?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$';
 
-// Group 1 = prefix (including an optional Common/Supporting namespace)
+// Group 1 = prefix
 // Group 2 = module name
-const MODULE_ROOT = '^(src/modules/(?:Common/|Supporting/)?)([^/]+)/';
+const MODULE_ROOT = '^(src/modules/)([^/]+)/';
 
-const MODULE_REPOSITORY_ROOT =
-    '^src/modules/(?:Common/|Supporting/)?[^/]+/repositories(?:/|$)';
+const MODULE_REPOSITORY_ROOT = '^src/modules/[^/]+/repositories(?:/|$)';
 const DESKTOP_BRIDGE_PATH = '^src/utils/desktopBridge\\.ts$';
 const DESKTOP_BRIDGE_TEST_PATH = '^src/utils/__tests__/desktopBridge\\.spec\\.ts$';
-const MODEL_PATH_PREFIX = '^(?:src/modules/(?:Common/|Supporting/)?[^/]+/models/)';
+const MODEL_PATH_PREFIX = '^(?:src/modules/[^/]+/models/)';
 
 // A model path is valid only when every segment starts with an uppercase
 // letter. `__tests__/` descendants and the module-level models/index.ts barrel
@@ -21,8 +20,7 @@ const MODEL_PATH_PREFIX = '^(?:src/modules/(?:Common/|Supporting/)?[^/]+/models/
 // the current tree. The filesystem preflight applies the same policy to files
 // dependency-cruiser cannot reach through an import edge.
 const MODEL_CASING_PATH = `${MODEL_PATH_PREFIX}(?:[^A-Z/]|.*\\/[^A-Z/])`;
-const MODEL_TEST_SUPPORT_PATH =
-    `${MODEL_PATH_PREFIX}(?:__tests__|.*\\/__tests__)(?:/|$)`;
+const MODEL_TEST_SUPPORT_PATH = `${MODEL_PATH_PREFIX}(?:__tests__|.*\\/__tests__)(?:/|$)`;
 const MODEL_SUPPORT_BARREL_PATH = `${MODEL_PATH_PREFIX}index\\.ts$`;
 
 const DESKTOP_IPC_ONLY_IN_REPOSITORIES = {

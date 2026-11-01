@@ -15,21 +15,93 @@ const CHAT_COMPLETIONS_PATH = '/v1/chat/completions';
 const MODEL_ID = 'sourdaw-e2e-loopback';
 const MAX_REQUEST_BYTES = 1_024 * 1_024;
 
+export type LoopbackToolCall = { id: string; name: string; arguments: Record<string, unknown> };
 type LoopbackOpenAiProviderOptions = {
     /** Assistant text the endpoint streams back for ordinary chat completions. */
     reply?: string;
     /** Explicit tool calls served in order to non-streaming completion requests. */
-    toolCalls?: readonly { id: string; name: string; arguments: Record<string, unknown> }[];
+    toolCalls?: readonly (LoopbackToolCall | ((request: unknown) => LoopbackToolCall))[];
 };
 
-/** A project read followed by an answer that cites that read's actual receipt. */
-export function createLoopbackAnswerToolCalls(reply: string): NonNullable<LoopbackOpenAiProviderOptions['toolCalls']> {
+export const LOOPBACK_STRUCTURAL_ANSWER_PREFIX = 'The project has';
+
+export type LoopbackAnswerSelection = {
+    kind?: string;
+    topicIds?: string[];
+    scopeCandidateIds?: string[];
+    rangeCandidateId?: string | null;
+    uncertainty?: string;
+};
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Uses the actual advertised joint/default or standalone Explain branch. */
+export function createLoopbackAnswerIntake(
+    request: unknown,
+    selection: LoopbackAnswerSelection = {},
+    id = 'intake'
+): LoopbackToolCall {
+    if (!isRecord(request) || !Array.isArray(request.tools)) {
+        throw new Error('Answer fixture needs advertised tools.');
+    }
+    for (const tool of request.tools) {
+        if (!isRecord(tool) || !isRecord(tool.function)) {
+            continue;
+        }
+        const definition = tool.function;
+        if (
+            !['selectCreativeInterpretation', 'selectAnswerInterpretation'].includes(String(definition.name)) ||
+            !isRecord(definition.parameters) ||
+            !isRecord(definition.parameters.properties)
+        ) {
+            continue;
+        }
+        const catalog = definition.parameters.properties.catalogId;
+        if (!isRecord(catalog) || typeof catalog.const !== 'string') {
+            continue;
+        }
+        const answer = {
+            kind: 'project-facts',
+            topicIds: [],
+            scopeCandidateIds: [],
+            rangeCandidateId: null,
+            uncertainty: 'none',
+            ...selection,
+        };
+        let argumentsValue: Record<string, unknown> = { catalogId: catalog.const, ...answer };
+        if (definition.name === 'selectCreativeInterpretation') {
+            argumentsValue = {
+                catalogId: catalog.const,
+                modeId: 'read-only',
+                targetCandidateIds: [],
+                editDimensionCandidateIds: [],
+                constraintCandidateIds: [],
+                creationSlotIds: [],
+                uncertainty: 'none',
+                answer,
+            };
+        }
+        return { id, name: String(definition.name), arguments: argumentsValue };
+    }
+    throw new Error('Answer fixture did not receive the dynamic intake schema.');
+}
+
+/** Dynamic intake followed by a real query and a closed application-composed answer. */
+export function createLoopbackAnswerToolCalls(): NonNullable<LoopbackOpenAiProviderOptions['toolCalls']> {
     return [
+        (request) => createLoopbackAnswerIntake(request, {}, 'loopback-intake'),
         { id: 'loopback-query', name: 'project_query', arguments: { type: 'project-summary' } },
         {
             id: 'loopback-answer',
             name: 'answer_respond',
-            arguments: { text: reply, evidenceCallIds: ['loopback-query'] },
+            arguments: {
+                intakeCallId: 'loopback-intake',
+                statements: [
+                    { kind: 'project-fact', fact: 'summary' },
+                    { kind: 'query-page', callId: 'loopback-query' },
+                ],
+            },
         },
     ];
 }
@@ -125,7 +197,8 @@ function createRequestListener(provider: {
                     'stream' in requestBody &&
                     requestBody.stream === false
                 ) {
-                    const call = provider.toolCalls[provider.nextToolCall++];
+                    const scripted = provider.toolCalls[provider.nextToolCall++];
+                    const call = typeof scripted === 'function' ? scripted(requestBody) : scripted;
                     if (call === undefined) {
                         sendJson(response, 500, { error: { message: 'Loopback tool script exhausted' } });
                         return;

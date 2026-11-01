@@ -21,6 +21,13 @@ const SYNTH_FAMILY_GUIDANCE_VERSION_BUMPS: Readonly<Record<string, string>> = {
     'builtin-synth-brass': 'descriptor-v1:e0b5d9cb',
 };
 
+// PR #5863 updates Bacteria Spring guidance, which is part of its command
+// contract fingerprint just like the synth-family guidance above.
+const INTENTIONAL_DESCRIPTOR_VERSION_BUMPS: Readonly<Record<string, string>> = {
+    ...SYNTH_FAMILY_GUIDANCE_VERSION_BUMPS,
+    bacteria: 'descriptor-v1:3821f89e',
+};
+
 const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {
     'builtin-eq': 'descriptor-v1:63102173',
     'builtin-compressor': 'descriptor-v1:432b6464',
@@ -78,6 +85,8 @@ const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {
     // which is part of the descriptor fingerprint.
     fermenter: 'descriptor-v1:1101b100',
     toaster: 'descriptor-v1:4badfeb2',
+    // The standalone shaper's two owner-guided gains enter the command registry together.
+    'transient-shaper': 'descriptor-v1:f506c7b5',
     // Levain records that ensembleTiming spreads fresh attacks (#4991).
     levain: 'descriptor-v1:4cd5b078',
     // Gluten, Bacteria and Grinder carry owner-authored parameter guidance
@@ -164,7 +173,7 @@ describe('getDeviceContractVersionForCommand', () => {
         }
     });
 
-    it('pins the full descriptor registry and limits intentional version changes to synth-family guidance', () => {
+    it('pins the full descriptor registry and limits version changes to approved guidance updates', () => {
         const descriptorIds = [...new Set(getBuiltinPlugins().map((plugin) => plugin.id))].sort();
         expect(Object.keys(BASELINE_DESCRIPTOR_VERSION_PINS).sort()).toEqual(descriptorIds);
 
@@ -172,11 +181,11 @@ describe('getDeviceContractVersionForCommand', () => {
             (deviceType) =>
                 getDeviceContractVersionForCommand(deviceType) !== BASELINE_DESCRIPTOR_VERSION_PINS[deviceType]
         );
-        expect(changedFromBaseline).toEqual(Object.keys(SYNTH_FAMILY_GUIDANCE_VERSION_BUMPS).sort());
+        expect(changedFromBaseline).toEqual(Object.keys(INTENTIONAL_DESCRIPTOR_VERSION_BUMPS).sort());
 
         for (const deviceType of descriptorIds) {
             const expectedVersion =
-                SYNTH_FAMILY_GUIDANCE_VERSION_BUMPS[deviceType] ?? BASELINE_DESCRIPTOR_VERSION_PINS[deviceType];
+                INTENTIONAL_DESCRIPTOR_VERSION_BUMPS[deviceType] ?? BASELINE_DESCRIPTOR_VERSION_PINS[deviceType];
             expect(getDeviceContractVersionForCommand(deviceType), deviceType).toBe(expectedVersion);
         }
     });

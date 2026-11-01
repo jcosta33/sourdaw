@@ -1,3 +1,4 @@
+import { load, save } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
@@ -20,11 +21,14 @@ import {
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
+    projectCrdtToStores,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
+    replaceCrdtDocInLineage,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { type AppAction } from '#/utils/handlerContract';
 import {
     type ConfirmPayload,
@@ -37,9 +41,15 @@ import { ClipDummy } from '../../__tests__/ClipDummy';
 import { TrackDummy } from '../../__tests__/TrackDummy';
 import { handleRestoreStripSilenceState } from '../../handlers/clip/handleRestoreStripSilenceState';
 import { handleStripSilence } from '../../handlers/clip/handleStripSilence';
-import { __resetGainEnvelopesForTest, getEnvelope, setEnvelope } from '../../stores/gainEnvelopeStore';
+import {
+    __resetGainEnvelopesForTest,
+    gainEnvelopeStore,
+    getEnvelope,
+    setEnvelope,
+} from '../../stores/gainEnvelopeStore';
+import { takeLaneStore } from '../../stores/takeLaneStore';
 import { trackStore } from '../../stores/trackStore';
-import { setWarpState, warpStates } from '../../stores/warpStates';
+import { setWarpState, warpStates, warpStateStore } from '../../stores/warpStates';
 import { prepareStripSilence } from '../prepareStripSilence';
 import { restoreStripSilenceState } from '../restoreStripSilenceState';
 import { stripSilence } from '../stripSilence';
@@ -53,8 +63,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
 }));
 
-function createTestAudioBuffer(channelData: Float32Array<ArrayBuffer>): AudioBuffer {
-    const sampleRate = 100;
+function createTestAudioBuffer(channelData: Float32Array<ArrayBuffer>, sampleRate = 50): AudioBuffer {
     return {
         copyFromChannel: (destination, _channelNumber, startInChannel = 0) => {
             destination.set(channelData.subarray(startInChannel, startInChannel + destination.length));
@@ -71,12 +80,12 @@ function createTestAudioBuffer(channelData: Float32Array<ArrayBuffer>): AudioBuf
 }
 
 /**
- * At 600 BPM a beat is 0.1s, so the 100 Hz fixture buffer runs at exactly 10
+ * At 300 BPM a beat is 0.2s, so the 50 Hz fixture buffer runs at exactly 10
  * samples per beat. The buffer is 20 beats long; the clip under test spans
  * timeline [16, 26] with `audioOffsetBeats` 3, so it plays buffer beats
  * [3, 13) and nothing else.
  */
-const FIXTURE_TEMPO = 600;
+const FIXTURE_TEMPO = 300;
 const SAMPLES_PER_BEAT = 10;
 const CLIP_START_BEAT = 16;
 const CLIP_AUDIO_OFFSET_BEATS = 3;
@@ -150,6 +159,8 @@ describe('stripSilence satellite migration (ledger #2108)', () => {
         setNotificationEventBus(createEventBus<NotificationEvents>());
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         transportStore.set({ ...defaultTransportState, tempo: FIXTURE_TEMPO });
+        tempoMapStore.set({ changes: [] });
+        takeLaneStore.set({ lanes: [] });
         const source = ClipDummy.create({
             id: 'clip-1',
             trackId: 'track-1',
@@ -178,6 +189,8 @@ describe('stripSilence satellite migration (ledger #2108)', () => {
         __resetGainEnvelopesForTest();
         warpStates.clear();
         transportStore.set(defaultTransportState);
+        tempoMapStore.set({ changes: [] });
+        takeLaneStore.set({ lanes: [] });
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
@@ -195,6 +208,155 @@ describe('stripSilence satellite migration (ledger #2108)', () => {
         expect(clips[0]).toMatchObject({ startBeat: 17, endBeat: 19, audioOffsetBeats: 4 });
         expect(clips[1]).toMatchObject({ startBeat: 23, endBeat: 26, audioOffsetBeats: 10 });
         expect(clips.map((clip) => clip.id)).not.toContain('clip-1');
+    });
+
+    describe('canonical source snapshots', () => {
+        function setPhysicalSourceFixture(): void {
+            transportStore.set({ ...defaultTransportState, tempo: 120 });
+            tempoMapStore.set({
+                changes: [
+                    { id: 'initial', beat: 0, tempo: 120, curve: 'instant' },
+                    { id: 'fast', beat: 1, tempo: 240, curve: 'instant' },
+                    { id: 'normal', beat: 2, tempo: 120, curve: 'instant' },
+                ],
+            });
+            const source = ClipDummy.create({
+                id: 'clip-1',
+                trackId: 'track-1',
+                audioBufferId: 'buf-1',
+                startBeat: 0,
+                endBeat: 3,
+                audioOffsetSeconds: 0.25,
+                audioUnwrappedOffsetSeconds: 0.4,
+                audioOffsetBeats: 99,
+                stretchMode: 'repitch',
+                stretchRatio: 2,
+            });
+            const otherClip = ClipDummy.create({ id: 'other-clip', trackId: 'track-2', startBeat: 0, endBeat: 4 });
+            trackStore.set({
+                tracks: [
+                    TrackDummy.create({ id: 'track-1', clips: [source] }),
+                    TrackDummy.create({ id: 'track-2', clips: [otherClip] }),
+                ],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
+            takeLaneStore.set({
+                lanes: [
+                    {
+                        id: 'other-lane',
+                        trackId: 'track-2',
+                        activeCompRegions: [],
+                        takes: [
+                            {
+                                id: 'other-take',
+                                clipId: 'other-clip',
+                                name: 'Other take',
+                                selected: true,
+                                startBeat: 0,
+                                endBeat: 4,
+                                sourceOffsetSeconds: 0.3,
+                            },
+                        ],
+                    },
+                ],
+            });
+            setEnvelope('clip-1', {
+                clipId: 'clip-1',
+                enabled: true,
+                points: [{ id: 'gain-point', beatOffset: 1.6, gainDb: -6 }],
+            });
+            setWarpState('clip-1', {
+                enabled: true,
+                markers: [{ id: 'warp', originalBeat: 3, warpedBeat: 3.2 }],
+                stretchMode: 'repitch',
+                originalTempo: 120,
+            });
+            setClipAutomationLane('canonical-lane', [
+                { id: 'first', beat: 0.55, value: 0.25, curve: 'linear', tension: 0 },
+                { id: 'later', beat: 1.6, value: 0.75, curve: 'linear', tension: 0 },
+            ]);
+            const samples = new Float32Array(144_000);
+            samples.fill(0.5, 36_000, 40_800);
+            samples.fill(0.5, 72_000, 76_800);
+            samples.fill(0.5, 108_000, 112_800);
+            mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(samples, 48_000));
+        }
+
+        function captureTouchedState() {
+            return structuredClone({
+                tracks: trackStore.value,
+                gain: gainEnvelopeStore.value,
+                warp: warpStateStore.value,
+                automation: automationStore.value,
+                takes: takeLaneStore.value,
+            });
+        }
+
+        it('round-trips exact physical entries and satellites through binary document reload and command undo/redo', async () => {
+            setPhysicalSourceFixture();
+            const before = captureTouchedState();
+            await executeAppAction({ type: 'stripSilence', payload: { clipId: 'clip-1', minDuration: 0.1 } });
+            flushAutomergeStorageWrites();
+            const after = captureTouchedState();
+            const children = after.tracks!.tracks[0]!.clips;
+            expect(children).toHaveLength(3);
+            for (const [index, expected] of [
+                [0.5, 0.6, 0.75, 0.65],
+                [1.5, 1.7, 1.5, 1.025],
+                [2.5, 2.6, 2.25, 1.4],
+            ].entries()) {
+                expect(children[index]!.startBeat).toBeCloseTo(expected[0]!, 10);
+                expect(children[index]!.endBeat).toBeCloseTo(expected[1]!, 10);
+                expect(children[index]!.audioOffsetSeconds).toBe(expected[2]!);
+                expect(children[index]!.audioUnwrappedOffsetSeconds).toBeCloseTo(expected[3]!, 10);
+            }
+            expect(after.takes).toEqual(before.takes);
+            expect(after.tracks!.tracks[1]).toEqual(before.tracks!.tracks[1]);
+            expect(after.automation!.lanes.map((lane) => lane.clipId)).toEqual([children[0]!.id, children[1]!.id]);
+            expect(Object.keys(after.gain!.envelopes).toSorted()).toEqual(children.map((child) => child.id).toSorted());
+            expect(Object.keys(after.warp!.states).toSorted()).toEqual(children.map((child) => child.id).toSorted());
+
+            const document = getCrdtDoc('root');
+            if (!document) {
+                throw new Error('Expected root document after strip');
+            }
+            replaceCrdtDocInLineage({ id: 'root', doc: load(save(document)) });
+            projectCrdtToStores({ resetProjections: true });
+            expect(captureTouchedState()).toEqual(after);
+            expect(await undo()).toEqual({ headConsumed: true });
+            flushAutomergeStorageWrites();
+            expect(captureTouchedState()).toEqual(before);
+            await redo();
+            flushAutomergeStorageWrites();
+            expect(captureTouchedState()).toEqual(after);
+
+            const changed = structuredClone(trackStore.value!);
+            changed.tracks[0]!.clips[1]!.audioOffsetSeconds = 1.55;
+            trackStore.set(changed);
+            flushAutomergeStorageWrites();
+            const beforeRefusal = captureTouchedState();
+            expect(await undo()).toEqual({ headConsumed: false });
+            expect(captureTouchedState()).toEqual(beforeRefusal);
+        });
+
+        it('refuses a carried source plan when the tempo clock changes before execution', async () => {
+            setPhysicalSourceFixture();
+            const action: Extract<AppAction, { type: 'stripSilence' }> = {
+                type: 'stripSilence',
+                payload: { clipId: 'clip-1', minDuration: 0.1 },
+            };
+            handleStripSilence.materializeCommandArguments?.(action);
+            expect(action.payload.replacement!.clips).toHaveLength(3);
+            tempoMapStore.set({ changes: [] });
+            const before = captureTouchedState();
+            const result = await executeAppActionBatch([action], { source: 'prompt' });
+            expect(result).toMatchObject({
+                status: 'conflicted',
+                reason: 'Action conflicts with current project state: stripSilence: The strip silence this command recorded no longer matches the project',
+            });
+            expect(captureTouchedState()).toEqual(before);
+        });
     });
 
     it('round-trips prepared segments with overrides and an offset after their decoded key order changes', () => {

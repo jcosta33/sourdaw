@@ -29,8 +29,28 @@ vi.mock('#/components/daw/DawPluginToggle', () => ({
     ),
 }));
 vi.mock('#/components/daw/Fader', () => ({
-    Fader: ({ value, onChange }: { value: number; onChange: (v: number) => void }) => (
-        <input type="range" data-testid="fader" value={value} onChange={(e) => onChange(Number(e.target.value))} />
+    Fader: ({
+        value,
+        onChange,
+        valueScale,
+        min,
+        max,
+    }: {
+        value: number;
+        onChange: (v: number) => void;
+        valueScale?: string;
+        min?: number;
+        max?: number;
+    }) => (
+        <input
+            type="range"
+            data-testid="fader"
+            data-value-scale={valueScale}
+            data-min={min}
+            data-max={max}
+            value={value}
+            onChange={(e) => onChange(Number(e.target.value))}
+        />
     ),
 }));
 
@@ -202,7 +222,7 @@ describe('MicBlendSlider — full mixer mode', () => {
         expect(toggles[0]?.textContent).toContain('ON');
     });
 
-    it('transforms fader dB to volume fraction on change', () => {
+    it('forwards the linear microphone gain on change', () => {
         const onUpdate = vi.fn();
         const onSend = vi.fn();
         const patch = createDefaultPatch('violin-1');
@@ -214,10 +234,35 @@ describe('MicBlendSlider — full mixer mode', () => {
                 onUpdateMicPosition={onUpdate}
             />
         );
-        // Fader sends dB value; component transforms (db + 70) / 76 → 0-1
-        fireEvent.change(screen.getAllByTestId('fader')[0]!, { target: { value: '6' } });
-        // (6 + 70) / 76 = 1.0
+        // The fader and engine use the same linear gain.
+        expect(screen.getAllByTestId('fader')[0]).toHaveAttribute('data-value-scale', 'gain');
+        expect(screen.getAllByTestId('fader')[0]).toHaveAttribute('data-min', '0');
+        expect(screen.getAllByTestId('fader')[0]).toHaveAttribute('data-max', '1');
+        fireEvent.change(screen.getAllByTestId('fader')[0]!, { target: { value: '1' } });
         expect(onUpdate).toHaveBeenCalledWith(0, { volume: 1 });
         expect(onSend).toHaveBeenCalledWith(0, 'volume', 1);
     });
+});
+
+it('selects a sparse bank index without adjusting its mix or sending engine parameters', () => {
+    const select = vi.fn();
+    const send = vi.fn();
+    const update = vi.fn();
+    const room = { ...createDefaultPatch().micPositions[2]! };
+    render(
+        <MicBlendSlider
+            micPositions={[null, room]}
+            showFull
+            selectedMicIndex={1}
+            onSelectMic={select}
+            onSendMicParam={send}
+            onUpdateMicPosition={update}
+        />
+    );
+    const button = screen.getByRole('button', { name: 'Select Room mic' });
+    expect(button).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(button);
+    expect(select).toHaveBeenCalledWith(1);
+    expect(send).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
 });

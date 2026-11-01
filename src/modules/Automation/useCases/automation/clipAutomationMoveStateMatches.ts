@@ -1,6 +1,9 @@
-import { type AutomationPointSnapshot, type ClipAutomationLaneActionSnapshot } from '#/utils/handlerContract';
+import {
+    type AutomationPointSnapshot,
+    type ClipAutomationLaneActionSnapshot,
+    type ClipAutomationLaneSnapshot,
+} from '#/utils/handlerContract';
 
-import { type AutomationPoint, type AutomationLane } from '../../models/Automation';
 import { automationStore } from '../../stores/automationStore';
 
 function controlPointsMatch(
@@ -10,7 +13,10 @@ function controlPointsMatch(
     return current?.x === expected?.x && current?.y === expected?.y;
 }
 
-function pointsMatch(current: readonly AutomationPoint[], expected: readonly AutomationPointSnapshot[]): boolean {
+function pointsMatch(
+    current: readonly AutomationPointSnapshot[],
+    expected: readonly AutomationPointSnapshot[]
+): boolean {
     return (
         current.length === expected.length &&
         current.every((point, index) => {
@@ -40,7 +46,7 @@ function pointsMatch(current: readonly AutomationPoint[], expected: readonly Aut
 export function clipAutomationMoveStateMatches(
     clipId: string,
     expected: readonly ClipAutomationLaneActionSnapshot[],
-    projectedLanes?: readonly AutomationLane[]
+    projectedLanes?: readonly ClipAutomationLaneSnapshot[]
 ): boolean {
     const laneSource = projectedLanes ?? automationStore.value?.lanes ?? [];
     const current = laneSource

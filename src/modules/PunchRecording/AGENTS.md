@@ -4,11 +4,7 @@ Owns punch-in / punch-out recording boundaries, pre-roll / post-roll intervals, 
 
 ## Public Contract Surface
 
-- `stores/`: `punchRecordingStore` (`PunchRecordingState`, `PunchRegion`, `BackgroundCapture`).
-- `useCases/`: `definePunchRegion`, `commitPunchRegion`, `discardCapture`, `setPreRoll`, `setPostRoll`, `startBackgroundCapture`, `stopBackgroundCapture`, `togglePunchRecording`, `updateCapturePosition`, `getPunchRecordingHandlers`.
-- `events/`: No public domain event payloads exported.
-- `presentations/views/`: `PunchRecordingControls`.
-- Handlers: `getPunchRecordingHandlers()`.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 
@@ -28,5 +24,5 @@ Owns punch-in / punch-out recording boundaries, pre-roll / post-roll intervals, 
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
 ```bash
-pnpm test:run <changed-spec>
+pnpm guard --profile focused -- pnpm test:run <changed-spec>
 ```

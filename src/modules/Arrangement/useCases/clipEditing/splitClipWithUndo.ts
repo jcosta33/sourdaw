@@ -1,4 +1,4 @@
-import { pushUndoEntry, REDO_NOT_APPLIED } from '#/modules/Command/useCases';
+import { executeUserAppAction, pushUndoEntry, REDO_NOT_APPLIED } from '#/modules/Command/useCases';
 import { getMidiStoreState, restoreMidiClipData } from '#/modules/MIDI/useCases';
 import { type RetiredTakeLaneSnapshot, type TakeReKeyLaneTransitionSnapshot } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -28,6 +28,10 @@ export function splitClipWithUndo(clipId: string, splitBeat: number): void {
     const targetTrack = state?.tracks.find((track) => track.id === resolution.trackId);
     const origClip = targetTrack?.clips.find((context) => context.id === clipId);
     if (!origClip) {
+        return;
+    }
+    if (origClip.type === 'audio') {
+        void executeUserAppAction({ type: 'splitClip', payload: { clipId, beat: splitBeat } }, { source: 'manual' });
         return;
     }
 

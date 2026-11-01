@@ -1,5 +1,6 @@
+use crate::events::EventSink;
 use daw_dsp::crumbs::engine::{CrumbsEngine, CrumbsMetering};
-use daw_dsp::crumbs::types::CrumbsCommand;
+use daw_dsp::crumbs::types::{CrumbsCommand, CrumbsMode, RecordState};
 /// Bridge: implements daw_engine::NativePlugin for any hosted plugin runtime.
 ///
 /// This allows plugin instances from daw-plugin-host to be sent to the native
@@ -17,14 +18,15 @@ use daw_dsp::crumbs::types::CrumbsCommand;
 /// RT-safety: all scratch buffers are preallocated. No heap allocation occurs
 /// in any `NativePlugin` method.
 use daw_engine::plugin_slot::{CaptureInputBlock, MidiNoteEvent, NativePlugin, TransportState};
+use daw_engine::{CaptureFirstInput, CapturePeriodObservation};
 use daw_plugin_host::{
     HostMidiEvent, HostParameterUpdate, HostTransport, HostedPluginRuntime, HostedRuntime,
     PluginParameter, ProcessingGate,
 };
 use rtrb::Consumer;
 use std::cell::UnsafeCell;
-use std::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, TryLockError, Weak};
 use std::thread;
 use std::time::{Duration, Instant};
 use tokio::runtime::RuntimeFlavor;
@@ -2161,7 +2163,7 @@ mod tests {
     /// command-side ring endpoints a test can drive.
     fn crumbs_slot_with_rings() -> (
         CrumbsPluginSlot,
-        rtrb::Producer<CrumbsCommand>,
+        CrumbsCommandSender,
         rtrb::Consumer<PendingRecordingCommit>,
         rtrb::Producer<RecordBufferPair>,
     ) {
@@ -2171,14 +2173,17 @@ mod tests {
         let metering = Arc::new(CrumbsMetering::default());
         let mut engine = CrumbsEngine::with_metering(48_000.0, Arc::clone(&metering));
         engine.enable_commit_handoff();
-        let slot = CrumbsPluginSlot {
+        let (retired_tx, _retired_rx) = rtrb::RingBuffer::new(2);
+        let slot = CrumbsPluginSlot::new(
             engine,
-            command_rx: rx,
+            rx,
             commit_tx,
             recycle_rx,
+            retired_tx,
+            Arc::new(CrumbsSlotLifetime::default()),
             metering,
-        };
-        (slot, tx, commit_rx, recycle_tx)
+        );
+        (slot, CrumbsCommandSender(tx), commit_rx, recycle_tx)
     }
 
     /// One chunk of the engine's input tap, as the render callback hands it
@@ -2213,6 +2218,52 @@ mod tests {
     /// holds is the capture block the slot was fed, channel for channel.
     /// Pre-fix the input was never delivered at all, so an armed recording
     /// captured silence end-to-end.
+    #[test]
+    fn first_served_block_acknowledges_each_take_and_preserves_its_transient() {
+        crate::commands::crumbs::tests::first_served_native_take_probe();
+    }
+
+    #[test]
+    fn joining_take_waits_through_refill_despite_period_first_serve() {
+        crate::commands::crumbs::tests::joining_native_take_probe();
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn take_callback_transitions_never_allocate_or_free() {
+        crate::commands::crumbs::tests::callback_lifecycle_probe();
+        let (mut slot, mut tx, _commits, _recycle) = crumbs_slot_with_rings();
+        for _ in 0..2 {
+            assert!(slot
+                .commit_tx
+                .push(PendingRecordingCommit {
+                    left: vec![0.0; 8],
+                    right: vec![0.0; 8],
+                    sample_rate: 48_000,
+                })
+                .is_ok());
+        }
+        tx.push(CrumbsCommand::SetMode(CrumbsMode::Record)).unwrap();
+        tx.push(CrumbsCommand::ArmRecording {
+            threshold: 0.1,
+            target_pad: 0,
+            max_duration_secs: 1.0,
+        })
+        .unwrap();
+        let audio = [0.5; 128];
+        assert_no_alloc::assert_no_alloc(|| {
+            slot.process_capture_input(capture_block(&audio, &audio, true))
+        });
+        tx.push(CrumbsCommand::StopRecording).unwrap();
+        let mut left = [0.0; 128];
+        let mut right = [0.0; 128];
+        assert_no_alloc::assert_no_alloc(|| slot.process_audio(&mut left, &mut right, 128));
+        assert!(
+            slot.pending_commit.is_some(),
+            "full commit ring retains PCM on the slot"
+        );
+    }
+
     #[test]
     fn crumbs_slot_records_the_capture_block_it_is_fed() {
         use daw_dsp::crumbs::types::{CrumbsMode, RecordState};
@@ -2450,7 +2501,7 @@ mod tests {
 
     /// Queue the commands that make a slot sound: a sample, made active, and a
     /// note at the root so nothing is transposed.
-    fn queue_a_sounding_note(tx: &mut rtrb::Producer<CrumbsCommand>) {
+    fn queue_a_sounding_note(tx: &mut CrumbsCommandSender) {
         use daw_dsp::crumbs::sample::SampleData;
 
         tx.push(CrumbsCommand::AddSample {
@@ -2468,7 +2519,7 @@ mod tests {
 
     /// A sample the slot can sound, with no note pressed: the engine holds it
     /// and answers a later note-on with a voice.
-    fn queue_a_loaded_sample(tx: &mut rtrb::Producer<CrumbsCommand>) {
+    fn queue_a_loaded_sample(tx: &mut CrumbsCommandSender) {
         use daw_dsp::crumbs::sample::SampleData;
 
         tx.push(CrumbsCommand::AddSample {
@@ -3250,11 +3301,207 @@ pub struct PendingRecordingCommit {
 /// An emptied record-buffer pair returned by the command side for reuse.
 pub type RecordBufferPair = (Vec<f32>, Vec<f32>);
 
+pub(crate) const TAKE_PREPARING: u8 = 0;
+pub(crate) const TAKE_WAITING: u8 = 1;
+pub(crate) const TAKE_RECORDING: u8 = 2;
+pub(crate) const TAKE_FINISHING: u8 = 3;
+pub(crate) const TAKE_COMPLETED: u8 = 4;
+pub(crate) const TAKE_CANCELLED: u8 = 5;
+pub(crate) const TAKE_FAILED: u8 = 6;
+
+/// Published by the slot's off-RT destructor, never by a callback before a drop.
+#[derive(Default)]
+pub struct CrumbsSlotLifetime {
+    pub stopped: AtomicBool,
+}
+
+#[derive(Clone, Copy)]
+pub struct NativeTakeReadout {
+    pub revision: u64,
+    pub phase: u8,
+    pub first_input: Option<CaptureFirstInput>,
+    pub failure: u8,
+}
+
+/// One accepted preparation. Only the slot writes its actual DSP/input witnesses.
+/// Control-side original PCM remains owned here if retirement interrupts cloning.
+pub struct NativeTakeSession {
+    pub instance_id: String,
+    pub incarnation: u64,
+    pub take_id: u64,
+    pub period: OnceLock<CapturePeriodObservation>,
+    pub valid: AtomicBool,
+    pub slot_enqueued: AtomicBool,
+    pub admitted: AtomicBool,
+    pub released: AtomicBool,
+    pub complete: AtomicBool,
+    pub cancel_requested: AtomicBool,
+    pub cancel_revision: AtomicU64,
+    pub rt_phase: AtomicU8,
+    pub failure: AtomicU8,
+    pub first_position: AtomicU64,
+    pub first_frames: AtomicUsize,
+    pub has_commit: AtomicBool,
+    pub sample_id: AtomicU32,
+    pub sample_safe: AtomicBool,
+    pub original_commit: Mutex<Option<Arc<PendingRecordingCommit>>>,
+    pub published: Mutex<NativeTakeReadout>,
+    pub revisions: Arc<AtomicU64>,
+    pub lifetime: Arc<CrumbsSlotLifetime>,
+    pub events: Weak<dyn EventSink>,
+    #[cfg(test)]
+    pub before_materialize: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
+    #[cfg(test)]
+    pub publication_attempts: AtomicU64,
+}
+
+impl NativeTakeSession {
+    pub fn new(
+        instance_id: String,
+        incarnation: u64,
+        take_id: u64,
+        revisions: Arc<AtomicU64>,
+        lifetime: Arc<CrumbsSlotLifetime>,
+        events: Weak<dyn EventSink>,
+    ) -> Self {
+        let revision = revisions.fetch_add(1, Ordering::Relaxed) + 1;
+        Self {
+            instance_id,
+            incarnation,
+            take_id,
+            period: OnceLock::new(),
+            valid: AtomicBool::new(true),
+            slot_enqueued: AtomicBool::new(false),
+            admitted: AtomicBool::new(false),
+            released: AtomicBool::new(false),
+            complete: AtomicBool::new(false),
+            cancel_requested: AtomicBool::new(false),
+            cancel_revision: AtomicU64::new(0),
+            rt_phase: AtomicU8::new(TAKE_PREPARING),
+            failure: AtomicU8::new(0),
+            first_position: AtomicU64::new(0),
+            first_frames: AtomicUsize::new(0),
+            has_commit: AtomicBool::new(false),
+            sample_id: AtomicU32::new(0),
+            sample_safe: AtomicBool::new(false),
+            original_commit: Mutex::new(None),
+            published: Mutex::new(NativeTakeReadout {
+                revision,
+                phase: TAKE_PREPARING,
+                first_input: None,
+                failure: 0,
+            }),
+            revisions,
+            lifetime,
+            events,
+            #[cfg(test)]
+            before_materialize: Mutex::new(None),
+            #[cfg(test)]
+            publication_attempts: AtomicU64::new(0),
+        }
+    }
+
+    pub fn first_input(&self) -> Option<CaptureFirstInput> {
+        let frames = self.first_frames.load(Ordering::Acquire);
+        (frames != 0).then(|| CaptureFirstInput {
+            position_frames: self.first_position.load(Ordering::Relaxed),
+            frames,
+        })
+    }
+
+    /// Cancellation is separate from the slot's actual terminal/handback witness.
+    pub fn invalidate(&self) {
+        self.valid.store(false, Ordering::Release);
+        self.cancel_requested.store(true, Ordering::Release);
+        if self.cancel_revision.load(Ordering::Acquire) == 0 {
+            let revision = self.revisions.fetch_add(1, Ordering::Relaxed) + 1;
+            let _ = self.cancel_revision.compare_exchange(
+                0,
+                revision,
+                Ordering::Release,
+                Ordering::Relaxed,
+            );
+        }
+    }
+
+    pub fn readout(&self) -> NativeTakeReadout {
+        let mut value = *self
+            .published
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let cancelled = self.cancel_revision.load(Ordering::Acquire);
+        if cancelled > value.revision {
+            value.revision = cancelled;
+            value.phase = TAKE_CANCELLED;
+            value.first_input = self.first_input();
+        }
+        value
+    }
+
+    /// A bounded worker visit; copying this readout never clones PCM or emits.
+    pub fn publish(&self, phase: u8) -> Option<NativeTakeReadout> {
+        #[cfg(test)]
+        self.publication_attempts.fetch_add(1, Ordering::Relaxed);
+        let Ok(mut value) = self.published.try_lock() else {
+            return None;
+        };
+        let first_input = self.first_input();
+        let failure = self.failure.load(Ordering::Acquire);
+        if value.phase == phase && value.first_input == first_input && value.failure == failure {
+            return Some(*value);
+        }
+        *value = NativeTakeReadout {
+            revision: self.revisions.fetch_add(1, Ordering::Relaxed) + 1,
+            phase,
+            first_input,
+            failure,
+        };
+        Some(*value)
+    }
+}
+
+pub struct NativePreparedTake {
+    pub session: Arc<NativeTakeSession>,
+    pub threshold: f32,
+    pub target_pad: u8,
+    pub max_duration_secs: f32,
+}
+
+pub enum NativeCrumbsCommand {
+    Engine(CrumbsCommand),
+    PrepareTake(NativePreparedTake),
+    StopTake { take_id: u64 },
+}
+
+/// Keeps ordinary writes unchanged while the same FIFO carries take identity.
+pub struct CrumbsCommandSender(pub rtrb::Producer<NativeCrumbsCommand>);
+impl CrumbsCommandSender {
+    pub fn push(&mut self, command: CrumbsCommand) -> Result<(), ()> {
+        self.0
+            .push(NativeCrumbsCommand::Engine(command))
+            .map_err(|_| ())
+    }
+    pub fn push_native(&mut self, command: NativeCrumbsCommand) -> Result<(), ()> {
+        self.0.push(command).map_err(|_| ())
+    }
+    pub fn slots(&self) -> usize {
+        self.0.slots()
+    }
+    pub fn capacity(&self) -> usize {
+        self.0.buffer().capacity()
+    }
+}
+
 pub struct CrumbsPluginSlot {
     pub engine: CrumbsEngine,
-    pub command_rx: Consumer<CrumbsCommand>,
+    pub command_rx: Consumer<NativeCrumbsCommand>,
     pub commit_tx: rtrb::Producer<PendingRecordingCommit>,
     pub recycle_rx: Consumer<RecordBufferPair>,
+    pub retired_take_tx: rtrb::Producer<Arc<NativeTakeSession>>,
+    pub lifetime: Arc<CrumbsSlotLifetime>,
+    active_take: Option<Arc<NativeTakeSession>>,
+    pending_prepare: Option<NativePreparedTake>,
+    pending_commit: Option<PendingRecordingCommit>,
     /// The same `Arc` the engine publishes into (`CrumbsEngine::with_metering`).
     /// `process_block_internal` overwrites it with the whole block's peak once
     /// every segment has rendered — see `publish_block_peak`.
@@ -3262,6 +3509,141 @@ pub struct CrumbsPluginSlot {
 }
 
 impl CrumbsPluginSlot {
+    pub fn new(
+        engine: CrumbsEngine,
+        command_rx: Consumer<NativeCrumbsCommand>,
+        commit_tx: rtrb::Producer<PendingRecordingCommit>,
+        recycle_rx: Consumer<RecordBufferPair>,
+        retired_take_tx: rtrb::Producer<Arc<NativeTakeSession>>,
+        lifetime: Arc<CrumbsSlotLifetime>,
+        metering: Arc<CrumbsMetering>,
+    ) -> Self {
+        Self {
+            engine,
+            command_rx,
+            commit_tx,
+            recycle_rx,
+            retired_take_tx,
+            lifetime,
+            metering,
+            active_take: None,
+            pending_prepare: None,
+            pending_commit: None,
+        }
+    }
+
+    fn prepare_take(&mut self, prepared: NativePreparedTake) {
+        let NativePreparedTake {
+            session,
+            threshold,
+            target_pad,
+            max_duration_secs,
+        } = prepared;
+        if session.valid.load(Ordering::Acquire) && self.engine.mode() == CrumbsMode::Record {
+            self.engine.handle_command(CrumbsCommand::ArmRecording {
+                threshold,
+                target_pad,
+                max_duration_secs,
+            });
+            if self.engine.record_state() != RecordState::Armed {
+                session.failure.store(1, Ordering::Release);
+                session.rt_phase.store(TAKE_FINISHING, Ordering::Release);
+            }
+        } else {
+            if session.valid.load(Ordering::Acquire) {
+                session.failure.store(1, Ordering::Release);
+            }
+            session.rt_phase.store(TAKE_FINISHING, Ordering::Release);
+        }
+        self.active_take = Some(session);
+    }
+
+    fn stop_take(&mut self) {
+        self.engine.handle_command(CrumbsCommand::StopRecording);
+        if let Some(take) = &self.active_take {
+            take.rt_phase.store(TAKE_FINISHING, Ordering::Release);
+        }
+    }
+
+    /// Both render and capture call this; capture runs first in the scheduler.
+    fn drain_control(&mut self) {
+        while let Ok((left, right)) = self.recycle_rx.pop() {
+            self.engine.return_record_buffers(left, right);
+        }
+        if self.active_take.is_none() {
+            if let Some(prepared) = self.pending_prepare.take() {
+                self.prepare_take(prepared);
+            }
+        }
+        if self.pending_prepare.is_none() {
+            while let Ok(command) = self.command_rx.pop() {
+                match command {
+                    NativeCrumbsCommand::PrepareTake(prepared) => {
+                        if self.active_take.is_some() {
+                            self.pending_prepare = Some(prepared);
+                            break;
+                        }
+                        self.prepare_take(prepared);
+                    }
+                    NativeCrumbsCommand::StopTake { take_id } => {
+                        if self
+                            .active_take
+                            .as_ref()
+                            .is_some_and(|take| take.take_id == take_id)
+                        {
+                            self.stop_take();
+                        }
+                    }
+                    NativeCrumbsCommand::Engine(command) => {
+                        if matches!(&command, CrumbsCommand::SetMode(mode) if *mode != CrumbsMode::Record)
+                            && self.engine.record_state() != RecordState::Idle
+                        {
+                            self.stop_take();
+                        }
+                        self.engine.handle_command(command);
+                    }
+                }
+            }
+        }
+        if self
+            .active_take
+            .as_ref()
+            .is_some_and(|take| take.cancel_requested.load(Ordering::Acquire))
+        {
+            self.stop_take();
+        }
+        self.forward_terminal();
+    }
+
+    fn forward_terminal(&mut self) {
+        if self.pending_commit.is_none() {
+            if let Some((left, right)) = self.engine.take_pending_commit() {
+                if let Some(take) = &self.active_take {
+                    take.has_commit.store(true, Ordering::Release);
+                }
+                self.pending_commit = Some(PendingRecordingCommit {
+                    left,
+                    right,
+                    sample_rate: self.engine.sample_rate() as u32,
+                });
+            }
+        }
+        if let Some(commit) = self.pending_commit.take() {
+            if let Err(rtrb::PushError::Full(commit)) = self.commit_tx.push(commit) {
+                self.pending_commit = Some(commit);
+            }
+        }
+        if self.engine.record_state() != RecordState::Idle || self.pending_commit.is_some() {
+            return;
+        }
+        if let Some(take) = self.active_take.take() {
+            take.rt_phase.store(TAKE_FINISHING, Ordering::Release);
+            // The actual slot-owned Arc moves off RT. A full ring retains it.
+            if let Err(rtrb::PushError::Full(take)) = self.retired_take_tx.push(take) {
+                self.active_take = Some(take);
+            }
+        }
+    }
     /// Shared block body for every render path.
     ///
     /// The slot adds its voice into the mix it is handed, and nothing here may
@@ -3290,20 +3672,7 @@ impl CrumbsPluginSlot {
         num_samples: usize,
         midi_events: &[MidiNoteEvent],
     ) {
-        // Adopt recycled record buffers BEFORE draining commands: an
-        // ArmRecording processed in this same block must find the capacity
-        // the command side just returned. Adopting after the command drain
-        // silently refused any re-arm that raced a drained commit (PR #579
-        // review — silent take loss on fast stop→record). O(1) ring pops,
-        // allocation-free on this thread, independent of command ordering.
-        while let Ok((buf_left, buf_right)) = self.recycle_rx.pop() {
-            self.engine.return_record_buffers(buf_left, buf_right);
-        }
-
-        // Drain commands from the UI thread
-        while let Ok(cmd) = self.command_rx.pop() {
-            self.engine.handle_command(cmd);
-        }
+        self.drain_control();
 
         // Render up to each event's own frame before dispatching it, so a note
         // sounds on the sample it was written for rather than at the head of
@@ -3340,17 +3709,7 @@ impl CrumbsPluginSlot {
         peak_right = peak_right.max(self.engine.read_peak_right());
         self.publish_block_peak(peak_left, peak_right);
 
-        // Forward any committed take to the command side over the SPSC ring.
-        // The engine did only pointer moves; the clone + pool insertion
-        // happen off-thread in the drain helper. A full ring (command side
-        // not draining) drops the take rather than allocating here.
-        if let Some((take_left, take_right)) = self.engine.take_pending_commit() {
-            let _ = self.commit_tx.push(PendingRecordingCommit {
-                left: take_left,
-                right: take_right,
-                sample_rate: self.engine.sample_rate() as u32,
-            });
-        }
+        self.forward_terminal();
     }
 
     /// Render `from..to` of the block through the engine, which sums into
@@ -3407,28 +3766,46 @@ impl NativePlugin for CrumbsPluginSlot {
         self.process_block_internal(left, right, num_samples, midi_events);
     }
 
-    /// The sampler's record feed: the engine's own input tap, delivered ahead
-    /// of the block this slot renders.
-    ///
-    /// An unserved block carries zeros and is fed all the same, deliberately.
-    /// A capture dropout then lands in the take as silence of exactly the
-    /// duration it lasted, where skipping it would compress time and move
-    /// every frame after the gap earlier than the musician played it. Zeros
-    /// before the threshold crossing cost nothing: an armed take consumes no
-    /// `max_duration` until it triggers.
-    ///
-    /// `latency_frames` and `position_frames` are not consumed here. A Crumbs
-    /// take is a threshold-triggered one-shot whose own zero is the crossing,
-    /// not a position on the timeline, so it has nothing to align to; latency
-    /// compensation belongs to the timeline recorder that anchors its take to
-    /// the transport.
-    ///
-    /// RT-safe: the record buffers are sized when the take is armed and an arm
-    /// that finds no capacity refuses rather than allocating
-    /// (`daw_dsp::crumbs::engine` — `ArmRecording`), so this path only pushes
-    /// into capacity that already exists.
+    /// Drain native controls before delivering this very input block. A new
+    /// take requires its exact period and its own first served block, including
+    /// when joining an old period during refill. Later unserved blocks retain
+    /// their duration as zeros. The witness is published before native readiness.
     fn process_capture_input(&mut self, block: CaptureInputBlock<'_>) {
+        self.drain_control();
+        if self.engine.record_state() == RecordState::Idle {
+            return;
+        }
+        if let Some(take) = &self.active_take {
+            if !take.valid.load(Ordering::Acquire) || take.cancel_requested.load(Ordering::Acquire)
+            {
+                return;
+            }
+            if take.first_frames.load(Ordering::Acquire) == 0 {
+                let eligible = take.period.get().is_some_and(|period| {
+                    let state = period.snapshot();
+                    state.opened
+                        && state.first_served.is_some()
+                        && !state.closed
+                        && state.failure.is_none()
+                });
+                if !eligible || !block.served || block.frames == 0 {
+                    return;
+                }
+                take.first_position
+                    .store(block.position_frames, Ordering::Relaxed);
+                take.first_frames.store(block.frames, Ordering::Release);
+            }
+        }
         self.engine.process_record_input(block.left, block.right);
+        if let Some(take) = &self.active_take {
+            let phase = match self.engine.record_state() {
+                RecordState::Armed => TAKE_WAITING,
+                RecordState::Recording => TAKE_RECORDING,
+                RecordState::Idle => TAKE_FINISHING,
+            };
+            take.rt_phase.store(phase, Ordering::Release);
+        }
+        self.forward_terminal();
     }
 
     fn name(&self) -> &str {
@@ -3441,8 +3818,7 @@ impl NativePlugin for CrumbsPluginSlot {
 
     /// Every callback, spliced or not.
     ///
-    /// `process_block_internal` is the only drain of this slot's command ring
-    /// and the only reader of the engine's committed take, and the slot is
+    /// The render pass drains controls even without a capture feed. The slot is
     /// registered detached — the strip's chain splices it in later, or never,
     /// if the strip stays on the Web Audio path. A block only while a chain
     /// carried it would leave every arm, note, parameter and sample load the
@@ -3460,3 +3836,13 @@ impl NativePlugin for CrumbsPluginSlot {
         self
     }
 }
+
+impl Drop for CrumbsPluginSlot {
+    fn drop(&mut self) {
+        self.lifetime.stopped.store(true, Ordering::Release);
+    }
+}
+
+#[cfg(all(test, debug_assertions))]
+#[global_allocator]
+static CRUMBS_TEST_ALLOCATOR: assert_no_alloc::AllocDisabler = assert_no_alloc::AllocDisabler;

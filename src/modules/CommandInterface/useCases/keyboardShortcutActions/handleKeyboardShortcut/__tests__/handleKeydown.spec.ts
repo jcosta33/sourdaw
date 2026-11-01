@@ -20,7 +20,9 @@ import { executeUserAppAction, pushUndoEntry, redo, undo } from '#/modules/Comma
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { stopAllSlots, triggerPad } from '#/modules/SessionLauncher/useCases';
 import { seekPlayhead, setLoopRegion } from '#/modules/Transport/useCases';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import {
+    closeCollaborationPanel,
     cycleAutomationVisibility,
     openExportDialog,
     openPreferencesDialog,
@@ -34,6 +36,7 @@ import {
     toggleWorkspaceMode,
 } from '#/modules/WorkspaceShell/useCases';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
+import { beginDragGesture } from '#/utils/UI/activeDragGesture';
 
 import { parseLoopStationPadCallbackId, type ShortcutAction } from '../../../../stores/shortcutStore';
 import { getAllClipIds } from '../../../selectionHelpers/getAllClipIds';
@@ -137,10 +140,13 @@ vi.mock('#/modules/Transport/useCases', () => ({
 }));
 
 vi.mock('#/modules/WorkspaceShell/stores', () => ({
-    workspaceStore: { value: { activeTool: 'select', selectedClipIds: [], selectedClipId: null } },
+    workspaceStore: {
+        value: { activeTool: 'select', selectedClipIds: [], selectedClipId: null, collaborationPanelOpen: false },
+    },
 }));
 
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({
+    closeCollaborationPanel: vi.fn(),
     cycleAutomationVisibility: vi.fn(),
     openExportDialog: vi.fn(),
     openPreferencesDialog: vi.fn(),
@@ -381,6 +387,165 @@ describe('handleKeydown', () => {
             expect(cancelActiveTimelineGesture).toHaveBeenCalledTimes(1);
             expect(vi.mocked(clearClipSelection)).not.toHaveBeenCalled();
             expect(stopPlaybackMock).not.toHaveBeenCalled();
+        });
+
+        describe('with a drag marked', () => {
+            let endDrag: () => void = () => undefined;
+
+            beforeEach(() => {
+                endDrag = beginDragGesture();
+            });
+
+            afterEach(() => {
+                endDrag();
+            });
+
+            it.each([
+                {
+                    step: 'dismissing the selected ghost clip',
+                    arm: (): void => {
+                        trackStoreMock.value.ghostClips = [{ id: 'ghost-1', trackId: 't1' }];
+                        clipSelectionStoreMock.value.selectedClipId = 'ghost-1';
+                    },
+                },
+                {
+                    step: 'clearing the marquee',
+                    arm: (): void => {
+                        clipSelectionStoreMock.value.marqueeSelection = { startBeat: 0, endBeat: 4, trackIds: ['t1'] };
+                    },
+                },
+                {
+                    step: 'clearing the clip selection',
+                    arm: (): void => {
+                        clipSelectionStoreMock.value.selectedClipId = 'clip-1';
+                        clipSelectionStoreMock.value.selectedClipIds = ['clip-1'];
+                    },
+                },
+                {
+                    step: 'stopping loop-station slots',
+                    arm: (): void => {
+                        loopStationStoreMock.value.slots = [{ state: 'playing' }];
+                    },
+                },
+                {
+                    step: 'stopping the transport',
+                    arm: (): void => undefined,
+                },
+            ])('leaves Escape to the drag instead of $step', ({ arm }) => {
+                bindEscape();
+                arm();
+
+                const prevent = handleKeydown(descriptor({ key: 'Escape' }));
+
+                expect(prevent).toBe(true);
+                expect(dismissGhostClip).not.toHaveBeenCalled();
+                expect(setMarqueeSelection).not.toHaveBeenCalled();
+                expect(clearClipSelection).not.toHaveBeenCalled();
+                expect(stopAllSlots).not.toHaveBeenCalled();
+                expect(stopPlaybackMock).not.toHaveBeenCalled();
+            });
+
+            it('still lets Enter stop the transport it is bound to', () => {
+                shortcutStoreMock.value.definitions = [
+                    {
+                        id: 'transport.stopPlayback',
+                        defaultKeys: ['Escape', 'Enter'],
+                        action: { type: 'callback', id: 'stopPlayback' },
+                    },
+                ];
+
+                handleKeydown(descriptor({ key: 'Enter' }));
+
+                expect(stopPlaybackMock).toHaveBeenCalledTimes(1);
+            });
+        });
+
+        describe('with the Collaborate panel open', () => {
+            beforeEach(() => {
+                workspaceStore.value!.collaborationPanelOpen = true;
+            });
+
+            afterEach(() => {
+                workspaceStore.value!.collaborationPanelOpen = false;
+            });
+
+            it('closes the panel and leaves transport and the clip selection alone', () => {
+                bindEscape();
+                clipSelectionStoreMock.value = {
+                    selectedClipId: 'clip-1',
+                    selectedClipIds: ['clip-1'],
+                    marqueeSelection: null,
+                };
+
+                const prevent = handleKeydown(descriptor({ key: 'Escape' }));
+
+                expect(prevent).toBe(true);
+                expect(closeCollaborationPanel).toHaveBeenCalledTimes(1);
+                expect(stopPlaybackMock).not.toHaveBeenCalled();
+                expect(vi.mocked(clearClipSelection)).not.toHaveBeenCalled();
+            });
+
+            it('cancels an active timeline gesture first and keeps the panel open', () => {
+                bindEscape();
+                vi.mocked(cancelActiveTimelineGesture).mockReturnValueOnce(true);
+
+                const prevent = handleKeydown(descriptor({ key: 'Escape' }));
+
+                expect(prevent).toBe(true);
+                expect(cancelActiveTimelineGesture).toHaveBeenCalledTimes(1);
+                expect(closeCollaborationPanel).not.toHaveBeenCalled();
+            });
+
+            it('leaves Enter to the transport stop it is bound to and keeps the panel open', () => {
+                shortcutStoreMock.value.definitions = [
+                    {
+                        id: 'transport.stopPlayback',
+                        defaultKeys: ['Escape', 'Enter'],
+                        action: { type: 'callback', id: 'stopPlayback' },
+                    },
+                ];
+
+                handleKeydown(descriptor({ key: 'Enter' }));
+
+                expect(stopPlaybackMock).toHaveBeenCalledTimes(1);
+                expect(closeCollaborationPanel).not.toHaveBeenCalled();
+            });
+
+            it('leaves Escape to a mouse drag that cancels itself and keeps the panel open', () => {
+                bindEscape();
+                const endDrag = beginDragGesture();
+                try {
+                    handleKeydown(descriptor({ key: 'Escape' }));
+                } finally {
+                    endDrag();
+                }
+
+                expect(closeCollaborationPanel).not.toHaveBeenCalled();
+            });
+
+            it('runs the MIDI panic on shift+Escape and keeps the panel open', () => {
+                shortcutStoreMock.value.definitions = [
+                    callbackDefinition({
+                        id: 'transport.panicAllNotes',
+                        key: 'shift+Escape',
+                        callbackId: 'panicAllNotes',
+                    }),
+                    callbackDefinition({ id: 'transport.stopPlayback', key: 'Escape', callbackId: 'stopPlayback' }),
+                ];
+
+                handleKeydown(descriptor({ key: 'Escape', shift: true }));
+
+                expect(panicAllNotesMock).toHaveBeenCalledTimes(1);
+                expect(closeCollaborationPanel).not.toHaveBeenCalled();
+            });
+
+            it('does not close the panel from a text field', () => {
+                bindEscape();
+
+                handleKeydown(descriptor({ key: 'Escape', isInput: true }));
+
+                expect(closeCollaborationPanel).not.toHaveBeenCalled();
+            });
         });
 
         it('clears an active marquee (time-range) selection before the clip selection', () => {
@@ -691,6 +856,33 @@ describe('handleKeydown', () => {
                 payload: { clipId: 'clip-7' },
             });
         });
+
+        it('keeps duplicateClipToNextBar to a one-clip selection, like the clip context menu', () => {
+            shortcutStoreMock.value.definitions = [
+                {
+                    id: 'test.dup-next-bar',
+                    defaultKeys: ['F1'],
+                    action: {
+                        type: 'appAction',
+                        action: { type: 'duplicateClipToNextBar', payload: { clipId: 'selected' } },
+                    },
+                },
+            ];
+            // Two clips is the smallest selection the context menu hides the command for.
+            clipSelectionStoreMock.value.selectedClipIds = ['clip-a', 'clip-b'];
+            clipSelectionStoreMock.value.selectedClipId = 'clip-b';
+
+            expect(handleKeydown(descriptor({ key: 'F1' }))).toBe(true);
+            expect(executeUserAppAction).not.toHaveBeenCalled();
+
+            clipSelectionStoreMock.value.selectedClipIds = ['clip-b'];
+            expect(handleKeydown(descriptor({ key: 'F1' }))).toBe(true);
+            expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+            expect(executeUserAppAction).toHaveBeenCalledWith({
+                type: 'duplicateClipToNextBar',
+                payload: { clipId: 'clip-b' },
+            });
+        });
     });
 
     describe('executeShortcutAction — callback dispatch', () => {
@@ -856,7 +1048,7 @@ describe('handleKeydown', () => {
             expect(pushUndoEntry).not.toHaveBeenCalled();
         });
 
-        it('dispatches one registered removeClip per selected clip, in selection order, and no raw mutation', () => {
+        it('dispatches one registered removeClip per selected clip, in selection order, and no raw mutation', async () => {
             shortcutStoreMock.value.definitions = [
                 callbackDefinition({ id: 'editing.deleteSelection', key: 'F1', callbackId: 'deleteSelection' }),
             ];
@@ -865,11 +1057,21 @@ describe('handleKeydown', () => {
                 { id: 't1', clips: [{ id: 'clip-1', startBeat: 0, endBeat: 2 }] },
                 { id: 't2', clips: [{ id: 'clip-2', startBeat: 4, endBeat: 6 }] },
             ];
+            let finishFirst: (() => void) | undefined;
+            vi.mocked(executeUserAppAction).mockImplementationOnce(
+                () =>
+                    new Promise<void>((resolve) => {
+                        finishFirst = resolve;
+                    })
+            );
 
             const prevent = handleKeydown(descriptor({ key: 'F1' }));
 
             expect(prevent).toBe(true);
-            expect(executeUserAppAction).toHaveBeenCalledTimes(2);
+            expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+            expect(finishFirst).toBeDefined();
+            finishFirst?.();
+            await vi.waitFor(() => expect(executeUserAppAction).toHaveBeenCalledTimes(2));
             expect(executeUserAppAction).toHaveBeenNthCalledWith(
                 1,
                 { type: 'removeClip', payload: { clipId: 'clip-2' } },
@@ -888,7 +1090,7 @@ describe('handleKeydown', () => {
             expect(clearClipSelection).toHaveBeenCalled();
         });
 
-        it('mints a fresh undo group id per delete keypress', () => {
+        it('mints a fresh undo group id per delete keypress', async () => {
             shortcutStoreMock.value.definitions = [
                 callbackDefinition({ id: 'editing.deleteSelection', key: 'F1', callbackId: 'deleteSelection' }),
             ];
@@ -899,10 +1101,12 @@ describe('handleKeydown', () => {
             clipSelectionStoreMock.value.selectedClipIds = ['clip-1', 'clip-2'];
 
             handleKeydown(descriptor({ key: 'F1' }));
+            await vi.waitFor(() => expect(executeUserAppAction).toHaveBeenCalledTimes(2));
             // The selection the first keypress asked to clear is still set on
             // the mock store, so the second keypress is the same gesture shape.
             clipSelectionStoreMock.value.selectedClipIds = ['clip-1', 'clip-2'];
             handleKeydown(descriptor({ key: 'F1' }));
+            await vi.waitFor(() => expect(executeUserAppAction).toHaveBeenCalledTimes(4));
 
             const groupIds = vi.mocked(executeUserAppAction).mock.calls.map((call) => call[1]?.groupId);
             expect(groupIds).toHaveLength(4);

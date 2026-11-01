@@ -5,6 +5,54 @@ import { transportStore } from '#/modules/Transport/stores';
 
 import { resolveTrackClipsWithComping } from '../resolveTrackClipsWithComping';
 
+describe('invalid modern take source ownership', () => {
+    it('omits an invalid placed owner and continues resolving a valid take', () => {
+        const clip = { ...recording(0, 4), audioOffsetSeconds: 0, audioUnwrappedOffsetSeconds: 0 };
+        const state: TakeLaneStoreState = {
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [
+                        {
+                            id: 'invalid',
+                            clipId: 'rec',
+                            name: 'Invalid',
+                            startBeat: 0,
+                            endBeat: 2,
+                            selected: false,
+                            sourceOffsetBeats: 0,
+                            passAnchorSeconds: 0,
+                            passDepthSeconds: 0,
+                            passOriginBeat: 0,
+                        },
+                        {
+                            id: 'valid',
+                            clipId: 'rec',
+                            name: 'Valid',
+                            startBeat: 2,
+                            endBeat: 4,
+                            selected: false,
+                            sourceOffsetSeconds: 1,
+                        },
+                    ],
+                    activeCompRegions: [
+                        { startBeat: 0, endBeat: 2, takeId: 'invalid' },
+                        { startBeat: 2, endBeat: 4, takeId: 'valid' },
+                    ],
+                },
+            ],
+        };
+        const resolved = resolveTrackClipsWithComping('t1', [clip], state, {
+            tempoAtBeat: () => 120,
+            secondsAtBeat: (beat) => beat / 2,
+            beatAtSeconds: (seconds) => seconds * 2,
+        });
+        expect(resolved).toHaveLength(1);
+        expect(resolved[0]).toMatchObject({ startBeat: 2, endBeat: 4, audioOffsetSeconds: 2 });
+    });
+});
+
 function recording(startBeat: number, endBeat: number, audioOffsetBeats?: number): Clip {
     const clip: Clip = {
         id: 'rec',

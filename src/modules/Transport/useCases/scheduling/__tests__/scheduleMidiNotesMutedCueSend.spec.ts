@@ -32,7 +32,8 @@ const registerScheduledSourceMock = vi.hoisted(() => vi.fn<(node: AudioScheduled
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: { value: { tracks: [] } },
 }));
-vi.mock('#/modules/MIDI/stores', () => ({
+vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
     midiStore: { value: null },
 }));
 vi.mock('#/modules/Automation/stores', () => ({

@@ -7,3 +7,4 @@ export { AutomationView } from './AutomationView';
 export { ClipView } from './ClipView';
 export { InspectorPanel } from './InspectorPanel';
 export { TempoEditor } from './TempoEditor';
+export { useArrangementMinimumHeight } from './useArrangementMinimumHeight';

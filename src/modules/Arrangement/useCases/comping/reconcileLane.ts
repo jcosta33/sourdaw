@@ -1,3 +1,5 @@
+import { type AudioSourceTile } from '#/utils/audioSourceTime';
+
 import { type Take, type TakeLane } from '../../models/TakeLane';
 
 import { regionsOverlap } from './regionsOverlap';
@@ -32,14 +34,22 @@ import { regionsOverlap } from './regionsOverlap';
  * region overlaps itself, and a zero-length region (which `compRegionInterval`'s
  * `endBeat > startBeat` law never produces) is the only shape it could not absorb.
  * Order follows the capture for the takes it knows and appends the live-only ones;
- * regions are ordered by beat, as the store's own shape requires.
+ * regions are ordered by beat, as the store's own shape requires. A live selection
+ * takes precedence over a restored take's captured selection. When live has no
+ * selection, at most one restored selected take regains it.
  */
-export function reconcileLane(live: TakeLane, captured: TakeLane, retiredTakeIds: readonly string[]): TakeLane | null {
+export function reconcileLane(
+    live: TakeLane,
+    captured: TakeLane,
+    retiredTakeIds: readonly string[],
+    retiredTiles: readonly AudioSourceTile[] = []
+): TakeLane | null {
     const retiredTakeIdSet = new Set(retiredTakeIds);
     const liveTakesById = new Map(live.takes.map((take) => [take.id, take]));
 
     const reAddedTakeIds = new Set<string>();
     const takes: Take[] = [];
+    let hasSelectedTake = live.takes.some((take) => take.selected);
     for (const take of captured.takes) {
         const liveTake = liveTakesById.get(take.id);
         if (liveTake !== undefined) {
@@ -47,7 +57,10 @@ export function reconcileLane(live: TakeLane, captured: TakeLane, retiredTakeIds
             continue;
         }
         if (retiredTakeIdSet.has(take.id)) {
-            takes.push(structuredClone(take));
+            const restored = structuredClone(take);
+            restored.selected = take.selected && !hasSelectedTake;
+            hasSelectedTake = hasSelectedTake || restored.selected;
+            takes.push(restored);
             reAddedTakeIds.add(take.id);
         }
     }
@@ -65,10 +78,26 @@ export function reconcileLane(live: TakeLane, captured: TakeLane, retiredTakeIds
             !live.activeCompRegions.some((liveRegion) => regionsOverlap(liveRegion, region))
     );
 
-    if (reAddedTakeIds.size === 0 && restoredRegions.length === 0) {
+    const liveTiles = live.baseGapAudioSources ?? [];
+    const restoredTiles = retiredTiles.filter(
+        (tile) => !liveTiles.some((existing) => existing.clipId === tile.clipId && regionsOverlap(existing, tile))
+    );
+    if (reAddedTakeIds.size === 0 && restoredRegions.length === 0 && restoredTiles.length === 0) {
         return null;
     }
 
+    if (restoredTiles.length > 0) {
+        return {
+            ...live,
+            takes,
+            baseGapAudioSources: [...liveTiles, ...structuredClone(restoredTiles)].sort(
+                (a, b) => a.clipId.localeCompare(b.clipId) || a.startBeat - b.startBeat
+            ),
+            activeCompRegions: [...live.activeCompRegions, ...restoredRegions].sort(
+                (alpha, buffer) => alpha.startBeat - buffer.startBeat
+            ),
+        };
+    }
     return {
         ...live,
         takes,

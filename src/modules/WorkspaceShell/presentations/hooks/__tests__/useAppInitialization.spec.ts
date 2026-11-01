@@ -615,6 +615,27 @@ describe('useAppInitialization — Project loading boundary', () => {
         expect(projectStoreMock.set).not.toHaveBeenCalled();
     });
 
+    it('revokes a disposed load attempt while allowing a remount to restore the saved session', async () => {
+        const firstLoad = Promise.withResolvers<boolean>();
+        vi.mocked(loadProject).mockReturnValueOnce(firstLoad.promise);
+        const first = renderHook(() => useAppInitialization());
+        await waitFor(() => expect(loadProject).toHaveBeenCalledOnce());
+        const firstAuthority = vi.mocked(loadProject).mock.calls[0]?.[0]?.shouldContinue;
+        expect(firstAuthority?.()).toBe(true);
+        first.unmount();
+        expect(firstAuthority?.()).toBe(false);
+        const second = renderHook(() => useAppInitialization());
+        await waitFor(() => expect(loadProject).toHaveBeenCalledTimes(2));
+        const secondAuthority = vi.mocked(loadProject).mock.calls[1]?.[0]?.shouldContinue;
+        expect(secondAuthority?.()).toBe(true);
+        firstLoad.resolve(false);
+        await firstLoad.promise;
+        expect(firstAuthority?.()).toBe(false);
+        expect(secondAuthority?.()).toBe(true);
+        second.unmount();
+        expect(secondAuthority?.()).toBe(false);
+    });
+
     it('does not load a project while identity-transition configuration is withheld', async () => {
         identityTransitionReady.hold();
 

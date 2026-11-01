@@ -86,6 +86,8 @@ const MasterGainFader = ({ value, onChange }: MasterGainFaderProps): ReactElemen
         onChange={onChange}
         min={0}
         max={FADER_MAX_GAIN}
+        valueScale="gain"
+        unityValue={1}
         step={0.01}
         fineStep={0.001}
         defaultValue={defaultTransportState.masterGain / 100}
@@ -138,6 +140,7 @@ const MasterGainMenu = ({
             x={position.x}
             y={position.y}
             onClose={onClose}
+            onClick={(event) => event.stopPropagation()}
             onKeyDown={handleNavigationKeyDown}
         >
             <DawMenuButton role="menuitem" onClick={onReset}>

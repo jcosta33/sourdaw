@@ -1,9 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { setMidiStoreState } from '#/modules/MIDI/useCases';
 
+import { handleRestoreFreezeState } from '../../../handlers/track/restoreFreezeState';
 import { createTrack, type Clip, type Track } from '../../../models/Track';
 import { trackStore } from '../../../stores/trackStore';
 import { bounceSelection } from '../bounceSelection';
@@ -111,9 +113,14 @@ const BOUNCE_REPLACE = {
 describe('silent bake guard', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        clearHandlerRegistry();
+        registerHandlerMap({ restoreFreezeState: handleRestoreFreezeState });
         trackStore.set({ tracks: [], selectedTrackId: null });
         automationStore.set(null);
         setMidiStoreState({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+    });
+    afterEach(() => {
+        clearHandlerRegistry();
     });
 
     // ── The defect: silence baked over material the scheduler was feeding ───

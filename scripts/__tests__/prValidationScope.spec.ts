@@ -28,9 +28,12 @@ import {
     selectValidationPlan,
     SMOKE_SPEC,
 } from '../prValidationScope';
+import { isVitestCollected } from '../vitestCollectionPatterns';
 
 // Synchronous Git fixture and planner child-process work can exceed Vitest's 5000 ms default on shared CI runners.
 const GIT_PLANNER_CASE_TIMEOUT_MS = 30_000;
+// The serial immutable-route Git/Node matrix observed 32.4s on the shared host.
+const IMMUTABLE_PACKAGE_ROUTES_TIMEOUT_MS = 60_000;
 const TUNER = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
 const TUNER_SPECS = ['tests/e2e/tuner.spec.ts', 'tests/e2e/tunerReferenceHomeEnd.spec.ts'] as const;
 const EXPORT = 'src/modules/AudioRendering/presentations/views/ExportDialog.tsx';
@@ -349,52 +352,13 @@ describe('graph-backed browser selection', () => {
         GIT_PLANNER_CASE_TIMEOUT_MS
     );
 });
-const PR_4890_PATHS = [
-    '.agents/skills/review-stances/correctness.md',
-    'scripts/__tests__/semanticReviewContext.spec.ts',
-    'scripts/semanticReview/__tests__/semanticReview.spec.ts',
-    'scripts/semanticReview/admissionBytes.ts',
-    'scripts/semanticReview/candidateFindings.ts',
-    'scripts/semanticReview/contracts.ts',
-    'scripts/semanticReview/evidence.ts',
-    'scripts/semanticReview/evidenceOrdering.ts',
-    'scripts/semanticReview/fit.ts',
-    'scripts/semanticReview/interpret.ts',
-    'scripts/semanticReview/provider.ts',
-    'scripts/semanticReview/requestPayload.ts',
-    'scripts/semanticReview/rules.ts',
-    'scripts/semanticReview/run.ts',
-    'scripts/semanticReview/verify.ts',
-    'scripts/semanticReview/withheldReasons.ts',
-    'scripts/semanticReviewContext.ts',
-];
-const PR_4902_PATHS = [
+const REVIEW_GUIDANCE_PATHS = ['.agents/skills/review-stances/correctness.md', 'scripts/prepareReview.ts'];
+const REVIEW_DELIVERY_PATHS = [
     'scripts/__tests__/agentDeliveryScripts.spec.ts',
     'scripts/__tests__/prepareReview.spec.ts',
     'scripts/reviewRiskPolicy.ts',
     'scripts/savedProjectStatePaths.ts',
-    'scripts/semanticReview/__tests__/semanticReview.spec.ts',
-    'scripts/semanticReview/rules.ts',
     'scripts/trustedGithubWriteBootstrap.ts',
-];
-const KNOWN_NODE_REVIEW_TOOLING = [
-    'scripts/typesafeRequest.ts',
-    'scripts/__tests__/typesafeRequest.spec.ts',
-    'scripts/semanticReviewEvaluation.ts',
-    'scripts/semanticReviewMeasurement.ts',
-    'scripts/__tests__/semanticReviewMeasurement.spec.ts',
-    'scripts/semanticReview/__tests__/candidateFindings.spec.ts',
-    'scripts/semanticReview/__tests__/changeFacts.spec.ts',
-    'scripts/semanticReview/__tests__/digestProbes.ts',
-    'scripts/semanticReview/changeFacts.ts',
-    'scripts/semanticReview/evaluation/__tests__/semanticEvaluation.spec.ts',
-    'scripts/semanticReview/evaluation/corpus.ts',
-    'scripts/semanticReview/evaluation/runEvaluation.ts',
-    'scripts/semanticReview/evaluation/semanticEvaluationCorpus.json',
-    'scripts/semanticReviewMeasurement/artifacts.ts',
-    'scripts/semanticReviewMeasurement/contracts.ts',
-    'scripts/semanticReviewMeasurement/gaps.ts',
-    'scripts/semanticReviewMeasurement/record.ts',
 ];
 const RELEASE_METADATA = ['release/open-source-inventory.json', 'release/dependency-license-proofs.json'];
 const REVIEW_REPAIR_TOOLING = [
@@ -1061,6 +1025,8 @@ describe('required affected verification', () => {
             const known = {
                 test: 'node scripts/other.ts',
                 'retarget:plan': 'node scripts/retargetCapabilitySnapshot.ts',
+                'lane:cleanup': 'node scripts/cleanupLanes.ts',
+                'lane:cleanup:install': 'node scripts/installCleanupLanes.ts',
             };
             const baseline = { test: 'node scripts/other.ts' };
             const writePackage = (contents: string | null) => {
@@ -1280,7 +1246,7 @@ describe('required affected verification', () => {
             const renameHead = commit('rename package');
             expectBroad(renameBase, renameHead);
         },
-        GIT_PLANNER_CASE_TIMEOUT_MS
+        IMMUTABLE_PACKAGE_ROUTES_TIMEOUT_MS
     );
 
     it.each(SHARED_OR_BROWSER_OWNED_SCRIPTS)(
@@ -1321,19 +1287,32 @@ describe('required affected verification', () => {
         expect(selectValidationPlan([path], INVENTORY)).toMatchObject({ ...BROAD_WITHOUT_BROWSER, codeql: true });
     });
 
-    it('keeps the exact 17 paths of PR 4890 in the tooling scope', () => {
-        const plan = selectValidationPlan(PR_4890_PATHS, INVENTORY);
+    it('keeps known review tooling and guidance in the tooling scope', () => {
+        const plan = selectValidationPlan(REVIEW_GUIDANCE_PATHS, INVENTORY);
         expect(plan).toMatchObject({ profile: 'tooling', browser: false, browserAi: false, codeql: true });
         expect(plan.matrix.include).toEqual([]);
-        expect(plan.reasons.map(({ path }) => path)).toEqual(PR_4890_PATHS);
+        expect(plan.reasons.map(({ path }) => path)).toEqual(REVIEW_GUIDANCE_PATHS);
     });
 
-    it('keeps the exact seven paths of PR 4902 in tooling scope', () => {
-        const plan = selectValidationPlan(PR_4902_PATHS, INVENTORY);
+    it('keeps review preparation and delivery tooling in tooling scope', () => {
+        const plan = selectValidationPlan(REVIEW_DELIVERY_PATHS, INVENTORY);
         expect(plan).toMatchObject({ profile: 'tooling', browser: false, browserAi: false, codeql: true });
         expect(plan.matrix.include).toEqual([]);
-        expect(plan.reasons.map(({ path }) => path)).toEqual(PR_4902_PATHS);
+        expect(plan.reasons.map(({ path }) => path)).toEqual(REVIEW_DELIVERY_PATHS);
     });
+
+    it.each(['cleanupLanes', 'installCleanupLanes', 'laneActivity'])(
+        'selects cleanup tooling and its exact spec for %s',
+        (name) => {
+            for (const path of [`scripts/${name}.ts`, `scripts/__tests__/${name}.spec.ts`]) {
+                expect(selectValidationPlan([path], INVENTORY)).toMatchObject({
+                    profile: 'tooling',
+                    browser: false,
+                    codeql: true,
+                });
+            }
+        }
+    );
 
     it.each(NEW_REVIEW_TOOLING_PATHS)('recognizes added review tooling path %s', (path) => {
         expect(selectValidationPlan([path], INVENTORY)).toMatchObject({
@@ -1341,16 +1320,6 @@ describe('required affected verification', () => {
             browser: false,
             browserAi: false,
             codeql: true,
-            matrix: { include: [] },
-        });
-    });
-
-    it.each(KNOWN_NODE_REVIEW_TOOLING)('keeps known Node-only review tooling %s out of browser jobs', (path) => {
-        expect(selectValidationPlan([path], INVENTORY)).toMatchObject({
-            profile: 'tooling',
-            browser: false,
-            browserAi: false,
-            codeql: path.endsWith('.ts'),
             matrix: { include: [] },
         });
     });
@@ -1376,7 +1345,7 @@ describe('required affected verification', () => {
             codeql: false,
             matrix: { include: [] },
         });
-        expect(selectValidationPlan([...RELEASE_METADATA, 'scripts/typesafeRequest.ts'], INVENTORY)).toMatchObject({
+        expect(selectValidationPlan([...RELEASE_METADATA, 'scripts/prepareReview.ts'], INVENTORY)).toMatchObject({
             profile: 'tooling',
             browser: false,
             browserAi: false,
@@ -1463,13 +1432,7 @@ describe('required affected verification', () => {
                     reason: 'known review tooling; security/static checks without browser execution',
                 })),
             });
-            const nodePaths = [
-                'scripts/typesafeRequest.ts',
-                'scripts/semanticReview/evaluation/runEvaluation.ts',
-                'scripts/semanticReview/evaluation/semanticEvaluationCorpus.json',
-                'scripts/semanticReviewMeasurement/record.ts',
-                ...REVIEW_REPAIR_TOOLING,
-            ];
+            const nodePaths = ['scripts/prepareReview.ts', ...REVIEW_REPAIR_TOOLING];
             for (const path of nodePaths) {
                 mkdirSync(join(root, path.slice(0, path.lastIndexOf('/'))), { recursive: true });
                 writeFileSync(join(root, path), path.endsWith('.json') ? '{}\n' : 'export const fixture = true;\n');
@@ -1502,10 +1465,10 @@ describe('required affected verification', () => {
             expect(broad).toMatchObject({ profile: 'broad', browser: true, browserAi: true, codeql: true });
             expect(broad).toMatchObject({ matrix: { include: [{ id: 1, specs: ['tests/e2e/undo.spec.ts'] }] } });
             const broadHead = git(['rev-parse', 'HEAD']);
-            const unknown = 'scripts/semanticReview/newBuildStep.ts';
+            const unknown = 'scripts/newBuildStep.ts';
             writeFileSync(join(root, unknown), 'export const fixture = true;\n');
             git(['add', unknown]);
-            git(['commit', '--quiet', '-m', 'unknown semantic module']);
+            git(['commit', '--quiet', '-m', 'unknown module']);
             expect(planAt(broadHead)).toMatchObject(BROAD_WITHOUT_BROWSER);
             const unknownHead = git(['rev-parse', 'HEAD']);
             writeFileSync(join(root, 'scripts/e2eServerIdentity.ts'), 'export const fixture = true;\n');
@@ -1518,19 +1481,21 @@ describe('required affected verification', () => {
 
     it('uses broad scope for mixed, unknown, and build paths', () => {
         for (const path of ['src/app/bootstrap.ts', 'package.json']) {
-            expect(selectValidationPlan([...PR_4890_PATHS, path], INVENTORY)).toMatchObject({
+            expect(selectValidationPlan([...REVIEW_GUIDANCE_PATHS, path], INVENTORY)).toMatchObject({
                 profile: 'broad',
                 browser: true,
                 browserAi: true,
             });
         }
         for (const path of ['scripts/newBuildStep.ts', 'scripts/semanticReview/newBuildStep.ts']) {
-            expect(selectValidationPlan([...PR_4890_PATHS, path], INVENTORY)).toMatchObject(BROAD_WITHOUT_BROWSER);
+            expect(selectValidationPlan([...REVIEW_GUIDANCE_PATHS, path], INVENTORY)).toMatchObject(
+                BROAD_WITHOUT_BROWSER
+            );
         }
     });
 
     it('keeps mixed product, unknown, and lookalike paths broad', () => {
-        expect(selectValidationPlan([...PR_4902_PATHS, 'src/app/bootstrap.ts'], INVENTORY)).toMatchObject({
+        expect(selectValidationPlan([...REVIEW_DELIVERY_PATHS, 'src/app/bootstrap.ts'], INVENTORY)).toMatchObject({
             profile: 'broad',
             browser: true,
             browserAi: true,
@@ -1541,7 +1506,7 @@ describe('required affected verification', () => {
             'scripts/agentDeliveryScriptsLookalike.ts',
             'scripts/__tests__/agentDeliveryScriptsLookalike.spec.ts',
         ]) {
-            expect(selectValidationPlan([...PR_4902_PATHS, path], INVENTORY)).toMatchObject({
+            expect(selectValidationPlan([...REVIEW_DELIVERY_PATHS, path], INVENTORY)).toMatchObject({
                 ...BROAD_WITHOUT_BROWSER,
                 codeql: true,
             });
@@ -1549,10 +1514,8 @@ describe('required affected verification', () => {
     });
 
     it('keeps either side of a rename or deletion in the classification', () => {
-        const renamedToUnknown = parseChangedPaths('R100\0scripts/semanticReviewContext.ts\0scripts/newBuildStep.ts\0');
-        const renamedFromUnknown = parseChangedPaths(
-            'R100\0scripts/newBuildStep.ts\0scripts/semanticReviewContext.ts\0'
-        );
+        const renamedToUnknown = parseChangedPaths('R100\0scripts/prepareReviewEntry.ts\0scripts/newBuildStep.ts\0');
+        const renamedFromUnknown = parseChangedPaths('R100\0scripts/newBuildStep.ts\0scripts/prepareReviewEntry.ts\0');
         expect(selectValidationPlan(renamedToUnknown, INVENTORY).profile).toBe('broad');
         expect(selectValidationPlan(renamedFromUnknown, INVENTORY).profile).toBe('broad');
         const reviewToolRenamedToUnknown = parseChangedPaths(
@@ -1571,9 +1534,9 @@ describe('required affected verification', () => {
         );
         expect(selectValidationPlan(metadataRenamedToUnknown, INVENTORY).profile).toBe('broad');
         expect(selectValidationPlan(metadataRenamedFromUnknown, INVENTORY).profile).toBe('broad');
-        expect(
-            selectValidationPlan(parseChangedPaths('D\0scripts/semanticReviewContext.ts\0'), INVENTORY).profile
-        ).toBe('tooling');
+        expect(selectValidationPlan(parseChangedPaths('D\0scripts/prepareReviewEntry.ts\0'), INVENTORY).profile).toBe(
+            'tooling'
+        );
     });
 
     it.each([TUNER, EXPORT])('widens product presentation %s to every browser proof', (path) => {
@@ -2162,6 +2125,8 @@ describe('repository tooling selects no browser suite', () => {
         'release/web-artifact-manifest.json',
         '.agents/skills/review-stances/stances.json',
         'crates/daw-dsp/README.md',
+        '.gitleaksignore',
+        '.gitleaks.toml',
     ])('keeps %s on broad non-browser validation', (path) => {
         const plan = selectValidationPlan([path], INVENTORY);
         expect(plan).toMatchObject(BROAD_WITHOUT_BROWSER);
@@ -2184,15 +2149,222 @@ describe('repository tooling selects no browser suite', () => {
         }
     });
 
-    it('lets the product path decide browser selection when scripts change beside it', () => {
-        const full = selectValidationPlan(['scripts/gen-daw-dsp-worklet.ts', 'src/app/bootstrap.ts'], INVENTORY);
-        expect(full).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
-        expect(allSelected(full)).toEqual(fullInventory(INVENTORY));
+    it.each([
+        ['.gitleaksignore', false],
+        ['.gitleaks.toml', true],
+    ] as const)('preserves broad validation and CodeQL selection for %s', (path, codeql) => {
+        expect(selectValidationPlan([path], INVENTORY)).toMatchObject({ ...BROAD_WITHOUT_BROWSER, codeql });
+        expect(productPathsOf([path], INVENTORY, false)).toEqual([]);
+    });
 
-        const paths = ['scripts/gen-daw-dsp-worklet.ts', TUNER];
+    it.each(['.gitleaksignore.bak', '.gitleaks.toml.bak', 'config/.gitleaksignore', 'config/.gitleaks.toml'])(
+        'retains full browser coverage for unrecognized scanner path %s',
+        (path) => {
+            const plan = selectValidationPlan([path], INVENTORY);
+            expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+            expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+            expect(productPathsOf([path], INVENTORY, false)).toEqual([path]);
+        }
+    );
+
+    it.each(['scripts/gen-daw-dsp-worklet.ts', '.gitleaksignore', '.gitleaks.toml'])(
+        'lets the product path decide browser selection when %s changes beside it',
+        (toolingPath) => {
+            const full = selectValidationPlan([toolingPath, 'src/app/bootstrap.ts'], INVENTORY);
+            expect(full).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+            expect(allSelected(full)).toEqual(fullInventory(INVENTORY));
+
+            const paths = [toolingPath, TUNER];
+            const productPaths = productPathsOf(paths, INVENTORY, false);
+            expect(productPaths).toEqual([TUNER]);
+            expect(canNarrow({ productPaths, candidateDiff: `M\0${TUNER}\0`, integrationDiff: '' })).toBe(true);
+            const narrow = selectValidationPlan(paths, INVENTORY, new Map(), false, {
+                kind: 'narrow',
+                specs: [...TUNER_SPECS],
+                browserAi: false,
+                owners: ['Tuner'],
+            });
+            expect(narrow).toMatchObject({ profile: 'broad', browser: true, browserAi: false });
+            expect(allSelected(narrow)).toEqual([...TUNER_SPECS].sort());
+        }
+    );
+
+    it('keeps Markdown inside product trees on the product route', () => {
+        const plan = selectValidationPlan(['src/modules/Tuner/notes.md'], INVENTORY);
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+    });
+
+    it.each([
+        'src/app/AGENTS.md',
+        'src/modules/Tuner/CLAUDE.md',
+        'src/infra/ZCODE.md',
+        'src/modules/GrandBoule/GEMINI.md',
+        'src/app/CODEX.md',
+        'src/app/KIMI.md',
+        'tests/e2e/AGENTS.md',
+    ])('keeps per-vendor agent guidance %s on broad non-browser validation', (path) => {
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(plan).toMatchObject(BROAD_WITHOUT_BROWSER);
+        expect(plan.reasons).toEqual([
+            { path, reason: 'repository tooling; broad non-browser validation without browser execution' },
+        ]);
+        expect(productPathsOf([path], INVENTORY, false)).toEqual([]);
+    });
+
+    it('lets the product path decide browser selection when agent guidance changes beside it', () => {
+        expect(productPathsOf(['src/modules/Tuner/AGENTS.md', TUNER], INVENTORY, false)).toEqual([TUNER]);
+    });
+
+    it.each([
+        'public/AGENTS.md',
+        'src/modules/Tuner/notes.md',
+        'src/app/agents.md',
+        'src/app/AGENTS.mdx',
+        'src/app/AGENTS.md.bak',
+        'src/app/NOTAGENTS.md',
+        'src/modules/Tuner/README.md',
+    ])('retains full browser coverage for non-guidance Markdown %s', (path) => {
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+        expect(productPathsOf([path], INVENTORY, false)).toEqual([path]);
+    });
+
+    it('keeps full browser coverage when agent guidance is renamed to product code', () => {
+        const plan = selectValidationPlan(
+            parseChangedPaths('R100\0src/app/AGENTS.md\0src/app/bootstrap.ts\0'),
+            INVENTORY
+        );
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+    });
+
+    it.each([
+        'crates/sourdaw-native/src/lib.rs',
+        'crates/daw-dsp/src/filters.rs',
+        'crates/daw-dsp/Cargo.toml',
+        'Cargo.toml',
+        'Cargo.lock',
+        'rust-toolchain.toml',
+        '.github/workflows/nightly.yml',
+        'evidence/agent-campaign/manifest.json',
+        'evidence/agent-campaign/corpora/held-out.json',
+    ])('keeps %s on broad non-browser validation', (path) => {
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(plan).toMatchObject(BROAD_WITHOUT_BROWSER);
+        expect(plan.reasons).toEqual([
+            { path, reason: 'repository tooling; broad non-browser validation without browser execution' },
+        ]);
+        expect(productPathsOf([path], INVENTORY, false)).toEqual([]);
+    });
+
+    it.each([
+        'crates/daw-dsp/src/filters.rs',
+        'Cargo.lock',
+        '.github/workflows/nightly.yml',
+        'evidence/agent-campaign/manifest.json',
+    ])('lets the feature presentation narrow when %s changes beside it', (path) => {
+        expect(productPathsOf([path, TUNER], INVENTORY, false)).toEqual([TUNER]);
+    });
+
+    it.each([
+        'public/wasm/daw-dsp/daw_dsp_bg.wasm',
+        'src/modules/AudioEngine/wasm/daw_dsp.js',
+        'crates/daw-dsp/src/grinder/nam/fixtures/lstm.nam',
+        'crates/daw-dsp/src/foo.json',
+        'src/foo.rs',
+        '.github/workflows/health-gates.yml',
+        '.github/workflows/heavy-gates.yml',
+        '.github/workflows/nightly.yaml',
+        'cratesx/foo.rs',
+        'src/crates/foo.ts',
+        'evidencex/manifest.json',
+        'electron/main.ts',
+    ])('retains full browser coverage for %s', (path) => {
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+        expect(productPathsOf([path], INVENTORY, false)).toEqual([path]);
+    });
+
+    it('keeps full browser coverage when a Rust source is renamed to product code', () => {
+        const plan = selectValidationPlan(
+            parseChangedPaths('R100\0crates/daw-dsp/src/a.rs\0src/app/bootstrap.ts\0'),
+            INVENTORY
+        );
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+    });
+});
+
+const UNIT_SPEC_REASON = 'unit test source; broad non-browser validation without browser execution';
+
+function e2eSourceReferences(): { file: string; reference: string }[] {
+    const references: { file: string; reference: string }[] = [];
+    for (const entry of readdirSync('tests/e2e', { recursive: true, withFileTypes: true })) {
+        if (!entry.isFile()) {
+            continue;
+        }
+        const file = posix.join(entry.parentPath, entry.name);
+        for (const [match] of readFileSync(file, 'utf8').matchAll(/(?<![\w-])(?:src|#)\/[\w./@-]*/g)) {
+            references.push({ file, reference: match.replace(/^#\//, 'src/') });
+        }
+    }
+    return references;
+}
+
+describe('unit test sources select no browser suite', () => {
+    it.each([
+        'src/modules/AudioEngine/repositories/devices/toneShaping/__tests__/createDeEsser.spec.ts',
+        'src/modules/Tuner/presentations/views/__tests__/TunerPanel.integration.spec.tsx',
+        'src/modules/Tuner/useCases/detectPitch.test.ts',
+    ])('keeps a lone %s on broad non-browser validation', (path) => {
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(plan).toMatchObject({ ...BROAD_WITHOUT_BROWSER, codeql: true });
+        expect(plan.reasons).toEqual([{ path, reason: UNIT_SPEC_REASON }]);
+        expect(productPathsOf([path], INVENTORY, false)).toEqual([]);
+    });
+
+    it.each([
+        'src/modules/BrowserAi/useCases/__tests__/ddspRenderProbe.ts',
+        'src/modules/Tuner/presentations/views/__tests__/tunerFixture.ts',
+        'src/modules/Tuner/presentations/views/TunerPanel.e2e.spec.ts',
+        'src/modules/Tuner/presentations/views/__tests__/TunerPanel.SPEC.ts',
+        'electron/main/__tests__/foo.spec.ts',
+    ])('retains full browser coverage for %s', (path) => {
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+        expect(productPathsOf([path], INVENTORY, false)).toEqual([path]);
+    });
+
+    it('lets a shared product path beside a unit spec select full coverage', () => {
+        const plan = selectValidationPlan(
+            ['src/modules/Tuner/useCases/__tests__/detectPitch.spec.ts', 'src/app/bootstrap.ts'],
+            INVENTORY
+        );
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+    });
+
+    it.each(['R100\0src/a/__tests__/x.spec.ts\0src/a/x.ts\0', 'R100\0src/a/x.ts\0src/a/__tests__/x.spec.ts\0'])(
+        'selects full coverage when a rename crosses between a unit spec and a source: %j',
+        (diff) => {
+            const plan = selectValidationPlan(parseChangedPaths(diff), INVENTORY);
+            expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+            expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+        }
+    );
+
+    it('lets the presentation path decide browser selection when its unit spec changes beside it', () => {
+        const unitSpec = 'src/modules/Tuner/presentations/views/__tests__/TunerPanel.spec.tsx';
+        const paths = [unitSpec, TUNER];
         const productPaths = productPathsOf(paths, INVENTORY, false);
         expect(productPaths).toEqual([TUNER]);
-        expect(canNarrow({ productPaths, candidateDiff: `M\0${TUNER}\0`, integrationDiff: '' })).toBe(true);
+        expect(canNarrow({ productPaths, candidateDiff: `M\0${unitSpec}\0M\0${TUNER}\0`, integrationDiff: '' })).toBe(
+            true
+        );
         const narrow = selectValidationPlan(paths, INVENTORY, new Map(), false, {
             kind: 'narrow',
             specs: [...TUNER_SPECS],
@@ -2203,9 +2375,14 @@ describe('repository tooling selects no browser suite', () => {
         expect(allSelected(narrow)).toEqual([...TUNER_SPECS].sort());
     });
 
-    it('keeps Markdown inside product trees on the product route', () => {
-        const plan = selectValidationPlan(['src/modules/Tuner/notes.md'], INVENTORY);
-        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
-        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+    it('holds the premise that no browser harness file references a Vitest-collected source', () => {
+        const references = e2eSourceReferences();
+        expect(references.map(({ reference }) => reference)).toContain(
+            'src/modules/BrowserAi/useCases/__tests__/ddspRenderProbe.ts'
+        );
+        const collected = references.filter(({ reference }) =>
+            ['', '.ts', '.tsx', '.js', '.jsx'].some((extension) => isVitestCollected(`${reference}${extension}`))
+        );
+        expect(collected).toEqual([]);
     });
 });

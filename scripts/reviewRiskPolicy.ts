@@ -98,8 +98,9 @@ const CARGO_WORKSPACE_PATHS = ['Cargo.lock', 'Cargo.toml'] as const;
  * Native toolchain, dependency and packaging surfaces outside `electron/` and `crates/`: the Rust
  * toolchain and build flags, the JavaScript dependency manifests, the native addon build, the
  * packaging config with its fuse and entitlement wiring, the bundled sandboxed preload, the pinned
- * Electron runtime with its provenance check, and the review tooling that admits CI or feeds the
- * review bundle. `.cargo/config` and `rust-toolchain` are the extensionless legacy names: Cargo
+ * Electron runtime with its provenance check, the review tooling that admits CI or feeds the
+ * review bundle, and the installer of the user launchd job that deletes delivered lane worktrees.
+ * `.cargo/config` and `rust-toolchain` are the extensionless legacy names: Cargo
  * still reads `.cargo/config` and prefers it when both forms exist, and rustup reads
  * `rust-toolchain` and prefers it over `rust-toolchain.toml` in the same directory, so either name
  * overrides the pinned toolchain.
@@ -118,12 +119,12 @@ const NATIVE_SECURITY_PATHS = [
     'scripts/ensurePinnedRustToolchain.sh',
     'scripts/ciApprovalAdmission.ts',
     'scripts/prepareReviewEntry.ts',
-    'scripts/semanticReviewContext.ts',
     'electron-builder.yml',
     'scripts/flipElectronFuses.ts',
     'scripts/buildElectronPreload.ts',
     'scripts/electronRuntimeContract.ts',
     'scripts/checkElectronRuntimeProvenance.ts',
+    'scripts/installCleanupLanes.ts',
 ] as const;
 /** macOS entitlement files the packaging config signs with, `build/entitlements.mac.plist` and kin. */
 const ENTITLEMENTS_PATTERN = /^build\/entitlements[^/]*\.plist$/u;
@@ -142,6 +143,8 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/acceptReview.ts',
     'scripts/canonicalRecord.ts',
     'scripts/claimTrackerIssue.ts',
+    'scripts/cleanupLaneBookkeeping.ts',
+    'scripts/cleanupLanes.ts',
     'scripts/confirmReviewRepairs.ts',
     'scripts/deliverPullRequest.ts',
     'scripts/deliveryLockLegacyIncidents.ts',
@@ -150,7 +153,9 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/findingLineage.ts',
     'scripts/gitAncestry.ts',
     'scripts/githubAppIdentity.ts',
+    'scripts/laneActivity.ts',
     'scripts/laneStackForkMarkers.ts',
+    'scripts/pnpmModulesPreflight.ts',
     'scripts/prContract.ts',
     'scripts/prepareReview.ts',
     'scripts/publishLane.ts',
@@ -158,13 +163,19 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/pullRequestMutationLock.ts',
     'scripts/pullRequestReviewState.ts',
     'scripts/reconcileTrackerIssue.ts',
-    'scripts/retirePullRequest.ts',
-    'scripts/retirementRecord.ts',
     'scripts/reconstructReviewRounds.ts',
     'scripts/recoverDeliveryLock.ts',
     'scripts/recoverPublishReviewLock.ts',
+    'scripts/removeLane.ts',
     'scripts/repairReviewFinding.ts',
     'scripts/resolveThread.ts',
+    'scripts/resourceGuard.ts',
+    'scripts/resourceGuardDisk.ts',
+    'scripts/resourceGuardLsofDiagnostics.ts',
+    'scripts/resourceGuardProofReasons.ts',
+    'scripts/resourceGuardStorage.ts',
+    'scripts/retirePullRequest.ts',
+    'scripts/retirementRecord.ts',
     'scripts/reviewApprovalContext.ts',
     'scripts/reviewApprovalFormat.ts',
     'scripts/reviewApprovalLabel.ts',
@@ -185,9 +196,9 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/reviewPublicationRemoteInspection.ts',
     'scripts/reviewRepair.ts',
     'scripts/reviewRiskPolicy.ts',
-    'scripts/reviewStructuralAdmission.ts',
     'scripts/reviewRoundEscalation.ts',
     'scripts/reviewShadowStatus.ts',
+    'scripts/reviewStructuralAdmission.ts',
     'scripts/reviewerModelDiversity.ts',
     'scripts/rulesetHardening.ts',
     'scripts/savedProjectStatePaths.ts',

@@ -5,6 +5,7 @@ vi.mock('../../../stores/trackStore', () => {
         value: { tracks: [], selectedTrackId: null } as { tracks: unknown[]; selectedTrackId: string | null } | null,
     };
     return {
+        recordTrackSelectionIntent: vi.fn(),
         trackStore: {
             get value() {
                 return internal.value;

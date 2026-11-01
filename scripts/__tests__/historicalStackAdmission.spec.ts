@@ -1,20 +1,30 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { canonicalJson } from '../canonicalRecord.ts';
+import { renderFindingLineage } from '../findingLineage.ts';
 import {
     AUTHOR_BOT_COMMIT_EMAIL,
     AUTHOR_BOT_COMMIT_NAME,
     AUTHOR_BOT_NODE_ID,
     REQUIRED_REPOSITORY,
 } from '../githubAppIdentity.ts';
-import { laneStackPath, readRegisteredLaneStack, writeLaneStack, type LaneStack } from '../stackedLanes.ts';
+import {
+    laneStackPath,
+    parseHistoricalAdmissionReceipt,
+    readRegisteredLaneStack,
+    writeLaneStack,
+    type LaneStack,
+} from '../stackedLanes.ts';
 import {
     admitHistoricalStack,
+    checkedNativeParentCompletion,
+    nativeParentInspectionInvocation,
     historicalAdmissionShellPort,
     parseHistoricalStackObservation,
     parseSyncParentArgs,
@@ -23,6 +33,7 @@ import {
     type HistoricalAdmissionReceipt,
     type HistoricalStackObservation,
 } from '../syncParentLane.ts';
+import { resolveTrustedExecutable, trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';
 
 const sha = (letter: string) => letter.repeat(40);
 const anchor = 'acf91c9e72a98ce6c25f019593df8813c7a3c61d';
@@ -1536,4 +1547,853 @@ describe('historical stack native admission', () => {
             expect(f.stored()).toBeUndefined();
         }
     });
+});
+
+function closedParentFixture() {
+    const f = fixture();
+    const observation = f.observation();
+    observation.child.baseRefOid = anchor;
+    observation.child.merged = false;
+    observation.child.closedAt = null;
+    observation.parent = {
+        ...observation.parent,
+        state: 'CLOSED',
+        merged: false,
+        closedAt: '2026-10-24T08:48:24Z',
+        baseRefOid: sha('e'),
+        events: ['ClosedEvent'],
+        closures: [{ id: 'close-node', createdAt: '2026-10-24T08:48:24Z', authorId: AUTHOR_BOT_NODE_ID }],
+    };
+    observation.closedParentCompletion = '{"native":"initial-proof"}';
+    f.setObservation(observation);
+    const input = { ...f.input, closedParent: { replacementPullRequest: 5636, parentOriginMain: true } };
+    return { f, input };
+}
+
+describe('explicit superseded parent historical admission', () => {
+    it('registers the original fork against a currently closed parent, allowing the native parent-only origin/main genesis', () => {
+        const { f, input } = closedParentFixture();
+        f.setParentLog(
+            f.port.parentLog().replace(`branch: Created from ${sha('e')}`, 'branch: Created from origin/main')
+        );
+        const descriptor = admitHistoricalStack(input, {
+            ...f.port,
+            readReceipt: () => {
+                const value = f.receipt();
+                if (value === undefined) {
+                    return undefined;
+                }
+                return parseHistoricalAdmissionReceipt(structuredClone(value));
+            },
+        });
+        expect(descriptor).toMatchObject({
+            childBranch,
+            parentBranch,
+            parentPullRequest: 5425,
+            forkHead: anchor,
+            parentHead: parent,
+        });
+        expect(f.writes).toEqual(['receipt', 'marker', 'descriptor']);
+        expect(f.receipt()).toMatchObject({
+            version: 2,
+            closedParent: { replacementPullRequest: 5636, parentOriginMain: true, proof: '{"native":"initial-proof"}' },
+        });
+        expect(admitHistoricalStack(input, f.port)).toEqual(descriptor);
+        expect(f.writes).toHaveLength(3);
+        expect(() =>
+            syncParentLane(descriptor, {
+                ...f.port,
+                main: () => sha('c'),
+                parents: () => [
+                    {
+                        number: 5425,
+                        branch: parentBranch,
+                        headSha: parent,
+                        state: 'CLOSED',
+                        authorId: AUTHOR_BOT_NODE_ID,
+                        repository: REQUIRED_REPOSITORY,
+                    },
+                ],
+                fetchParent: () => undefined,
+                merge: () => {
+                    throw new Error('must not merge');
+                },
+                conflicts: () => [],
+                save: () => {
+                    throw new Error('must not save');
+                },
+            })
+        ).toThrow('stack parent closed without merging');
+    });
+
+    it('keeps A-close/B-current provenance parity: local history may precede the current remote head', () => {
+        const { f, input } = closedParentFixture();
+        expect(f.port.parentLocalHead()).toBe(next);
+        expect(f.observation().parent.headSha).toBe(parent);
+        expect(admitHistoricalStack(input, f.port).parentHead).toBe(parent);
+        // No historical head-at-close attestation was inferred from a plain receipt.
+        expect(f.receipt()?.descriptor.forkHead).toBe(anchor);
+    });
+
+    it.each([
+        'missing flag',
+        'wrong actor',
+        'wrong base',
+        'reopened parent',
+        'wrong closure actor',
+        'closure before child',
+        'wrong parent at birth',
+        'child origin/main',
+        'arbitrary parent origin',
+        'missing origin flag',
+        'cached base absent',
+        'cached base unrelated',
+        'dirty child',
+    ])('refuses %s without writes', (change) => {
+        const { f, input } = closedParentFixture();
+        const observation = f.observation();
+        if (change === 'wrong actor') {
+            observation.parent.authorId = 'foreign';
+        }
+        if (change === 'wrong base') {
+            observation.child.baseBranch = 'agent/other';
+        }
+        if (change === 'reopened parent') {
+            observation.parent.events.push('ReopenedEvent');
+        }
+        if (change === 'wrong closure actor' && observation.parent.closures?.[0]) {
+            observation.parent.closures[0].authorId = 'foreign';
+        }
+        if (change === 'closure before child') {
+            observation.parent.closedAt = '2026-10-20T00:00:00Z';
+        }
+        if (change === 'wrong parent at birth') {
+            f.setParentLog(f.port.parentLog().replaceAll(anchor, sha('d')));
+        }
+        if (change === 'child origin/main') {
+            f.setChildLog(
+                f.port.childLog().replace(`branch: Created from ${anchor}`, 'branch: Created from origin/main')
+            );
+        }
+        if (change === 'arbitrary parent origin') {
+            f.setParentLog(
+                f.port.parentLog().replace(`branch: Created from ${sha('e')}`, 'branch: Created from agent/other')
+            );
+        }
+        if (change === 'missing origin flag') {
+            f.setParentLog(
+                f.port.parentLog().replace(`branch: Created from ${sha('e')}`, 'branch: Created from origin/main')
+            );
+            input.closedParent.parentOriginMain = false;
+        }
+        if (change === 'cached base absent') {
+            delete observation.child.baseRefOid;
+        }
+        if (change === 'cached base unrelated') {
+            observation.child.baseRefOid = sha('d');
+        }
+        if (change === 'dirty child') {
+            f.setClean(false);
+        }
+        expect(() => admitHistoricalStack(change === 'missing flag' ? f.input : input, f.port)).toThrow();
+        expect(f.writes).toEqual([]);
+    });
+
+    it('leaves existing OPEN genesis admission strict', () => {
+        const f = fixture();
+        f.setParentLog(
+            f.port.parentLog().replace(`branch: Created from ${sha('e')}`, 'branch: Created from origin/main')
+        );
+        expect(() => admitHistoricalStack(f.input, f.port)).toThrow('native branch creation record missing');
+        expect(f.writes).toEqual([]);
+    });
+
+    it.each(['receipt', 'marker', 'descriptor'])('journals and exactly resumes a crash at %s', (phase) => {
+        const { f, input } = closedParentFixture();
+        const port = {
+            ...f.port,
+            saveReceipt: (receipt: HistoricalAdmissionReceipt) => {
+                f.port.saveReceipt(receipt);
+                if (phase === 'receipt') {
+                    throw new Error('crash');
+                }
+            },
+            addMarker: (fork: string) => {
+                f.port.addMarker(fork);
+                if (phase === 'marker') {
+                    throw new Error('crash');
+                }
+            },
+            installDescriptor: (value: LaneStack) => {
+                f.port.installDescriptor(value);
+                if (phase === 'descriptor') {
+                    throw new Error('crash');
+                }
+            },
+        };
+        expect(() => admitHistoricalStack(input, port)).toThrow('crash');
+        expect(f.receipt()?.version).toBe(2);
+        expect(() => admitHistoricalStack(f.input, f.port)).toThrow();
+        expect(() =>
+            admitHistoricalStack({ ...input, closedParent: { ...input.closedParent, parentOriginMain: false } }, f.port)
+        ).toThrow('flags changed');
+        const snapshot = f.observation().closedParentCompletion;
+        f.observation().closedParentCompletion = '{"native":"moved"}';
+        expect(() => admitHistoricalStack(input, f.port)).toThrow('flags changed');
+        f.observation().closedParentCompletion = snapshot;
+        expect(admitHistoricalStack(input, f.port).parentPullRequest).toBe(5425);
+    });
+
+    it.each([2, 3, 4, 5])('repeats the native completion at observation boundary %s', (boundary) => {
+        const { f, input } = closedParentFixture();
+        let observations = 0;
+        expect(() =>
+            admitHistoricalStack(input, {
+                ...f.port,
+                observe: () => {
+                    observations += 1;
+                    if (observations === boundary) {
+                        f.observation().closedParentCompletion = '{"native":"changed"}';
+                    }
+                    return f.port.observe();
+                },
+            })
+        ).toThrow('changed during admission');
+        expect(observations).toBe(boundary);
+        expect(f.writes).toHaveLength(Math.min(boundary - 2, 3));
+    });
+
+    it('requires bounded strict version2 records and exact explicit CLI flags', () => {
+        const { f, input } = closedParentFixture();
+        admitHistoricalStack(input, f.port);
+        const receipt = f.receipt();
+        expect(parseHistoricalAdmissionReceipt(receipt)).toEqual(receipt);
+        for (const changed of [
+            { ...receipt, extra: true },
+            { ...receipt, closedParent: { ...input.closedParent, proof: 'x'.repeat(32769) } },
+            { ...receipt, closedParent: { ...input.closedParent, proof: 'ok', extra: true } },
+        ]) {
+            expect(() => parseHistoricalAdmissionReceipt(changed)).toThrow();
+        }
+        const base = [
+            '--lane',
+            '/owned/child',
+            '--admit-historical',
+            '--child-pr',
+            '5438',
+            '--parent-pr',
+            '5425',
+            '--expected-head',
+            child,
+        ];
+        expect(
+            parseSyncParentArgs([...base, '--superseded-parent-replacement', '5636', '--parent-origin-main']).admission
+                ?.closedParent
+        ).toEqual({ replacementPullRequest: 5636, parentOriginMain: true });
+        for (const suffix of [
+            ['--parent-origin-main'],
+            ['--superseded-parent-replacement', '5425'],
+            ['--superseded-parent-replacement', '5636', '--legacy-fork', anchor],
+            ['--superseded-parent-replacement', '5636', '--unknown'],
+        ]) {
+            expect(() => parseSyncParentArgs([...base, ...suffix])).toThrow();
+        }
+    });
+
+    it('uses the frozen Node/primary native tuple, strips tokens/loaders/overrides and adds only Darwin system ps', () => {
+        const { f, input } = closedParentFixture();
+        const tools = inspectionToolFixture();
+        const invocation = nativeParentInspectionInvocation(
+            {
+                primaryRoot: tools.root,
+                gitPath: tools.gitPath,
+                ghPath: tools.ghPath,
+                localEnv: {
+                    PATH: '/evil',
+                    GH_TOKEN: ['private', 'fixture'].join('-'),
+                    NODE_OPTIONS: '--import=/evil',
+                    SOURDAW_TRUSTED_PRIMARY_ROOT: '/evil',
+                    npm_execpath: '/evil/package',
+                },
+            },
+            input.closedParent,
+            f.observation().parent,
+            'darwin'
+        );
+        expect(invocation.command).toBe(process.execPath);
+        expect(invocation.cwd).toBe(tools.root);
+        expect(invocation.args).toEqual([
+            join(tools.root, 'scripts/trustedGithubWriteBootstrap.ts'),
+            'pr:supersede',
+            '--inspect-parent-completion',
+            '--parent-pr',
+            '5425',
+            '--expected-head',
+            parent,
+            '--replacement',
+            '5636',
+        ]);
+        expect(invocation.env.GH_TOKEN).toBeUndefined();
+        expect(invocation.env.NODE_OPTIONS).toBeUndefined();
+        expect(invocation.env.SOURDAW_TRUSTED_PRIMARY_ROOT).toBeUndefined();
+        expect(invocation.env.PATH).not.toContain('/evil');
+        expect(invocation.env.PATH?.split(':').at(-1)).toBe('/bin');
+        expect(JSON.stringify(invocation.args)).not.toContain('private');
+        expect(() =>
+            nativeParentInspectionInvocation(
+                { primaryRoot: tools.root, gitPath: tools.gitPath, ghPath: tools.ghPath, localEnv: {} },
+                input.closedParent,
+                f.observation().parent,
+                'linux',
+                () => undefined
+            )
+        ).toThrow('only on Darwin');
+        expect(() =>
+            nativeParentInspectionInvocation(
+                { primaryRoot: tools.root, gitPath: tools.gitPath, ghPath: tools.ghPath, localEnv: {} },
+                input.closedParent,
+                f.observation().parent,
+                'darwin',
+                () => {
+                    throw new Error('missing system ps');
+                }
+            )
+        ).toThrow('missing system ps');
+    });
+});
+
+function nativeCompletionWire() {
+    const { f, input } = closedParentFixture();
+    const core = {
+        number: 5425,
+        head: parent,
+        headRefName: parentBranch,
+        base: 'main',
+        baseRefOid: sha('e'),
+        headRepository: REQUIRED_REPOSITORY,
+        repository: REQUIRED_REPOSITORY,
+        state: 'CLOSED',
+        merged: false,
+        closedAt: '2026-10-24T08:48:24Z',
+        mergeCommit: null,
+    };
+    const marker = {
+        id: 'marker',
+        fullDatabaseId: '123',
+        authorNodeId: AUTHOR_BOT_NODE_ID,
+        authorType: 'Bot',
+        body: 'native bytes',
+    };
+    const payload = {
+        version: 1,
+        sourceCommit: sha('9'),
+        parent: core,
+        replacement: {
+            ...core,
+            number: 5636,
+            state: 'MERGED',
+            headRefName: 'fix/replacement',
+            merged: true,
+            mergeCommit: sha('f'),
+        },
+        receipt: marker,
+        lineage: { ...marker, id: 'lineage' },
+        findingIds: ['1001'],
+    };
+    return { f, input, payload, wire: () => `${canonicalJson(payload)}\n` };
+}
+
+describe('bounded native parent inspection transport', () => {
+    it('accepts only the exact bound source and original/current identities, with one complete output', () => {
+        const { f, input, payload, wire } = nativeCompletionWire();
+        f.observation().closedParentCompletion = checkedNativeParentCompletion(
+            wire(),
+            f.observation().parent,
+            5636,
+            sha('9')
+        );
+        expect(f.observation().closedParentCompletion).toBe(wire().slice(0, -1));
+        expect(admitHistoricalStack(input, f.port).parentPullRequest).toBe(5425);
+        for (const invalid of [
+            `${wire()}\n`,
+            `banner\n${wire()}`,
+            wire().trim(),
+            '{}\n',
+            wire().replace('sourceCommit', 'unknown'),
+            'x'.repeat(32770),
+        ]) {
+            expect(() => checkedNativeParentCompletion(invalid, f.observation().parent, 5636, sha('9'))).toThrow();
+        }
+        expect(() => checkedNativeParentCompletion(wire(), f.observation().parent, 5636, sha('8'))).toThrow(
+            'source changed'
+        );
+        for (const change of ['head', 'branch', 'replacement', 'merge', 'marker actor', 'roots']) {
+            const row = structuredClone(payload);
+            if (change === 'head') {
+                row.parent.head = sha('d');
+            }
+            if (change === 'branch') {
+                row.parent.headRefName = 'agent/other';
+            }
+            if (change === 'replacement') {
+                row.replacement.number = 9999;
+            }
+            if (change === 'merge') {
+                row.replacement.mergeCommit = 'main';
+            }
+            if (change === 'marker actor') {
+                row.receipt.authorNodeId = 'foreign';
+            }
+            if (change === 'roots') {
+                row.findingIds = ['1001', '1001'];
+            }
+            expect(() =>
+                checkedNativeParentCompletion(`${canonicalJson(row)}\n`, f.observation().parent, 5636, sha('9'))
+            ).toThrow();
+        }
+    });
+
+    it('launches the actual registered bootstrap and read-only supersession closure in a private repository', () => {
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-parent-inspection-native-'));
+        const bin = join(root, 'bin');
+        mkdirSync(bin);
+        const installedGit = realpathSync(execFileSync('which', ['git'], { encoding: 'utf8' }).trim());
+        const gitPath = join(bin, 'git');
+        writeFileSync(
+            gitPath,
+            `#!${process.execPath}
+import { spawnSync } from 'node:child_process';
+const result = spawnSync(${JSON.stringify(installedGit)}, process.argv.slice(2), { stdio: 'inherit', env: process.env });
+if (result.error) throw result.error;
+if (result.signal) process.kill(process.pid, result.signal);
+else process.exit(result.status ?? 1);
+`
+        );
+        chmodSync(gitPath, 0o700);
+        symlinkSync(process.execPath, join(bin, 'node'));
+        symlinkSync('/bin/ps', join(bin, 'ps'));
+        const env = {
+            ...process.env,
+            GIT_CONFIG_GLOBAL: '/dev/null',
+            GIT_CONFIG_SYSTEM: '/dev/null',
+            GIT_AUTHOR_NAME: 'Native fixture',
+            GIT_AUTHOR_EMAIL: 'fixture@example.test',
+            GIT_COMMITTER_NAME: 'Native fixture',
+            GIT_COMMITTER_EMAIL: 'fixture@example.test',
+        };
+        const git = (...args: string[]) =>
+            execFileSync(gitPath, args, { cwd: root, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+        for (const file of trustedDependencyGraphs['pr:supersede']) {
+            mkdirSync(join(root, file, '..'), { recursive: true });
+            writeFileSync(join(root, file), readFileSync(join(process.cwd(), file)));
+        }
+        const identityPath = join(root, 'scripts/githubAppIdentity.ts');
+        const identity = readFileSync(identityPath, 'utf8');
+        const start = identity.indexOf('export async function authenticateRole(');
+        const end = identity.indexOf('const AUTHOR_WORKFLOW_PATH_PREFIX', start);
+        expect(start).toBeGreaterThan(0);
+        expect(end).toBeGreaterThan(start);
+        writeFileSync(
+            identityPath,
+            `${identity.slice(0, start)}export async function authenticateRole() {
+            return { minted: { actorNodeId: AUTHOR_BOT_NODE_ID }, session: { configDir: ${JSON.stringify(root)}, env: process.env, dispose() {} } };
+        }\n${identity.slice(end)}`
+        );
+        writeFileSync(
+            join(root, 'package.json'),
+            JSON.stringify({
+                type: 'module',
+                scripts: {
+                    'pr:supersede': 'node scripts/trustedGithubWriteBootstrap.ts pr:supersede',
+                },
+            })
+        );
+        const { f, input, payload } = nativeCompletionWire();
+        const lineage = renderFindingLineage({ format: 'lineage-v1', oldPr: 5425, replacementPr: 5636, entries: [] });
+        const comments = [
+            {
+                id: 'receipt',
+                fullDatabaseId: '123',
+                body: 'Superseded by #5636.',
+                author: { id: AUTHOR_BOT_NODE_ID, __typename: 'Bot', login: 'native' },
+            },
+            {
+                id: 'lineage',
+                fullDatabaseId: '124',
+                body: lineage,
+                author: { id: AUTHOR_BOT_NODE_ID, __typename: 'Bot', login: 'native' },
+            },
+        ];
+        const ghPath = join(bin, 'gh');
+        writeFileSync(
+            ghPath,
+            `#!${process.execPath}
+import fs from 'node:fs';
+const args=process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(join(root, 'read-commands.jsonl'))}, JSON.stringify({args,token:process.env.GH_TOKEN??null,loader:process.env.NODE_OPTIONS??null})+String.fromCharCode(10));
+const query=args.find(a=>a.startsWith('query='))??'';
+if(query.includes('mutation')) { process.stderr.write('mutation forbidden'); process.exit(97); }
+const number=Number((args.find(a=>a.startsWith('number='))??'number=5425').split('=')[1]);
+const parent=${JSON.stringify(payload.parent)}, replacement=${JSON.stringify(payload.replacement)};
+const c=number===5425?parent:replacement;
+let result;
+if(query.includes('reviewThreads')) result={data:{repository:{pullRequest:{reviewThreads:{nodes:[],pageInfo:{hasNextPage:false}}}}}};
+else if(query.includes('node(id:')) { const subject=(args.find(a=>a.startsWith('subjectId='))??'subjectId=PR_5425').split('=')[1]; result={data:{node:{id:subject,comments:{nodes:subject==='PR_5425'?${JSON.stringify(comments)}:[],pageInfo:{hasNextPage:false}}}}}; }
+else result={data:{repository:{nameWithOwner:${JSON.stringify(REQUIRED_REPOSITORY)},pullRequest:{id:'PR_'+number,number,state:c.state,headRefOid:c.head,headRefName:c.headRefName,headRepository:{nameWithOwner:c.headRepository},baseRefName:c.base,baseRefOid:c.baseRefOid,baseRef:null,merged:c.merged,closedAt:c.closedAt,mergeCommit:c.mergeCommit?{oid:c.mergeCommit}:null}}}};
+process.stdout.write(JSON.stringify(result));
+`
+        );
+        chmodSync(ghPath, 0o700);
+        execFileSync(process.execPath, ['--check', ghPath], { encoding: 'utf8', stdio: 'pipe' });
+        git('init', '-b', 'main');
+        git('add', '.');
+        git('commit', '-m', 'test: isolated native inspection');
+        git('remote', 'add', 'origin', root);
+        git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+        const source = git('rev-parse', 'HEAD');
+        const invocation = nativeParentInspectionInvocation(
+            {
+                primaryRoot: root,
+                gitPath,
+                ghPath,
+                localEnv: {
+                    ...env,
+                    GH_TOKEN: ['secret', 'probe'].join('-'),
+                    NODE_OPTIONS: '--import=/missing-evil-loader',
+                    PATH: '/missing-evil-bin',
+                    SOURDAW_TRUSTED_PRIMARY_ROOT: '/foreign',
+                    npm_execpath: '/foreign/package',
+                },
+            },
+            input.closedParent,
+            f.observation().parent,
+            'darwin'
+        );
+        const raw = execFileSync(invocation.command, invocation.args, {
+            cwd: invocation.cwd,
+            env: invocation.env,
+            encoding: 'utf8',
+            timeout: 15000,
+        });
+        expect(checkedNativeParentCompletion(raw, f.observation().parent, 5636, source)).toContain(
+            'Superseded by #5636.'
+        );
+        const reads = readFileSync(join(root, 'read-commands.jsonl'), 'utf8')
+            .trim()
+            .split('\n')
+            .map((line) => JSON.parse(line));
+        expect(reads.length).toBeGreaterThan(5);
+        expect(reads.every((row) => row.token === null && row.loader === null)).toBe(true);
+        expect(reads.every((row) => !row.args.some((arg: string) => arg.includes('mutation')))).toBe(true);
+        expect(git('for-each-ref', '--format=%(refname)', 'refs/sourdaw')).toBe('');
+        expect(() => checkedNativeParentCompletion(raw, f.observation().parent, 5636, sha('8'))).toThrow(
+            'source changed'
+        );
+        // The outer primary boundary is real: a mutated local launcher cannot execute inspection.
+        writeFileSync(
+            join(root, 'scripts/trustedGithubWriteBootstrap.ts'),
+            `${readFileSync(join(root, 'scripts/trustedGithubWriteBootstrap.ts'), 'utf8')}\n// local drift\n`
+        );
+        expect(() =>
+            execFileSync(invocation.command, invocation.args, {
+                cwd: invocation.cwd,
+                env: invocation.env,
+                encoding: 'utf8',
+                stdio: 'pipe',
+                timeout: 15000,
+            })
+        ).toThrow('does not match its pinned');
+    });
+});
+
+describe('closed parent shell observation boundaries', () => {
+    // Closed registration admits only the Darwin system-tool boundary.
+    it
+        .runIf(process.platform === 'darwin')
+        .each([
+            'stable',
+            'child moves',
+            'parent moves',
+            'base ref moves',
+            'final query errors',
+            'truncated lifecycle',
+            'source changes',
+            'inspection fails',
+        ])('binds freshly inspected completion: %s', (change) => {
+        const { f, input, wire } = nativeCompletionWire();
+        const tools = inspectionToolFixture();
+        const root = tools.root;
+        const remote = (pr: HistoricalStackObservation['parent']) => ({
+            id: pr.id,
+            number: pr.number,
+            createdAt: pr.createdAt,
+            state: pr.state,
+            merged: pr.merged ?? false,
+            closedAt: pr.closedAt ?? null,
+            baseRefOid: pr.baseRefOid,
+            author: { id: pr.authorId },
+            repository: { id: pr.repositoryId, nameWithOwner: pr.repository },
+            headRepository: { id: pr.headRepositoryId, nameWithOwner: pr.headRepository },
+            headRefName: pr.branch,
+            headRefOid: pr.headSha,
+            headRef: { name: pr.branch, target: { oid: pr.headSha } },
+            baseRefName: pr.baseBranch,
+            baseRef: { name: pr.baseBranch, target: { oid: parent } },
+            timelineItems: {
+                pageInfo: { hasNextPage: change === 'truncated lifecycle' },
+                nodes: pr.events.map((event) => {
+                    if (event === 'ClosedEvent') {
+                        return {
+                            __typename: event,
+                            id: 'close-node',
+                            createdAt: pr.closedAt,
+                            actor: { id: AUTHOR_BOT_NODE_ID },
+                        };
+                    }
+                    return { __typename: event };
+                }),
+            },
+        });
+        const candidates = (pr: HistoricalStackObservation['parent']) =>
+            JSON.stringify([
+                [
+                    {
+                        number: pr.number,
+                        state: pr.state.toLowerCase(),
+                        merged_at: null,
+                        head: { ref: pr.branch, sha: pr.headSha, repo: { full_name: pr.repository } },
+                        user: { node_id: pr.authorId },
+                    },
+                ],
+            ]);
+        let queries = 0;
+        let inspections = 0;
+        const port = historicalAdmissionShellPort(
+            {
+                lane: root,
+                branch: childBranch,
+                primaryRoot: root,
+                gitPath: tools.gitPath,
+                ghPath: tools.ghPath,
+                originCommit: sha('9'),
+                localEnv: {},
+                session: { configDir: root, env: { GH_TOKEN: ['ghs', 'fixture'].join('_') }, dispose: () => undefined },
+                run: () => undefined,
+                capture: (command, args, options) => {
+                    if (command === process.execPath) {
+                        inspections += 1;
+                        expect(args.slice(0, 3)).toEqual([
+                            join(root, 'scripts/trustedGithubWriteBootstrap.ts'),
+                            'pr:supersede',
+                            '--inspect-parent-completion',
+                        ]);
+                        expect(options?.cwd).toBe(root);
+                        if (change === 'inspection fails') {
+                            throw new Error('inspection subprocess failed');
+                        }
+                        return change === 'source changes' ? wire().replace(sha('9'), sha('8')) : wire();
+                    }
+                    if (args[0] === 'api' && args[1] === 'graphql') {
+                        queries += 1;
+                        if (queries % 2 === 0 && change === 'final query errors') {
+                            return JSON.stringify({ errors: [{ message: 'unavailable' }] });
+                        }
+                        const childPr = remote(f.observation().child);
+                        if (queries % 2 === 0 && change === 'child moves') {
+                            childPr.headRefOid = sha('d');
+                            childPr.headRef.target.oid = sha('d');
+                        }
+                        const parentPr = remote(f.observation().parent);
+                        if (queries % 2 === 0 && change === 'parent moves') {
+                            parentPr.headRefOid = sha('d');
+                            parentPr.headRef.target.oid = sha('d');
+                        }
+                        if (queries % 2 === 0 && change === 'base ref moves') {
+                            childPr.baseRef.target.oid = sha('d');
+                        }
+                        return JSON.stringify({ data: { repository: { child: childPr, parent: parentPr } } });
+                    }
+                    if (args[0] === 'api') {
+                        if (args[3]?.includes(encodeURIComponent(childBranch))) {
+                            return candidates(f.observation().child);
+                        }
+                        return candidates(f.observation().parent);
+                    }
+                    if (args[0] === 'rev-parse') {
+                        return parent;
+                    }
+                    throw new Error('unexpected observer operation');
+                },
+            },
+            input
+        );
+        if (change === 'stable') {
+            expect(port.observe().closedParentCompletion).toBe(wire().trim());
+            expect(port.observe().closedParentCompletion).toBe(wire().trim());
+            expect(inspections).toBe(2);
+            expect(queries).toBe(4);
+        } else {
+            expect(() => port.observe()).toThrow();
+        }
+    });
+});
+
+describe('version2 registered-lineage reader', () => {
+    it('refuses a receipt-only or missing-marker completion and preserves its exact flags/proof on disk', () => {
+        const { f, input } = closedParentFixture();
+        const descriptor = admitHistoricalStack(input, f.port);
+        const receipt = f.receipt();
+        const root = mkdtempSync(join(tmpdir(), 'sourdaw-closed-journal-'));
+        mkdirSync(join(root, '.agents/lane-stacks'), { recursive: true });
+        writeFileSync(`${laneStackPath(root, childBranch)}.admission.json`, JSON.stringify(receipt));
+        expect(() => readRegisteredLaneStack(root, childBranch, configWithForkMarkers(childBranch))).toThrow(
+            'incomplete'
+        );
+        writeLaneStack(root, descriptor);
+        expect(() => readRegisteredLaneStack(root, childBranch, configWithForkMarkers(childBranch))).toThrow();
+        expect(readRegisteredLaneStack(root, childBranch, configWithForkMarkers(childBranch, anchor))).toEqual(
+            descriptor
+        );
+        expect(JSON.parse(readFileSync(`${laneStackPath(root, childBranch)}.admission.json`, 'utf8'))).toEqual(receipt);
+    });
+});
+
+function inspectionToolFixture() {
+    const root = mkdtempSync(join(tmpdir(), 'sourdaw-selected-inspection-tools-'));
+    const gitDir = join(root, 'git');
+    const ghDir = join(root, 'gh');
+    mkdirSync(gitDir);
+    mkdirSync(ghDir);
+    const executable = (path: string) => {
+        writeFileSync(path, '#!/bin/sh\nexit 0\n');
+        chmodSync(path, 0o700);
+        return realpathSync(path);
+    };
+    const gitPath = executable(join(gitDir, 'git'));
+    const ghPath = executable(join(ghDir, 'gh'));
+    const operatorPath = [ghDir, gitDir, dirname(process.execPath), '/bin'].join(delimiter);
+    return { root, gitDir, ghDir, gitPath, ghPath, operatorPath, executable };
+}
+
+describe('native inspection executable identity', () => {
+    it.each(['git', 'gh'] as const)('refuses a canonical colon-directory %s reached through a normal alias', (name) => {
+        const tools = inspectionToolFixture();
+        const physical = join(tools.root, `physical:${name}`);
+        const splitPrefix = join(tools.root, 'physical');
+        const aliases = join(tools.root, 'aliases');
+        mkdirSync(physical);
+        mkdirSync(splitPrefix);
+        mkdirSync(aliases);
+        const selected = tools.executable(join(physical, name));
+        const competing = tools.executable(join(splitPrefix, name));
+        symlinkSync(selected, join(aliases, name));
+        const gitPath = name === 'git' ? selected : tools.gitPath;
+        const ghPath = name === 'gh' ? selected : tools.ghPath;
+        const operatorPath = [aliases, tools.ghDir, tools.gitDir, dirname(process.execPath), '/bin'].join(delimiter);
+        expect(resolveTrustedExecutable(name, { PATH: operatorPath }, 'darwin')).toBe(selected);
+        const reconstructed = [dirname(gitPath), dirname(ghPath), dirname(process.execPath), '/bin'].join(delimiter);
+        expect(resolveTrustedExecutable(name, { PATH: reconstructed }, 'darwin')).toBe(competing);
+        const { f, input } = closedParentFixture();
+        let launches = 0;
+        expect(() => {
+            nativeParentInspectionInvocation(
+                { primaryRoot: tools.root, gitPath, ghPath, localEnv: { PATH: operatorPath } },
+                input.closedParent,
+                f.observation().parent,
+                'darwin'
+            );
+            launches += 1;
+        }).toThrow('native inspection executable directory cannot be represented in PATH');
+        expect(launches).toBe(0);
+    });
+
+    it('retains the actual selected tools and canonical system ps through legitimate aliases', () => {
+        const tools = inspectionToolFixture();
+        symlinkSync(tools.ghPath, join(tools.gitDir, 'gh'));
+        symlinkSync('/bin/ps', join(tools.gitDir, 'ps'));
+        const { f, input } = closedParentFixture();
+        const invocation = nativeParentInspectionInvocation(
+            {
+                primaryRoot: tools.root,
+                gitPath: tools.gitPath,
+                ghPath: tools.ghPath,
+                localEnv: { PATH: tools.operatorPath },
+            },
+            input.closedParent,
+            f.observation().parent,
+            'darwin'
+        );
+        expect(resolveTrustedExecutable('git', { PATH: tools.operatorPath }, 'darwin')).toBe(tools.gitPath);
+        expect(resolveTrustedExecutable('gh', { PATH: tools.operatorPath }, 'darwin')).toBe(tools.ghPath);
+        expect(resolveTrustedExecutable('git', invocation.env, 'darwin')).toBe(tools.gitPath);
+        expect(resolveTrustedExecutable('gh', invocation.env, 'darwin')).toBe(tools.ghPath);
+        expect(resolveTrustedExecutable('ps', invocation.env, 'darwin')).toBe(realpathSync('/bin/ps'));
+        const resolvedNode = execFileSync('/usr/bin/which', ['node'], { env: invocation.env, encoding: 'utf8' }).trim();
+        expect(realpathSync(resolvedNode)).toBe(realpathSync(process.execPath));
+        expect(invocation.command).toBe(process.execPath);
+    });
+
+    it.each(['gh', 'ps', 'node', 'git alias'])(
+        'refuses competing %s identities before launching the reader',
+        (collision) => {
+            const tools = inspectionToolFixture();
+            let gitPath = tools.gitPath;
+            let operatorPath = tools.operatorPath;
+            let competing = '';
+            if (collision === 'gh') {
+                competing = tools.executable(join(tools.gitDir, 'gh'));
+            }
+            if (collision === 'ps') {
+                competing = tools.executable(join(tools.gitDir, 'ps'));
+            }
+            if (collision === 'node') {
+                competing = tools.executable(join(tools.gitDir, 'node'));
+            }
+            if (collision === 'git alias') {
+                const aliases = join(tools.root, 'aliases');
+                const stored = join(tools.root, 'stored');
+                mkdirSync(aliases);
+                mkdirSync(stored);
+                gitPath = tools.executable(join(stored, 'selected-git'));
+                symlinkSync(gitPath, join(aliases, 'git'));
+                competing = tools.executable(join(stored, 'git'));
+                operatorPath = [tools.ghDir, aliases, dirname(process.execPath), '/bin'].join(delimiter);
+            }
+            expect(resolveTrustedExecutable('git', { PATH: operatorPath }, 'darwin')).toBe(gitPath);
+            expect(resolveTrustedExecutable('gh', { PATH: operatorPath }, 'darwin')).toBe(tools.ghPath);
+            // The native resolver demonstrates why the published reconstructed layout is unsafe.
+            const reconstructed = [dirname(gitPath), dirname(tools.ghPath), dirname(process.execPath), '/bin'].join(
+                delimiter
+            );
+            if (collision === 'node') {
+                const node = execFileSync('/usr/bin/which', ['node'], {
+                    env: { PATH: reconstructed },
+                    encoding: 'utf8',
+                }).trim();
+                expect(realpathSync(node)).toBe(competing);
+                expect(realpathSync(node)).not.toBe(realpathSync(process.execPath));
+            } else {
+                let name: 'git' | 'gh' | 'ps' = 'gh';
+                if (collision === 'ps') {
+                    name = 'ps';
+                }
+                if (collision === 'git alias') {
+                    name = 'git';
+                }
+                expect(resolveTrustedExecutable(name, { PATH: reconstructed }, 'darwin')).toBe(competing);
+            }
+            const { f, input } = closedParentFixture();
+            let launches = 0;
+            expect(() => {
+                nativeParentInspectionInvocation(
+                    { primaryRoot: tools.root, gitPath, ghPath: tools.ghPath, localEnv: { PATH: operatorPath } },
+                    input.closedParent,
+                    f.observation().parent,
+                    'darwin'
+                );
+                launches += 1;
+            }).toThrow(/native inspection .* executable/);
+            expect(launches).toBe(0);
+        }
+    );
 });

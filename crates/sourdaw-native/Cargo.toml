@@ -73,6 +73,7 @@ whisper-rs = { version = "0.16", features = ["metal"] }
 libc = "0.2"
 
 [dev-dependencies]
+assert_no_alloc = "1.1"
 daw-engine = { path = "../daw-engine", features = ["command-capture-fixture"] }
 daw-plugin-host = { path = "../daw-plugin-host", features = ["engine-owned-command-fixture"] }
 tokio = { version = "1", features = ["macros", "time", "net", "rt", "rt-multi-thread", "sync"] }

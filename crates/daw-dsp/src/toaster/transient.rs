@@ -68,3 +68,63 @@ impl TransientShaper {
         }
     }
 }
+
+/// Stereo adapter for the standalone effect. The pad shaper above keeps its
+/// historical API and block behavior; this adapter advances one state per channel.
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub struct TransientShaperInstance {
+    left: TransientShaper,
+    right: TransientShaper,
+}
+
+#[wasm_bindgen::prelude::wasm_bindgen]
+impl TransientShaperInstance {
+    #[wasm_bindgen::prelude::wasm_bindgen(constructor)]
+    pub fn new(sample_rate: f32) -> Result<TransientShaperInstance, String> {
+        if !sample_rate.is_finite() || sample_rate <= 0.0 {
+            return Err("Transient Shaper requires a positive finite sample rate".into());
+        }
+        Ok(Self {
+            left: TransientShaper::new(sample_rate),
+            right: TransientShaper::new(sample_rate),
+        })
+    }
+
+    pub fn process_left(&mut self, input: f32, attack_gain: f32, sustain_gain: f32) -> f32 {
+        process_channel(&mut self.left, input, attack_gain, sustain_gain)
+    }
+
+    pub fn process_right(&mut self, input: f32, attack_gain: f32, sustain_gain: f32) -> f32 {
+        process_channel(&mut self.right, input, attack_gain, sustain_gain)
+    }
+
+    /// Reset detector history without rebuilding coefficients or changing gains.
+    pub fn reset(&mut self) {
+        self.left.fast_env = 0.0;
+        self.left.slow_env = 0.0;
+        self.right.fast_env = 0.0;
+        self.right.slow_env = 0.0;
+    }
+}
+
+#[inline]
+fn process_channel(
+    shaper: &mut TransientShaper,
+    input: f32,
+    attack_gain: f32,
+    sustain_gain: f32,
+) -> f32 {
+    if attack_gain.is_finite() {
+        shaper.set_attack(attack_gain);
+    }
+    if sustain_gain.is_finite() {
+        shaper.set_sustain(sustain_gain);
+    }
+    let input = if input.is_finite() { input } else { 0.0 };
+    let output = shaper.process(input);
+    if output.is_finite() {
+        output
+    } else {
+        0.0
+    }
+}

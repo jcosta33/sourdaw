@@ -11,6 +11,35 @@ import { fromToasterKitState, toToasterKitState, TOASTER_KIT_STATE_VERSION } fro
  * directly and a missing pad or pattern is a crash rather than a wrong sound.
  */
 describe('toasterKitState codec', () => {
+    it('restores the B pattern and morph controls while accepting older payloads without morph', () => {
+        const kit = createDefaultKit();
+        const b = structuredClone(kit.patterns[0]!);
+        b.id = 'B1';
+        b.name = 'Pattern B1';
+        b.tracks[0]!.steps[1]!.active = true;
+        kit.patterns.push(b);
+        kit.morph = { enabled: true, targetPatternId: 'B1', position: 0.5 };
+
+        const restored = fromToasterKitState(toToasterKitState(kit));
+        expect(restored.morph).toEqual(kit.morph);
+        expect(restored.patterns[1]?.tracks[0]?.steps[1]?.active).toBe(true);
+        expect(restored.patterns[0]?.tracks[0]?.steps[1]?.active).toBe(false);
+
+        const oldChunk = toToasterKitState(kit);
+        delete (oldChunk.data.kit as Record<string, unknown>).morph;
+        expect(fromToasterKitState(oldChunk).morph).toEqual(createDefaultKit().morph);
+    });
+
+    it('disables invalid, stale, and self targets and repairs a non-finite position', () => {
+        const kit = createDefaultKit();
+        const chunk = toToasterKitState(kit);
+        const storedKit = chunk.data.kit as Record<string, unknown>;
+        storedKit.morph = { enabled: true, targetPatternId: 'missing', position: 'NaN' };
+        expect(fromToasterKitState(chunk).morph).toEqual({ enabled: false, targetPatternId: null, position: 0 });
+
+        storedKit.morph = { enabled: true, targetPatternId: 'A1', position: 0.8 };
+        expect(fromToasterKitState(chunk).morph).toEqual({ enabled: false, targetPatternId: 'A1', position: 0.8 });
+    });
     it('round-trips the fields parameterValues cannot hold', () => {
         const kit = createDefaultKit();
         kit.name = 'Sourdough Breaks';

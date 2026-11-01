@@ -15,9 +15,9 @@ describe('closeScratchPad', () => {
         vi.clearAllMocks();
     });
 
-    it('closes the scratch pad', () => {
+    it('closes the scratch pad and forgets that it was collapsed', () => {
         closeScratchPad();
 
-        expect(mocks.updateWorkspaceState).toHaveBeenCalledWith({ scratchPadOpen: false });
+        expect(mocks.updateWorkspaceState).toHaveBeenCalledWith({ scratchPadOpen: false, scratchPadCollapsed: false });
     });
 });

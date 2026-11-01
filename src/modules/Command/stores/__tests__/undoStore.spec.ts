@@ -17,6 +17,136 @@ const SUPPORTED_SESSION_ACTION_TYPES = [
     'togglePlayback',
 ] as const;
 
+describe('deferred boot session restore', () => {
+    async function pendingRestore(
+        value: unknown = {
+            past: [
+                {
+                    id: 'saved-tempo',
+                    kind: 'action',
+                    label: 'Saved tempo',
+                    timestamp: 1,
+                    source: 'manual',
+                    action: { type: 'setTempo', payload: { bpm: 120 } },
+                    inverseAction: { type: 'setTempo', payload: { bpm: 100 } },
+                },
+            ],
+            future: [],
+            projectId: 'saved-project',
+            witness: 'saved-root',
+        }
+    ) {
+        vi.resetModules();
+        sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(value));
+        const subject = await import('../undoStore');
+        let documentAvailable = false;
+        const validateEntry = vi.fn(() => documentAvailable);
+        const contracts = [
+            {
+                actionType: 'setTempo',
+                operationVersion: 1,
+                role: 'forward' as const,
+                validateArguments: () => true,
+                validateEntry,
+            },
+        ];
+        subject.hydrateUndoStoreFromSession(contracts, true);
+        return {
+            subject,
+            validateEntry,
+            contracts,
+            installDocument: () => {
+                documentAvailable = true;
+            },
+        };
+    }
+
+    it('keeps pending bytes and hides entries through a pre-root mirror microtask', async () => {
+        const pending = await pendingRestore();
+        const serialized = sessionStorage.getItem(UNDO_SESSION_KEY);
+        await flushPersistence();
+        expect(sessionStorage.getItem(UNDO_SESSION_KEY)).toBe(serialized);
+        expect(pending.subject.undoStore.value).toEqual({ past: [], future: [] });
+        expect(pending.validateEntry).not.toHaveBeenCalled();
+        pending.installDocument();
+        pending.subject.reconcileUndoStoreForProject('saved-project', () => 'saved-root');
+        expect(pending.validateEntry).toHaveBeenCalledOnce();
+        expect(pending.subject.undoStore.value?.past.map((entry) => entry.id)).toEqual(['saved-tempo']);
+    });
+
+    it.each([
+        ['other-project', 'saved-root'],
+        ['saved-project', 'divergent-root'],
+        [undefined, 'saved-root'],
+    ])('rejects owner %s / %s before any document-dependent validation', async (projectId, witness) => {
+        const pending = await pendingRestore();
+        pending.installDocument();
+        pending.subject.reconcileUndoStoreForProject(projectId, () => witness);
+        expect(pending.validateEntry).not.toHaveBeenCalled();
+        expect(pending.subject.undoStore.value).toEqual({ past: [], future: [] });
+        pending.subject.reconcileUndoStoreForProject('saved-project', () => 'saved-root');
+        expect(pending.subject.undoStore.value).toEqual({ past: [], future: [] });
+    });
+
+    it('does not replace a pending snapshot or rehydrate a settled one on repeated registration', async () => {
+        const pending = await pendingRestore();
+        const serialized = sessionStorage.getItem(UNDO_SESSION_KEY);
+        pending.subject.hydrateUndoStoreFromSession(pending.contracts, true);
+        await flushPersistence();
+        expect(sessionStorage.getItem(UNDO_SESSION_KEY)).toBe(serialized);
+        pending.installDocument();
+        pending.subject.reconcileUndoStoreForProject('saved-project', () => 'saved-root');
+        const restored = pending.subject.undoStore.value;
+        pending.subject.hydrateUndoStoreFromSession(pending.contracts, true);
+        expect(pending.subject.undoStore.value).toBe(restored);
+    });
+
+    it('invalidates pending history on an explicit project-history clear', async () => {
+        const pending = await pendingRestore();
+        const { clearUndoHistory } = await import('../clearUndoHistory');
+        clearUndoHistory();
+        pending.installDocument();
+        pending.subject.reconcileUndoStoreForProject('saved-project', () => 'saved-root');
+        expect(pending.validateEntry).not.toHaveBeenCalled();
+        expect(pending.subject.undoStore.value).toEqual({ past: [], future: [] });
+    });
+
+    it('does not resurrect a pending entry when validation clears project authority', async () => {
+        const pending = await pendingRestore();
+        pending.installDocument();
+        pending.validateEntry.mockImplementationOnce(() => {
+            pending.subject.clearUndoStoreOwner();
+            pending.subject.undoStore.set({ past: [], future: [] });
+            return true;
+        });
+        pending.subject.reconcileUndoStoreForProject('saved-project', () => 'saved-root');
+        expect(pending.subject.undoStore.value).toEqual({ past: [], future: [] });
+    });
+
+    it('rejects a document witness that changes during entry validation', async () => {
+        const pending = await pendingRestore();
+        pending.installDocument();
+        let witness = 'saved-root';
+        pending.validateEntry.mockImplementationOnce(() => {
+            witness = 'divergent-root';
+            return true;
+        });
+        pending.subject.reconcileUndoStoreForProject('saved-project', () => witness);
+        expect(pending.subject.undoStore.value).toEqual({ past: [], future: [] });
+    });
+
+    it.each([
+        { past: [], future: [], projectId: 'saved-project', witness: 'saved-root' },
+        { past: [{ kind: 'action' }], future: [], projectId: 'saved-project', witness: 'saved-root' },
+        { past: [], future: [] },
+    ])('keeps empty, malformed and unowned legacy mirrors fail-safe', async (wire) => {
+        const pending = await pendingRestore(wire);
+        pending.installDocument();
+        pending.subject.reconcileUndoStoreForProject('saved-project', () => 'saved-root');
+        expect(pending.subject.undoStore.value).toEqual({ past: [], future: [] });
+    });
+});
+
 async function loadSubject() {
     vi.resetModules();
     const createUndoEntryModule = await import('../../useCases/createUndoEntry');

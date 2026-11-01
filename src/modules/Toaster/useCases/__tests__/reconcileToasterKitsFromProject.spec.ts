@@ -90,6 +90,23 @@ describe('reconcileToasterKitsFromProject', () => {
         expect(mocks.writeNative).toHaveBeenCalledTimes(1);
     });
 
+    it('accepts a peer morph and B edit without echoing the peer chunk', () => {
+        const kit = createDefaultKit();
+        const target = structuredClone(kit.patterns[0]!);
+        target.id = 'B1';
+        target.name = 'Pattern B1';
+        target.tracks[0]!.steps[1]!.active = true;
+        kit.patterns.push(target);
+        kit.morph = { enabled: true, targetPatternId: 'B1', position: 0.5 };
+        projectWith(toasterDevice(toToasterKitState(kit)));
+
+        reconcileToasterKitsFromProject();
+
+        expect(toasterStore.value?.[DEVICE_ID]?.kit.patterns[1]?.tracks[0]?.steps[1]?.active).toBe(true);
+        expect(toasterStore.value?.[DEVICE_ID]?.kit.morph).toEqual(kit.morph);
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+    });
+
     it('reconciles the owner type only', () => {
         projectWith(toasterDevice(peerChunk()), { id: 'levain-1', type: 'levain', deviceState: peerChunk() });
 

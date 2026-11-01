@@ -1,4 +1,5 @@
 import {
+    type AppAction,
     type ClipSatelliteEntrySnapshot,
     type ClipSatelliteGainEnvelopeSnapshot,
     type ClipSatelliteWarpMarkerSnapshot,
@@ -180,11 +181,26 @@ export function normalizeClipSatelliteEntry(entry: ClipSatelliteEntrySnapshot): 
  * compared through the same normalization `writeClipSatelliteEntry` applies, so
  * a snapshot written by an earlier head matches regardless of key order.
  */
-export function clipSatelliteEntriesMatchSnapshot(entries: readonly ClipSatelliteEntrySnapshot[]): boolean {
-    return entries.every(
-        (entry) =>
-            JSON.stringify(readClipSatelliteEntry(entry.clipId)) === JSON.stringify(normalizeClipSatelliteEntry(entry))
-    );
+export function clipSatelliteEntriesMatchSnapshot(
+    entries: readonly ClipSatelliteEntrySnapshot[],
+    priorActions: readonly AppAction[] = []
+): boolean {
+    return entries.every((entry) => {
+        let projected = readClipSatelliteEntry(entry.clipId);
+        for (const action of priorActions) {
+            let replacements: readonly ClipSatelliteEntrySnapshot[] | undefined;
+            if (action.type === 'restoreClip') {
+                replacements = action.payload.ripplePlan?.clipSatellites;
+            } else if (action.type === 'restoreClipSplitState') {
+                replacements = action.payload.replacement.clipSatellites;
+            }
+            const replacement = replacements?.find((candidate) => candidate.clipId === entry.clipId);
+            if (replacement) {
+                projected = normalizeClipSatelliteEntry(replacement);
+            }
+        }
+        return JSON.stringify(projected) === JSON.stringify(normalizeClipSatelliteEntry(entry));
+    });
 }
 
 /**

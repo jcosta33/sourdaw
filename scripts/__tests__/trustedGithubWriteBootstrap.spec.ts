@@ -349,6 +349,9 @@ function withNativeSupersession(
             export const assertRequiredRepository = value => {
                 if (value !== REQUIRED_REPOSITORY) throw new Error('wrong repository');
             };
+            export function githubAuthorizationGitEnv() {
+                throw new Error('unexpected Git authorization environment request in native closure fixture');
+            }
             export const spawnCapture = () => REQUIRED_REPOSITORY;
             export async function authenticateRole() {
                 return { minted: { actorNodeId: AUTHOR_BOT_NODE_ID },
@@ -520,6 +523,9 @@ function writeNativeRetirementPorts(root: string, mode: 'admission' | 'rollback'
         export const originMainBlob = () => 'controlled-source-port';
         export const resolvePrimaryRoot = () => process.cwd();
         export const assertRequiredRepository = value => { if (value !== REQUIRED_REPOSITORY) throw new Error('wrong repository'); };
+        export function githubAuthorizationGitEnv() {
+            throw new Error('unexpected Git authorization environment request in native closure fixture');
+        }
         export const spawnCapture = (_command, args) => {
             if (args[0] !== 'api') return REQUIRED_REPOSITORY;
             const state = JSON.parse(readFileSync(join(process.cwd(), 'reviews.json'), 'utf8'));

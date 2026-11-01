@@ -11,6 +11,7 @@ import { trackCommands } from '../TrackCommands';
 vi.mock('#/utils/Notification/promptUser', () => ({ promptUser: vi.fn() }));
 vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: vi.fn().mockResolvedValue(undefined),
+    isAppActionCommittedError: vi.fn(() => false),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     duplicateTrack: vi.fn(),
@@ -18,7 +19,11 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     renameClip: vi.fn(),
     splitClip: vi.fn(),
 }));
+vi.mock('#/modules/Project/useCases', () => ({
+    captureProjectTransitionAuthority: vi.fn(),
+}));
 vi.mock('#/modules/Arrangement/stores', () => ({
+    resolveEligibleClipWriteTarget: vi.fn(),
     trackStore: {
         value: {
             tracks: [{ id: 't1', name: 'Old Track', clips: [{ id: 'c1', name: 'Old Clip' }] }],

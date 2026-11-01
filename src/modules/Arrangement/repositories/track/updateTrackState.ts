@@ -1,4 +1,4 @@
-import { trackStore } from '../../stores/trackStore';
+import { recordTrackSelectionIntent, trackStore } from '../../stores/trackStore';
 
 import { type TrackState } from './getTrackState';
 
@@ -8,5 +8,9 @@ export function updateTrackState(patch: Partial<TrackState>): void {
     if (!state) {
         return;
     }
-    trackStore.set({ ...state, ...patch });
+    const next = { ...state, ...patch };
+    if (Object.hasOwn(patch, 'selectedTrackId') && !Object.hasOwn(patch, 'tracks')) {
+        recordTrackSelectionIntent(next);
+    }
+    trackStore.set(next);
 }

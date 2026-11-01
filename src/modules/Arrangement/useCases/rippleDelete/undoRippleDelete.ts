@@ -4,6 +4,7 @@ import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
 import { type ClipSatelliteEntry, writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { type Clip } from '../../stores/trackStore';
+import { relocateAudioSourceTimeFields } from '../clip/relocateAudioSourceTimeFields';
 import { restoreTakesForClip } from '../comping/restoreTakesForClip';
 import { getTrackStoreState } from '../getTrackStoreState';
 import { setTrackState } from '../setTrackState';
@@ -19,6 +20,8 @@ type RippleDeleteShift = {
 
 type UndoRippleDeleteInput = {
     trackId: string;
+    /** Captured slot for a single-clip removal; legacy/multi-remove callers append. */
+    clipIndex?: number;
     removedClips: Clip[];
     shiftedClips: RippleDeleteShift[];
     /** Gain envelopes/warp states the removed clips carried, restored verbatim. */
@@ -31,6 +34,7 @@ type UndoRippleDeleteInput = {
 
 export function undoRippleDelete({
     trackId,
+    clipIndex,
     removedClips,
     shiftedClips,
     clipSatellites,
@@ -65,13 +69,17 @@ export function undoRippleDelete({
                     // anchor rides the same delta back or the restored
                     // placement would read a spurious advance (#4988).
                     ...shiftLoopOriginEntry(clip, originalShift.origStartBeat - clip.startBeat),
+                    ...relocateAudioSourceTimeFields(clip, originalShift.origStartBeat - clip.startBeat),
                 };
             });
 
-            return {
-                ...track,
-                clips: [...restoredClips, ...removedClips],
-            };
+            const clips = [...restoredClips];
+            clips.splice(
+                clipIndex === undefined ? clips.length : Math.min(clipIndex, clips.length),
+                0,
+                ...removedClips
+            );
+            return { ...track, clips };
         }),
     });
 

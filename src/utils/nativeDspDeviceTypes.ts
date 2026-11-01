@@ -42,6 +42,7 @@ export const NATIVE_DSP_DEVICE_TYPES = [
     // The Tuner, whose engine is the `scoring` crate.
     'native-scoring',
     'knead',
+    'transient-shaper',
 ] as const;
 
 export type NativeDspDeviceType = (typeof NATIVE_DSP_DEVICE_TYPES)[number];
@@ -70,6 +71,7 @@ export const DEVICE_TYPE_IDS = {
     dutchOven: 'dutch-oven',
     nativeScoring: 'native-scoring',
     knead: 'knead',
+    transientShaper: 'transient-shaper',
 } as const satisfies Record<string, NativeDspDeviceType>;
 
 /**

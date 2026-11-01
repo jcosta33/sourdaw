@@ -10,6 +10,8 @@ import { parseDawProject } from './parseDawProject';
 export type ImportDawProjectInput = {
     buffer: ArrayBuffer;
     fileName: string;
+    /** `discard` when the user chose to leave the open project without saving. */
+    outgoingProject?: Parameters<typeof applyImportedProjectData>[0]['outgoingProject'];
     /** The caller keeps this true only while the user still wants this replacement. */
     shouldProceed?: () => boolean;
 };
@@ -22,16 +24,42 @@ function warningMessage(warning: DawProjectImportWarning, index: number, total: 
     let detail: string;
     if (warning.kind === 'unsupported-device') {
         detail = `${subject} was replaced with a gain device`;
+        if (warning.details?.length) {
+            detail += `; ${warning.details.join(', ')} not imported`;
+        }
     } else if (warning.kind === 'unsupported-device-settings') {
         detail = `Settings for ${subject} were not imported`;
     } else if (warning.kind === 'missing-audio') {
         detail = `Audio for ${subject} could not be loaded`;
+    } else if (warning.handling === 'partial') {
+        detail = `${subject} was partially imported: ${(warning.details ?? []).join(', ')}`;
     } else if (warning.handling === 'substituted') {
         detail = `${subject} was substituted`;
+        if (warning.details?.length) {
+            detail += `; ${warning.details.join(', ')} not imported`;
+        }
     } else {
         detail = `${subject} was not imported`;
     }
     return `DAWproject warning ${String(index + 1)}/${String(total)}: ${detail}. Dismiss to read the next warning.`;
+}
+
+function combineMissingAudioWithPartialWarnings(warnings: DawProjectImportWarning[]): void {
+    for (let index = warnings.length - 1; index >= 0; index--) {
+        const missing = warnings[index];
+        if (!missing || missing.kind !== 'missing-audio') {
+            continue;
+        }
+        const partial = warnings.find(
+            (warning) => warning.sourceOrder === missing.sourceOrder && warning.handling === 'partial'
+        );
+        if (!partial) {
+            continue;
+        }
+        const partialDetails = partial.details ?? [];
+        partial.details = [...partialDetails, 'audio could not be loaded'];
+        warnings.splice(index, 1);
+    }
 }
 
 export async function importDawProject(input: ImportDawProjectInput): ImportDawProjectOutput {
@@ -69,6 +97,7 @@ export async function importDawProject(input: ImportDawProjectInput): ImportDawP
         fileName: input.fileName,
         warnings,
     });
+    combineMissingAudioWithPartialWarnings(warnings);
     warnings.sort((a, b) => a.sourceOrder - b.sourceOrder);
 
     try {
@@ -78,6 +107,7 @@ export async function importDawProject(input: ImportDawProjectInput): ImportDawP
         const ok = await applyImportedProjectData({
             data: projectData,
             decodedAudioBuffers: audioBuffers,
+            outgoingProject: input.outgoingProject,
             shouldProceed,
             transaction,
         });

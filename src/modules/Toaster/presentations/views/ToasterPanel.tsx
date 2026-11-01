@@ -22,7 +22,7 @@ import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 import { MAX_AUDIBLE_FREQ_HZ, MIN_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
 import { cn } from '#/utils/Styles/cn';
 
-import { TOASTER_PAD_COUNT, type PadState, withActivePatternId } from '../../models/ToasterKit';
+import { TOASTER_PAD_COUNT, getValidMorphState, type PadState } from '../../models/ToasterKit';
 import {
     getToasterViewState,
     pendingPadSelectionStore,
@@ -30,10 +30,10 @@ import {
     setStepVelocity,
     toasterStore,
     toggleStep,
-    updateKit,
 } from '../../stores/toasterStore';
 import { applyEuclideanToTrack } from '../../useCases/applyEuclidean';
 import { assignToasterPatternGroove } from '../../useCases/assignToasterPatternGroove';
+import { copyMorphTargetPattern } from '../../useCases/copyMorphTargetPattern';
 import { enter16Levels } from '../../useCases/enter16Levels';
 import { exit16Levels } from '../../useCases/exit16Levels';
 import { exportPatternToTimeline } from '../../useCases/exportPatternToTimeline';
@@ -42,6 +42,10 @@ import { getToasterPresetKit } from '../../useCases/getToasterPresetKit';
 import { getToasterPresetSummaries } from '../../useCases/getToasterPresetSummaries';
 import { loadToasterKitPreset } from '../../useCases/loadToasterKit';
 import { type NoteRepeatRate } from '../../useCases/noteRepeat';
+import { selectMorphSourcePattern } from '../../useCases/setMorphPosition/selectMorphSourcePattern';
+import { setMorphPosition } from '../../useCases/setMorphPosition/setMorphPosition';
+import { setMorphTarget } from '../../useCases/setMorphPosition/setMorphTarget';
+import { toggleMorph } from '../../useCases/setMorphPosition/toggleMorph';
 import { setPadParamImmediate } from '../../useCases/setPadParamImmediate';
 import { type SixteenLevelsTarget } from '../../useCases/sixteenLevels';
 import { setSoundLock } from '../../useCases/soundLocks/setSoundLock';
@@ -145,6 +149,8 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     const [eucSteps, setEucSteps] = useState(16);
     const [grooveAmountPreview, setGrooveAmountPreview] = useState<GrooveAmountPreview | null>(null);
     const [grooveAssignmentFailure, setGrooveAssignmentFailure] = useState<GrooveAssignmentFailure | null>(null);
+    const [morphFailure, setMorphFailure] = useState<string | null>(null);
+    const [bakeNotice, setBakeNotice] = useState<string | null>(null);
     const [is16Levels, setIs16Levels] = useState(false);
     const [sixteenLevelsTarget, setSixteenLevelsTarget] = useState<SixteenLevelsTarget>('tune');
     const [isRepeatActive, setIsRepeatActive] = useState(false);
@@ -213,6 +219,7 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     }
 
     const activePattern = kit.patterns.find((pattern) => pattern.id === kit.activePatternId);
+    const morph = getValidMorphState(kit);
     let grooveStatus: ReturnType<typeof getToasterPatternGrooveStatus> = { status: 'unassigned' };
     if (activePattern) {
         grooveStatus = getToasterPatternGrooveStatus({
@@ -329,10 +336,9 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
     }
 
     function handleSelectPattern(patternId: string): void {
-        const next = withActivePatternId(kit, patternId);
-        if (next !== kit) {
-            updateKit(deviceId, { activePatternId: next.activePatternId });
-        }
+        void selectMorphSourcePattern(deviceId, patternId).then((committed) => {
+            setMorphFailure(committed ? null : 'Could not select the pattern.');
+        });
     }
 
     function handlePadParam(padIndex: number, key: string, value: number): void {
@@ -713,6 +719,98 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                             </Row>
                         </Row>
 
+                        <SectionCard
+                            title="Pattern morph"
+                            detail="The selected pattern is A; choose a different B target."
+                        >
+                            <Row align="center" wrap gap={2}>
+                                <DawPluginChip
+                                    type="button"
+                                    tone="peach"
+                                    size="sm"
+                                    onClick={() => {
+                                        void copyMorphTargetPattern(deviceId).then((committed) => {
+                                            setMorphFailure(committed ? null : 'Could not create the B copy.');
+                                        });
+                                    }}
+                                >
+                                    Copy selected pattern as B
+                                </DawPluginChip>
+                                <label
+                                    className="text-[10px] text-muted-foreground"
+                                    htmlFor={`toaster-morph-target-${deviceId}`}
+                                >
+                                    B target
+                                </label>
+                                <DawCompactSelect
+                                    id={`toaster-morph-target-${deviceId}`}
+                                    aria-label="Morph B target"
+                                    value={morph.targetPatternId ?? ''}
+                                    onChange={(event) => {
+                                        void setMorphTarget(deviceId, event.target.value || null).then((committed) => {
+                                            setMorphFailure(committed ? null : 'Could not select the B target.');
+                                        });
+                                    }}
+                                >
+                                    <option value="">Choose a pattern</option>
+                                    {kit.patterns.map((pattern) => (
+                                        <option
+                                            key={pattern.id}
+                                            value={pattern.id}
+                                            disabled={pattern.id === kit.activePatternId}
+                                        >
+                                            {pattern.name}
+                                            {pattern.id === kit.activePatternId ? ' (selected for editing)' : ''}
+                                        </option>
+                                    ))}
+                                </DawCompactSelect>
+                                <DawPluginChip
+                                    type="button"
+                                    active={morph.enabled}
+                                    disabled={!morph.targetPatternId || morph.targetPatternId === kit.activePatternId}
+                                    aria-pressed={morph.enabled}
+                                    tone="peach"
+                                    size="sm"
+                                    onClick={() => {
+                                        void toggleMorph(deviceId).then((committed) => {
+                                            setMorphFailure(committed ? null : 'Could not change morph playback.');
+                                        });
+                                    }}
+                                >
+                                    {morph.enabled ? 'Morph on' : 'Morph off'}
+                                </DawPluginChip>
+                            </Row>
+                            <label
+                                className="text-[10px] text-muted-foreground"
+                                htmlFor={`toaster-morph-position-${deviceId}`}
+                            >
+                                Position {Math.round(morph.position * 100)}%
+                            </label>
+                            <Input
+                                id={`toaster-morph-position-${deviceId}`}
+                                type="range"
+                                min={0}
+                                max={1}
+                                step={0.01}
+                                value={morph.position}
+                                disabled={!morph.targetPatternId || morph.targetPatternId === kit.activePatternId}
+                                onChange={(event) => {
+                                    void setMorphPosition(deviceId, Number(event.target.value)).then((committed) => {
+                                        setMorphFailure(committed ? null : 'Could not change morph position.');
+                                    });
+                                }}
+                            />
+                            <DawInlineHint>
+                                To edit B, select it in the Pattern menu. Morph turns off while B is selected; select A
+                                again and turn morph back on to hear A → B.
+                            </DawInlineHint>
+                            {morphFailure ? (
+                                <div role="alert" className="text-[10px] text-destructive">
+                                    {morphFailure}
+                                </div>
+                            ) : null}
+                        </SectionCard>
+
                         <div className="toaster-window min-h-0 shrink-0 overflow-auto p-3">
                             {activePattern ? (
                                 <StepSequencer
@@ -782,7 +880,16 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                                 disabled={!isGrooveAvailable}
                                 tone="peach"
                                 size="sm"
-                                onClick={() => exportPatternToTimeline(deviceId)}
+                                onClick={() => {
+                                    setBakeNotice(null);
+                                    void exportPatternToTimeline(deviceId).then((result) => {
+                                        if (!result.ok) {
+                                            setBakeNotice(result.message);
+                                            return;
+                                        }
+                                        setBakeNotice(result.warning ?? null);
+                                    });
+                                }}
                             >
                                 <Send className="size-3.5" />
                                 To timeline
@@ -792,6 +899,11 @@ export const ToasterPanel = ({ deviceId }: { deviceId: string }): ReactElement =
                             Play sounds the pattern live only. To timeline writes it to the arrangement for export and
                             native playback.
                         </DawInlineHint>
+                        {bakeNotice ? (
+                            <div role="alert" className="text-[9px] text-destructive">
+                                {bakeNotice}
+                            </div>
+                        ) : null}
                         <div role="status" className="text-[9px] leading-4 text-muted-foreground">
                             {grooveStatusMessage}
                         </div>

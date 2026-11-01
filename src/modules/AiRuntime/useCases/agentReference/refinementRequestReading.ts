@@ -63,7 +63,8 @@ const REMOVAL = new RegExp(
     `^(?:(?:${wordsPattern(REMOVAL_OPENERS)})\\s+)*(?:${wordsPattern(REMOVAL_VERBS)})\\s+(.+)$`,
     'u'
 );
-const INNER_REMOVAL_SEPARATOR = /\s+(?=(?:except(?:\s+for)?|without)\s)/giu;
+// Anchored at the start of a whitespace run, like the shared clause separator, so a long run stays linear.
+const INNER_REMOVAL_SEPARATOR = /(?<!\s)\s+(?=(?:except(?:\s+for)?|without)\s)/giu;
 const REFERENCE_ARTICLE_WORDS: readonly string[] = ['the', 'a', 'an', 'my', 'its', 'their'];
 const REFERENCE_ARTICLES = new RegExp(`^(?:(?:${REFERENCE_ARTICLE_WORDS.join('|')})\\s+)+`, 'u');
 /**

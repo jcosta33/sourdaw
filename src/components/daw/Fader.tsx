@@ -8,6 +8,14 @@ import {
     useLayoutEffect,
 } from 'react';
 
+import {
+    dbToGain,
+    faderPositionToValue,
+    faderValueToPosition,
+    formatDecibels,
+    formatGainDb,
+    type FaderValueScale,
+} from '#/utils/audioLevelLaw';
 import { cn } from '#/utils/Styles/cn';
 
 type Tone =
@@ -79,6 +87,10 @@ type FaderProps = {
      * than a bare number. Omit it where the value is already unitless.
      */
     unit?: string;
+    /** Opt into a continuous audio fader law; the default preserves generic linear travel. */
+    valueScale?: FaderValueScale;
+    /** Override the unity mark; audio scales default to 1 for gain and 0 for decibels. */
+    unityValue?: number;
 };
 
 /** dB marks for the fader scale */
@@ -120,6 +132,8 @@ export const Fader = ({
     className,
     tone = 'cyan',
     unit,
+    valueScale = 'linear',
+    unityValue,
     'aria-label': ariaLabel,
 }: FaderProps): ReactElement => {
     const [isDragging, setIsDragging] = useState(false);
@@ -143,10 +157,10 @@ export const Fader = ({
     const activePointerIdRef = useRef<number | null>(null);
     const finalizeDragRef = useRef<() => void>(() => {});
 
-    const normalized = Math.max(0, Math.min(1, (value - min) / (max - min)));
+    const normalized = faderValueToPosition(value, min, max, valueScale);
 
     const clampAndSnap = (value1: number) => {
-        let clamped = Math.max(min, Math.min(max, value1));
+        let clamped = Number.isNaN(value1) ? min : Math.max(min, Math.min(max, value1));
         if (bipolar && Math.abs(clamped - defaultValue) < (max - min) * 0.05) {
             clamped = defaultValue;
         }
@@ -259,7 +273,7 @@ export const Fader = ({
         if (!isCapClick) {
             const rect = trackRef.current.getBoundingClientRect();
             const percent = 1 - (event.clientY - rect.top) / rect.height;
-            const newValue = clampAndSnap(min + percent * (max - min));
+            const newValue = clampAndSnap(faderPositionToValue(percent, min, max, valueScale));
             onChange(newValue, true);
             hasEmittedTransient.current = true;
             currentValue.current = newValue;
@@ -284,12 +298,14 @@ export const Fader = ({
         }
         const deltaY = startY.current - event.clientY;
         const currentStep = event.shiftKey ? fineStep : step;
-        const pxPerUnit = height / (max - min);
-        let sensitivity = 1 / pxPerUnit;
-        if (event.shiftKey) {
-            sensitivity *= 0.1;
+        const travelDelta = (deltaY / height) * (event.shiftKey ? 0.1 : 1);
+        let newValue: number;
+        if (valueScale === 'linear') {
+            newValue = startValue.current + travelDelta * (max - min);
+        } else {
+            const startPosition = faderValueToPosition(startValue.current, min, max, valueScale);
+            newValue = faderPositionToValue(startPosition + travelDelta, min, max, valueScale);
         }
-        let newValue = startValue.current + deltaY * sensitivity;
         newValue = Math.round(newValue / currentStep) * currentStep;
         const clamped = clampAndSnap(newValue);
         currentValue.current = clamped;
@@ -380,14 +396,31 @@ export const Fader = ({
     };
 
     const capBottomPct = normalized * 100;
-    const unityPct = Math.max(0, Math.min(100, ((defaultValue - min) / (max - min)) * 100));
+    let unityTarget = unityValue ?? defaultValue;
+    if (unityValue === undefined && valueScale === 'gain') {
+        unityTarget = 1;
+    } else if (unityValue === undefined && valueScale === 'decibels') {
+        unityTarget = 0;
+    }
+    const unityPct = faderValueToPosition(unityTarget, min, max, valueScale) * 100;
 
     // audit M-083: the value the accessibility tree reports, kept inside the declared bounds.
-    const reportedValue = Math.max(min, Math.min(max, value));
+    const reportedValue = Number.isNaN(value) ? min : Math.max(min, Math.min(max, value));
     let valueText: string | undefined;
-    if (unit) {
+    if (valueScale === 'gain') {
+        valueText = `${formatGainDb(reportedValue)} dB`;
+    } else if (valueScale === 'decibels') {
+        valueText = `${formatDecibels(reportedValue)} dB`;
+    } else if (unit) {
         valueText = `${Math.round(reportedValue * 100) / 100} ${unit}`;
     }
+
+    const scalePosition = (db: number): number =>
+        faderValueToPosition(valueScale === 'gain' ? dbToGain(db) : db, min, max, valueScale) * 100;
+    const isScaleMarkVisible = (db: number): boolean => {
+        const markValue = valueScale === 'gain' ? dbToGain(db) : db;
+        return markValue >= min && markValue <= max;
+    };
 
     return (
         <div
@@ -425,11 +458,12 @@ export const Fader = ({
             {/* dB scale marks (left side) */}
             {showScale ? (
                 <div className="pointer-events-none absolute -left-6 top-0 bottom-0 flex w-5 flex-col justify-between">
-                    {DB_MARKS.map((db) => {
-                        const pct = ((db - min) / (max - min)) * 100;
+                    {DB_MARKS.filter(isScaleMarkVisible).map((db) => {
+                        const pct = scalePosition(db);
                         return (
                             <span
                                 key={db}
+                                data-role={`fader-scale-tick-${db}`}
                                 className={cn(
                                     'absolute right-0 font-mono text-[8px] leading-none tracking-[0.08em]',
                                     db === 0 ? 'text-text-primary' : 'text-text-disabled'
@@ -446,6 +480,7 @@ export const Fader = ({
             {/* Track groove */}
             <div
                 ref={trackRef}
+                data-role="fader-track"
                 className="daw-inset-surface absolute top-0 bottom-0 left-1/2 w-[5px] -translate-x-1/2 overflow-hidden rounded-full"
                 style={{
                     background:
@@ -454,6 +489,7 @@ export const Fader = ({
             >
                 {/* Unity gain line */}
                 <div
+                    data-role="fader-unity"
                     className="absolute w-full h-px z-0"
                     style={{
                         bottom: `${unityPct}%`,
@@ -463,11 +499,12 @@ export const Fader = ({
 
                 {/* Tick marks at the right side for visual reference */}
                 {showScale
-                    ? DB_MARKS.map((db) => {
-                          const pct = ((db - min) / (max - min)) * 100;
+                    ? DB_MARKS.filter(isScaleMarkVisible).map((db) => {
+                          const pct = scalePosition(db);
                           return (
                               <div
                                   key={db}
+                                  data-role={`fader-scale-mark-${db}`}
                                   className="absolute right-0 w-[2px] h-px bg-white/10"
                                   style={{ bottom: `${pct}%` }}
                               />

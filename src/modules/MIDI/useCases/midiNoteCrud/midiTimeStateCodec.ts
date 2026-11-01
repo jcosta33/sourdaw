@@ -508,6 +508,31 @@ function decodeState(value: unknown): MidiStoreState | null {
     }
 }
 
+type MidiTimeStateRestorePlan = {
+    version: 1;
+    expected: MidiStoreState;
+    replacement: MidiStoreState;
+};
+
+function decodeRestorePlan(value: unknown): MidiTimeStateRestorePlan | null {
+    const properties = readDataObject(value, ['version', 'expected', 'replacement']);
+    if (!properties || properties.version !== 1) {
+        return null;
+    }
+
+    const expected = decodeState(properties.expected);
+    const replacement = decodeState(properties.replacement);
+    if (!expected || !replacement) {
+        return null;
+    }
+
+    return {
+        version: 1,
+        expected,
+        replacement,
+    };
+}
+
 function nodesEqual(left: MidiTimeStateNode, right: MidiTimeStateNode): boolean {
     if (left.type !== right.type) {
         return false;
@@ -579,6 +604,7 @@ function stateMatchesSnapshot(state: MidiStoreState, snapshot: MidiTimeStateNode
 }
 
 export const midiTimeStateCodec = {
+    decodeRestorePlan,
     decodeState,
     encodeState,
     stateMatchesSnapshot,

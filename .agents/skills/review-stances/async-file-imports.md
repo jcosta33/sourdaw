@@ -1,5 +1,11 @@
 # Lesson library: asynchronous file imports
 
+## Escape: Prompt Bar stem preparation had no local-work budget admission
+
+PR #1986 (`e36b9589c2`) made stem preparation refuse a missing work-budget callback before decode or staging. PR #2648 (`7b41fd731c`) introduced `submitAdmittedPromptRequest` without passing that callback to `planPromptActions`; PR #4479 retained the route. The public #2648 approval covered run and recovery settlement, but its described checks did not establish a real Prompt Bar file-preparation admission. The missed stance was route parity at the picker-to-budget-to-decode boundary.
+
+Submit a two-file stem import through the real Prompt Bar planner with only picker, decode and storage ports replaced. An admitted budget must produce one confirmable card and commit once; an exceeded storage limit must preserve the exact refusal, reserve none of the three stem categories, and reach neither decode nor staging. Keep cancelled and invalid selections at the same boundary. A mocked planner or prepared-scope result cannot prove this route carries the callback. Historical private review prompts and tiers are unknown.
+
 For file requests that read or parse asynchronously before changing an open project, distinguish
 the project's lifetime from the user's latest request within that lifetime. A matching project
 alone does not authorize an older request to publish its result.
@@ -23,6 +29,20 @@ alone does not authorize an older request to publish its result.
   supersession, and project replacement must leave a clean current project clean. Preserve the
   loading guard and recheck request ownership before bookkeeping and after synchronous dirty
   subscribers, before publishing success. A mocked store cannot prove autosave admission.
+
+## Crumbs waveform publication outlived its accepted sample
+
+Commit `c8c1257477838ab15d98b5ea6b38e821ddb4ad57` introduced the sampler's unfenced
+post-peaks continuation; no associated public PR is established. PR #5041 later guarded
+decode completion, leaving telemetry and peaks as separate stale-publication windows (#5780).
+Historical private prompts and reviewer tiers are unknown.
+
+Hold each await independently against the real session store. Complete B before releasing A,
+and separately leave B decoding: require B's exact metadata/vector and pending flag. Replace
+the accepted sample without starting another load. Check project/device lifetime and the
+actual accepted leaf after each await and synchronous subscriber, while ordinary edits and
+the accepted sample's own persistence round trip remain valid. Removing either post-await
+check must redden its corresponding case; a decode-only inverse-completion test cannot.
 
 ## Escape: a project-lifetime fence did not order Scala imports
 

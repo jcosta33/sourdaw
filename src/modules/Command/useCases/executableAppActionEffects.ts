@@ -292,6 +292,10 @@ export const executableAppActionEffectsByType = {
         dimensions: ['arrangement'],
         scope: 'target',
     },
+    removeCompRegion: {
+        dimensions: ['arrangement'],
+        scope: 'target',
+    },
     setSoloSafe: {
         dimensions: ['monitoring'],
         scope: 'target',
@@ -329,7 +333,7 @@ export const executableAppActionEffectsByType = {
         scope: 'target',
     },
     setTempo: {
-        dimensions: ['project-timing'],
+        dimensions: ['project-timing', 'arrangement', 'clip-audio'],
         scope: 'project',
     },
     setTimeSignature: {

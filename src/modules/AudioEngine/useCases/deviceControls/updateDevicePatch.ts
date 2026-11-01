@@ -1,6 +1,10 @@
+import { logger } from '#/infra/logger/appLogger';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
 import { extractBacteriaModAssignments } from '../../engine/BacteriaNode';
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 import { sendNativeDeviceParameters } from '../livePlayback/sendNativeDeviceParameters';
+import { sendNativeGrinderNeuralPatch } from '../livePlayback/sendNativeGrinderNeuralPatch';
 
 import { nativeBuiltinWriteTarget } from './nativeBuiltinWriteTarget';
 
@@ -29,6 +33,12 @@ import { nativeBuiltinWriteTarget } from './nativeBuiltinWriteTarget';
  * validator. An absent or malformed table appends no mod command and leaves
  * the native engine's routing untouched; an empty array is sent and clears it.
  */
+function reportNativeGrinderRefusal(error: unknown): void {
+    const reason = error instanceof Error ? error.message : String(error);
+    logger.warn(`[AudioEngine] native Grinder model change could not be confirmed: ${reason}`);
+    notifyUser('Native Grinder could not confirm the model change. Stop to hear the Web Audio version.', 'warning');
+}
+
 export function updateDevicePatch(trackId: string, deviceId: string, patch: Record<string, unknown>): void {
     audioEngine.updateDevicePatch(trackId, deviceId, patch);
     const body = nativeBuiltinWriteTarget(trackId, deviceId);
@@ -36,6 +46,25 @@ export function updateDevicePatch(trackId: string, deviceId: string, patch: Reco
         return;
     }
     const values = body.projectPatch(patch);
+    if (body.neuralPatch) {
+        try {
+            const modelJson = body.neuralPatch(patch);
+            if (modelJson !== undefined) {
+                const neuralModelMode = patch.neuralModelMode === 'imported' || modelJson !== null ? 1 : 0;
+                void sendNativeGrinderNeuralPatch({
+                    kind: 'write',
+                    trackId,
+                    deviceId,
+                    modelJson,
+                    values: { ...values, neuralModelMode },
+                }).catch(reportNativeGrinderRefusal);
+                return;
+            }
+        } catch (error) {
+            reportNativeGrinderRefusal(error);
+            return;
+        }
+    }
     const modAssignments = extractBacteriaModAssignments(patch);
     if (modAssignments === null) {
         void sendNativeDeviceParameters({ trackId, deviceId, values });

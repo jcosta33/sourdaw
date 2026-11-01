@@ -5,10 +5,13 @@ import { admitOfflineAudioWorkletTrace, type OfflineTraceExpectation } from '../
 const OUTER = 'AudioWorkletProcessor::Process';
 const HANDLER = 'AudioHandler::ProcessIfNecessary';
 const AUTHOR = 'AudioWorkletProcessor::Process (author script execution)';
+const WORKLET_CATEGORY = 'disabled-by-default-audio-worklet';
+const HANDLER_CATEGORY = 'disabled-by-default-webaudio.audionode';
 const SMALL_PHASES: OfflineTraceExpectation = { warmupCallbacks: 1, measuredCallbacks: 2 };
 
 type FixtureEvent = {
     name: string;
+    cat: string;
     ph: string;
     ts: number;
     dur: number;
@@ -21,6 +24,7 @@ function callback(ts: number, outerDuration: number, pid = 1, tid = 2, handlerTh
     return [
         {
             name: HANDLER,
+            cat: HANDLER_CATEGORY,
             ph: 'X',
             ts,
             dur: outerDuration + 4,
@@ -28,20 +32,21 @@ function callback(ts: number, outerDuration: number, pid = 1, tid = 2, handlerTh
             tid,
             args: { 'node type': 'AudioWorkletNode', this: handlerThis },
         },
-        { name: OUTER, ph: 'X', ts: ts + 1, dur: outerDuration + 2, pid, tid, args: {} },
-        { name: AUTHOR, ph: 'X', ts: ts + 2, dur: outerDuration, pid, tid, args: {} },
+        { name: OUTER, cat: WORKLET_CATEGORY, ph: 'X', ts: ts + 1, dur: outerDuration + 2, pid, tid, args: {} },
+        { name: AUTHOR, cat: WORKLET_CATEGORY, ph: 'X', ts: ts + 2, dur: outerDuration, pid, tid, args: {} },
     ];
 }
 
 function validTrace(): FixtureEvent[] {
     return [
-        { name: 'metadata', ph: 'M', ts: 0, dur: 0, pid: 0, tid: 0, args: {} },
+        { name: 'metadata', cat: '__metadata', ph: 'M', ts: 0, dur: 0, pid: 0, tid: 0, args: {} },
         ...callback(10, 2),
         ...callback(30, 3),
         ...callback(50, 8),
         ...callback(80, 12),
         {
             name: HANDLER,
+            cat: HANDLER_CATEGORY,
             ph: 'X',
             ts: 110,
             dur: 2,
@@ -67,6 +72,7 @@ function observedEqualEndpointTrace(authorDuration = 10): FixtureEvent[] {
     return [
         {
             name: HANDLER,
+            cat: HANDLER_CATEGORY,
             ph: 'X',
             ts: 425_593_194,
             dur: 19,
@@ -74,8 +80,8 @@ function observedEqualEndpointTrace(authorDuration = 10): FixtureEvent[] {
             tid,
             args: { 'node type': 'AudioWorkletNode', this: handlerThis },
         },
-        { name: OUTER, ph: 'X', ts: 425_593_196, dur: 15, pid, tid, args: {} },
-        { name: AUTHOR, ph: 'X', ts: 425_593_201, dur: authorDuration, pid, tid, args: {} },
+        { name: OUTER, cat: WORKLET_CATEGORY, ph: 'X', ts: 425_593_196, dur: 15, pid, tid, args: {} },
+        { name: AUTHOR, cat: WORKLET_CATEGORY, ph: 'X', ts: 425_593_201, dur: authorDuration, pid, tid, args: {} },
         ...callback(425_593_230, 3, pid, tid, handlerThis),
         ...callback(425_593_250, 8, pid, tid, handlerThis),
         ...callback(425_593_280, 12, pid, tid, handlerThis),
@@ -89,6 +95,7 @@ function observedEqualHandlerEndpointTrace(handlerDuration = 12): FixtureEvent[]
     return [
         {
             name: HANDLER,
+            cat: HANDLER_CATEGORY,
             ph: 'X',
             ts: 651_633_637,
             dur: handlerDuration,
@@ -96,8 +103,8 @@ function observedEqualHandlerEndpointTrace(handlerDuration = 12): FixtureEvent[]
             tid,
             args: { 'node type': 'AudioWorkletNode', this: handlerThis },
         },
-        { name: OUTER, ph: 'X', ts: 651_633_638, dur: 11, pid, tid, args: {} },
-        { name: AUTHOR, ph: 'X', ts: 651_633_641, dur: 7, pid, tid, args: {} },
+        { name: OUTER, cat: WORKLET_CATEGORY, ph: 'X', ts: 651_633_638, dur: 11, pid, tid, args: {} },
+        { name: AUTHOR, cat: WORKLET_CATEGORY, ph: 'X', ts: 651_633_641, dur: 7, pid, tid, args: {} },
         ...callback(651_633_670, 3, pid, tid, handlerThis),
         ...callback(651_633_690, 8, pid, tid, handlerThis),
         ...callback(651_633_720, 12, pid, tid, handlerThis),
@@ -111,6 +118,7 @@ function observedEqualHandlerStartTrace(handlerStart = 416_895_108): FixtureEven
     return [
         {
             name: HANDLER,
+            cat: HANDLER_CATEGORY,
             ph: 'X',
             ts: handlerStart,
             dur: 9,
@@ -118,8 +126,8 @@ function observedEqualHandlerStartTrace(handlerStart = 416_895_108): FixtureEven
             tid,
             args: { 'node type': 'AudioWorkletNode', this: handlerThis },
         },
-        { name: OUTER, ph: 'X', ts: 416_895_108, dur: 8, pid, tid, args: {} },
-        { name: AUTHOR, ph: 'X', ts: 416_895_110, dur: 6, pid, tid, args: {} },
+        { name: OUTER, cat: WORKLET_CATEGORY, ph: 'X', ts: 416_895_108, dur: 8, pid, tid, args: {} },
+        { name: AUTHOR, cat: WORKLET_CATEGORY, ph: 'X', ts: 416_895_110, dur: 6, pid, tid, args: {} },
         ...callback(416_895_140, 3, pid, tid, handlerThis),
         ...callback(416_895_160, 8, pid, tid, handlerThis),
         ...callback(416_895_190, 12, pid, tid, handlerThis),
@@ -134,6 +142,7 @@ function observedExporterTruncationTrace(): FixtureEvent[] {
     return [
         {
             name: HANDLER,
+            cat: HANDLER_CATEGORY,
             ph: 'X',
             ts: 673_500_805,
             dur: 25,
@@ -141,8 +150,8 @@ function observedExporterTruncationTrace(): FixtureEvent[] {
             tid,
             args: { 'node type': 'AudioWorkletNode', this: handlerThis },
         },
-        { name: OUTER, ph: 'X', ts: 673_500_806, dur: 23, pid, tid, args: {} },
-        { name: AUTHOR, ph: 'X', ts: 673_500_823, dur: 7, pid, tid, args: {} },
+        { name: OUTER, cat: WORKLET_CATEGORY, ph: 'X', ts: 673_500_806, dur: 23, pid, tid, args: {} },
+        { name: AUTHOR, cat: WORKLET_CATEGORY, ph: 'X', ts: 673_500_823, dur: 7, pid, tid, args: {} },
         ...callback(673_500_850, 3, pid, tid, handlerThis),
         ...callback(673_500_870, 8, pid, tid, handlerThis),
         ...callback(673_500_900, 12, pid, tid, handlerThis),
@@ -157,6 +166,7 @@ function equalAuthorStartTrace(authorStart = 101): FixtureEvent[] {
     return [
         {
             name: HANDLER,
+            cat: HANDLER_CATEGORY,
             ph: 'X',
             ts: 100,
             dur: 20,
@@ -164,8 +174,8 @@ function equalAuthorStartTrace(authorStart = 101): FixtureEvent[] {
             tid,
             args: { 'node type': 'AudioWorkletNode', this: handlerThis },
         },
-        { name: OUTER, ph: 'X', ts: 101, dur: 15, pid, tid, args: {} },
-        { name: AUTHOR, ph: 'X', ts: authorStart, dur: 10, pid, tid, args: {} },
+        { name: OUTER, cat: WORKLET_CATEGORY, ph: 'X', ts: 101, dur: 15, pid, tid, args: {} },
+        { name: AUTHOR, cat: WORKLET_CATEGORY, ph: 'X', ts: authorStart, dur: 10, pid, tid, args: {} },
         ...callback(130, 3, pid, tid, handlerThis),
         ...callback(150, 8, pid, tid, handlerThis),
         ...callback(180, 12, pid, tid, handlerThis),
@@ -197,12 +207,12 @@ function adjacentCallbackTrace(overrides: Partial<AdjacentCallbackSlices> = {}):
     const handlerThis = '0x1';
     const handlerArgs = { 'node type': 'AudioWorkletNode', this: handlerThis };
     return [
-        { name: HANDLER, ph: 'X', ...slices.handlerA, pid, tid, args: handlerArgs },
-        { name: OUTER, ph: 'X', ts: 11, dur: 10, pid, tid, args: {} },
-        { name: AUTHOR, ph: 'X', ...slices.authorA, pid, tid, args: {} },
-        { name: HANDLER, ph: 'X', ...slices.handlerB, pid, tid, args: handlerArgs },
-        { name: OUTER, ph: 'X', ...slices.outerB, pid, tid, args: {} },
-        { name: AUTHOR, ph: 'X', ...slices.authorB, pid, tid, args: {} },
+        { name: HANDLER, cat: HANDLER_CATEGORY, ph: 'X', ...slices.handlerA, pid, tid, args: handlerArgs },
+        { name: OUTER, cat: WORKLET_CATEGORY, ph: 'X', ts: 11, dur: 10, pid, tid, args: {} },
+        { name: AUTHOR, cat: WORKLET_CATEGORY, ph: 'X', ...slices.authorA, pid, tid, args: {} },
+        { name: HANDLER, cat: HANDLER_CATEGORY, ph: 'X', ...slices.handlerB, pid, tid, args: handlerArgs },
+        { name: OUTER, cat: WORKLET_CATEGORY, ph: 'X', ...slices.outerB, pid, tid, args: {} },
+        { name: AUTHOR, cat: WORKLET_CATEGORY, ph: 'X', ...slices.authorB, pid, tid, args: {} },
         ...callback(50, 8, pid, tid, handlerThis),
         ...callback(80, 12, pid, tid, handlerThis),
     ];
@@ -214,9 +224,17 @@ function nestedCallbackTrace(handler: Slice, outer: Slice, author: Slice): Fixtu
     const tid = 2;
     const handlerThis = '0x1';
     return [
-        { name: HANDLER, ph: 'X', ...handler, pid, tid, args: { 'node type': 'AudioWorkletNode', this: handlerThis } },
-        { name: OUTER, ph: 'X', ...outer, pid, tid, args: {} },
-        { name: AUTHOR, ph: 'X', ...author, pid, tid, args: {} },
+        {
+            name: HANDLER,
+            cat: HANDLER_CATEGORY,
+            ph: 'X',
+            ...handler,
+            pid,
+            tid,
+            args: { 'node type': 'AudioWorkletNode', this: handlerThis },
+        },
+        { name: OUTER, cat: WORKLET_CATEGORY, ph: 'X', ...outer, pid, tid, args: {} },
+        { name: AUTHOR, cat: WORKLET_CATEGORY, ph: 'X', ...author, pid, tid, args: {} },
         ...callback(outer.ts + 100, 3, pid, tid, handlerThis),
         ...callback(outer.ts + 120, 8, pid, tid, handlerThis),
         ...callback(outer.ts + 150, 12, pid, tid, handlerThis),
@@ -242,7 +260,16 @@ function gridValue(random: () => number, minUs: number, maxUs: number): number {
 
 // The exporter writes ts = floor(start) and dur = floor(end - start), each truncated on its own.
 function exportedSlice(name: string, start: number, end: number, args: Record<string, unknown>): FixtureEvent {
-    return { name, ph: 'X', ts: Math.floor(start), dur: Math.floor(end - start), pid: 1, tid: 2, args };
+    return {
+        name,
+        cat: name === HANDLER ? HANDLER_CATEGORY : WORKLET_CATEGORY,
+        ph: 'X',
+        ts: Math.floor(start),
+        dur: Math.floor(end - start),
+        pid: 1,
+        tid: 2,
+        args,
+    };
 }
 
 function hasExportedTimestampTie(events: readonly FixtureEvent[], name: string): boolean {
@@ -285,6 +312,40 @@ function truncatedNestingTrace(random: () => number): FixtureEvent[] | null {
 }
 
 describe('offline AudioWorklet trace admission', () => {
+    it('admits exact category memberships in comma-separated native categories', () => {
+        const events = validTrace().map((event) => ({ ...event, cat: `other, ${event.cat} ,another` }));
+
+        expect(admission(events).status).toBe('admitted');
+    });
+
+    it.each([OUTER, HANDLER, AUTHOR])('refuses missing or malformed categories on %s', (name) => {
+        const valid = validTrace();
+        const invalidIndex = valid.findLastIndex((event) => event.name === name);
+        for (const cat of [undefined, null, 1, [WORKLET_CATEGORY]]) {
+            const events = valid.map((event, index) => (index === invalidIndex ? { ...event, cat } : event));
+
+            expect(admission(events)).toMatchObject({
+                status: 'refused',
+                reason: expect.stringContaining(`relevant event ${name} lacks category`),
+            });
+        }
+    });
+
+    it.each([OUTER, HANDLER, AUTHOR])('refuses incorrect or partial category memberships on %s', (name) => {
+        const required = name === HANDLER ? HANDLER_CATEGORY : WORKLET_CATEGORY;
+        const other = name === HANDLER ? WORKLET_CATEGORY : HANDLER_CATEGORY;
+        const valid = validTrace();
+        const invalidIndex = valid.findLastIndex((event) => event.name === name);
+        for (const cat of ['', other, `${required}-suffix`, `prefix-${required}`]) {
+            const events = valid.map((event, index) => (index === invalidIndex ? { ...event, cat } : event));
+
+            expect(admission(events)).toMatchObject({
+                status: 'refused',
+                reason: expect.stringContaining(`relevant event ${name} lacks category ${required}`),
+            });
+        }
+    });
+
     it('admits a complete nested trace and binds the explicit phase population', () => {
         expect(admission()).toEqual({
             status: 'admitted',
@@ -572,7 +633,7 @@ describe('offline AudioWorklet trace admission', () => {
                 )
             ).status
         ).toBe('refused');
-        expect(admission([{ name: OUTER, ph: 'B' }, ...validTrace()]).status).toBe('refused');
+        expect(admission([{ name: OUTER, cat: WORKLET_CATEGORY, ph: 'B' }, ...validTrace()]).status).toBe('refused');
         expect(admission([null, 1, { name: 'metadata', ph: 'M' }, ...validTrace()]).status).toBe('admitted');
     });
 });

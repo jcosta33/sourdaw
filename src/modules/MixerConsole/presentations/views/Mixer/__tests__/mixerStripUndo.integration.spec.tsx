@@ -30,6 +30,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, setGestureClockSource, transportStore } from '#/modules/Transport/stores';
+import { FADER_MAX_GAIN, faderValueToPosition } from '#/utils/audioLevelLaw';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
 import { useTracks } from '../../../hooks/useTracks';
@@ -144,8 +145,14 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
 vi.mock('#/modules/MIDI/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
     return {
+        captureEventPositionAt: actual.captureEventPositionAt,
+        replaceFrozenMidiTakeRow: actual.replaceFrozenMidiTakeRow,
+        sealHeldRecordedMidiNotes: actual.sealHeldRecordedMidiNotes,
+        snapshotMidiClipData: actual.snapshotMidiClipData,
         projectClipControllerEvents: vi.fn(),
         projectClipControllerRestore: vi.fn(),
+        isExactMidiClipDataActionSnapshot: actual.isExactMidiClipDataActionSnapshot,
+        decodeMidiClipDataSnapshots: actual.decodeMidiClipDataSnapshots,
         projectChannelBend: vi.fn(),
         adaptGrooveTemplateForConsumer: vi.fn(),
         addChordEvent: vi.fn(),
@@ -274,6 +281,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     // The same census: the project session quiescer imports the disarm, and
     // this suite never reaches a session teardown.
     disarmRetrospectiveCapture: vi.fn(),
+    openCachedAudioBufferHold: vi.fn(() => ({ retain: vi.fn(), release: vi.fn() })),
     soundsNativeNotes: vi.fn(() => false),
     updateDeviceParam: vi.fn(),
     holdWebFallbackDeviceParam: vi.fn(),
@@ -316,6 +324,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     clearReportedLatency: vi.fn(),
     clearRuntimeCachedAudioBuffers: vi.fn(),
     createBufferSource: vi.fn(),
+    createNativeRecordingCaptureClock: vi.fn(() => ({
+        admission: null,
+        last: null,
+        read: () => ({ carrier: 'browser' as const }),
+    })),
     createRuntimeGraphTopologyFingerprint: vi.fn(),
     decodeAudioFile: vi.fn(),
     discardDecodedAudioFile: vi.fn(),
@@ -656,6 +669,12 @@ function recordedGainPoints(): Array<{ beat: number; value: number }> {
     return (lane?.points ?? []).map((point) => ({ beat: point.beat, value: point.value }));
 }
 
+function faderClientYForGain(gain: number): number {
+    const startPosition = faderValueToPosition(0.8, 0, FADER_MAX_GAIN, 'gain');
+    const targetPosition = faderValueToPosition(gain, 0, FADER_MAX_GAIN, 'gain');
+    return 50 + (startPosition - targetPosition) * 100;
+}
+
 /**
  * A V-shaped ride: down to the floor and back up. A straight ramp would collapse
  * to its two endpoints under `simplifyGesturePoints`' RDP pass and could not
@@ -667,15 +686,15 @@ function rideFaderInAVee(fader: HTMLElement): void {
     const cap = fader.querySelector('[data-role="fader-cap"]')!;
     fireEvent.pointerDown(cap, { button: 0, pointerId: 5, clientY: 50 });
     const samples: Array<[number, number]> = [
-        [1, 60],
-        [2, 70],
-        [3, 80],
-        [4, 70],
-        [5, 60],
+        [1, 0.6],
+        [2, 0.4],
+        [3, 0.2],
+        [4, 0.4],
+        [5, 0.6],
     ];
-    for (const [beat, clientY] of samples) {
+    for (const [beat, gain] of samples) {
         movePlayheadTo(beat);
-        fireEvent.pointerMove(fader, { pointerId: 5, clientY });
+        fireEvent.pointerMove(fader, { pointerId: 5, clientY: faderClientYForGain(gain) });
     }
     movePlayheadTo(6);
     fireEvent.pointerUp(fader, { pointerId: 5 });
@@ -783,13 +802,11 @@ describe('mixer strip writes reach the project through the recorded path', () =>
 
         // Downward, so every sample stays inside `clampFaderGain`'s [0,
         // FADER_MAX_GAIN] — a clamped sample would hide a lost intermediate
-        // value. The fader's `max` is now the +6 dB ceiling rather than 1.5,
-        // which changes how many gain units one pixel of drag covers — the
-        // values below are recalculated for that sensitivity, not the old one.
+        // value. Coordinates target raw amplitudes under the current travel law.
         fireEvent.pointerDown(cap, { button: 0, pointerId: 3, clientY: 50 });
-        fireEvent.pointerMove(fader, { pointerId: 3, clientY: 60 });
-        fireEvent.pointerMove(fader, { pointerId: 3, clientY: 70 });
-        fireEvent.pointerMove(fader, { pointerId: 3, clientY: 80 });
+        fireEvent.pointerMove(fader, { pointerId: 3, clientY: faderClientYForGain(0.6) });
+        fireEvent.pointerMove(fader, { pointerId: 3, clientY: faderClientYForGain(0.4) });
+        fireEvent.pointerMove(fader, { pointerId: 3, clientY: faderClientYForGain(0.2) });
 
         // Mid-gesture, before release: project truth is still where the gesture
         // started, nothing is on the stack yet, and the strip's dB readout has
@@ -909,7 +926,7 @@ describe('mixer strip writes reach the project through the recorded path', () =>
         // The vertex is the ride. A lane holding only the release value cannot
         // contain it, and RDP keeps it because it is the turn.
         const vertex = points.find((point) => point.beat === 3);
-        // Beat 3 is the bottom of the V (clientY 80, the same deltaY the
+        // Beat 3 is the bottom of the V (raw gain 0.2, the same value the
         // ceiling-sensitivity recalculation above uses), so the vertex lands
         // at the same 0.2 the other drag test settles on.
         expect(vertex?.value).toBeCloseTo(0.2, 5);
@@ -933,7 +950,7 @@ describe('mixer strip writes reach the project through the recorded path', () =>
 
         const points = recordedGainPoints();
         const vertex = points.find((point) => point.beat === 3);
-        // Beat 3 is the bottom of the V (clientY 80, the same deltaY the
+        // Beat 3 is the bottom of the V (raw gain 0.2, the same value the
         // ceiling-sensitivity recalculation above uses), so the vertex lands
         // at the same 0.2 the other drag test settles on.
         expect(vertex?.value).toBeCloseTo(0.2, 5);
@@ -972,7 +989,7 @@ describe('mixer strip writes reach the project through the recorded path', () =>
         const fader = screen.getByRole('slider', { name: 'Lead Vocal gain' });
         const cap = fader.querySelector('[data-role="fader-cap"]')!;
         fireEvent.pointerDown(cap, { button: 0, pointerId: 6, clientY: 50 });
-        fireEvent.pointerMove(fader, { pointerId: 6, clientY: 70 });
+        fireEvent.pointerMove(fader, { pointerId: 6, clientY: faderClientYForGain(0.4) });
         expect(Number(fader.getAttribute('aria-valuenow'))).toBeCloseTo(0.4, 5);
 
         fireEvent.pointerUp(fader, { pointerId: 6 });

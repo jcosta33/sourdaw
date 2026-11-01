@@ -315,6 +315,56 @@ describe('mapToProjectData — device normalization', () => {
         ]);
     });
 
+    it('combines device substitution and lost settings in one warning', () => {
+        const warnings: DawProjectImportWarning[] = [];
+        const data = mapToProjectData({
+            parsed: minimalParsed({
+                tracks: [
+                    {
+                        id: 't1',
+                        name: 'Lead',
+                        kind: 'midi',
+                        color: '',
+                        parentId: null,
+                        volume: 0.8,
+                        pan: 0,
+                        mute: false,
+                        solo: false,
+                        clips: [],
+                        deviceTypes: ['external'],
+                        deviceSources: [
+                            {
+                                name: 'Verb',
+                                sourceType: 'Vst3Plugin',
+                                sourceId: 'verb',
+                                sourceOrder: 3,
+                                hasSettings: true,
+                            },
+                        ],
+                    },
+                ],
+            }),
+            bufferIdsByPath: new Map(),
+            fileName: 'test.dawproject',
+            warnings,
+        });
+        expect(data.arrangement.tracks.find((track) => track.id === 't1')?.devices).toMatchObject([
+            { type: 'builtin-gain' },
+        ]);
+        expect(warnings).toEqual([
+            {
+                kind: 'unsupported-device',
+                name: 'Verb',
+                sourceType: 'Vst3Plugin',
+                sourceId: 'verb',
+                context: 'Lead',
+                handling: 'substituted',
+                sourceOrder: 3,
+                details: ['settings'],
+            },
+        ]);
+    });
+
     it('reports ignored settings on a supported device without claiming the device was dropped', () => {
         const warnings: DawProjectImportWarning[] = [];
         mapToProjectData({

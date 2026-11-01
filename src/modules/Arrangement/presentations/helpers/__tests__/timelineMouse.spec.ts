@@ -4,7 +4,8 @@ import { timelineViewStore } from '../../../stores/timelineViewStore';
 import { canvasXToBeat, getContentY, resolveTrackAtY, valueAtTrackY } from '../timelineMouse';
 
 const mocks = vi.hoisted(() => ({
-    buildTimelineRenderModel: vi.fn<() => { tracks: { id: string; height: number }[] } | null>(),
+    buildTimelineRenderModel:
+        vi.fn<() => { tracks: { id: string; height: number; variationLanes?: unknown[] }[] } | null>(),
     getTrackAtY: vi.fn<(tracks: unknown[], y: number) => { index: number } | null>(),
 }));
 
@@ -50,6 +51,18 @@ describe('resolveTrackAtY', () => {
         const result = resolveTrackAtY(100);
 
         expect(result).toEqual({ trackId: 't2', height: 80, offset: 60, index: 1 });
+    });
+
+    it('offsets a track below the variation lanes of the tracks above it', () => {
+        mocks.buildTimelineRenderModel.mockReturnValue({
+            tracks: [
+                { id: 't1', height: 60, variationLanes: [{}, {}] },
+                { id: 't2', height: 80 },
+            ],
+        });
+        mocks.getTrackAtY.mockReturnValue({ index: 1 });
+
+        expect(resolveTrackAtY(120)).toEqual({ trackId: 't2', height: 80, offset: 108, index: 1 });
     });
 
     it('returns null when no track covers the Y coordinate', () => {

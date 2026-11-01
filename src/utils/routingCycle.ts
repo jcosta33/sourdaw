@@ -51,31 +51,29 @@ export type WouldCreateRoutingCycleInput = {
 };
 
 /**
- * Collects the nodes `nodeId` feeds directly, under all three edge relations.
+ * Indexes all three edge relations once, retaining every duplicate-owner row.
  */
-function getDownstreamSuccessors(
-    nodeId: string,
+function indexDownstreamSuccessors(
     tracks: readonly RoutingCycleTrack[],
     sidechainRoutes: readonly RoutingCycleSidechainRoute[]
-): string[] {
-    const successors: string[] = [];
+): Map<string, string[]> {
+    const downstream = new Map<string, string[]>();
     for (const track of tracks) {
-        if (track.id !== nodeId) {
-            continue;
-        }
+        const successors = downstream.get(track.id) ?? [];
         if (track.outputId) {
             successors.push(track.outputId);
         }
         for (const send of track.sends ?? []) {
             successors.push(send.busId);
         }
+        downstream.set(track.id, successors);
     }
     for (const route of sidechainRoutes) {
-        if (route.sourceTrackId === nodeId) {
-            successors.push(route.targetTrackId);
-        }
+        const successors = downstream.get(route.sourceTrackId) ?? [];
+        successors.push(route.targetTrackId);
+        downstream.set(route.sourceTrackId, successors);
     }
-    return successors;
+    return downstream;
 }
 
 /**
@@ -101,6 +99,7 @@ export function wouldCreateRoutingCycle({
         return true;
     }
 
+    const downstream = indexDownstreamSuccessors(tracks, sidechainRoutes);
     const visited = new Set<string>();
     const toProcess = [targetId];
 
@@ -113,7 +112,7 @@ export function wouldCreateRoutingCycle({
             continue;
         }
         visited.add(currentId);
-        for (const successor of getDownstreamSuccessors(currentId, tracks, sidechainRoutes)) {
+        for (const successor of downstream.get(currentId) ?? []) {
             toProcess.push(successor);
         }
     }
@@ -125,6 +124,7 @@ export function hasRoutingCycle({
     tracks,
     sidechainRoutes = [],
 }: Pick<WouldCreateRoutingCycleInput, 'tracks' | 'sidechainRoutes'>): boolean {
+    const downstream = indexDownstreamSuccessors(tracks, sidechainRoutes);
     const visited = new Set<string>();
     const active = new Set<string>();
 
@@ -137,7 +137,7 @@ export function hasRoutingCycle({
         }
         visited.add(nodeId);
         active.add(nodeId);
-        for (const successor of getDownstreamSuccessors(nodeId, tracks, sidechainRoutes)) {
+        for (const successor of downstream.get(nodeId) ?? []) {
             if (visit(successor)) {
                 return true;
             }
@@ -146,12 +146,7 @@ export function hasRoutingCycle({
         return false;
     }
 
-    const nodeIds = new Set(tracks.map((track) => track.id));
-    for (const route of sidechainRoutes) {
-        nodeIds.add(route.sourceTrackId);
-        nodeIds.add(route.targetTrackId);
-    }
-    for (const nodeId of nodeIds) {
+    for (const nodeId of downstream.keys()) {
         if (visit(nodeId)) {
             return true;
         }

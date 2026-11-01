@@ -7,10 +7,11 @@ export function createUndoEntry(
     action: AppAction,
     inverseAction: AppAction | null,
     source: UndoSource = 'manual',
-    redoAction?: AppAction
+    redoAction?: AppAction,
+    entryId?: string
 ): ActionUndoEntry {
     const entry: ActionUndoEntry = {
-        id: `undo-${crypto.randomUUID().slice(0, 8)}`,
+        id: entryId ?? `undo-${crypto.randomUUID().slice(0, 8)}`,
         kind: 'action',
         label,
         action,

@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 test.describe('Mixer & Routing', () => {
@@ -61,7 +60,7 @@ test.describe('Mixer & Routing', () => {
         // The routing popup menu should appear with a listbox role
         const routingMenu = page.getByRole('listbox', { name: /Output routing/i });
         await expect(routingMenu).toBeVisible();
-        
+
         // Assert that 'Master' is an option
         const masterOption = routingMenu.getByRole('option', { name: /Master/i });
         await expect(masterOption).toBeVisible();

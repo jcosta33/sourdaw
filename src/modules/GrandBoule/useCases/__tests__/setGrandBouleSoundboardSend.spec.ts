@@ -9,6 +9,9 @@ import { setGrandBouleSoundboardSend } from '../setGrandBouleSoundboardSend';
 const dispatched: { type: string; payload: unknown }[] = [];
 
 vi.mock('#/modules/Command/useCases', () => ({
+    commitRedoInverseCapture: vi.fn(),
+    readUndoEntryForInverse: vi.fn<typeof import('#/modules/Command/useCases').readUndoEntryForInverse>(() => null),
+
     getExecutableAppActionEffect: vi.fn(() => null),
     executeAppAction: vi.fn(),
     executeAppActionBatch: vi.fn(),

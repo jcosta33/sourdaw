@@ -5,7 +5,7 @@ import { R128_CEILING_DB_TP, R128_TARGET_LUFS } from '#/utils/audioLevelLaw';
 
 export { R128_CEILING_DB_TP, R128_TARGET_LUFS };
 
-export type ExportFormat = 'wav' | 'mp3' | 'flac';
+export type ExportFormat = 'wav' | 'mp3' | 'flac' | 'ogg' | 'opus';
 export type Mp3BitRate = 96 | 128 | 192 | 320;
 
 /**
@@ -33,6 +33,8 @@ export type ExportSettings = {
     dither: ExportDither;
     normalization: ExportNormalization;
     targetLufs?: number;
+    channels?: 1 | 2;
+    ceilingDbTp?: number;
 };
 
 /**
@@ -64,7 +66,7 @@ const DEFAULT_EXPORT_SETTINGS: ExportSettings = {
     targetLufs: R128_TARGET_LUFS,
 };
 
-const validExportFormats: readonly string[] = ['wav', 'mp3', 'flac'];
+const validExportFormats: readonly string[] = ['wav', 'mp3', 'flac', 'ogg', 'opus'];
 const validBitDepths: readonly number[] = [16, 24, 32];
 
 type ReadNumberInput = {
@@ -126,7 +128,7 @@ function sanitizeExportSettings(value: unknown): ExportSettings {
         return createDefaultExportSettings();
     }
 
-    return {
+    const settings: ExportSettings = {
         formats: readFormats(value),
         sampleRate: readNumber({
             value: value.sampleRate,
@@ -141,14 +143,26 @@ function sanitizeExportSettings(value: unknown): ExportSettings {
         mp3BitRate: readMp3BitRate(value.mp3BitRate),
         dither: readDither(value.dither),
         normalization: readNormalization(value.normalization),
-        targetLufs:
-            typeof value.targetLufs === 'number' &&
-            Number.isFinite(value.targetLufs) &&
-            value.targetLufs >= MIN_EXPORT_TARGET_LUFS &&
-            value.targetLufs <= MAX_EXPORT_TARGET_LUFS
-                ? value.targetLufs
-                : R128_TARGET_LUFS,
     };
+    if (value.channels === 1 || value.channels === 2) {
+        settings.channels = value.channels;
+    }
+    if (
+        typeof value.ceilingDbTp === 'number' &&
+        Number.isFinite(value.ceilingDbTp) &&
+        value.ceilingDbTp >= -20 &&
+        value.ceilingDbTp <= 0
+    ) {
+        settings.ceilingDbTp = value.ceilingDbTp;
+    }
+    settings.targetLufs =
+        typeof value.targetLufs === 'number' &&
+        Number.isFinite(value.targetLufs) &&
+        value.targetLufs >= MIN_EXPORT_TARGET_LUFS &&
+        value.targetLufs <= MAX_EXPORT_TARGET_LUFS
+            ? value.targetLufs
+            : R128_TARGET_LUFS;
+    return settings;
 }
 
 type CreateExportSettingsStoreOutput = Store<ExportSettings>;

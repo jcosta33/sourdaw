@@ -5,12 +5,21 @@ import { executeUserAppAction } from '#/modules/Command/useCases';
 import { type CallableCommandEntry } from '../../searchCommandRegistry';
 import { trackCommands } from '../TrackCommands';
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeAppAction: vi.fn().mockResolvedValue(undefined),
     executeUserAppAction: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({ duplicateTrack: vi.fn(), removeTrack: vi.fn() }));
-vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: { value: { tracks: [] } } }));
+vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: { value: { tracks: [] } },
+    resolveEligibleClipWriteTarget: vi.fn(),
+}));
+vi.mock('#/modules/Project/useCases', () => ({
+    captureProjectTransitionAuthority: vi.fn(),
+}));
+vi.mock('#/utils/Notification/confirmUser', () => ({ confirmUser: vi.fn() }));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('#/utils/Notification/promptUser', () => ({ promptUser: vi.fn() }));
 vi.mock('../../selectionHelpers/getSelectedTrackId', () => ({ getSelectedTrackId: () => null }));
 

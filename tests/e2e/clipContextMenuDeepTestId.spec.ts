@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 async function openClipContextMenu(page: import('@playwright/test').Page, x = 200, y = 40): Promise<void> {

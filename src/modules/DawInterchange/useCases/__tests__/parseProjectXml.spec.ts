@@ -553,8 +553,9 @@ describe('parseProjectXml — master-track automation', () => {
             { beat: 4, tempo: 140, curve: 'instant' },
             { beat: 8, tempo: 150, curve: 'instant' },
         ]);
-        expect(result.warnings.map((warning) => warning.name)).toEqual(['Cutoff', 'Pan']);
-        expect(result.warnings.map((warning) => warning.sourceType)).toEqual(['Points', 'Points']);
+        expect(result.warnings.map((warning) => warning.name)).toEqual(['Tempo automation', 'Cutoff', 'Pan']);
+        expect(result.warnings.map((warning) => warning.sourceType)).toEqual(['RealPoint', 'Points', 'Points']);
+        expect(result.warnings[0]).toMatchObject({ handling: 'partial', details: ['tempo position'] });
         expect(result.warnings[0]?.sourceOrder).toBeLessThan(result.warnings[1]!.sourceOrder);
     });
 
@@ -671,7 +672,15 @@ describe('parseProjectXml — inherited arrangement scope', () => {
             expect(mapped.arrangement.tracks.find((track) => track.name === 'Audio')?.clips).toMatchObject([
                 { name: 'Source window', type: 'audio', startBeat: 4, endBeat: 8, sampleStartBeat: offset },
             ]);
-            expect(parsed.warnings).toEqual([]);
+            expect(parsed.warnings).toMatchObject([
+                {
+                    sourceType: 'Clip',
+                    name: 'Source window',
+                    context: 'Audio',
+                    handling: 'partial',
+                    details: ['source offset'],
+                },
+            ]);
         });
 
         it.each([
@@ -741,10 +750,22 @@ describe('parseProjectXml — inherited arrangement scope', () => {
                     expect(parsed.warnings).toEqual([]);
                 } else {
                     expect(parsed.tracks[0]?.clips.map((clip) => clip.name)).toEqual(['Beat sibling']);
-                    expect(parsed.warnings).toMatchObject([
-                        { kind: 'unsupported-clip', sourceId: 'window', context: 'Audio', handling: 'dropped' },
-                    ]);
-                    expect(parsed.warnings).toHaveLength(1);
+                    const expectedWarnings = [];
+                    if (tempoUnit === 'seconds') {
+                        expectedWarnings.push({
+                            sourceType: 'RealPoint',
+                            handling: 'partial',
+                            details: ['tempo position'],
+                        });
+                    }
+                    expectedWarnings.push({
+                        kind: 'unsupported-clip',
+                        sourceId: 'window',
+                        context: 'Audio',
+                        handling: 'dropped',
+                    });
+                    expect(parsed.warnings).toMatchObject(expectedWarnings);
+                    expect(parsed.warnings).toHaveLength(expectedWarnings.length);
                 }
             }
         );
@@ -782,10 +803,18 @@ describe('parseProjectXml — inherited arrangement scope', () => {
             );
 
             expect(parsed.tracks[0]?.clips.map((clip) => clip.name)).toEqual(['Beat sibling']);
-            expect(parsed.warnings).toMatchObject([
-                { kind: 'unsupported-clip', sourceId: 'window', context: 'Audio', handling: 'dropped' },
-            ]);
-            expect(parsed.warnings).toHaveLength(1);
+            const expectedWarnings = [];
+            if (tempoUnit === 'seconds') {
+                expectedWarnings.push({ sourceType: 'RealPoint', handling: 'partial', details: ['tempo position'] });
+            }
+            expectedWarnings.push({
+                kind: 'unsupported-clip',
+                sourceId: 'window',
+                context: 'Audio',
+                handling: 'dropped',
+            });
+            expect(parsed.warnings).toMatchObject(expectedWarnings);
+            expect(parsed.warnings).toHaveLength(expectedWarnings.length);
         }
     );
 
@@ -945,16 +974,28 @@ describe('parseProjectXml — inherited arrangement scope', () => {
                 ]);
                 const phrase = clips?.[0];
                 expect(phrase && mapped.midi.notesByClipId[phrase.id]).toMatchObject([{ pitch: 67, duration: 0.5 }]);
-                expect(parsed.warnings).toMatchObject([
-                    {
-                        kind: 'unsupported-clip',
-                        name: 'Container',
-                        sourceId: 'container',
-                        context: 'Keys',
-                        handling: 'dropped',
-                    },
-                ]);
-                expect(parsed.warnings).toHaveLength(1);
+                const expectedWarnings = [];
+                if (timeUnit === 'seconds') {
+                    expectedWarnings.push(
+                        { sourceType: 'RealPoint', handling: 'partial', details: ['tempo position'] },
+                        { sourceType: 'RealPoint', handling: 'partial', details: ['tempo position'] }
+                    );
+                }
+                expectedWarnings.push({
+                    kind: 'unsupported-clip',
+                    name: 'Container',
+                    sourceId: 'container',
+                    context: 'Keys',
+                    handling: 'dropped',
+                });
+                expectedWarnings.push({
+                    sourceType: 'Clip',
+                    name: 'Seconds phrase',
+                    context: 'Container',
+                    handling: 'dropped',
+                });
+                expect(parsed.warnings).toMatchObject(expectedWarnings);
+                expect(parsed.warnings).toHaveLength(expectedWarnings.length);
             }
         }
     );
@@ -1256,8 +1297,9 @@ describe('parseProjectXml — inherited arrangement scope', () => {
         expect(parsed.tracks.find((track) => track.name === 'Keys')?.clips).toEqual([]);
         expect(parsed.warnings).toMatchObject([
             { kind: 'unsupported-clip', sourceType: 'Clip', sourceId: 'loop', context: 'Keys', handling: 'dropped' },
+            { sourceType: 'Clip', name: 'Repeated phrase', context: 'Looped container', handling: 'dropped' },
         ]);
-        expect(parsed.warnings).toHaveLength(1);
+        expect(parsed.warnings).toHaveLength(2);
         expect(parsed.warnings[0]?.sourceOrder).toBeGreaterThan(0);
     });
 
@@ -1326,7 +1368,7 @@ describe('parseProjectXml — inherited arrangement scope', () => {
         expect(phrase && mapped.midi.notesByClipId[phrase.id]).toMatchObject([
             { pitch: 60, startBeat: 0, duration: 1 },
         ]);
-        expect(parsed.warnings).toMatchObject([
+        const expectedWarnings: Array<Record<string, unknown>> = [
             {
                 kind: 'unsupported-clip',
                 sourceType: 'Clip',
@@ -1335,16 +1377,27 @@ describe('parseProjectXml — inherited arrangement scope', () => {
                 context: 'Drums',
                 handling: 'dropped',
             },
-            {
-                kind: 'unsupported-clip',
+        ];
+        if (content.includes('<Clip ')) {
+            expectedWarnings.push({
+                kind: 'unsupported-element',
                 sourceType: 'Clip',
-                sourceId: 'later-rejected',
-                name: 'Later rejected phrase',
-                context: 'Drums',
+                sourceId: undefined,
+                name: 'Clip',
+                context: 'Rejected phrase',
                 handling: 'dropped',
-            },
-        ]);
-        expect(parsed.warnings).toHaveLength(2);
+            });
+        }
+        expectedWarnings.push({
+            kind: 'unsupported-clip',
+            sourceType: 'Clip',
+            sourceId: 'later-rejected',
+            name: 'Later rejected phrase',
+            context: 'Drums',
+            handling: 'dropped',
+        });
+        expect(parsed.warnings).toMatchObject(expectedWarnings);
+        expect(parsed.warnings).toHaveLength(expectedWarnings.length);
         expect(parsed.warnings[0]!.sourceOrder).toBeLessThan(parsed.warnings[1]!.sourceOrder);
     });
 
@@ -1384,8 +1437,9 @@ describe('parseProjectXml — inherited arrangement scope', () => {
                 context: 'Drums',
                 handling: 'dropped',
             },
+            { sourceType: 'Clip', name: 'Unplaceable phrase', context: 'Warped route', handling: 'dropped' },
         ]);
-        expect(parsed.warnings).toHaveLength(1);
+        expect(parsed.warnings).toHaveLength(2);
     });
 
     it.each([
@@ -1428,8 +1482,9 @@ describe('parseProjectXml — inherited arrangement scope', () => {
                 context: 'Keys',
                 handling: 'dropped',
             },
+            { sourceType: 'Clip', name: 'Clip', context: 'Container', handling: 'dropped' },
         ]);
-        expect(parsed.warnings).toHaveLength(1);
+        expect(parsed.warnings).toHaveLength(2);
     });
 
     it('keeps a nested phrase inside a loop range that never repeats', () => {
@@ -1914,7 +1969,16 @@ describe('parseProjectXml — inherited arrangement scope', () => {
         expect(control.keys).toEqual([['Independent Keys', 20, 21]]);
         expect(control.drums).toEqual([['Parent Phrase', 8, 8.25, 1, true]]);
         expect(control.notes).toEqual([[60, 1, 0.25]]);
-        expect(control.parsed.warnings).toEqual([]);
+        expect(control.parsed.warnings).toMatchObject([
+            {
+                sourceType: 'Clip',
+                name: 'Parent Phrase',
+                context: 'Drums',
+                handling: 'partial',
+                details: ['clip extent defaulted'],
+            },
+        ]);
+        expect(control.parsed.warnings).toHaveLength(1);
 
         const withChild = importPhrase(
             '<Clips><Clip name="Nested Branch" time="1" duration="1"><Notes>' +
@@ -1956,6 +2020,7 @@ describe('parseProjectXml — inherited arrangement scope', () => {
             { name: 'Seconds phrase', notes: [{ pitch: 60, startBeat: 2, duration: 1 }] },
         ]);
         expect(parsed.warnings).toMatchObject([
+            { sourceType: 'Points', name: 'Tempo shape', handling: 'partial', details: ['timeline name'] },
             {
                 kind: 'unsupported-automation',
                 sourceType: 'RealPoint',
@@ -1964,7 +2029,7 @@ describe('parseProjectXml — inherited arrangement scope', () => {
                 context: 'Arrangement',
             },
         ]);
-        expect(parsed.warnings).toHaveLength(1);
+        expect(parsed.warnings).toHaveLength(2);
     });
 
     it('validates both present tempo scalars while retaining decimal, scientific, default and ramp siblings', () => {
@@ -1986,19 +2051,27 @@ describe('parseProjectXml — inherited arrangement scope', () => {
             { beat: 2.5, tempo: 130, curve: 'linear' },
             { beat: 4, tempo: 140, curve: 'instant' },
         ]);
-        expect(parsed.warnings.map((warning) => warning.sourceId)).toEqual([
+        expect(parsed.warnings[0]).toMatchObject({
+            sourceType: 'Points',
+            name: 'Tempo shape',
+            handling: 'partial',
+            details: ['timeline name'],
+        });
+        expect(parsed.warnings.slice(1).map((warning) => warning.sourceId)).toEqual([
             'bad-value',
             'bad-both',
             'empty-time',
             'hex-value',
         ]);
         expect(
-            parsed.warnings.every(
-                (warning) =>
-                    warning.kind === 'unsupported-automation' &&
-                    warning.sourceType === 'RealPoint' &&
-                    warning.name === 'Tempo shape'
-            )
+            parsed.warnings
+                .slice(1)
+                .every(
+                    (warning) =>
+                        warning.kind === 'unsupported-automation' &&
+                        warning.sourceType === 'RealPoint' &&
+                        warning.name === 'Tempo shape'
+                )
         ).toBe(true);
         expect(parsed.warnings.map((warning) => warning.sourceOrder)).toEqual(
             [...parsed.warnings.map((warning) => warning.sourceOrder)].sort((a, b) => a - b)
@@ -2031,7 +2104,10 @@ describe('parseProjectXml — inherited arrangement scope', () => {
         const clips = mapped.arrangement.tracks.find((track) => track.name === 'Keys')?.clips;
 
         expect(parsed.tempoChanges).toEqual([{ beat: 20, tempo: 150, curve: 'instant' }]);
-        expect(parsed.warnings.map((warning) => warning.name)).toEqual(['Tempo shape']);
+        expect(parsed.warnings).toMatchObject([
+            { sourceType: 'Points', name: 'Tempo shape', handling: 'partial', details: ['timeline name'] },
+            { sourceType: 'RealPoint', sourceId: 'invalid-tempo', name: 'Tempo shape', handling: 'dropped' },
+        ]);
         expect(parsed.tracks[0]?.clips).toMatchObject([
             { name: 'Seconds phrase', startBeat: 8, endBeat: 12 },
             { name: 'Beat sibling', startBeat: 20, endBeat: 21 },
@@ -2044,16 +2120,14 @@ describe('parseProjectXml — inherited arrangement scope', () => {
         expect(phrase && mapped.midi.notesByClipId[phrase.id]).toMatchObject([
             { pitch: 60, startBeat: 2, duration: 1 },
         ]);
-        expect(parsed.warnings).toMatchObject([
-            {
-                kind: 'unsupported-automation',
-                sourceType: 'RealPoint',
-                sourceId: 'invalid-tempo',
-                name: 'Tempo shape',
-                context: 'Arrangement',
-            },
-        ]);
-        expect(parsed.warnings).toHaveLength(1);
+        expect(parsed.warnings[1]).toMatchObject({
+            kind: 'unsupported-automation',
+            sourceType: 'RealPoint',
+            sourceId: 'invalid-tempo',
+            name: 'Tempo shape',
+            context: 'Arrangement',
+        });
+        expect(parsed.warnings).toHaveLength(2);
         const validChange = { id: 'valid-tempo', beat: 20, tempo: 150, curve: 'instant' };
         try {
             restoreTimelineMapSnapshot({
@@ -2569,8 +2643,9 @@ describe('parseProjectXml — inherited arrangement scope', () => {
         expect(parsed.warnings).toMatchObject([
             { kind: 'unsupported-clip', sourceId: 'repeat', name: 'Repeat', context: 'Keys' },
             { kind: 'unsupported-clip', sourceId: 'stretched', name: 'Stretched', context: 'Audio' },
+            { sourceId: 'seek', name: 'Plain seek', context: 'Audio', handling: 'partial', details: ['source offset'] },
         ]);
-        expect(parsed.warnings).toHaveLength(2);
+        expect(parsed.warnings).toHaveLength(3);
         expect(parsed.warnings[0]!.sourceOrder).toBeLessThan(parsed.warnings[1]!.sourceOrder);
     });
 
@@ -2588,9 +2663,16 @@ describe('parseProjectXml — inherited arrangement scope', () => {
 
         expect(parsed.tracks[0]?.clips.map((clip) => [clip.name, clip.playStartBeat])).toEqual([['Far seek', 12]]);
         expect(parsed.warnings).toMatchObject([
+            {
+                sourceId: 'one-pass',
+                name: 'Far seek',
+                context: 'Audio',
+                handling: 'partial',
+                details: ['source offset'],
+            },
             { kind: 'unsupported-clip', sourceId: 'repeat', name: 'Real repeat', context: 'Audio' },
         ]);
-        expect(parsed.warnings).toHaveLength(1);
+        expect(parsed.warnings).toHaveLength(2);
     });
 
     it('keeps same-unit warp identities and omits a malformed point after a tempo step', () => {
@@ -2681,5 +2763,593 @@ describe('parseProjectXml — inherited arrangement scope', () => {
             { kind: 'unsupported-clip', sourceId: 'warp', name: 'Mixed warp', context: 'Audio' },
         ]);
         expect(parsed.warnings).toHaveLength(2);
+    });
+});
+
+// Source population: Bitwig Project.xsd at ee4dcdde75940f30e14e55401a26955a58b8322b.
+// Family                         Preserved/default                         Diagnosed when lost or inexact
+// Project/Application/Transport envelope and optional 120/4-4             invalid initial transport values
+// Structure/Track               name, color, hierarchy, ordinary kind      unsupported role, inactive state, annotations
+// Channel/Send                  standard mixer values and master route     routing, solo/role, count, sends, parameter loss
+// Timeline/Lanes/Clips          owner and time units on supported routes   unrepresented named annotations
+// Clip                          timing, mute, supported one-pass content    repeat/warp, reference, fade, extent, seek
+// Notes/Note                    key, timing and seven-bit velocity          direct Notes, invalid notes, channel/expression
+// ClipSlot/Scene                empty slot without stop                     empty stop, scene and independent lost clips
+// Audio/Video/File/Warps        embedded audio and identity transformations video, unplaceable warp, external/algorithm
+// Automation/Points             compatible global tempo and meter points    unsupported shapes and globalized local scope
+// Markers                       arrangement marker name and position         unsupported lane markers or inexact fields
+// Devices/Parameters            supported devices, enabled/empty defaults  substitution, settings and unsupported units
+// Base/enum/provenance          IDs, version and input metadata as context   material payloads through owning element
+// Compatibility routes: Track@type/master, Channel/Solo, Audio@file/path,
+// Automation wrappers, Points@target and Warps/Audio follow the same accounting.
+// Named lost descendants are reported once; transparent wrappers do not mask them.
+
+describe('DAWproject diagnostic accounting', () => {
+    it('names direct notes, slot clips, referenced clips and partial note properties', () => {
+        const parsed = parseProjectXml(
+            project(`<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>
+            <Arrangement><Lanes track="keys"><Notes id="direct" name="Direct phrase"><Note key="60"/></Notes>
+                <ClipSlot><Clip id="slot" name="Slot phrase" time="0" duration="1"><Notes><Note key="62"/></Notes></Clip></ClipSlot>
+                <Clips><Clip id="reference" name="Reference" time="0" duration="1" reference="source"/>
+                    <Clip id="retained" name="Retained" time="1" duration="2"><Notes>
+                        <Note key="64" time="0" duration="1" channel="2" rel="0.3"/>
+                    </Notes></Clip></Clips></Lanes></Arrangement>`)
+        );
+        expect(parsed.warnings).toMatchObject([
+            { sourceType: 'Notes', sourceId: 'direct', name: 'Direct phrase', context: 'Keys', handling: 'dropped' },
+            { sourceType: 'Clip', sourceId: 'slot', name: 'Slot phrase', context: 'Keys', handling: 'dropped' },
+            {
+                sourceType: 'Clip',
+                sourceId: 'reference',
+                name: 'Reference',
+                context: 'Keys',
+                handling: 'partial',
+                details: ['referenced content'],
+            },
+            {
+                sourceType: 'Note',
+                name: 'key 64',
+                context: 'Keys / Retained',
+                handling: 'partial',
+                details: ['MIDI channel', 'release velocity'],
+            },
+        ]);
+        expect(parsed.tracks[0]?.clips).toMatchObject([
+            { name: 'Reference', notes: [] },
+            { name: 'Retained', notes: [{ pitch: 64 }] },
+        ]);
+    });
+
+    it('accounts for clip and note timeline metadata while retaining notes', () => {
+        const parsed = parseProjectXml(
+            project(`<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>
+            <Arrangement><Lanes><Clips track="keys"><Clip name="Phrase" color="#123456" comment="cue" time="0" duration="2">
+                <Notes name="Original notes" color="#abcdef" comment="memo"><Note key="60" time="0" duration="1"/></Notes>
+            </Clip></Clips></Lanes></Arrangement>`)
+        );
+        expect(parsed.warnings).toMatchObject([
+            {
+                sourceType: 'Clip',
+                name: 'Phrase',
+                context: 'Keys',
+                handling: 'partial',
+                details: ['clip color', 'clip comment'],
+            },
+            {
+                sourceType: 'Notes',
+                name: 'Original notes',
+                context: 'Keys / Phrase',
+                handling: 'partial',
+                details: ['timeline name', 'timeline color', 'timeline comment'],
+            },
+        ]);
+        expect(parsed.tracks[0]?.clips).toMatchObject([{ name: 'Phrase', notes: [{ pitch: 60 }] }]);
+    });
+
+    it('reports independent unnamed content inside a dropped scene without wrapper noise', () => {
+        const parsed = parseProjectXml(
+            project(`<Scenes><Scene name="Chorus"><Lanes><ClipSlot><Clip time="0" duration="1"><Notes>
+            <Note key="60" time="0" duration="1"/></Notes></Clip></ClipSlot></Lanes></Scene></Scenes>`)
+        );
+        expect(parsed.warnings).toMatchObject([
+            { sourceType: 'Scene', name: 'Chorus', context: 'Scenes', handling: 'dropped' },
+            { sourceType: 'Clip', name: 'Clip', context: 'Chorus', handling: 'dropped' },
+        ]);
+        expect(parsed.warnings).toHaveLength(2);
+    });
+
+    it('reports only an empty stop slot and the separate nonempty slot clip', () => {
+        const parsed = parseProjectXml(
+            project(`<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>
+            <Arrangement><Lanes track="keys"><ClipSlot id="stop" hasStop="true"/><ClipSlot hasStop="false" name=" "/>
+                <ClipSlot id="occupied" hasStop="true"><Clip id="slotclip" name="Slot phrase" time="0" duration="1"><Notes/></Clip></ClipSlot>
+            </Lanes></Arrangement>`)
+        );
+        expect(parsed.warnings).toMatchObject([
+            { sourceType: 'ClipSlot', sourceId: 'stop', context: 'Keys', handling: 'dropped' },
+            { sourceType: 'Clip', sourceId: 'slotclip', name: 'Slot phrase', context: 'Keys', handling: 'dropped' },
+        ]);
+        expect(parsed.warnings).toHaveLength(2);
+    });
+
+    it('retains defaulted leaf extents while naming the inexact content', () => {
+        const parsed = parseProjectXml(
+            project(`<Structure><Track id="keys" name="Keys" contentType="notes"/><Track id="audio" name="Audio" contentType="audio"/></Structure>
+            <Arrangement><Lanes><Clips track="keys"><Clip id="notes" name="Notes leaf" time="0"><Notes><Note time="0" duration="1" key="60"/></Notes></Clip>
+                <Clip id="ref" name="Reference leaf" time="2" reference="source"/><Clip name="Explicit" time="4" duration="2"><Notes><Note key="62"/></Notes></Clip>
+                <Clip name="Derived" time="8" playStart="0" playStop="2"><Notes><Note key="64"/></Notes></Clip></Clips>
+                <Clips track="audio"><Clip id="audio-leaf" name="Audio leaf" time="0"><Audio file="a.wav"/></Clip></Clips></Lanes></Arrangement>`)
+        );
+        expect(parsed.warnings).toMatchObject([
+            { sourceId: 'notes', handling: 'partial', details: ['clip extent defaulted'] },
+            { sourceId: 'ref', handling: 'partial', details: ['referenced content', 'clip extent defaulted'] },
+            { sourceId: 'audio-leaf', handling: 'partial', details: ['clip extent defaulted'] },
+        ]);
+        expect(parsed.tracks[0]?.clips.map(({ name, startBeat, endBeat }) => [name, startBeat, endBeat])).toEqual([
+            ['Notes leaf', 0, 0.25],
+            ['Reference leaf', 2, 2.25],
+            ['Explicit', 4, 6],
+            ['Derived', 8, 10],
+        ]);
+        expect(parsed.tracks[1]?.clips).toMatchObject([{ name: 'Audio leaf', startBeat: 0, endBeat: 0.25 }]);
+    });
+
+    it('reports unplaceable standalone warps once and names independent media', () => {
+        const parsed = parseProjectXml(
+            project(`<Structure><Track id="audio" name="Audio" contentType="audio"/></Structure>
+            <Arrangement><Lanes track="audio"><Warps id="anonymous" contentTimeUnit="seconds"><Audio file="a.wav"/><Warp time="0" contentTime="0"/></Warps>
+                <Warps id="named" name="Warp route" contentTimeUnit="seconds"><Audio name="Named media" file="b.wav"/><Warp time="0" contentTime="0"/></Warps>
+            </Lanes></Arrangement>`)
+        );
+        expect(parsed.warnings).toMatchObject([
+            { sourceType: 'Warps', sourceId: 'anonymous', context: 'Audio', handling: 'dropped' },
+            { sourceType: 'Warps', sourceId: 'named', name: 'Warp route', context: 'Audio', handling: 'dropped' },
+            { sourceType: 'Audio', name: 'Named media', context: 'Warp route', handling: 'dropped' },
+        ]);
+        expect(parsed.warnings).toHaveLength(3);
+        expect(parsed.tracks[0]?.clips).toEqual([]);
+    });
+
+    it('reports a retained audio warp algorithm setting and leaves an absent algorithm quiet', () => {
+        const parsed = parseProjectXml(
+            project(`<Structure><Track id="audio" name="Audio" contentType="audio"/></Structure>
+            <Arrangement><Lanes><Clips track="audio"><Clip name="Processed" time="0" duration="2"><Audio name="Media" algorithm="vendor-algo" file="a.wav"/></Clip>
+                <Clip name="Plain" time="2" duration="2"><Audio file="b.wav"/></Clip></Clips></Lanes></Arrangement>`)
+        );
+        expect(parsed.warnings).toMatchObject([
+            {
+                sourceType: 'Audio',
+                name: 'Media',
+                context: 'Audio / Processed',
+                handling: 'partial',
+                details: ['timeline name', 'warp algorithm setting'],
+            },
+        ]);
+        expect(parsed.tracks[0]?.clips.map(({ name, audioAssetPath }) => [name, audioAssetPath])).toEqual([
+            ['Processed', 'a.wav'],
+            ['Plain', 'b.wav'],
+        ]);
+    });
+
+    it('reports compatibility tempo and meter timelines globalized from clip and note scopes', () => {
+        const parsed = parseProjectXml(
+            project(`<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>
+            <Arrangement><Lanes track="keys"><Points target="tempo"><RealPoint time="0" value="120"/></Points><Clips>
+                <Clip name="Tempo clip" time="4" duration="2"><Points id="local-tempo" name="Local tempo" target="tempo"><RealPoint time="1" value="90"/></Points></Clip>
+                <Clip name="Meter clip" time="8" duration="2"><Notes><Note key="60" time="0" duration="1"><Points id="local-meter" name="Local meter" target="timeSignature"><TimeSignaturePoint time="1" numerator="3" denominator="4"/></Points></Note></Notes></Clip>
+            </Clips></Lanes></Arrangement>`)
+        );
+        expect(parsed.tempoChanges.map(({ beat, tempo }) => [beat, tempo])).toEqual([
+            [0, 120],
+            [1, 90],
+        ]);
+        expect(parsed.timeSignatureChanges).toEqual([{ beat: 1, numerator: 3, denominator: 4 }]);
+        expect(parsed.warnings).toMatchObject([
+            {
+                sourceId: 'local-tempo',
+                sourceType: 'Points',
+                handling: 'partial',
+                details: ['timeline name', 'automation scope'],
+            },
+            { sourceType: 'Note', name: 'key 60', handling: 'partial', details: ['note expression'] },
+            {
+                sourceId: 'local-meter',
+                sourceType: 'Points',
+                handling: 'partial',
+                details: ['timeline name', 'automation scope'],
+            },
+        ]);
+        expect(parsed.tracks[0]?.clips).toMatchObject([
+            { name: 'Tempo clip', notes: [] },
+            { name: 'Meter clip', notes: [{ pitch: 60 }] },
+        ]);
+    });
+
+    it('does not claim a nested meter point was globalized when the store rejects it', () => {
+        const parsed = parseProjectXml(
+            project(`<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>
+            <Arrangement><Lanes><Clips track="keys"><Clip name="Meter clip" time="0" duration="2"><Points target="timeSignature"><TimeSignaturePoint id="invalid" time="0" numerator="3" denominator="64"/></Points></Clip></Clips></Lanes></Arrangement>`)
+        );
+        expect(parsed.warnings).toMatchObject([
+            { sourceType: 'TimeSignaturePoint', sourceId: 'invalid', handling: 'dropped' },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+        expect(parsed.tracks[0]?.clips).toMatchObject([{ name: 'Meter clip', notes: [] }]);
+    });
+
+    it('reports pitch-bend Points once while retaining the legacy empty clip', () => {
+        const parsed = parseProjectXml(
+            project(`<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>
+            <Arrangement><Lanes><Clips track="keys"><Clip name="Automation clip" time="0" duration="4"><Points id="bend" name="Bend"><Target expression="pitchBend"/><RealPoint time="0" value="0"/></Points></Clip></Clips></Lanes></Arrangement>`)
+        );
+        expect(parsed.warnings).toMatchObject([
+            { sourceType: 'Points', sourceId: 'bend', name: 'Bend', handling: 'dropped' },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+        expect(parsed.tracks[0]?.clips).toMatchObject([{ name: 'Automation clip', notes: [] }]);
+    });
+
+    it.each([
+        { tempo: '301', numerator: '4', denominator: '4', expectedTempo: 301, warning: 'tempo' },
+        { tempo: 'not-a-number', numerator: '4', denominator: '4', expectedTempo: 120, warning: 'tempo' },
+        { tempo: '120', numerator: '33', denominator: '4', expectedTempo: 120, warning: 'time signature' },
+        { tempo: '120', numerator: '4', denominator: '64', expectedTempo: 120, warning: 'time signature' },
+    ])(
+        'reports initial transport values that normalize: $warning $tempo/$numerator/$denominator',
+        ({ tempo, numerator, denominator, expectedTempo, warning }) => {
+            const parsed = parseProjectXml(
+                project(
+                    '',
+                    `<Transport><Tempo value="${tempo}"/><TimeSignature numerator="${numerator}" denominator="${denominator}"/></Transport>`
+                )
+            );
+            expect(parsed.initialTempo).toBe(expectedTempo);
+            expect(parsed.warnings).toMatchObject([{ context: 'Transport', handling: 'partial', details: [warning] }]);
+            expect(parsed.warnings).toHaveLength(1);
+        }
+    );
+
+    it('uses normalized initial tempo when diagnosing retained source seeks and seconds markers', () => {
+        const parsed = parseProjectXml(
+            project(
+                `<Structure><Track id="audio" name="Audio" contentType="audio"/></Structure>
+            <Arrangement timeUnit="seconds"><Lanes><Clips track="audio" timeUnit="beats"><Clip id="seek" name="Seek" time="0" duration="2" contentTimeUnit="seconds" playStart="1"><Audio file="a.wav"/></Clip></Clips></Lanes>
+                <Markers><Marker name="Cue" time="1"/></Markers></Arrangement>`,
+                '<Transport><Tempo value="301"/></Transport>'
+            )
+        );
+        expect(parsed.initialTempo).toBe(301);
+        expect(parsed.tracks[0]?.clips).toMatchObject([{ name: 'Seek', playStartBeat: 301 / 60 }]);
+        expect(parsed.warnings).toMatchObject([
+            { sourceType: 'Tempo', context: 'Transport', handling: 'partial', details: ['tempo'] },
+            { sourceType: 'Clip', sourceId: 'seek', handling: 'partial', details: ['source offset'] },
+            { sourceType: 'Marker', name: 'Cue', handling: 'partial', details: ['marker position'] },
+        ]);
+    });
+
+    it('does not warn for missing optional transport defaults or accepted boundaries', () => {
+        expect(parseProjectXml('<Project version="1.0"/>').warnings).toEqual([]);
+        expect(
+            parseProjectXml(
+                project(
+                    '',
+                    '<Transport><Tempo value="300"/><TimeSignature numerator="32" denominator="16"/></Transport>'
+                )
+            ).warnings
+        ).toEqual([]);
+    });
+
+    it('reports named markers in unsupported lane timelines', () => {
+        const parsed = parseProjectXml(
+            project(`<Structure><Track id="keys" name="Keys" contentType="notes"/></Structure>
+            <Arrangement><Lanes track="keys"><markers><Marker name="Cue" time="4"/></markers></Lanes></Arrangement>`)
+        );
+        expect(parsed.markers).toEqual([]);
+        expect(parsed.warnings).toMatchObject([
+            { sourceType: 'Marker', name: 'Cue', context: 'Keys', handling: 'dropped' },
+        ]);
+        expect(parsed.warnings).toHaveLength(1);
+    });
+
+    it('reports a schema-valid time signature outside the consuming store range', () => {
+        const parsed = parseProjectXml(
+            project(`<Arrangement><Lanes><Points name="Meter" target="timeSignature">
+            <TimeSignaturePoint time="4" numerator="3" denominator="64"/></Points></Lanes></Arrangement>`)
+        );
+        expect(parsed.timeSignatureChanges).toEqual([{ beat: 4, numerator: 3, denominator: 64 }]);
+        expect(parsed.warnings).toMatchObject([
+            {
+                sourceType: 'Points',
+                name: 'Meter',
+                context: 'Arrangement',
+                handling: 'partial',
+                details: ['timeline name'],
+            },
+            { sourceType: 'TimeSignaturePoint', name: 'Meter', context: 'Arrangement', handling: 'dropped' },
+        ]);
+    });
+
+    it('reports inexact seconds positions while preserving the mapped values', () => {
+        const parsed = parseProjectXml(
+            project(`<Structure><Track id="audio" name="Audio" contentType="audio"/></Structure>
+            <Arrangement timeUnit="seconds"><Lanes><Points name="Tempo" target="tempo" timeUnit="seconds">
+                <RealPoint id="start" time="0" value="120"/><RealPoint id="step" time="2" value="60"/><RealPoint id="later" time="6" value="60"/>
+                </Points></Lanes><Markers><Marker name="After step" time="6"/></Markers></Arrangement>`)
+        );
+        expect(parsed.tempoChanges.map(({ beat, tempo }) => [beat, tempo])).toEqual([
+            [0, 120],
+            [4, 60],
+            [12, 60],
+        ]);
+        expect(parsed.markers).toEqual([{ beat: 12, name: 'After step' }]);
+        expect(parsed.warnings).toMatchObject([
+            {
+                sourceType: 'RealPoint',
+                sourceId: 'later',
+                name: 'Tempo',
+                handling: 'partial',
+                details: ['tempo position'],
+            },
+            { sourceType: 'Marker', name: 'After step', handling: 'partial', details: ['marker position'] },
+        ]);
+    });
+
+    it('uses the transport law for ramp, duplicate and negative marker positions', () => {
+        const ramp = parseProjectXml(
+            project(
+                `<Arrangement timeUnit="seconds"><Lanes><Points target="tempo" timeUnit="beats">
+            <RealPoint time="0" value="100" interpolation="linear"/><RealPoint time="16" value="140"/>
+            </Points></Lanes><Markers><Marker name="Ramp" time="2"/></Markers></Arrangement>`,
+                '<Transport><Tempo value="100"/></Transport>'
+            )
+        );
+        expect(ramp.warnings).toMatchObject([
+            { sourceType: 'Marker', name: 'Ramp', handling: 'partial', details: ['marker position'] },
+        ]);
+        const duplicate = parseProjectXml(
+            project(`<Arrangement timeUnit="seconds"><Lanes><Points target="tempo" timeUnit="beats">
+            <RealPoint time="0" value="120"/><RealPoint time="4" value="60"/><RealPoint time="4" value="120"/>
+            </Points></Lanes><Markers><Marker name="After duplicate" time="4"/></Markers></Arrangement>`)
+        );
+        expect(duplicate.warnings).toEqual([]);
+        expect(duplicate.markers).toEqual([{ name: 'After duplicate', beat: 8 }]);
+        const negative = parseProjectXml(
+            project(`<Arrangement timeUnit="seconds"><Lanes><Points target="tempo" timeUnit="beats">
+            <RealPoint time="4" value="60"/></Points></Lanes><Markers><Marker name="Before zero" time="-2"/></Markers></Arrangement>`)
+        );
+        expect(negative.markers).toEqual([{ name: 'Before zero', beat: -4 }]);
+        expect(negative.warnings).toMatchObject([
+            { sourceType: 'Marker', name: 'Before zero', handling: 'partial', details: ['marker position'] },
+        ]);
+    });
+
+    it('does not report seconds positions on a flat tempo map', () => {
+        const parsed = parseProjectXml(
+            project(`<Arrangement timeUnit="seconds"><Lanes><Points target="tempo" timeUnit="seconds">
+            <RealPoint time="0" value="120"/><RealPoint time="6" value="120"/></Points></Lanes>
+            <Markers><Marker name="Flat" time="6"/></Markers></Arrangement>`)
+        );
+        expect(parsed.warnings).toEqual([]);
+        expect(parsed.markers).toEqual([{ beat: 12, name: 'Flat' }]);
+    });
+
+    it('distinguishes default device wrappers from disabled or populated settings', () => {
+        const parsed = parseProjectXml(
+            project(`<Structure><Track name="Keys" contentType="notes"><Channel><Devices>
+            <Device deviceRole="builtin-synth"><Parameters/><Enabled value="true"/></Device>
+            <Device deviceRole="builtin-eq"><Enabled value="false"/></Device>
+            <Device deviceRole="builtin-compressor"><Parameters><RealParameter unit="linear" value="0.5"/></Parameters></Device>
+            </Devices></Channel></Track></Structure>`)
+        );
+        expect(parsed.tracks[0]?.deviceSources?.map((device) => device.hasSettings)).toEqual([false, true, true]);
+    });
+
+    it('reports an inactive track and mixed content roles without changing the imported track', () => {
+        const parsed = parseProjectXml(
+            project(`<Structure><Track id="mixed" name="Mixed" contentType="audio,notes" loaded="false"/></Structure>`)
+        );
+        expect(parsed.warnings).toMatchObject([
+            {
+                sourceType: 'Track',
+                name: 'Mixed',
+                context: 'Mixed',
+                handling: 'partial',
+                details: ['inactive track state', 'track content type'],
+            },
+        ]);
+        expect(parsed.tracks[0]).toMatchObject({ name: 'Mixed', kind: 'audio' });
+    });
+
+    it('reports unconverted mixer units without changing the parsed mixer values', () => {
+        const parsed = parseProjectXml(
+            project(`<Structure><Track id="audio" name="Audio" contentType="audio"><Channel name="Mixer">
+            <Pan unit="percent" value="25"/><Volume unit="decibel" value="-6"/></Channel></Track></Structure>`)
+        );
+        expect(parsed.warnings).toMatchObject([
+            { sourceType: 'Channel', name: 'Mixer', context: 'Audio', handling: 'partial', details: ['channel name'] },
+            {
+                sourceType: 'Pan',
+                name: 'Pan',
+                context: 'Audio',
+                handling: 'partial',
+                details: ['parameter unit', 'pan range'],
+            },
+            {
+                sourceType: 'Volume',
+                name: 'Volume',
+                context: 'Audio',
+                handling: 'partial',
+                details: ['parameter unit', 'volume range'],
+            },
+        ]);
+        expect(parsed.tracks[0]).toMatchObject({ volume: -6, pan: 49 });
+    });
+
+    it('recognizes a master destination and matching role as preserved channel defaults', () => {
+        const parsed = parseProjectXml(
+            project(`<Structure>
+            <Track id="master" name="Master" type="masterChannel"><Channel id="master-channel" role="master"/></Track>
+            <Track id="audio" name="Audio" contentType="audio"><Channel role="regular" destination="master-channel" solo="false"/></Track>
+            </Structure>`)
+        );
+        expect(parsed.warnings).toEqual([]);
+        expect(parsed.tracks.map(({ name, kind }) => [name, kind])).toEqual([
+            ['Master', 'master'],
+            ['Audio', 'audio'],
+        ]);
+    });
+
+    it('does not warn for default channel properties, zero fade or zero source offset', () => {
+        const parsed = parseProjectXml(
+            project(`<Structure><Track id="audio" name="Audio" contentType="audio"><Channel role="regular" solo="false"/></Track></Structure>
+            <Arrangement><Lanes track="audio"><Points target="tempo"><RealPoint time="0" value="120"/><RealPoint time="4" value="60"/></Points>
+                <Clips><Clip name="Zero" time="8" duration="4" contentTimeUnit="seconds" playStart="0" fadeInTime="0"><Audio file="zero.wav"/></Clip></Clips>
+            </Lanes></Arrangement>`)
+        );
+        expect(parsed.warnings).toEqual([]);
+        expect(parsed.tracks[0]?.clips).toMatchObject([{ name: 'Zero' }]);
+    });
+});
+
+describe('rejected owners and invalid mixer values', () => {
+    it('reports named descendants and invalid values while preserving playable clips and mixer defaults', () => {
+        const parsed = parseProjectXml(
+            project(
+                `<Structure><Channel id="return" name="Return"/><Track id="keys" name="Keys" contentType="notes"><Channel><Volume id="vol" unit="linear" value="not-a-number"/><Pan id="pan" value="Infinity"/></Channel></Track><Track name="Controls" contentType="notes"><Channel><Volume value="0"/><Pan value="0.5"/></Channel></Track><Track name="Defaults" contentType="notes"><Channel><Volume/><Pan/></Channel></Track></Structure><Arrangement><Lanes><Clips track="return"><Clip id="orphan" name="Orphan" time="0" duration="1"><Notes id="verse" name="Verse"><Note key="60" time="0" duration="1"/></Notes></Clip></Clips><Clips track="keys"><Clip name="Playable" time="0" duration="1"><Notes><Note key="64" time="0" duration="1"/></Notes></Clip></Clips></Lanes></Arrangement>`
+            )
+        );
+        expect(parsed.warnings).toMatchObject([
+            { sourceType: 'Channel', sourceId: 'return', name: 'Return', context: 'Structure', handling: 'dropped' },
+            {
+                sourceType: 'Volume',
+                sourceId: 'vol',
+                name: 'Volume',
+                context: 'Keys',
+                handling: 'partial',
+                details: ['invalid parameter value'],
+            },
+            {
+                sourceType: 'Pan',
+                sourceId: 'pan',
+                name: 'Pan',
+                context: 'Keys',
+                handling: 'partial',
+                details: ['invalid parameter value'],
+            },
+            { sourceType: 'Clip', sourceId: 'orphan', name: 'Orphan', context: 'return', handling: 'dropped' },
+            { sourceType: 'Notes', sourceId: 'verse', name: 'Verse', context: 'Orphan', handling: 'dropped' },
+        ]);
+        expect(parsed.warnings).toHaveLength(5);
+        expect(parsed.tracks[0]).toMatchObject({ name: 'Keys', volume: 0.8, pan: 0, clips: [{ name: 'Playable' }] });
+        expect(parsed.tracks[1]).toMatchObject({ name: 'Controls', volume: 0, pan: 0 });
+        expect(parsed.tracks[2]).toMatchObject({ name: 'Defaults', volume: 0.8, pan: 0 });
+    });
+    it('warns for blank mixer values while retaining their existing numeric coercion', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track name="Blank" contentType="notes"><Channel><Volume id="empty" value=""/><Pan id="space" value="   "/></Channel></Track><Track name="Valid" contentType="notes"><Channel><Volume value="0"/><Pan value="0"/></Channel></Track><Track name="Defaults" contentType="notes"><Channel><Volume value="0.8"/><Pan value="0.5"/></Channel></Track><Track name="Absent" contentType="notes"><Channel><Volume/><Pan/></Channel></Track></Structure>'
+            )
+        );
+        expect(parsed.warnings).toMatchObject([
+            {
+                sourceType: 'Volume',
+                sourceId: 'empty',
+                name: 'Volume',
+                context: 'Blank',
+                handling: 'partial',
+                details: ['invalid parameter value'],
+            },
+            {
+                sourceType: 'Pan',
+                sourceId: 'space',
+                name: 'Pan',
+                context: 'Blank',
+                handling: 'partial',
+                details: ['invalid parameter value'],
+            },
+        ]);
+        expect(parsed.warnings).toHaveLength(2);
+        expect(parsed.tracks.map(({ volume, pan }) => ({ volume, pan }))).toEqual([
+            { volume: 0, pan: -1 },
+            { volume: 0, pan: -1 },
+            { volume: 0.8, pan: 0 },
+            { volume: 0.8, pan: 0 },
+        ]);
+    });
+    it('reports custom mixer bounds without changing values or duplicating metadata warnings', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track name="Keys" contentType="notes"><Channel><Volume id="vol" name="Level" value="0.75" min="0.25" max="0.9"/><Pan id="pan" value="0.75" min="0.25" max="0.75"/></Channel></Track><Track name="Min only" contentType="notes"><Channel><Volume id="min" value="0.8" min="0.1"/></Channel></Track><Track name="Max only" contentType="notes"><Channel><Pan id="max" value="0.5" max="0.9"/></Channel></Track><Track name="Default" contentType="notes"><Channel><Volume value="0.8"/><Pan value="0.5"/></Channel></Track></Structure>'
+            )
+        );
+        expect(parsed.warnings).toMatchObject([
+            {
+                sourceType: 'Volume',
+                sourceId: 'vol',
+                name: 'Level',
+                context: 'Keys',
+                handling: 'partial',
+                details: ['parameter name', 'parameter bounds'],
+            },
+            {
+                sourceType: 'Pan',
+                sourceId: 'pan',
+                name: 'Pan',
+                context: 'Keys',
+                handling: 'partial',
+                details: ['parameter bounds'],
+            },
+            {
+                sourceType: 'Volume',
+                sourceId: 'min',
+                name: 'Volume',
+                context: 'Min only',
+                handling: 'partial',
+                details: ['parameter bounds'],
+            },
+            {
+                sourceType: 'Pan',
+                sourceId: 'max',
+                name: 'Pan',
+                context: 'Max only',
+                handling: 'partial',
+                details: ['parameter bounds'],
+            },
+        ]);
+        expect(parsed.warnings).toHaveLength(4);
+        expect(parsed.tracks.map(({ volume, pan }) => ({ volume, pan }))).toEqual([
+            { volume: 0.75, pan: 0.5 },
+            { volume: 0.8, pan: 0 },
+            { volume: 0.8, pan: 0 },
+            { volume: 0.8, pan: 0 },
+        ]);
+    });
+    it('keeps standard pan bounds quiet while reporting custom bounds and other metadata', () => {
+        const parsed = parseProjectXml(
+            project(
+                '<Structure><Track name="Both" contentType="notes"><Channel><Pan value="0.75" unit="normalized" min="0" max="1"/></Channel></Track><Track name="Min" contentType="notes"><Channel><Pan value="0.75" min="0"/></Channel></Track><Track name="Max" contentType="notes"><Channel><Pan value="0.75" max="1"/></Channel></Track><Track name="Absent" contentType="notes"><Channel><Pan value="0.75"/></Channel></Track><Track name="Custom" contentType="notes"><Channel><Pan id="custom" name="Position" value="0.75" min="0.25" max="0.75"/></Channel></Track><Track name="Volume" contentType="notes"><Channel><Volume id="vol" value="0.75" min="0" max="1"/></Channel></Track></Structure>'
+            )
+        );
+        expect(parsed.warnings).toMatchObject([
+            {
+                sourceType: 'Pan',
+                sourceId: 'custom',
+                name: 'Position',
+                context: 'Custom',
+                handling: 'partial',
+                details: ['parameter name', 'parameter bounds'],
+            },
+            {
+                sourceType: 'Volume',
+                sourceId: 'vol',
+                name: 'Volume',
+                context: 'Volume',
+                handling: 'partial',
+                details: ['parameter bounds'],
+            },
+        ]);
+        expect(parsed.warnings).toHaveLength(2);
+        expect(parsed.tracks.slice(0, 5).map(({ pan }) => pan)).toEqual([0.5, 0.5, 0.5, 0.5, 0.5]);
+        expect(parsed.tracks[5]?.volume).toBe(0.75);
     });
 });

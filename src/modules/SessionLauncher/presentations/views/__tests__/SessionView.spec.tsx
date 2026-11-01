@@ -114,6 +114,41 @@ describe('SessionView', () => {
         expect(screen.getByText('No session tracks yet')).toBeInTheDocument();
     });
 
+    it('should not offer the master or folder rows as launch columns', async () => {
+        const { useTracks } = await import('../../hooks/useTracks');
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [
+                makeTrack({ id: 'master', name: 'Master', kind: 'master', outputId: 'hw_out' }),
+                makeTrack({ id: 'folder-1', name: 'Drums Folder', kind: 'folder' }),
+                makeTrack({ id: 'track-1', name: 'Audio 1', clips: [makeClip('clip-1')] }),
+            ],
+            selectedTrackId: null,
+        });
+
+        render(<SessionView />);
+
+        expect(screen.getByText('Audio 1')).toBeInTheDocument();
+        expect(screen.queryByText('Master')).not.toBeInTheDocument();
+        expect(screen.queryByText('Drums Folder')).not.toBeInTheDocument();
+
+        act(() => {
+            fireEvent.click(screen.getByLabelText('Launch scene 1'));
+        });
+        expect(sessionLaunchStore.value?.activeSlots).toEqual({ 'track-1': 0 });
+    });
+
+    it('should show the empty state when only the master row exists', async () => {
+        const { useTracks } = await import('../../hooks/useTracks');
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ id: 'master', name: 'Master', kind: 'master', outputId: 'hw_out' })],
+            selectedTrackId: null,
+        });
+
+        render(<SessionView />);
+
+        expect(screen.getByText('No session tracks yet')).toBeInTheDocument();
+    });
+
     describe('keyboard accessibility (F8)', () => {
         beforeEach(async () => {
             // A prior test in this file overrides useTracks with mockReturnValue,

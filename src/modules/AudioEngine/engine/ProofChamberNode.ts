@@ -8,7 +8,7 @@ import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '
 
 import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
 import { PROOF_CHAMBER_AUTOMATION_PARAM_IDS } from '../models/ProofChamberAutomationParams';
-import proofChamberProcessorUrl from '../services/proofChamberProcessor.ts?worker&url';
+import proofChamberProcessorUrl from '../worklets/proofChamberProcessor.ts?worker&url';
 
 const DEFAULT_WASM_URL = '/wasm/proof-chamber/proof_chamber_bg.wasm';
 
@@ -27,6 +27,23 @@ type OfflineAutomationSegment = {
     startValue: number;
     endValue: number;
 };
+
+function holdBooleanAutomation(segments: readonly OfflineAutomationSegment[]): OfflineAutomationSegment[] {
+    const held = segments.map((segment) => ({
+        ...segment,
+        endValue: segment.endFrame > segment.startFrame ? segment.startValue : segment.endValue,
+    }));
+    const last = segments.at(-1);
+    if (last && last.endFrame > last.startFrame) {
+        held.push({
+            startFrame: last.endFrame,
+            endFrame: last.endFrame,
+            startValue: last.endValue,
+            endValue: last.endValue,
+        });
+    }
+    return held;
+}
 
 export type ProofChamberNodeResult = {
     workletNode: AudioWorkletNode;
@@ -112,7 +129,10 @@ export async function createProofChamberNode(
                     Number.isFinite(segment.endValue)
             );
         if (valid) {
-            node.port.postMessage({ type: 'paramAutomation', paramId, segments });
+            // The scheduler quantises each Boolean tick; interpolating between
+            // those ticks would cross the DSP threshold before its event frame.
+            const scheduled = name === 'freeze' || name === 'shimmer' ? holdBooleanAutomation(segments) : segments;
+            node.port.postMessage({ type: 'paramAutomation', paramId, segments: scheduled });
         }
     };
 

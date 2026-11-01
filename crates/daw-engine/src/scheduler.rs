@@ -31,6 +31,7 @@ use daw_dsp::fermenter::{FermenterInstance, FERMENTER_BLOCK_FRAMES};
 use daw_dsp::gluten::engine::GlutenEngine;
 use daw_dsp::grand_boule::{GrandBouleInstance, GRAND_BOULE_BLOCK_FRAMES};
 use daw_dsp::grinder::engine::GrinderEngine;
+use daw_dsp::grinder::nam::native_admission::{NativeGrinderModelRequest, NativePreparedNam};
 use daw_dsp::knead::engine::KneadEngine;
 use daw_dsp::levain::{LevainInstance, LEVAIN_BLOCK_FRAMES};
 use daw_dsp::primitives::sanitize::sanitize_block;
@@ -143,6 +144,9 @@ pub struct TransportPositionSnapshot {
     pub tempo: f64,
     pub time_sig_num: u16,
     pub time_sig_denom: u16,
+    /// Callback-owned presentation date paired with these exact counters.
+    /// Offline/same-thread drivers have no device presentation clock.
+    pub capture_clock: Option<crate::CaptureClockSnapshot>,
 }
 
 pub struct TransportPositionReader {
@@ -305,6 +309,7 @@ pub enum BuiltinEffectType {
     Toaster,
     Levain,
     Scoring,
+    TransientShaper,
 }
 
 impl BuiltinEffectType {
@@ -325,6 +330,7 @@ impl BuiltinEffectType {
             Self::Toaster => "toaster",
             Self::Levain => "levain",
             Self::Scoring => "native-scoring",
+            Self::TransientShaper => "transient-shaper",
         }
     }
 
@@ -345,6 +351,7 @@ impl BuiltinEffectType {
             "toaster" => Some(Self::Toaster),
             "levain" => Some(Self::Levain),
             "native-scoring" => Some(Self::Scoring),
+            "transient-shaper" => Some(Self::TransientShaper),
             _ => None,
         }
     }
@@ -383,6 +390,7 @@ impl BuiltinEffectType {
             // A tuner listens. It hands the block on unchanged and turns the
             // pitch it heard into a reading, so it sounds nothing of its own.
             Self::Scoring => false,
+            Self::TransientShaper => false,
         }
     }
 
@@ -409,7 +417,7 @@ impl BuiltinEffectType {
             Self::DutchOven => DUTCH_OVEN_PATCH_PRECEDENCE,
             Self::Toaster => TOASTER_PATCH_PRECEDENCE,
             Self::Levain => LEVAIN_PATCH_PRECEDENCE,
-            Self::Knead | Self::GrandBoule | Self::Scoring => &[],
+            Self::Knead | Self::GrandBoule | Self::Scoring | Self::TransientShaper => &[],
         }
     }
 }
@@ -450,6 +458,12 @@ pub enum GraphCommand {
     /// [`GraphCommand::AddEffect`]'s.
     AddDetachedEffect(usize, PluginCore, Option<Box<MidiNoteStore>>),
     SetParam(usize, DeviceParam, f32),
+    /// Control-prepared network and a reusable return box. Even a rejected
+    /// incoming request leaves through the off-callback reclaimer.
+    SetGrinderModel {
+        effect_id: usize,
+        request: Box<NativeGrinderModelRequest>,
+    },
     SetBypass(usize, bool),
     /// Drop a Bacteria body's whole modulation-assignment table.
     ///
@@ -979,6 +993,7 @@ impl GraphCommand {
             // `RemoveBusDevice` leave the effect registered — detached, or
             // back on the master chain — so none of them frees a slot.
             Self::SetParam(..)
+            | Self::SetGrinderModel { .. }
             | Self::SetBypass(..)
             | Self::ClearModAssignments(..)
             | Self::AddModAssignment { .. }
@@ -1082,6 +1097,7 @@ impl GraphCommand {
             | Self::AddPlugin(..)
             | Self::AddHostedPlugin(..)
             | Self::SetParam(..)
+            | Self::SetGrinderModel { .. }
             | Self::SetBypass(..)
             | Self::ClearModAssignments(..)
             | Self::AddModAssignment { .. }
@@ -1142,6 +1158,7 @@ pub enum PluginCore {
     Toaster(Box<ToasterBody>),
     Levain(Box<LevainBody>),
     Scoring(Box<ScoringBody>),
+    TransientShaper(Box<TransientShaperBody>),
     Native(Box<dyn NativePlugin>),
 }
 
@@ -1181,6 +1198,9 @@ impl PluginCore {
                 Self::levain_with_patch(LevainInstance::new(sample_rate, LEVAIN_MAX_VOICES), &[])
             }
             BuiltinEffectType::Scoring => Self::scoring_with_patch(sample_rate, &[]),
+            BuiltinEffectType::TransientShaper => {
+                Self::transient_shaper_with_patch(sample_rate, &[])
+            }
         }
     }
 
@@ -1394,6 +1414,22 @@ impl PluginCore {
         Self::Scoring(Box::new(body))
     }
 
+    pub fn transient_shaper_with_patch(
+        sample_rate: f32,
+        patch: &[(BuiltinParamName, f32)],
+    ) -> Self {
+        let mut body = TransientShaperBody {
+            engine: daw_dsp::toaster::transient::TransientShaperInstance::new(sample_rate)
+                .expect("native stream sample rate must be positive and finite"),
+            attack_gain: 1.0,
+            sustain_gain: 1.0,
+        };
+        for (name, value) in patch {
+            body.set_param(name.as_str(), *value);
+        }
+        Self::TransientShaper(Box::new(body))
+    }
+
     /// The detection channel of the Tuner this core is, or `None` for every
     /// other core.
     ///
@@ -1407,6 +1443,7 @@ impl PluginCore {
         match self {
             Self::Scoring(body) => Some(body.telemetry()),
             Self::Knead(_)
+            | Self::TransientShaper(_)
             | Self::Fermenter(_)
             | Self::GrandBoule(_)
             | Self::Gluten(_)
@@ -1438,6 +1475,7 @@ impl PluginCore {
             Self::Toaster(_) => Some(BuiltinEffectType::Toaster),
             Self::Levain(_) => Some(BuiltinEffectType::Levain),
             Self::Scoring(_) => Some(BuiltinEffectType::Scoring),
+            Self::TransientShaper(_) => Some(BuiltinEffectType::TransientShaper),
             Self::Native(_) => None,
         }
     }
@@ -1468,6 +1506,7 @@ impl PluginCore {
             // name ([`GraphCommand::SetParam`]), and the instruments here take
             // notes alone.
             Self::Knead(_)
+            | Self::TransientShaper(_)
             | Self::Fermenter(_)
             | Self::Gluten(_)
             | Self::Crust(_)
@@ -1505,6 +1544,7 @@ impl PluginCore {
             // The bodies that take no controller in [`Self::control_change`]
             // hold nothing a note-off cannot release.
             Self::Knead(_)
+            | Self::TransientShaper(_)
             | Self::Fermenter(_)
             | Self::Gluten(_)
             | Self::Crust(_)
@@ -1530,6 +1570,7 @@ impl PluginCore {
         match self {
             Self::Native(plugin) => plugin.runs_while_detached(),
             Self::Knead(_)
+            | Self::TransientShaper(_)
             | Self::Fermenter(_)
             | Self::GrandBoule(_)
             | Self::Gluten(_)
@@ -1582,6 +1623,7 @@ impl PluginCore {
             // impulse responses ever made them reachable.
             Self::DutchOven(body) => Some(body.latency_samples() as usize),
             Self::Knead(_)
+            | Self::TransientShaper(_)
             | Self::Fermenter(_)
             | Self::GrandBoule(_)
             | Self::Toaster(_)
@@ -2593,6 +2635,23 @@ impl GrinderBody {
         }
     }
 
+    pub fn swap_native_model(
+        &mut self,
+        model: Option<NativePreparedNam>,
+    ) -> Option<NativePreparedNam> {
+        self.engine.swap_native_neural_model(model)
+    }
+
+    pub fn has_native_model(&self) -> bool {
+        self.engine.native_neural_model().is_some()
+    }
+
+    fn activate_native_model(&self) {
+        if let Some(model) = self.engine.native_neural_model() {
+            model.lease.activate();
+        }
+    }
+
     /// Amplify the block in place.
     ///
     /// Written rather than summed because an effect transforms the signal it
@@ -3552,7 +3611,7 @@ impl DutchOvenBody {
 ///
 /// The figure the web host constructs its own worklet instance with
 /// (`TOASTER_PAD_COUNT` in
-/// `src/modules/AudioEngine/services/toasterProcessor.ts`), so a kit that moves
+/// `src/modules/AudioEngine/worklets/toasterProcessor.ts`), so a kit that moves
 /// between the two runtimes finds the same grid on both. It is also the size of
 /// the two note banks [`toaster_pad_for_note`] maps and the bound
 /// [`toaster_pad_key`] refuses a pad address past.
@@ -3912,7 +3971,7 @@ impl ToasterBody {
 ///
 /// The figure the web runtime builds its own instance with
 /// (`new LevainInstance(sampleRate, 64)`,
-/// `src/modules/AudioEngine/services/levainProcessor.ts`), so a strip that
+/// `src/modules/AudioEngine/worklets/levainProcessor.ts`), so a strip that
 /// moves between the two runtimes steals voices at the same point rather than
 /// sounding different under load.
 const LEVAIN_MAX_VOICES: u32 = 64;
@@ -4491,6 +4550,41 @@ impl ScoringBody {
     }
 }
 
+/// The same two-channel scalar adapter the browser exports; gains are the only
+/// persistent state. Construction is control-side, processing and reset are bounded.
+pub struct TransientShaperBody {
+    engine: daw_dsp::toaster::transient::TransientShaperInstance,
+    attack_gain: f32,
+    sustain_gain: f32,
+}
+
+impl TransientShaperBody {
+    fn set_param(&mut self, name: &str, value: f32) -> bool {
+        if !value.is_finite() {
+            return false;
+        }
+        match name {
+            "attackGain" => self.attack_gain = value.clamp(0.0, 2.0),
+            "sustainGain" => self.sustain_gain = value.clamp(0.0, 2.0),
+            _ => return false,
+        }
+        true
+    }
+
+    fn process(&mut self, left: &mut [f32], right: &mut [f32], frames: usize) {
+        for sample in left.iter_mut().take(frames) {
+            *sample = self
+                .engine
+                .process_left(*sample, self.attack_gain, self.sustain_gain);
+        }
+        for sample in right.iter_mut().take(frames) {
+            *sample = self
+                .engine
+                .process_right(*sample, self.attack_gain, self.sustain_gain);
+        }
+    }
+}
+
 /// Apply an addressed device parameter to the built-in body it names,
 /// answering whether the address and the body agreed.
 ///
@@ -4499,6 +4593,27 @@ impl ScoringBody {
 /// `false` here is not an unknown parameter but a producer that lost track of
 /// what an effect id holds. The caller counts it rather than the engine
 /// guessing which body the value was meant for.
+fn take_cleared_grinder_model(
+    instance: &mut PluginCore,
+    param: DeviceParam,
+    value: f32,
+) -> Option<NativePreparedNam> {
+    let DeviceParam::BuiltinNamed(name) = param else {
+        return None;
+    };
+    if name.as_str() != "neuralModelSlot" && !(name.as_str() == "neuralModelMode" && value <= 0.5) {
+        return None;
+    }
+    let PluginCore::Grinder(body) = instance else {
+        return None;
+    };
+    let old = body.swap_native_model(None);
+    if let Some(model) = &old {
+        model.lease.invalidate();
+    }
+    old
+}
+
 fn apply_builtin_param(instance: &mut PluginCore, param: DeviceParam, value: f32) -> bool {
     match (instance, param) {
         (PluginCore::Knead(engine), DeviceParam::ShiftSemitones) => {
@@ -4550,6 +4665,9 @@ fn apply_builtin_param(instance: &mut PluginCore, param: DeviceParam, value: f32
             true
         }
         (PluginCore::Proof(body), DeviceParam::BuiltinNamed(name)) => {
+            body.set_param(name.as_str(), value)
+        }
+        (PluginCore::TransientShaper(body), DeviceParam::BuiltinNamed(name)) => {
             body.set_param(name.as_str(), value)
         }
         (PluginCore::Scoring(body), DeviceParam::BuiltinNamed(name)) => {
@@ -5162,6 +5280,8 @@ impl MasterWorkList {
 /// `Producer` of these across the public command vocabulary; the fields and
 /// constructors stay crate-private.
 pub struct RetiredGraphObjects {
+    grinder_request: Option<Box<NativeGrinderModelRequest>>,
+    grinder_model: Option<NativePreparedNam>,
     effect: Option<ActiveEffect>,
     midi_fx: Option<Box<dyn MidiFx>>,
     /// A track, bus, or clip the graph gave up. Each owns sample buffers, so
@@ -5183,6 +5303,8 @@ pub struct RetiredGraphObjects {
 impl RetiredGraphObjects {
     fn removed(effect: Option<ActiveEffect>, midi_fx: Option<Box<dyn MidiFx>>) -> Self {
         Self {
+            grinder_request: None,
+            grinder_model: None,
             effect,
             midi_fx,
             timeline_object: None,
@@ -5240,6 +5362,8 @@ impl RetiredGraphObjects {
         let mut pending = pending.unwrap_or_else(|| Self::removed(None, None));
 
         Self {
+            grinder_request: pending.grinder_request.take(),
+            grinder_model: pending.grinder_model.take(),
             effect: pending.effect.take(),
             midi_fx: pending.midi_fx.take(),
             timeline_object: pending.timeline_object.take(),
@@ -6264,12 +6388,16 @@ impl AudioScheduler {
             tempo: self.transport.tempo,
             time_sig_num: self.transport.time_sig_num,
             time_sig_denom: self.transport.time_sig_denom,
+            capture_clock: None,
         }
     }
 
-    #[inline]
-    pub(crate) fn publish_transport_position(&mut self) {
-        let snapshot = self.transport_position();
+    pub(crate) fn publish_transport_position(
+        &mut self,
+        capture_clock: Option<crate::CaptureClockSnapshot>,
+    ) {
+        let mut snapshot = self.transport_position();
+        snapshot.capture_clock = capture_clock;
         self.transport_position_tx.write(snapshot);
     }
 
@@ -6475,7 +6603,33 @@ impl AudioScheduler {
                 GraphCommand::RemovePlugin(id) => {
                     self.remove_effect(id).map(RetiredGraphObjects::effect)
                 }
+                GraphCommand::SetGrinderModel {
+                    effect_id,
+                    mut request,
+                } => {
+                    if request.authority.load(Ordering::Acquire) == request.request
+                        && request
+                            .model
+                            .as_ref()
+                            .map_or(true, |model| model.lease.is_current())
+                    {
+                        if let Some(slot) = self.effect_index.lookup(effect_id) {
+                            if let PluginCore::Grinder(body) = &mut self.effects[slot].instance {
+                                request.model = body.swap_native_model(request.model.take());
+                                body.activate_native_model();
+                                request.applied.store(true, Ordering::Release);
+                            }
+                        }
+                    }
+                    if let Some(model) = &request.model {
+                        model.lease.retire();
+                    }
+                    let mut retired = RetiredGraphObjects::removed(None, None);
+                    retired.grinder_request = Some(request);
+                    Some(retired)
+                }
                 GraphCommand::SetParam(id, param, value) => {
+                    let mut retired_model = None;
                     let mut moved_latency = false;
                     if let Some(slot) = self.effect_index.lookup(id) {
                         if let Some(effect) = self.effects.get_mut(slot) {
@@ -6484,6 +6638,8 @@ impl AudioScheduler {
                             // travel on its control path, and a built-in
                             // address aimed at the other built-in is a
                             // producer that lost track of what this id holds.
+                            retired_model =
+                                take_cleared_grinder_model(&mut effect.instance, param, value);
                             if apply_builtin_param(&mut effect.instance, param, value) {
                                 // A body that reports its own latency may have
                                 // moved it on this very write, and the write is
@@ -6495,7 +6651,11 @@ impl AudioScheduler {
                         }
                     }
                     self.pdc_dirty |= moved_latency;
-                    None
+                    retired_model.map(|model| {
+                        let mut retired = RetiredGraphObjects::removed(None, None);
+                        retired.grinder_model = Some(model);
+                        retired
+                    })
                 }
                 // Neither addition nor clear moves a declared latency, so
                 // both are absent from `dirties_compensation` — and both are
@@ -6540,6 +6700,13 @@ impl AudioScheduler {
                     if let Some(slot) = self.effect_index.lookup(id) {
                         let was_bypassed = self.effects[slot].bypassed;
                         self.effects[slot].bypassed = bypassed;
+                        if was_bypassed != bypassed {
+                            if let PluginCore::TransientShaper(body) =
+                                &mut self.effects[slot].instance
+                            {
+                                body.engine.reset();
+                            }
+                        }
                         // A body whose declared figure follows its own bypass
                         // re-aims the pass here, because this is where that
                         // figure moves: a bypassed Bacteria delays nothing on
@@ -7231,7 +7398,7 @@ impl AudioScheduler {
             !(sounds_notes && placement == EffectPlacement::MasterChain),
             "a note-sink built-in must never be registered onto the master chain"
         );
-        let effect = if sounds_notes {
+        let mut effect = if sounds_notes {
             ActiveEffect::detached(id, instance)
         } else {
             ActiveEffect::with_placement(id, instance, placement)
@@ -7245,8 +7412,27 @@ impl AudioScheduler {
             self.timeline.record_capacity_refusal();
             return Some(RetiredGraphObjects::effect(effect));
         }
+        let mut stale_model = None;
+        if let PluginCore::Grinder(body) = &mut effect.instance {
+            if body
+                .engine
+                .native_neural_model()
+                .is_some_and(|model| !model.lease.is_current())
+            {
+                stale_model = body.swap_native_model(None);
+                if let Some(model) = &stale_model {
+                    model.lease.retire();
+                }
+            } else {
+                body.activate_native_model();
+            }
+        }
         self.push_effect(effect);
-        None
+        stale_model.map(|model| {
+            let mut retired = RetiredGraphObjects::removed(None, None);
+            retired.grinder_model = Some(model);
+            retired
+        })
     }
 
     /// Refuse an `AddEffect` naming a note-sink built-in: the master insert
@@ -7840,6 +8026,12 @@ impl AudioScheduler {
             {
                 visits += 1;
             }
+            let holds_model = matches!(&self.effects[slot].instance, PluginCore::Grinder(body) if body.has_native_model());
+            if holds_model && (self.pending_retirement.is_some() || self.retired_tx.slots() <= 1) {
+                work_index += 1;
+                continue;
+            }
+            let mut retired_model = None;
             let effect = &mut self.effects[slot];
             let receives_no_block = effect.receives_no_block();
             let mut wrote_builtin = false;
@@ -7881,6 +8073,10 @@ impl AudioScheduler {
                         }
                     }
                     (instance, DeviceParamTarget::Builtin(param)) => {
+                        let old = take_cleared_grinder_model(instance, param, event.value as f32);
+                        if old.is_some() {
+                            retired_model = old;
+                        }
                         if apply_builtin_param(instance, param, event.value as f32) {
                             wrote_builtin = true;
                         } else {
@@ -7903,6 +8099,13 @@ impl AudioScheduler {
                 self.parameter_work.remove(slot);
             } else {
                 work_index += 1;
+            }
+            if let Some(model) = retired_model {
+                let mut retired = RetiredGraphObjects::removed(None, None);
+                retired.grinder_model = Some(model);
+                if !self.retire(retired) {
+                    break;
+                }
             }
         }
         self.pdc_dirty |= moved_latency;
@@ -8282,6 +8485,17 @@ impl AudioScheduler {
 /// always did.
 #[inline]
 fn run_dry_delay(effect: &mut ActiveEffect, left: &mut [f32], right: &mut [f32], frames: usize) {
+    if matches!(effect.instance, PluginCore::TransientShaper(_)) {
+        for sample in left
+            .iter_mut()
+            .take(frames)
+            .chain(right.iter_mut().take(frames))
+        {
+            if !sample.is_finite() {
+                *sample = 0.0;
+            }
+        }
+    }
     if let Some(delay) = effect.dry_delay.as_mut() {
         delay.process(left, right, frames);
     }
@@ -8387,6 +8601,9 @@ fn process_device(
     }
 
     match &mut effect.instance {
+        PluginCore::TransientShaper(body) => {
+            body.process(left, right, frames);
+        }
         PluginCore::Knead(engine) => {
             engine.process_block(left, right);
         }
@@ -9509,6 +9726,7 @@ mod tests {
             BuiltinEffectType::Toaster,
             BuiltinEffectType::Levain,
             BuiltinEffectType::Scoring,
+            BuiltinEffectType::TransientShaper,
         ] {
             // No wildcard: a variant added to the registry and forgotten in
             // the list above fails to compile here rather than going unpinned.
@@ -9524,7 +9742,8 @@ mod tests {
                 | BuiltinEffectType::DutchOven
                 | BuiltinEffectType::Toaster
                 | BuiltinEffectType::Levain
-                | BuiltinEffectType::Scoring => {}
+                | BuiltinEffectType::Scoring
+                | BuiltinEffectType::TransientShaper => {}
             }
             assert_eq!(
                 BuiltinEffectType::from_name(builtin.name()),
@@ -12026,9 +12245,10 @@ mod tests {
         /// (`ConvolutionProcessor::process_stereo` returns early when no body
         /// is chosen), so the stage would be named and never run.
         ///
-        /// Eight 512-frame callbacks, because this patch reports 2048 samples
-        /// of latency (band 1's spectral window is the deepest, and `Parallel`
-        /// pads every band and the dry tap out to the worst case), so a
+        /// Both patches select Parallel explicitly, independent of the engine
+        /// default. Eight 512-frame callbacks, because this patch reports 2048
+        /// samples of latency (band 1's spectral window is the deepest, and
+        /// `Parallel` pads every band and the dry tap out to the worst case), so a
         /// single callback would render nothing but the alignment rings
         /// filling and the assertions below would pass against silence. The
         /// precondition below checks the 2048 figure directly rather than
@@ -12037,9 +12257,9 @@ mod tests {
         /// The oracle is a second render of the identical graph, built from a
         /// patch that repeats every name `BacteriaEngine::latency_samples`
         /// and `realign_bands` read to size a band's delay —
-        /// `bandCount`, `band0_oversampling`, `band0_distortionMode`,
-        /// `band0_codecArtifact`, `band1_spectralEnabled` and
-        /// `band0_convolutionIr` — so both patches drive every band to the
+        /// `globalRouting`, `bandCount`, `band0_oversampling`,
+        /// `band0_distortionMode`, `band0_codecArtifact`,
+        /// `band1_spectralEnabled` and `band0_convolutionIr` — so both patches drive every band to the
         /// same reported delay; the precondition below proves that equality
         /// rather than assuming it. `band1_spectralEnabled` in particular has
         /// to stay on in both patches, not off: it is the one enable flag
@@ -12083,6 +12303,7 @@ mod tests {
 
             let material = bacteria_guard_material(RENDERED);
             let patch_engaged = bacteria_guard_writes(&[
+                ("globalRouting", 1.0),
                 ("bandCount", 2.0),
                 ("band0_distortionEnabled", 1.0),
                 ("band0_drive", 8.0),
@@ -12100,13 +12321,14 @@ mod tests {
                 ("band1_grainMix", 1.0),
             ]);
             // Repeats every latency-moving name from `patch_engaged` at the
-            // same value — `bandCount`, `band0_oversampling`,
+            // same value — `globalRouting`, `bandCount`, `band0_oversampling`,
             // `band0_distortionMode`, `band0_codecArtifact`,
             // `band1_spectralEnabled`, `band0_convolutionIr` — and every
             // other stage's enable flag at the same value too, so the only
             // differences left are the four wet-only controls the doc above
             // names.
             let patch_muted = bacteria_guard_writes(&[
+                ("globalRouting", 1.0),
                 ("bandCount", 2.0),
                 ("band0_distortionEnabled", 1.0),
                 ("band0_drive", 0.0),
@@ -23965,6 +24187,273 @@ mod timeline_tests {
         );
     }
 
+    static NATIVE_GRINDER_TEST: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn native_grinder_prepared(
+        text: &str,
+        authority: Arc<std::sync::atomic::AtomicU64>,
+        request: u64,
+    ) -> daw_dsp::grinder::nam::native_admission::NativePreparedNam {
+        use daw_dsp::grinder::nam::native_admission::*;
+        let plan = NativeNamPlan::inspect(text, GRINDER_RATE).unwrap();
+        let transaction = NativeNamTransaction::begin(text.len(), 1).unwrap();
+        let mut leases = transaction
+            .reserve(&[NativeNamReservation {
+                plan: plan.clone(),
+                target: NativeNamTarget {
+                    engine: 1,
+                    effect: 7,
+                },
+                authority,
+                request,
+            }])
+            .unwrap();
+        NativePreparedNam::build(text, &plan, leases.remove(0), [0; 32]).unwrap()
+    }
+
+    #[test]
+    fn native_grinder_model_actual_scheduler_matches_direct_network_and_retires_on_clear() {
+        let _serial = NATIVE_GRINDER_TEST.lock().unwrap();
+        use daw_dsp::grinder::engine::GrinderEngine;
+        use daw_dsp::grinder::nam::native_admission::NativeGrinderModelRequest;
+        use std::sync::atomic::AtomicU64;
+        let text = r#"{"architecture":"Linear","sample_rate":48000,"config":{"receptive_field":2,"bias":false},"weights":[0.25,-0.5]}"#;
+        let authority = Arc::new(AtomicU64::new(1));
+        let model = native_grinder_prepared(text, Arc::clone(&authority), 1);
+        let witness = Arc::downgrade(&model.lease);
+        let mut harness = Harness::new(64);
+        let material = grinder_burst_material(4096);
+        track_with_grinder(&mut harness, material.clone(), &grinder_patch());
+        let command = GraphCommand::SetGrinderModel {
+            effect_id: 7,
+            request: Box::new(NativeGrinderModelRequest {
+                model: Some(model),
+                authority,
+                request: 1,
+                applied: Arc::new(AtomicBool::new(false)),
+            }),
+        };
+        assert!(harness.command_tx.push(command).is_ok());
+        #[cfg(debug_assertions)]
+        assert_no_alloc::assert_no_alloc(|| harness.scheduler.update_graph());
+        #[cfg(not(debug_assertions))]
+        harness.scheduler.update_graph();
+        harness.playing();
+        let (actual, _) = render_master(&mut harness, 512, 8);
+        let mut reference = GrinderEngine::new(GRINDER_RATE);
+        for (name, value) in GRINDER_PATCH {
+            reference.set_param(name, value);
+        }
+        reference.load_neural_model(text).unwrap();
+        let mut expected = material.clone();
+        let mut right = material;
+        for (left, right) in expected.chunks_mut(128).zip(right.chunks_mut(128)) {
+            reference.process_block(left, right);
+        }
+        assert!(actual.iter().any(|sample| *sample != 0.0));
+        assert!(
+            max_abs_difference(&actual, &expected) < 1e-6,
+            "native full network differs from direct reference"
+        );
+        assert!(harness
+            .command_tx
+            .push(GraphCommand::SetParam(
+                7,
+                DeviceParam::BuiltinNamed(grinder_name("neuralModelSlot")),
+                1.0
+            ))
+            .is_ok());
+        #[cfg(debug_assertions)]
+        assert_no_alloc::assert_no_alloc(|| harness.scheduler.update_graph());
+        #[cfg(not(debug_assertions))]
+        harness.scheduler.update_graph();
+        assert!(
+            witness.strong_count() > 0,
+            "removing a map entry is not final reclamation"
+        );
+        while let Ok(retired) = harness.retired_rx.pop() {
+            drop(retired);
+        }
+        assert_eq!(
+            witness.strong_count(),
+            0,
+            "the actual off-callback last owner releases the lease"
+        );
+    }
+
+    #[test]
+    fn native_grinder_model_retired_queue_retains_budget_and_stale_incoming_ownership() {
+        let _serial = NATIVE_GRINDER_TEST.lock().unwrap();
+        use daw_dsp::grinder::nam::native_admission::*;
+        use std::sync::atomic::{AtomicU64, Ordering};
+        let text = r#"{"architecture":"Linear","config":{"receptive_field":1,"bias":false},"weights":[0.5]}"#;
+        let authority = Arc::new(AtomicU64::new(1));
+        let mut harness = Harness::new(128);
+        track_with_grinder(&mut harness, grinder_burst_material(4096), &grinder_patch());
+        for request in 1..=32 {
+            authority.store(request, Ordering::Release);
+            let model = native_grinder_prepared(text, Arc::clone(&authority), request);
+            harness.send(GraphCommand::SetGrinderModel {
+                effect_id: 7,
+                request: Box::new(NativeGrinderModelRequest {
+                    model: Some(model),
+                    authority: Arc::clone(&authority),
+                    request,
+                    applied: Arc::new(AtomicBool::new(false)),
+                }),
+            });
+        }
+        let plan = NativeNamPlan::inspect(text, GRINDER_RATE).unwrap();
+        let transaction = NativeNamTransaction::begin(text.len(), 1).unwrap();
+        assert!(transaction
+            .reserve(&[NativeNamReservation {
+                plan,
+                target: NativeNamTarget {
+                    engine: 1,
+                    effect: 7
+                },
+                authority: Arc::clone(&authority),
+                request: 33
+            }])
+            .is_err());
+        drop(transaction);
+        while let Ok(retired) = harness.retired_rx.pop() {
+            drop(retired);
+        }
+        authority.store(33, Ordering::Release);
+        let stale = native_grinder_prepared(text, Arc::clone(&authority), 33);
+        let witness = Arc::downgrade(&stale.lease);
+        authority.store(34, Ordering::Release);
+        harness.send(GraphCommand::SetGrinderModel {
+            effect_id: 999,
+            request: Box::new(NativeGrinderModelRequest {
+                model: Some(stale),
+                authority,
+                request: 33,
+                applied: Arc::new(AtomicBool::new(false)),
+            }),
+        });
+        assert!(
+            witness.strong_count() > 0,
+            "wrong-target model must retire, not free oncallback"
+        );
+        while let Ok(retired) = harness.retired_rx.pop() {
+            drop(retired);
+        }
+        assert_eq!(witness.strong_count(), 0);
+    }
+
+    #[test]
+    fn native_grinder_scheduled_clear_waits_for_retirement_capacity_and_shutdown_keeps_pending_owner(
+    ) {
+        let _serial = NATIVE_GRINDER_TEST.lock().unwrap();
+        use std::sync::atomic::AtomicU64;
+        let text = r#"{"architecture":"Linear","config":{"receptive_field":1,"bias":false},"weights":[0.5]}"#;
+        let authority = Arc::new(AtomicU64::new(1));
+        let mut harness = Harness::new(4);
+        track_with_grinder(&mut harness, grinder_burst_material(4096), &grinder_patch());
+        let mut witness = None;
+        for request in 1..=3 {
+            authority.store(request, Ordering::Release);
+            let model = native_grinder_prepared(text, Arc::clone(&authority), request);
+            witness = Some(Arc::downgrade(&model.lease));
+            let command = GraphCommand::SetGrinderModel {
+                effect_id: 7,
+                request: Box::new(NativeGrinderModelRequest {
+                    model: Some(model),
+                    authority: Arc::clone(&authority),
+                    request,
+                    applied: Arc::new(AtomicBool::new(false)),
+                }),
+            };
+            assert!(harness.command_tx.push(command).is_ok());
+            assert_no_alloc::assert_no_alloc(|| harness.scheduler.update_graph());
+        }
+        let witness = witness.unwrap();
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 7,
+            param: DeviceParamTarget::Builtin(DeviceParam::BuiltinNamed(grinder_name(
+                "neuralModelMode",
+            ))),
+            value: 0.0,
+            at_frame: 0,
+        });
+        assert_no_alloc::assert_no_alloc(|| harness.scheduler.apply_due_device_params(0, 64));
+        let slot = harness.scheduler.effect_index.lookup(7).unwrap();
+        assert!(
+            !harness.scheduler.effects[slot].pending_params.is_empty(),
+            "full retirement channel must preserve the actual clear event"
+        );
+        assert!(
+            matches!(&harness.scheduler.effects[slot].instance, PluginCore::Grinder(body) if body.has_native_model())
+        );
+        drop(harness.retired_rx.pop().unwrap());
+        assert_no_alloc::assert_no_alloc(|| harness.scheduler.apply_due_device_params(0, 64));
+        assert!(harness.scheduler.effects[slot].pending_params.is_empty());
+        assert!(
+            matches!(&harness.scheduler.effects[slot].instance, PluginCore::Grinder(body) if !body.has_native_model())
+        );
+        assert!(witness.strong_count() > 0);
+        while let Ok(retired) = harness.retired_rx.pop() {
+            drop(retired);
+        }
+        assert_eq!(witness.strong_count(), 0);
+
+        authority.store(4, Ordering::Release);
+        let model = native_grinder_prepared(text, Arc::clone(&authority), 4);
+        let removed = Arc::downgrade(&model.lease);
+        harness.send(GraphCommand::SetGrinderModel {
+            effect_id: 7,
+            request: Box::new(NativeGrinderModelRequest {
+                model: Some(model),
+                authority: Arc::clone(&authority),
+                request: 4,
+                applied: Arc::new(AtomicBool::new(false)),
+            }),
+        });
+        assert!(harness
+            .command_tx
+            .push(GraphCommand::RemovePlugin(7))
+            .is_ok());
+        assert_no_alloc::assert_no_alloc(|| harness.scheduler.update_graph());
+        assert!(removed.strong_count() > 0);
+        while let Ok(retired) = harness.retired_rx.pop() {
+            drop(retired);
+        }
+        assert_eq!(removed.strong_count(), 0);
+
+        authority.store(5, Ordering::Release);
+        let model = native_grinder_prepared(text, Arc::clone(&authority), 5);
+        let pending = Arc::downgrade(&model.lease);
+        assert!(harness
+            .command_tx
+            .push(GraphCommand::SetGrinderModel {
+                effect_id: 7,
+                request: Box::new(NativeGrinderModelRequest {
+                    model: Some(model),
+                    authority,
+                    request: 5,
+                    applied: Arc::new(AtomicBool::new(false))
+                })
+            })
+            .is_ok());
+        let Harness {
+            scheduler,
+            mut retired_rx,
+            command_tx,
+        } = harness;
+        drop(scheduler);
+        drop(command_tx);
+        assert!(
+            pending.strong_count() > 0,
+            "shutdown must hand queued model ownership to the existing reclaimer"
+        );
+        while let Ok(retired) = retired_rx.pop() {
+            drop(retired);
+        }
+        assert_eq!(pending.strong_count(), 0);
+    }
+
     /// A Grinder on the strip, optionally written to after registration, and
     /// the master it renders beside the diagnostics that count the write.
     fn render_grinder_write(
@@ -27447,7 +27936,7 @@ mod timeline_tests {
     /// (`crates/daw-engine/AGENTS.md`). So an unaddressable channel reaches the
     /// instrument's unnarrowed `note_off`, which is also what the worklet sends
     /// for a message carrying no channel at all (`_dispatch`,
-    /// `src/modules/AudioEngine/services/levainProcessor.ts`).
+    /// `src/modules/AudioEngine/worklets/levainProcessor.ts`).
     ///
     /// Two notes of one pitch are struck on two channels so the two answers
     /// differ: the narrowed release leaves one of them sounding, the broad one
@@ -28208,5 +28697,195 @@ mod timeline_tests {
             telemetry.snapshot().active,
             "the guarded pass left the analyser hearing nothing, so it covered no analysis path"
         );
+    }
+
+    fn transient_shaper_harness(frames: usize) -> Harness {
+        let mut harness = Harness::new(64);
+        track_with_constant_clip(&mut harness, 1, 9, 0.5, frames);
+        harness.send(GraphCommand::AddDetachedEffect(
+            7,
+            PluginCore::builtin(BuiltinEffectType::TransientShaper, 48_000.0),
+            None,
+        ));
+        harness.send(insert_track_device(1, effect(7), 0));
+        harness.playing();
+        harness
+    }
+
+    #[test]
+    fn transient_shaper_warm_unity_and_bypass_reset_first_audio_frame() {
+        let mut harness = transient_shaper_harness(96_000);
+        for _ in 0..375 {
+            let (left, right) = harness.render(128);
+            assert!(left.iter().all(|sample| *sample == 0.5));
+            assert_eq!(left, right);
+        }
+        let gain = |name| DeviceParam::BuiltinNamed(BuiltinParamName::parse(name).unwrap());
+        harness.send(GraphCommand::SetParam(7, gain("attackGain"), 2.0));
+        harness.send(GraphCommand::SetParam(7, gain("sustainGain"), 0.25));
+        assert_eq!(
+            harness.render(1).0[0],
+            0.125,
+            "unity must warm the detector"
+        );
+        harness.send_in_one_drain([
+            GraphCommand::SetBypass(7, true),
+            GraphCommand::SetParam(7, gain("attackGain"), 1.5),
+            GraphCommand::SetBypass(7, false),
+        ]);
+        assert_eq!(
+            harness.render(1).0[0],
+            0.75,
+            "first re-entry must use fresh state and latest gain"
+        );
+        for _ in 0..374 {
+            harness.render(128);
+        }
+        harness.send(GraphCommand::SetBypass(7, false));
+        assert_eq!(
+            harness.render(1).0[0],
+            0.125,
+            "redundant bypass must retain detector history"
+        );
+    }
+
+    #[test]
+    fn transient_shaper_stamp_uses_existing_block_steps_and_holds_during_bypass() {
+        let mut harness = transient_shaper_harness(32);
+        let attack = DeviceParamTarget::Builtin(DeviceParam::BuiltinNamed(
+            BuiltinParamName::parse("attackGain").unwrap(),
+        ));
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 7,
+            param: attack,
+            value: 1.5,
+            at_frame: 6,
+        });
+        assert_eq!(harness.render(4).0, vec![0.5; 4]);
+        assert_eq!(
+            harness.render(4).0,
+            vec![0.75; 4],
+            "stamp 6 applies to the whole [4,8) block"
+        );
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 7,
+            param: attack,
+            value: 2.0,
+            at_frame: 10,
+        });
+        assert_eq!(harness.render(4).0, vec![0.5; 4]);
+        harness.send(GraphCommand::SetBypass(7, false));
+        assert_eq!(harness.render(1).0, vec![1.0]);
+    }
+
+    #[test]
+    fn transient_shaper_native_plugin_both_orders_process_actual_audio() {
+        for shaper_first in [true, false] {
+            let mut harness = transient_shaper_harness(257);
+            harness.send(GraphCommand::SetParam(
+                7,
+                DeviceParam::BuiltinNamed(BuiltinParamName::parse("attackGain").unwrap()),
+                2.0,
+            ));
+            harness.send(GraphCommand::SetParam(
+                7,
+                DeviceParam::BuiltinNamed(BuiltinParamName::parse("sustainGain").unwrap()),
+                2.0,
+            ));
+            harness.send(GraphCommand::AddPlugin(
+                8,
+                Box::new(ScalingPlugin { factor: 0.5 }),
+                None,
+            ));
+            harness.send(insert_track_device(
+                1,
+                effect(8),
+                if shaper_first { 1 } else { 0 },
+            ));
+            let (left, right) = harness.render(257);
+            assert_eq!(left, vec![0.5; 257]);
+            assert_eq!(left, right);
+        }
+    }
+
+    #[test]
+    fn transient_shaper_nonunity_processing_and_bypass_drain_allocate_nothing() {
+        let mut harness = transient_shaper_harness(257);
+        harness.send(GraphCommand::SetParam(
+            7,
+            DeviceParam::BuiltinNamed(BuiltinParamName::parse("attackGain").unwrap()),
+            1.5,
+        ));
+        let mut left = [0.0; 257];
+        let mut right = [0.0; 257];
+        assert_no_alloc::assert_no_alloc(|| {
+            harness.scheduler.process_block(&mut left, &mut right, 257)
+        });
+        assert_eq!(left[0], 0.75);
+        for command in [
+            GraphCommand::SetBypass(7, true),
+            GraphCommand::SetBypass(7, false),
+        ] {
+            assert!(harness.command_tx.push(command).is_ok());
+        }
+        assert_no_alloc::assert_no_alloc(|| harness.scheduler.update_graph());
+        left.fill(0.0);
+        right.fill(0.0);
+        assert_no_alloc::assert_no_alloc(|| {
+            harness.scheduler.process_block(&mut left, &mut right, 257)
+        });
+        assert_eq!(
+            left[0], 0.0,
+            "the finite clip ended; stale samples cannot be replayed"
+        );
+    }
+
+    #[test]
+    fn transient_shaper_native_plugin_output_and_send_bus_audio() {
+        for send in [false, true] {
+            for shaper_first in [false, true] {
+                let mut harness = Harness::new(64);
+                track_with_constant_clip(&mut harness, 1, 9, 0.5, 8192);
+                harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+                harness.send(GraphCommand::AddDetachedEffect(
+                    7,
+                    PluginCore::transient_shaper_with_patch(
+                        48_000.0,
+                        &[
+                            (BuiltinParamName::parse("attackGain").unwrap(), 2.0),
+                            (BuiltinParamName::parse("sustainGain").unwrap(), 2.0),
+                        ],
+                    ),
+                    None,
+                ));
+                harness.send(GraphCommand::AddPlugin(
+                    8,
+                    Box::new(ScalingPlugin { factor: 0.5 }),
+                    None,
+                ));
+                let order = if shaper_first { [7, 8] } else { [8, 7] };
+                for (index, id) in order.into_iter().enumerate() {
+                    harness.send(insert_bus_device(50, effect(id), index));
+                }
+                if send {
+                    harness.send(GraphCommand::AddSend {
+                        track_id: 1,
+                        bus_id: 50,
+                        tap: SendTap::PreFader,
+                        level: 1.0,
+                        delay: uncompensated(),
+                    });
+                    harness.send(GraphCommand::SetTrackMute(1, true));
+                } else {
+                    harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Bus(50)));
+                }
+                harness.playing();
+                harness.render(4096);
+                let (left, right) = harness.render(257);
+                assert_eq!(left, vec![0.5; 257]);
+                assert_eq!(left, right);
+            }
+        }
     }
 }

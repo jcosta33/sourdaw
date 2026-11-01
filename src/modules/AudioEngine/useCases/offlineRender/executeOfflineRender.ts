@@ -40,7 +40,7 @@ function combineSignals(...signals: readonly (AbortSignal | undefined)[]): Abort
  */
 export async function executeOfflineRender(
     capture: () => ReturnType<typeof captureOfflineRenderInput>,
-    options: Pick<OfflineRenderOptions, 'onProgress' | 'onWarning' | 'abortSignal' | 'lockHolder'> = {}
+    options: Pick<OfflineRenderOptions, 'onProgress' | 'onWarning' | 'abortSignal' | 'lockHolder' | 'onRendered'> = {}
 ): Promise<AudioBuffer> {
     const holder = options.lockHolder ?? 'musician-export';
     // An agent render stops on this signal beside its caller's own stop, so a musician's export
@@ -69,7 +69,7 @@ export async function executeOfflineRender(
         // Instrument setup stops at an export cancel or at this render's own stop, whichever comes first.
         const cancellationSignal = combineSignals(scopeSignal, abortSignal);
         const input = capture();
-        const { sampleRate, historySeconds, outputDurationSeconds } = input;
+        const { sampleRate, historyFrameCount, outputFrameCount } = input;
         const plan = resolveOfflineMixPlan(input, callbacks.onWarning);
         let buffer = await tryNativeOfflineRender(input, plan, callbacks);
         if (!buffer) {
@@ -100,7 +100,13 @@ export async function executeOfflineRender(
             buffer = await scheduleOfflineMix({ input, plan, graph, offlineCtx, masterGain, scheduleFrame, callbacks });
         }
         callbacks.onProgress?.(1);
-        return cropHistoryFromRenderedBuffer({ buffer, historySeconds, outputDurationSeconds });
+        if (options.onRendered) {
+            await options.onRendered(
+                cropHistoryFromRenderedBuffer({ buffer, historyFrameCount, outputFrameCount, borrowed: true })
+            );
+            return buffer;
+        }
+        return cropHistoryFromRenderedBuffer({ buffer, historyFrameCount, outputFrameCount });
     } catch (error) {
         // A render a musician's export stopped reports why, unless its caller stopped it first.
         if (holder !== 'musician-export' && preemption.signal.aborted && callerSignal?.aborted !== true) {

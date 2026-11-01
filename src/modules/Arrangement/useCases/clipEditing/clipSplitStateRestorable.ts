@@ -1,8 +1,9 @@
-import { type ClipSplitActionSnapshot } from '#/utils/handlerContract';
+import { type ClipSnapshot, type ClipSplitActionSnapshot } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
-import { getTrackState, type TrackState } from '../../repositories/track/getTrackState';
-import { type Clip } from '../../stores/trackStore';
+import { getTrackState } from '../../repositories/track/getTrackState';
+
+import { resolveClipSplitInsertionIndex } from './resolveClipSplitInsertionIndex';
 
 export type ClipSplitStateRestorableInput = {
     clipId: string;
@@ -12,31 +13,55 @@ export type ClipSplitStateRestorableInput = {
 };
 
 function trackSnapshotMatches(
-    clips: readonly Clip[],
+    clips: readonly ClipSnapshot[],
     clipId: string,
     rightClipId: string,
     expected: ClipSplitActionSnapshot
 ): boolean {
     const leftClip = clips.find((clip) => clip.id === clipId);
+    const leftClipIndex = clips.findIndex((clip) => clip.id === clipId);
     const rightClipIndex = clips.findIndex((clip) => clip.id === rightClipId);
     const rightClip = rightClipIndex < 0 ? null : clips[rightClipIndex]!;
-    const effectiveRightIndex = rightClipIndex < 0 ? clips.length : rightClipIndex;
     return (
         valuesEqual(leftClip ?? null, expected.leftClip) &&
         valuesEqual(rightClip, expected.rightClip) &&
-        effectiveRightIndex === expected.rightClipIndex
+        Number.isSafeInteger(expected.rightClipIndex) &&
+        expected.rightClipIndex >= 0 &&
+        (expected.rightClip === null || rightClipIndex > leftClipIndex)
+    );
+}
+
+function clipOwnershipMatches(
+    tracks: readonly { id: string; clips: readonly ClipSnapshot[] }[],
+    trackId: string,
+    clipId: string,
+    rightClipId: string,
+    rightClipPresent: boolean
+): boolean {
+    if (
+        tracks.some(
+            (candidate) =>
+                candidate.id !== trackId &&
+                candidate.clips.some((clip) => clip.id === clipId || clip.id === rightClipId)
+        )
+    ) {
+        return false;
+    }
+    const clips = tracks.flatMap((candidate) => candidate.clips);
+    return (
+        clips.filter((clip) => clip.id === clipId).length === 1 &&
+        clips.filter((clip) => clip.id === rightClipId).length === (rightClipPresent ? 1 : 0)
     );
 }
 
 /** Same precondition `replaceClipSplitTrackState` writes against, kept as the sole export of its
  *  own file (rather than a second export alongside the write) so a handler's `validate` can
  *  preflight a batch without performing the write that `replaceClipSplitTrackState` performs once
- *  the precondition holds. Includes the replacement right-clip index bound check, since that is
- *  computed from current track state and is just as load-bearing as the snapshot match — a replay
- *  with a now-out-of-range index must be refused before executing, not during. */
+ *  the precondition holds. Relative witnesses preserve peer ordering; legacy
+ *  captures retain the conservative paired-index admission. */
 export function clipSplitStateRestorable(
     { clipId, rightClipId, expected, replacement }: ClipSplitStateRestorableInput,
-    state: TrackState | null = getTrackState()
+    state: { tracks: readonly { id: string; clips: readonly ClipSnapshot[] }[] } | null = getTrackState()
 ): boolean {
     if (
         expected.trackId !== replacement.trackId ||
@@ -51,11 +76,14 @@ export function clipSplitStateRestorable(
     if (!state || !track || !trackSnapshotMatches(track.clips, clipId, rightClipId, expected)) {
         return false;
     }
-    if (replacement.rightClip) {
-        const clipsAfterRemoval = track.clips.filter((clip) => clip.id !== rightClipId).length;
-        if (replacement.rightClipIndex < 0 || replacement.rightClipIndex > clipsAfterRemoval) {
-            return false;
-        }
+    if (!clipOwnershipMatches(state.tracks, expected.trackId, clipId, rightClipId, expected.rightClip !== null)) {
+        return false;
+    }
+    if (
+        replacement.rightClip &&
+        resolveClipSplitInsertionIndex(track.clips, clipId, rightClipId, expected, replacement) === null
+    ) {
+        return false;
     }
     return true;
 }

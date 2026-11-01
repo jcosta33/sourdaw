@@ -454,6 +454,53 @@ function decodeState(value: unknown): DecodedTimelineMapTimeState | null {
     }
 }
 
+type TimelineMapTimeStateRestorePlan = {
+    version: 1;
+    expected: TimelineMapTimeStateSnapshot;
+    replacement: TimelineMapTimeStateSnapshot;
+};
+
+function decodeRestorePlanUnchecked(value: unknown): {
+    plan: TimelineMapTimeStateRestorePlan;
+    expectedState: DecodedTimelineMapTimeState;
+    replacementState: DecodedTimelineMapTimeState;
+} | null {
+    const properties = readDataObject(value, ['version', 'expected', 'replacement']);
+    if (!properties || properties.version !== 1) {
+        return null;
+    }
+
+    const expectedState = decodeState(properties.expected);
+    const replacementState = decodeState(properties.replacement);
+    if (!expectedState || !replacementState) {
+        return null;
+    }
+
+    const expected = encodeState(expectedState);
+    const replacement = encodeState(replacementState);
+    if (!expected || !replacement) {
+        return null;
+    }
+
+    return {
+        plan: {
+            version: 1,
+            expected,
+            replacement,
+        },
+        expectedState,
+        replacementState,
+    };
+}
+
+function decodeRestorePlan(value: unknown): ReturnType<typeof decodeRestorePlanUnchecked> {
+    try {
+        return decodeRestorePlanUnchecked(value);
+    } catch {
+        return null;
+    }
+}
+
 function encodedNumbersEqual(left: EncodedNumber, right: EncodedNumber): boolean {
     if (left.type !== right.type) {
         return false;
@@ -531,6 +578,7 @@ function stateMatchesSnapshot({ tempoState, timeSignatureState, snapshot }: Stat
 }
 
 export const timelineMapTimeStateCodec = {
+    decodeRestorePlan,
     decodeState,
     encodeState,
     snapshotsEqual,

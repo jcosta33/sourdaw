@@ -20,8 +20,7 @@ const CODEQL_PERMISSIONS = { contents: 'read', 'security-events': 'write', actio
 // workflow-level pin: `contents: write` on a validation leg would hand every
 // pull request a token that can push. Every job in every registered file
 // inherits the workflow-level grant except these, each pinned exactly: the
-// CodeQL SARIF uploads, the nightly failure reporter, and the semantic-review
-// coverage job.
+// CodeQL SARIF uploads and the nightly failure reporter.
 export const JOB_PERMISSION_PINS: JobPins<Readonly<Record<string, string>>> = {
     'health-gates.yml': { codeql: CODEQL_PERMISSIONS },
     'nightly.yml': { codeql: CODEQL_PERMISSIONS, 'nightly-report': { contents: 'read', issues: 'write' } },
@@ -29,7 +28,6 @@ export const JOB_PERMISSION_PINS: JobPins<Readonly<Record<string, string>>> = {
         validate: { actions: 'read', contents: 'read', 'security-events': 'read' },
         publish: { contents: 'read', issues: 'write' },
     },
-    'semantic-review.yml': { coverage: { contents: 'read' } },
 };
 
 // The only jobs that may read a secret or the job token, each pinned to the
@@ -44,7 +42,6 @@ export const SECRET_REFERENCE_PINS: JobPins<readonly string[]> = {
         'deploy-web': ['GITHUB_TOKEN', 'VERCEL_ORG_ID', 'VERCEL_PROJECT_ID', 'VERCEL_TOKEN'],
         'nightly-report': ['GITHUB_TOKEN'],
     },
-    'semantic-review.yml': { assess: ['GITHUB_TOKEN', 'JEV_KEY'] },
 };
 
 // A deployment environment unlocks that environment's own secrets and
@@ -70,7 +67,6 @@ export const CREDENTIALLESS_CHECKOUTS: JobPins<readonly string[]> = {
     },
     'pr-checks.yml': { scope: ['Checkout'] },
     'quantum-measurements.yml': { measure: ['Checkout source head'] },
-    'semantic-review.yml': { assess: ['Checkout the trusted revision'] },
     'validation.yml': {
         unit: ['Checkout'],
         'native-macos': ['Checkout'],
@@ -92,9 +88,6 @@ export const REQUIRED_CHECK_OWNER = { workflow: 'health-gates.yml', job: 'gate' 
 export const JOB_NAME_EXPRESSION_PINS: JobPins<string> = {
     'heavy-gates.yml': { e2e: 'Affected end-to-end ${{ matrix.id }}' },
     'nightly.yml': { unit: 'Unit suite ${{ matrix.shard }}/4', e2e: 'End-to-end ${{ matrix.shard }}/12' },
-    'semantic-review.yml': {
-        coverage: "Jev coverage · ${{ needs.assess.outputs.coverage || 'no assessment delivered' }}",
-    },
     'validation.yml': { unit: 'Unit suite ${{ matrix.shard }}/4' },
 };
 

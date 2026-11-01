@@ -13,6 +13,7 @@ import { type PlanRippleDeleteOutput, planRippleDelete } from './planRippleDelet
 type RippleDeleteClipsInput = {
     trackId: string;
     clipIds: string[];
+    ripple?: boolean;
 };
 
 type RippleDeletePlan = NonNullable<PlanRippleDeleteOutput>;
@@ -31,8 +32,8 @@ type RippleDeleteClipsOutput = {
     retiredTakeLanes: readonly RetiredTakeLaneSnapshot[];
 } | null;
 
-export function rippleDeleteClips({ trackId, clipIds }: RippleDeleteClipsInput): RippleDeleteClipsOutput {
-    const plan = planRippleDelete({ trackId, clipIds });
+export function rippleDeleteClips({ trackId, clipIds, ripple }: RippleDeleteClipsInput): RippleDeleteClipsOutput {
+    const plan = planRippleDelete({ trackId, clipIds, ripple });
     if (!plan) {
         return null;
     }

@@ -28,6 +28,7 @@ export type DawProjectDeviceSource = {
 
 export type DawProjectImportWarning = {
     kind:
+        | 'unsupported-element'
         | 'unsupported-device'
         | 'unsupported-device-settings'
         | 'unsupported-automation'
@@ -39,7 +40,8 @@ export type DawProjectImportWarning = {
     sourceType: string;
     sourceId?: string;
     context: string;
-    handling: 'dropped' | 'substituted';
+    handling: 'dropped' | 'substituted' | 'partial';
+    details?: string[];
     sourceOrder: number;
 };
 

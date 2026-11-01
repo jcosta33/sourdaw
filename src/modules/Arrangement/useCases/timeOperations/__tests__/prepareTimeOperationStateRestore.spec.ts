@@ -240,6 +240,7 @@ function installDependencies(input: InstallDependenciesInput = {}) {
     );
     const noChange = createNoChangePreparation();
     setTimeOperationDependencies({
+        savedRestorePlanValidators: { automation: () => false, midi: () => false, timelineMap: () => false },
         prepareAutomationTimeOperation: vi.fn(() => noChange),
         prepareAutomationTimeStateRestore: prepareAutomation,
         prepareMidiGlobalTimeTransaction: vi.fn(() => ({
@@ -437,6 +438,37 @@ describe('prepareTimeOperationStateRestore', () => {
         expect(mocks.trackState.value).toEqual(replacementTrackState);
         expect(mocks.markerState.value).toBe(markerState);
     });
+
+    it.each(['global', 'selected-range'] as const)(
+        '%s replays durable tracks while keeping current selection and ghosts',
+        (scope) => {
+            const expectedTrackState = createTrackState(2);
+            const replacementTrackState = createTrackState(1);
+            const markerState = createMarkerState(8);
+            const current = {
+                ...expectedTrackState,
+                selectedTrackId: null,
+                ghostClips: [ClipDummy.create({ id: 'live-ghost', trackId: 'track-1', isGhost: true })],
+            };
+            setCurrentState(current, markerState);
+            installDependencies();
+            const plan = createPlan({
+                scope,
+                expectedTrackState,
+                replacementTrackState,
+                expectedMarkerState: markerState,
+                replacementMarkerState: markerState,
+            });
+
+            const transaction = prepareTimeOperationStateRestore(JSON.parse(JSON.stringify(plan)));
+
+            expect(transaction.status).toBe('ready');
+            expect(transaction.apply()).toBe(true);
+            expect(mocks.trackState.value).toEqual({ ...current, tracks: replacementTrackState.tracks });
+            expect(transaction.revert()).toBe(true);
+            expect(mocks.trackState.value).toEqual(current);
+        }
+    );
 
     it('restores and redoes exact values with fresh reversed owner preparations', () => {
         const expectedTrackState = createTrackState(2, -0);
@@ -1060,6 +1092,46 @@ describe('prepareTimeOperationStateRestore', () => {
         expect(applied.apply()).toBe(false);
         expect(applied.revert()).toBe(false);
     });
+
+    it.each(['restore', 'retire'] as const)(
+        'rejects a %s take retirement naming a clip retained by both local snapshots',
+        (appliedEffect) => {
+            const erased = ClipDummy.create({ id: 'erased', trackId: 'track-1', startBeat: 2, endBeat: 4 });
+            const untouched = ClipDummy.create({ id: 'untouched', trackId: 'track-1', startBeat: 0, endBeat: 1 });
+            const before = createTrackState(1, 0, { clips: [erased, untouched] });
+            const after = createTrackState(1, 0, { clips: [untouched] });
+            const expectedTrackState = appliedEffect === 'restore' ? after : before;
+            const replacementTrackState = appliedEffect === 'restore' ? before : after;
+            const markerState = createMarkerState(8);
+            setCurrentState(expectedTrackState, markerState);
+            const dependencies = installDependencies();
+            const take = createTake(untouched.id, 'Untouched', 0, 1);
+            const lanes = { lanes: [{ ...createTakeLane('track-1'), takes: [take] }] };
+            takeLaneStore.set(lanes);
+            const transaction = prepareTimeOperationStateRestore(
+                createPlan({
+                    scope: 'global',
+                    expectedTrackState,
+                    replacementTrackState,
+                    expectedMarkerState: markerState,
+                    replacementMarkerState: markerState,
+                    takeLanes: {
+                        version: 1,
+                        appliedEffect,
+                        removedClipIds: [erased.id, untouched.id],
+                        retiredLanes: [],
+                    },
+                })
+            );
+            expect(transaction.status).toBe('rejected');
+            expect(transaction.apply()).toBe(false);
+            expect(mocks.trackState.value).toEqual(expectedTrackState);
+            expect(takeLaneStore.value).toEqual(lanes);
+            expect(dependencies.prepareAutomation).not.toHaveBeenCalled();
+            expect(dependencies.prepareMidi).not.toHaveBeenCalled();
+            expect(dependencies.prepareTimelineMap).not.toHaveBeenCalled();
+        }
+    );
 
     // #4520 — the take-lane slot: applying a restore plan puts the retired
     // lanes back, and reverting it (the reversed plan, as redo uses) retires

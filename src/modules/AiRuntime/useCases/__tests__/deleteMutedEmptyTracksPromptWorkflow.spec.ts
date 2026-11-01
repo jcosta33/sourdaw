@@ -30,6 +30,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { type ToolSchema } from '../../models/ToolDefinitions';
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -42,6 +43,7 @@ import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
 
 import { landProjectEdit } from './landProjectEdit';
+import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 
 const PROMPT = 'Delete all muted empty tracks, but preserve buses and groups.';
 
@@ -240,6 +242,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function getHostedUserMessage(body: string): string {
+    const request: unknown = JSON.parse(body);
+    if (!isRecord(request) || !Array.isArray(request.messages)) {
+        throw new TypeError('Expected hosted provider messages');
+    }
+    const message = request.messages.find(
+        (entry) => isRecord(entry) && entry.role === 'user' && typeof entry.content === 'string'
+    );
+    if (!isRecord(message) || typeof message.content !== 'string') {
+        throw new TypeError('Expected hosted provider user message');
+    }
+    return message.content;
+}
+
 function getProviderSection(userMessage: string, section: string): Record<string, unknown> {
     const match = new RegExp(String.raw`^${section}:\n(?<payload>.+)$`, 'mu').exec(userMessage);
     const payload = match?.groups?.payload;
@@ -296,7 +312,7 @@ function assertDiscoveredCommandSchemas(receipts: readonly unknown[], names: rea
     if (
         !isRecord(discovery) ||
         discovery.status !== 'success' ||
-        discovery.turn !== 1 ||
+        discovery.turn !== 2 ||
         !isRecord(discovery.data) ||
         discovery.data.schema !== 'sourdaw.agent-tool-catalog' ||
         discovery.data.schemaVersion !== 1 ||
@@ -387,12 +403,15 @@ function toolCallsResponse(calls: readonly ProviderCall[]): Response {
 function setProviderPlan(plan: readonly ProviderCall[]): void {
     const names = [...new Set(plan.map((call) => call.name))];
     let webLlmTurn = 0;
-    runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) => {
+    runtimeMocks.generateWebLlmCompletion.mockImplementation((systemPrompt, userMessage) => {
         webLlmTurn += 1;
-        if (webLlmTurn > 2) {
-            throw new Error('Expected exactly two WebLLM provider turns');
+        if (webLlmTurn > 3) {
+            throw new Error('Expected exactly three WebLLM provider turns');
         }
         if (webLlmTurn === 1) {
+            return Promise.resolve(JSON.stringify(literalMetricIntakeTurn(userMessage, systemPrompt)));
+        }
+        if (webLlmTurn === 2) {
             return Promise.resolve(
                 JSON.stringify([{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }])
             );
@@ -406,10 +425,16 @@ function setProviderPlan(plan: readonly ProviderCall[]): void {
             throw new TypeError('Expected hosted provider request body');
         }
         hostedTurn += 1;
-        if (hostedTurn > 2) {
-            throw new Error('Expected exactly two hosted provider turns');
+        if (hostedTurn > 3) {
+            throw new Error('Expected exactly three hosted provider turns');
         }
         if (hostedTurn === 1) {
+            const request = JSON.parse(init.body) as { tools: ToolSchema[] };
+            return Promise.resolve(
+                toolCallsResponse(literalMetricIntakeTurn(getHostedUserMessage(init.body), request.tools))
+            );
+        }
+        if (hostedTurn === 2) {
             return Promise.resolve(
                 toolCallsResponse([{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }])
             );
@@ -527,7 +552,7 @@ describe('delete muted empty tracks prompt workflow', () => {
     it('compiles the exact app-owned target set into one guarded destructive confirmation', async () => {
         await sendChatMessage(PROMPT);
 
-        expect(generateWebLlmCompletion).toHaveBeenCalledTimes(2);
+        expect(generateWebLlmCompletion).toHaveBeenCalledTimes(3);
         const request = vi.mocked(generateWebLlmCompletion).mock.calls[0]?.[1];
         expect(request).toContain(PROMPT);
         expect(request).toContain('track-muted-audio');
@@ -536,7 +561,7 @@ describe('delete muted empty tracks prompt workflow', () => {
         expect(request).toContain('group-muted-empty');
         expect(request).toContain('track-muted-nonempty');
         expect(request).toContain('track-unmuted-empty');
-        expect(getConfirmation()?.actions).toEqual([
+        expect(getConfirmation()?.actions, JSON.stringify(chatStore.value?.messages)).toEqual([
             {
                 type: 'removeTrack',
                 payload: {
@@ -749,10 +774,10 @@ describe('delete muted empty tracks prompt workflow', () => {
 
         await sendChatMessage(PROMPT);
 
-        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(2);
+        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(3);
         expect(getHostedRequestBody()).toContain(PROMPT);
         expect(getHostedRequestBody()).toContain('track-muted-audio');
-        expect(getConfirmation()?.actions).toEqual([
+        expect(getConfirmation()?.actions, JSON.stringify(chatStore.value?.messages)).toEqual([
             {
                 type: 'removeTrack',
                 payload: {

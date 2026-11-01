@@ -1,10 +1,6 @@
 /**
- * The runner collection contract the Vitest collection-scope guard and the semantic review screen
- * agree on.
- *
- * Both consumers answer the same question — which paths does a runner collect as a test — so the
- * patterns and directories live here rather than in either consumer. Importing this module has no
- * side effects: the guard runs only when its own entry point is executed.
+ * Runner collection patterns shared by tooling that classifies test paths. Importing this module
+ * has no side effects.
  */
 
 /** Mirrors vitest's default `include` (`**\/*.{test,spec}.?(c|m)[jt]s?(x)`). */

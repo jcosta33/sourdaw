@@ -1,0 +1,270 @@
+{
+    "ownedLane": "/Volumes/Development/sourdaw/.agents/worktrees/feat-4634-ogg-codecs-pinned-runtime",
+    "head": "8203124704fa50ae0e9592ceeb684bf724fde3c7",
+    "pinnedSources": {
+        "emsdkInstaller": "d7b4130688bfa348392b921ab04015aa15c4f154",
+        "wasmMedia": "4a45333baadbab312d1cc0911151dfad23157c51",
+        "libogg": "bada45718453ac27b56773ae663f7e65112f6a6e",
+        "libvorbis": "0657aee69dec8508a0011f47f3b69d7538e9d262",
+        "audiojsOpusGlue": "16df8a96b45cadd0c1fdcdce508c12b011a08817",
+        "libopus": "212d66c20944d0a0db91132f826a27dd0d5edd5d"
+    },
+    "sdkInstallerSourceArchive": {
+        "originalRecord": "private-build-root/preparation.json",
+        "originalRecordedSdkSourceArchiveSha256": "431731eb29343a82de4b8fc98f934eba3fd5780eecea254b3ced345e61611a2a",
+        "actualRetainedSdkInstallerSourceArchive": "/Users/josecosta/.agents/artifacts/sourdaw/WORKFLOW-REASSESS-2026-10-23/R4634-first-pinned-build-author-sol/private-build-root/emsdk-source.tar.gz",
+        "actualSha256": "91a27c37ee08094a7bb4322d968526d2106104e74a62ef329c50d5d725edbfb4",
+        "bytes": 178460,
+        "sourceUrl": "https://codeload.github.com/emscripten-core/emsdk/tar.gz/d7b4130688bfa348392b921ab04015aa15c4f154",
+        "cause": "prepare action reused Python loop variable archive for codec source extraction; the final SDK archive hash expression addressed the last Opus archive. Original record preserved. This corrects that metadata field only; all individual SDK source-file hashes had been checked independently.",
+        "runtimeSdkBinaryArchiveUnchanged": true
+    },
+    "sdkBinaryArchive": {
+        "url": "https://storage.googleapis.com/webassembly/emscripten-releases-builds/mac/eb132757325583b787fe9414b09afea9442b72ad/wasm-binaries-arm64.tar.xz",
+        "sha256": "3d8ced05935fbef5b3edda4252dce260004860bf8d579617f13d417338aa4cac",
+        "bytes": 286147016,
+        "urlEvidence": "actual-processes/sdk-install/stdout.txt:12"
+    },
+    "actualToolchainIdentity": "Packaged Emscripten e13ee988ce3d87a738dd8f3661d02223308c412a and clang83ee07799c341b60965f07892f7bb3d175da05be differ from declared release DEPS5f63/5f47; frozen archive and exact runtime/header/notice content checked; no claim of unproved compiler build-source equivalence.",
+    "assets": [
+        {
+            "path": "vorbis/ogg-encode.js",
+            "bytes": 15969,
+            "sha256": "4457f17a42a69337b6f223f3d99a08e6f608f90cf008d2e053de93160d5a4f68"
+        },
+        {
+            "path": "vorbis/ogg-encode.d.ts",
+            "bytes": 522,
+            "sha256": "f63cec41be682a78f744cd8afab19b2256c79d9dda50c7aba310b427e0101932"
+        },
+        {
+            "path": "vorbis/vorbis.wasm.js",
+            "bytes": 554587,
+            "sha256": "2a8c5e5e759a19d2c61dab70b938ae6b62564250eeb2a9dbc3db01fda439a4e6"
+        },
+        {
+            "path": "opus/opus-encode.js",
+            "bytes": 6492,
+            "sha256": "4dc036a5b17b697d5a1ab217cfb448dda8482ab3c911dd0a41b3f6f451ebac33"
+        },
+        {
+            "path": "opus/opus-encode.d.ts",
+            "bytes": 504,
+            "sha256": "b25ba98ad0f64f8452ffd1ad3296af87194c490158c845dc3fac496c9bfd80a1"
+        },
+        {
+            "path": "opus/core.js",
+            "bytes": 3526,
+            "sha256": "5b1b10c259028d19a0bcbaedb1e72039c6100ee41e246a856959a63c3c97a11f"
+        },
+        {
+            "path": "opus/core.d.ts",
+            "bytes": 1015,
+            "sha256": "2effd9577d9fd64751c0ce26d4c31baa1d827a62b1c47ca18d0c3d4cd84fa43c"
+        },
+        {
+            "path": "opus/src/opus.wasm.js",
+            "bytes": 237595,
+            "sha256": "017b31edb879542d41c7e0d29980385f2d2e5c7f019fd8f78e8997df6f3601af"
+        }
+    ],
+    "noticeProposal": {
+        "path": "/Users/josecosta/.agents/artifacts/sourdaw/WORKFLOW-REASSESS-2026-10-23/R4634-first-pinned-build-author-sol/codec-runtime-notice-appendix-proposal.txt",
+        "bytes": 661502,
+        "sha256": "082d78fdb90fd2ee127fad44c28fd0549ac71db63654b7d136373a5966f85b80"
+    },
+    "proofLimits": "Exact modified-source/factory raw repeat, ABI and changed-asset owning/Chromium checks observed. Full representative AC001, original continuous AC002 and actual native/platform acceptance remain separate and incomplete. Shared authoritative notice/four whole-file digest updates are held until foreign5865 lands. Rejected Opus120context is absent; actual production Opus wrapper/factory bytes unchanged.",
+    "retrievableExactInputs": [
+        {
+            "kind": "source-archive",
+            "url": "https://codeload.github.com/xiph/ogg/tar.gz/bada45718453ac27b56773ae663f7e65112f6a6e",
+            "sha256": "c157fd177bcfade344e26b93cc8b0f14ab2022e05132b148623fb5319fd43ed6",
+            "bytes": 256015
+        },
+        {
+            "kind": "source-archive",
+            "url": "https://codeload.github.com/xiph/vorbis/tar.gz/0657aee69dec8508a0011f47f3b69d7538e9d262",
+            "sha256": "6ccc3fa4cfd3072f9a772025cc8fd712098d081c00171b09b6627ffced7faa88",
+            "bytes": 1235008
+        },
+        {
+            "kind": "source-archive",
+            "url": "https://codeload.github.com/xiph/opus/tar.gz/212d66c20944d0a0db91132f826a27dd0d5edd5d",
+            "sha256": "431731eb29343a82de4b8fc98f934eba3fd5780eecea254b3ced345e61611a2a",
+            "bytes": 4890571
+        },
+        {
+            "kind": "source-file",
+            "url": "https://raw.githubusercontent.com/arseneyr/wasm-media-encoders/4a45333baadbab312d1cc0911151dfad23157c51/src/wasm/vorbis/vorbis_enc.c",
+            "sha256": "881f20eb195d20c879a9bd88abd6568399b888d6e89207ef155616dc828fe788",
+            "bytes": 5160,
+            "destination": "source/wasm-media/src/wasm/vorbis/vorbis_enc.c"
+        },
+        {
+            "kind": "source-file",
+            "url": "https://raw.githubusercontent.com/arseneyr/wasm-media-encoders/4a45333baadbab312d1cc0911151dfad23157c51/src/wasm/common_params.h",
+            "sha256": "f056532233b4ffd84d3462c5251c6a42b5034d24c3ac38fdad70abc0cb4193c6",
+            "bytes": 271,
+            "destination": "source/wasm-media/src/wasm/common_params.h"
+        },
+        {
+            "kind": "source-file",
+            "url": "https://raw.githubusercontent.com/audiojs/encode/16df8a96b45cadd0c1fdcdce508c12b011a08817/packages/encode-opus/src/opus_glue.c",
+            "sha256": "7420d8b4e129d804d3ad2c8b8e2e840f214d4544ff9d4cc792b9e1dd3c94d9b8",
+            "bytes": 2819,
+            "destination": "source/opus_glue.c"
+        },
+        {
+            "kind": "original-npm-archive",
+            "url": "https://registry.npmjs.org/@audio/encode-ogg/-/encode-ogg-1.3.1.tgz",
+            "integrity": "sha512-EMnAZbJsVs5TQfXzLG09UJQc1wfWR5JkAkQ4hJ5U9cSqIAAackpszPFnh+uFfbd/9IWF9/SdwkuzGqp//K74Yg==",
+            "sha256": "68b806e59b3ee52c579f4ffabf8b47360660d3096e3fcfa2e2575911bfcb0614",
+            "bytes": 213893,
+            "use": "original wrapper/declaration bytes only; old embedded runtime payloads excluded"
+        },
+        {
+            "kind": "original-npm-archive",
+            "url": "https://registry.npmjs.org/@audio/encode-opus/-/encode-opus-1.3.0.tgz",
+            "integrity": "sha512-Bh93rd4V9KMXBsjcss3VVUOOtXdw4/IHK3/I/U9H1EnMmgYqmNFfiVLl2Q3aNJdJu9n6/1PURVnKkqdmMEc8AA==",
+            "sha256": "a1669da7368cca3b52e4560a916ad7c3d2c4cf5f44da5d600bfda8aec3553028",
+            "bytes": 132056,
+            "use": "original wrapper/declaration bytes only; old embedded runtime payloads excluded"
+        }
+    ],
+    "cohesiveFeatureModification": {
+        "reason": "Ordinary native encoder cleanup rather than only dropping the public wrapper reference",
+        "originalFrozenWrapperSha256": "5cc15b5bbdaa4f5a7c5535a09c49c384244795589daf4ad8acc7e03bdac759e9",
+        "free": "zero configured ref before native enc_free, clear wrapper in finally; idempotent before configuration and on repeat",
+        "generatedFactoriesChanged": "Vorbis only: separately recorded primer-page glue and modified-libvorbis virtual-prefix source patches; Opus unchanged"
+    },
+    "initialUnmodifiedRuntimeDeterminism": {
+        "scope": "fresh private output and runtime cache; same pinned source/toolchain, unchanged compilation settings; output paths necessarily change",
+        "outputs": [
+            {
+                "path": "vorbis.wasm.js",
+                "firstSha256": "3e163db7141a12b402b5be403a646e6c00f53beea02202624ae2e8143612055e",
+                "cleanSha256": "3e163db7141a12b402b5be403a646e6c00f53beea02202624ae2e8143612055e",
+                "firstBytes": 554380,
+                "cleanBytes": 554380,
+                "identical": true
+            },
+            {
+                "path": "opus.wasm.js",
+                "firstSha256": "017b31edb879542d41c7e0d29980385f2d2e5c7f019fd8f78e8997df6f3601af",
+                "cleanSha256": "017b31edb879542d41c7e0d29980385f2d2e5c7f019fd8f78e8997df6f3601af",
+                "firstBytes": 237595,
+                "cleanBytes": 237595,
+                "identical": true
+            },
+            {
+                "path": "ogg-install/lib/libogg.a",
+                "firstSha256": "7e2cd99dc9fde74d576372dda719322f901984c2a6bae3db9226c56b6e4f14f7",
+                "cleanSha256": "7e2cd99dc9fde74d576372dda719322f901984c2a6bae3db9226c56b6e4f14f7",
+                "firstBytes": 56922,
+                "cleanBytes": 56922,
+                "identical": true
+            },
+            {
+                "path": "vorbis-build/lib/libvorbis.a",
+                "firstSha256": "6daa73a7d0cbfe95d6e5995bac9faccc165800701bf7056d407603ae8c0dc766",
+                "cleanSha256": "6daa73a7d0cbfe95d6e5995bac9faccc165800701bf7056d407603ae8c0dc766",
+                "firstBytes": 360434,
+                "cleanBytes": 360434,
+                "identical": true
+            },
+            {
+                "path": "vorbis-build/lib/libvorbisenc.a",
+                "firstSha256": "a2c195ec0f1549cacf33b9873f3422420e405ccd0c8b36e815c0cde3cf6abf42",
+                "cleanSha256": "a2c195ec0f1549cacf33b9873f3422420e405ccd0c8b36e815c0cde3cf6abf42",
+                "firstBytes": 631054,
+                "cleanBytes": 631054,
+                "identical": true
+            },
+            {
+                "path": "opus-build/libopus.a",
+                "firstSha256": "511f928466ef3a03a02f8729b047e71544f2dcc6f376b1c4bbdced051c3b6c99",
+                "cleanSha256": "511f928466ef3a03a02f8729b047e71544f2dcc6f376b1c4bbdced051c3b6c99",
+                "firstBytes": 1235042,
+                "cleanBytes": 1235042,
+                "identical": true
+            }
+        ]
+    },
+    "vorbisPrimerPageRepair": {
+        "patchPath": "release/upstream-proofs/audio-export-codecs/vorbis-primer-page.patch",
+        "patchSha256": "c4bd7e21a0acd609df3f850f98a6eb006626a41cea907a0af0232b69e8ee3d6c",
+        "upstreamSourcePath": "src/wasm/vorbis/vorbis_enc.c",
+        "preimageSha256": "881f20eb195d20c879a9bd88abd6568399b888d6e89207ef155616dc828fe788",
+        "postimageSha256": "747b62128339b4e4fc365563f2740b735e9e9d63f4166ac98db0ea845601c9c6",
+        "change": "Per-encoder calloc-zeroed first-audio-packet flag; existing libogg flush only on that packet. No packet, header, CRC, final granule/EOS or native cleanup substitution.",
+        "determinism": {
+            "first": {
+                "bytes": 554400,
+                "sha256": "cefd90ff4a82c2dee053b7e8d336775364b883a40c39a5f412a92838cdd95e6f"
+            },
+            "freshOutputAndCacheRepeat": {
+                "bytes": 554400,
+                "sha256": "cefd90ff4a82c2dee053b7e8d336775364b883a40c39a5f412a92838cdd95e6f"
+            },
+            "rawByteIdentical": true,
+            "libraryRebuild": false
+        },
+        "actualSourceNoticeCoverage": {
+            "observedArchiveMemberInputsUnchanged": true,
+            "glueDependencyCount": 43,
+            "onlyChangedDependencyContent": "owned patched C glue; other42 dependency contents match prior qualified source/notice envelope"
+        },
+        "proofLimits": "Actual link/ABI/repeatability only; one-frame RMS quality and full browser/native/AC002 acceptance remain separate obligations."
+    },
+    "modifiedLibvorbis": {
+        "scope": "Exact root-admitted block.c virtual-prefix patch, source-integrated paired runtime, byte-identical independent fresh-output/cache repeat; original libvorbis explicitly modified",
+        "upstreamRevision": "0657aee69dec8508a0011f47f3b69d7538e9d262",
+        "patchPath": "release/upstream-proofs/audio-export-codecs/vorbis-short-leading-context.patch",
+        "status": "OWNED DISJOINT SOURCE INTEGRATED; SHARED NOTICE/DIGEST PHASE HELD",
+        "originalSource": "/Users/josecosta/.agents/artifacts/sourdaw/WORKFLOW-REASSESS-2026-10-23/R4634-first-pinned-build-author-sol/private-build-root/source/vorbis/lib/block.c",
+        "originalSha256": "7f65c7031c2b94405d2c1b5f0a73cc19efe9506e95736ba0b38d86bd42170a7e",
+        "patchedSource": "/Users/josecosta/.agents/artifacts/sourdaw/WORKFLOW-REASSESS-2026-10-23/R4634-first-pinned-build-author-sol/private-build-root/virtual-prefix-experiment/source-vorbis/lib/block.c",
+        "patchedSha256": "e5643f5f9947fcfb7d08824338b02af28b2d2dd30acb311c85d0efb2c7160453",
+        "patchSha256": "49ddc53f865c69d4ec9e6cb4d4594afe22ffc805a5920d828d8009cc68c09789",
+        "constraint": "Only existing virtual prefix, real input1..32frames. Programme samples/granules/EOF/muxer unchanged. First boundary hypothesis failure stops this route.",
+        "firstFactory": {
+            "bytes": 554587,
+            "sha256": "2a8c5e5e759a19d2c61dab70b938ae6b62564250eeb2a9dbc3db01fda439a4e6"
+        },
+        "modifiedLibrary": {
+            "bytes": 361826,
+            "sha256": "cdac7e5f840617cadd6f51016d5f2671d4c3a6e25f0990c097c91bcb1ba26a22"
+        },
+        "actualCoveragePacket": "production-source-notice-closure-packet.json in retained author evidence",
+        "allRuntimeHeaderAndTraceFamiliesUnchanged": true,
+        "qualityEvidence": "14 short before/after rows;4 bounded normal/long rows;49 negative/asymmetric/silent/partition+normal-exact-PCM controls passed. Original overlarge raw-call baseline failure retained; actual supported producer uses\u22644096frames.",
+        "reproducibilityStatus": "First and independent fresh-output/cache repeat archive/factory bytes match exactly; no normalization or unchanged library replay",
+        "productionIntegrationStatus": "Exact paired factory/patch integrated; source-owning and actual Chromium changed-asset checks passed; final shared notice/inventory phase held",
+        "independentRepeat": {
+            "modifiedArchive": {
+                "bytes": 361826,
+                "sha256": "cdac7e5f840617cadd6f51016d5f2671d4c3a6e25f0990c097c91bcb1ba26a22"
+            },
+            "pairedFactory": {
+                "bytes": 554587,
+                "sha256": "2a8c5e5e759a19d2c61dab70b938ae6b62564250eeb2a9dbc3db01fda439a4e6"
+            },
+            "rawByteIdentical": true,
+            "freshOutputAndRuntimeCache": true,
+            "unchangedSourceTree": true,
+            "sameActualArchiveMemberFamilies": true,
+            "glueDependencyContentsSame": 43,
+            "blockDependencyContentsSame": 48,
+            "unchangedOtherCodecArchivesRebuilt": false
+        },
+        "sourceAndChangedAssetProof": "Actual real-factory exports/init/configure/encode/flush/free/errors and fresh heap views on growth; Vorbis encoder/Worker owning9 cases; real Chromium representative normal/tail/rate/channel UI, all original short duration/channel cases and held-output/cancel/prior-file/immediate repeated successor checks. These functional proofs do not claim fullAC001/AC002/native acceptance."
+    },
+    "currentCanonicalLegalNotice": {
+        "path": "public/legal/THIRD-PARTY-NOTICES.md",
+        "bytes": 671057,
+        "sha256": "bd81e9d5797a2a74b5e4202712c429b7dbea4b0c282ea11bf75a7d6a41f105f4",
+        "status": "Historical C13 notice still integrated; new modified-libvorbis prominent notice and ALL affected consumer digests held for actual foreign5865 sequencing"
+    },
+    "headRole": "Initial repository source base, not a claim about the current feature head",
+    "featureCheckpointBeforeVirtualPrefixIntegration": "ee2605e663dd70a8a5dbaca3f455dbe1985c0cbc"
+}

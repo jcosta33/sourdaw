@@ -4,6 +4,8 @@ import { type MidiNote } from '#/modules/MIDI/stores';
 import { type Pattern } from '../models/ToasterKit';
 import { fromToasterKitState } from '../models/ToasterKitState';
 
+import { getEffectiveToasterPattern } from './getEffectiveToasterPattern';
+
 export type ToasterPatternOutsideArrangement = {
     trackId: string;
     trackName: string;
@@ -25,7 +27,7 @@ function trackHasBakedNotes(track: Track, notesByClipId: NotesByClipId): boolean
 }
 
 /**
- * Toaster devices whose active pattern has a live hit that was never baked to
+ * Toaster devices whose effective pattern has a live hit that was never baked to
  * the arrangement via **To timeline** (`exportPatternToTimeline.ts`) — the
  * only export/native-playback-visible form of a pattern (ADR 0045). A pattern
  * with no active step has nothing to bake and is not reported; a pattern
@@ -48,8 +50,8 @@ export function listToasterPatternsOutsideArrangement(input: {
             }
 
             const kit = fromToasterKitState(device.deviceState);
-            const activePattern = kit.patterns.find((pattern) => pattern.id === kit.activePatternId);
-            if (!activePattern || !patternHasActiveStep(activePattern)) {
+            const effective = getEffectiveToasterPattern(kit);
+            if (!effective || !patternHasActiveStep(effective.pattern)) {
                 continue;
             }
 

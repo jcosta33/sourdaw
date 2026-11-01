@@ -1,383 +1,239 @@
 ---
 name: delivery-orchestration
 description: >-
-    Operate Sourdaw's trusted review and delivery scripts — lane:publish,
-    review:prepare, review:publish, review:accept, review:repair, review:confirm,
-    review:resolve, deliver,
-    pr:supersede, branch:prune — with the delivery lock, crash recovery,
-    receipts, review and acceptance document formats, thread resolution, and
-    the launcher snapshot trust boundary. ALWAYS load when running any review
-    or delivery trusted script or recovering a crashed delivery, even for a
-    single command.
+    Orchestrate a Sourdaw change from claim to cleanup: survey claims and open a
+    lane, brief and dispatch author, repair, and reviewer agents, publish with
+    lane:publish, run review rounds (review:prepare, review.json, review:publish,
+    review:repair, review:confirm), deliver, clean up after delivery, and recover
+    crashed or blocked operations (delivery lock, review publication recovery,
+    blocked Gate, pr:supersede, pr:retire, branch:prune). ALWAYS load when
+    orchestrating any change or running any review or delivery trusted script,
+    even for a single command.
 ---
 
 ## Purpose
 
-Root `AGENTS.md` states the delivery rules: trusted scripts only, identity
-immutability, workflow boundaries, review blindness, post-before-repair. This skill
-holds the procedure an orchestrator needs at the moment it runs those scripts.
+Root [AGENTS.md](../../../AGENTS.md) owns the policy: trusted scripts only, identity immutability,
+workflow boundaries, review blindness, post-before-repair. This skill is the procedure an
+orchestrator follows from claim to cleanup, in the order it runs, with the briefs it gives the agents
+it dispatches. Every step below runs on every delivery; the references hold the rare modes.
 
 ## Command reference
 
 | Need                                                        | Command                                                                                                                                                                                                                          |
 | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Open a lane                                                 | `pnpm lane:open [issue] [slug] --type <type> [--model <model>] [--stack-on <absolute-parent-lane>]`                                                                                                                              |
+| Open a lane                                                 | `pnpm lane:open [issue] [slug] --type <type> --model <model> [--stack-on <absolute-parent-lane>]`                                                                                                                                |
 | Claim the lane's issue                                      | `pnpm issue:claim <issue>`                                                                                                                                                                                                       |
 | Sync a dependent lane                                       | `pnpm lane:sync-parent --lane <absolute-child-lane>`                                                                                                                                                                             |
 | Push; open or update the PR                                 | `pnpm lane:publish <issue \| --lane <absolute-path>> [--relates] [--title "<conventional-subject>"] [--summary "<text>"] [--test "<instructions>"] [--model <model>] [--milestone <title>] [--project <title>] [--label <name>]` |
+| Adopt a released PR into a new lane                         | `pnpm lane:publish --adopt-pr <pr> --expected-head <full-lowercase-sha> --model <model>`                                                                                                                                         |
 | Write the review bundle                                     | `pnpm review:prepare <pr>`                                                                                                                                                                                                       |
 | Post `review.json`                                          | `pnpm review:publish <pr>`                                                                                                                                                                                                       |
 | Post final `acceptance.json` (legacy pre-policy heads only) | `pnpm review:accept <pr>`                                                                                                                                                                                                        |
 | Record a repair, leave open                                 | `pnpm review:repair <pr> --thread <thread-id> --head <full-sha> --commit <full-sha> --summary "<one line>" [--evidence <path-to-json>]`                                                                                          |
 | Confirm repairs, resolve                                    | `pnpm review:confirm <pr> --head <full-sha>`                                                                                                                                                                                     |
-| Explain the retired resolution command                      | `pnpm review:resolve --help`                                                                                                                                                                                                     |
 | Rebuild rounds; shadow-compare                              | `pnpm review:reconstruct <pr>`                                                                                                                                                                                                   |
 | Squash-merge                                                | `pnpm deliver <pr>`                                                                                                                                                                                                              |
 | Recover a crashed delivery                                  | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                                                                 |
 | Recover a wedged review post                                | `pnpm review:publish:recover <pr> --owner <oid> [--attest-absent]`                                                                                                                                                               |
+| Reconcile a tracker issue at delivery                       | `pnpm issue:reconcile <issue> --expected-body-sha256 <64-hex> (--edits-file <json> \| --superseded-by <issue>)`                                                                                                                  |
 | Close a superseded PR                                       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged> [--superseded-parent <closed-unmerged-parent> [--parent-replacement <merged-parent-replacement>]] --lineage <path-to-json>`                                     |
 | Retire an obsolete PR with confirmed repairs                | `pnpm pr:retire <pr> --head <head-sha> --record <path-to-json>`                                                                                                                                                                  |
 | Prune spent remote branches                                 | `pnpm branch:prune [--apply] [--limit <n>]`                                                                                                                                                                                      |
+| Retry/discover pending post-merge cleanup                   | `pnpm lane:cleanup [--status]`                                                                                                                                                                                                   |
+| Install/refresh macOS cleanup job                           | `pnpm lane:cleanup:install`                                                                                                                                                                                                      |
 | Remove a spent lane                                         | `pnpm lane:remove <path>`                                                                                                                                                                                                        |
 | Strand an abandoned lane                                    | `pnpm lane:strand <path> --reason "<text>"`                                                                                                                                                                                      |
 | Prune lane artifacts                                        | `pnpm lane:prune <path> \| --all \| --stale-days <days>`                                                                                                                                                                         |
 | Restamp author identity on lanes                            | `pnpm lane:identity`                                                                                                                                                                                                             |
 
-`pr:supersede` refuses to close a superseded pull request until every live
-review thread on it has exactly one recorded disposition on the replacement.
-Each finding is the decimal database id of a review thread's root comment, as
-GitHub reports it. The caller writes that total map as a `FindingLineage` JSON
-document and passes its path with `--lineage`; both the bare JSON object and the
-rendered marker form are accepted, `oldPr`/`replacementPr` must match the
-invocation, and a missing, unreadable, or malformed file refuses with the path.
-The transaction then posts the receipt plus a second lineage marker, converges
-duplicates to exactly one of each, and closes only afterwards, so a re-run after
-a partial transaction repairs rather than duplicates.
+`review:resolve` is retired: valid invocations refuse before authentication or GitHub access, and
+`pnpm review:resolve --help` explains the replacement — the author records each repair with
+`review:repair` and the distinct reviewer confirms it with `review:confirm`.
 
-`pr:retire` closes an owner-released obsolete PR without asserting a merged replacement. The
-caller supplies a canonical `retirement-v1` JSON record with `pr`, `head`, `base`, a one-line
-`rationale`, 1–8 repository evidence URL/observation pairs, a total `findings` list of live root
-comment/thread IDs and native author repair/reviewer confirmation comment IDs, and `reviewBodies`
-mapping each `REQUEST_CHANGES` review ID to its inline roots and `bodyDigest`, the lower-case
-SHA-256 digest of that exact review body's UTF-8 bytes (without trimming or normalization).
-The command checks this binding initially, before marker writes, before closing, after closing,
-and on closed replay. Unbound historical records and markers refuse; they cannot authorize a new
-close or replay and must never be adopted as bound evidence.
-Each review proof reads both complete review-thread and requested-changes-review connections in
-one GraphQL response. Eligibility is bounded to 100 threads, 100 requested-changes reviews and 100
-comments per thread, with every `hasNextPage` false. Missing, malformed or truncated connections
-refuse without pagination or stitching separate responses. One response does not establish
-GraphQL resolver atomicity or prevent later changes.
-The command refuses an unconfirmed
-or unresolved root, unmatched review body, changed head/base/root set, or ambiguous role actor;
-it posts one author-App marker and closes through the native transaction. The reason, evidence,
-and mapping of review prose to inline roots are caller attestations, not machine proof of
-obsolescence. A review body with a distinct finding that cannot truthfully be mapped to a
-confirmed inline root remains a refusal; there is no discard or body-only admission in this
-version. This does not change `pr:supersede`, review, Gate, or delivery rules.
-The selected reviewer confirmation's decimal comment ID must strictly follow the selected author
-repair's ID; identity and a matching repair digest alone do not establish that chronology.
-Caller-selected IDs must identify the whole thread's authoritative native repair and sole
-confirmation. Retirement reuses native author-record supersession and reviewer replay selection,
-including historical full-record confirmations; another authorized conflicting repair or duplicate
-confirmation refuses. Older author records require verified ancestry before a descending record
-can supersede them. Plain or foreign replies do not gain authority. This does not restrict the
-original finding's actor or require every root to originate in a requested-changes review.
-Closed replay refreshes PR identity and canonical marker identity after the review proof and
-refuses movement between those observations. It cannot fence changes arriving after its last read.
+`review:accept <pr>` remains only for legacy pre-policy heads: a plan-carrying bundle whose dossier
+already carries the reviewer-recorded delivery authorization refuses the duplicate. New deliveries
+never call it.
 
-The replacement normally targets the old pull request's base exactly. A child
-left behind after its stack parent was natively superseded may cross that base
-only with `--superseded-parent <pr>`. The named parent must be closed without
-merge, own the child's old base branch from the child's base repository, target
-the replacement's base (or prove the completed nested binding below), and carry exactly one canonical author-Bot supersession
-receipt and one total finding lineage marker naming the merged replacement. The
-child's live `baseRef` must name that parent branch in the child's repository and
-target the parent's final head commit. The parent's final head must also belong
-to the old child's immutable history. When that head advanced after the published
-child, only the existing native registered lane provenance can establish the
-historical association: the protected-primary descriptor and matching
-`branch.<child>.sourdaw-stack-fork`, exact child/parent branches and parent PR,
-and the recorded fork commit retained in both old child and final parent. This
-uses the existing same-account native provenance boundary, not cryptographic
-ownership. A missing descriptor is never reconstructed from shared ancestry,
-reviews, workflow associations or prose. A reused branch name is insufficient.
-Any observed cached child `baseRefOid` must belong to both histories during fresh
-admission; that cached commit alone is not parent provenance. The command
-snapshots the live ref's repository, name
-and target, re-reading the child after the parent proof at each mutation boundary.
-It checks the child's finding set after that last remote proof immediately before
-close, and again after the final post-close proof, so a finding added or removed
-during parent inspection cannot inherit an earlier coverage check.
+`deliver` already closes the issue the pull request's body closes (not one a `--relates` PR only
+references) as completed after the merge.
+`issue:reconcile` performs the delivery-time reconciliation `deliver` does not perform itself, in two
+modes: replacing exact text in an open issue's body (an `--edits-file` JSON array of 1–64
+`{ "from", "to" }` entries, each `from` matching exactly once), or closing an issue as not planned
+with one `Superseded by #<n>.` comment naming an open replacement issue. Both refuse unless
+`--expected-body-sha256` equals the SHA-256 of the issue's current body. Later corrections to an
+issue use manual `gh` under AGENTS.md [Artifacts](../../../AGENTS.md#artifacts).
 
-Stacked closure posts a third canonical author-Bot
-`sourdaw-supersession-parent-v1` marker binding the child, parent, both replacement
-identities and immutable commits to the admitted provenance kind, fork and cached
-base. It participates in exact observation, convergence, journaled writes,
-compensation and ambiguous-write retention alongside receipt and lineage.
-An already CLOSED child may replay without writes after its live base ref or
-local lane metadata has been deleted only with exactly one strictly parsed,
-canonical authorized binding marker, receipt and total lineage. Replay uses the
-stored historical fork and cached base, verifies current identities and immutable
-ancestry, and refuses a present contradictory descriptor or live ref. A later
-cached base does not rewrite the admitted history. An old two-marker completion
-cannot acquire this binding during CLOSED replay. The distinction confirms an
-existing completion only and cannot admit fresh closure with an absent live ref.
+### Protected primary package route
 
-The command revalidates that live parent proof before the first child write, before
-closing, and after closing before reporting success. A refusal before writing
-leaves no child mutation, a refusal after adding child markers compensates those
-markers, and a post-close authority failure reports ambiguity while retaining
-all the closed child's markers as durable evidence.
+Run these package scripts with the protected primary checkout as the working directory, never from a
+lane: `lane:publish`, `lane:sync-parent`, `review:publish`, `review:publish:recover`,
+`review:repair`, `review:confirm`, `review:shadow-status`, `deliver`, `pr:supersede`, `pr:retire`,
+`issue:claim`, `issue:reconcile`, and `ruleset:harden` (the trusted ruleset change);
+`review:accept` remains only for legacy pre-policy heads, and `review:resolve` only explains its
+retirement. Each routes through `scripts/trustedGithubWriteBootstrap.ts`, which refuses any other
+launch location with `trusted GitHub writes must be launched from the protected primary checkout`
+and runs the script closure from one pinned `origin/main` snapshot. Lane files are data, never
+executable delivery code. Snapshot and environment controls: [trust boundary](references/trust-boundary.md).
 
-When the parent was superseded by a different merged PR, name it explicitly with
-`--parent-replacement <pr>` after `--superseded-parent`. All four PR identities
-must differ. Both replacements must target `main`; the old parent must target `main`
-or supply the completed nested-binding proof described below. The old parent's
-canonical receipt and total live finding lineage must name its own
-replacement, while the child keeps its independent lineage to the child
-replacement. The parent's replacement merge commit must be an ancestor of the
-child replacement's source head. The read-only comparison binds the repository,
-ordered full commit SHAs, base object, merge-base object and terminal descendant
-commit. The comparison has no paging parameters, so GitHub's terminal returned
-commit remains the newest even when its list is capped at 250. A branch match or
-status alone is insufficient, and unavailable evidence refuses. This path
-snapshots and revalidates all four identities, merge commits, parent markers and
-both old PR finding sets before the first child write, immediately before close,
-and after close. Each proof ends with independent core reads of every replacement
-and parent after the final dependent marker and thread reads, followed by the
-child's final core read. CLOSED replay uses the same final authority witnesses.
-These client reads cannot exclude changes after their respective observations.
-Pre-close refusals use the same marker compensation; post-close
-failure reports ambiguity and preserves the closed child's markers. The option
-does not infer a new parent from prose, retarget a branch, or change a registered
-stack. Ancestry proves dependency containment, not semantic replacement or product
-acceptance; those remain independently reviewed caller obligations. Historical
-same-base supersessions and the existing same-replacement parent path do not
-require this additional merge-commit proof.
+Each script validates its own preconditions and refuses rather than repairs. Read the refusal, fix
+its named cause, and run the same command again; never route around it.
 
-A closed parent that itself crossed a superseded parent's base can authorize the next child only
-through its existing canonical completion. The command revalidates that parent's receipt, total
-live finding lineage and exact authorized parent-binding marker recursively, to the original
-one-level proof. The parent's recorded replacement must equal the selected parent successor:
-`--parent-replacement` when supplied, otherwise the child's replacement. Every distinct replacement
-merge must belong to the corresponding child replacement's immutable source history. Sharing one
-replacement across adjacent levels does not require its squash merge to occur in its own source.
-All original parent identities, historical provenance, cached-base ancestry and present live refs
-remain required; only an already completed node can use its stored binding after ref/ledger cleanup.
+## Delivery path
 
-New nested completions write `sourdaw-supersession-parent-v2`, binding the immediate parent's
-completion comment node ID, decimal database ID and exact canonical v1/v2 payload. The v1 schema,
-bytes and existing one-level admission remain unchanged; replay never upgrades a completion.
-Strict parsing refuses unknown or duplicate fields, contradictory repeated identities, cycles,
-more than 32 binding levels or a marker exceeding 60,000 UTF-8 bytes. Before any child write, before
-close, after close and on CLOSED replay, the full ancestor proof and all original finding sets are
-revalidated. Final dependent marker/thread reads are followed by independent core witnesses for
-every unique parent and replacement, then the child's final core. Ancestors are read-only. The
-existing child owner, marker convergence, verified pre-close compensation and post-close ambiguity
-retention apply to v2 unchanged. These are finite client observations, not a remote atomic snapshot.
+### a. Claim
 
-`branch:prune` defaults to dry run and deletes only branches whose every PR is
-merged or closed. It retains a branch that is the last remote holder of a
-measurement source revision a tracked table records, because the admission
-resolves that revision by SHA and squash delivery never lands the lane head on
-`main`. A recorded revision the remote independently confirms is gone is
-reported by name and skipped, so one stale table entry cannot abort the run; a
-branch that merely cannot be compared holds nothing and is passed over, while
-any comparison that cannot be answered still refuses and deletes nothing.
+Two agents taking the same work waste both. Before `lane:open`, survey for a lane or PR already on
+the same issue or surface:
 
-## Claim at lane open
+- `git worktree list` for existing lanes;
+- `gh pr list --state open` for open PRs;
+- `gh pr list --state open --json number,headRefName,files` for open PRs touching the files the
+  change will touch.
 
-Two agents taking the same work waste both. Before `lane:open`, read
-`git worktree list` and `gh pr list --state open` for a lane or PR already on
-the same issue or surface; a lane or PR you did not open is another agent's
-claim and is read-only for you.
+A lane or PR you did not open is another agent's claim and is read-only for you. The lane cap and
+the shared generated files and digests that force waiting or stacking are in AGENTS.md
+[Delivery](../../../AGENTS.md#delivery).
 
-Opening a lane stamps the worktree's git config with the author App's commit
-identity — `hplovecraft208[bot]`, keyed to its immutable database id
-318698904, unsigned — so lane commits attribute to the App without any
-credential; `pnpm lane:identity` restamps lanes opened before that stamp
-existed.
+Choose the author's model before opening the lane, then open it with
+`pnpm lane:open [issue] [slug] --type <type> --model <model>`. `--model` is required and must be the
+model the author agent will actually run on: `lane:open` records it in the primary checkout's git
+config as `branch.<branch>.sourdaw-author-model`, `lane:publish` turns it into the PR's `Authored by`
+label, and `review:publish` refuses a reviewer draw on that model unless the review document carries
+`modelExhaustion`. When the author ends up running on a different model, publish with
+`lane:publish --model <actual-model>`: an explicit `--model` wins, replaces the recorded value, and
+the publication's label edit removes the superseded `Authored by` label. `--type` is the
+conventional-commit type of the change; branch grammar and stacking are in
+[lane publication](references/lane-publication.md).
 
-An issue-bound lane claims its issue in the same step: `lane:open` prints
-the command, and `pnpm issue:claim <issue>` — run from the protected
-primary checkout — adds the `status:active` label, removes every other
-`status:` label, and moves every board item holding the issue to In
-progress, reading the project's field and option ids live. The script
-refuses an issue that already carries `status:active`, making an existing
-claim visible before work starts; the check is read-then-write, not
-atomic, so the survey before `lane:open` remains the guard against two
-claims racing in one window. After delivery, verify the issue is closed
-and the board item reads Done; project automation may not move it.
+Opening a lane stamps the worktree's git config with the author App's commit identity —
+`hplovecraft208[bot]`, keyed to its immutable database id 318698904, unsigned — so lane commits
+attribute to the App without any credential; `pnpm lane:identity` restamps lanes opened before that
+stamp existed.
 
-An issueless lane's worktree and PR are the claim: choose a slug that names
-the change precisely and publish early, before the head is final if
-needed. Work that outlives one lane or session — a campaign, or a hand-off to
-another agent — is filed first so each lane binds to the issue that
+An issue-bound lane claims its issue in the same step: `lane:open` prints the command, and
+`pnpm issue:claim <issue>` — run from the protected primary checkout — adds the `status:active`
+label, removes every other `status:` label, and moves every board item holding the issue to In
+progress, reading the project's field and option ids live. The script refuses an issue that already
+carries `status:active`, making an existing claim visible before work starts; the check is
+read-then-write, not atomic, so the survey before `lane:open` remains the guard against two claims
+racing in one window.
+
+An issueless lane's worktree and PR are the claim: choose a slug that names the change precisely and
+publish early, before the head is final if needed. Work that outlives one lane or session — a
+campaign, or a hand-off to another agent — is filed first so each lane binds to the issue that
 carries it; a change one lane can land stays issueless.
 
-## Script order
+### b. Brief and dispatch the author
 
-The delivery sequence, in order:
+Use the [author brief](#author-brief) below. Resolve the tier and model under AGENTS.md
+[Delegation](../../../AGENTS.md#delegation) before writing it, and make sure the lane's `--model` is
+that model. The author works only in the lane and commits there; it never pushes.
 
-1. `lane:publish` — push the lane and open or update the PR (mechanics below).
-   It pushes without `--force` and refuses uncommitted changes: the publishing
-   session commits the work itself with a conventional subject first.
-2. Wait for the cheap `PR checks` run on the head (pushes no longer run `Gate`),
-   then `review:prepare <pr>` — write the bundle (below) and dispatch blind
-   reviewers against it under the root Review rules.
-   A head that conflicts with its base gets no GitHub merge ref, so no
-   `pull_request` workflow run is created and no check can ever appear: waiting
-   on it waits forever. When `lane:publish` reports a conflicted head, read
-   `gh pr view <pr> --json mergeable` and resolve the reported paths with a
-   push before waiting; an `UNKNOWN` answer is GitHub still computing, so check
-   it again rather than treating it as a conflict.
-3. Validate every finding, write `review.json` with the round's `draws` (and
-   any `discarded`), then `review:publish <pr>` — post validated blockers as
-   the reviewer App BEFORE dispatching any repair.
-4. After the author pushes a fixed head, `review:repair` records the repair per
-   thread and leaves the thread open; let the reviewer confirm it with
-   `review:confirm <pr> --head <sha>`, then obtain a fresh review round.
-5. On a clean round, the reviewer posts one APPROVE; that reviewer APPROVE on the
-   current head records the delivery authorization in the head's dossier, and
-   `review:publish` then re-applies the `ci:approved` label as the reviewer App,
-   after its publication lock is released; a failed label write exits nonzero
-   naming the pull request, and a plain re-run replays the review and retries it.
-   That label event alone starts the heavy checks and `Gate`, so CI capacity is
-   spent once per approved head; `REQUEST_CHANGES` removes the label. Re-running
-   `review:publish` on the same head replays the review and re-applies the label,
-   which restarts a `Gate` that a later label event failed or cancelled.
-6. Wait for the approval-triggered `Gate`, then the author runs `deliver <pr>`
-   through the protected primary checkout's package route — it squash-merges as
-   the author App after the reviewer APPROVE (below) and a green `Gate`. Lane
-   files are data, never executable delivery code.
+### c. Before publishing
 
-`review:accept <pr>` remains only for legacy pre-policy heads: a plan-carrying
-bundle whose dossier already carries the reviewer-recorded delivery authorization
-refuses the duplicate. New deliveries never call it.
+- Read the whole lane diff yourself (`git diff origin/main...HEAD` in the lane) against the brief:
+  specified behavior, tests observing their claimed subjects, nothing outside the stated paths.
+- Run the exact affected specs (`pnpm guard --profile focused -- pnpm test:run <changed-spec>`) and
+  `pnpm format <changed-files>` under AGENTS.md [Checks](../../../AGENTS.md#checks). PR CI owns the
+  broad suites.
+- Settle every generated artifact the change moves, committed in the lane before publishing:
+    - **wasm**: any non-test edit in a package's path-dependency closure moves its hash. Name the
+      affected packages and build scripts from `scripts/wasm-artifacts.ts`, rebuild each
+      (`pnpm guard --profile broad -- pnpm <build-script>`), run
+      `pnpm wasm:manifest`, stage the artifacts, then `pnpm wasm:verify`. AGENTS.md
+      [Delivery](../../../AGENTS.md#delivery) holds the full rule.
+    - **Agent evidence manifest**: `evidence/agent-campaign/manifest.json` pins the SHA-256 of every
+      fixture its suites read, and `scripts/__tests__/agentCampaignHarness.spec.ts` fails in push
+      Unit validation when a pinned file changes. `pnpm evidence:gate --manifest evidence/agent-campaign/manifest.json`
+      lists stale digests; regenerate with
+      `pnpm evidence:gate --manifest evidence/agent-campaign/manifest.json --write` and commit the
+      rewrite.
+    - **Release tracked sets**: `release/open-source-inventory.json` records digests over the
+      `gitPathspecs` of `GRAND_BOULE_RELEASE_REGISTRY` in `scripts/checkReleaseInventory.ts`, which
+      reach outside the Grand Boule module into Transport MIDI scheduling, AudioEngine runtime and
+      worklet files, and the command handler maps and argument keys. After committing a change to any
+      of those paths, run `pnpm release:restamp:tracked-set`: it refuses uncommitted tracked-set
+      changes, prints `release inventory already current` or each moved digest, and rewrites the
+      inventory for you to commit. PR CI's release inventory check fails on a stale digest.
 
-Each script validates its own preconditions and refuses rather than repairs:
-`review:publish` posts only when GitHub's live head matches the bundle;
-`deliver` requires the reviewer Bot's current-head APPROVE and all threads
-resolved, and refuses `BLOCKED`, non-`main` bases, and unstable reads (below).
+### d. Publish
 
-## lane:publish mechanics
+`pnpm lane:publish <issue | --lane <absolute-path>>` pushes the lane and opens or updates the PR. It
+pushes without `--force` and refuses uncommitted changes: the work is committed in the lane with a
+conventional subject first. Publishing neither enables auto-merge nor posts reviews.
 
-A lane branch is `<type>/<issue>/<slug>` or `<type>/<slug>`, where `<type>` is a
-conventional-commit type (`feat`, `fix`, `chore`, `docs`, `test`, `refactor`,
-`perf`, `build`, `ci`; never `style`) chosen at `lane:open --type`. The legacy
-`agent/<issue>/<slug>` and `agent/<slug>` shapes of lanes opened earlier are
-recognized by every script exactly as typed ones are; new lanes never use
-`agent/`. `parseLaneBranch` in `scripts/prContract.ts` is the one reader: only
-the first segment is the type, a numeric middle segment without a leading zero
-is the issue (a number inside a slug is never an issue), and a slug is
-dash-joined lowercase words that is never purely numeric, so `fix/12-beat` is an
-issueless slug and `fix/12/34` is refused. A name is at most 100 characters
-(`MAX_LANE_BRANCH_LENGTH`). Any other name, an unknown type included, is not a
-lane branch.
+- **Title.** For conforming lanes (typed or legacy `agent/`), a first publish titles the PR from
+  the newest non-merge lane commit, excluding everything reached by resolved `origin/main` and stack
+  parent heads; it refuses a lane lacking one. The title then stays frozen through follow-up commits
+  and merges unless `--title "<conventional-subject>"` supplies the creation or replacement title.
+  The same effective title governs body validation, derived metadata, and branch-type warnings.
+  Every publish, follow-ups included, also checks that newest lane subject against `TITLE_PATTERN`
+  in `scripts/prContract.ts` (`feat`, `fix`, `chore`, `docs`, `test`, `refactor`, `perf`, `build`,
+  `ci`; never `style`) and refuses with `pull-request title is not conventional` when it fails, so
+  the newest lane commit needs a conventional subject before every publish, and on the first
+  publish it is the subject the PR should show.
+- **Body flags.** The body follows [`.github/pull_request_template.md`](../../../.github/pull_request_template.md);
+  the script controls format and rejects malformed bodies. A new PR requires explicit `--summary`
+  and `--test`; on later runs a supplied flag replaces its section and an omitted flag preserves it.
+- **Product-scope How to test.** A product-scope change — any handwritten path under
+  `src/modules/`, `src/components/`, or `electron/` — refuses a `--test` in which any sentence,
+  clause, or line narrates a command or names specs, suites, or CI; it must teach only
+  user/reviewer-observable steps and their expected result, with an app launch folded into the step
+  that uses it, while a body preserved from an existing pull request is not re-judged.
 
-An issue number resolves its lane by that parsed issue segment, across types and
-legacy prefixes alike (two lanes carrying the same issue need `--lane`); `--lane`
-names an exact absolute lane root, which is what disambiguates write-disjoint
-lanes sharing one issue.
+Write the PR body for a teammate outside the session. Under template headings explain what changed
+and why, without repeating the title, and how to test. How to test is the reviewer's script in the
+app: what to open, click, play, or export, and what they should see or hear. Product changes carry
+only those steps — unit, E2E, typecheck, lint, and CI runs do not belong beside them, because the
+reviewer does not re-run them and the checks list already shows them. Internal or developer work
+with no app surface exercises the tool an operator runs and what it prints or refuses, not the specs
+covering it; only a test-only change names its specs. The template has no Screenshots section;
+agents never attach one. Exclude session diaries, unpublished rounds, mutation tables, and test-run
+inventories. The author brief's approach and reasoning stay out of the body.
 
-For conforming lanes (typed or legacy `agent/`), `lane:publish` opens a PR titled from the newest
-non-merge lane commit, excluding everything reached by resolved `origin/main` and stack parent
-heads; it refuses lanes lacking one. Existing titles stay frozen through follow-up commits and
-merges unless `--title "<conventional-subject>"` explicitly supplies the creation or replacement
-title. The same effective title governs body validation, derived metadata, and branch-type
-warnings. Off-convention legacy lanes refuse `--title` and remain push-only. The body
-follows [`.github/pull_request_template.md`](../../../.github/pull_request_template.md);
-the script controls format and rejects malformed bodies. New PRs require
-explicit `--summary` and `--test`; later supplied flags replace their section,
-omitted flags preserve it. A product-scope change — any handwritten path under
-`src/modules/`, `src/components/`, or `electron/` — refuses a `--test` in
-which any sentence, clause, or line narrates a command or names specs, suites,
-or CI; it must teach only user/reviewer-observable steps and their expected
-result, with an app launch folded into the step that uses it, while a body
-preserved from an existing pull request is not re-judged. Publishing neither enables auto-merge nor posts
-reviews.
+Branch grammar, issue resolution, stack targets, the authorship gate and its remedy, labels,
+milestone and project mechanics, branch-type warnings, and off-convention lanes:
+[lane publication](references/lane-publication.md).
 
-`lane:publish` targets `main` for ordinary lanes and the verified parent branch
-for registered stack children.
+### e. Wait for push checks and mergeability
 
-Publishing gates authorship on exactly the commits it adds to the pull-request
-branch (the notes ref the push also carries is the tool integration's own
-channel, not publication the gate governs): the remote tip when the branch
-already exists there at an ancestor of the head, otherwise the same base the
-title derives from — always excluding what the resolved bases reach, both
-origin/main and any stack parent head, because commits they already carry are
-not the lane's to author. Every remaining commit, merges included, must carry
-the author App's commit identity; a refusal names each offending commit and
-email. Publication also refuses outright while the lane repository's shared
-object store carries rewrites a push bypasses — an `info/grafts` file in the
-common dir or any `refs/replace/*` ref — because `git log` follows the graft
-file even with `--no-replace-objects` and the replace-refs disable applies to
-the gate's read alone. The remedy: restamp with `pnpm lane:identity`, then —
-only when the remote branch holds none of the lane's commits AND the
-comparison base dominates every excluded base (it is origin/main itself, or a
-parent head that already contains current main) — rebase from the comparison
-base with
-`git rebase --rebase-merges --exec 'git commit --amend --reset-author --no-edit' <comparison-base>`;
-otherwise, when no offered rewrite can stay off base-side history, re-create
-the named offending commits. Never a rewrite rooted at the remote tip: it
-would replay base-side commits as the App.
+- Wait for the entire `PR checks` workflow on the exact head to conclude `SUCCESS`; a green
+  `Plan push checks` job alone is not the workflow result.
+- A model-label event may trigger a pre-approval `Gate` failure; that separate run is expected and is
+  not awaited before independent review and reviewer-App approval.
+- Use one observer per PR; back off on read failures or use a connected reader that returns complete
+  checks. Job pages can omit results: establish completion from the whole exact-head workflow or a
+  complete check rollup, never a green subset, and do not rerun CI because a status read failed.
+- A head that conflicts with its base gets no GitHub merge ref, so no `pull_request` workflow run is
+  created and no check can ever appear: waiting on it waits forever. When `lane:publish` reports a
+  conflicted head, read `gh pr view <pr> --json mergeable` and resolve the reported paths with a push
+  before waiting; an `UNKNOWN` answer is GitHub still computing, so check it again rather than
+  treating it as a conflict.
 
-Labels and milestone are written by the author App. Project membership is not:
-installation tokens cannot reach user-owned Projects v2, so the project listing,
-the issue's and PR's own membership, and the `--add-project` write all go through
-the verified operator credential, in a second edit. Without that credential an
-explicit `--project` refuses, and every other case logs one line and leaves
-membership to the operator backfill — the rest of the publish still lands. An
-issueless lane derives its project from its derived type label and keeps it only
-when the live listing names that project.
+### f. Review round
 
-When a typed branch's type differs from the type of the title the PR will show
-(the explicit `--title`, otherwise the newest lane commit on a first publish or frozen title afterwards),
-`lane:publish` logs a `warning:` line and publishes anyway: the branch name
-cannot change after `lane:open`, and a `feat` lane routinely ends on a `test:`
-or `chore:` follow-up. `agent/` lanes name no type and never warn.
+`pnpm review:prepare <pr>` writes the head-bound bundle under the primary checkout's
+`.agents/review-bundles/` with a manifest, diff, size report, risk plan, PR text, and merge-base
+contracts, and prints its path. The manifest binds the PR, base, merge-base and head; reuse requires
+matching base and merge-base context. Bundle internals and the risk-plan format:
+[review records](references/review-records.md).
 
-Author-locked off-convention branches (any name `parseLaneBranch` rejects) may publish via `--lane <absolute-path>`
-only with an already open PR for that exact branch, proving it a genuine
-stranded lane. This path only pushes; it never writes PR title or body and
-refuses if the PR is no longer open when the push lands.
+`review:prepare` does not go through the trusted launcher, so run it only from the protected primary
+checkout. It reads the primary's `.env.sourdaw-reviewer` only after its `origin/main` blob check
+passes, but that check covers only the script's relative-import closure and runs after the module
+graph is evaluated: the executing checkout's import-time code runs before it, and the
+`node_modules` it resolves are never checked. Launched from another checkout, that code runs
+unverified beside the reviewer credential. When the primary's closure
+differs from `origin/main` it refuses with `<path> does not match origin/main; refusing to run a
+mutated copy` or `<path> has no blob on origin/main; refusing to run an unverifiable copy`. A primary
+checkout lagging `origin/main` is a blocker to report to the owner; never work around it from a lane
+or another checkout. The bundle lands under the primary checkout.
 
-### PR body
-
-Write for a teammate outside the session. Under template headings explain what
-changed and why, without repeating the title, and how to test. How to test is
-the reviewer's script in the app: what to open, click, play, or export, and what
-they should see or hear. Product changes carry only those steps — unit, E2E,
-typecheck, lint, and CI runs do not belong beside them, because the reviewer does
-not re-run them and the checks list already shows them. Internal or developer
-work with no app surface exercises the tool an operator runs and what it prints
-or refuses, not the specs covering it; only a test-only change names its specs.
-The template has no Screenshots section; agents never attach one. Exclude
-session diaries, unpublished rounds, mutation tables, and test-run inventories.
-
-## Review bundles and publication
-
-`review:prepare` prints a primary-root bundle path containing `manifest.json`,
-`diff.patch`, `review-size.json`, `risk-plan.json`, `pr.md`, and merge-base
-`contracts/`. The manifest binds PR, base branch, merge-base, and head. The diff and
-deterministic size report use the actual base/head merge-base; handwritten,
-test, documentation, and generated changes (including lockfiles) remain visible
-as separate groups, and unknown paths count as handwritten. Paths are keyed by
-head sha. Re-preparing the same head replaces generated files and preserves
-caller files only while the bound base name and merge-base context match; a
-populated legacy bundle without base identity cannot be reused. Unrelated
-movement of the base tip is allowed when that context is unchanged.
-
-`risk-plan.json` records `format: 'risk-plan-v1'`, the `pr`/`headSha`/`baseSha`
-it is bound to, the change's `riskClasses`, the `requiredStances` those classes
-earn, and the `triggers` that fired. It is derived from the same path
-classification as `review-size.json`, so the plan and the printed size summary
-cannot disagree. Classes union when several fire, no class earns a stance
-outside its own entry, and parsing recomputes the union from `riskClasses`, so a
-hand-edited plan can neither widen nor narrow its own review. The earned stances
-name risk surfaces to weigh; the dispatched stances are the orchestrator's
-task-derived judgement.
+Derive the stances under AGENTS.md [Review](../../../AGENTS.md#review) and the
+[review-stances README](../review-stances/README.md#stance-derivation-and-the-lesson-library). The
+plan's classes name risk surfaces the stance enumeration must weigh and set the draw floor; they
+never name the stances:
 
 | Class                                                                                       | Earns                                                     | Draw floor |
 | ------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ---------- |
@@ -391,471 +247,426 @@ task-derived judgement.
 | `native-security`                                                                           | correctness, security-platform, test-validity             | 3          |
 | `undo`                                                                                      | correctness, project-integrity-undo, test-validity        | 3          |
 
-Every `.github/` path classifies as handwritten whatever its name, so it never
-plans `test-only` or `docs-only`, on either side of a rename. Generated paths —
-lockfiles and rebuilt wasm artifacts — earn the `realtime-audio`,
-`native-security`, and `undo` classes of the tree they sit in, but never count
-toward the size budget. The Cargo workspace root `Cargo.lock` and `Cargo.toml`
-earn both `realtime-audio` and `native-security`. The Rust toolchain files under
-either name, the JavaScript dependency manifests, the native addon build, the
-desktop packaging files and entitlements, the fuse, preload and Electron runtime
-scripts, and the review tooling that admits CI or feeds the bundle earn
-`native-security`; worklet sources under `public/audio/worklets/` and their
-generators earn `realtime-audio`. A generated-only change plans `small`. A plan
-of several classes needs three distinct stances, or every stance its classes
-earn when they earn fewer. Specialist classes keep those stance and evidence
-obligations within the same reviewer cost ceiling.
+A plan of several classes needs three distinct stances, or every stance its classes earn when they
+earn fewer. Specialist classes keep those stance and evidence obligations within the same reviewer
+cost ceiling.
 
-`review:publish` prints the review id and posts as reviewer App only if
-GitHub's live head matches the bundle; fresh approvals also require matching
-base context. For a plan-carrying bundle it derives the canonical record from
-`review.json` and the plan, persists it as `dossier.json` before the POST, and
-refuses before any remote write when the plan is missing, malformed, or rebound
-from the head/base/pr it must bind; when `review.json` carries no `draws` and no
-reusable unpublished record supplies them; when
-the draws miss the floor above; when the summary reviewer model or any effective
-draw exceeds the review cost ceiling below; or when a value is unsafe. Effective
-draws include an unpublished historical dossier reused by a caller document with
-no draws. These are fresh-publication gates: exact published replay and recovery
-keep their original model and tier metadata without rewriting canonical bytes.
-The record is
-`format: 'dossier-v1'`: an append-only event chain (`stance-completed` per draw,
-`finding-accepted` per inline comment) whose records carry `sequence`,
-`previousDigest`, and `digest`, plus `headDigest` and a `dossierDigest` over the
-header identity, the approval evidence, and the recommendation. Re-publication of
-a head whose record binds its publication replays it unchanged; reviewer
-diversity and the freeze are not re-run for that replay, which posts nothing. A
-pre-ADR-0054 bundle whose `review.json` has no `draws` falls back to an
-unpublished record it already holds. `stances.json`, `discarded.json`,
-`reassessment.json`, and a caller-written `dossier.json` are ignored with one
-log line, and `semantic-ci.json` is information only.
+Before reading any stance report, review the whole head yourself under AGENTS.md
+[Review](../../../AGENTS.md#review): no stance, against the request and the author brief. Read the
+full lane diff and the code it touches. This global review is not a draw and is not recorded in
+`draws`.
 
-`review:prepare` logs
-`review-round-freeze:<pr>:request-changes=<n>:threshold=<t>` from the pull
-request's public review history on every run; `review:repair` logs it only at
-or above the threshold. At `REVIEW_ROUND_FREEZE_THRESHOLD` (five
-reviewer `REQUEST_CHANGES` rounds, `scripts/reviewRoundEscalation.ts`) the pull
-request is frozen: `review:publish` refuses every fresh reviewer publication,
-approve or request changes, before any remote write, and names the way out —
-respin the change as one consolidated pull request, then close the frozen one
-with `pr:supersede` once the replacement merges. `review:repair` and
-`review:confirm` stay open.
+Give each blind reviewer exactly one stance with the [reviewer brief](#reviewer-brief) below; a
+stance may take several draws on different permitted models.
 
-Legacy tolerance: a bundle with no `risk-plan.json` retains its historical shape.
-A fresh publication still meets reviewer cost and diversity rules.
+### g. Validate findings
 
-### Headless reviewer dispatch
+You adjudicate every finding; nothing reaches the author or the public record unvalidated.
 
-Reviewers use only fast, low-cost mid-tier models or below: Luna, Terra, Sonnet
-and Haiku families, recorded by their public model names. Fresh draws use
-`economy` or `standard`, including specialist and disputed-risk reviews. Never
-use Fable, Astra, Opus, any Sol model, another frontier or high-end model, or an
-unknown family or premium alias for review. Author and orchestrator routing is
-unchanged. Keep the required independent stances, blind dispatch, identity and
-head bindings, probes and evidence quality within this ceiling.
+- Check every finding against the live head and surrounding code, not the diff alone, and against
+  your own global reading.
+- Reproduce each merge-blocking finding: its input, state, or mutation and the observed result.
+  Baseline-probe findings name the mutation that should have failed the check but did not.
+- Discard incorrect, out-of-scope, or personal-style findings; record each as a `discarded` entry
+  and never forward or post it. File out-of-scope defects instead of growing the PR.
+- Merge duplicate findings into one comment whose `sources` names every draw that independently
+  detected it.
+- A blocker your global review found that no draw reported: dispatch a fresh blind draw whose
+  stance names that failure mode, never your finding, and post the blocker once a draw reproduces
+  it. Anything no draw reproduces, concrete defect or judgement alike, is never posted: withhold
+  approval and, under AGENTS.md [Delegation](../../../AGENTS.md#delegation), re-brief the author on
+  a new head or respin or close the PR. That hold is not a review and posts nothing.
 
-When the harness cannot select subagent models, run each blind stance on another agent
-harness headlessly: one stance per dispatch, blind, read-only, no credentials, the
-report returned as text for the orchestrator to validate and publish. `reviewerModel`
-records the model actually run; the dispatch never enters the trusted snapshot; the
-harness and invocation are the dispatching session's choice within the permitted
-configured models. Diversify among those models, preferring a different model from
-the author's when available. When only one permitted model is available, disclose
-the unavailable alternatives in `modelExhaustion`; never use a prohibited model
-to obtain diversity. If no permitted model is available, report the blocker.
-When only the author's permitted model is available, the same-model review still publishes: `review.json`
-carries `modelExhaustion` (one line naming what made every other model unavailable)
-and the published body names the reviewer model, so the deviation is recorded rather
-than silently accepted. A draw on an authoring model is covered by the same
-`modelExhaustion`, and the body names that draw's model too. Exhaustion never
-waives the cost ceiling.
+### h. Write `review.json`
 
-## Review document formats
+`review.json` in the bundle directory is the round's only caller document. Field names come from
+`scripts/reviewDocumentParser.ts`. `authorization` and a comment `body` key are refused, and
+`draws`, `discarded` and `sources` entries refuse any key outside their exact set. A misspelled
+required field (`reviewerModel`, `sources`, `evidence` on `APPROVE`) is refused as missing, but any
+other unknown top-level or comment key is dropped silently, so a misspelled optional field such as
+`modelExhaustion` has no effect; check every key against this table.
 
-### Inline comments (REQUEST_CHANGES)
+| Field             | Rule                                                                                                                                                                      |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `event`           | `APPROVE` or `REQUEST_CHANGES`.                                                                                                                                           |
+| `body`            | Required and nonblank for both events.                                                                                                                                    |
+| `comments`        | `REQUEST_CHANGES` requires at least one; `APPROVE` must carry none. Each entry: `path`, `line`, `side` (`LEFT`/`RIGHT`), `defect`, `consequence`, `done`, `sources`.      |
+| `sources`         | Per comment: non-empty `{ stance, reviewerModel }` pairs naming the completed draws that independently detected the finding; required on fresh plan-carrying publication. |
+| `reviewerModel`   | Required on fresh reviewer publication: a permitted Review-ceiling model, in `lane:open --model` token form.                                                              |
+| `modelExhaustion` | Only when a reviewer model equals an authoring model: one line naming what made every other model unavailable; the body must then name that reviewer model.               |
+| `draws`           | One `{ stance, reviewerModel, tier, outcome }` per completed blind draw; required on fresh plan-carrying publication.                                                     |
+| `discarded`       | Optional; one `{ finding, reason }` per discarded candidate.                                                                                                              |
+| `format`          | `compact-v1`, required on a new `APPROVE` and refused without approval `evidence`.                                                                                        |
+| `evidence`        | Required on a new `APPROVE`, refused on `REQUEST_CHANGES`: `{ headSha, claims: [{ observable, verification, observed }] }`.                                               |
 
-Read every changed line and surrounding code as needed. Comment on the
-defective line with one problem, discussing code rather than author. Use
-literal fields `defect`, `consequence`, and `done` for what is wrong, why it
-matters, and the required result; retired `body` is refused with an error
-naming the replacement. Each field is one non-empty line without edge
-whitespace; target one precise sentence, never padding. Tooling space-joins
-fields and appends a period where terminal punctuation is absent. The composed
-comment must fit 600 bytes, not characters; there is no minimum.
+`authorization` is refused: delivery authorization belongs only to legacy `acceptance.json`.
 
-Request changes when this head must not merge, and post every blocking comment
-with that review. The summary is a short pointer to those comments, not a
-report.
+**Inline comments (`REQUEST_CHANGES`).** Read every changed line and surrounding code as needed.
+Comment on the defective line with one problem, discussing code rather than author; the line must be
+a changed line on that side of the bundle's `diff.patch`. Use literal fields `defect`,
+`consequence`, and `done` for what is wrong, why it matters, and the required result; retired `body`
+is refused with an error naming the replacement. Each field is one non-empty line without edge
+whitespace; target one precise sentence, never padding. Tooling space-joins fields and appends a
+period where terminal punctuation is absent. The composed comment must fit 600 bytes, not
+characters; there is no minimum. Request changes when this head must not merge, and post every
+blocking comment with that review. The summary is a short pointer to those comments, not a report.
 
-### Round record in review.json
+**Round record.** Several draws on one stance with distinct models count once toward the floor.
+Fresh `tier` is `economy` or `standard`, and `outcome` is `clean` or `findings`. The fields are
+exact; an unknown tier or outcome, a repeated stance-and-model pair, or an extra field is refused.
+Discards are shape-checked and never posted or recorded. The accepted findings are the document's
+own inline comments. Canonical historical parsers retain `strongest`; that metadata cannot
+authorize a fresh publication and is preserved on published replay and recovery.
 
-`review.json` is the only caller document. Beside its review fields it carries
-`draws`, one `{ stance, reviewerModel, tier, outcome }` per completed blind draw —
-several draws on one stance with distinct models count once toward the floor —
-with fresh `tier` `economy`/`standard` and `outcome` `clean`/`findings`,
-and optional `discarded`, one `{ finding, reason }` per discarded candidate. The
-fields are exact; an unknown tier or outcome, a repeated stance-and-model pair,
-or an extra field is refused. Discards are shape-checked and never posted or
-recorded. The accepted findings are the document's own inline comments.
-Canonical historical parsers retain `strongest`; that metadata cannot authorize
-a fresh publication and is preserved on published replay and recovery.
+**Value safety.** Every draw, discard, and approval-claim value must be single-line, trimmed and
+bounded, and is refused when it carries a credential-shaped value, a private-key header, a JWT, a
+bearer token, or raw session-transcript markers. Private reviewer prose belongs nowhere in the
+record.
 
-Every draw, discard, and approval-claim value must be single-line, trimmed and
-bounded, and is refused when it carries a credential-shaped value, a private-key
-header, a JWT, a bearer token, or raw session-transcript markers. Private
-reviewer prose belongs nowhere in the record.
+**APPROVE: compact-v1 evidence.** Bind `evidence.headSha` to the reviewed bundle head. Supply at
+least one claim, with every value a nonblank, trimmed, single-line string: `observable` is expected
+behavior from the request or contract, `verification` is the exact command, check URL, or source
+comparison, and `observed` is the decisive result or excerpt. Keep the body to a short conclusion.
+Publication posts only that reviewer-written body; the structured evidence stays unpublished in
+`review.json`/`acceptance.json`, bound to the head by `headSha`. `review:accept` validates only
+`acceptance.json`'s own head-bound evidence; `review.json`'s evidence is read by the orchestrator,
+not by any script. The posted body must fit 600 Unicode code points; reject excess and report the
+actual and allowed lengths, never truncate. Record completeness and head binding do not prove
+truthful execution; the orchestrator remains responsible for verifying the claims.
+`REQUEST_CHANGES` must not carry approval evidence. Unknown fresh formats fail closed. Historical
+unversioned documents remain readable only for exact reconstruction and recovery; never rewrite old
+bundles or posted reviews. Keep detailed logs in the session and the concise head-bound
+verification record in structured bundle evidence. The public approval carries only its short
+conclusion; the structured evidence never leaves the bundle.
 
-Records persisted under earlier contracts — with per-draw `exhaustion`,
-discards, `assessmentImpact`, `assessmentIgnoredReason`, `signalDispositions`,
-or `review-reassessed` events — keep verifying byte-identically and replaying;
-fresh publications write none of those fields. Readers of historical review and
-acceptance documents are unchanged, and `review:accept` takes no dossier.
+A minimal `REQUEST_CHANGES` on a `small` plan, with one finding and one clean draw:
 
-### Publication binding, replay, and reconstruction
+```json
+{
+    "event": "REQUEST_CHANGES",
+    "body": "One blocker: a zero tempo reaches the scheduler unclamped; see the inline comment.",
+    "comments": [
+        {
+            "path": "src/modules/Transport/useCases/setTempo.ts",
+            "line": 42,
+            "side": "RIGHT",
+            "defect": "setTempo accepts 0 BPM and stores it in the tempo map",
+            "consequence": "secondsBetweenBeats divides by zero and the scheduler stops advancing",
+            "done": "setTempo refuses non-positive tempi and a spec proves the refusal",
+            "sources": [{ "stance": "non-positive-tempo-input", "reviewerModel": "claude-sonnet-4.5" }]
+        }
+    ],
+    "reviewerModel": "claude-sonnet-4.5",
+    "draws": [
+        {
+            "stance": "non-positive-tempo-input",
+            "reviewerModel": "claude-sonnet-4.5",
+            "tier": "standard",
+            "outcome": "findings"
+        },
+        {
+            "stance": "tempo-undo-restores-stale-map",
+            "reviewerModel": "gpt-6-luna",
+            "tier": "economy",
+            "outcome": "clean"
+        }
+    ],
+    "discarded": [{ "finding": "rename tempo to bpm in setTempo", "reason": "personal style, no defect" }]
+}
+```
 
-After the review POST lands, `review:publish` appends `review-published` (the
-landed review id) and one `finding-published` per posted comment (its public
-comment id, matched to the document positionally after a path/line/side check)
-to the head's dossier; a bundle dossier that already records its publication
-replays — the exact same review must stand live: actor, head, state, body, and
-comments — instead of re-posting, and a recorded publication that no longer
-stands exact fails closed before any write. `review:accept` refuses a
-plan-carrying bundle whose dossier is missing, records no publication, or
-leaves an accepted finding without its public comment binding; a legacy bundle
-without a risk plan publishes and accepts exactly as before.
+A minimal `APPROVE` on the same plan:
 
-`pnpm review:reconstruct <pr>` is read-only: it rebuilds every governed round
-from public channels alone — reviews, review comments, author
-`sourdaw-repair-v1` marker replies, and reviewer confirmations — and
-shadow-compares each head's local dossier against the
-reconstruction (recorded review id, recommendation, and every finding's public
-comment binding). Mismatches are logged and counted, never gated; the command
-fails only on unreadable public data or a corrupt local record.
+```json
+{
+    "format": "compact-v1",
+    "event": "APPROVE",
+    "body": "setTempo now refuses non-positive tempi. Attacked zero, negative and NaN input and undo after a refused edit; all held. Nit: the refusal message could name the accepted range.",
+    "reviewerModel": "claude-sonnet-4.5",
+    "draws": [
+        {
+            "stance": "non-positive-tempo-input",
+            "reviewerModel": "claude-sonnet-4.5",
+            "tier": "standard",
+            "outcome": "clean"
+        },
+        {
+            "stance": "tempo-undo-restores-stale-map",
+            "reviewerModel": "gpt-6-luna",
+            "tier": "economy",
+            "outcome": "clean"
+        }
+    ],
+    "evidence": {
+        "headSha": "0123456789abcdef0123456789abcdef01234567",
+        "claims": [
+            {
+                "observable": "setTempo refuses a tempo of 0 BPM",
+                "verification": "pnpm test:run src/modules/Transport/useCases/__tests__/setTempo.spec.ts with the guard reverted",
+                "observed": "the zero-tempo case fails on revert and passes on the head"
+            }
+        ]
+    }
+}
+```
 
-Author V1 replies reconstruct as repair records. Historical reviewer V1 replies
-remain readable as confirmations, while new confirmations use one canonical
-`sourdaw-repair-confirmation-v1` marker containing the pull request, thread,
-confirmation head, and SHA-256 digest of the entire canonical author record.
-The digest binds the complete evidence and summary without repeating those bytes.
-Reconstruction places confirmations beside, not inside, a finding's repair list
-and requires their digest to match an author record bound to that pull request,
-thread, and root finding. This remains structural evidence, not independent
-proof that a runtime repair is true.
+### i. Before any APPROVE publish
 
-### APPROVE: compact-v1 evidence
+- The whole `PR checks` workflow is `SUCCESS` on that exact head (step e).
+- `gh pr view <pr> --json mergeable` reads `MERGEABLE`; wait out `UNKNOWN`, and resolve `CONFLICTING`
+  with a new head and a fresh round.
+- Zero unresolved review threads, CodeQL `github-advanced-security` threads included.
+  `review:publish` counts every unresolved thread and refuses a fresh APPROVE over any of them before
+  writing anything, because an approval over open threads can never authorize its head and its
+  persisted publication would replay without one (#5436). Clear threads through
+  [repair](#k-repair), never by approving over them.
+- Your [global review](#f-review-round) of this exact head holds, and you would merge it; never
+  approve a head you judge unfit, whatever the draws say.
+- The document carries no inline comments and its body fits 600 Unicode code points; observations go
+  in the body as `Nit:` or `Optional:`, or are filed.
 
-New APPROVE publication requires `format: compact-v1` and
-`evidence: { headSha, claims: [{ observable, verification, observed }] }` in
-`review.json`. Bind `headSha` to the reviewed bundle head. Supply at least one
-claim, with every value a nonblank, trimmed, single-line string: `observable`
-is expected behavior from the request or contract, `verification` is the exact
-command, check URL, or source comparison, and `observed` is the decisive result
-or excerpt. Keep the body to a short conclusion. Publication posts only that
-reviewer-written body; the structured evidence stays unpublished in
-`review.json`/`acceptance.json`, bound to the head by `headSha`.
-`review:accept` validates only `acceptance.json`'s own head-bound evidence;
-`review.json`'s evidence is read by the orchestrator, not by any script. The
-posted body must fit 600 Unicode code points; reject excess and report the
-actual and allowed lengths, never truncate. Record completeness and head
-binding do not prove truthful execution; the orchestrator remains responsible
-for verifying the claims.
-REQUEST_CHANGES must not carry approval evidence.
-Unknown fresh formats fail closed. Historical unversioned documents remain
-readable only for exact reconstruction and recovery; never rewrite old bundles
-or posted reviews.
+### j. Publish the review
 
-Keep detailed logs in the session and the concise head-bound verification
-record in structured bundle evidence. The public approval carries only its
-short conclusion; the structured evidence never leaves the bundle.
+`pnpm review:publish <pr>` posts `review.json` as the reviewer App only when GitHub's live head
+matches the bundle; a fresh approval also requires matching base context. It validates the plan and
+the document, derives the head's canonical record, and refuses before any remote write when the
+draws miss the floor, a model exceeds the review cost ceiling, a reviewer model matches an author
+without `modelExhaustion`, or a value is unsafe. A bound published record replays exactly, without
+another post. A legacy bundle without a risk plan retains its historical shape. The full refusal and
+replay contract: [review records](references/review-records.md).
 
-### Stack children
+Post validated blockers as a `REQUEST_CHANGES` review BEFORE dispatching any repair.
+`REQUEST_CHANGES` removes the `ci:approved` label.
 
-A stack child may receive `REQUEST_CHANGES` while its verified parent branch is
-its base. Fresh APPROVE publication requires base `main`; for a
-registered child they also require the bundle's live context and proof that
-reconciliation contains the recorded parent's landed commit.
+On a clean round, the reviewer posts one APPROVE; that reviewer APPROVE on the current head records
+the delivery authorization in the head's dossier, and `review:publish` then re-applies the
+`ci:approved` label as the reviewer App, after its publication lock is released; a failed label write
+exits nonzero naming the pull request, and a plain re-run replays the review and retries it. That
+label event alone starts the heavy checks and `Gate`, so CI capacity is spent once per approved
+head. Re-running `review:publish` on the same head replays the review and re-applies the label,
+which restarts a `Gate` that a later label event failed or cancelled.
 
-## acceptance.json (legacy pre-policy heads only)
+### k. Repair
 
-`review:accept <pr>` remains readable for pre-policy heads, but it is no longer
-part of the delivery flow. The reviewer publication is the delivery
-authorization (#4584): a reviewer APPROVE on a plan-carrying bundle records one
-`delivery-authorized` event bound to its own just-posted review id and to the
-dossier digest, in the same persisted write as the publication bindings.
-`review.json` carrying `authorization` is refused. `review:accept` refuses a
-plan-carrying head whose dossier already carries that reviewer-recorded
-authorization — refusing the duplicate — and keeps working for legacy bundles
-without a risk plan. New deliveries never call it.
+1. Dispatch each validated finding with the [repair brief](#repair-brief). If a repair introduces a
+   new mechanism or outcome, reassess the PR scope under AGENTS.md Delegation first.
+2. The author commits the fix in the lane without pushing; read the diff yourself as in step c.
+3. Push through `lane:publish` from the protected primary checkout. Lane tooling owns every push.
+4. For each thread, record the repair as the author App:
+   `pnpm review:repair <pr> --thread <thread-id> --head <full-sha> --commit <full-sha> --summary "<one line>"`.
+   `--head` is the pull request's live head. `--commit` is the repairing commit: inside `base..head`
+   and strictly descending the commit the thread's root finding reviewed (it may equal the live
+   head). It refuses an already resolved thread, a stale `--head`, or a commit that predates or is
+   the reviewed revision. It never resolves; re-running the same head and commit posts nothing.
+5. The reviewer App confirms with `pnpm review:confirm <pr> --head <full-sha>`, resolving only the
+   threads whose recorded repair validates; any refusal resolves nothing and names the ambiguity to
+   fix before re-running.
+6. Run a fresh `review:prepare` and a new blind round on the new head.
 
-A pre-policy plan-carrying head is not deliverable and cannot be re-authorized
-in place: re-publication replays the recorded publication rather than posting a
-fresh reviewer APPROVE, so no reviewer-bound `delivery-authorized` event is ever
-recorded. This holds whether the dossier already records the old orchestrator
-acceptance authorization (`deliver` refuses its ids, which do not both bind the
-live reviewer approval) or records an old-flow APPROVE with no authorization at
-all (`deliver` refuses for want of one). Bundles with no `risk-plan.json` stay
-exempt and still merge. Such a stuck head needs a new commit and a fresh review
-round.
+No script writes free-form thread replies, so wrongly posted findings have no discussion route;
+clarify code, not threads. Full eligibility, ancestry, and crash-recovery mechanics:
+[repair and lock recovery](references/repair-and-lock-recovery.md).
 
-`deliver` consumes the record: a plan-carrying head bundle with no recorded
-authorization, an authorization whose digest is not the
-dossier-minus-authorization digest, or one whose `reviewId`/`approvalReviewId`
-do not both bind the live reviewer approval review refuses delivery before any
-merge. Legacy bundles without a risk plan deliver exactly as before.
+### l. Gate and deliver
 
-## Thread resolution
+Wait for the approval-triggered `Gate`. The merge is your decision: run `pnpm deliver <pr>` from the
+protected primary checkout, and the script squash-merges as the immutable author App after the
+reviewer APPROVE and a green `Gate`.
 
-Push the fix, then record it with `review:repair`, which runs as the author App
-and leaves the thread open. It reads the thread live and refuses one already
-resolved, a `--head` that is not the pull request's live head, or a `--commit`
-outside `base..head`: an ancestor of or equal to that head and not an ancestor
-of the pull request's `baseRefOid`, so the merge base and every pre-pull-request
-commit are refused. The repair must also strictly descend the reviewed commit
-from the thread root's live `pullRequestReview.commit.oid`; it may equal the
-live head. The reviewed commit itself, its predecessors, and commits that do
-not descend it are refused. Missing or malformed root review provenance and
-unavailable ancestry comparisons fail closed before posting. It binds the
-thread's own root comment as
-the finding, plus the commit, one-line summary, bounded evidence, and head, and
-posts a readable reply carrying one canonical `sourdaw-repair-v1` marker line;
-it never resolves. Re-running the same head and commit posts nothing and reports
-the already-recorded state.
+#### Validation order
 
-For ancestry `B -> P -> R -> H`, let `B` be the PR base and `R` the root finding's
-reviewed commit. `H` qualifies as the repair even when it is the live head.
-`P` predates the finding, and `R` is the revision that received it; neither
-strictly descends `R`, so neither can be recorded or confirmed as its repair.
+`pnpm deliver` squash-merges only non-draft, structurally mergeable PRs after BOTH validation points
+confirm the immutable reviewer Bot `APPROVED` the current head, with its recorded delivery
+authorization binding that live reviewer approval, and all threads resolved. Approval counts or
+matching logins cannot substitute for that actor identity. Merge executes as the immutable author
+App; receipt and tracker writes retain their author App identities.
 
-The reviewer confirms with `review:confirm`, a distinct identity from the
-author's. It resolves, in one pass with deterministic mutation ids, the threads
-whose author-recorded repair validates: same pull request, same thread, a
-recorded head equal to or an ancestor of the live head with the repairing
-commit still contained in it, finding equal to the thread's root comment,
-repairing commit inside
-`base..head` and strictly descending the thread root's live associated review
-commit (`pullRequestReview.commit.oid`), record well formed, evidence safe.
-A re-record on a descending head supersedes the thread's earlier record
-(#4589). The repairing commit may equal the live head. Missing or malformed
-root review provenance or an unavailable ancestry comparison fails closed for
-the whole batch before any confirmation or resolution. It also fails closed —
-a refused record, conflicting duplicate records no descending re-record
-supersedes, a thread already carrying a
-confirmation for a different record or a duplicated identical confirmation, a
-rebound identity, a mismatched finding, or a commit outside the reviewed range
-resolves nothing and reports the refusal, leaving the operator to fix the
-ambiguity and re-run. New reviewer replies carry only a canonical
-`sourdaw-repair-confirmation-v1` whole-record digest binding; the full V1 record
-stays in the author's reply. One historical full-record reviewer confirmation
-remains readable for exact replay. Mixed, duplicated, malformed, or stale
-reviewer markers refuse the whole batch before posting or resolving. After a
-partial post-success and resolve failure, replay recognizes the same record on
-a descendant live head, logs `repair-confirmation-replayed:<pr>:<thread>`, and
-resolves without posting a second confirmation.
-Both commands acquire the existing per-PR fenced mutation owner before authentication and
-hold it through their complete read, selection, write and replay operation. Cooperating
-processes sharing the Git common directory serialize with publication, delivery and native
-closure commands; another PR remains independent. Deterministic mutation IDs correlate
-receipts; GitHub does not deduplicate these requests by ID. This is local process
-serialization, not distributed exactly-once execution across separate clones or direct APIs.
+Head, head branch, base branch, body, canonical closing target, and stacked dependents must stay
+stable between reads. `deliver` remains main-only and refuses any other base; reconcile a landed
+parent through `lane:sync-parent`, republish the child against main, and obtain fresh review before
+delivery. Do not merge any other way.
 
-Each actual reply or resolve attempt journals the owner before the remote call. A failed
-attempt retains the owner and prints its exact recovery command:
-`pnpm deliver --recover-lock <pr> --owner <oid>`. After the recorded process fence is dead,
-recover through that existing route, then rerun the original repair or confirmation command
-with its original bound inputs. Recovery itself posts and resolves nothing. Replay reads
-existing records, skips posted confirmations, and ignores threads already resolved; it
-completes the remaining work without duplicating authoritative replies.
+#### CI admission
 
-`review:resolve` is retired. Valid invocations refuse before authentication or
-GitHub access; `--help` explains the replacement. Record every repair with
-`review:repair` and let the distinct reviewer confirm it with `review:confirm`.
-Historical records remain readable, but historical roots do not restore
-author-side resolution.
-No script writes free-form thread replies; wrongly posted findings have no
-discussion route. Clarify code, not threads. Resolve only when the current head
-addresses the finding, then obtain a new review. File out-of-scope feedback; do
-not grow the PR.
+Snapshot-backed CI admission is advisory: successful, failed, pending, absent, cancelled, malformed,
+or unavailable evidence does not itself block delivery. GitHub still enforces the live ruleset's
+required `Gate`; `deliver` refuses `BLOCKED` before any remote write, including receipts or merge
+attempts. Dormant required-CI admission retains pinned workflow-derived gate and complete-rollup
+rules from the launcher's pinned `origin/main` workflow copy; lanes cannot select or reshape it.
 
-## deliver
+#### Refusals and retries
 
-### Validation order
+GitHub structural mergeability independently gates base compatibility: delivery retries one
+transient `UNKNOWN`, refusing conflicts or a second `UNKNOWN`.
 
-`pnpm deliver` squash-merges only non-draft, structurally mergeable PRs after
-BOTH validation points confirm the immutable reviewer Bot `APPROVED` the current
-head, with its recorded delivery authorization binding that live reviewer
-approval, and all threads resolved. Approval counts or matching logins cannot
-substitute for that actor identity. Merge executes as the immutable author App;
-receipt and tracker writes retain their author App identities.
-
-Head, head branch, base branch, body, canonical closing target, and stacked
-dependents must stay stable between reads. `deliver` remains main-only and
-refuses any other base; reconcile a landed parent through `lane:sync-parent`,
-republish the child against main, and obtain fresh review before delivery. Do
-not merge any other way.
-
-### CI admission
-
-Snapshot-backed CI admission is advisory: successful, failed, pending, absent,
-cancelled, malformed, or unavailable evidence does not itself block delivery.
-GitHub still enforces the live ruleset's required `Gate`; `deliver` refuses
-`BLOCKED` before any remote write, including receipts or merge attempts.
-Dormant required-CI admission retains pinned workflow-derived gate and
-complete-rollup rules from the launcher's pinned `origin/main` workflow copy;
-lanes cannot select or reshape it.
+For a crashed delivery, repair, confirmation, closure, or review publication, follow the
+operation-specific [lock recovery](references/repair-and-lock-recovery.md); recovery itself does not
+perform the original operation.
 
 ### Recovering a blocked Gate
 
-When a required check fails because of a filed defect, preserve the original
-evidence with the owning issue: the run URL and attempt, full head SHA, failed
-check and matrix shard, relevant failure excerpt, and any retained artifacts.
-Keep that failed run attached to the original head. A matching issue, a green
-nightly, or a later successful attempt alone does not establish recovery.
+When a required check fails because of a filed defect, preserve the original evidence with the
+owning issue: the run URL and attempt, full head SHA, failed check and matrix shard, relevant failure
+excerpt, and any retained artifacts. Keep that failed run attached to the original head. A matching
+issue, a green nightly, or a later successful attempt alone does not establish recovery.
 
-Verify that a fix changes the cause in the code or check scope and that a
-regression test exercises the reported failure conditions and outcome. For a
-scope defect, inspect the changed-path decision and prove the resulting `Gate`
-still requires every selected check. A filed issue or a change that merely
-touches a nearby path is not this proof. If no relevant fix is available, leave
-the pull request blocked and the cause issue open with the failure evidence;
-there is no retry, empty commit, scope exception, or delivery waiver.
+Verify that a fix changes the cause in the code or check scope and that a regression test exercises
+the reported failure conditions and outcome. For a scope defect, inspect the changed-path decision
+and prove the resulting `Gate` still requires every selected check. A filed issue or a change that
+merely touches a nearby path is not this proof. If no relevant fix is available, leave the pull
+request blocked and the cause issue open with the failure evidence; there is no retry, empty commit,
+scope exception, or delivery waiver.
 
-After the verified fix lands on `main`, check whether its commit is already in
-the blocked pull-request lane. If it is absent, merge that actual fix from
-`main` into the owned lane. This is justified only when the fix changes the code
-or scope that produced the failure. Do not rebase or add an empty commit to
-trigger another run. Publish the resulting head through `lane:publish`, then
-require a fresh `Gate` on that changed code and a fresh review of the new head
-before delivery. If the new check fails, retain the new failure as evidence and
-continue fixing the cause; do not rerun it to obtain green. Diagnostic retries
-never replace the original failure or authorize `deliver`.
+After the verified fix lands on `main`, check whether its commit is already in the blocked
+pull-request lane. If it is absent, merge that actual fix from `main` into the owned lane. This is
+justified only when the fix changes the code or scope that produced the failure. Do not rebase or
+add an empty commit to trigger another run. Publish the resulting head through `lane:publish`, then
+require a fresh `Gate` on that changed code and a fresh review of the new head before delivery. If
+the new check fails, retain the new failure as evidence and continue fixing the cause; do not rerun
+it to obtain green. Diagnostic retries never replace the original failure or authorize `deliver`.
 
-### Refusals and retries
+### m. After delivery
 
-GitHub structural mergeability independently gates base compatibility: delivery
-retries one transient `UNKNOWN`, refusing conflicts or a second `UNKNOWN`.
+- Verify the issue is closed and its board item reads Done; project automation may not move it.
+- Delivery removes its own lane (below). When it reports cleanup pending, `pnpm lane:cleanup
+--status` names the refusal and the scheduled job retries; `pnpm lane:remove <path>` from outside
+  the lane remains the manual route, and its author lock remains until removal succeeds.
+- Delete the leftover local branch, which neither route deletes (AGENTS.md
+  [Worktrees](../../../AGENTS.md#worktrees)).
 
-## The delivery lock
+#### Local cleanup after delivery
 
-`deliver` serializes each PR with a protected-primary Git ref pointing to a
-strict owner blob. Acquire with zero-ref Git compare-and-swap; release requires
-the acquired object ID. Hold ownership from before authentication through merge
-or already-merged recovery and tracker completion. Validate and refuse existing
-owners without waiting or automatic takeover, regardless of liveness. Crashes
-leave the ref; only `deliver --recover-lock` clears it.
+Once merged recovery or delivery completes its receipt and tracker writes, and its serialization is
+released, it queues and attempts native lane removal. A cleanup refusal leaves delivery successful
+and reports pending cleanup. Failed delivery never attempts cleanup. A periodic deterministic macOS
+job recovers missed queueing and crashes by rescanning registered author and legacy detached review
+roots; no model automation or reviewer-created checkout is involved.
 
-`pr:supersede` and `pr:retire` use this same per-PR owner for every live PR read, replay, comment,
-delete, close and compensation. A pre-close refusal releases only after verified
-rollback restores the original OPEN comment-ID set and removes every comment the
-invocation created; the overall command still fails. This permits corrected
-lineage on a later invocation without letting another native closer adopt markers
-while their creator can still roll them back. Retaining stale lineage alone would
-prevent such a corrected retry.
-An acknowledged created comment ID must be observed with its exact owned marker before deletion
-and must be absent after the acknowledged deletion. Omission from a later read alone cannot prove
-rollback; missing or altered created markers retain the owner without an unverified deletion.
+`lane:cleanup` writes identity-bound pending/protected/removed records before attempting removal,
+under the primary `.agents/lane-cleanup/`. Safety refusals retry on the ordinary schedule; unavailable
+inspection uses capped backoff. Successful delivery wakes its matching head while respecting shared
+inspection backoff. Every attempt repeats live exact-head
+merge/supersession and local safety proof through `removeLane`; records grant no deletion authority.
+Dirty, untracked, non-regenerable ignored data, active Git work, open files, incomplete process
+inspection and foreign locks survive. A replacement directory or changed HEAD gets a separate delayed
+record and must earn its own fresh proof. Git CAS serialization recovers only a proven-dead worker.
 
-Ambiguous comment results, altered markers, attempted closure and unverified or
-failed compensation retain the journaled owner and print its exact recovery
-command. After that owner's process fence is dead, use the existing
-`deliver --recover-lock <pr> --owner <oid>` route. It can reconcile stable OPEN or
-CLOSED unmerged observations, but recovery does not prove supersession complete:
-rerun the original closure command with its verified head and complete bound record or lineage.
-Closure success is logged only after its mutation owner releases. Retirement preserves its exact
-marker and retained owner after ambiguous writes, failed or unverified compensation, or uncertainty
-after a close attempt; a verified complete OPEN rollback releases ownership while still refusing.
-Both native closers observe the bound PR core again after their marker/review reads and immediately
-before the close mutation, without fetching comments in that last observation. They compare PR
-number/node identity, head, source, base, state and closure facts. Post-close proof and CLOSED replay
-also finish with an independent core observation. A moved or unreadable witness refuses; safe
-pre-close compensation remains available, while uncertainty after a close preserves the evidence
-and owner. GitHub's `ClosePullRequestInput` has no expected-head comparison, so this bounds the
-client's split-read composition gap without eliminating external changes after its final read.
+Run `pnpm lane:cleanup:install` from approved current sources to install or refresh the user launchd
+job. It materializes the worker's verified `origin/main` local-import closure, requires only Node and
+existing Git/GitHub executables, and checks runtime bytes and manifest against approved Git objects
+before every execution. It can refresh only the canonical protected-primary bootstrap from approved
+sources when its HEAD/index or previous verified installation proves the current bytes; a local edit
+refuses. It preserves other primary dirt and never depends on the author lane surviving. Install
+then verifies the job's first launchd launch and, when launchd cannot initialize it, boots the job
+out, removes the plist and fails with the remediation. On macOS a primary on an external volume needs
+the pinned Node binary granted Full Disk Access (or Removable Volumes access). Consult
+`lane:cleanup --status` from a current checkout, `.agents/lane-cleanup/worker*.log`, and
+`launchctl print gui/$(id -u)/com.sourdaw.lane-cleanup` for retained work and scheduler status.
 
-Launch supersession and retirement through the protected primary package route. Their pinned
-snapshot closures include the CLI, transaction, GitHub adapter and record parsers;
-the launcher freezes POSIX `ps` or Windows PowerShell before the default process
-fence is acquired. POSIX snapshots own a detached process group. Calling the
-transaction script directly does not supply this trusted process-tool boundary.
+## Briefs
 
-Recovery refuses a live recorded process fence, adopts the lock under its own
-fence before reading anything, then requires two matching remote reads. It
-never merges, retargets, posts, or closes, and accepts only the immutable
-author Bot or historical orchestrator User as merger. Clearing records a
-dead-owner-keyed receipt; repeat recovery replays it without GitHub access.
-The shared owner does not identify the original command. Fresh recovery and receipt replay guide
-rerunning that original operation with its original bound inputs; they do not prescribe delivery,
-certify completion or authorize a merge. All original operation and delivery gates still apply.
+AGENTS.md [Delegation](../../../AGENTS.md#delegation) lists what every dispatch contains; these
+templates add how to do the work. Keep each a checklist.
 
-Already-merged recovery accepts the immutable author Bot or historical
-orchestrator User as merger; fresh delivery requires the author App and rejects
-a fresh orchestrator-user merge. Actor type and immutable ID must agree in both
-paths.
+### Author brief
 
-## Review-publication lock recovery
+Why: an author who must rediscover the design, the code to imitate, and the area's traps re-decides
+choices already made and spends its budget exploring; a senior engineer hands a junior the steps.
 
-`review:publish` and `review:accept` serialize each PR with their own owner ref.
-A run that dies after the journal records `remote-mutation-attempted` but before
-GitHub answers leaves a dead owner that recovery can neither release nor replace
-with a releasable one: the journal cannot prove the POST never landed, so the
-default refusal has to hold, and adoption only re-creates the same refusal.
+- **Delegation fields**: objective, lane, branch, paths, exclusions, dependencies, preservation
+  guarantees, acceptance conditions, integration observable, exact checks, and, for a handwritten
+  path under `src/modules/`, `src/components/`, or `electron/`, the user-observable How-to-test
+  steps. Trace each observable to its producing line and each mechanism to every route first.
+- **Approach**: the chosen approach and the rejected alternative with the reason, so the author does
+  not re-decide the design.
+- **Where to work**: the files and functions to change and the existing code to imitate, as
+  `path:line`.
+- **Step order**: first a failing spec that reproduces the behavior, then the change, then callers,
+  then formatting.
+- **Traps**: the domain skill under `.agents/skills/` and the module `AGENTS.md` to read, the
+  architecture rules that bite in this area, and the generated artifacts the change will move
+  ([step c](#c-before-publishing)).
+- **Per-step verification**: the exact command for each step and its expected result — the new spec
+  fails before the change and passes after.
+- **Stop rule**: when the code contradicts the brief — a file differs, a route is uncovered, an
+  observable is not emitted — stop and report instead of improvising. Brief errors are the
+  orchestrator's defect.
+- **Commit**: the author commits in the lane with the conventional subject that will title the PR,
+  and never pushes.
+- **Return**: status, changed paths, decisive evidence, blockers.
 
-`review:publish:recover` refuses a live fence, authenticates the recorded
-publication identity, and requires the retained payload digest to match the
-bundle document plus two stable inspections of the same head. When the journal
-itself proves no mutation landed — the owner is still `prepared`, or it carries
-an HTTP 422 marker — absence releases the owner, and its receipt makes repeat
-recovery idempotent without GitHub access.
+Depth limit: name the functions, patterns, and order; leave naming, local structure, and the code
+itself to the author. Never write pseudo-code. Detail scales inversely with tier: an economy-tier
+author gets more explicit steps, a strongest-tier author gets intent plus constraints.
 
-The live main ruleset dismisses a reviewer approval when the pull request head moves
-past it, so a landed approval then reads back as DISMISSED. Recovery accepts that one
-state difference, and only for the reviewer App's APPROVE document once the live head
-differs from the journaled head; every other field must still match exactly. It binds
-the publication, records no delivery authorization (a dismissed approval of a stale head
-authorizes nothing), and releases the lock. A DISMISSED review on an unmoved head, a
-dismissed REQUEST_CHANGES, or a dismissed review from another actor keeps the
-ambiguous-or-non-exact refusal. A dismissed exact copy of the document from any actor
-other than the sanctioned other publication identity (the reviewer App or the
-orchestrator) is refused as unauthorized landed review evidence, exactly as a live copy
-is, whatever the head or event: unlike the reviewer's own dismissed approval, it needs
-neither a moved head nor an APPROVE document to be refused. The two
-inspections must agree: an approval that stands at the first read and is dismissed at
-the second refuses as a change during reconciliation, moved head or not.
-`review:publish` and `deliver` never treat DISMISSED as live.
+### Repair brief
 
-`--attest-absent` is the operator's explicit assertion that the review POST never
-landed, and it is the only path that releases an owner whose sole failing
-condition is a missing definitive answer. It is legitimate only after
-independently establishing that the remote holds no review at the journaled head
-— for instance, the owning run has been dead long enough that a landed POST
-would be visible. The flag adds one term to the release decision; every other
-protection still runs and keeps its refusal: a live fence, ambiguous or non-exact
-landed review evidence, unauthorized landed review evidence, a payload digest
-that differs from the retained lock, and a missing or mismatched bundle. The
-release records the operator attestation in its own receipt version rather than
-inferring it from an older receipt, so replay distinguishes it from a
-journal-attested absence and a receipt that did not record it never gains it.
+Why: a repair written from reviewer prose anchors the author on the reviewer's framing, and a repair
+that loosens a check without naming what stays rejected silently widens it.
 
-## Receipts
+- The finding restated in your own words, never the reviewer's prose; authors never judge findings
+  against their own work.
+- The repair approach, with where to work and the step order as in the author brief.
+- When the fix loosens a validator or check: the inputs that must still be rejected and the cases
+  that must still fail, each with a spec.
+- The stop rule from the author brief.
+- Commit in the lane without pushing; return status, changed paths, decisive evidence, blockers.
 
-Same-head delivery receipts preserve the issue-comment REST endpoint's
-ascending comment-ID order for adjacency and newest authority; timestamps only
-prove App-owned comments remained unedited.
+### Reviewer brief
 
-## Launcher trust boundary
+Why: a reviewer given anything but the head, the bundle, and one stance is anchored, and a reviewer
+without a posture and a probe duty returns a pass that proves nothing.
 
-Run `lane:publish`, `deliver`, `pr:supersede`, `pr:retire`, `issue:claim`, and `issue:reconcile` through the
-protected primary checkout's package route; `review:accept` remains only for
-legacy pre-policy heads. This
-is the snapshot-backed write trust boundary: launcher and whole script closure
-must match one pinned `origin/main` commit and come only from the primary
-repository. Lane files are data, never executable delivery code. Lanes
-predating the launcher or trailing `main` can publish and deliver without
-first merging.
+- **Target**: the bundle path printed by `review:prepare` and the full head SHA.
+- **Stance**: exactly one, named for the failure mode that admits it, plus the most specific
+  matching file under [`.agents/skills/review-stances/`](../review-stances/README.md), never a
+  broader one in addition, or none when no file matches.
+- **Baseline probe**: establish what must break for each existing check to fail and whether it
+  observes what its name claims; name a mechanical probe (revert the behavioral hunk or apply one
+  targeted mutation, then run the named spec through
+  `pnpm guard --profile focused -- pnpm test:run <spec>`). Remaining green fails the
+  round.
+- **Isolation**: read the fixed commit with `git show <sha>:<path>` and the bundle; never create a
+  worktree or clone or install dependencies. Probes run only through an explicit exclusive handoff
+  of the clean, committed author lane under
+  [reviewer isolation](../review-stances/README.md#reviewer-isolation). If no handoff or execution
+  is available, report the exact mutation, named check, and limitation; an unrun probe is never a
+  pass.
+- **Posture**: try to break the change and report the strongest surviving finding with concrete
+  failure inputs or state, or report none. Finding nothing is success; hedged findings without a
+  concrete break are discarded.
+- **Report**: per finding `path`, `line`, `side`, `defect`, `consequence`, `done`, and the
+  reproduction input, state, or mutation with its observed result; or `clean` plus the probe that
+  ran and its result. Findings go only to the orchestrator.
+- **Model**: economy or standard tier on a Review-ceiling model family, different from the PR's
+  `Authored by` model when one is available, otherwise recorded through `modelExhaustion` (step h).
+  A harness that cannot select models uses
+  [headless reviewer dispatch](references/review-records.md#headless-reviewer-dispatch).
 
-This isolates lane-controlled files, not operator-running code. The pre-launcher
-operator environment is trusted; same-account processes can read credentials.
-Snapshot and token-bearing children discard redirecting overrides (Node
-loaders/preloads; Git, GitHub CLI, GitHub Actions, and App configuration) and
-use launcher-resolved `git` and `gh`. During credential lookup and isolated
-execution for the orchestrator User role, discard inherited GitHub, Git, and
-Node overrides the same way.
+Never give reviewers other reviewers' prose, the author's transcript, or orchestrator reasoning. The
+author brief's approach and reasoning never reach a reviewer, the bundle, or the PR body.
+
+## Freeze
+
+At five reviewer `REQUEST_CHANGES` rounds a PR is frozen to fresh publication under AGENTS.md
+[Review](../../../AGENTS.md#review); mechanics in [review records](references/review-records.md).
+
+## References
+
+- [Lane publication and maintenance](references/lane-publication.md): open on a `lane:publish`
+  refusal about the branch name, lane resolution, commit authorship, labels, milestone or project,
+  on an off-convention lane, or before `branch:prune`.
+- [Review records](references/review-records.md): open on a `review:prepare` or `review:publish`
+  refusal, a classification question, a replay or reconstruction, a frozen PR, a harness that
+  cannot select reviewer models, a stack-child approval, or a legacy `acceptance.json` head.
+- [Repair and lock recovery](references/repair-and-lock-recovery.md): full repair and confirmation
+  eligibility, the delivery lock, review-publication lock recovery, and receipts; open on any
+  `review:repair` or `review:confirm` refusal or a crashed operation.
+- [Closure and retirement](references/closure-and-retirement.md): open before `pr:supersede` or
+  `pr:retire`.
+- [Lane adoption](references/lane-adoption.md): open before taking custody of a released PR with
+  `lane:publish --adopt-pr`.
+- [Historical stack admission](historical-stack-admission.md): open when a stack child has neither
+  descriptor nor fork marker and must recover its original parent.
+- [Trust boundary](references/trust-boundary.md): open when a launcher snapshot or environment
+  refusal needs explaining.

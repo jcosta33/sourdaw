@@ -3,6 +3,8 @@
 
 export { clipSelectionStore, defaultClipSelectionState } from './clipSelectionStore';
 export type { ClipSelectionState, MarqueeSelection } from './clipSelectionStore';
+export { deviceSelectionStore, defaultDeviceSelectionState } from './deviceSelectionStore';
+export type { DeviceSelectionState } from './deviceSelectionStore';
 export { markerStore } from './markerStore';
 export type { MarkerStoreState } from './markerStore';
 export { readMusicalRange } from './readMusicalRange';
@@ -28,6 +30,7 @@ export {
 export type { TimelineViewState } from './timelineViewStore';
 
 export { activeRecordingRef } from './activeRecordingRef';
+export type { RecordingMidiAdmission } from './activeRecordingRef';
 
 export { trackStore, defaultTrackState, sanitizeTrackSnapshot } from './trackStore';
 export type {

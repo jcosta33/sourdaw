@@ -1,686 +1,266 @@
-# Lesson library: behavior and invariant defects
+# Standing probes: behavior and invariant defects
 
-Lesson library for behavior and invariant defects — the generic class a derived stance must
-specialize beyond, never a stance name to dispatch: attack what the change does, not what it
-claims — read the whole unit at head, state the invariant it must maintain, and try to construct
-the input or state that breaks it. Per the Review section of `AGENTS.md`, this directory is a
-lesson library, not a stance menu: an escape — a defect that reached `main` whose defect class
-matches this file — is recorded here as a lesson, and every dispatch whose derived stance matches
-this file carries its lessons. Lessons state the escape, the blind spot, and the probe that would
-have caught it. Keep each lesson short enough to paste into a dispatch. A behavior-risk stance
-matching no more specific file carries this file; a stance with a more specific match never
-carries it in addition.
-
-### Explicit preservation must retain its whole owner and every forbidden operation
-
-Issue [#5339](https://github.com/jcosta33/sourdaw/issues/5339) reports an unresolved protection admitting
-the requested edit. PR [#5277](https://github.com/jcosta33/sourdaw/pull/5277) introduced the coordinated
-level suite, including a Strings restriction expected to refuse; that test introduction does not
-prove the defect's introduction. The earliest introducing revision and historical review stance or
-tier remain unproven. The proven coverage gap is an owner-and-route preservation probe.
-
-Attack a reserved selection phrase colliding with a display name, a missing quoted compound owner
-containing a real name, a title-cased quality beside a real missing-object control, and an unclosed
-VCA quality beside its strict protection. A whole-track fader exception must permit gain while
-refusing pan and rename, including commands touching owned objects through canonical owner checks.
-Retain the exact selected identity through pending-card refinement and compiled replacement after
-selection moves. Independent clauses and later positive protections must restrict exceptions,
-never combine them into wider permission. Inspect the recorded basis and actual proposal scope.
-Any compatibility mask must prove full consumption of the original clause; a known control beside
-an unknown clip or unread suffix must not discharge the residual restriction.
+The generic defect class a derived stance must specialize beyond, never a stance name to dispatch: the
+change does something other than what it claims, or breaks an invariant its callers, readers, replays
+or siblings rely on. A behavior-risk stance matching no more specific file carries this file; a stance
+with a more specific match never carries it in addition. Each probe names the failure mode, the input,
+state or mutation to run, and the check that must go red. Report the concrete break or none.
 
 ## Standing probes
 
-- Read the full unit the diff touches at head — the function, its callers, its callee contracts —
-  never the hunk alone. A hunk shows what changed, not what the code now does.
-- State the invariant the change maintains in one sentence, then construct the input or state that
-  violates it. Report the concrete failure scenario or report that none survived; never hedge.
-- Where the change models another component's state — a mirror, a shadow copy, a re-derivation —
-  enumerate the owning component's contract clauses from its source and check the model against
-  every clause, including the ones today's tests do not exercise.
-- When a change introduces or repairs a detector that asserts a global invariant over a registered
-  population — sanitizers, storage adapters, encoders, any registry of interchangeable components —
-  enumerate every registered adapter at head and verify the invariant against each, never only the
-  adapters the incident or the diff names. The population, not the incident report, bounds the
-  sweep; an unverified member of the same class is the finding.
-- Probe every boundary the change establishes or relies on one quantum to each side: the value the
-  bug report named, and the adjacent value the report did not name.
-- A green gate is not evidence: name what would have to break for the existing checks to fail, and
-  whether anything observes it.
-- When the change touches a shared control or a component that shares its input model, read the
-  sibling components on the same surface before attacking: their comments carry measured browser
-  behaviour (a `lostpointercapture` for a pointer the control never owned, a window or tab switch
-  that never delivers `pointerup`) that the change must survive, and a stance that reads only the
-  changed file re-derives, or misses, what a sibling already pinned.
-- When a change stores timed events for later delivery — notes, automation stamps, scheduled
-  commands — state its ordering rule, its release rule for every way playback leaves the timeline
-  (stop, locate, loop wrap, a clear of the window), and its per-occurrence rule for repeated keys;
-  a store that answers "is there a later note-off for this key" without "which occurrence does it
-  belong to" releases the wrong note. A clause with no enforcing route is the finding.
-- When a doc sentence calls two commands atomic, trace every command in the pair to the branch that
-  can refuse it after the fence has made them visible; visibility-atomic and success-atomic are
-  different claims, and the sentence must say which one holds and what a refusal leaves behind.
-- When a set or bitmap models the state of another thing one bit per key, ask what the model cannot
-  represent — two of one key, an order, a count — and whether the contract says so where a producer
-  of that state will read it.
-- When a diff closes one door onto a state — a placement, a chain, a mode, an owner — enumerate on
-  the live head every route that sets that state: the constructors' defaults (a `home` a release
-  returns to), every release or return path, every removal arm, and every command that re-derives
-  it; then drive the smallest project through each route the diff did not guard. A door the diff
-  leaves open while its doc says the state is unreachable is the finding, and the doc is what
-  blocks.
-- When a change decides a syntax shape by hand — a header, a body, a terminator, a delimiter —
-  enumerate the grammar-legal forms the new rule does not name and drive each one in both
-  directions, because a shape it wrongly refuses is a command that cannot run and a shape it wrongly
-  accepts is a check that did not happen; a case that pins the refused forms states the bound and
-  hands the fix off, it does not close the defect.
-- Where a component decides whether a downstream consumer will accept its output — a reservation, a
-  quota, a fitted payload, a receipt — measure the admitted unit with the _consumer's_ own
-  expression, re-derived from the consumer's source. Two expressions of one budget stay
-  self-consistent for as long as each is tested against itself, and the divergence shows up as a
-  refusal at the consumer that the producer believes it paid for.
-- For every refusal a change adds or moves, state which units it stops and which reason each stopped
-  unit records. A failure that is a property of one unit but is read as a property of the run
-  reports every later unit under a cause that never happened, and the volume of that report hides
-  the single unit that actually failed.
-
-## Lessons from escapes
-
-### 2026-10-25 — a protected clip or control became a whole track (introduced by PR #2811)
-
-PR [#2811](https://github.com/jcosta33/sourdaw/pull/2811)
-(`beb59d2e74a4d98992b692ff07a40635db22ee39`) inferred whole-track protection from a track name
-contained in raw unchanged text. With a Bass track owning a Bass Verse clip, `leave Bass Verse
-unchanged` could protect the whole track and block a sibling clip edit. `leave Bass fader
-unchanged` requires control-facet authority rather than whole-track authority. The historical
-review stance, prompt and tier are unestablished.
-
-Use canonical whole-owner facts. When a track and a clip or device share the exact name Bass,
-retain actual track candidates conservatively while leaving the mixed original range unconsumed
-for generic non-track admission. Probe the real producer, initial recorded facts, a permitted
-sibling clip edit, and later admission against a frozen whole owner's actual descendants.
-Independent `leave Bass alone` and structural or frozen roots must remain whole restrictions
-beside a separately protected clip.
-
-### 2026-10-24 — a fenced transaction had no native process-tool admission (introduced by PR #5639)
-
-PR #5639 serialized supersession with the shared fenced owner, but its package command still
-called the transaction script directly. The actual command refused before PR I/O because the
-default fence had no launcher-pinned `ps`. Strongest-tier review was present; the missing stance
-was actual native CLI and platform-tool admission, while lock fixtures injected owner fences.
-
-Trace a newly required capability from the package command through the protected launcher to
-its real consumer. Invoke that route with controlled remote ports and the default owner fence;
-observe the acquired process identity before the first PR read. Restoring a direct package route
-or omitting the command from the launcher's fenced set must fail that probe before remote I/O.
-
-### 2026-10-22 — a controller-only take was stored and silent (escaped via PR #5338)
-
-PR #5338 (`866a97def`) recorded channel controllers and pitch bend into the MIDI take, and a
-take of a pedal or mod wheel with no notes committed its rows but never a note list. Every
-playback and export reader admits a MIDI clip by its note list (`scheduleMidiNotes`,
-`resolveStoredControllerClips`, the Yeast route, `scheduleTrackClips`), so the take was stored,
-visible and silent. The blind spot was reading the recording writers and their redo snapshot
-without reading the readers' admission gates; the specs always recorded a note beside the
-controllers. The historical review stance, prompt and tier are unestablished.
-
-A recording change that stores a new kind of row must be checked against every playback
-reader's admission gate, including a take made of only that kind of row. Enumerate the readers
-of the stored kind on the live head and read each one's skip condition, then drive a take of
-that kind alone through commit, undo, redo, live playback and export, and require the take to
-be heard. Restoring any reader's skip must fail a case that drives a controller-only clip with no
-note list through that reader.
-
-Fix a playback reader's admission rather than write a structural placeholder (an empty note
-list) into shared CRDT state: the placeholder races with a peer's concurrent first write to the
-same key, and a clip derived by split, copy, duplicate or paste (#5470) never carries it.
-
-### 2026-10-21 — final cleanup changed storage state after result construction
-
-PR #5274 (`40baa0716b`) set a storage-only leak reason and retained message before its
-existing `finally` cleanup attempt. Complete proof on that final attempt could delete the
-owned payload while the returned result still said it was retained. The historical review
-stance, prompt, and tier are unestablished. A result assembled before finalization was not
-an oracle for the final state.
-
-Probe a real guarded child and owned payload with the first release refused and the final
-direct and claimed release permitted. Assert exact owner and claim removal alongside the
-reported reason and output. Persistent refusal must still report retention, and an earlier
-process or resource failure must remain a failure after storage removal.
-
-### 2026-10-11 — a requested crop anchor displaced render history (PR #5323 review repair)
-
-The orchestrator packet prescribed the requested beat-four anchor without tracing
-`resolveHistoryAwareRenderContext`, which expands bounded renders to beat zero for device
-history. The resulting moving-layer inverse sampled the crop's future during warmup and
-lost the fade in the retained crop; its positive-compensation seed also used the wrong beat.
-This was a dispatch-origin error as well as an implementation and review gap.
-
-Trace the actual render origin through history expansion before prescribing an anchor.
-Require terminal gain and pan writes to match a whole render on both sides of the crop under
-a tempo ramp. Add a layer whose beat-zero value differs from its requested-start value,
-and prove positive compensation changes only write times while its zero-time seed uses the
-actual render origin. Keep crop selection distinct from the scheduling clock.
-
-### 2026-10-11 — offline modulation retained a second tempo inverse (#5209, exposed by #5243)
-
-PR #5209 (`54ff77cd1`) sampled modulation and moving adjustment layers through a private,
-step-only seconds-to-beat helper with inverted units. PR #5243's Transport ramp integration
-removed the modulation caller's `defaultTempo` and `projectBeat` aliases at its actual landing
-(`83a92c4005`), leaving a runtime ReferenceError as well as ramp and subregion drift.
-The historical reviewer prompts and tiers are unestablished; the missed probe is established.
-
-Trace both projection directions from captured tempo state to every terminal binding: AudioParam,
-segment writer and curve writer, with track, clip and absent automation lanes. Drive a flat tempo
-and a linear ramp from a nonzero region anchor; independently integrate the ramp and require the
-actual delivered value, quantisation, slew and compensated write clock. Include both moving-layer
-schedulers and both stem branches. Replacing the Transport inverse or losing the region anchor
-must fail the terminal-output cases. Require the inverse only for moving consumers so lane-only
-native recorders remain valid, and preserve native refusal of enabled modulation and layers.
-
-### 2026-09-28 — elapsed cohort timeout retired progressing instruments (introduced in `9783731236`; exposed after PR #3982)
-
-The 10-second `waitForDevices` deadline measured the whole cohort from wait entry, even while Levain decoded files continued to complete. A cold 161-file bank with five consumers therefore timed out after 39 files and rolled back all five live nodes. The method also returned `void` after timeout, so a committed demo/template could appear ready without usable instruments. The timeout commit is associated with PR #2035, but that association does not prove its readiness policy was reviewed there. PR #3982 deliberately fixed cohort isolation and explicitly deferred progress and caller outcomes to #3318; do not charge its bounded review with that missing promise.
-
-Probe: drive real decoded-file completions to every captured consumer at 39/161 just before the old deadline, then finish all 161 and require five worklet-acknowledged ready results without rollback. In the same fixture, leave one peer stalled for its own full inactivity window while another progresses, and require only the stalled peer to fail. Hold the final worklet acknowledgement to prove decoded completion alone never means ready; make a committed template report current failure without changing project identity, while obsolete cancellation stays silent.
-
-### 2026-09-28 — browser exception and validation scope disagreed (escaped via PR #4854)
-
-PR #4854 exempted known review tooling and agent documentation from browser selection, but did not
-carry that classification into the independent validation path filter. A semantic-review-only PR
-therefore selected the complete browser matrix: `scripts/**` claimed web work and an `.agents/*.md`
-lesson entered the unclassified fallback, promoting Rust, server and web checks as well.
-
-Blind spot: the review proved the browser selector in isolation and did not trace the same path list
-through the validation workflow's job conditions. Probe: feed a real mixed review-tooling and agent-doc
-diff through both planners, then inspect the effective jobs and the required Gate result for a failed,
-cancelled or skipped selected script suite; retain a product/unknown-path counterexample.
-
-PR #4902 exposed the same omission one level earlier: four changed delivery and review helper paths
-were absent from the explicit tooling-name set, so the browser selector classified them as product
-work even though the validation workflow correctly ran the script suite for a tooling plan. Blind
-spot: the review verified the registered names without tracing every path in a real change through
-the classifier. Probe: classify the full changed-path set, including root specs and helpers, and
-require tooling-only paths to retain CodeQL and the tooling suite while mixed, unknown, lookalike,
-and rename paths remain broad.
-
-PRs #4484 (`4504a698`, `checkStancesRecord`), #4932 (`33c27947`, semantic corpus and change facts),
-and #4933 (`d03336ec`, measurement) added Node-only files without completing those explicit tooling
-sets. The missing probe was to classify each complete changed-path set, including root and nested
-specs, helpers, and corpus inputs, then require static and security checks without browser jobs for
-known tooling while mixed product, config, and unknown paths stay broad. The historical reviewer
-stance and tier are unavailable; this records the missing probe, not a claimed review outcome.
-
-### 2026-09-28 — the semantic review's own budget had two expressions, and one unit's refusal starved the plan (escaped via PR #4491; merge `9effe3689c`)
-
-PR #4491 shipped the advisory scan with its planner reserving a hand-rolled wrapper — `JSON.stringify({unit, evidence: {}})` plus the serialized questions — while the provider refuses a request by measuring `JSON.stringify({state, questions})`. The envelope (the outer braces and the `state`/`questions` key names) was never paid for, so an admitted unit measured `22 − fittedRegions` bytes over the cap. On the run that surfaced it, one unit measured 24,585 bytes against a 24,576-byte cap — nine bytes over, at an upper bound of thirteen fitted regions (the overage is `22 − fittedRegions` only when the fitter left no slack, so any slack lowers the count) — and because both per-request size refusals shared `budget_exhausted`, which the admission loop reads as "the run cannot continue", the oversized unit's own refusal began the cascade: the scan attempted 5 of 42 planned units in 3.4 seconds of a 120-second deadline and reported 37 unassessed, 36 as `budget-exhausted-before-admission` plus the oversized unit itself under `budget_exhausted`.
-
-Blind spot: review checked the reservation's arithmetic and each refusal's code in isolation. Nothing measured a planned unit with the sender's own expression, and nothing asked which units a refusal stops or whether the reason it records names what happened — so two self-consistent expressions, and a per-unit failure reported as run-wide exhaustion, survived every round until someone ran the command against a real pull request and read the report's own arithmetic.
-
-Probe that would have caught it: plan the change under review, then measure the deepest unit the planner admits with the provider's own expression (`JSON.stringify({state, questions})`) against the profile's own ceiling — a positive overage is the finding, and the fitted-region count that produces it is the reproduction to keep. Then drive a plan whose middle unit trips each refusal and assert which units are never attempted and what reason each records.
-
-### 2026-09-27 — member expression overtook its own release (escaped via PR #805)
-
-PR #805 replaced one MIDI event tail with a global note tail and per-channel expression tails. Its first review caught unrelated-channel expression delayed by a pending note, but the revised note-off still waited only on the global note tail. A pending note-on followed by pressure, CC74, bend and release therefore committed the note before the last gestures reached it; the next note on that member channel could start before the old bend finished.
-
-Blind spot: the review checked note-on before expression and unrelated-channel latency, but not expression before note-off or the next note. Probe: hold the note-on's async worker, admit pressure, CC74, bend, release and another note on the same channel, then observe the recorded first note's three curve points and the exact execution order. Keep an idle unrelated channel immediate.
-
-### 2026-09-27 — a covered-source promotion that outranked every unrelated collected spec (escaped via PR #4826; measured in review of that head; fix handed to #4846)
-
-PR #4826, the change that closed #4824, promoted a source a contract-carrying spec covers into the
-contract tier so the spec could not outrank the source it tests. It gave that source the
-non-spec-before-spec rank at the front of the tier, ahead of every collected spec. The order decides
-which regions the collector's total withholds, so on the production `local` profile a change whose
-collected specs and covered sources together exceed the total spent the room on the covered sources:
-on a 13-path fixture of added, deleted, renamed, copied, credentialed and over-ceiling paths the
-filer measured 4 planned units and 16 references against the merge base `96504259b9`'s 9 units and
-18, excluding a deleted file's own before side, an over-ceiling file's own before side and a
-collected spec's unit as `no-admissible-evidence`. Disabling only the `specCovered` arm of
-`admissionTier` restored the merge base's units, so the promotion was the cause. The blind draw
-measured the reallocation and the approved head disclosed it as a limitation instead of reopening the
-ordering, so the defect reached `main`; at `ci`, whose total did not bind on that fixture, the two
-revisions' sets are identical, which is why the assessed diff never showed it.
-
-Blind spot: the review's stances attacked the promotion's own direction — a spec outranking the
-source it covers — and pinned that pairwise order, but none asked what the new rank does to the
-_unrelated_ units the same total has to carry. A rank added to fix one pairwise inversion is itself
-an ordering change, and under a binding total an ordering change is a plan-state change.
-
-Probe that would have caught it: drive `collectEvidence` and `planUnits` over the production `local`
-and `ci` limits on a change set wide enough that the total binds — several collected specs plus the
-sources they cover, with a deleted, an over-ceiling and a credentialed path — and compare the planned
-units, their own and context regions, the reasons and their sides against the merge base. Compare
-fixture against fixture, never aggregate counts, and treat a reallocation the probe measures as the
-finding rather than as a disclosed limitation. `scripts/semanticReview/__tests__/semanticReview.spec.ts`
-now pins the case (`ranks a covered source with the spec that covers it...`), and disabling the
-`specCovered` arm still has to redden the two pairwise cases.
-
-### 2026-09-27 — a declaration recogniser that refused eight grammar-legal forms as computed loads (escaped via PR #4775; measured in review of #4828; fix handed to #4835)
-
-PR #4775 added the trusted-snapshot scanner's declaration recognition — class, interface and type
-headers — so a generic class header or a completed type alias would stop being mistaken for a loader
-body. The recognition names the header forms it accepts, treats an `enum`, `namespace` or `module`
-header as a terminator that refuses, and treats every other `{` as a body or an object literal, so
-eight grammar-legal TypeScript forms that each hold a `require(specifier: string): unknown` member —
-a nested property type, a parameter annotation, a return type, a class-property annotation, a
-conditional-type branch, a mapped type, a decorator-preceded member, and a union with a negative
-literal type — are refused as computed loads once another member precedes that one — except the
-decorator form, which refuses alone — and the graph assertion stops a command whose source loads
-nothing. The defect reached `main` through that pull request; the refusals were measured while
-reviewing the later change #4828, which handed the fix to #4835 and pinned nothing, so no bound on
-these forms survives in the merged revision.
-
-Blind spot: the review's stances attacked the miss direction (a load the scanner fails to see) and
-the accepted-literal direction, and probed the declaration headers the change added; none asked
-which grammar-legal forms the new recognition still refuses. A hand-rolled recogniser has two
-failure directions, and the refusal direction turns a legal source into a command that cannot run,
-which reads as a defect in the source rather than in the scanner.
-
-Probe that would have caught it: enumerate the TypeScript forms that place an object type where the
-recogniser only expects a header — nested property, parameter, return, property annotation,
-conditional branch, mapped type, decorator member, literal-union member — and drive
-`snapshotComputedDynamicSpecifiers` on each, twice: once with the named member first in its body and
-once with another member such as `version: string;` ahead of it, the union form nested in a
-class-like body so that position is the only difference between the two readings. Seven forms return
-`[]` alone and `['require(...)']` ahead-of-member, so the member position alone decides them; the
-decorator form returns `['require(...)']` for both, refusing even when it is first. Any form that
-returns a specifier is the finding, a form admitted alone reads as a legal source, and the same
-enumeration must include the forms the rule does accept so the pin covers both directions. Measure a
-genuine computed load in the same scratch script — `const p = './x.ts'; require(p);` must still
-return `['require(...)']` — because an empty result for a declaration form is otherwise
-indistinguishable from a scanner that never ran.
-
-### 2026-09-26 — a read tool whose largest answer never fit its own receipt budget (escaped via PR #2011)
-
-PR #2011 shipped `device.factory-manifest.read` returning a whole descriptor's `parameters` array in one receipt, checked only against a synthetic small descriptor. Several real descriptors (Fermenter, Bacteria, Gluten, Crust, and every other descriptor declaring a `legalSet`) exceed the loop's per-call receipt budget alone, even requested one type at a time — the narrowest request the schema allowed — so the planner could never read their parameter bounds, legal values, or guidance; the tool always returned `tool-receipt-too-large` for them instead.
-
-Blind spot: review verified the generic budget-enforcement mechanism (`boundReceipt`) and the tool's schema shape, but never checked the tool's own worst-case output against the budget it was bound by — a receipt shape can be correct and still be an answer the route can never deliver.
-
-Probe that would have caught it: for every registered type the tool can name, request it alone with no other arguments and measure the real receipt (`JSON.stringify` byte length, exactly as the loop measures it) against the per-call budget; a type whose single-type, otherwise-default request already fails is the finding, and a `legalSet`-declaring type failing it is the reproduction to keep.
-
-### 2026-09-21 — level context was complete before serialization, not after it (escaped via PR #4392)
-
-PR #4392 (`5c476c92153`) projected linear/decibel pairs into `ProjectContext`, while the full provider serializer dropped most decibel fields and the delta snapshot tracked neither nested sends/clips nor gain-lane ranges.
-
-Coverage gap: the change did not trace every produced level through the full and correction provider-message routes.
-
-Probe that would have caught it: change and remove a clip gain, send level, and gain-lane bounds on an unselected retained track without changing its name or gain; the delta message must carry the changed pair or removal, while full and delta messages each retain one law header.
-
-### 2026-09-09 — whole-engine admission trusted its artifact's declared budget (escaped via PR #2725; merge `26a362bbc4a5b9a74d46dd713951eb9f411ded68`)
-
-PR #2725 let the release inventory compare measured costs to a table-controlled budget; the later PR #3018 only extracted that assertion. An inflated budget, negative cost, or non-finite parsed number could therefore admit an invalid whole-engine measurement.
-
-Blind spot: review treated a self-reported threshold and numeric type checks as the runner's fixed deadline contract.
-
-Probe that would have caught it: set each measured cost independently to zero, a valid positive value, the fixed deadline, a negative value, and `1e309`; inflate the artifact budget with a 10 ms cost, and require admission to bind exactly to the producer's `128 / 48_000 * 1000` ms deadline.
-
-### 2026-09-09 — filtered calibration values lost their producer keys (escaped via PR #974)
-
-The quantum measurement runner filtered invalid segment rates but kept sample indices from the
-producer's original segment array, so a gap renumbered every later sample onto the wrong rate.
-
-Blind spot: review checked the filtered values without preserving the producer key that identified
-which calibration segment owned each sample.
-
-Probe that would have caught it: when filtering keyed measurements, preserve producer keys and test
-an invalid middle calibration plus a missing referenced tail through actual conversion and admission;
-require a filter-or-clamp mutation to fail.
-
-### 2026-09-05 — output selection recorded the requested sink after the browser refused it
-
-The output-device use case wrote the requested ID into its selection store after `setSinkId` rejected or was unavailable, so the picker claimed hardware that was not applied. Its existing spec blessed that mirror by asserting the requested ID after a rejection.
-
-Blind spot: the review treated a successful call attempt as the hardware outcome and never checked whether the store represented the browser's applied state through failure or overlapping requests.
-
-Probe that would have caught it: drive the real use case with fake hardware and observe the store and notification after rejection, absent or non-callable `setSinkId`, deferred success, and ordered overlapping requests; require every failed request to retain the last applied ID and every later request to wait for its predecessor.
-
-### 2026-09-02 — a mirror that implements half of the engine's release law (escaped via PR #3363; clip repair in flight in #3437)
-
-PR #3363 shipped fader, pan and send automation on the native live engine with the loop-end
-starvation live: its clip keeps writes stamped at the loop end (`orderedWrites`,
-`writeLandSeconds(write) <= span.endSeconds`). The post-merge correctness round found the writer's
-own release mirror implements only the playhead half of the engine's `proven_popped` law: the seam
-half — carried stamps released two wraps post-echo when the start frame precedes the span end
-frame — is missing, so a step one poll interval below the loop end is never mirrored as released.
-Reproduced by simulation (30 of 60 passes frozen with a step 1 ms below the loop end) and by a
-lane-run probe of the starvation spec with its last step at 3.9999 (0.1 ms below the 4.0 s loop
-end), frozen by pass 8. The open #3437 repairs the clip, and its outstanding review round covers the
-mirror gap.
-
-Blind spot: the mirror was checked against the half of the law the failing test exercised, not the
-whole law — stances ran across five attacked heads and still enumerated only part of it. The specs
-pinned the behavior at the boundary the bug report named and never one poll interval inside it.
-
-Probe that would have caught it: when a fix maintains a mirror of another component's state,
-enumerate every clause of the owning component's invariant from its source (the engine's
-render-and-pop law) and require each clause in the mirror — a clause no current test exercises is
-the finding. Then run the starvation scenario with the step one poll interval below the loop end
-and require the write to be released.
-
-### 2026-09-03 — a narrowed sanitizer checked against one writer of the shape (escaped via PR #3112; fixed in #3477)
-
-PR #3112 added a persistence rule that a pending-effect continuation may carry `sourceRevision`
-only when every effect is a section render, and in the same PR made prepared-continuation
-promotion pass the finalized revision for every continuation. For any generic effect, the promote's
-persist failed sanitation, the throw was swallowed by an empty catch on the commit path, and the
-placeholder prepared entry became the durable proof, so recovery refused every generic partially
-committed batch with a proof mismatch. Many review rounds attacked the render paths only.
-
-Blind spot: a new restriction on what a store accepts was checked against the writer the PR was
-about, never against every writer of that record; and an empty catch around the persist hid the
-violation from every test on the path.
-
-Probe that would have caught it: when a diff narrows what a store or sanitizer admits, list every
-producer of that record at head and drive each through the new clause. When a diff adds or keeps an
-empty catch around a persistence call, name the throw it hides and construct the input that throws.
-
-### 2026-09-03 — a changed durable record whose other witnesses were never run (escaped via PR #3506)
-
-The fix made generic pending-effect continuation promotion succeed, so the persisted continuation
-started carrying the receipt's real effects instead of the placeholder. `confirmPendingChatActions.spec.ts`
-asserted the placeholder and failed deterministically on every nightly shard, hidden on the pull
-request by the continue-on-error unit step; the pull request named three regression specs to run and
-this one was not among them.
-
-Blind spot: when a change alters what a durable record contains, every spec that asserts that
-record's fields is a witness, and the stance accepted the author's named regression set instead of
-deriving the set from the record.
-
-Probe that would have caught it: grep `src/**/__tests__` for the record's field or type name
-(`pendingEffectContinuations` here) and for the literal placeholder values the change retires, name
-every spec that hits, and require the author's evidence to include a run of each.
-
-### 2026-09-05 — a retired renderer body with a carrier rule that still routed to it (escaped via PR #3593; fixed in #3846)
-
-PR #3593 made the native live session the audible carrier and turned the Web Audio
-external-plugin device into a synchronous pass-through, so only the native engine could voice
-a hosted plugin. The carrier law it shipped kept rule 1 — a strip with no native playback is
-`'nothing scheduled'` and stays on Web Audio — ahead of every chain rule, and the session
-called itself the audible carrier only when the batch scheduled a clip. A track holding an
-attached generator plugin and no clips, the exact project the nightly Desktop latency leg
-builds, was therefore handed to a carrier that could no longer sound it, and the native master
-peak read null. The approval walked every exit of the start sequence asking which carrier
-sounds each strip, and never walked the law's rules against the strips the retired body used to
-sound. The leg ran red from the first nightly after the merge until #3846.
-
-Blind spot: when a diff retires one carrier's body for a device, the reviewer checked the new
-carrier's exits and not whether the routing law can still send that device to the retired
-carrier.
-
-Probe that would have caught it: when a diff removes or stubs a renderer for something — a
-device type, a clip type, a route — enumerate every rule in the routing law that can still
-deliver that thing to the stub, drive each with the smallest project that hits it (one track,
-that device, nothing else) and require either the new carrier to take it or a notice that names
-why not. Then find the product's own standing consumers of that path — the nightly harness
-project, the smoke set — and run them through the same rule.
-
-### 2026-09-06 — a new device body admitted against the engine's vocabulary, never against the record its producer sends (escaped via 07102e912)
-
-The change that first admitted the Fermenter body to the native graph mapper kept the mapper's
-standing rule that any parameter key it cannot resolve refuses the whole batch, and it admitted the
-body on every strip. Every Fermenter device carries camelCase descriptor ids in `parameterValues`
-from the moment it is created — `addDevice.ts` seeds them and `serializeDevice` copies them
-verbatim — while the engine's Fermenter vocabulary is snake_case. So a native live session holding
-any Fermenter track was refused outright from the moment the body was admitted, on contributing and
-non-contributing strips alike. Four review rounds attacked the body's render and its pointer
-discipline and never ran the batch the producer actually sends.
-
-Blind spot: the mapper was checked against the vocabulary the engine defines rather than against the
-record the TypeScript producer emits today for that device type, and only on strips that contribute
-audio.
-
-Probe that would have caught it: when a mapper admits a new device type, build the batch the
-producer ships for a freshly created device of that type — read the creation use case's seeded
-`parameterValues`, then the serializer — and drive it through the mapper on a contributing strip and
-on a non-contributing one; a refusal on either is the finding. Then list every branch of that mapper
-that degrades to omission rather than refusing, and require any refusal reachable on the new type to
-obey the same law.
-
-### 2026-09-09 — one native trace nesting edge never reached equality (escaped via PR #4068)
-
-The unit fixture always gave the enclosing AudioWorkletNode handler extra end margin, while the
-observed equality case covered only the author/outer edge. A real trace whose handler and outer
-callback ended at the same timestamp was therefore refused even though the handler uniquely enclosed
-the callback.
-
-Probe that would have caught it: exercise every independently validated nesting edge at an equal end
-timestamp and again with the enclosure ending one timestamp unit early. Admit the equality only when
-the pairing remains unique, and preserve refusal of the actual overrun and ambiguous overlap cases.
-
-### 2026-09-10 — a status footer relayout moved a readout the nightly harness reads by label (escaped via 06c5f6dc9)
-
-06c5f6dc9 gave `StatusBar.tsx` a compact layout below `COMPACT_STATUS_BAR_MAX_WIDTH` (1199 px) that
-moves the "Out" master-level cluster, and its neighbouring UI CPU / MEM / AI Model readouts, into a
-Radix Popover behind `button[aria-label="More application status"]`, whose content portals outside
-`footer[aria-label="Application status"]`. The nightly Desktop latency harness's `readStatusBar` in
-`scripts/desktopLatencyConnect.ts` walks that footer for a row of exactly two sibling spans labelled
-"Out", with no notion of the popover; the runner's screen clamped Electron's requested 1440×900
-window narrower than 1200 px, dropped the app into the compact layout, and the first nightly run
-after the merge failed at "wait for the engine to report a running meter" with `the status bar has
-no readout labelled "Out"`. The PR's own responsive e2e coverage exercised the product's compact
-layout directly and never ran, or was asked about, any standing consumer that reads the footer by
-label or selector outside the product's own tests.
-
-Blind spot: no stance grepped the harness and E2E trees for existing readers of the labels and
-selectors the diff touches, so a relayout that is entirely correct for the product it renders can
-still break a consumer the diff never looked at.
-
-Probe that would have caught it: for any change to `StatusBar.tsx`, or to a `src/components/daw/Daw*`
-primitive it renders, grep `scripts/desktopLatency*.ts` and `tests/e2e/**` for the labels and
-selectors the diff adds, moves, or removes; name every hit and run its spec (the harness reader spec
-where one exists) against the changed head before approving.
-
-### 2026-09-10 — a published catalog whose ids were minted from the length of the array being pushed (escaped via PR #4128; fixed in the 3b-B slice)
-
-`collectCreationSlots` in `prepareCreativeInterpretationCatalog.ts` derived each slot's `candidateId`
-from `slots.length` through a `nextId()` closure and then pushed three slots in a single
-`slots.push(a, b, c)` call. All three arguments were evaluated before the push, so every slot after
-the first carried the same id and the provider-facing enum offered `slot-2` three times. The device
-slot, which a processing request needs, was unselectable, and the first end-to-end case that tried to
-add a device under an admitted authority failed.
-
-Probe that would have caught it: for every published candidate list the provider selects from by id,
-assert the ids are pairwise distinct and that each object type or dimension the design says is
-selectable is reachable through the admission path, not merely present in the catalog. Read every
-id-minting closure against the statement that consumes it; a counter read inside a variadic call
-observes the pre-call length for every argument.
-
-### 2026-09-10 — strict start comparisons on a microsecond clock survived one fix and one review (introduced in 4266e649b, missed again at 0a4efc74f)
-
-4266e649b introduced the trace binder with both START comparisons strict and the author/outer
-END already admitting equality. 0a4efc74f admitted the handler/outer END equality and stated
-that strict starts were retained; its review accepted that statement unprobed. The first nightly
-trace then refused 2256 of 24001 callbacks whose enclosing handler started in the callback's own
-microsecond. Start and end live on the same quantized clock.
-
-Blind spot: the stance accepted "retains strict start" as reassurance rather than asking why one
-boundary of a quantized clock differs from the other.
-
-Probe that would have caught it: for any comparison against a quantized clock, list every strict
-inequality in the function on that clock (start and end of every nesting relation) and require
-the author to justify each remaining strict one from uniqueness, not caution; a fix that admits
-equality at one boundary and keeps another strict without such justification is the finding.
-
-### 2026-09-10 — a new provider tool appended to the schema list that the in-browser backend truncates (escaped via PR #4128; fixed in the P4a slice of #3276)
-
-`parsePromptToActions.ts` appended the creative interpretation tool schema last in `providerToolSchemas`
-and told the model to call it, but `inference.ts` classified only the fixed application tools as
-mandatory and trimmed the remaining action tools to the WebLLM cap. Being last, the new tool was the
-first cut, and a provider that obeyed the system prompt was refused with "Provider requested a tool
-that was not advertised for this request." The cloud branch advertises every schema, so every planning
-spec, which mocked `generateToolPlanningOutcome` above the truncation, stayed green while the in-browser
-path could never admit an interpretation.
-
-Probe that would have caught it: for every schema a change adds to a provider request, trace it through
-each backend's advertisement path to the request body actually sent, and read the names out of that
-body under the backend's cap with more action tools than the cap admits. A tool the system prompt
-demands must be in the mandatory set of every backend, and the first end-to-end case must run below
-the mock that hides the backend.
-
-### 2026-09-19 — an argument form accepted by the handler but not by the planner path (escaped via PR #4392; fixed in the second task of #4366)
-
-The decibel level forms landed as a handler contract: `handleSetTrackGain` and its siblings resolved
-`gainDb`, `levelDb`, `valueDb` and `deltaDb`, the AiRuntime payload validators admitted them, and the
-system-prompt schemas in `models/Tools/*.ts` advertised them. The planner never sent one. The
-executable registry the planner is actually handed, `getExecutableAppActionToolSchemas()`, still
-advertised the linear key alone and marked it required; the grounding value rules knew no decibel
-unit; and each bridge strategy demanded an exact key set naming the linear key. A model asked for a
-level in decibels therefore had to convert to a linear amplitude against a fader curve it cannot see,
-and every handler spec stayed green while the form was unreachable from a prompt.
-
-Blind spot: the stance read the acceptor the diff touched and treated the new form as accepted, rather
-than asking who else has to admit it before a request can reach that acceptor.
-
-Probe that would have caught it: for every claim that a command accepts a new argument form, list each
-acceptor on the provider path — the handler, the payload validator, the executable registry schema and
-its `required`, the strategy's key set, and the grounding value rules — and drive one call carrying the
-new form through the real planner path end to end. A green handler spec is not evidence for the planner
-path; the narrow acceptor is the one the diff did not touch.
-
-### 2026-09-21 — point writes targeted a linked follower that playback ignores (introduced in 2a0e594f94; fixed in #4506)
-
-Linked-lane playback resolves the source and ignores every point stored on the follower, but the point command still
-reported a successful write to that follower. Review point mutations against the sampler's resolved owner: native and
-decibel forms must refuse follower, dangling, and cyclic targets without redirecting or detaching them, while a source
-write must still change the follower's sampled value.
-
-### 2026-10-24 — OPEN compensation erased markers another supersession had adopted (PRs #2357 and #4420)
-
-PR #2357 introduced the compensation snapshot; PR #4420 extended rollback to receipt and lineage
-markers. An invocation could read OPEN during compensation, then delete its verified canonical
-markers after another invocation adopted them, closed the pull request, and verified success.
-Historical exact review stance and tier are unestablished. Checking OPEN again before DELETE
-leaves the same gap. Retention alone is also insufficient: if finding 1002 arrives after lineage
-1001 was posted, the retained old lineage prevents a retry with the complete corrected lineage.
-
-Serialize the production operation's reads, replay, writes and compensation under the existing
-per-PR mutation owner. A verified pre-close rollback may release only after OPEN state, the exact
-original comment IDs and absence of its created IDs are proven; the invocation still fails.
-Ambiguous writes, altered markers, attempted closure and incomplete compensation retain the
-journal for native recovery. Preserve prior and foreign comments.
-
-Pause one invocation after its OPEN compensation snapshot. A second real serialized entrypoint
-must refuse before any PR port call; after verified rollback releases, its later invocation must
-close with both canonical proofs intact. Also add a finding before close, then require the
-complete updated lineage to succeed on retry without relaxing marker validation. A lock-release
-failure must never print a supersession success.
-
-### 2026-09-21 — a recovery path cleared a receipt it did not start from (escaped via PR #3977)
-
-PR #3977 (`975524db5f`) made `--recover` delete whichever guard-failure receipt existed for the lane
-after its child returned, unconditionally, and discard the removal's boolean result. A receipt a
-concurrent invocation wrote during the child run was therefore deleted by the older success, and the
-newer stopped obligation disappeared; a failed unlink was reported as success.
-
-Blind spot: review treated the receipt path as owned by the recovering invocation and never asked
-whether the cleared receipt was the one recovery began from, or whether the removal result was surfaced.
-
-Probe that would have caught it: write a replacement receipt for the same lane inside the recovery
-child before it returns code 0 and require recovery to return non-zero with the replacement bytes
-preserved; then make the unlink throw and require recovery to report the failure.
-
-### 2026-09-26 — quantize swing ignored the grid and a spec pinned the deviation (introduced in 6fa76ee35e; fixed in #4788)
-
-A bulk MIDI remediation commit made quantize swing always delay the eighth-note "and" by a fixed
-half-beat unit, whatever grid the user chose, and added a spec row asserting exactly that. On a 1/16
-grid the swung positions therefore never moved and beat 0.5 moved instead, which no established DAW
-does: Logic, Ableton and Pro Tools swing every second step of the selected grid. The pinned row made
-the deviation look like a contract to every later reader.
-
-Blind spot: review checked that the spec discriminated the code and never asked whether the pinned
-musical law matched professional convention; a green, mutation-sensitive row proved only
-self-consistency.
-
-Probe that would have caught it: for any timing, quantize, swing, or grid semantic, state the law an
-established DAW applies and evaluate the change at two grids (1/16 and 1/4 here); a result that
-cannot be reproduced in a reference DAW is a finding unless a decision record names the deliberate
-difference. Then quantize the output a second time: a destructive quantize must leave its own output
-in place, so each note has to snap to the nearest point of the swung grid, not to a straight step plus
-an offset.
-
-### 2026-09-29 — Faust compiler upgrade exposed a throwing optional-effect probe (introduced by PR #4904; fixed in #4916)
-
-The FaustWasm 0.18.5 poly generator compiled `dsp_code.effect` before a voice even when the registered instrument had no effect. Libfaust threw `undefined symbol : effect`, and its generated Emscripten runtime printed an abort assertion before the generator caught the error and compiled the voice successfully. The upgrade review's runtime-instantiation stance checked node creation but missed this compiler input and its console consequence.
-
-Probe that would have caught it: for a compiler or DSP runtime upgrade, trace every factory input for one declared effect-free poly voice, one effectful voice, and one mono source. Require the effect-free route to compile its voice without a failed optional-effect factory, while the effectful route still compiles its effect and the resulting instrument still emits PCM after `keyOn`.
-
-### 2026-09-30 — a widened join tolerance admitted the simultaneous notes it was never meant to rank (introduced in 6fa76ee35e; fixed in the #4860 repair)
-
-The bulk MIDI remediation commit widened `joinNotes`' run-extension tolerance from a fixed 0.001 to `gridSize/8` to absorb humanize and partial-quantize jitter. The predicate `|previous end − next start| ≤ tolerance` never asked whether the next note starts after the previous one begins, so two same-pitch notes stacked on the same beat — durations 0.1 and 1 on the default 1-beat grid — satisfied `0.1 ≤ 0.125` and joined into one note, silently discarding the second note's scalars and curves. The old constant was small enough that only genuine continuations passed, so the widening changed which population the predicate admits, not just its margin.
-
-Blind spot: the remediation's review tested the tolerance against the cases that motivated it — jitter gaps and genuine rests — and never enumerated what the old value refused that the new one accepts.
-
-Probe that would have caught it: for any widening of a tolerance or threshold on an admission predicate, construct an input inside the newly admitted band and outside every case the change names — here two same-pitch notes sharing `startBeat` whose first duration sits under the new tolerance — and require the changed behavior for it to be stated. A band a widening adds is a behavior change in its own right.
-
-### 2026-09-30 — strict provider schema closed open command arguments (introduced by PR #4393; fixed in #4882)
-
-The canonical proposal accepted nonempty typed command arguments, but the hosted strict projector
-closed each open argument object with no properties. A provider could not produce a valid `addDevice`
-proposal even though the application compiler accepted it. The earlier review checked projection
-keywords and flags without passing one real registered command through the outbound wire and back.
-
-Probe that would have caught it: take a current discovered command with nonempty arguments, inspect
-the actual provider advertisement for both primitive and semantic-list proposal forms, then return
-each through the common provider admission and canonical decoder. Verify the proposal reaches the
-normal catalogue and approval path; reject an unknown command there. Include a non-strict compatible
-and local WebLLM control so wire repair does not change their canonical arguments.
-
-### 2026-10-07 — mono input vanished at stereo modulation splitters (introduced in 0249a95cc52; fixed for #5034)
-
-Auto Pan and Stereo Widener fed a default-mode GainNode into a two-output ChannelSplitterNode.
-The splitter uses explicit, discrete channel mixing, so a mono source reached its left output while
-its right output was silent. The strip's later dual-mono panner feed from PR #5006 could not repair
-the signal before either effect: Auto Pan lost its right side, and Widener treated the missing right
-side as stereo difference.
-
-Blind spot: graph-construction checks counted splitters and mergers, and a Widener matrix test
-supplied equal left and right arrays itself. Neither rendered a one-channel source through the
-actual factory input, where Web Audio decides the channel count.
-
-Probe: render a mono buffer through each real factory in Chromium OfflineAudioContext. Auto Pan
-must produce a right-channel peak; Widener at non-unity width must emit equal left and right
-samples. Keep a two-channel asymmetric source as a control that still produces stereo difference.
-Removing the explicit speakers upmix at either input must turn its mono assertion red.
-
-### 2026-10-12 — near-zero tempo identity escape (PR #5199)
-
-Commit `77f11923e6bb9906c14d84d3709dac4c97dd5a61` relocated the projected opening
-boundary to zero but lost the selected authored governing beat. Three instant changes at
-`2e-7`, `4e-7`, `6e-7` beats with 90, 120, 160 BPM projected a 90 BPM tail instead of 160.
-Public review `5472288669` flagged the opening fold without a case; final review
-`5474617910` missed multiple positive changes in the origin bucket. Missing input coverage
-is established; private prompt and tier are unavailable.
-
-Relocate the engine coordinate independently of authored tempo identity. Probe several distinct
-values within the origin tolerance, both with an exact-zero member and entirely positive starts;
-require the last value to govern the terminal segment. Separately preserve each sampled ramp
-boundary's beat integral and final tail. Restoring the zero-coordinate lookup must fail the
-cluster cases without requiring a renderer sample rate.
-
-### 2026-10-11 — warning-only Faust failure produced an incomplete musician export (#5215)
-
-PR #841 (`4edbe587b`) established the construction-error split: unsupported claimed devices refused,
-but runtime factory failures warned and omitted the device. Its Faust case asserted that omission;
-the dialog's warning case asserted success over a returned buffer. The historical stance dispatch
-is unverified. The missing failure mode was an admitted, audible device failing after admission.
-
-Inject a real Faust factory rejection through the musician mixdown's strip and chain, require a
-named track/device refusal with no buffer, then require the dialog to perform no encode, write or
-download. Exercise grouped stem strips and auxiliary detector keys; a refusal must invalidate the
-whole requested set after strategy teardown. Preserve bypass, withheld and non-contributing cases
-and degradable agent/freeze callers. A bundled constructor success does not prove refusal after a
-later runtime load failure.
-
-### 2026-10-11 — the validated head was not the merged tree (introduced by PR #5243)
-
-PR #5243 removed `defaultTempo` from `scheduleTrackAutomation` consistently — its validated head held zero references. Between its last validation and the merge, another PR landed modulator work in the same file on `main`; the squash merge took the three-way merge result against the advanced base, which combined the head-side removals with base-side additions and re-introduced `defaultTempo`/`projectBeat` references whose bindings no longer existed. `main` stopped typechecking (TS18004/TS2304 in `automationScheduling.ts`) although every validated tree was green: the required Gate ran on the earlier merge ref, and GitHub created the squash from the never-validated new one.
-
-Blind spot: delivery validation treats the reviewed head as the merged content. When the base tip advances after the last run — same-file base changes especially — the squash tree is a textual combine no run typechecked, and per-file affected selection cannot see an intra-file leftover it did not diff.
-
-Probe: before merging, when the base tip has moved since the head's last Gate, require fresh CI evidence that covers the resulting base-plus-head tree, not just the earlier head. Reverting either contributing hunk should make that combined-tree typecheck fail, which is what no validated run observed here.
-
-### 2026-10-27 — device deltas assumed live eligibility meant an initialized strip (introduced by PR #2083)
-
-PR #2083 made device edits require an exact live before-chain. MIDI import publishes a track with its default Synth after boot's strip projection, so a lawful Remove Synth before first Play commits project truth and then fails against an absent strip. Its public review caught project-only folders but did not cover an uninitialized live-eligible MIDI track; historical private prompts, models and tiers are unavailable. Play/Stop warming masked the missing admission. Undo also has to change the existing live chain, rather than send an initialization snapshot that can only accept an already matching strip.
-
-Probe the real import, Command/CRDT/history and engine boundary with a completed import, an actually absent strip and no Play gesture. Require clean removal, exact authoritative final topology, and identity-preserving Undo/Redo. Exercise cold add/remove/reorder and grouped final-chain composition; refuse an existing mismatched strip, stale or unrelated project divergence and duplicate ownership. Inject initialization rejection and require committed failure with no later parameter writes. Revert the missing-strip admission and require the cold Command regression to fail. UI admission must require the Remove Synth control unconditionally and click it before first Play.
+1. **Hunk-only reading.** The hunk shows what changed, not what the code now does. Read the function,
+   its callers and its callee contracts at head; state the invariant in one sentence; construct the
+   violating input. Where the change touches a shared control, read the sibling components on the same
+   surface first: their comments carry measured browser behaviour (`lostpointercapture`, a tab switch
+   with no `pointerup`) the change must survive.
+2. **A check that observes nothing.** Name what must break for each existing check to fail. Probe:
+   destroy the value after the assertion, or apply one targeted mutation, and run the named spec; still
+   green fails the round. Blind forms: a fixture that sets explicitly what a fresh instance defaults
+   (Bacteria Serial vs Parallel, #2079) or passes a key the engine ignores (`routing` vs `globalRouting`,
+   #2606); a spec that pins the deviation (quantize swing, #4788); callbacks applied to a mock where the
+   project must retain the value (Freeze failure reason, #2597); a mock above the layer that hides the
+   defect (backend truncation, #4128); a setter-injected microtask standing for the production receive
+   protocol; metadata equality standing for delivered audio.
+3. **A model of another component's state.** A mirror, shadow copy, bitmap, or projection must carry
+   every clause of the owner's contract, including those no test exercises. Probe: enumerate the clauses
+   from the owner's source and drive the one-poll-interval-inside case of each (loop-end seam half of
+   `proven_popped`, #3363); render the persisted state the owner refuses (enabled mapping to a
+   nonautomatable parameter must show no Inspector halo, #831/#5379); change the owner after detection
+   and require the mounted reader to follow without a pointer refresh (Elastic markers; the real
+   slider with a selected clip and no open editor must change authoritative automatic markers while
+   locked/user rows, another clip and PCM stay exact, and selected-only resolution must not override an
+   explicitly opened editor; do not open the editor to satisfy the test); write points to a linked follower the sampler ignores (#4506). Ask what a
+   one-bit-per-key model cannot represent (two of one key, an order, a count).
+4. **Population and producer sweep.** When a detector, sanitizer, adapter or narrowed store rule
+   asserts an invariant over a registered population or every writer of a record, enumerate every member
+   and producer at head and drive each through the new clause; the population, not the incident, bounds
+   the sweep (#3112: promotion wrote `sourceRevision` for generic effects). Name the throw any empty
+   catch around persistence hides and construct the input.
+5. **Witnesses outside the author's list.** A change to a durable record's contents or to a UI label,
+   selector or layout has readers the author did not name. Grep `src/**/__tests__`, `tests/e2e/**` and
+   `scripts/desktopLatency*.ts` for the field, type, literal placeholder or label, name every hit, and
+   require a run of each (`pendingEffectContinuations`, #3506; compact StatusBar moved "Out" behind a
+   popover the nightly harness reads by label).
+6. **Boundaries and quantized clocks.** Probe one quantum each side of every boundary: the value the
+   report named and its neighbour. On a quantized clock list every strict inequality and require each
+   remaining one justified by uniqueness (trace binder starts vs ends, #4068); cluster tolerances need
+   several distinct values inside it, with and without an exact-zero member (near-zero tempo, #5199);
+   a widened tolerance or threshold changes which population is admitted, so construct an input inside
+   the new band (`joinNotes` joined stacked same-pitch notes at `gridSize/8`); finite windows must also
+   hit a fractional change origin before the outgoing next tick (meter seam 4/4 to 3/4 at 5.5, window
+   5.4..5.6) and must adopt the segment boundary's exact origin once, even when another distinct origin
+   is within grid rounding tolerance; keep equal-point queries, negative starts, inclusive right
+   tolerance and last-change governance at duplicate beats. Validate the entered unit and
+   segment, not only the initial one: drive an invalid later unit and a walk finite arithmetic cannot
+   advance, and require the valid prefix. Frame limits get the `2^30` boundary (`2^30 + 1` requested vs
+   `2^30` returned, with and without tail, nonzero start). Trace binder: equal end timestamp and one
+   unit early, pairing unique, real overrun and ambiguous overlap still refused.
+7. **Hand-decided grammar.** A hand-rolled recogniser fails in two directions. Enumerate the
+   grammar-legal forms the rule does not name (nested property, parameter, return, annotation,
+   conditional branch, mapped type, decorator, union member) and drive each with the named member first
+   and after another member, plus a genuine computed load as positive control, since an empty result is
+   otherwise indistinguishable from a scanner that never ran (#4775/#4835). Pinning refused forms states the bound; it does not fix it.
+8. **One enforcement route of several.** A rule enforced on one route admits the same request on
+   another. List every route that returns actions or reads the state (direct, coordinated, atomic,
+   compiled, refined; constructors' defaults, releases, removal arms, re-deriving commands; dispatcher
+   single and batch entrypoints, #1949/#2988) and drive each with the same request; a route that never
+   reads the verdict is the finding (clip-protection completeness, #4929). When a diff retires or stubs a
+   renderer, list every routing rule that can still deliver the thing to it and run the smallest project
+   (one track, that device) plus the product's standing consumers (#3593/#3846). A new stored row kind
+   must pass every reader's admission gate on a take made of only that kind: restore each reader's skip,
+   and a controller-only clip with no note list must go red (#5338); fix the reader, never write a
+   placeholder into shared CRDT state. A doc sentence calling two commands atomic must say whether it
+   means visibility-atomic or success-atomic and what a refusal leaves behind.
+9. **The record the real producer sends.** Admission checked against the acceptor's vocabulary rather
+   than the producer's output fails live. Build what the producer ships for a freshly created object
+   (Fermenter camelCase `parameterValues` vs snake_case engine keys) on a contributing and a
+   non-contributing strip, list every mapper branch that degrades to omission rather than refusing, and
+   require any refusal reachable on the new type to obey the same law; list every acceptor on
+   the path (handler, payload validator, executable registry schema and `required`, strategy key set,
+   grounding rules, provider serializer in full and delta forms, #4392/#4366) and drive one call
+   carrying the new form end to end (change and remove a clip gain, send level and gain-lane bound on an
+   unselected retained track: the delta must carry the pair or removal, full and delta one law header). Trace each added provider tool or schema through every backend's
+   advertisement under its cap (#4128), a command with nonempty arguments through the strict wire and
+   back (#4882), a declared control key through the production parameter schema to the worklet (`convolutionIr`,
+   #5254, every Body index), a mono source through the real factory in Chromium (#5034: Auto Pan right
+   peak, Widener equal L/R, asymmetric stereo control). Published candidate ids must be
+   pairwise distinct and every selectable object type reachable; a counter read inside one variadic
+   call sees the pre-call length for every argument.
+10. **The outcome that happened, not the one requested.** State written after a call is attempted, a
+    result assembled before finalization, or a success returned over an unperformed effect are
+    unrecorded failures. Probe: reject, absent, defer and overlap the real dependency and read the
+    store, document and result (output sink after `setSinkId` rejection; storage cleanup after the
+    result was built, #5274; a void replay marked Reverted for an absent group, #5565; Faust runtime
+    failure inside a musician export, #5215; short offline render placed at the requested end, #5013/#4986;
+    guarded solo whose target already holds, #5643; device delta against an uninitialized live strip,
+    #2083: complete a MIDI import, leave the strip actually absent, and run Remove Synth with no Play
+    gesture, since a Play masked the missing strip; Undo must change the existing live chain rather than
+    send an initialization snapshot; reverting the missing-strip admission must fail the cold Command case).
+    Specific inputs: overlapping sink requests wait for their predecessor; a plain-click exclusive solo
+    makes the guarded inverse target already hold, so Undo consumes the entry with no root, revision or
+    projection write and the next Undo reaches the older entry (Redo likewise; keep the differing-live,
+    missing-track and unguarded-overwrite controls); a committed warning keeps the whole revert consumed,
+    an unexpected replay failure reaches visible error without an abandoned rejection.
+    Require unchanged project, history and visible refusal where it did not happen; a grouped stem or
+    auxiliary detector failure invalidates the whole requested set.
+11. **State read at start, trusted at commit.** A decision reached before a concurrent writer acts must
+    be rechecked or serialized with that writer. Probe: pause the first invocation after its read, run
+    the second through the real entrypoint, then release the first (OPEN compensation erased adopted
+    markers, #4420; recovery deleted a receipt it did not start from and discarded the unlink result,
+    #3977; optimistic Undo replay hydrated away a peer edit, #5520/#5613 in both admission orders and
+    each late-peer owner). Retaining the journal or lineage is not enough: post lineage 1001, then add
+    finding 1002, and require the complete updated lineage to succeed on retry without relaxing marker
+    validation; pause one invocation after its OPEN snapshot and the second real entrypoint must refuse
+    before any PR port call. Write a replacement receipt inside the recovery child before it returns 0
+    and require non-zero with the replacement bytes kept; a throwing unlink must be reported. Require
+    either both edits or zero-write refusal with history pending. Track
+    presence does not certify the restored programme: race MIDI notes, controllers, clip automation,
+    gain and warp owners separately; ambient owner equality inside an entered transaction scope does not
+    certify newly authored intent, so interpose publication and hydration there; check both the
+    immutable root and the prospective mutable document, since proxy identity is no ownership witness.
+12. **Limits measured by the consumer, at the largest answer.** Re-derive the consumer's own expression
+    and measure the worst admitted unit with it: `JSON.stringify({state, questions})` vs the planner's
+    hand-built wrapper (#4491); the single-type request vs the per-call receipt budget (#2011); a
+    sample cap vs the highest admitted rate (4096 at 192/384 kHz, #2055/#5858); a self-declared budget
+    vs the producer's fixed deadline with zero, negative and `1e309` costs (#2725); filtered keyed
+    measurements must keep producer keys (invalid middle calibration plus a missing referenced tail,
+    #974). Request each type alone: a `legalSet`-declaring descriptor was the reproduction (#2011).
+13. **Refusal attribution and reallocation.** For every refusal added or moved, state which units it
+    stops and what reason each records; a per-unit property read as a run property reports unrelated
+    units under a cause that never happened (#4491). A rank or order added for one pairwise inversion
+    reallocates a binding total: compare planned units and reasons against the merge base on a fixture
+    wide enough for the total to bind (collected specs plus covered sources, with a deleted, an
+    over-ceiling and a credentialed path), never aggregate counts (#4826).
+14. **Release and transition rules for timed or stateful stores.** State the ordering rule, the release
+    rule for every way playback leaves the timeline (stop, locate, loop wrap, window clear) and the
+    per-occurrence rule for repeated keys. Probe: every window a scheduler opens is projected against
+    the loop end, including one a late wrap opens at `loopStart` (stalled tick within one look-ahead of
+    `loopEnd`: loop 0..8 at 120 BPM, a clip after the loop, tick at 7.975 s after a 0.05 s tick; nothing
+    posted at or past `loopEnd`, seam armed, next pass's beat 0 lands on its frame, #6004); a readiness
+    deadline measures progress, not elapsed cohort time, and decoded is not worklet-acknowledged
+    (#3318/#3982): at 39 of 161 files just before the old deadline all five consumers must still finish
+    ready without rollback; one peer stalled for its own inactivity window while another progresses fails
+    only the stalled peer; obsolete cancellation stays silent.
+
+## Saved projects and replay
+
+15. **Identity namespaces across reload and replay.** Produce entries through real Command, save and
+    load the Automerge document, reset every projection and hydrate the session mirror, then require a
+    global ID census, exact values and real Undo/Redo. Split before surviving points: retained copied
+    IDs must reserve the live namespace, including a preoccupied preferred ID under another owner, an
+    ID claimed by a peer after Undo (zero-write refusal), nested points and cross-domain owners
+    (#4036), at a dyadic and a non-dyadic cut. Producer-local scopes stay local: canonical clip-local gain point IDs repeat across clips
+    and equal a track ID, while same-envelope duplicates, track/clip/device collisions and repeated
+    arrangement IDs stay repair-required. For a batch-admitted restored clip preceding a split, compare
+    captured IDs with the committed IDs before reloading and replaying twice; a live execution that
+    remints a preflight capture is not replay-stable. Read executable entries from the full history
+    owner, not its label-only view; draw is singleton-only, so a rejected draw/split proves admission only.
+16. **Saved inverse authority.** Probe a saved inverse through production hydration before any write:
+    duplicate note identities, malformed CC or bend rows, a missing capture, one side of a mirrored
+    optional satellite absent (present empty is distinct), and a durable-head change alone must not
+    refresh a removal inverse (#5064). Add Redo after unrelated same-track growth (#1425 slot), a
+    cross-track move's source order after a peer removal (#515), and split Redo with a recreated target
+    identity. Mocked minimal rows cannot show the restore owner admits what Arrangement already wrote.
+17. **Lossy import accounts for the whole source.** Enumerate the legal source grammar and account for
+    every preserved, omitted or partially kept element, including named descendants under rejected
+    owners and malformed, nonnumeric, nonfinite, empty and whitespace-only values against the actual
+    parser fallback (DAWproject, #5656/#5795). Assert warning identity, owner, order, cardinality beside
+    playable siblings; remove each accounting branch and its case must fail.
+
+## Audio, timing and format laws
+
+18. **Tempo projection in both directions.** Trace seconds to beats and beats to seconds from captured
+    tempo state to every terminal binding (AudioParam, segment writer, curve writer; track, clip, absent
+    lanes) on a flat tempo and a ramp from a nonzero anchor, with an independent integral. Trace the real
+    render origin through history expansion before prescribing a crop anchor (#5323); a private
+    step-only inverse or lost anchor must fail the terminal-output case (#5209/#5243): include both
+    moving-layer schedulers and stem branches, quantisation, slew and the compensated write clock, and a
+    layer whose beat-zero value differs from its requested-start value under a tempo ramp.
+19. **Musical law against DAW convention.** State the law an established DAW applies and evaluate at
+    two grids (1/16 and 1/4); quantize the output again and require it unchanged; a result no reference
+    DAW reproduces is a finding unless a decision record names the difference (#4788). Mapped ruler
+    paint must follow the model's physical bar origins, not an inverse over bar names (Insert 2 at 4 in
+    4/4 carries the origin to 6 and moves the clip at 8 to 10; two partial pieces can share a number);
+    cover partial bars, denominators other than 4 and a later meter change.
+20. **Fresh instance, highest rate, whole signal.** Render a fresh instance without setting the
+    parameter under test and compare with explicit values (default routing); measure the actual engine
+    at the highest admitted context rate for late tail and silence after the physical duration; compare
+    mid and side impulses with an independent ideal delay. Trace enable transitions on sustained
+    input: short-window output and gain against an already-open reference (zero crossing, near-threshold
+    detector), enable-time hold seeding, and a single NaN or infinity compared sample for sample with a
+    healthy reference through attack, hold, release and reopening; an output scrub proves nothing about
+    recursive state. Revert only the default, cap or fence and the named PCM case must fail; follow the
+    source through regenerated served WASM when the claim is about the shipped carrier.
+21. **Format conformance by an independent decoder.** Compare real encoded output through the shipped
+    decoder against the originating PCM at each bit depth, including container checksums and decoder
+    warnings (FLAC Rice polarity per RFC 9639); reverting the grammar fix must fail the parity case.
+
+## AI action bridge, prompt segmentation and request authority
+
+22. **Context and cancellation at every dispatcher route.** Drive execution context through single and
+    batch dispatch and both runtime and project handlers; prove cancellation and deferred-work attempts
+    at a real consumer; dropping context on the single-action entrypoint alone must fail a case.
+23. **Segmentation keeps each action's qualifiers.** Vary connectors and punctuation; each action keeps
+    its own exclusions and reference ambiguity without borrowing adjacent action text; mutate literal-ID
+    vs display-name evidence and Unicode-overlap evidence. An exact identifier must not erase genuine
+    ambiguity and a clause boundary must not widen a destructive action or collapse competing targets.
+24. **Deterministic admission consumes the whole request.** Test a complete exact command across the
+    registry before complexity heuristics; reserved context references resolve before unquoted names; an
+    unquoted multiword value is semantic unless a bounded grammar proves it literal. Feed fuzzy rank,
+    partial text, context availability or first registry match and require a refusal.
+25. **Source authority and protections come from the original text.** Masked text serves discovery and
+    segmentation only; it never proves literal source syntax or target authority. Deterministic, direct
+    and compiler-backed proposals derive authority from the same original text and the same complete
+    selection set: a primary selection field does not prove the selection is unique, and
+    compiler-resolved identities validate selector structure only. Parse quote boundaries once,
+    offset-preserving, in-word apostrophes as content;
+    reserved selection phrases apply outside quotes only; mask spans are immutable and a generated marker
+    never becomes evidence. Resolve each list member independently, union protected candidates, treat an
+    incomplete protection as rejection, enforce after final target resolution including compiler
+    overrides. When a value can contain the connector, enumerate quote-aware source boundaries, ground
+    each prefix completely (including a complete known owner qualifier; a contained name is
+    insufficient) and admit one unique interpretation, never letting a provider target choose between
+    competing boundaries. Where a grammar permits an optional connector, classify source and value from
+    one quote-aware parse and keep semantic whitespace inside a protection reference without joining
+    separate punctuation-bounded clauses.
+26. **Protection owner, polarity and exceptions.** Probe a name shared by track and clip
+    (`leave Bass Verse unchanged` must not freeze the track, `leave Bass fader unchanged` is control
+    authority, #2811); later admission against a frozen whole owner's actual descendants, and
+    independent `leave Bass alone` and structural or frozen roots kept as whole restrictions beside a
+    separately protected clip, with a track and a clip or device sharing the exact name; a reserved phrase colliding with a display name, quoted compound owners,
+    title-cased qualities, unclosed VCA quality; a fader exception permitting gain but refusing pan and
+    rename; selection retained through pending-card refinement and compiled replacement; independent
+    clauses and later protections restricting, never widening; a compatibility mask consuming the whole
+    clause (#5339). Catalog candidates come from fully consumed resolved spans with unknown protected
+    objects clarified (#4128); a required insertion anchor is checked before optional-field omission,
+    with missing and wrong anchors writing nothing (#1650/#2811).
+27. **Direct-level inventory is catalog-wide.** Enumerate every planner-emittable direct-level command
+    and trace schema, prompt binding, strategy, handler, stored value, undo and full/delta context;
+    test absolute and relative decibels, the owning ceiling, silence and legacy linear values at actual
+    execution (#4366); VCA and metronome fell outside the first enumerated family list, so a passing
+    sample of those families cannot prove the remaining catalog.
+
+## MIDI
+
+28. **Note-correlation regressions cross the rack boundary.** When a transform stores a Note On decision
+    for a later Note Off, drive supplied `noteInstanceId` values through `MidiRack`: one equal-pitch note,
+    change the deciding parameter while held, then attack and release a second identity first. Assert
+    emitted identity and pitch or suppression; channel/pitch FIFO must fail. Keep identityless FIFO apart.
+29. **Expression ordering around note release.** Hold the note-on's async worker, admit pressure, CC74,
+    bend, release and the next same-channel note; read the curve points and execution order; an idle
+    unrelated channel stays immediate (#805).
+
+## Trusted scripts and delivery
+
+30. **Invoke the real route with default dependencies.** Trace a new capability from the package
+    command through the protected launcher to its consumer and run it with controlled remote ports and
+    the default owner fence; observe the acquired process identity before the first PR read. Omitting
+    the command from the launcher's fenced set, or restoring a direct package route to the transaction
+    script, must fail before remote I/O; lock fixtures that inject owner fences cannot show it (#5639).
+31. **Validated tree vs merged tree.** When the base tip moved after the head's last run, especially
+    in the same file, require evidence covering base plus head; reverting either contributing hunk must fail that combined typecheck (#5243).
+
+## Retired lessons
+
+- Optional-effect probe throwing in a Faust compiler upgrade (#4904) → enforced by `compileFaustDSP.spec.ts` "compiles the registered Supersaw voice without probing an absent effect".
+- Tooling paths missing from the browser selector or validation path filter (#4854, #4902, #4484, #4932, #4933) → enforced by `scripts/__tests__/prValidationScope.spec.ts` "keeps known review tooling security checked without browser execution" and "admits exact review helper source and matching spec %s".

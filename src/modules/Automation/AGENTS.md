@@ -4,11 +4,7 @@ Owns parameter automation lanes, breakpoint envelope curves, live automation rec
 
 ## Public Contract Surface
 
-- `stores/`: `automationStore` (`AutomationLane`, `AutomationCurveType`, `AutomationStoreState`), `modulationStore`, `modulationRuntimeStore` (`ModulationStoreState`).
-- `useCases/`: Lane & point CRUD (`addAutomationLane`, `removeAutomationLane`, `addAutomationPoint`, `batchAddAutomationPoints`, `updateAutomationPoint`, `setAutomationPointCurve`, `removeAutomationPoint`, `replaceAutomationLanePoints`, `restoreAutomationLanePoints`), transforms (`scaleAutomation`, `stretchAutomation`, `invertAutomation`, `reverseAutomation`, `thinAutomation`, `quantizeAutomation`, `shiftClipAutomation`, `deleteAutomationTimeRange`, `duplicateClipAutomation`), recording (`startAutomationRecording`, `stopAutomationRecording`, `recordAutomationValue`, `releaseTouchAutomation`, `resolveAutoMatchValue`), drawing sessions (`beginDrawSession`, `paintDrawPoint`, `endDrawSession`), modulation (`addModulator`, `removeModulator`, `updateModulator`, `addMapping`, `removeMapping`, `applyModulationToEngine`), query helpers (`getAutomationValueAtBeat`, `getAutomationLaneCeiling`, `isRecordingAutomation`).
-- `events/`: No public domain event payloads exported.
-- `presentations/views/`: `ModulationMatrix`.
-- Handlers: `getAutomationHandlers()`.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 
@@ -30,5 +26,5 @@ Owns parameter automation lanes, breakpoint envelope curves, live automation rec
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
 ```bash
-pnpm test:run <changed-spec>
+pnpm guard --profile focused -- pnpm test:run <changed-spec>
 ```

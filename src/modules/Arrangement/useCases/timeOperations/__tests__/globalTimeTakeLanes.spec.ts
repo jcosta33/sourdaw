@@ -102,6 +102,7 @@ function registerIdleDependencies(): void {
         revert: () => true,
     };
     setTimeOperationDependencies({
+        savedRestorePlanValidators: { automation: () => false, midi: () => false, timelineMap: () => false },
         prepareAutomationTimeOperation: () => idle,
         prepareAutomationTimeStateRestore: () => idle,
         prepareTimelineMapTimeOperation: () => idle,

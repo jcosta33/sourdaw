@@ -67,6 +67,14 @@ describe('rippleInsertClip', () => {
             trackId: 'track-target',
             startBeat: 2,
             endBeat: 4,
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 1,
+            audioOffsetSeconds: 0.5,
+            audioUnwrappedOffsetSeconds: 0,
+            audioLoopStartSeconds: 0,
+            audioLoopPassEntrySeconds: 0.25,
+            audioLoopPassOriginBeat: 1,
         });
         const unplannedClip = ClipDummy.create({
             id: 'clip-unplanned',
@@ -122,6 +130,8 @@ describe('rippleInsertClip', () => {
                             ...plannedClip,
                             startBeat: 3.5,
                             endBeat: 5.5,
+                            loopOriginBeat: 2.5,
+                            audioLoopPassOriginBeat: 2.5,
                         },
                         unplannedClip,
                     ],

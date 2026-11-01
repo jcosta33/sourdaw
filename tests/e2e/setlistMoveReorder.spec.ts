@@ -1,5 +1,6 @@
-import { test, expect, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
+import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 async function openSetlistTab(page: Page): Promise<void> {
@@ -24,9 +25,7 @@ async function addItems(page: Page, count: number): Promise<void> {
     await expect(add).toBeVisible();
     for (let i = 1; i <= count; i += 1) {
         await add.click();
-        await expect(
-            page.getByRole('list', { name: 'Setlist items' }).getByRole('listitem'),
-        ).toHaveCount(i);
+        await expect(page.getByRole('list', { name: 'Setlist items' }).getByRole('listitem')).toHaveCount(i);
     }
 }
 

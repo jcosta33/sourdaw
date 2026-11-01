@@ -503,7 +503,7 @@ describe('checkBarrelMockCoverage — the exemption mechanism', () => {
 
 type RealTreeScan = ReturnType<typeof scanRepository>;
 
-/** `#/modules/Foo/Common/Bar/presentations/views` → `presentations/views`. No kind
+/** `#/modules/Foo/presentations/views` → `presentations/views`. No kind
  * is a suffix of another, so the suffix test partitions the violations exactly. */
 function kindOf(barrel: string): string | undefined {
     return allBarrelKinds.find((kind) => barrel.endsWith(`/${kind}`));

@@ -1,6 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import {
     applyRuntimeGraphDelta,
+    createRuntimeGraphTopologyFingerprint,
     getRuntimeGraphRevision,
     getTrackStrip,
     matchesRuntimeDeviceChainTopology,
@@ -132,10 +133,81 @@ export function applyDeviceChainRuntimeDelta({
         currentTrack !== undefined &&
         !compiledAfterIsCurrent &&
         hasLaterSameTrackDeviceChainMutation(batchContext, after);
-    const authoritativeAfter = mayComposeGroupedFinal ? runtimeGraphTopology.createNode(currentTrack) : compiledAfter;
     const authoritativeTrack = compiledAfterIsCurrent || mayComposeGroupedFinal ? currentTrack : undefined;
 
-    if (authoritativeTrack !== undefined && matchesRuntimeDeviceChainTopology(authoritativeAfter)) {
+    return applyProjectedDeviceChainRuntimeDelta({
+        before,
+        after,
+        operation,
+        authoritativeTrack,
+        mayComposeGroupedFinal,
+    });
+}
+
+type ProjectedDeviceChainRuntimeDeltaInput = Pick<ApplyDeviceChainRuntimeDeltaInput, 'before' | 'after' | 'operation'> &
+    Readonly<{
+        authoritativeTrack: Track | undefined;
+        mayComposeGroupedFinal: boolean;
+    }>;
+
+function applyProjectedDeviceChainRuntimeDelta({
+    before,
+    after,
+    operation,
+    authoritativeTrack,
+    mayComposeGroupedFinal,
+}: ProjectedDeviceChainRuntimeDeltaInput): ApplyDeviceChainRuntimeDeltaResult {
+    const compiledBefore = runtimeGraphTopology.createWebAudioNode(before);
+    const authoritativeAfter = runtimeGraphTopology.createWebAudioNode(authoritativeTrack ?? after);
+    const projectedChainUnchanged =
+        createRuntimeGraphTopologyFingerprint(compiledBefore) ===
+        createRuntimeGraphTopologyFingerprint(authoritativeAfter);
+    const liveStrip = getTrackStrip(after.id);
+    const liveMatches =
+        authoritativeTrack !== undefined &&
+        liveStrip !== undefined &&
+        matchesRuntimeDeviceChainTopology(authoritativeAfter);
+
+    // A committed track may be missing its strip after import. Build its full
+    // current projection once, including the native mirror, before any delta.
+    if (authoritativeTrack !== undefined && liveStrip === undefined) {
+        const initialized = projectTrackToLiveStrip({ trackId: authoritativeTrack.id }) ?? {
+            acceptance: 'rejected' as const,
+            application: 'not-applied' as const,
+            reason: `Cannot initialize device runtime strip for track ${authoritativeTrack.id}`,
+        };
+        if (initialized.acceptance === 'accepted' && initialized.application === 'applied') {
+            mirrorNativeDeviceChain(before, authoritativeTrack);
+        }
+        return initialized;
+    }
+
+    // An instrument-only mutation owes no AudioNode edit once its live strip
+    // exists, but a divergent strip must still reject.
+    if (projectedChainUnchanged) {
+        if (authoritativeTrack === undefined) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: 'Runtime graph delta does not match the current project topology',
+            });
+        }
+        if (!liveMatches) {
+            return Object.freeze({
+                acceptance: 'rejected' as const,
+                application: 'not-applied' as const,
+                reason: 'Live source strip does not match the compiled device-chain delta',
+            });
+        }
+        mirrorNativeDeviceChain(before, authoritativeTrack);
+        return Object.freeze({
+            acceptance: 'superseded' as const,
+            application: 'discharged' as const,
+            reason: `Web Audio device chain is unchanged for track ${after.id}`,
+        });
+    }
+
+    if (liveMatches && authoritativeTrack !== undefined) {
         mirrorNativeDeviceChain(before, authoritativeTrack);
         return Object.freeze({
             acceptance: 'superseded' as const,
@@ -144,34 +216,18 @@ export function applyDeviceChainRuntimeDelta({
         });
     }
 
-    // Imports can publish a device-bearing track after the app's initial strip
-    // projection. Only an absent strip may bootstrap from current final truth;
-    // an existing strip still has to prove the delta's exact before-chain.
-    const initializeMissingStrip =
-        currentTrack !== undefined &&
-        (compiledAfterIsCurrent || mayComposeGroupedFinal) &&
-        getTrackStrip(currentTrack.id) === undefined;
-    let result: ReturnType<typeof applyRuntimeGraphDelta>;
-    if (initializeMissingStrip) {
-        result = projectTrackToLiveStrip({ trackId: currentTrack.id }) ?? {
-            acceptance: 'rejected' as const,
-            application: 'not-applied' as const,
-            reason: `Cannot initialize device runtime strip for track ${currentTrack.id}`,
-        };
-    } else {
-        result = applyRuntimeGraphDelta({
-            schemaVersion: 1,
-            command: 'replace-track-device-chain',
-            correlation: {
-                appRevision: getRuntimeGraphRevision(),
-                projectRevision: captureProjectRevision(),
-            },
-            operation: mayComposeGroupedFinal ? 'replace-device-chain' : operation,
-            before: runtimeGraphTopology.createNode(before),
-            after: authoritativeAfter,
-            parameters: [],
-        });
-    }
+    const result = applyRuntimeGraphDelta({
+        schemaVersion: 1,
+        command: 'replace-track-device-chain',
+        correlation: {
+            appRevision: getRuntimeGraphRevision(),
+            projectRevision: captureProjectRevision(),
+        },
+        operation: mayComposeGroupedFinal ? 'replace-device-chain' : operation,
+        before: compiledBefore,
+        after: authoritativeAfter,
+        parameters: [],
+    });
     // Only a delta Web Audio actually applied: a rejected or half-applied one
     // leaves the two carriers to be reconciled by the repair the result already
     // asks for, and mirroring it would put a chain on the native engine that

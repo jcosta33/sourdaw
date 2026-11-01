@@ -30,6 +30,8 @@ import { formatChordName } from '#/modules/MIDI/useCases';
 import { NOTE_NAMES } from '#/utils/noteNames';
 import { cn } from '#/utils/Styles/cn';
 
+import { type LanePointerPosition, useLaneDragSession } from '../../hooks/useLaneDragSession';
+
 const ROOT_NAMES = NOTE_NAMES;
 
 type ChordTrackLaneProps = {
@@ -114,10 +116,7 @@ type ContextMenuState =
 
 type DragState = {
     eventId: string;
-    originalBeat: number;
-    pointerId: number;
     previewBeat: number;
-    startX: number;
 };
 
 type ActionEffects = {
@@ -137,18 +136,21 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
     const menuRef = useRef<HTMLDivElement>(null);
     const addRef = useRef<HTMLDivElement>(null);
     const menuOpenerRef = useRef<HTMLElement | null>(null);
-    const dragRef = useRef<DragState | null>(null);
-    const committingPointerRef = useRef<number | null>(null);
     const restoreAddFocusRef = useRef(false);
     const mountedRef = useRef(true);
     const pendingRef = useRef(false);
+    // A drag's move closure outlives the render that armed it; the zoom can change mid-drag.
+    const pixelsPerBeatRef = useRef(pixelsPerBeat);
+    useEffect(() => {
+        pixelsPerBeatRef.current = pixelsPerBeat;
+    });
+    // Likewise the chords: a drag's commit must see whether its chord is still there when it ends.
+    const eventsRef = useRef(state.events);
+    useEffect(() => {
+        eventsRef.current = state.events;
+    });
 
     const beatToX = (beat: number): number => beat * pixelsPerBeat - scrollX;
-
-    const updateDrag = (next: DragState | null): void => {
-        dragRef.current = next;
-        setDragState(next);
-    };
 
     const dispatchAction = async (
         action: Parameters<typeof executeAppAction>[0],
@@ -207,10 +209,12 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
         return () => {
             mountedRef.current = false;
             pendingRef.current = false;
-            dragRef.current = null;
-            committingPointerRef.current = null;
         };
     }, []);
+
+    // Declared after the mount effect so that on unmount `mountedRef` is already false when the
+    // session's own teardown commits an armed drag: a drag cut off by unmounting is abandoned.
+    const { hasActiveDrag, beginDrag, dragHandlers } = useLaneDragSession();
 
     const closeContextMenu = (restoreFocus: boolean): void => {
         setContextMenu({ kind: 'none' });
@@ -279,63 +283,47 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
     };
 
     // ── Drag handling ─────────────────────────────────────────────────
+    // The session owns capture, the Escape cancel, the drag mark and the blur/hidden/unmount
+    // teardown; this lane only says what a move, a commit and a cancel do to the chord.
     const handlePointerDown = (pointerEvent: PointerEvent<HTMLButtonElement>, event: ChordTrackEvent): void => {
-        if (pointerEvent.button !== 0 || pendingRef.current || dragRef.current) {
+        if (pointerEvent.button !== 0 || pendingRef.current || hasActiveDrag()) {
             return;
         }
         pointerEvent.stopPropagation();
-        pointerEvent.currentTarget.setPointerCapture(pointerEvent.pointerId);
-        updateDrag({
-            eventId: event.id,
-            originalBeat: event.beat,
-            pointerId: pointerEvent.pointerId,
-            previewBeat: event.beat,
-            startX: pointerEvent.clientX,
-        });
-    };
+        const startX = pointerEvent.clientX;
+        let previewBeat = event.beat;
 
-    const handlePointerMove = (pointerEvent: PointerEvent<HTMLButtonElement>): void => {
-        const drag = dragRef.current;
-        if (!drag || drag.pointerId !== pointerEvent.pointerId) {
-            return;
-        }
-        const dx = pointerEvent.clientX - drag.startX;
-        const beatDelta = dx / pixelsPerBeat;
-        const previewBeat = Math.max(0, Math.round((drag.originalBeat + beatDelta) * 4) / 4);
-        updateDrag({ ...drag, previewBeat });
-    };
+        const move = ({ clientX }: LanePointerPosition): void => {
+            const beatDelta = (clientX - startX) / pixelsPerBeatRef.current;
+            previewBeat = Math.max(0, Math.round((event.beat + beatDelta) * 4) / 4);
+            setDragState({ eventId: event.id, previewBeat });
+        };
 
-    const handlePointerUp = (pointerEvent: PointerEvent<HTMLButtonElement>): void => {
-        const drag = dragRef.current;
-        if (!drag || drag.pointerId !== pointerEvent.pointerId) {
-            return;
-        }
-        if (pendingRef.current) {
-            updateDrag(null);
-            return;
-        }
-        committingPointerRef.current = drag.pointerId;
-        if (drag.previewBeat === drag.originalBeat) {
-            committingPointerRef.current = null;
-            updateDrag(null);
-            return;
-        }
-        void dispatchAction(
-            { type: 'moveChordEvent', payload: { eventId: drag.eventId, beat: drag.previewBeat } },
-            {
-                onSettled: () => {
-                    committingPointerRef.current = null;
-                    updateDrag(null);
-                },
+        const commit = (): void => {
+            if (!mountedRef.current) {
+                return;
             }
-        );
-    };
+            const chordStillExists = eventsRef.current.some((current) => current.id === event.id);
+            if (!chordStillExists || pendingRef.current || previewBeat === event.beat) {
+                setDragState(null);
+                return;
+            }
+            void dispatchAction(
+                { type: 'moveChordEvent', payload: { eventId: event.id, beat: previewBeat } },
+                { onSettled: () => setDragState(null) }
+            );
+        };
 
-    const cancelPointerDrag = (pointerEvent: PointerEvent<HTMLButtonElement>): void => {
-        const drag = dragRef.current;
-        if (drag?.pointerId === pointerEvent.pointerId && committingPointerRef.current !== pointerEvent.pointerId) {
-            updateDrag(null);
-        }
+        const cancel = (): void => setDragState(null);
+
+        beginDrag({
+            pointerId: pointerEvent.pointerId,
+            captureTarget: pointerEvent.currentTarget,
+            move,
+            commit,
+            cancel,
+        });
+        setDragState({ eventId: event.id, previewBeat });
     };
 
     // ── Context menu ──────────────────────────────────────────────────
@@ -556,16 +544,20 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
                 {actionError ?? ''}
             </span>
             {/* ── Chord blocks ── */}
-            <div className="relative flex-1 h-full">
+            <div className="relative flex-1 h-full" {...dragHandlers}>
                 {state.events.map((event) => {
-                    const displayedBeat = dragState?.eventId === event.id ? dragState.previewBeat : event.beat;
+                    const dragPreviewBeat = dragState?.eventId === event.id ? dragState.previewBeat : null;
+                    const isDragged = dragPreviewBeat !== null;
+                    const displayedBeat = dragPreviewBeat ?? event.beat;
                     const x = beatToX(displayedBeat);
                     const width = event.duration * pixelsPerBeat;
                     const color = ROOT_COLORS[event.root % 12]!;
 
                     // Cull off-screen blocks against the real viewport width — a fixed
-                    // guess here hid chord blocks on wide viewports (#2039).
-                    if (x + width < -20 || x > viewportWidth + 20) {
+                    // guess here hid chord blocks on wide viewports (#2039). The dragged
+                    // block holds pointer capture, so it stays mounted wherever its preview
+                    // sits: unmounting it would release capture and end the drag early.
+                    if (!isDragged && (x + width < -20 || x > viewportWidth + 20)) {
                         return null;
                     }
 
@@ -591,11 +583,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
                             aria-label={`${formatChordName(event)} chord at beat ${String(event.beat)}`}
                             data-chord-event-id={event.id}
                             onKeyDown={(keyboardEvent) => handleChordKeyDown(keyboardEvent, event)}
-                            onLostPointerCapture={cancelPointerDrag}
-                            onPointerCancel={cancelPointerDrag}
                             onPointerDown={(pointerEvent) => handlePointerDown(pointerEvent, event)}
-                            onPointerMove={handlePointerMove}
-                            onPointerUp={handlePointerUp}
                             title={`${formatChordName(event)} — ${event.duration} beats`}
                         >
                             <span className="text-[9px] font-bold text-white/90 tracking-tight whitespace-nowrap overflow-hidden text-ellipsis px-1.5 drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]">

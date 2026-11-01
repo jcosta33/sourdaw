@@ -359,6 +359,7 @@ export async function executeConfirmedCommandBatch(
                 ? issueAgentCommandApprovalBinding({
                       approval: approved,
                       commandBatch,
+                      confirmationId: confirmation.id,
                       onRejection: (rejection) => {
                           bindingRejectionRef.current = rejection;
                       },

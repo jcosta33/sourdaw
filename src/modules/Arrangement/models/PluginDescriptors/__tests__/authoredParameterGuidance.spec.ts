@@ -98,6 +98,7 @@ const STANDALONE_EFFECT_IDS_UNDER_CENSUS = [
     'gluten',
     'grinder',
     'knead',
+    'transient-shaper',
     'proof',
     'yeast',
 ] as const;

@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 /**
@@ -8,10 +7,7 @@ import { launch_new_project, setupWorkspace } from './e2eUtils';
  * flow proven in devicePanels.spec.ts (Add device -> menuitem -> open panel).
  */
 async function open_scoring_panel(page: import('@playwright/test').Page): Promise<void> {
-    const addAudioButton = page
-        .locator('button')
-        .filter({ hasText: 'Audio' })
-        .filter({ hasText: 'Record or import' });
+    const addAudioButton = page.locator('button').filter({ hasText: 'Audio' }).filter({ hasText: 'Record or import' });
     await addAudioButton.waitFor({ state: 'visible' });
     await addAudioButton.click();
 
@@ -36,9 +32,7 @@ test.describe('Tuner (Scoring device panel)', () => {
         await launch_new_project(page);
     });
 
-    test('Adding a Scoring device opens the tuner panel with default reference and needle mode', async ({
-        page,
-    }) => {
+    test('Adding a Scoring device opens the tuner panel with default reference and needle mode', async ({ page }) => {
         await open_scoring_panel(page);
 
         // Default display mode is 'needle' — its mode button is pressed, the

@@ -72,6 +72,7 @@ vi.mock('#/infra/di/Container', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    persistDeviceParam: vi.fn(),
     activeRecordingRef: { current: [] },
     getTrackEligibility: vi.fn(),
     resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
@@ -98,6 +99,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     // handlers reach both of these, and neither is exercised by these cases.
     markerStore: { value: null, subscribe: vi.fn() },
     resolveEligibleDeviceWriteTarget: vi.fn(() => null),
+    clipSelectionStore: { value: null, subscribe: vi.fn(() => () => {}) },
 }));
 
 vi.mock('../../../repositories/webMidi/lifecycle/initWebMidi', () => ({

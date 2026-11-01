@@ -1,8 +1,14 @@
 import { useRef, useEffect, type MouseEvent } from 'react';
 
 import { useStore } from '#/infra/store/useStore';
-import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
-import { defaultTransportState, seekPlayhead, setLoopRegion, disableLooping } from '#/modules/Transport/useCases';
+import { transportStore, playheadPositionRef, timeSignatureMapStore } from '#/modules/Transport/stores';
+import {
+    defaultTransportState,
+    seekPlayhead,
+    setLoopRegion,
+    disableLooping,
+    getTimelineRulerGrid,
+} from '#/modules/Transport/useCases';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 
 import { timelineViewStore, type TimelineViewState } from '../../stores/timelineViewStore';
@@ -11,6 +17,62 @@ import { registerTimelineGestureCanceler } from '../../useCases/timelineInteract
 import { TimelineChromeSurface } from './TimelineChromeSurface';
 
 export const BEAT_RULER_HEIGHT = 18;
+const EMPTY_METER_MAP = { changes: [] };
+
+function drawTimelineGrid(
+    ctx: CanvasRenderingContext2D,
+    grid: ReturnType<typeof getTimelineRulerGrid>,
+    viewportStartBeat: number,
+    pixelsPerBeat: number
+): void {
+    const h = BEAT_RULER_HEIGHT;
+    ctx.font = '500 9px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
+    for (const piece of grid) {
+        const bar = piece.bar - 1;
+        const barX = (piece.startBeat - viewportStartBeat) * pixelsPerBeat;
+        const barPixels = piece.nominalBeats * pixelsPerBeat;
+        const labelEvery = barPixels < 40 ? Math.ceil(40 / barPixels) : 1;
+        if (bar % 2 === 1) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.025)';
+            ctx.fillRect(barX, 0, (piece.endBeat - piece.startBeat) * pixelsPerBeat, h);
+        }
+        const is4BarBoundary = bar % 4 === 0;
+        const is8BarBoundary = bar % 8 === 0;
+        let lineAlpha = '0.12';
+        let labelAlpha = '0.35';
+        if (is8BarBoundary) {
+            lineAlpha = '0.35';
+            labelAlpha = '0.7';
+        } else if (is4BarBoundary) {
+            lineAlpha = '0.25';
+            labelAlpha = '0.55';
+        }
+        ctx.strokeStyle = `rgba(255, 255, 255, ${lineAlpha})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(barX, 0);
+        ctx.lineTo(barX, h);
+        ctx.stroke();
+        if (bar % labelEvery === 0 && bar >= 0) {
+            ctx.fillStyle = `rgba(224, 224, 224, ${labelAlpha})`;
+            ctx.fillText(String(piece.bar), barX + 3, 11);
+        }
+        if (barPixels <= 25) {
+            continue;
+        }
+        for (const tick of piece.ticks) {
+            const beatX = (tick.beat - viewportStartBeat) * pixelsPerBeat;
+            const isHalf = tick.index === Math.floor(piece.numerator / 2);
+            const tickH = isHalf ? 7 : 4;
+            ctx.strokeStyle = isHalf ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.07)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(beatX, h - tickH);
+            ctx.lineTo(beatX, h);
+            ctx.stroke();
+        }
+    }
+}
 
 export const BeatRulerBar = (): React.ReactElement => {
     const containerRef = useRef<HTMLDivElement | null>(null);
@@ -42,6 +104,7 @@ export const BeatRulerBar = (): React.ReactElement => {
     const defaultTransport = defaultTransportState;
     const viewState = useStore(timelineViewStore, defaultTimelineView);
     const transport = useStore(transportStore, defaultTransport);
+    const meterMap = useStore(timeSignatureMapStore, EMPTY_METER_MAP);
 
     const pixelsPerBeat = viewState.pixelsPerBeat;
     const scrollX = viewState.scrollX;
@@ -49,7 +112,6 @@ export const BeatRulerBar = (): React.ReactElement => {
     const loopEnd = transport.loopEnd;
     const isLooping = transport.isLooping;
     const isPlaying = transport.isPlaying;
-    const timeSigNum = transport.timeSignatureNumerator;
 
     // Draw the ruler via canvas
     const drawRuler = (canvas: HTMLCanvasElement, playhead: number = playheadPositionRef.current) => {
@@ -97,79 +159,16 @@ export const BeatRulerBar = (): React.ReactElement => {
             ctx.fillRect(lx + lw - 2, 0, 2, h);
         }
 
-        // Bar numbers & beat ticks
+        // The subscribed map also repaints this grid while playback is stopped.
         const viewportStartBeat = scrollX / pixelsPerBeat;
-        const beatsVisible = w / pixelsPerBeat;
-        const beatsPerBar = timeSigNum;
-
-        // Determine label interval based on zoom
-        const barPixels = beatsPerBar * pixelsPerBeat;
-        const labelEvery = barPixels < 40 ? Math.ceil(40 / barPixels) : 1;
-
-        ctx.font = '500 9px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
-
-        const firstBar = Math.floor(viewportStartBeat / beatsPerBar);
-        const lastBar = Math.ceil((viewportStartBeat + beatsVisible) / beatsPerBar) + 1;
-
-        for (let bar = firstBar; bar < lastBar; bar++) {
-            const barBeat = bar * beatsPerBar;
-            const barX = (barBeat - viewportStartBeat) * pixelsPerBeat;
-
-            // Alternating bar background — Logic Pro-style visual grouping
-            if (bar % 2 === 1) {
-                ctx.fillStyle = 'rgba(255, 255, 255, 0.025)';
-                ctx.fillRect(barX, 0, barPixels, h);
-            }
-
-            // 4-bar group emphasis: brighter line at every 4th bar
-            const is4BarBoundary = bar % 4 === 0;
-            const is8BarBoundary = bar % 8 === 0;
-
-            if (is8BarBoundary) {
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
-                ctx.lineWidth = 1;
-            } else if (is4BarBoundary) {
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
-                ctx.lineWidth = 1;
-            } else {
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-                ctx.lineWidth = 1;
-            }
-            ctx.beginPath();
-            ctx.moveTo(barX, 0);
-            ctx.lineTo(barX, h);
-            ctx.stroke();
-
-            // Bar number label — brighter at 4-bar boundaries, clearer text
-            if (bar % labelEvery === 0 && bar >= 0) {
-                ctx.fillStyle = (() => {
-                    if (is8BarBoundary) {
-                        return 'rgba(224, 224, 224, 0.7)';
-                    }
-                    if (is4BarBoundary) {
-                        return 'rgba(224, 224, 224, 0.55)';
-                    }
-                    return 'rgba(224, 224, 224, 0.35)';
-                })();
-                ctx.fillText(String(bar + 1), barX + 3, 11);
-            }
-
-            // Beat subdivisions — graduated tick heights
-            if (barPixels > 25) {
-                for (let beat = 1; beat < beatsPerBar; beat++) {
-                    const beatX = barX + beat * pixelsPerBeat;
-                    // Beat 2 (halfway through bar) gets a taller tick
-                    const isHalf = beat === Math.floor(beatsPerBar / 2);
-                    const tickH = isHalf ? 7 : 4;
-                    ctx.strokeStyle = isHalf ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.07)';
-                    ctx.lineWidth = 1;
-                    ctx.beginPath();
-                    ctx.moveTo(beatX, h - tickH);
-                    ctx.lineTo(beatX, h);
-                    ctx.stroke();
-                }
-            }
-        }
+        const grid = getTimelineRulerGrid({
+            changes: meterMap.changes,
+            fromBeat: viewportStartBeat,
+            toBeat: viewportStartBeat + w / pixelsPerBeat,
+            defaultNumerator: transport.timeSignatureNumerator,
+            defaultDenominator: transport.timeSignatureDenominator,
+        });
+        drawTimelineGrid(ctx, grid, viewportStartBeat, pixelsPerBeat);
 
         // Playhead marker — clean triangular indicator
         const phX = (playhead - viewportStartBeat) * pixelsPerBeat;

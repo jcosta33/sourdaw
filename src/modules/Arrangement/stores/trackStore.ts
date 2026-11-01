@@ -1,8 +1,21 @@
 import { createStore } from '#/infra/store/createStore';
-import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    AutomergeStorageWriteConflictError,
+    createAutomergeStorage,
+    getCurrentAutomergeStorageMutationOwner,
+} from '#/infra/store/storage/createAutomergeStorage';
+import { hasValidAudioSourceState } from '#/utils/audioSourceTime';
+import { valuesEqual } from '#/utils/structuralEquality';
 
 import { migrateStoredDeviceParameterValues } from '../models/StoredDeviceParameterMigration';
 import { normalizeTrack } from '../models/Track';
+
+import {
+    captureTempoAudioSourceTrackMetadata,
+    projectTempoAudioSourceTrackWrite,
+    tempoAudioSourceTrackIntentMatches,
+    type TempoAudioSourceWriteIntent,
+} from './tempoAudioSourceWriteIntent';
 
 import type {
     AutomationMode,
@@ -58,6 +71,13 @@ type PlainObject = {
 };
 
 type TrackTransientState = Pick<TrackStoreState, 'selectedTrackId' | 'ghostClips'>;
+
+// Ephemeral intent, separate from both document fields and an owner's optimistic value.
+const selectionIntents = new WeakMap<TrackStoreState, { owner: object | undefined }>();
+
+export function recordTrackSelectionIntent(value: TrackStoreState): void {
+    selectionIntents.set(value, { owner: getCurrentAutomergeStorageMutationOwner() });
+}
 
 type TrackSnapshotState = Pick<TrackStoreState, 'tracks' | 'selectedTrackId'>;
 
@@ -268,6 +288,21 @@ function normalize_clip(value: unknown): Clip | null {
     }
     if (is_finite_number(value.audioOffsetBeats)) {
         clip.audioOffsetBeats = value.audioOffsetBeats;
+    }
+    if (clip.type === 'audio' && hasValidAudioSourceState(value) && is_finite_number(value.audioOffsetSeconds)) {
+        clip.audioOffsetSeconds = value.audioOffsetSeconds;
+        if (is_finite_number(value.audioUnwrappedOffsetSeconds)) {
+            clip.audioUnwrappedOffsetSeconds = value.audioUnwrappedOffsetSeconds;
+        }
+        if (is_finite_number(value.audioLoopStartSeconds)) {
+            clip.audioLoopStartSeconds = value.audioLoopStartSeconds;
+        }
+        if (is_finite_number(value.audioLoopPassEntrySeconds)) {
+            clip.audioLoopPassEntrySeconds = value.audioLoopPassEntrySeconds;
+        }
+        if (is_finite_number(value.audioLoopPassOriginBeat)) {
+            clip.audioLoopPassOriginBeat = value.audioLoopPassOriginBeat;
+        }
     }
     if (is_finite_number(value.midiOffsetBeats)) {
         clip.midiOffsetBeats = value.midiOffsetBeats;
@@ -780,6 +815,43 @@ function get_current_track_transient_state(): TrackTransientState {
     return get_valid_transient_state(trackStore.value) ?? defaultTrackTransientState;
 }
 
+function project_track_local_state(input: {
+    authorityValue: TrackStoreState;
+    localValue: TrackStoreState;
+    previousLocalValue?: TrackStoreState;
+}): TrackStoreState {
+    const local_state = get_valid_transient_state(input.localValue);
+    const transient_state = local_state ?? defaultTrackTransientState;
+    const previous = local_state ? input.previousLocalValue : undefined;
+    const authority_state = get_valid_transient_state(input.authorityValue) ?? defaultTrackTransientState;
+    const selection_intent = selectionIntents.get(input.localValue);
+    const requested_selection =
+        previous &&
+        (selection_intent?.owner !== undefined ||
+            (selection_intent === undefined && input.localValue.selectedTrackId === previous.selectedTrackId))
+            ? authority_state.selectedTrackId
+            : transient_state.selectedTrackId;
+    const selected_track_id = input.authorityValue.tracks.some((track) => track.id === requested_selection)
+        ? requested_selection
+        : null;
+    const ghost_clips =
+        previous && input.localValue.ghostClips === previous.ghostClips
+            ? authority_state.ghostClips
+            : transient_state.ghostClips;
+    if (
+        input.authorityValue.selectedTrackId === selected_track_id &&
+        (valuesEqual(input.authorityValue.ghostClips, ghost_clips) ||
+            (input.authorityValue.ghostClips === undefined && ghost_clips?.length === 0))
+    ) {
+        return input.authorityValue;
+    }
+    return {
+        ...input.authorityValue,
+        selectedTrackId: selected_track_id,
+        ghostClips: ghost_clips,
+    };
+}
+
 function sanitize_track_store_state_from_crdt(value: unknown): TrackStoreState {
     const transient_state = get_current_track_transient_state();
     const snapshot_state = sanitizeTrackSnapshot(value);
@@ -801,20 +873,51 @@ function sanitize_track_store_state_from_crdt(value: unknown): TrackStoreState {
 }
 
 export const trackStore = createStore<TrackStoreState>({
-    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'tracks', {
-        toCrdt: ({ tracks }) => ({ tracks }),
-        fromCrdt: sanitize_track_store_state_from_crdt,
-        // Tracks, clips, devices, midiFx and alternatives all carry an `id`, so
-        // the slot reconciles row by row on its own. Sends are the one
-        // collection here without one: a send is identified by the bus it
-        // feeds, and naming that lets two peers adjust sends to different buses
-        // on the same track without overwriting each other.
-        crdtEntityIdentity: {
-            sends: (row) => (typeof row.busId === 'string' && row.busId.length > 0 ? row.busId : null),
-        },
-        // Audit CC-2 — projection default for a document without this slot, so
-        // hydrate never writes the previous project's cache back into truth.
-        hydrateMissing: () => defaultTrackState,
-    }),
+    storage: createAutomergeStorage<TrackStoreState, readonly TempoAudioSourceWriteIntent[]>(
+        DOC_PREFIX_ROOT,
+        'tracks',
+        {
+            toCrdt: ({ tracks }) => ({ tracks }),
+            fromCrdt: sanitize_track_store_state_from_crdt,
+            isLocalRuntimeStateUpdate: ({ currentValue, nextValue }) => nextValue.tracks === currentValue.tracks,
+            preserveLocalRuntimeStateOnRecompute: true,
+            projectCommittedLocalState: project_track_local_state,
+            writeMetadata: {
+                capture: captureTempoAudioSourceTrackMetadata,
+                reduce: ({ current, captured }) => {
+                    const pending = current ? current.slice() : [];
+                    pending.push(...captured);
+                    return pending;
+                },
+            },
+            mutateCrdtWithMetadata: ({ metadata, doc, value, baseValue, reconcile }) => {
+                if (metadata?.some((intent) => !tempoAudioSourceTrackIntentMatches(intent, doc))) {
+                    throw new AutomergeStorageWriteConflictError('Tempo source inputs changed before the track write');
+                }
+                if (metadata?.some((intent) => 'rowClock' in intent)) {
+                    const tracks = value ? projectTempoAudioSourceTrackWrite(value.tracks, metadata) : null;
+                    if (!tracks || !value) {
+                        throw new AutomergeStorageWriteConflictError(
+                            'Tempo-map source tuple changed during projection'
+                        );
+                    }
+                    reconcile({ ...value, tracks }, baseValue);
+                    return;
+                }
+                reconcile(value, baseValue);
+            },
+            // Tracks, clips, devices, midiFx and alternatives all carry an `id`, so
+            // the slot reconciles row by row on its own. Sends are the one
+            // collection here without one: a send is identified by the bus it
+            // feeds, and naming that lets two peers adjust sends to different buses
+            // on the same track without overwriting each other.
+            crdtEntityIdentity: {
+                sends: (row) => (typeof row.busId === 'string' && row.busId.length > 0 ? row.busId : null),
+            },
+            // Audit CC-2 — projection default for a document without this slot, so
+            // hydrate never writes the previous project's cache back into truth.
+            hydrateMissing: () => defaultTrackState,
+        }
+    ),
     initialData: defaultTrackState,
 });

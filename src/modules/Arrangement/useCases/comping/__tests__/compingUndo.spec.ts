@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTakeLane } from '../../../models/TakeLane';
 import { type TakeLaneStoreState } from '../../../stores/takeLaneStore';
@@ -100,13 +101,22 @@ describe('comping undo entries', () => {
         expect(pushUndoEntryMock).not.toHaveBeenCalled();
     });
 
-    it('removeCompRegion pushes undo when a region is removed', () => {
+    it('removeCompRegion delegates serializable Undo ownership to Command', () => {
         const lane = createTakeLane('t1');
         const region = { startBeat: 0, endBeat: 4, takeId: 'x' };
-        takeLaneStoreMock.value = { lanes: [{ ...lane, activeCompRegions: [region] }] };
+        const take = { id: 'x', clipId: 'clip-x', name: 'X', startBeat: 0, endBeat: 4, selected: true };
+        takeLaneStoreMock.value = { lanes: [{ ...lane, takes: [take], activeCompRegions: [region] }] };
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 't1', clips: [ClipDummy.create({ id: 'clip-x', trackId: 't1' })] })],
+            selectedTrackId: 't1',
+            ghostClips: [],
+        });
         removeCompRegion('t1', 0);
-        expect(pushUndoEntryMock).toHaveBeenCalledTimes(1);
-        expect(pushUndoEntryMock.mock.calls[0]![0]).toBe('Remove comp region');
+        expect(executeUserAppActionMock).toHaveBeenCalledWith({
+            type: 'removeCompRegion',
+            payload: { trackId: 't1', startBeat: 0 },
+        });
+        expect(pushUndoEntryMock).not.toHaveBeenCalled();
     });
 
     it('flattenComp pushes a single undo entry covering the whole lane removal', () => {

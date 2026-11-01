@@ -1,6 +1,7 @@
 import { restoreAutomationLanes } from '#/modules/Automation/useCases';
 import { splitMidiNotesAtBeat } from '#/modules/MIDI/useCases';
 import { type ClipStateSnapshot } from '#/utils/handlerContract';
+import { valuesEqual } from '#/utils/structuralEquality';
 
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
@@ -8,6 +9,7 @@ import { writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { type Clip } from '../../stores/trackStore';
 import { applyTakeReKeyTransitions } from '../comping/applyTakeReKeyTransitions';
 import { captureClipSplitTakeReKeyTransitions } from '../comping/captureClipSplitTakeReKey';
+import { reKeyedTakeLaneOwnersMatchStore } from '../comping/reKeyedTakeLaneOwnersMatchStore';
 import { type TakeReKeyLaneTransition } from '../comping/takeReKeyTransition';
 
 import { prepareClipSplit } from './prepareClipSplit';
@@ -20,22 +22,49 @@ type SplitClipOptions = {
      * both facets. The split applies the transitions itself either way.
      */
     reKeyedTakeLanes?: TakeReKeyLaneTransition[];
+    prepared?: NonNullable<ReturnType<typeof prepareClipSplit>>;
 };
 
 function cloneClipStateSnapshot(snapshot: ClipStateSnapshot): Clip {
-    return {
-        ...structuredClone(snapshot),
-        overrides: snapshot.overrides ? { ...snapshot.overrides } : undefined,
-        kneadState: snapshot.kneadState
+    const { overrides, kneadState, ...snapshotClip } = structuredClone(snapshot);
+    const clip: Clip = snapshotClip;
+    if (Object.hasOwn(snapshot, 'overrides')) {
+        clip.overrides = overrides ? { ...overrides } : undefined;
+    }
+    if (Object.hasOwn(snapshot, 'kneadState')) {
+        clip.kneadState = kneadState
             ? {
-                  ...snapshot.kneadState,
-                  blobs: snapshot.kneadState.blobs.map((blob) => ({
+                  ...kneadState,
+                  blobs: kneadState.blobs.map((blob) => ({
                       ...blob,
                       pitchCurveCents: [...blob.pitchCurveCents],
                   })),
               }
-            : undefined,
-    };
+            : undefined;
+    }
+    return clip;
+}
+
+function validSplitArguments(splitBeat: number, rightClipId?: string): boolean {
+    return (
+        Number.isFinite(splitBeat) &&
+        (rightClipId === undefined || (typeof rightClipId === 'string' && rightClipId.length > 0))
+    );
+}
+
+function splitStillOwned(
+    state: NonNullable<ReturnType<typeof getTrackState>>,
+    plan: NonNullable<ReturnType<typeof prepareClipSplit>>,
+    clipId: string
+): boolean {
+    const track = state.tracks.find((candidate) => candidate.id === plan.previous.trackId);
+    const current = track?.clips.find((candidate) => candidate.id === clipId);
+    return Boolean(
+        current &&
+        valuesEqual(current, plan.previous.leftClip) &&
+        !state.tracks.some((candidate) => candidate.clips.some((clip) => clip.id === plan.rightClipId)) &&
+        (!plan.takeReKeyTransitions || reKeyedTakeLaneOwnersMatchStore(plan.takeReKeyTransitions, 'apply'))
+    );
 }
 
 /**
@@ -53,16 +82,20 @@ export function splitClip(
     resolvedSplitBeat?: number,
     options?: SplitClipOptions
 ): string | null {
-    if (!Number.isFinite(splitBeat)) {
-        return null;
-    }
-    if (rightClipId !== undefined && (typeof rightClipId !== 'string' || rightClipId.length === 0)) {
+    if (!validSplitArguments(splitBeat, rightClipId)) {
         return null;
     }
 
-    const plan = prepareClipSplit({ clipId, splitBeat, rightClipId, resolvedSplitBeat, targetNoteIds });
+    const captured = options?.prepared;
+    const plan =
+        captured?.previous.leftClip.type === 'audio'
+            ? captured
+            : prepareClipSplit({ clipId, splitBeat, rightClipId, resolvedSplitBeat, targetNoteIds });
     const state = getTrackState();
     if (!plan || !state || !plan.next.rightClip) {
+        return null;
+    }
+    if (!splitStillOwned(state, plan, clipId)) {
         return null;
     }
     // #5048 — splitting changes no audio: takes and comp regions re-key onto
@@ -70,14 +103,18 @@ export function splitClip(
     // spanning the seam keeps sounding its take across both fragments instead
     // of staying bounded by the left clip's end. Captured before any write,
     // applied right after the clip state publishes.
-    const takeReKeyTransitions = captureClipSplitTakeReKeyTransitions({
-        trackId: plan.next.trackId,
-        clipId,
-        rightClipId: plan.rightClipId,
-        splitBeat: plan.next.leftClip.endBeat,
-        clipStartBeat: plan.previous.leftClip.startBeat,
-        clipEndBeat: plan.previous.leftClip.endBeat,
-    });
+    const takeReKeyTransitions =
+        plan.takeReKeyTransitions ??
+        captureClipSplitTakeReKeyTransitions({
+            sourceClip: cloneClipStateSnapshot(plan.previous.leftClip),
+            trackId: plan.next.trackId,
+            clipId,
+            rightClipId: plan.rightClipId,
+            splitBeat: plan.next.leftClip.endBeat,
+            clipStartBeat: plan.previous.leftClip.startBeat,
+            clipEndBeat: plan.previous.leftClip.endBeat,
+            sourceMidi: plan.previous.sourceMidi,
+        });
     const leftClip = cloneClipStateSnapshot(plan.next.leftClip);
     const rightClip = cloneClipStateSnapshot(plan.next.rightClip);
     setTrackState({

@@ -181,9 +181,9 @@ const ENGINE_SOURCES: Record<NativeDspDeviceType, DeviceEngines> = {
     // The Tuner, whose engine is the `scoring` crate.
     'native-scoring': singleEngine('crates/scoring/src'),
     knead: singleEngine('crates/daw-dsp/src/knead'),
+    'transient-shaper': singleEngine('crates/daw-dsp/src/toaster/transient.rs'),
 };
 
-const SERVICES = 'src/modules/AudioEngine/services';
 const WORKLETS = 'src/modules/AudioEngine/worklets';
 
 /**
@@ -198,11 +198,12 @@ const WORKLETS = 'src/modules/AudioEngine/worklets';
  */
 type NameTranslation =
     | { readonly kind: 'identity' }
+    | { readonly kind: 'numericArguments'; readonly source: string; readonly processor: string }
     | { readonly kind: 'table'; readonly source: string; readonly constName: string }
     | { readonly kind: 'camelToSnake'; readonly source: string; readonly functionName: string };
 
 const PARAM_NAME_TRANSLATIONS: Record<NativeDspDeviceType, NameTranslation> = {
-    fermenter: { kind: 'camelToSnake', source: `${SERVICES}/fermenterProcessor.ts`, functionName: 'camelToSnake' },
+    fermenter: { kind: 'camelToSnake', source: `${WORKLETS}/fermenterProcessor.ts`, functionName: 'camelToSnake' },
     // Pad-scoped writes go through `set_pad_param` and PAD_PARAM_MAP; the
     // device-level `param` message automation reads `TOASTER_KIT_PARAM_NAMES`,
     // which the worklet now imports from `models/` rather than keeping its own
@@ -212,7 +213,7 @@ const PARAM_NAME_TRANSLATIONS: Record<NativeDspDeviceType, NameTranslation> = {
         source: 'src/modules/AudioEngine/models/ToasterKitParamNames.ts',
         constName: 'TOASTER_KIT_PARAM_NAMES',
     },
-    levain: { kind: 'table', source: `${SERVICES}/levainProcessor.ts`, constName: 'PARAM_MAP' },
+    levain: { kind: 'table', source: `${WORKLETS}/levainProcessor.ts`, constName: 'PARAM_MAP' },
     'builtin-crumbs': { kind: 'identity' },
     // Grand Boule's two processors share one core, and the map lives there.
     'grand-boule': { kind: 'table', source: `${WORKLETS}/grandBouleEngineCore.ts`, constName: 'PARAM_MAP' },
@@ -228,12 +229,17 @@ const PARAM_NAME_TRANSLATIONS: Record<NativeDspDeviceType, NameTranslation> = {
         source: 'src/modules/AudioEngine/models/CrustDspParamNames.ts',
         constName: 'CRUST_DSP_PARAM_NAMES',
     },
-    bacteria: { kind: 'table', source: `${SERVICES}/bacteriaProcessor.ts`, constName: 'PARAM_MAP' },
-    grinder: { kind: 'table', source: `${SERVICES}/grinderProcessor.ts`, constName: 'PARAM_MAP' },
+    bacteria: { kind: 'table', source: `${WORKLETS}/bacteriaProcessor.ts`, constName: 'PARAM_MAP' },
+    grinder: { kind: 'table', source: `${WORKLETS}/grinderProcessor.ts`, constName: 'PARAM_MAP' },
     proof: { kind: 'identity' },
     'dutch-oven': { kind: 'identity' },
     'native-scoring': { kind: 'identity' },
     knead: { kind: 'identity' },
+    'transient-shaper': {
+        kind: 'numericArguments',
+        source: 'crates/daw-dsp/src/toaster/transient.rs',
+        processor: `${WORKLETS}/transientShaperProcessor.ts`,
+    },
 };
 
 /**
@@ -595,6 +601,10 @@ function readCamelToSnakeOverrides(sourcePath: string, functionName: string): Re
 function buildTranslator(deviceType: NativeDspDeviceType): (paramId: string) => string {
     const translation = PARAM_NAME_TRANSLATIONS[deviceType];
 
+    if (translation.kind === 'numericArguments') {
+        return (paramId) => paramId.replaceAll(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+    }
+
     if (translation.kind === 'identity') {
         return (paramId) => paramId;
     }
@@ -687,7 +697,62 @@ function selectableEngineIds(deviceType: NativeDspDeviceType): readonly string[]
     return [...new Set(SELECTOR_WIRE_VALUES.get(deviceType)!.values())];
 }
 
+/** Numeric ABI wiring is proved from both real signatures and each worklet
+ * argument's AudioParam producer; unrelated string setter arms cannot vouch for it. */
+function numericArgumentAnswersTo(deviceType: NativeDspDeviceType, paramId: string): boolean {
+    const translation = PARAM_NAME_TRANSLATIONS[deviceType];
+    if (translation.kind !== 'numericArguments') {
+        return false;
+    }
+    let position = -1;
+    if (paramId === 'attackGain') {
+        position = 1;
+    } else if (paramId === 'sustainGain') {
+        position = 2;
+    }
+    if (position < 0) {
+        return false;
+    }
+    const rust = stripComments(readFileSync(resolve(REPO_ROOT, translation.source), 'utf8'));
+    const processor = stripComments(readFileSync(resolve(REPO_ROOT, translation.processor), 'utf8'));
+    const argumentName = TRANSLATORS.get(deviceType)!(paramId);
+    const local = paramId === 'attackGain' ? 'attack' : 'sustain';
+    const gainReaderStart = processor.indexOf('function gainAtFrame(');
+    if (gainReaderStart < 0) {
+        return false;
+    }
+    const gainReader = readBalancedBlock(processor, processor.indexOf('{', gainReaderStart));
+    // A posted immediate write takes its one frame; every other frame reads the AudioParam.
+    const frameGainStart = processor.indexOf('function gainForFrame(');
+    if (frameGainStart < 0) {
+        return false;
+    }
+    const frameGain = readBalancedBlock(processor, processor.indexOf('{', processor.indexOf(')', frameGainStart)));
+    const immediate = `immediate${local[0]!.toUpperCase()}${local.slice(1)}`;
+    if (
+        !gainReader.includes('return values?.[values.length === 1 ? 0 : frame] ?? Number.NaN;') ||
+        !frameGain.includes('return frame === immediateIndex ? immediate.value : gainAtFrame(values, frame);') ||
+        !processor.includes(`const ${paramId} = parameters.${paramId};`) ||
+        !processor.includes(`const ${local} = gainForFrame(${immediate}, ${local}Index, ${paramId}, frame);`)
+    ) {
+        return false;
+    }
+    return ['process_left', 'process_right'].every((method) => {
+        const signature = new RegExp(String.raw`pub fn ${method}\(([^)]*)\)`).exec(rust);
+        const args = signature?.[1]
+            ?.split(',')
+            .filter((part) => !part.includes('self'))
+            .map((part) => part.trim().split(':')[0]);
+        const call = new RegExp(String.raw`instance\.${method}\(([^;]*)\)`).exec(processor);
+        const values = call?.[1]?.split(',').map((part) => part.trim());
+        return args?.[position] === argumentName && values?.[position] === local;
+    });
+}
+
 function engineAnswersTo(deviceType: NativeDspDeviceType, engineId: string, paramId: string): boolean {
+    if (PARAM_NAME_TRANSLATIONS[deviceType].kind === 'numericArguments') {
+        return numericArgumentAnswersTo(deviceType, paramId);
+    }
     const translated = TRANSLATORS.get(deviceType)!(paramId);
     const shared = SHARED_PARAM_NAMES.get(deviceType)!;
     const own = ENGINE_PARAM_NAMES.get(deviceType)!.get(engineId);

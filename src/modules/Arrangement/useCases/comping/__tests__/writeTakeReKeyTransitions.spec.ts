@@ -69,6 +69,44 @@ function liveLane(): TakeLane {
 }
 
 describe('writeTakeReKeyTransitions', () => {
+    it('moves only a MIDI source phase while keeping a peer row edit on that take', () => {
+        const source = {
+            sourceClipId: 'clip-1',
+            rows: {
+                notes: {
+                    present: true as const,
+                    value: [{ id: 'note-1', pitch: 60, startBeat: 1, duration: 1, velocity: 90 }],
+                },
+                controlChanges: { present: true as const, value: [] },
+                pitchBends: { present: true as const, value: [] },
+            },
+            sourceEntryBeat: 0,
+            sourceEndBeat: 4,
+            phaseHeadBeat: 0,
+            passLengthBeats: 4,
+        };
+        const before = { ...createTake('clip-1', 'Pass', 4, 8), midiSource: source };
+        const after = { ...before, startBeat: 2, endBeat: 6, midiSource: { ...source, phaseHeadBeat: -2 } };
+        const live = structuredClone(before);
+        live.midiSource.rows.notes.value[0]!.velocity = 111;
+        const lane: TakeLane = { ...createTakeLane('track-1'), takes: [live] };
+        mocks.takeLaneStoreValue.value = { lanes: [lane] };
+        const transition: TakeReKeyLaneTransition = {
+            laneId: lane.id,
+            trackId: lane.trackId,
+            takesBefore: [before],
+            takesAfter: [after],
+            regionsBefore: [],
+            regionsAfter: [],
+        };
+
+        applyTakeReKeyTransitions([transition]);
+
+        expect(liveLane().takes[0]?.startBeat).toBe(2);
+        expect(liveLane().takes[0]?.midiSource?.phaseHeadBeat).toBe(-2);
+        expect(liveLane().takes[0]?.midiSource?.rows.notes.value[0]?.velocity).toBe(111);
+    });
+
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.takeLaneStoreValue.value = null;
@@ -177,6 +215,7 @@ describe('writeTakeReKeyTransitions', () => {
     it.each([
         { field: 'anchor', moved: { passAnchorSeconds: -2 } },
         { field: 'depth', moved: { passDepthSeconds: 3 } },
+        { field: 'exclusive end', moved: { passSourceEndSeconds: 4 } },
     ])('moves a pass whose placement $field alone the transition changed, both ways', ({ moved }) => {
         // The two facets differ only in where the pass sounds against its
         // clip's media, or what it plays, so that field alone must mark the
@@ -302,6 +341,57 @@ describe('writeTakeReKeyTransitions', () => {
         applyTakeReKeyTransitions([transition]);
 
         expect(liveLane().takes).toEqual([{ ...reKeyedTake, selected: true }]);
+    });
+
+    it.each(['apply', 'restore'] as const)(
+        'restores at most one captured selection without a retained live choice on %s',
+        (direction) => {
+            const first = {
+                ...createTake('clip-1', 'First pass', 0, 4, 2),
+                selected: true,
+                passAnchorSeconds: -1,
+                passDepthSeconds: 2,
+            };
+            const second = { ...createTake('clip-1', 'Second pass', 0, 4, 4), selected: true };
+            const unchanged = createTake('clip-1', 'Deleted unchanged pass', 0, 4);
+            const before = [first, second, unchanged];
+            const after = [{ ...first, endBeat: 2 }, { ...second, endBeat: 2 }, unchanged];
+            const lane = { ...createTakeLane('track-1'), takes: [] };
+            mocks.takeLaneStoreValue.value = { lanes: [lane] };
+            mocks.trackState.value = { tracks: [{ id: 'track-1', clips: [{ id: 'clip-1' }] }] };
+            const transition: TakeReKeyLaneTransition = {
+                laneId: lane.id,
+                trackId: lane.trackId,
+                takesBefore: before,
+                takesAfter: after,
+                regionsBefore: [],
+                regionsAfter: [],
+            };
+            if (direction === 'apply') {
+                applyTakeReKeyTransitions([transition]);
+            } else {
+                restoreTakeReKeyTransitions([transition]);
+            }
+            const target = direction === 'apply' ? after : before;
+            expect(liveLane().takes).toEqual([target[0], { ...target[1], selected: false }]);
+            expect(
+                liveLane()
+                    .takes.filter((take) => take.selected)
+                    .map((take) => take.id)
+            ).toEqual([first.id]);
+        }
+    );
+
+    it('restores the captured selection when the only live selected fragment leaves', () => {
+        const fixture = splitFixture('clip-1', 'track-1');
+        fixture.take.selected = true;
+        fixture.rightTake.selected = true;
+        mocks.takeLaneStoreValue.value = { lanes: [{ ...fixture.lane, takes: [fixture.rightTake] }] };
+        mocks.trackState.value = { tracks: [{ id: 'track-1', clips: [{ id: 'clip-1' }] }] };
+
+        restoreTakeReKeyTransitions([splitTransition(fixture)]);
+
+        expect(liveLane().takes).toEqual([fixture.take]);
     });
 
     it('finds the lane by track when a remove-add cycle gave it a fresh id', () => {

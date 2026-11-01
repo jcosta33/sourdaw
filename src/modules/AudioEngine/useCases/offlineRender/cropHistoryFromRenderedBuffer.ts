@@ -1,24 +1,40 @@
 type CropHistoryFromRenderedBufferInput = {
     buffer: AudioBuffer;
-    historySeconds: number;
-    outputDurationSeconds: number;
+    historyFrameCount: number;
+    outputFrameCount: number;
+    borrowed?: boolean;
 };
 
+type BorrowedRenderWindow = Pick<AudioBuffer, 'length' | 'numberOfChannels' | 'sampleRate' | 'getChannelData'>;
+
+export function cropHistoryFromRenderedBuffer(
+    input: CropHistoryFromRenderedBufferInput & { borrowed: true }
+): BorrowedRenderWindow;
+export function cropHistoryFromRenderedBuffer(input: CropHistoryFromRenderedBufferInput): AudioBuffer;
 /** Returns the requested window after a timeline-zero history render. */
 export function cropHistoryFromRenderedBuffer({
     buffer,
-    historySeconds,
-    outputDurationSeconds,
-}: CropHistoryFromRenderedBufferInput): AudioBuffer {
-    if (historySeconds <= 0) {
+    historyFrameCount,
+    outputFrameCount,
+    borrowed = false,
+}: CropHistoryFromRenderedBufferInput): AudioBuffer | BorrowedRenderWindow {
+    if (historyFrameCount <= 0) {
         return buffer;
     }
 
-    const startFrame = Math.round(historySeconds * buffer.sampleRate);
-    const outputFrameCount = Math.ceil(outputDurationSeconds * buffer.sampleRate);
+    const startFrame = historyFrameCount;
     const endFrame = startFrame + outputFrameCount;
-    if (startFrame < 0 || endFrame > buffer.length) {
+    if (endFrame > buffer.length) {
         throw new Error('The requested region falls outside the renderer frame limit');
+    }
+
+    if (borrowed) {
+        return {
+            length: outputFrameCount,
+            sampleRate: buffer.sampleRate,
+            numberOfChannels: buffer.numberOfChannels,
+            getChannelData: (channel) => buffer.getChannelData(channel).subarray(startFrame, endFrame),
+        };
     }
 
     const output = new AudioBuffer({
