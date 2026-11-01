@@ -50,6 +50,7 @@ import {
     type AudioGraphCommandBatch,
     type NativeGrinderModelReceipt,
 } from '../../models/AudioGraphBackend';
+import { readNativeEngineIncarnation } from '../nativeEngineIncarnation';
 
 import { type NativeGraphTransport } from './nativeGraphTransport';
 import { nativeTimelineMaterialLeases } from './nativeTimelineMaterialLeases';
@@ -292,12 +293,18 @@ function readAppliedResult(value: unknown, batch: AudioGraphCommandBatch): Audio
         const admitted = payload.admittedBatch;
         const admittedBatch =
             typeof admitted === 'number' && Number.isFinite(admitted) ? { admittedBatch: admitted } : {};
+        const incarnation = readNativeEngineIncarnation(payload.engineIncarnation);
+        const identity: { engineIncarnation?: string } = {};
+        if (incarnation !== undefined) {
+            identity.engineIncarnation = incarnation;
+        }
         const result: Extract<AudioGraphApplyResult, { application: 'applied' }> = {
             acceptance: 'accepted',
             application: 'applied',
             ...correlation,
             runtimeRevision,
             ...admittedBatch,
+            ...identity,
             reports,
             attachedPlugins: readAttachedPlugins(payload.attachedPlugins),
             attachedCrumbs: readAttachedCrumbsInstances(payload.attachedCrumbs),

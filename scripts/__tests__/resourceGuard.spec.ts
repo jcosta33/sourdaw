@@ -1002,14 +1002,14 @@ describe('resource CLI', () => {
 
 describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
     it.each([
-        { profile: 'broad' as const, command: 'pnpm', args: ['typecheck:test'], expected: 6 * 1024 ** 3 },
+        { profile: 'broad' as const, command: 'pnpm', args: ['typecheck:test'], expected: 7168 * 1024 ** 2 },
         {
             profile: 'broad' as const,
             command: 'pnpm',
             args: ['run', 'typecheck:test'],
-            expected: 6 * 1024 ** 3,
+            expected: 7168 * 1024 ** 2,
         },
-        { profile: 'focused' as const, command: 'pnpm', args: ['typecheck:test'], expected: 6 * 1024 ** 3 },
+        { profile: 'focused' as const, command: 'pnpm', args: ['typecheck:test'], expected: 7168 * 1024 ** 2 },
         {
             profile: 'focused' as const,
             command: 'pnpm',
@@ -1044,13 +1044,13 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         },
         { profile: 'focused' as const, command: 'pnpm', args: ['deps:validate'], expected: 6.5 * 1024 ** 3 },
         { profile: 'broad' as const, command: 'pnpm', args: ['run', 'deps:validate'], expected: 6.5 * 1024 ** 3 },
-        { profile: 'focused' as const, command: 'pnpm', args: ['test:e2e'], expected: 5.5 * 1024 ** 3 },
-        { profile: 'broad' as const, command: 'pnpm', args: ['run', 'test:e2e'], expected: 5.5 * 1024 ** 3 },
+        { profile: 'focused' as const, command: 'pnpm', args: ['test:e2e'], expected: 8 * 1024 ** 3 },
+        { profile: 'broad' as const, command: 'pnpm', args: ['run', 'test:e2e'], expected: 8 * 1024 ** 3 },
         {
             profile: 'focused' as const,
             command: 'pnpm',
             args: ['test:e2e', 'tests/e2e/exportAudioEvidence.spec.ts'],
-            expected: 5.5 * 1024 ** 3,
+            expected: 8 * 1024 ** 3,
         },
         {
             profile: 'focused' as const,
@@ -1062,13 +1062,13 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
             profile: 'broad' as const,
             command: 'pnpm',
             args: ['--config.verify-deps-before-run=false', 'typecheck:test'],
-            expected: 6 * 1024 ** 3,
+            expected: 7168 * 1024 ** 2,
         },
         {
             profile: 'broad' as const,
             command: 'pnpm',
             args: ['--config.verify-deps-before-run=false', 'run', 'typecheck:test'],
-            expected: 6 * 1024 ** 3,
+            expected: 7168 * 1024 ** 2,
         },
         {
             profile: 'focused' as const,
@@ -1086,19 +1086,19 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
             profile: 'focused' as const,
             command: 'pnpm',
             args: ['-C', 'packages/app', 'test:e2e'],
-            expected: 5.5 * 1024 ** 3,
+            expected: 8 * 1024 ** 3,
         },
         {
             profile: 'focused' as const,
             command: 'pnpm',
             args: ['--dir', 'packages/app', 'test:e2e'],
-            expected: 5.5 * 1024 ** 3,
+            expected: 8 * 1024 ** 3,
         },
         {
             profile: 'broad' as const,
             command: 'pnpm',
             args: ['--silent', 'run', 'typecheck:test'],
-            expected: 6 * 1024 ** 3,
+            expected: 7168 * 1024 ** 2,
         },
     ])('resolves $profile/$command/$args to $expected bytes', ({ profile, command, args, expected }) => {
         expect(resolveDefaultMaxRssBytes({ profile, command, args })).toBe(expected);
@@ -1122,7 +1122,7 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
                 availableMemoryBytes: abundantMemoryBytes,
             });
             expect(typecheckResult.code).toBe(0);
-            expect(typecheckResult.maxRssBytes).toBe(6 * 1024 ** 3);
+            expect(typecheckResult.maxRssBytes).toBe(7168 * 1024 ** 2);
 
             const prefixedResult = await runIsolatedGuardedCommand({
                 command: 'pnpm',
@@ -1133,7 +1133,7 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
                 availableMemoryBytes: abundantMemoryBytes,
             });
             expect(prefixedResult.code).toBe(0);
-            expect(prefixedResult.maxRssBytes).toBe(6 * 1024 ** 3);
+            expect(prefixedResult.maxRssBytes).toBe(7168 * 1024 ** 2);
 
             const e2eResult = await runIsolatedGuardedCommand({
                 command: 'pnpm',
@@ -1144,7 +1144,7 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
                 availableMemoryBytes: abundantMemoryBytes,
             });
             expect(e2eResult.code).toBe(0);
-            expect(e2eResult.maxRssBytes).toBe(5.5 * 1024 ** 3);
+            expect(e2eResult.maxRssBytes).toBe(8 * 1024 ** 3);
 
             const execResult = await runIsolatedGuardedCommand({
                 command: 'pnpm',

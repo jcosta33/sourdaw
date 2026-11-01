@@ -4,7 +4,7 @@ export function lsofInspectionMatch(name: string, type: string | undefined): str
         return operation.toLowerCase();
     }
     // Darwin libproc separates vnode paths from unrooted errno messages, so path words are not errors.
-    if ((type === 'REG' || type === 'DIR') && name.startsWith('/')) {
+    if ((type === 'REG' || type === 'DIR' || type === 'LINK') && name.startsWith('/')) {
         return undefined;
     }
     return /Permission denied|Operation not permitted|no info/i.exec(name)?.[0].toLowerCase().replaceAll(' ', '-');

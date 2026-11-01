@@ -34,6 +34,8 @@ type StereoBlock = { left: Float32Array; right: Float32Array };
 type FixtureParam = {
     value: number;
     setTargetAtTime: (target: number, startTime: number, timeConstant: number) => void;
+    setValueAtTime: (value: number, time: number) => void;
+    cancelScheduledValues: (time: number) => void;
 };
 
 function createParam(initialValue: number): FixtureParam {
@@ -42,6 +44,10 @@ function createParam(initialValue: number): FixtureParam {
         setTargetAtTime(target: number): void {
             this.value = target;
         },
+        setValueAtTime(value: number): void {
+            this.value = value;
+        },
+        cancelScheduledValues(): void {},
     };
 }
 
@@ -369,17 +375,64 @@ describe('control room monitoring on the listening path', () => {
 
     it('inserts strictly between the master analyser and the destination', () => {
         // Walk the live graph upward from the destination: the single audible
-        // feeder chain must be destination <- dim <- mono <- masterAnalyser,
+        // feeder chain must be destination <- dim <- mono <- programme gate <- analyser,
         // and the analyser must hold no direct edge to the destination.
         const audibleFeeder = driven.context.destination.sources.find(
             (node): node is FixtureGainNode => node instanceof FixtureGainNode && node.gain.value === 1
         );
         const monoInsert = audibleFeeder?.sources[0];
+        const programmeGate = monoInsert?.sources[0];
         expect(audibleFeeder).toBeInstanceOf(FixtureGainNode);
         expect(monoInsert).toBeInstanceOf(FixtureGainNode);
-        expect(monoInsert?.sources).toContain(driven.engine.masterAnalyser);
+        expect(programmeGate).toBeInstanceOf(FixtureGainNode);
+        expect(programmeGate?.sources).toContain(driven.engine.masterAnalyser);
+        expect(driven.engine.audioPreviewOutput).toBe(monoInsert);
 
         const analyserEdges = (driven.engine.masterAnalyser as unknown as FixtureNode).connectedTo;
         expect(analyserEdges).not.toContain(driven.context.destination);
+    });
+
+    it('isolates retained listening from programme, click and input-monitor legs while the upstream tap stays intact', async () => {
+        connectProgrammeBuffer(driven, 0.5, 0.25);
+        // scheduleClick feeds masterGainNode. inputMonitoring.connectMonitorEdge
+        // feeds strip.gainNode, whose ordinary TrackNode output feeds this same
+        // master leg. Drive those legs with exact prerecorded samples: no mic
+        // permission, capture acquisition or physical-input claim is involved.
+        connectProgrammeBuffer(driven, 0.125, 0.125);
+        const monitorStrip = driven.context.createGain();
+        monitorStrip.connect(driven.engine.masterGainNode as unknown as FixtureNode);
+        const input = driven.context.createBufferSource();
+        input.buffer = createProgrammeBuffer(0.25, -0.125);
+        input.connect(monitorStrip);
+        input.start();
+        const intent = driven.engine.beginExclusiveAudioPreviewIntent();
+        const retained = driven.context.createBufferSource();
+        retained.buffer = createProgrammeBuffer(0.125, -0.0625);
+        retained.connect(driven.engine.audioPreviewOutput as unknown as FixtureNode);
+        retained.start();
+        const output = await driven.context.startRendering();
+        expect(Array.from(output.left)).toEqual(Array(RENDER_FRAMES).fill(0.125));
+        expect(Array.from(output.right)).toEqual(Array(RENDER_FRAMES).fill(-0.0625));
+        const upstream = (driven.engine.masterAnalyser as unknown as FixtureAnalyserNode).stitchedCapture();
+        expect(Array.from(upstream.left)).toEqual(Array(RENDER_FRAMES).fill(0.875));
+        expect(Array.from(upstream.right)).toEqual(Array(RENDER_FRAMES).fill(0.25));
+        retained.stop();
+        intent.release();
+    });
+
+    it('restores current mono, dim and master settings rather than an acquisition snapshot', async () => {
+        connectProgrammeBuffer(driven, 0.5, 0.25);
+        const intent = driven.engine.beginExclusiveAudioPreviewIntent();
+        executeToggle('toggleControlRoomMono');
+        executeToggle('toggleControlRoomDim');
+        driven.engine.setMasterGain(0.5);
+        intent.release();
+        driven.engine.setAudioPreviewProgrammeSuppressed(false);
+        const output = await driven.context.startRendering();
+        const expected = ((0.5 + 0.25) / 2) * 0.5 * dbToGain(-20);
+        expect(maxAbs(output.left)).toBeCloseTo(expected, 5);
+        expect(maxAbs(output.right)).toBeCloseTo(expected, 5);
+        expect(controlRoomStore.value).toMatchObject({ monoActive: true, dimActive: true });
+        expect(driven.engine.getMasterGain()).toBe(0.5);
     });
 });

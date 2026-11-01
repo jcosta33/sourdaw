@@ -36,7 +36,7 @@ import {
     type AgentRunTemporaryAsset,
     type AgentRunWorkLease,
 } from '../models/AgentRun';
-import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import { APPLICATION_TOOL_RECEIPT_MAX_BYTES, type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { getPendingEffectRecoveryPolicy } from '../models/GetPendingEffectRecoveryPolicy';
 import { MAX_METRIC_GOAL_STATE_BYTES } from '../models/MetricGoalAdmission';
 import { type BoundRequestProtections, type ProposalProtectionFacts } from '../models/ProposalGroundingBasis';
@@ -1529,6 +1529,12 @@ function readAgentRunPlan(value: unknown, fallbackScope: AgentRun['scope']): Age
               commandIds,
               serializedBatchIdentity,
               applicationToolReceipts,
+              terminalMeasurementSettlement:
+                  typeof value.terminalMeasurementSettlement === 'string' &&
+                  new TextEncoder().encode(value.terminalMeasurementSettlement).byteLength <=
+                      APPLICATION_TOOL_RECEIPT_MAX_BYTES
+                      ? value.terminalMeasurementSettlement
+                      : undefined,
               metricGoalState:
                   typeof value.metricGoalState === 'string' &&
                   new TextEncoder().encode(value.metricGoalState).byteLength <= MAX_METRIC_GOAL_STATE_BYTES

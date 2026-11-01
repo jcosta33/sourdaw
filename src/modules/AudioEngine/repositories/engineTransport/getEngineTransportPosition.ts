@@ -8,6 +8,7 @@ import {
     type EngineCaptureClock,
     type EngineCaptureClockQuery,
 } from '../../models/EngineTransportPosition';
+import { readNativeEngineIncarnation } from '../nativeEngineIncarnation';
 
 function readNumber(payload: Record<string, unknown>, key: keyof EngineTransportPosition): number {
     const value = payload[key];
@@ -146,6 +147,25 @@ function asTunerReading(value: unknown): NativeTunerReading | null {
     return { active: entry.active, frequency, cents, confidence, noteIndex, octave, midiNote };
 }
 
+// Normalization can turn malformed facts into stopped defaults. Authenticate
+// the optional readiness witness against the raw wire values first.
+function readPositionIncarnation(payload: Record<string, unknown>): string | null | undefined {
+    const batchesApplied = payload.batchesApplied;
+    if (
+        typeof payload.running !== 'boolean' ||
+        typeof payload.playing !== 'boolean' ||
+        typeof batchesApplied !== 'number' ||
+        !Number.isSafeInteger(batchesApplied) ||
+        batchesApplied < 0
+    ) {
+        return undefined;
+    }
+    if (payload.engineIncarnation === null) {
+        return !payload.running && !payload.playing && batchesApplied === 0 ? null : undefined;
+    }
+    return readNativeEngineIncarnation(payload.engineIncarnation);
+}
+
 function nativeIdentity(value: unknown): value is string {
     return (
         typeof value === 'string' && /^[1-9][0-9]{0,19}$/.test(value) && BigInt(value) <= 18_446_744_073_709_551_615n
@@ -222,6 +242,10 @@ function toEngineTransportPosition(response: unknown): EngineTransportPosition {
         stripPeaks: readStripPeaks(payload),
         tunerTelemetry: readTunerTelemetry(payload),
     };
+    const incarnation = readPositionIncarnation(payload);
+    if (incarnation !== undefined) {
+        position.engineIncarnation = incarnation;
+    }
     if (nativeIdentity(payload.engineId)) {
         position.engineId = payload.engineId;
     }

@@ -17,7 +17,7 @@ import {
     queryAgentDiscovery,
     querySemanticProject,
 } from '#/modules/Project/useCases';
-import { canonicalJson } from '#/utils/canonicalDigest';
+import { canonicalJson, digest } from '#/utils/canonicalDigest';
 
 import { APPLICATION_OWNED_CAPABILITY_OPERATIONS } from '../models/AgentCapabilityOperations';
 import { type AgentPlanProposal } from '../models/AgentRun';
@@ -30,7 +30,11 @@ import {
 import { type AnswerOnsets } from '../models/AnswerEvidence';
 import { ANSWER_INTERPRETATION_TOOL_NAME } from '../models/AnswerInterpretation';
 import { type PlanningAnswer } from '../models/AnswerRespond';
-import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import {
+    APPLICATION_TOOL_RECEIPT_MAX_BYTES,
+    type ApplicationToolReceipt,
+    type TerminalMeasurementSettlement,
+} from '../models/ApplicationOwnedTool';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
 import { DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT } from '../models/DeviceManifestPageLimits';
 import {
@@ -111,7 +115,7 @@ export const APPLICATION_OWNED_TOOL_LOOP_LIMITS = {
     maxTurns: 4,
     maxCallsPerTurn: 4,
     maxTotalCalls: 8,
-    maxReceiptBytesPerCall: 16_384,
+    maxReceiptBytesPerCall: APPLICATION_TOOL_RECEIPT_MAX_BYTES,
     maxReceiptBytesPerTurn: 32_768,
     maxTotalReceiptBytes: 65_536,
 } as const;
@@ -162,6 +166,7 @@ export type ApplicationOwnedToolLoopOutcome =
           searchedIntents: string[];
           proposal: AgentPlanProposal | null;
           receipts: ApplicationToolReceipt[];
+          terminalMeasurementSettlement?: string;
           turns: number;
           /** Whether this run's control phase admitted an interpretation, asked to clarify, or never ran. */
           interpretation: ApplicationOwnedToolLoopInterpretationOutcome;
@@ -202,9 +207,37 @@ export type ApplicationOwnedToolLoopInterpretationAdmission =
 
 export type DeclineAdmission = { status: 'admitted' } | { status: 'refused'; reason: string };
 
+type MeasurementOpportunity = {
+    authorityId: string;
+    callId: string;
+    turn: number;
+    revision: string;
+    required: boolean;
+    available: boolean;
+};
+
+type MeasurementIntake = MeasurementOpportunity & { toolName: string };
+
+type HeldTerminal = {
+    calls: IdentifiedToolCall[];
+    proposal: AgentPlanProposal | null;
+    turn: number;
+    opportunity: MeasurementOpportunity;
+};
+
+type MeasurementAttempt = {
+    loopId: string;
+    callId: string;
+    toolName: string;
+    turn: number;
+    revision: string | undefined;
+};
+
 type RunApplicationOwnedToolLoopInput = {
     loopId: string;
     requireWholeRequestIntake?: true;
+    /** Current app-owned intake identity and availability; never a metric-proof assertion. */
+    readMeasurementOpportunity?: () => MeasurementOpportunity | null;
     requestTurn: (input: {
         turn: number;
         wholeRequestIntake?: WholeRequestIntakePhase;
@@ -222,7 +255,7 @@ type RunApplicationOwnedToolLoopInput = {
             calls: number;
             receiptBytes: number;
         };
-        /** `required`, restricted to the terminal tool set, only on the loop's final allowed turn. */
+        /** Required terminal set on the final turn, or a caller-bound single measurement opportunity. */
         directive: HostedToolChoiceDirective;
     }) => Promise<ApplicationToolPlanningOutcome>;
     terminalToolNames: ReadonlySet<string>;
@@ -1329,6 +1362,16 @@ async function executeMeasurement(
     call: ToolCallResult,
     context: MeasurementCallContext
 ): Promise<ExecutedRead> {
+    let attempt: MeasurementAttempt | undefined;
+    if (call.name === measurement.toolName) {
+        attempt = {
+            loopId: context.loopId,
+            callId: context.callId,
+            toolName: call.name,
+            turn: context.turn,
+            revision: measurement.revision,
+        };
+    }
     try {
         const result = await measurement.execute(call, context);
         return {
@@ -1336,6 +1379,7 @@ async function executeMeasurement(
             ...(result.answerMeasurement === undefined
                 ? {}
                 : { answerSource: { kind: 'measurement' as const, value: result.answerMeasurement } }),
+            measurementAttempt: attempt,
         };
     } catch {
         return {
@@ -1348,6 +1392,7 @@ async function executeMeasurement(
                 safeMessage: 'Measurement failed inside the application authority.',
                 retryable: true,
             }),
+            measurementAttempt: attempt,
         };
     }
 }
@@ -1357,6 +1402,7 @@ async function executeMeasurement(
  * the project offline, so a later one in the same turn is refused without rendering.
  */
 type ExecutedRead = {
+    measurementAttempt?: MeasurementAttempt;
     answerSource?: AnswerReadSource;
     receipt: ApplicationToolReceipt;
     commands: readonly RetainedCommand[] | null;
@@ -1792,6 +1838,39 @@ function normalizeTerminalProposalCall(call: ToolCallResult): ToolCallResult {
 
 /** One accepted call of a turn, under the identity the loop resolved for it. */
 type IdentifiedToolCall = { call: ToolCallResult; callId: string };
+/** What native history records for a turn whose executed calls are only part of its reply. */
+type NativeTurnRecord = { calls: readonly IdentifiedToolCall[]; receipts: readonly ApplicationToolReceipt[] };
+
+/** A valid decline on the measurement step, as its admission answered it. */
+type StepDecline =
+    | { status: 'admitted'; calls: IdentifiedToolCall[]; record: NativeTurnRecord }
+    | { status: 'refused'; callId: string; reason: string };
+
+/** How the loop answers one reply to the single-measurement step. */
+type MeasurementStepReply =
+    | { status: 'rejected'; reason: string; receipts: ApplicationToolReceipt[] }
+    | { status: 'unmeasured'; kept: HeldTerminal | null }
+    | { status: 'measured'; measureCalls: IdentifiedToolCall[]; record: NativeTurnRecord; kept: HeldTerminal | null };
+
+function orderReceiptsByCalls(
+    calls: readonly IdentifiedToolCall[],
+    receipts: readonly ApplicationToolReceipt[]
+): ApplicationToolReceipt[] {
+    return calls.flatMap(({ callId }) => receipts.filter((receipt) => receipt.callId === callId));
+}
+
+/** A measurement step's native record with the receipts its admitted calls earned, in call order. */
+function withStepRecord(
+    record: NativeTurnRecord | undefined,
+    turnReceipts: readonly ApplicationToolReceipt[]
+): NativeTurnRecord | undefined {
+    return (
+        record && {
+            calls: record.calls,
+            receipts: orderReceiptsByCalls(record.calls, [...turnReceipts, ...record.receipts]),
+        }
+    );
+}
 
 function resolveCallId(call: ToolCallResult, loopId: string, turn: number, index: number): string | null {
     if (call.id === undefined) {
@@ -1812,6 +1891,97 @@ function resolveCallId(call: ToolCallResult, loopId: string, turn: number, index
  */
 function toHostedTurnCalls(identifiedCalls: readonly IdentifiedToolCall[]): HostedTurnCall[] {
     return identifiedCalls.map(({ call, callId }) => ({ id: callId, name: call.name, arguments: call.arguments }));
+}
+
+function readCurrentMeasurementOpportunity(
+    input: RunApplicationOwnedToolLoopInput,
+    receipts: readonly ApplicationToolReceipt[],
+    admittedIntake: MeasurementIntake | null,
+    turn: number
+): MeasurementOpportunity | null {
+    if (admittedIntake === null || input.measurement === undefined) {
+        return null;
+    }
+    const opportunity = input.readMeasurementOpportunity?.();
+    if (
+        opportunity === undefined ||
+        opportunity === null ||
+        !opportunity.required ||
+        !opportunity.available ||
+        opportunity.authorityId.length === 0 ||
+        !sameMeasurementAuthority(opportunity, admittedIntake) ||
+        opportunity.turn >= turn ||
+        input.measurement.revision !== opportunity.revision
+    ) {
+        return null;
+    }
+    const intake = receipts.find((receipt) => receipt.callId === opportunity.callId);
+    if (
+        intake?.status !== 'success' ||
+        intake.turn !== opportunity.turn ||
+        intake.toolName !== admittedIntake.toolName
+    ) {
+        return null;
+    }
+    return opportunity;
+}
+
+function sameMeasurementAuthority(left: MeasurementOpportunity, right: MeasurementOpportunity): boolean {
+    return (
+        left.authorityId === right.authorityId &&
+        left.callId === right.callId &&
+        left.turn === right.turn &&
+        left.revision === right.revision
+    );
+}
+
+function admitsMeasurementAttempt(input: {
+    attempt: MeasurementAttempt | undefined;
+    opportunity: MeasurementOpportunity;
+    raw: ApplicationToolReceipt;
+    admitted: ApplicationToolReceipt | undefined;
+    loopId: string;
+    toolName: string;
+    turn: number;
+}): boolean {
+    const { attempt, opportunity, raw, admitted } = input;
+    return (
+        attempt !== undefined &&
+        admitted !== undefined &&
+        attempt.loopId === input.loopId &&
+        attempt.toolName === input.toolName &&
+        attempt.turn === input.turn &&
+        attempt.turn > opportunity.turn &&
+        attempt.revision === opportunity.revision &&
+        [raw, admitted].every(
+            (receipt) =>
+                receipt.callId === attempt.callId &&
+                receipt.toolName === attempt.toolName &&
+                receipt.turn === attempt.turn &&
+                (receipt.revision === opportunity.revision ||
+                    (receipt.status === 'failure' && receipt.revision === null))
+        )
+    );
+}
+
+function toolChoiceRefusal(
+    calls: readonly ToolCallResult[],
+    directive: HostedToolChoiceDirective,
+    finalTurn: boolean
+): string | null {
+    if (directive.mode === 'required' && calls.length === 0) {
+        if (finalTurn) {
+            return 'Provider returned no tool call on the final application tool-loop turn.';
+        }
+        return 'Provider returned no tool call on a required application tool-loop step.';
+    }
+    if (directive.parallelToolCalls === false && calls.length > 1) {
+        return 'Provider returned multiple tool calls on a single-call application tool-loop step.';
+    }
+    if (directive.mode === 'required' && calls.some((call) => !directive.toolNames.includes(call.name))) {
+        return 'Provider returned a tool outside the required application tool-loop set.';
+    }
+    return null;
 }
 
 export const APPLICATION_OWNED_TOOL_SCHEMAS: readonly ToolSchema[] = getAgentToolCatalogSchemas();
@@ -1841,6 +2011,108 @@ export async function runApplicationOwnedToolLoop(
     const answerReads = new Map<string, AdmittedAnswerRead>();
     let interpretation: ApplicationOwnedToolLoopInterpretationOutcome = 'none';
     let wholeRequestIntake: WholeRequestIntakePhase = 'pending';
+    let measurementIntake: MeasurementIntake | null = null;
+    let measurementWitness: { opportunity: MeasurementOpportunity; receipt: ApplicationToolReceipt } | null = null;
+    let heldTerminal: HeldTerminal | null = null;
+    // Read through a function: the loop's measurement step decides which turns reach the hold,
+    // and inline narrowing of `heldTerminal` at the loop head would depend on that decision.
+    const heldOpportunity = (): MeasurementOpportunity | null => heldTerminal?.opportunity ?? null;
+
+    const hasMeasurementWitness = (opportunity: MeasurementOpportunity): boolean =>
+        measurementWitness !== null && sameMeasurementAuthority(measurementWitness.opportunity, opportunity);
+
+    const validateTerminalCalls = (calls: readonly IdentifiedToolCall[]): ValidatedTerminalCalls =>
+        validateCatalogTerminalCalls(
+            calls,
+            disclosedCommandSchemas,
+            retainedCompilations,
+            {
+                transform: input.transform?.revision,
+                recipe: input.recipe?.revision,
+                preview: input.measurement?.revision,
+            },
+            receipts,
+            answerIntake,
+            answerReads
+        );
+
+    const completeHeldTerminal = (
+        held: HeldTerminal,
+        turn: number,
+        terminalMeasurementSettlement?: string
+    ): ApplicationOwnedToolLoopOutcome => ({
+        status: 'complete',
+        toolCalls: held.calls.map(({ call }) => normalizeTerminalProposalCall(call)),
+        decline: null,
+        answer: null,
+        searchedIntents: [...searchedIntents],
+        proposal: held.proposal,
+        receipts,
+        ...(terminalMeasurementSettlement === undefined ? {} : { terminalMeasurementSettlement }),
+        turns: turn,
+        interpretation,
+        retainedCompilations: [...retainedCompilations.values()],
+    });
+
+    const releaseHeldTerminal = (held: HeldTerminal, turn: number): ApplicationOwnedToolLoopOutcome => {
+        const validation = validateTerminalCalls(held.calls);
+        if (validation.status === 'rejected') {
+            return { status: 'rejected', reason: validation.reason, receipts, turns: turn };
+        }
+        const witness = measurementWitness;
+        const admittedMeasurementIntake = measurementIntake;
+        const intake =
+            admittedMeasurementIntake === null
+                ? undefined
+                : receipts.find((receipt) => receipt.callId === admittedMeasurementIntake.callId);
+        if (
+            witness === null ||
+            intake === undefined ||
+            !sameMeasurementAuthority(witness.opportunity, held.opportunity)
+        ) {
+            return {
+                status: 'rejected',
+                reason: 'Held proposal has no admitted measurement settlement.',
+                receipts,
+                turns: turn,
+            };
+        }
+        const receiptIdentity = (receipt: ApplicationToolReceipt): TerminalMeasurementSettlement['intake'] => ({
+            callId: receipt.callId,
+            toolName: receipt.toolName,
+            turn: receipt.turn,
+            receiptDigest: digest(receipt),
+        });
+        const deferred = held.calls.flatMap(({ callId }) =>
+            receipts.filter((receipt) => receipt.callId === callId && receipt.turn === held.turn)
+        );
+        if (deferred.length !== held.calls.length) {
+            return {
+                status: 'rejected',
+                reason: 'Held proposal control receipts are incomplete.',
+                receipts,
+                turns: turn,
+            };
+        }
+        const settlement: TerminalMeasurementSettlement = {
+            schemaVersion: 1,
+            authorityId: witness.opportunity.authorityId,
+            revision: witness.opportunity.revision,
+            intake: receiptIdentity(intake),
+            deferredCalls: deferred.map(receiptIdentity),
+            measurement: receiptIdentity(witness.receipt),
+        };
+        const terminalMeasurementSettlement = JSON.stringify(settlement);
+        if (byteLength(terminalMeasurementSettlement) > limits.maxReceiptBytesPerCall) {
+            return {
+                status: 'rejected',
+                reason: 'Terminal measurement settlement exceeded the bounded receipt size.',
+                receipts,
+                turns: turn,
+            };
+        }
+        return completeHeldTerminal(held, turn, terminalMeasurementSettlement);
+    };
 
     /**
      * The turn ceiling for the run as it currently stands. Offering the tool buys nothing: only a run
@@ -1861,7 +2133,8 @@ export async function runApplicationOwnedToolLoop(
         turn: number,
         outcome: Extract<ApplicationToolPlanningOutcome, { status: 'complete' }>,
         identifiedCalls: readonly IdentifiedToolCall[],
-        selectedAnswerAuthority?: Parameters<typeof projectAnswerProviderReceipt>[1]
+        selectedAnswerAuthority?: Parameters<typeof projectAnswerProviderReceipt>[1],
+        nativeRecord?: NativeTurnRecord
     ): { reason: string; receipts: ApplicationToolReceipt[] } | null => {
         const overBudget = 'Application tool receipts exceeded the bounded context budget.';
         const turnBytes = byteLength(serializeReceiptContext(turnReceipts, turn));
@@ -1900,11 +2173,207 @@ export async function runApplicationOwnedToolLoop(
                 turn,
                 provider: outcome.providerTurn.provider,
                 assistantItems: outcome.providerTurn.assistantItems,
-                calls: toHostedTurnCalls(identifiedCalls),
-                receipts: [...turnReceipts],
+                calls: toHostedTurnCalls(nativeRecord?.calls ?? identifiedCalls),
+                receipts: [...(nativeRecord?.receipts ?? turnReceipts)],
             });
         }
         return null;
+    };
+
+    const deferredCompletionReceipt = (call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt =>
+        boundReceipt(
+            failureReceipt({
+                callId,
+                toolName: call.name,
+                turn,
+                code: 'measurement-required',
+                safeMessage: 'Proposal completion is deferred until an application measurement receipt is admitted.',
+                retryable: true,
+            }),
+            limits.maxReceiptBytesPerCall
+        );
+
+    const chargeCalls = (count: number): string | null => {
+        if (count > limits.maxCallsPerTurn) {
+            return 'Provider exceeded the application tool-call budget for one turn.';
+        }
+        totalCalls += count;
+        return totalCalls > limits.maxTotalCalls ? 'Provider exceeded the total application tool-call budget.' : null;
+    };
+
+    const declineRefusalReceipt = (callId: string, turn: number, reason: string): ApplicationToolReceipt =>
+        boundReceipt(
+            failureReceipt({
+                callId,
+                toolName: COMMAND_BATCH_DECLINE_TOOL_NAME,
+                turn,
+                code: 'decline-not-admitted',
+                safeMessage: reason,
+                retryable: true,
+            }),
+            limits.maxReceiptBytesPerCall
+        );
+
+    const stepRefusalReceipt = (
+        call: ToolCallResult,
+        callId: string,
+        turn: number,
+        safeMessage: string
+    ): ApplicationToolReceipt =>
+        boundReceipt(
+            failureReceipt({
+                callId,
+                toolName: call.name,
+                turn,
+                code: 'measurement-step-refused',
+                safeMessage,
+                retryable: false,
+            }),
+            limits.maxReceiptBytesPerCall
+        );
+
+    // A valid decline sent on the measurement step, with no proposal held, needs no measurement: once
+    // admitted it is answered as on any other turn, and every other call of the reply, a measure
+    // included, is refused in native history only. A refused one is answered as the step answers any
+    // other refused call, so the step still leaves its witness.
+    const readStepDecline = (
+        toolName: string,
+        identifiedCalls: readonly IdentifiedToolCall[],
+        turn: number
+    ): StepDecline | null => {
+        const terminalCalls = identifiedCalls.filter(
+            ({ call }) => call.name !== toolName && input.terminalToolNames.has(call.name)
+        );
+        if (heldTerminal !== null || terminalCalls.length === 0) {
+            return null;
+        }
+        const validation = validateTerminalCalls(terminalCalls);
+        if (validation.status === 'rejected' || validation.decline === null) {
+            return null;
+        }
+        const admission =
+            input.declineAdmission === undefined || answerIntake !== null
+                ? null
+                : input.declineAdmission(validation.decline);
+        if (admission?.status === 'refused') {
+            return { status: 'refused', callId: terminalCalls[0]!.callId, reason: admission.reason };
+        }
+        const declineCallIds = new Set(terminalCalls.map(({ callId }) => callId));
+        return {
+            status: 'admitted',
+            calls: terminalCalls,
+            record: {
+                calls: identifiedCalls,
+                receipts: identifiedCalls
+                    .filter(({ callId }) => !declineCallIds.has(callId))
+                    .map(({ call, callId }) =>
+                        stepRefusalReceipt(
+                            call,
+                            callId,
+                            turn,
+                            'The decline on this step was answered; this call did not run.'
+                        )
+                    ),
+            },
+        };
+    };
+
+    // A valid proposal sent on the measurement step, with none held yet, is kept as one sent on the
+    // turn before would be held: the step's own measurement, or its absence, then releases it.
+    const keepStepTerminal = (
+        toolName: string,
+        opportunity: MeasurementOpportunity,
+        identifiedCalls: readonly IdentifiedToolCall[],
+        outcome: Extract<ApplicationToolPlanningOutcome, { status: 'complete' }>,
+        turn: number
+    ): HeldTerminal | null => {
+        const terminalCalls = identifiedCalls.filter(
+            ({ call }) => call.name !== toolName && input.terminalToolNames.has(call.name)
+        );
+        if (heldTerminal !== null || terminalCalls.length === 0) {
+            return null;
+        }
+        const validation = validateTerminalCalls(terminalCalls);
+        if (validation.status === 'rejected' || validation.decline !== null || validation.answer !== null) {
+            return null;
+        }
+        return {
+            calls: structuredClone(terminalCalls),
+            proposal: structuredClone(
+                outcome.proposal ?? extractAgentPlanProposal(terminalCalls.map(({ call }) => call))
+            ),
+            turn,
+            opportunity: structuredClone(opportunity),
+        };
+    };
+
+    // Answers a reply to the single-measurement step, held proposal or not: the first primary
+    // measurement runs, a valid proposal is kept, a refused decline carries its admission's reason,
+    // every other call is refused in native history only, and a reply without a measurement records
+    // that none was requested, so the proposal stays unverified.
+    const answerMeasurementStepReply = (
+        toolName: string,
+        opportunity: MeasurementOpportunity,
+        identifiedCalls: readonly IdentifiedToolCall[],
+        outcome: Extract<ApplicationToolPlanningOutcome, { status: 'complete' }>,
+        turn: number,
+        refusedDecline: { callId: string; reason: string } | null
+    ): MeasurementStepReply => {
+        const measureCalls = identifiedCalls.filter(({ call }) => call.name === toolName);
+        const kept = keepStepTerminal(toolName, opportunity, identifiedCalls, outcome, turn);
+        const keptCallIds = new Set(kept?.calls.map(({ callId }) => callId));
+        const record: NativeTurnRecord = {
+            calls: identifiedCalls,
+            receipts: identifiedCalls
+                .filter(({ call }) => call.name !== toolName)
+                .map(({ call, callId }) => {
+                    if (keptCallIds.has(callId)) {
+                        return deferredCompletionReceipt(call, callId, turn);
+                    }
+                    if (callId === refusedDecline?.callId) {
+                        return declineRefusalReceipt(callId, turn, refusedDecline.reason);
+                    }
+                    return stepRefusalReceipt(
+                        call,
+                        callId,
+                        turn,
+                        'Only the required measurement runs on this step; this call did not run.'
+                    );
+                }),
+        };
+        // A kept proposal is charged as a held one is; refused calls never run and spend nothing.
+        const overCallBudget = chargeCalls(Math.min(measureCalls.length, 1) + keptCallIds.size);
+        if (overCallBudget !== null) {
+            return { status: 'rejected', reason: overCallBudget, receipts };
+        }
+        if (measureCalls.length > 0) {
+            return { status: 'measured', measureCalls, record, kept };
+        }
+        const unmeasured = boundReceipt(
+            failureReceipt({
+                callId: `${input.loopId}-${String(turn)}-measurement-step`,
+                toolName,
+                turn,
+                code: 'measurement-not-requested',
+                safeMessage: 'The provider did not request the required measurement; the proposal is unverified.',
+                retryable: false,
+            }),
+            limits.maxReceiptBytesPerCall
+        );
+        if (seenCallIds.has(unmeasured.callId)) {
+            return {
+                status: 'rejected',
+                reason: 'Provider returned an invalid or duplicate tool-call identity.',
+                receipts,
+            };
+        }
+        seenCallIds.add(unmeasured.callId);
+        const overBudget = admitTurnReceipts([unmeasured], turn, outcome, identifiedCalls, undefined, record);
+        if (overBudget !== null) {
+            return { status: 'rejected', ...overBudget };
+        }
+        measurementWitness = { opportunity: structuredClone(opportunity), receipt: structuredClone(unmeasured) };
+        return { status: 'unmeasured', kept };
     };
 
     for (let turn = 1; turn <= maxTurns(); turn += 1) {
@@ -1917,17 +2386,28 @@ export async function runApplicationOwnedToolLoop(
             };
         }
         const isFinalTurn = turn === maxTurns();
-        // Forcing the terminal tool set only on the final allowed turn keeps every earlier
-        // turn free to read, discover, or interpret before the loop must land on an action.
-        const directive: HostedToolChoiceDirective = isFinalTurn
-            ? {
-                  mode: 'required',
-                  toolNames:
-                      answerIntake === null
-                          ? [...input.terminalToolNames]
-                          : [ANSWER_RESPOND_TOOL_NAME, COMMAND_BATCH_DECLINE_TOOL_NAME],
-              }
-            : AUTO_TOOL_CHOICE;
+        // A held candidate can still receive the real executor's stale-snapshot refusal. Snapshot
+        // movement itself is neither an invocation nor a receipt and cannot settle its control.
+        const measurementOpportunity: MeasurementOpportunity | null =
+            readCurrentMeasurementOpportunity(input, receipts, measurementIntake, turn) ?? heldOpportunity();
+        const needsMeasurementStep: boolean =
+            measurementOpportunity !== null &&
+            !hasMeasurementWitness(measurementOpportunity) &&
+            (heldTerminal !== null || turn === maxTurns() - 1);
+        // Voluntary reads can share a turn. A held proposal or the penultimate turn reserves
+        // one missing primary receipt; a held complete proposal needs no later proposal turn.
+        let directive: HostedToolChoiceDirective = AUTO_TOOL_CHOICE;
+        if (needsMeasurementStep && input.measurement !== undefined) {
+            directive = { mode: 'required', toolNames: [input.measurement.toolName], parallelToolCalls: false };
+        } else if (isFinalTurn) {
+            directive = {
+                mode: 'required',
+                toolNames:
+                    answerIntake === null
+                        ? [...input.terminalToolNames]
+                        : [ANSWER_RESPOND_TOOL_NAME, COMMAND_BATCH_DECLINE_TOOL_NAME],
+            };
+        }
         let outcome: ApplicationToolPlanningOutcome;
         try {
             const remaining = {
@@ -1968,25 +2448,18 @@ export async function runApplicationOwnedToolLoop(
         if (input.signal?.aborted) {
             return { status: 'rejected', reason: 'Application-owned tool loop was cancelled.', receipts, turns: turn };
         }
-        if (outcome.toolCalls.length > limits.maxCallsPerTurn) {
-            return {
-                status: 'rejected',
-                reason: 'Provider exceeded the application tool-call budget for one turn.',
-                receipts,
-                turns: turn,
-            };
-        }
-        totalCalls += outcome.toolCalls.length;
-        if (totalCalls > limits.maxTotalCalls) {
-            return {
-                status: 'rejected',
-                reason: 'Provider exceeded the total application tool-call budget.',
-                receipts,
-                turns: turn,
-            };
+        // A run outlives a measurement step its provider did not honour: some providers cannot
+        // disable parallel calls or ignore the directive outright.
+        const measurementStepToolName: string | undefined = needsMeasurementStep
+            ? input.measurement?.toolName
+            : undefined;
+        const directiveRefusal =
+            measurementStepToolName === undefined ? toolChoiceRefusal(outcome.toolCalls, directive, isFinalTurn) : null;
+        if (directiveRefusal !== null) {
+            return { status: 'rejected', reason: directiveRefusal, receipts, turns: turn };
         }
 
-        const identifiedCalls: IdentifiedToolCall[] = [];
+        let identifiedCalls: IdentifiedToolCall[] = [];
         for (const [index, call] of outcome.toolCalls.entries()) {
             const callId = resolveCallId(call, input.loopId, turn, index);
             if (callId === null || seenCallIds.has(callId)) {
@@ -1999,6 +2472,51 @@ export async function runApplicationOwnedToolLoop(
             }
             seenCallIds.add(callId);
             identifiedCalls.push({ call, callId });
+        }
+
+        let measurementStepRecord: NativeTurnRecord | undefined;
+        let stepTerminal: HeldTerminal | null = null;
+        const stepDecline: StepDecline | null =
+            measurementStepToolName === undefined
+                ? null
+                : readStepDecline(measurementStepToolName, identifiedCalls, turn);
+        const admittedStepDecline: Extract<StepDecline, { status: 'admitted' }> | null =
+            stepDecline?.status === 'admitted' ? stepDecline : null;
+        if (admittedStepDecline !== null) {
+            measurementStepRecord = admittedStepDecline.record;
+            identifiedCalls = admittedStepDecline.calls;
+            outcome = { ...outcome, toolCalls: admittedStepDecline.calls.map(({ call }) => call) };
+        }
+        if (admittedStepDecline === null && measurementStepToolName !== undefined && measurementOpportunity !== null) {
+            const reply: MeasurementStepReply = answerMeasurementStepReply(
+                measurementStepToolName,
+                measurementOpportunity,
+                identifiedCalls,
+                outcome,
+                turn,
+                stepDecline?.status === 'refused' ? stepDecline : null
+            );
+            if (reply.status === 'rejected') {
+                return { status: 'rejected', reason: reply.reason, receipts: reply.receipts, turns: turn };
+            }
+            if (reply.status === 'unmeasured') {
+                if (reply.kept !== null) {
+                    return completeHeldTerminal(reply.kept, turn);
+                }
+                if (heldTerminal !== null) {
+                    return releaseHeldTerminal(heldTerminal, turn);
+                }
+                continue;
+            }
+            measurementStepRecord = reply.record;
+            stepTerminal = reply.kept;
+            identifiedCalls = reply.measureCalls;
+            outcome = { ...outcome, toolCalls: reply.measureCalls.map(({ call }) => call) };
+        } else {
+            const overCallBudget = chargeCalls(outcome.toolCalls.length);
+            if (overCallBudget !== null) {
+                return { status: 'rejected', reason: overCallBudget, receipts, turns: turn };
+            }
         }
 
         if (
@@ -2283,6 +2801,26 @@ export async function runApplicationOwnedToolLoop(
             }
             metricProviderProjection = admission.providerProjection;
             interpretation = 'admitted';
+            const opportunity = input.readMeasurementOpportunity?.();
+            if (
+                opportunity !== null &&
+                opportunity !== undefined &&
+                opportunity.callId === callId &&
+                opportunity.turn === turn
+            ) {
+                measurementIntake = { ...structuredClone(opportunity), toolName: call.name };
+            }
+            if (
+                readCurrentMeasurementOpportunity(input, receipts, measurementIntake, turn + 1) !== null &&
+                (maxTurns() - turn < 2 || limits.maxTotalCalls - totalCalls < 2)
+            ) {
+                return {
+                    status: 'rejected',
+                    reason: 'Whole-request intake left insufficient budget for measurement and a terminal proposal.',
+                    receipts,
+                    turns: turn,
+                };
+            }
             continue;
         }
 
@@ -2302,7 +2840,7 @@ export async function runApplicationOwnedToolLoop(
             ...(input.recipe === undefined ? [] : [input.recipe.toolName]),
         ]);
         const safeReadCalls = identifiedCalls.filter(({ call }) => safeReadToolNames.has(call.name));
-        const terminalCalls = identifiedCalls.filter(
+        const terminalCalls: IdentifiedToolCall[] = identifiedCalls.filter(
             ({ call }) => !safeReadToolNames.has(call.name) && input.terminalToolNames.has(call.name)
         );
         if (safeReadCalls.length + terminalCalls.length !== outcome.toolCalls.length) {
@@ -2321,19 +2859,7 @@ export async function runApplicationOwnedToolLoop(
                 turns: turn,
             };
         }
-        const terminalValidation = validateCatalogTerminalCalls(
-            terminalCalls,
-            disclosedCommandSchemas,
-            retainedCompilations,
-            {
-                transform: input.transform?.revision,
-                recipe: input.recipe?.revision,
-                preview: input.measurement?.revision,
-            },
-            receipts,
-            answerIntake,
-            answerReads
-        );
+        const terminalValidation: ValidatedTerminalCalls = validateTerminalCalls(terminalCalls);
         if (terminalValidation.status === 'rejected') {
             return {
                 status: 'rejected',
@@ -2342,8 +2868,12 @@ export async function runApplicationOwnedToolLoop(
                 turns: turn,
             };
         }
+        // A decline on the measurement step was admitted when the step read it.
         const declineRefusal =
-            terminalValidation.decline === null || input.declineAdmission === undefined || answerIntake !== null
+            admittedStepDecline !== null ||
+            terminalValidation.decline === null ||
+            input.declineAdmission === undefined ||
+            answerIntake !== null
                 ? null
                 : input.declineAdmission(terminalValidation.decline);
         if (declineRefusal?.status === 'refused') {
@@ -2357,17 +2887,7 @@ export async function runApplicationOwnedToolLoop(
                     turns: turn,
                 };
             }
-            const refusalReceipt = boundReceipt(
-                failureReceipt({
-                    callId: terminalCalls[0]!.callId,
-                    toolName: COMMAND_BATCH_DECLINE_TOOL_NAME,
-                    turn,
-                    code: 'decline-not-admitted',
-                    safeMessage: declineRefusal.reason,
-                    retryable: true,
-                }),
-                limits.maxReceiptBytesPerCall
-            );
+            const refusalReceipt = declineRefusalReceipt(terminalCalls[0]!.callId, turn, declineRefusal.reason);
             const refusalOverBudget = admitTurnReceipts([refusalReceipt], turn, outcome, terminalCalls);
             if (refusalOverBudget !== null) {
                 return {
@@ -2390,6 +2910,50 @@ export async function runApplicationOwnedToolLoop(
             };
         }
         if (terminalCalls.length > 0 || outcome.toolCalls.length === 0) {
+            const opportunity = readCurrentMeasurementOpportunity(input, receipts, measurementIntake, turn);
+            if (
+                terminalCalls.length > 0 &&
+                terminalValidation.decline === null &&
+                terminalValidation.answer === null &&
+                opportunity !== null &&
+                !hasMeasurementWitness(opportunity)
+            ) {
+                if (isFinalTurn || limits.maxTotalCalls - totalCalls < 1) {
+                    return {
+                        status: 'rejected',
+                        reason: 'Proposal completion has no remaining budget for its required measurement receipt.',
+                        receipts,
+                        turns: turn,
+                    };
+                }
+                const deferredReceipts = terminalCalls.map(({ call, callId }) =>
+                    deferredCompletionReceipt(call, callId, turn)
+                );
+                const deferredOverBudget = admitTurnReceipts(deferredReceipts, turn, outcome, terminalCalls);
+                if (deferredOverBudget !== null) {
+                    return {
+                        status: 'rejected',
+                        reason: deferredOverBudget.reason,
+                        receipts: deferredOverBudget.receipts,
+                        turns: turn,
+                    };
+                }
+                if (deferredReceipts.some((receipt) => receipt.error?.code !== 'measurement-required')) {
+                    return {
+                        status: 'rejected',
+                        reason: 'Deferred proposal exceeded the bounded receipt budget.',
+                        receipts,
+                        turns: turn,
+                    };
+                }
+                heldTerminal = {
+                    calls: structuredClone(terminalCalls),
+                    proposal: structuredClone(outcome.proposal ?? extractAgentPlanProposal(outcome.toolCalls)),
+                    turn,
+                    opportunity: structuredClone(opportunity),
+                };
+                continue;
+            }
             return {
                 status: 'complete',
                 toolCalls: terminalCalls.map(({ call }) => normalizeTerminalProposalCall(call)),
@@ -2413,7 +2977,7 @@ export async function runApplicationOwnedToolLoop(
                 retainedCompilations: [...retainedCompilations.values()],
             };
         }
-        if (isFinalTurn) {
+        if (isFinalTurn && heldTerminal === null) {
             return {
                 status: 'rejected',
                 reason: 'Provider exhausted the bounded application tool-loop turns.',
@@ -2476,13 +3040,39 @@ export async function runApplicationOwnedToolLoop(
         });
         recordDisclosedCommandSchemas(safeReadCalls, turnReceipts, disclosedCommandSchemas);
         recordSearchedIntents(safeReadCalls, turnReceipts, searchedIntents);
-        const overBudget = admitTurnReceipts(turnReceipts, turn, outcome, safeReadCalls);
+        const overBudget = admitTurnReceipts(
+            turnReceipts,
+            turn,
+            outcome,
+            safeReadCalls,
+            undefined,
+            withStepRecord(measurementStepRecord, turnReceipts)
+        );
         if (overBudget !== null) {
             return { status: 'rejected', reason: overBudget.reason, receipts: overBudget.receipts, turns: turn };
         }
         transientOnsetsDiscovered ||= hasAdmittedTransientDiscovery(safeReadCalls, turnReceipts);
+        const currentOpportunity = measurementOpportunity;
         for (const [index, executed] of executedReads.entries()) {
             const admitted = turnReceipts[index];
+            if (
+                currentOpportunity !== null &&
+                admitted !== undefined &&
+                admitsMeasurementAttempt({
+                    attempt: executed.measurementAttempt,
+                    opportunity: currentOpportunity,
+                    raw: executed.receipt,
+                    admitted,
+                    loopId: input.loopId,
+                    toolName: input.measurement?.toolName ?? '',
+                    turn,
+                })
+            ) {
+                measurementWitness = {
+                    opportunity: structuredClone(currentOpportunity),
+                    receipt: structuredClone(admitted),
+                };
+            }
             if (
                 admitted?.status === 'success' &&
                 admitted.callId === executed.receipt.callId &&
@@ -2505,6 +3095,20 @@ export async function runApplicationOwnedToolLoop(
                 commands: executed.commands,
             };
             retainedCompilations.set(admitted.callId, retainedCompilationOf(executed, retainable));
+        }
+        if (needsMeasurementStep && currentOpportunity !== null && !hasMeasurementWitness(currentOpportunity)) {
+            return {
+                status: 'rejected',
+                reason: 'Measurement receipt did not match the required application step.',
+                receipts,
+                turns: turn,
+            };
+        }
+        if (stepTerminal !== null) {
+            return completeHeldTerminal(stepTerminal, turn);
+        }
+        if (heldTerminal !== null) {
+            return releaseHeldTerminal(heldTerminal, turn);
         }
     }
 

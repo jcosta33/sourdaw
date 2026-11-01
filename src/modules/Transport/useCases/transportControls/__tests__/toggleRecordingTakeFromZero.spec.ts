@@ -107,6 +107,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     ensureCachedAudioBuffersDurable: vi.fn(),
     createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
     audioEngine: {
+        beginAudioPreviewIntent: () => ({
+            signal: new AbortController().signal,
+            isCurrent: () => true,
+            release: vi.fn(),
+        }),
         setTransportInfo: vi.fn(),
     },
     resumeEngine: mocks.resumeEngine,

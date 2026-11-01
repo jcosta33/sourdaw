@@ -12,6 +12,8 @@ import { type NativeGrinderModelReceipt } from './AudioGraphBackend';
 
 /** Where the native engine's transport stands, as of its last rendered block. */
 export type EngineTransportPosition = {
+    /** String: witnessed handle; null: modern no-handle; absent: legacy/unavailable. */
+    engineIncarnation?: string | null;
     /** Optional only for older in-process providers; the bridge parser emits null when unavailable. */
     captureClock?: EngineCaptureClock | null;
     captureClockQuery?: EngineCaptureClockQuery | null;

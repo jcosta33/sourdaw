@@ -155,6 +155,9 @@ pub struct EngineTransportPosition {
     pub playhead_frame: f64,
     pub loop_wraps: f64,
     pub batches_applied: f64,
+    /// String: witnessed handle; null: modern no-handle; absent: unavailable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_incarnation: Option<Option<String>>,
     pub tempo: f64,
     pub time_sig_num: u16,
     pub time_sig_denom: u16,
@@ -299,6 +302,7 @@ fn transport_position_payload(
         playhead_frame: snapshot.playhead_frame as f64,
         loop_wraps: snapshot.loop_wraps as f64,
         batches_applied: snapshot.batches_applied as f64,
+        engine_incarnation: None,
         tempo: snapshot.tempo,
         time_sig_num: snapshot.time_sig_num,
         time_sig_denom: snapshot.time_sig_denom,
@@ -552,7 +556,10 @@ pub async fn engine_transport_position(
         .map_err(|error| format!("Failed to lock engine: {error}"))?;
 
     let Some(engine) = engine_guard.as_mut() else {
-        return Ok(EngineTransportPosition::default());
+        return Ok(EngineTransportPosition {
+            engine_incarnation: Some(None),
+            ..EngineTransportPosition::default()
+        });
     };
 
     let (epoch, entered_seconds) = engine.capture_clock_now();
@@ -589,6 +596,7 @@ pub async fn engine_transport_position(
     });
     payload.engine_id = Some(engine.instance_id().to_string());
     payload.grinder_models = registry_guard.native_grinder_readback(engine.instance_id());
+    payload.engine_incarnation = registry_guard.engine_incarnation().map(Some);
     Ok(payload)
 }
 
@@ -1141,6 +1149,7 @@ mod tests {
             playhead_frame: 72_000.0,
             loop_wraps: 2.0,
             batches_applied: 11.0,
+            engine_incarnation: None,
             capture_clock: Some(EngineCaptureClock {
                 epoch: 7,
                 stream_epoch: 2,
@@ -1428,7 +1437,17 @@ mod tests {
         let position = crate::block_on_test(engine_transport_position(&state))
             .expect("position should be readable");
 
-        assert_eq!(position, EngineTransportPosition::default());
+        assert_eq!(
+            position,
+            EngineTransportPosition {
+                engine_incarnation: Some(None),
+                ..EngineTransportPosition::default()
+            }
+        );
+        let wire = serde_json::to_value(&position).expect("position serializes");
+        assert!(wire
+            .get("engineIncarnation")
+            .is_some_and(serde_json::Value::is_null));
         assert!(!position.running);
     }
 
