@@ -20,6 +20,7 @@ import { playheadPositionRef, transportStore } from '#/modules/Transport/stores'
 import { defaultTransportState } from '#/modules/Transport/useCases';
 import { defaultWorkspaceState, workspaceStore, type WorkspaceState } from '#/modules/WorkspaceShell/stores';
 import { cn } from '#/utils/Styles/cn';
+import { isDragGestureActive } from '#/utils/UI/activeDragGesture';
 
 import { type AutomationLane, type AutomationCurveType } from '../../../models/AutomationViewTypes';
 import {
@@ -341,7 +342,8 @@ export const AutomationLaneRow = ({
             event.preventDefault();
             setSelectedPoints(lane.points.map((param) => param.beat));
         }
-        if (event.key === 'Escape') {
+        // A live drag owns Escape: it cancels itself, and the selection being dragged stays.
+        if (event.key === 'Escape' && !isDragGestureActive()) {
             setSelectedPoints([]);
         }
     };

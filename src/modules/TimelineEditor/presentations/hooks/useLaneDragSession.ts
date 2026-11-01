@@ -15,7 +15,7 @@
  */
 import { type PointerEvent as ReactPointerEvent, type RefObject, useRef, useEffect } from 'react';
 
-import { beginDragGesture } from '#/utils/UI/activeDragGesture';
+import { beginDragGesture, isDragCancelEscape } from '#/utils/UI/activeDragGesture';
 
 export type LanePointerPosition = {
     clientX: number;
@@ -45,9 +45,6 @@ type ArmedLaneDrag = {
     session: LaneDragSession;
     disarm: () => void;
 };
-
-const isUnmodifiedEscape = (event: KeyboardEvent): boolean =>
-    event.key === 'Escape' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey;
 
 /**
  * Take the armed gesture out of the ref and drop its Escape ownership — the drag mark and the
@@ -233,9 +230,7 @@ export const useLaneDragSession = (): UseLaneDragSessionOutput => {
         session.captureTarget.setPointerCapture(session.pointerId);
         const endDragGesture = beginDragGesture();
         const handleEscape = (event: KeyboardEvent): void => {
-            // A held Escape's auto-repeat is ignored, as the global shortcut layer ignores it, so
-            // a drag begun while the key is still down survives.
-            if (event.repeat || !isUnmodifiedEscape(event)) {
+            if (!isDragCancelEscape(event)) {
                 return;
             }
             cancelArmedDrag();

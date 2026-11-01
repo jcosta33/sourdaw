@@ -1,11 +1,11 @@
-import { beginDragGesture } from '#/utils/UI/activeDragGesture';
+import { beginDragGesture, isDragCancelEscape } from '#/utils/UI/activeDragGesture';
 
 /**
  * Attaches global mousemove + mouseup listeners and tears them down on the
  * first mouseup. Eliminates the repeated add/remove boilerplate across every
  * inline drag handler in a component.
  *
- * Escape cancels the gesture: listeners are removed and `onCancel` runs
+ * Escape cancels the gesture (`isDragCancelEscape`: unmodified, not an auto-repeat): listeners are removed and `onCancel` runs
  * instead of `onUp`. This is not a no-op teardown — a gesture that mutates
  * live state in `onMove` (e.g. writing straight to a CRDT-backed store on
  * every move, as the automation drags do) needs `onCancel` to revert that
@@ -66,7 +66,7 @@ export const startMouseDrag = (
     };
 
     const handleKeyDown = (event: KeyboardEvent): void => {
-        if (event.key !== 'Escape') {
+        if (!isDragCancelEscape(event)) {
             return;
         }
         cancel();

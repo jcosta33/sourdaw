@@ -28,3 +28,12 @@ export const beginDragGesture = (): (() => void) => {
 };
 
 export const isDragGestureActive = (): boolean => readActiveDragCount() > 0;
+
+/**
+ * Whether a keydown is the Escape that cancels a live drag: unmodified and not an auto-repeat.
+ * A held key's repeat must not kill a drag begun while it is still down, and Shift/Ctrl/Alt/Meta
+ * + Escape belongs to other shortcuts. The global shortcut layer ignores repeat for the same reason,
+ * so every drag owner shares this one rule.
+ */
+export const isDragCancelEscape = (event: KeyboardEvent): boolean =>
+    event.key === 'Escape' && !event.repeat && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey;
