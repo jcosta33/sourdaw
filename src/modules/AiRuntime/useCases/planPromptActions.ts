@@ -1,3 +1,4 @@
+import { openCachedAudioBufferHold } from '#/modules/AudioEngine/useCases';
 import { captureProjectRevision, settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
 import { canonicalJson } from '#/utils/canonicalDigest';
 
@@ -7,6 +8,7 @@ import { type AgentRunCreationRefusalReason, describeAgentRunCreationRefusal } f
 import { getCreativeSelectionSnapshot } from '../models/CreativeInterpretation';
 import { type PlannedIntentResult } from '../models/IntentResult';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
+import { type AnswerSuggestion } from '../models/PlanningOutcome';
 import { type PlanningProfile, guardReadonlyPlanningResult } from '../models/PlanningProfile';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
 import { type ThreadContext } from '../models/ThreadContext';
@@ -36,6 +38,8 @@ type PlanPromptActionsInput = {
     profile?: PlanningProfile;
     /** The chat thread's state before this request; a request from outside a thread passes none. */
     thread?: ThreadContext | null;
+    /** An earlier answer's suggestion the user asked to see proposed, compiled without a provider. */
+    suggestion?: AnswerSuggestion;
 };
 
 /**
@@ -191,6 +195,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
         await preparedStemImportCleanup.discardBestEffort(stemImportScope.actionSeed.stems);
     };
     const profileOptions = input.profile === undefined ? {} : { profile: input.profile };
+    const suggestionOptions = input.suggestion === undefined ? {} : { suggestion: input.suggestion };
     let result;
     try {
         result = await parsePromptToActions({
@@ -205,6 +210,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
             onMeasurementAttempt,
             thread: input.thread,
             ...profileOptions,
+            ...suggestionOptions,
         });
         if (input.profile === 'readonly-answer') {
             result = guardReadonlyPlanningResult(result);
@@ -213,7 +219,9 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
         const rejectionEvidence = result.rejectionEvidence;
         const correctableValidationFailure = isCorrectableRejection(result.rejectionReason);
         const correctionAdmission = input.onProviderAttempt;
+        // A suggestion's refusal names the project state that refused it; no provider can correct that.
         if (
+            input.suggestion === undefined &&
             correctableValidationFailure &&
             correctionAdmission !== undefined &&
             input.signal?.aborted !== true &&
@@ -293,28 +301,34 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
             result = guardReadonlyPlanningResult(result);
         }
         if (input.profile !== 'readonly-answer' && result.preparationRequest === 'stem-import') {
-            const preparedStemImport = await prepareStemImport(input.signal, input.onLocalWorkAttempt);
-            if (preparedStemImport.status === 'cancelled') {
-                await settleAutoCreatedRun('completed');
-                input.signal?.removeEventListener('abort', onAbort);
-                return {
-                    context,
-                    result: {
-                        actions: [],
-                        rawText: input.prompt,
-                        requiresConfirmation: false,
-                        planningOutcome: { kind: 'no-match' as const },
-                    },
-                    projectRevision,
-                };
-            }
-            stemImportScope = createStemImportPromptScope(preparedStemImport, projectRevision);
-            if (streamIdentity !== undefined) {
-                preparedStemImportResources.register({
-                    runId: streamIdentity.runId,
-                    stems: stemImportScope.actionSeed.stems,
-                });
-                stemImportResourcesRegistered = true;
+            // The decoded stems stay resident until the run's registration owns them.
+            const stemHold = openCachedAudioBufferHold();
+            try {
+                const preparedStemImport = await prepareStemImport(input.signal, input.onLocalWorkAttempt, stemHold);
+                if (preparedStemImport.status === 'cancelled') {
+                    await settleAutoCreatedRun('completed');
+                    input.signal?.removeEventListener('abort', onAbort);
+                    return {
+                        context,
+                        result: {
+                            actions: [],
+                            rawText: input.prompt,
+                            requiresConfirmation: false,
+                            planningOutcome: { kind: 'no-match' as const },
+                        },
+                        projectRevision,
+                    };
+                }
+                stemImportScope = createStemImportPromptScope(preparedStemImport, projectRevision);
+                if (streamIdentity !== undefined) {
+                    preparedStemImportResources.register({
+                        runId: streamIdentity.runId,
+                        stems: stemImportScope.actionSeed.stems,
+                    });
+                    stemImportResourcesRegistered = true;
+                }
+            } finally {
+                stemHold.release();
             }
             result = await parsePromptToActions({
                 prompt: input.prompt,

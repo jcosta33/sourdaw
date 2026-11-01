@@ -1,4 +1,4 @@
-import { type AnswerEvidenceEntry } from './PlanningOutcome';
+import { type AnswerEvidenceEntry, type AnswerSuggestion } from './PlanningOutcome';
 import { type ToolSchema } from './ToolDefinitions';
 
 export const ANSWER_RESPOND_MAX_STATEMENTS = 16;
@@ -36,7 +36,7 @@ export type AnswerRespondArguments<MetricId extends string> = {
     statements: AnswerStatement<MetricId>[];
 };
 /** Existing renderer contract; factual text is composed by the application. */
-export type PlanningAnswer = { text: string; evidence: AnswerEvidenceEntry[] };
+export type PlanningAnswer = { text: string; evidence: AnswerEvidenceEntry[]; suggestion?: AnswerSuggestion };
 
 function createAnswerStatementSchemas<MetricId extends string>(
     metricIds: readonly MetricId[]

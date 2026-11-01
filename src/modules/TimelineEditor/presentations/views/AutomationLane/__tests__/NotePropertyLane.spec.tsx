@@ -440,6 +440,144 @@ describe('NotePropertyLane', () => {
             expect(setValues).toHaveBeenCalledWith('clip-1', [{ noteId: 'n3', velocity: 127 }]);
         });
 
+        describe('Escape mid-drag', () => {
+            const readVelocities = (): Record<string, number> =>
+                Object.fromEntries(
+                    (laneMocks.midiState.notesByClipId['clip-1'] ?? []).map((note) => [note.id, note.velocity])
+                );
+
+            const pressEscape = (): void => {
+                fireEvent.keyDown(window, { key: 'Escape' });
+            };
+
+            it('reverts a paint drag, the press write included, and records no undo entry', () => {
+                seedNotes([makeNote('n1', 0, 100), makeNote('n2', 2, 80)]);
+                render(<NotePropertyLane {...defaultProps} setValue={liveSetValue} />);
+                const canvas = getCanvas();
+
+                fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 10, clientY: 2 });
+                fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 90, clientY: 129 });
+                expect(readVelocities()).toEqual({ n1: 127, n2: 0 });
+
+                pressEscape();
+
+                expect(readVelocities()).toEqual({ n1: 100, n2: 80 });
+                expect(pushUndoEntry).not.toHaveBeenCalled();
+
+                // The release the browser still delivers neither paints nor commits.
+                fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 10, clientY: 66 });
+                fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 10, clientY: 66 });
+                expect(readVelocities()).toEqual({ n1: 100, n2: 80 });
+                expect(pushUndoEntry).not.toHaveBeenCalled();
+            });
+
+            it('reverts the value a bare press wrote', () => {
+                seedNotes([makeNote('n1', 0, 100)]);
+                render(<NotePropertyLane {...defaultProps} setValue={liveSetValue} />);
+
+                fireEvent.pointerDown(getCanvas(), { pointerId: 1, clientX: 10, clientY: 2 });
+                expect(readVelocities()).toEqual({ n1: 127 });
+
+                pressEscape();
+
+                expect(readVelocities()).toEqual({ n1: 100 });
+                expect(pushUndoEntry).not.toHaveBeenCalled();
+            });
+
+            it('reverts a shift+drag ramp', () => {
+                seedNotes([makeNote('n1', 0, 100), makeNote('n2', 2, 90), makeNote('n3', 4, 80)]);
+                render(
+                    <NotePropertyLane
+                        {...defaultProps}
+                        setValue={liveSetValue}
+                        selectedNoteIds={new Set(['n1', 'n2', 'n3'])}
+                    />
+                );
+                const canvas = getCanvas();
+
+                fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 10, clientY: 2, shiftKey: true });
+                expect(readVelocities()).toEqual({ n1: 100, n2: 114, n3: 127 });
+
+                pressEscape();
+
+                expect(readVelocities()).toEqual({ n1: 100, n2: 90, n3: 80 });
+                expect(pushUndoEntry).not.toHaveBeenCalled();
+            });
+
+            it('reverts a ramp end-handle drag', () => {
+                seedNotes([makeNote('n1', 0, 100), makeNote('n3', 4, 60)]);
+                const { container } = render(
+                    <NotePropertyLane
+                        {...defaultProps}
+                        setValue={liveSetValue}
+                        setValues={vi.fn()}
+                        selectedNoteIds={new Set(['n1', 'n3'])}
+                    />
+                );
+                const handles = container.querySelectorAll('div.cursor-ns-resize');
+
+                fireEvent.pointerDown(handles[1]!, { pointerId: 3 });
+                fireEvent.pointerMove(handles[1]!, { pointerId: 3, clientY: 2 });
+                expect(readVelocities()).toEqual({ n1: 100, n3: 127 });
+
+                pressEscape();
+
+                expect(readVelocities()).toEqual({ n1: 100, n3: 60 });
+                expect(pushUndoEntry).not.toHaveBeenCalled();
+            });
+
+            it('drops the values buffered for a frozen occurrence instead of committing them later', () => {
+                const sourceRow = makeNote('original', 5.5, 90);
+                const viewNote = makeNote('view-first', 2, 90);
+                const plainNote = makeNote('plain', 0, 70);
+                seedNotes([plainNote]);
+                const setFrozenValue = vi.fn();
+                const projection = {
+                    notes: [viewNote],
+                    baseNotes: [],
+                    baseOwnersByViewId: new Map(),
+                    ownersByViewId: new Map([
+                        [
+                            viewNote.id,
+                            {
+                                laneId: 'lane',
+                                takeId: 'selected',
+                                sourceClipId: 'source',
+                                sourceEntryBeat: 5,
+                                row: sourceRow,
+                                occurrenceIndex: 0,
+                                displayedStartBeat: 2,
+                                displayedDuration: 1,
+                            },
+                        ],
+                    ]),
+                    coveredWindows: [{ startBeat: 0, endBeat: 4 }],
+                    insertOwnerAtBeat: () => null,
+                };
+                render(
+                    <NotePropertyLane
+                        {...defaultProps}
+                        primaryClipNotes={[plainNote, viewNote]}
+                        takeProjections={new Map([['clip-1', projection]])}
+                        setFrozenValue={setFrozenValue}
+                        setValue={liveSetValue}
+                    />
+                );
+                const canvas = getCanvas();
+
+                fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 90, clientY: 2 });
+                pressEscape();
+                expect(setFrozenValue).not.toHaveBeenCalled();
+
+                // The next gesture, on another note, commits only its own value, never the abandoned one.
+                // clientY 66 → (1 - 64/127) * 127 = 63
+                fireEvent.pointerDown(canvas, { pointerId: 2, clientX: 10, clientY: 66 });
+                fireEvent.pointerUp(canvas, { pointerId: 2, clientX: 10, clientY: 66 });
+                expect(liveSetValue).toHaveBeenLastCalledWith('clip-1', 'plain', 63);
+                expect(setFrozenValue).not.toHaveBeenCalled();
+            });
+        });
+
         describe('cross-clip selection scope', () => {
             // A selection can span every clip the piano roll has open; the lane
             // must draw and edit the notes of every clip that selection

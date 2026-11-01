@@ -219,7 +219,7 @@ describe('cold first-paint warmup', () => {
         vi.restoreAllMocks();
     });
 
-    it('shares 180 seconds between a 35-second navigation and prompt overlay', async () => {
+    it('shares 300 seconds between a 35-second navigation and prompt overlay', async () => {
         warmupMocks.goto.mockImplementation(async () => {
             clock.now += 35_000;
             return null;
@@ -238,15 +238,15 @@ describe('cold first-paint warmup', () => {
         expect(identityCallOrder).toBeLessThan(launchCallOrder);
         expect(warmupMocks.newPage).toHaveBeenCalledWith({ baseURL: 'http://localhost:4173' });
         expect(warmupMocks.addInitScript).toHaveBeenCalledWith(expect.any(Function), 'sourdaw-e2e-direct');
-        expect(warmupMocks.goto).toHaveBeenCalledWith('/', { timeout: 180_000 });
+        expect(warmupMocks.goto).toHaveBeenCalledWith('/', { timeout: 300_000 });
         expect(warmupMocks.getByLabel).toHaveBeenCalledWith('Sourdaw — start a project');
-        expect(warmupMocks.waitFor).toHaveBeenCalledWith({ state: 'visible', timeout: 145_000 });
+        expect(warmupMocks.waitFor).toHaveBeenCalledWith({ state: 'visible', timeout: 265_000 });
         expect(warmupMocks.close).toHaveBeenCalledOnce();
         // The cold cost is reported so a slow warmup is visible in the CI log
         // instead of surfacing inside the first test's timed allowance (#4781).
         expect(warmupLog).toHaveBeenCalledWith(
             expect.stringMatching(
-                /\[first-paint warmup\] launch overlay after 35\.0s, boot capabilities after 35\.0s; 145\.0s of the 180s cold allowance remains/
+                /\[first-paint warmup\] launch overlay after 35\.0s, boot capabilities after 35\.0s; 265\.0s of the 300s cold allowance remains/
             )
         );
         expect(warmupError).not.toHaveBeenCalled();
@@ -325,9 +325,9 @@ describe('cold first-paint warmup', () => {
 
         await expect(warmFirstPaint(config)).rejects.toThrow('navigation timed out');
 
-        expect(warmupMocks.goto).toHaveBeenCalledWith('/', { timeout: 180_000 });
+        expect(warmupMocks.goto).toHaveBeenCalledWith('/', { timeout: 300_000 });
         expect(warmupMocks.waitFor).not.toHaveBeenCalled();
-        expect(clock.now).toBe(180_000);
+        expect(clock.now).toBe(300_000);
         expect(warmupMocks.close).toHaveBeenCalledOnce();
     });
 
@@ -343,8 +343,8 @@ describe('cold first-paint warmup', () => {
 
         await expect(warmFirstPaint(config)).rejects.toThrow('overlay timed out');
 
-        expect(warmupMocks.waitFor).toHaveBeenCalledWith({ state: 'visible', timeout: 145_000 });
-        expect(clock.now).toBe(180_000);
+        expect(warmupMocks.waitFor).toHaveBeenCalledWith({ state: 'visible', timeout: 265_000 });
+        expect(clock.now).toBe(300_000);
         expect(warmupMocks.close).toHaveBeenCalledOnce();
     });
 
@@ -378,7 +378,7 @@ describe('cold first-paint warmup', () => {
 
         await vi.waitFor(() => expect(warmupMocks.close).toHaveBeenCalledOnce());
         expect(emitted).toHaveLength(1);
-        expect(emitted[0]).toContain('First-paint warmup failed after 180000ms');
+        expect(emitted[0]).toContain('First-paint warmup failed after 300000ms');
         expect(emitted[0]).toContain('Vite client connected +0.0s');
         expect(emitted[0]).toContain('browser emitted boot detail');
         expect(emitted[0]).toContain('unrelated browser message 8');
@@ -388,8 +388,8 @@ describe('cold first-paint warmup', () => {
         expect(settled).toBe(false);
         expect(warmupMocks.goto).toHaveBeenCalledOnce();
         expect(warmupMocks.waitFor).toHaveBeenCalledOnce();
-        expect(warmupMocks.waitFor).toHaveBeenCalledWith({ state: 'visible', timeout: 145_000 });
-        expect(clock.now).toBe(180_000);
+        expect(warmupMocks.waitFor).toHaveBeenCalledWith({ state: 'visible', timeout: 265_000 });
+        expect(clock.now).toBe(300_000);
         expect(onClose).toHaveBeenCalledOnce();
 
         close.resolve(undefined);
@@ -483,7 +483,7 @@ describe('cold first-paint warmup', () => {
 
     it('refuses a depleted budget before passing timeout zero to the overlay', async () => {
         warmupMocks.goto.mockImplementation(async () => {
-            clock.now += 179_999.5;
+            clock.now += 299_999.5;
             return null;
         });
 
