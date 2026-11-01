@@ -40,6 +40,32 @@ const { timeSignatureMapStore } = vi.hoisted(
 const { audioClock } = vi.hoisted((): { audioClock: { currentTime: number } } => ({
     audioClock: { currentTime: 0 },
 }));
+const previewIntents = vi.hoisted(() => {
+    let exclusive: AbortController | null = null;
+    let ordinarySignal: AbortSignal | null = null;
+    return {
+        get ordinarySignal() {
+            return ordinarySignal;
+        },
+        beginExclusive() {
+            const controller = new AbortController();
+            exclusive = controller;
+            return { signal: controller.signal, release: () => controller.abort('released') };
+        },
+        beginOrdinary() {
+            const previous = exclusive;
+            exclusive = null;
+            previous?.abort('preempted');
+            const controller = new AbortController();
+            ordinarySignal = controller.signal;
+            return { signal: controller.signal, release: () => controller.abort('released') };
+        },
+        reset() {
+            exclusive?.abort('reset');
+            exclusive = null;
+        },
+    };
+});
 vi.mock('../../../stores/timeSignatureMapStore', () => ({ timeSignatureMapStore }));
 vi.mock('../../../repositories/transport/getTransportState', () => ({
     getTransportState: vi.fn(),
@@ -49,6 +75,10 @@ vi.mock('../../../repositories/transport/updateTransportState', () => ({
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRootIdentity: () => 'playback-fixture-root' }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    audioEngine: {
+        beginAudioPreviewIntent: previewIntents.beginOrdinary,
+        beginExclusiveAudioPreviewIntent: previewIntents.beginExclusive,
+    },
     resumeEngine: vi.fn(),
     nativeLiveGraphSessionOffered: vi.fn(),
     startNativeLiveGraphSession: vi.fn(),
@@ -108,6 +138,7 @@ function publishTransportPatch(patch: Parameters<typeof updateTransportState>[0]
 
 describe('startPlayback', () => {
     beforeEach(() => {
+        previewIntents.reset();
         playheadPositionRef.current = 0;
         playheadWrapCountRef.current = 0;
         timeSignatureMapStore.value = { changes: [] };
@@ -173,6 +204,23 @@ describe('startPlayback', () => {
         expect(update).toHaveBeenCalledWith({ isPlaying: true, playheadPosition: 8 });
         expect(playheadPositionRef.current).toBe(8);
         expect(startPlayheadScheduler).toHaveBeenCalled();
+    });
+
+    it('retires an exclusive preview before requesting engine resume', () => {
+        const events: string[] = [];
+        const exclusive = previewIntents.beginExclusive();
+        exclusive.signal.addEventListener('abort', () => events.push('preview-abort'));
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, isPlaying: false });
+        vi.mocked(resumeEngine).mockImplementation(() => {
+            expect(previewIntents.ordinarySignal?.aborted).toBe(true);
+            events.push('resume-requested');
+            return Promise.resolve();
+        });
+
+        startPlayback();
+
+        expect(exclusive.signal.aborted).toBe(true);
+        expect(events).toEqual(['preview-abort', 'resume-requested']);
     });
 
     it('surfaces a failed engine resume to the user while still starting playback', async () => {

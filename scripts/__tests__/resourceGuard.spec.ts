@@ -1044,13 +1044,13 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         },
         { profile: 'focused' as const, command: 'pnpm', args: ['deps:validate'], expected: 6.5 * 1024 ** 3 },
         { profile: 'broad' as const, command: 'pnpm', args: ['run', 'deps:validate'], expected: 6.5 * 1024 ** 3 },
-        { profile: 'focused' as const, command: 'pnpm', args: ['test:e2e'], expected: 5.5 * 1024 ** 3 },
-        { profile: 'broad' as const, command: 'pnpm', args: ['run', 'test:e2e'], expected: 5.5 * 1024 ** 3 },
+        { profile: 'focused' as const, command: 'pnpm', args: ['test:e2e'], expected: 8 * 1024 ** 3 },
+        { profile: 'broad' as const, command: 'pnpm', args: ['run', 'test:e2e'], expected: 8 * 1024 ** 3 },
         {
             profile: 'focused' as const,
             command: 'pnpm',
             args: ['test:e2e', 'tests/e2e/exportAudioEvidence.spec.ts'],
-            expected: 5.5 * 1024 ** 3,
+            expected: 8 * 1024 ** 3,
         },
         {
             profile: 'focused' as const,
@@ -1086,13 +1086,13 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
             profile: 'focused' as const,
             command: 'pnpm',
             args: ['-C', 'packages/app', 'test:e2e'],
-            expected: 5.5 * 1024 ** 3,
+            expected: 8 * 1024 ** 3,
         },
         {
             profile: 'focused' as const,
             command: 'pnpm',
             args: ['--dir', 'packages/app', 'test:e2e'],
-            expected: 5.5 * 1024 ** 3,
+            expected: 8 * 1024 ** 3,
         },
         {
             profile: 'broad' as const,
@@ -1144,7 +1144,7 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
                 availableMemoryBytes: abundantMemoryBytes,
             });
             expect(e2eResult.code).toBe(0);
-            expect(e2eResult.maxRssBytes).toBe(5.5 * 1024 ** 3);
+            expect(e2eResult.maxRssBytes).toBe(8 * 1024 ** 3);
 
             const execResult = await runIsolatedGuardedCommand({
                 command: 'pnpm',

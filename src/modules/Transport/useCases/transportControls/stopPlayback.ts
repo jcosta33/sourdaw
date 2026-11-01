@@ -94,5 +94,6 @@ function haltTransport(): Promise<void> {
  * synchronous teardown and each store notifies once with its final value.
  */
 export function stopPlayback(): Promise<void> {
+    audioEngine.beginAudioPreviewIntent().release();
     return batchStoreUpdates(haltTransport);
 }

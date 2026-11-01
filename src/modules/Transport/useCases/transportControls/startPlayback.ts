@@ -1,5 +1,5 @@
 import { logger } from '#/infra/logger/appLogger';
-import { nativeLiveGraphSessionOffered, resumeEngine } from '#/modules/AudioEngine/useCases';
+import { audioEngine, nativeLiveGraphSessionOffered, resumeEngine } from '#/modules/AudioEngine/useCases';
 import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -32,6 +32,7 @@ import type { TransportState } from '../../models/TransportState';
  * build decides when the native session settles or the hold cap expires.
  */
 export async function startPlayback(onRoll?: (contextSeconds: number, beat: number) => void): Promise<void> {
+    audioEngine.beginAudioPreviewIntent().release();
     try {
         await startPlaybackRequest(onRoll);
     } catch (error) {

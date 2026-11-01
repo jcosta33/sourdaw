@@ -523,6 +523,15 @@ export type AudioEngine = {
     /** Main-thread cancellation ownership; currentness alone does not certify listening isolation. */
     beginAudioPreviewIntent(): AudioPreviewIntent;
     beginExclusiveAudioPreviewIntent(): AudioPreviewIntent;
+    /** Retained audition enters the same mono/dim listening insert as programme. */
+    readonly audioPreviewOutput: AudioNode;
+    setAudioPreviewProgrammeSuppressed(suppressed: boolean): void;
+    holdAudioPreviewRestoration(restoration: Promise<void>): void;
+    playAudioPreviewTone(
+        frequency: number,
+        durationSeconds: number,
+        intent: AudioPreviewIntent
+    ): { stop: () => void; ready: Promise<void> } | null;
     /** Monotonic live-graph revision used to reject stale compiled deltas. */
     getRuntimeGraphRevision(): number;
     /** Composition-owned freshness authority; AudioEngine never reads project state directly. */
