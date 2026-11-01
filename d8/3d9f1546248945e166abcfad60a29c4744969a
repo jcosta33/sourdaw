@@ -1,0 +1,37 @@
+src/modules/TimelineEditor/presentations/helpers/mouseDrag.ts
+  s_fec7059b7a251c::t_606bceb484bfab 10-19
+  s_fec7059b7a251c::t_e813c9d0f944cc 8-9
+  s_fec7059b7a251c::t_41cf25e7f2d2d5 1,70
+src/utils/UI/activeDragGesture.ts
+  s_fec7059b7a251c::t_5df9bcc0a5f5a9 41
+  s_fec7059b7a251c::t_432351169b2d69 40
+  s_fec7059b7a251c::t_2184db55547b79 42
+  s_fec7059b7a251c::t_8aa0ff1fb31617 33-38
+src/modules/TimelineEditor/presentations/hooks/useLaneDragSession.ts
+  s_fec7059b7a251c::t_554113c1f44123 233
+  s_fec7059b7a251c::t_9a0b881c14a7de 18
+src/modules/TimelineEditor/presentations/views/AutomationView/AutomationLaneRow.tsx
+  s_fec7059b7a251c::t_23a044dba9cbd3 348
+  s_fec7059b7a251c::t_2a31602c61b9e4 345-347
+  s_fec7059b7a251c::t_3554bc5a2dc9fd 23
+src/modules/TimelineEditor/presentations/views/AutomationView/__tests__/AutomationLaneRow.spec.tsx
+  s_fec7059b7a251c::t_e9a0cf0ae5fcbc 18,490-495,530-586
+src/utils/UI/__tests__/activeDragGesture.spec.ts
+  s_fec7059b7a251c::t_fa391b17c8fba2 3,37,48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d83d9f1546248945e166abcfad60a29c4744969a",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
