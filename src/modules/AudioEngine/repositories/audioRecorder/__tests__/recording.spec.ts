@@ -56,11 +56,14 @@ describe('startAudioRecording', () => {
         });
     });
 
-    it('should return false and log when microphone access fails', async () => {
+    it('rejects with the microphone failure as its cause and leaves the logging to the caller', async () => {
         const onComplete = vi.fn();
 
-        await expect(startAudioRecording('track-1', onComplete)).resolves.toBe(false);
-        expect(logger.error).toHaveBeenCalled();
+        const starting = startAudioRecording('track-1', onComplete);
+
+        await expect(starting).rejects.toThrow('Failed to start recording on track track-1');
+        await expect(starting).rejects.toMatchObject({ cause: new Error('mic denied') });
+        expect(logger.error).not.toHaveBeenCalled();
         expect(onComplete).not.toHaveBeenCalled();
         expect(audioEngine.ensureTrackStrip).not.toHaveBeenCalled();
     });
@@ -159,7 +162,9 @@ describe('startAudioRecording', () => {
             throw new Error('source creation failed');
         });
 
-        await expect(startAudioRecording('track-source-fail', vi.fn())).resolves.toBe(false);
+        await expect(startAudioRecording('track-source-fail', vi.fn())).rejects.toMatchObject({
+            cause: new Error('source creation failed'),
+        });
 
         expect(media_track_stop).toHaveBeenCalledTimes(1);
         expect(audioEngine.ensureTrackStrip).not.toHaveBeenCalled();
@@ -203,6 +208,21 @@ describe('startAudioRecording', () => {
 
         await expect(restarting).resolves.toBe(true);
         expect(globalThis.navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2);
+    });
+
+    it('refuses quietly when a stop moves the generation during the same-track wait', async () => {
+        await expect(startAudioRecording('track-wait-stop', vi.fn())).resolves.toBe(true);
+
+        const stopping = stopAudioRecording();
+        const restarting = startAudioRecording('track-wait-stop', vi.fn());
+        await Promise.resolve();
+        void stopAudioRecording();
+
+        await vi.advanceTimersByTimeAsync(5_000);
+        await stopping;
+
+        await expect(restarting).resolves.toBe(false);
+        expect(globalThis.navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
     });
 
     it('acquires distinct streams for tracks assigned distinct inputs', async () => {

@@ -233,7 +233,6 @@ export const startAudioRecording: StartAudioRecording = inject({ logger })(
 
                 return true;
             } catch (error) {
-                logger.error(new Error(`Failed to start recording on track ${trackId}`, { cause: error }));
                 const sessionWasRegistered =
                     registeredSession !== null && activeSessions.get(trackId) === registeredSession;
                 if (registeredSession) {
@@ -246,7 +245,11 @@ export const startAudioRecording: StartAudioRecording = inject({ logger })(
                     sourceNode?.disconnect();
                     releaseSharedMediaStream(mediaStream);
                 }
-                return false;
+                // `false` means a stop moved the start generation or the track
+                // is already recording; an input that failed to open must reach
+                // the caller as a failure it can tell the musician about. The
+                // caller logs it.
+                throw new Error(`Failed to start recording on track ${trackId}`, { cause: error });
             }
         }
 );

@@ -53,6 +53,7 @@ import { startPlayback } from '../../transportControls/startPlayback';
 import { stopPlayback } from '../../transportControls/stopPlayback';
 
 const TRACK_ID = 'track-recording';
+const INPUT_START_FAILURE = 'Punch-in recording failed to start — the take was discarded.';
 const SESSION_KEY = 'sourdaw-undo-session';
 const testAudioDatabase = new IDBFactory();
 type RecordingTerminal = Parameters<typeof import('#/modules/AudioEngine/useCases').startAudioRecording>[1];
@@ -583,7 +584,9 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes)).toEqual([]);
         expect(activeRecordingRef.current).toEqual([]);
         expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
-        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('Punch-in recording'), 'error');
+        expect(mocks.notifyUser).toHaveBeenCalledWith(INPUT_START_FAILURE, 'error');
+        expect(transportStore.value?.isPlaying).toBe(true);
+        expect(schedulerSession.worker).not.toBeNull();
         pausePlayback();
         await recordingLifecycle.waitForClosing();
         expect(actionHistoryStore.value?.entries).toEqual([]);
@@ -645,6 +648,28 @@ describe('automatic punch Pause and Play with real recording commits', () => {
 
     it('keeps Play rolling when a refused first-window punch-in start shares the window with a loop seam', async () => {
         await playIntoRefusedFirstWindowPunch({ loopStart: 0, loopEnd: 8 });
+    });
+
+    it('keeps Play rolling and says the input failed when a held first-window punch-in start rejects', async () => {
+        const start = Promise.withResolvers<boolean>();
+        mocks.startAudioRecording.mockImplementationOnce(() => start.promise);
+        armFirstWindowPunch(null);
+        const playing = startPlayback();
+        await vi.waitFor(() => expect(mocks.startAudioRecording).toHaveBeenCalledTimes(1));
+        expect(trackStore.value?.tracks[0]?.clips).toHaveLength(1);
+        // The input fails while Play's own first window still prepares, so the
+        // discard is held until the initial emission settles.
+        start.reject(new Error('microphone permission denied'));
+        await playing;
+        expect(transportStore.value?.isPlaying).toBe(true);
+        expect(schedulerSession.worker).not.toBeNull();
+        await vi.waitFor(() => expect(trackStore.value?.tracks[0]?.clips).toEqual([]));
+        expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes)).toEqual([]);
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(INPUT_START_FAILURE, 'error');
+        pausePlayback();
+        await recordingLifecycle.waitForClosing();
+        expectRefusedPunchRetired();
     });
 
     it('retires a refused first-window start when the initial emission goes stale', async () => {
