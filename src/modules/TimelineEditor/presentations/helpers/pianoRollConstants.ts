@@ -32,12 +32,12 @@ export const RULER_HEIGHT = 22;
  * canvas (and of the key rail beside it): the ruler band, then one
  * `ROW_HEIGHT` row per visible pitch, row 0 being the highest pitch.
  *
- * The canvas draws, hit-tests and sizes itself from these, and the key rail
- * positions every label from the same `getPianoRollRowTop`, so a label sits
- * beside the row where its pitch is drawn and where a click creates it.
- * Never derive a row's y anywhere else, and never let the rail's own flex
- * layout place labels: a column of flex-shrinkable labels compresses once
- * the dock is shorter than the roll and drifts off the canvas rows.
+ * The canvas sizes itself and maps a click to a row through these, and the
+ * key rail positions every label from the same `getPianoRollRowTop`, so a
+ * label sits beside the row where its pitch is drawn and where a click
+ * creates it. Never let the rail's own flex layout place labels: a column of
+ * flex-shrinkable labels compresses once the dock is shorter than the roll
+ * and drifts off the canvas rows.
  */
 export const getPianoRollContentHeight = (rowCount: number): number => RULER_HEIGHT + rowCount * ROW_HEIGHT;
 
