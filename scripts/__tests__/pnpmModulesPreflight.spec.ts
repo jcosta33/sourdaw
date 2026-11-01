@@ -286,6 +286,25 @@ describe('outsideSymlinkRefusal', () => {
             })
         ).toBeUndefined();
     });
+
+    it('passes a link into a lane child whose name merely begins with two dots', () => {
+        expect(
+            outsideSymlinkRefusal({
+                laneRoot,
+                linkPath: `${laneRoot}/node_modules`,
+                linkTarget: `${laneRoot}/..cache/store`,
+            })
+        ).toBeUndefined();
+    });
+
+    it.each([`${laneRoot}/..`, `${laneRoot}/../other`, `${laneRoot}-sibling/store`, laneRoot])(
+        'refuses a link resolving to %s',
+        (linkTarget) => {
+            expect(outsideSymlinkRefusal({ laneRoot, linkPath: `${laneRoot}/node_modules`, linkTarget })).toMatch(
+                /outside the lane/
+            );
+        }
+    );
 });
 
 describe('pnpm modules preflight against a real filesystem', () => {

@@ -143,6 +143,8 @@ describe('stdlib access admission before copied source import', () => {
         'capability',
         'ancestor',
         'tool escape',
+        'tool parent',
+        'tool dot-dot child',
     ])('observes actual bootstrap %s and never grants a failed admission', async (failure) => {
         const context = {
             uid: 20000,
@@ -178,6 +180,11 @@ describe('stdlib access admission before copied source import', () => {
             truncated: status.trimEnd(),
             capability: status.replace('CapEff: 0', 'CapEff: 1'),
         };
+        const toolRealpaths: Record<string, string> = {
+            'tool escape': '/outside/tool',
+            'tool parent': '/var/tmp',
+            'tool dot-dot child': '/var/tmp/tools/..cache',
+        };
         const read = vi.fn(() => samples[failure] ?? status);
         const access = vi.fn((current: string) => {
             if (failure === 'ancestor' && current === '/var/tmp') {
@@ -188,7 +195,7 @@ describe('stdlib access admission before copied source import', () => {
             constants: { R_OK: 4, X_OK: 1 },
             readFileSync: read,
             accessSync: access,
-            realpathSync: (current: string) => (failure === 'tool escape' ? '/outside/tool' : current),
+            realpathSync: (current: string) => toolRealpaths[failure] ?? current,
             statSync: () => ({ isDirectory: () => false, isFile: () => true, mode: 0o755 }),
         };
         const run = () =>
@@ -205,7 +212,7 @@ describe('stdlib access admission before copied source import', () => {
                 process: { argv: ['node', JSON.stringify(context), 'verify'], exit },
                 console: { info, error },
             });
-        if (failure === 'admitted') {
+        if (failure === 'admitted' || failure === 'tool dot-dot child') {
             await run();
             expect(info).toHaveBeenCalledWith(expect.stringContaining('checkout=readable pnpm-closure=readable'));
             expect(access).toHaveBeenCalledWith('/var/tmp/copy/checkout/scripts/runIsolatedUnitShard.ts', 4);
