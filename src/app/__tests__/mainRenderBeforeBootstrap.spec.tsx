@@ -403,7 +403,7 @@ describe('app main first paint', () => {
         expect(mocks.render).toHaveBeenCalled();
         expectFirstPaintRendered();
         expect(mocks.resetBrowserDisplayScaleForChildStartup).toHaveBeenCalledOnce();
-        expect(mocks.bootstrap).toHaveBeenCalledOnce();
+        await vi.waitFor(() => expect(mocks.bootstrap).toHaveBeenCalledOnce());
         expect(mocks.failIdentityTransition).not.toHaveBeenCalled();
         expect(document.getElementById('root')).not.toBeNull();
     });
