@@ -1,0 +1,43 @@
+src/modules/Arrangement/useCases/clipSelection/selectClipWithFocus.ts
+  s_dde1671ba022b8::t_b6495f431b92de 2,5
+src/modules/Arrangement/useCases/clipSelection/setClipSelection.ts
+  s_ba80576e6f5cb5::t_5c47157e5ecaa5 2,5-7
+src/modules/Arrangement/useCases/clipSelection/__tests__/clipSelection.spec.ts
+  s_ba80576e6f5cb5::t_95eb7a81dd03eb 4-5,17,183-227
+src/modules/Arrangement/useCases/clipSelection/selectClip.ts
+  s_ba80576e6f5cb5::t_69761fcce17796 2,5
+src/modules/Arrangement/useCases/clipSelection/toggleClipInSelection.ts
+  s_ba80576e6f5cb5::t_188b2db56c7d05 2,9
+src/modules/Arrangement/useCases/deviceSelection/clearDeviceSelection.ts
+  s_ba80576e6f5cb5::t_67223d9cfa9f27 4-8
+src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx
+  s_ba80576e6f5cb5::t_bb1b77715eefc8 232-239
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/EffectsTab.spec.tsx
+  s_ba80576e6f5cb5::t_20b83e80d3cf91 243-263
+src/modules/TimelineEditor/presentations/views/__tests__/InspectorPanelFocusPrecedence.spec.tsx
+  s_ba80576e6f5cb5::t_63c41fd24a0a63 1-93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bbabd8760b3bc97d2335c3e5026310638c31d101",
+  "prompts": {},
+  "sessions": {
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_dde1671ba022b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e4c42ac-51ff-45eb-b81f-f43601ed01dc",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
