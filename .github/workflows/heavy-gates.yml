@@ -152,8 +152,9 @@ jobs:
     # macOS (304s in job 119609756189) while admissions died at a 1-minute
     # cap (run 39703602835), so it has seven. Set up Node, which fetches Node
     # and restores the pnpm store, has taken over 40% of a 1-minute cap, so it
-    # has three.
-    timeout-minutes: 40
+    # has three. The admission step's cap sits one minute above the Playwright
+    # config's whole-run limit, which is derived from the cold warmup bound.
+    timeout-minutes: 42
     steps:
       - name: Checkout
         timeout-minutes: 3
@@ -190,7 +191,7 @@ jobs:
         run: pnpm exec playwright install chromium
 
       - name: Run Browser AI WebGPU admission
-        timeout-minutes: 18
+        timeout-minutes: 20
         shell: bash
         env:
           DEBUG: pw:api,pw:browser

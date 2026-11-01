@@ -564,3 +564,114 @@ describe('startPlayheadScheduler punch at the late wrap on a sub-look-ahead regi
         expect(schedulerSession.punchRecordingActive).toBe(false);
     });
 });
+
+/**
+ * A stalled tick that late-wraps to within one look-ahead of the loop end hands
+ * the pass it opened over at that pass's own seam. When that tick's scan (the
+ * wrapped position, inside the punch region) opens the punch, the punch-out the
+ * dying pass reaches before the seam is due once the audio clock gets there.
+ * Neither the seam-tick rule nor the wrap rule can close it, since the recording
+ * was not open when the tick began, and every later tick scans the incoming pass,
+ * which never reaches the punch-out beat: unrepaired, the take ran a whole pass
+ * past its punch-out.
+ */
+describe('startPlayheadScheduler punch opened by a late wrap that hands its pass over at the seam', () => {
+    beforeEach(() => {
+        resetPunchHarness();
+    });
+
+    afterEach(() => {
+        disposePlayheadScheduler();
+        vi.unstubAllGlobals();
+    });
+
+    async function tickAt(worker: SchedulerWorkerHarness, contextSeconds: number): Promise<void> {
+        ctxTime.now = contextSeconds;
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    async function stallIntoPunch(
+        loopEnd: number,
+        punchInBeat: number,
+        punchOutBeat: number,
+        stalledTickSeconds: number
+    ): Promise<SchedulerWorkerHarness> {
+        trackStoreState.value = { tracks: [armedAudioTrack()] };
+        transportStoreState.value = playingState({
+            playheadPosition: 0,
+            isLooping: true,
+            loopStart: 0,
+            loopEnd,
+            punchInEnabled: true,
+            punchInBeat,
+            punchOutBeat,
+        });
+        startPlayheadScheduler();
+        const worker = schedulerWorker();
+        await tickAt(worker, 0.05);
+        // Stalled past the loop end: the audio stands at beat loopEnd - 0.05 of
+        // a later pass, within one look-ahead of its own loop end.
+        await tickAt(worker, stalledTickSeconds);
+        return worker;
+    }
+
+    it('closes a punch the late wrap opened when the audio reaches a punch-out before the loop end', async () => {
+        const worker = await stallIntoPunch(4, 2, 3.98, 3.975);
+        expect(schedulerSession.pendingSeam?.seamAudioTime).toBeCloseTo(4, 9);
+        expect(punchClock.start).toEqual([3.975]);
+        expect(punchClock.stop).toEqual([]);
+
+        await tickAt(worker, 4.0125);
+        await tickAt(worker, 4.05);
+
+        expect(punchClock.stop).toEqual([4.0125]);
+        expect(vi.mocked(stopRecording).mock.calls.map(([beat]) => beat)).toEqual([3.98]);
+        expect(schedulerSession.punchRecordingActive).toBe(false);
+    });
+
+    it('closes a punch the late wrap opened when its punch-out sits on the loop end', async () => {
+        const worker = await stallIntoPunch(8, 7.9, 8, 7.975);
+        expect(schedulerSession.pendingSeam?.seamAudioTime).toBeCloseTo(8, 9);
+        expect(punchClock.start).toEqual([7.975]);
+        expect(punchClock.stop).toEqual([]);
+
+        await tickAt(worker, 8.0125);
+        await tickAt(worker, 8.05);
+
+        expect(punchClock.stop).toEqual([8.0125]);
+        expect(vi.mocked(stopRecording).mock.calls.map(([beat]) => beat)).toEqual([8]);
+        expect(schedulerSession.punchRecordingActive).toBe(false);
+    });
+
+    // The late wrap re-enters the region at its loop start, so the window its
+    // punch scan reads opens there, not at the previous pass's position. A
+    // punch-in between the loop start and that position anchors at the punch
+    // point, as every late-wrap punch-in is anchored at the larger of the punch
+    // point and the wrapped window's opening.
+    it('anchors a punch-in the late wrap opens at the punch point, not at the previous pass position', async () => {
+        trackStoreState.value = { tracks: [armedAudioTrack()] };
+        transportStoreState.value = playingState({
+            playheadPosition: 0,
+            isLooping: true,
+            loopStart: 0,
+            loopEnd: 4,
+            punchInEnabled: false,
+            punchInBeat: 0.05,
+            punchOutBeat: 3.98,
+        });
+        startPlayheadScheduler();
+        const worker = schedulerWorker();
+        await tickAt(worker, 0.05);
+        expect(schedulerSession.accumulatedPosition).toBeCloseTo(0.1, 9);
+        // Punch is enabled only now, so the previous pass at 0.1, inside the
+        // punch region, opened nothing.
+        transportStoreState.value = { ...transportStoreState.value, punchInEnabled: true };
+
+        await tickAt(worker, 3.975);
+
+        expect(schedulerSession.pendingSeam?.seamAudioTime).toBeCloseTo(4, 9);
+        expect(vi.mocked(startRecording).mock.calls.map(([anchorBeat]) => anchorBeat)).toEqual([0.05]);
+    });
+});

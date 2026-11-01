@@ -19,6 +19,7 @@ import {
 import { defaultProjectStoreState, projectStore, type ProjectStoreState } from '#/modules/Project/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
+import { type AnswerSuggestion } from '../../../models/PlanningOutcome';
 import { chatStore, clearChatMessages } from '../../../stores/chatStore';
 import { pendingActionConfirmationStore } from '../../../stores/pendingActionConfirmationStore';
 import { type AiAnswerNotice } from '../../aiChangeNotificationState';
@@ -92,6 +93,39 @@ describe('openAnswerInChat', () => {
         expect(pendingActionConfirmationStore.value).toEqual(confirmationsBefore);
         expect(undoHistoryStore.value).toEqual(undoBefore);
         expect(captureProjectRevision()).toBe(revisionBefore);
+    });
+
+    it('carries the suggestion an answer offered, with the project and revision it was offered against', () => {
+        setChatPanelOpen(true);
+        const suggestion: AnswerSuggestion = {
+            recipeId: 'vocal-warm',
+            recipeTitle: 'Chest-register lift with a softened upper shelf',
+            targetId: 'track-lead-vocal',
+            targetName: 'Lead Vocal',
+            recipeRole: 'vocal',
+            roleSource: 'target',
+        };
+        const answer = { ...answerAboutLiveProject(), suggestion };
+
+        expect(openAnswerInChat(answer)).toBe('opened');
+
+        expect(chatStore.value?.messages.at(-1)).toMatchObject({
+            role: 'assistant',
+            answerSuggestion: suggestion,
+            projectId: answer.projectIdentity,
+            projectRevision: answer.projectRevision,
+        });
+        expect(pendingActionConfirmationStore.value?.confirmations ?? []).toEqual([]);
+    });
+
+    it('stamps no suggestion on an answer that offered none', () => {
+        setChatPanelOpen(true);
+
+        expect(openAnswerInChat(answerAboutLiveProject())).toBe('opened');
+
+        const reply = chatStore.value?.messages.at(-1);
+        expect(reply?.answerSuggestion).toBeUndefined();
+        expect(reply?.projectRevision).toBeUndefined();
     });
 
     it('opens the chat panel when it is closed', () => {

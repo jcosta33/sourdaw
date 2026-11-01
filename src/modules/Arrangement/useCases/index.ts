@@ -104,7 +104,10 @@ export { hydrateClipWarpStates } from './warp/hydrateClipWarpStates';
 export { removeGainEnvelopePoint } from './clipGainEnvelope/removeGainEnvelopePoint';
 export { resetClipGainEnvelope } from './clipGainEnvelope/resetClipGainEnvelope';
 export { toggleClipGainEnvelope } from './clipGainEnvelope/toggleClipGainEnvelope';
+export { collectAudioBufferIdFields } from './collectAudioBufferIdFields';
 export { isAudioBufferReferencedByUndoHistory } from './isAudioBufferReferencedByUndoHistory';
+export { readUndoEntriesAudioBufferIds } from './readUndoEntriesAudioBufferIds';
+export { readUndoHistoryAudioBufferIds } from './readUndoHistoryAudioBufferIds';
 
 // ── Clipboard ─────────────────────────────────────────────────────────────────
 
@@ -125,6 +128,11 @@ export { toggleClipInSelection } from './clipSelection/toggleClipInSelection';
 export { selectAllClips } from './clipSelection/selectAllClips';
 export { clearClipSelection } from './clipSelection/clearClipSelection';
 export { setMarqueeSelection } from './clipSelection/setMarqueeSelection';
+
+// ── Device Selection ──────────────────────────────────────────────────────────
+
+export { selectDevice } from './deviceSelection/selectDevice';
+export { clearDeviceSelection } from './deviceSelection/clearDeviceSelection';
 
 // ── Timeline Interactions ─────────────────────────────────────────────────────
 

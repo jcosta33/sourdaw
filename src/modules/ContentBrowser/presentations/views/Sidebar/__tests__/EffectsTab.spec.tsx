@@ -81,6 +81,7 @@ const createPanelActions = (): SidebarPanelActions => ({
     showScoring: vi.fn(),
     showToaster: vi.fn(),
     showYeast: vi.fn(),
+    revealDevice: vi.fn(),
 });
 
 const renderWithTooltip = (ui: React.ReactElement) => {
@@ -239,6 +240,27 @@ describe('EffectsTab', () => {
         await waitFor(() => expect(panelActions.showYeast).toHaveBeenCalledWith('device-77'));
     });
 
+    it("leaves Yeast closed when the add is refused, rather than opening the track's existing one", async () => {
+        arrangementMocks.executeAddDeviceAction.mockResolvedValue({ status: 'not-applied', deviceId: null });
+        const panelActions = createPanelActions();
+
+        renderWithTooltip(
+            <EffectsTab
+                {...defaultProps}
+                currentRoute={{ id: 'effects-midifx', title: 'MIDI FX' }}
+                panelActions={panelActions}
+            />
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: /yeast/i }));
+
+        expect(arrangementMocks.executeAddDeviceAction).toHaveBeenCalledWith('track-1', 'yeast');
+        // The continuation is attached to this promise first, so it has run by
+        // the time this await resumes.
+        await arrangementMocks.executeAddDeviceAction.mock.results[0]?.value;
+        expect(panelActions.showYeast).not.toHaveBeenCalled();
+    });
+
     it('opens Yeast when addDevice commits but post-commit processing fails', async () => {
         // The dispatch door reports the committed-degraded split instead of
         // rejecting: the device is in project truth, so the panel still opens.
@@ -277,6 +299,56 @@ describe('EffectsTab', () => {
         fireEvent.click(screen.getByRole('button', { name: /crust/i }));
 
         await waitFor(() => expect(panelActions.showCrust).toHaveBeenCalledWith(null));
+    });
+
+    describe('plain effect rows', () => {
+        const eqPlugin = createPlugin({ id: 'builtin-eq', name: 'EQ', category: 'effect' });
+        const categoryRoute = { id: 'effects-audiofx-eq-filter', title: 'EQ & Filter' };
+
+        it('reveals the device a plain row adds in the category list', async () => {
+            const panelActions = createPanelActions();
+
+            renderWithTooltip(
+                <EffectsTab
+                    {...defaultProps}
+                    plugins={[eqPlugin]}
+                    currentRoute={categoryRoute}
+                    panelActions={panelActions}
+                />
+            );
+            fireEvent.click(screen.getByText('EQ'));
+
+            expect(arrangementMocks.executeAddDeviceAction).toHaveBeenCalledExactlyOnceWith('track-1', 'builtin-eq');
+            await waitFor(() => expect(panelActions.revealDevice).toHaveBeenCalledExactlyOnceWith('device-77'));
+        });
+
+        it('reveals the device a plain row adds in search results', async () => {
+            const panelActions = createPanelActions();
+
+            renderWithTooltip(
+                <EffectsTab {...defaultProps} plugins={[eqPlugin]} searchQuery="eq" panelActions={panelActions} />
+            );
+            fireEvent.click(screen.getByText('EQ'));
+
+            await waitFor(() => expect(panelActions.revealDevice).toHaveBeenCalledExactlyOnceWith('device-77'));
+        });
+
+        it('does not reveal a device for a premium card, which opens its own panel', async () => {
+            const panelActions = createPanelActions();
+
+            renderWithTooltip(
+                <EffectsTab
+                    {...defaultProps}
+                    plugins={[createPlugin({ id: 'crust', name: 'Crust', category: 'effect' })]}
+                    searchQuery="crust"
+                    panelActions={panelActions}
+                />
+            );
+            fireEvent.click(screen.getByRole('button', { name: /crust/i }));
+
+            await waitFor(() => expect(panelActions.showCrust).toHaveBeenCalledWith('device-77'));
+            expect(panelActions.revealDevice).not.toHaveBeenCalled();
+        });
     });
 
     describe('Audio FX category placement', () => {

@@ -15,6 +15,7 @@ import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import * as clipGlueState from '../../clipEditing/restoreClipGlueState';
 import { restoreClipGlueState } from '../../clipEditing/restoreClipGlueState';
+import { readUndoHistoryAudioBufferIds } from '../../readUndoHistoryAudioBufferIds';
 import { resolveClipsWithComping } from '../../resolveComping';
 import { flattenComp } from '../flattenComp';
 
@@ -212,6 +213,28 @@ describe('flattenComp', () => {
         // set; its own spec pins that.)
         const programme = resolveClipsWithComping(TRACK_ID, liveClips());
         expect(programme.map((clip) => [clip.audioBufferId, clip.startBeat, clip.endBeat])).toEqual([['buf-b', 0, 8]]);
+    });
+
+    it('keeps the unheard take’s buffer reachable from history so undo can restore it (#6003)', () => {
+        // Take A is not in the comp, so after the flatten no clip references
+        // buf-a; only the entry's undo can bring it back, and the audio cache
+        // reads residency from what history declares.
+        seedTrack([
+            ClipDummy.create({ id: 'clip-a', trackId: TRACK_ID, startBeat: 0, endBeat: 8, audioBufferId: 'buf-a' }),
+            ClipDummy.create({ id: 'clip-b', trackId: TRACK_ID, startBeat: 0, endBeat: 8, audioBufferId: 'buf-b' }),
+        ]);
+        seedLane(
+            [
+                { id: 'take-a', clipId: 'clip-a', startBeat: 0, endBeat: 8 },
+                { id: 'take-b', clipId: 'clip-b', startBeat: 0, endBeat: 8 },
+            ],
+            [{ startBeat: 0, endBeat: 8, takeId: 'take-b' }]
+        );
+
+        expect(flattenComp(TRACK_ID)).toBe(true);
+
+        expect(liveClips().some((clip) => clip.audioBufferId === 'buf-a')).toBe(false);
+        expect(readUndoHistoryAudioBufferIds()).toEqual(new Set(['buf-a', 'buf-b']));
     });
 
     it('gives every fragment the media-entry offset its own position demands', () => {

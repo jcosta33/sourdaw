@@ -87,6 +87,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     readMusicalRangeInputs: vi.fn(),
     resolveEligibleDeviceWriteTarget: vi.fn(),
 
+    activeRecordingRef: { current: [] },
     trackStore: { value: null, subscribe: vi.fn(() => () => {}) },
     resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
         () => ({ status: 'missing' })
@@ -142,6 +143,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         setTransportInfo: mockSetTransportInfo,
     },
     cacheAudioBuffer: vi.fn(() => 'recorded-audio-buffer'),
+    openCachedAudioBufferHold: () => ({ retain: vi.fn(), release: vi.fn() }),
     scheduleClick: vi.fn(),
     stopAllScheduled: mockStopAllScheduled,
     stopAudioRecording: vi.fn(() => Promise.resolve()),
