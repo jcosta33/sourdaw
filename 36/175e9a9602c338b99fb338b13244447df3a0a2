@@ -1,0 +1,44 @@
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/synthEnvelopeGestureUndo.integration.spec.tsx
+  s_0314bb17e5dee3::t_2dbf65a9375b90 14-19
+  s_0314bb17e5dee3::t_da71a07b6df5e1 490
+  s_0314bb17e5dee3::t_47e2eacae42e1d 446
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/compressorCurveGestureUndo.integration.spec.tsx
+  s_0314bb17e5dee3::t_9781c200d178a2 384
+  s_0314bb17e5dee3::t_30fbfd9d3d8501 15-20
+  s_0314bb17e5dee3::t_813341b70dc839 340
+src/modules/Levain/useCases/__tests__/levainMultiInstanceProjectRoundTrip.spec.ts
+  s_0314bb17e5dee3::t_a2ec0b46007c4c 42
+  s_0314bb17e5dee3::t_aefe6436730cbe 115
+  s_0314bb17e5dee3::t_d107a3b0ee11e8 80
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.integration.spec.ts
+  s_0314bb17e5dee3::t_e9ec20ec20de48 206
+  s_0314bb17e5dee3::t_77017527e0f45e 215
+  s_0314bb17e5dee3::t_f3a67ce705a120 18
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/distortionCurveGestureUndo.integration.spec.tsx
+  s_0314bb17e5dee3::t_7658cb7a4a162d 15
+  s_0314bb17e5dee3::t_81f5f7307ab07e 286
+  s_0314bb17e5dee3::t_badca4fe57402e 329
+src/modules/Arrangement/useCases/device/__tests__/coldImportedDeviceEdits.integration.spec.ts
+  s_0314bb17e5dee3::t_450daf3636a3e5 11
+  s_0314bb17e5dee3::t_1a3147a002bbf7 106
+  s_0314bb17e5dee3::t_36107bf7aa74d2 96
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_0314bb17e5dee3::t_d96db908b07f1c 1337
+  s_0314bb17e5dee3::t_c15d8fc912a0df 1284
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "36175e9a9602c338b99fb338b13244447df3a0a2",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
