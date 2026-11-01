@@ -118,6 +118,25 @@ describe('reviewer review ordering', () => {
         expect(read.latestReviewerReviewDatabaseId).toBeNull();
     });
 
+    it('compares reviewer ids as numbers', () => {
+        const read = inspect([
+            review('approve', REVIEWER_BOT_NODE_ID, 'APPROVED', head, 'Bot', 9),
+            review('rejected', REVIEWER_BOT_NODE_ID, 'CHANGES_REQUESTED', head, 'Bot', 10),
+        ]);
+        expect(read.latestReviewerStateOnHead).toBe('CHANGES_REQUESTED');
+    });
+
+    it('skips a pending reviewer review, even with a greater or missing id', () => {
+        for (const databaseId of [99, null]) {
+            const read = inspect([
+                reviewer(),
+                review('draft', REVIEWER_BOT_NODE_ID, 'PENDING', head, 'Bot', databaseId),
+            ]);
+            expect(read.latestReviewerStateOnHead).toBe('APPROVED');
+            expect(read.latestReviewerReviewDatabaseId).toBe(1);
+        }
+    });
+
     it('ignores a non-reviewer review with a greater id', () => {
         const read = inspect([reviewer(), review('later-user', userId, 'CHANGES_REQUESTED', head, 'User', 99)]);
         expect(read.latestReviewerStateOnHead).toBe('APPROVED');

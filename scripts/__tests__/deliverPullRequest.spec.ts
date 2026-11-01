@@ -12909,71 +12909,76 @@ describe('delivery shell boundary', () => {
     it.each([
         { label: 'null', submittedAt: null },
         { label: 'equal', submittedAt: '2026-08-19T00:00:00Z' },
-    ])('uses database id order for opposite same-head reviewer states with $label timestamps', ({ submittedAt }) => {
-        const captures: string[][] = [];
-        const shell: ShellRunner = {
-            capture: (_command, args) => {
-                captures.push(args);
-                const before = args.find((argument) => argument.startsWith('reviewsBefore='));
-                if (before === undefined) {
-                    return reviewStateResponse(
-                        {
-                            nodes: [
-                                {
-                                    id: 'review-newest',
-                                    databaseId: 2,
-                                    state: 'CHANGES_REQUESTED',
-                                    submittedAt,
-                                    author: {
-                                        id: REVIEWER_BOT_NODE_ID,
-                                        login: 'renamed-reviewer[bot]',
-                                        __typename: 'Bot',
+    ])(
+        'uses database id order, not list order, for opposite same-head reviewer states with $label timestamps',
+        ({ submittedAt }) => {
+            const captures: string[][] = [];
+            const shell: ShellRunner = {
+                capture: (_command, args) => {
+                    captures.push(args);
+                    const before = args.find((argument) => argument.startsWith('reviewsBefore='));
+                    if (before === undefined) {
+                        return reviewStateResponse(
+                            {
+                                nodes: [
+                                    {
+                                        id: 'review-listed-last',
+                                        databaseId: 1,
+                                        state: 'APPROVED',
+                                        submittedAt,
+                                        author: {
+                                            id: REVIEWER_BOT_NODE_ID,
+                                            login: 'renamed-reviewer[bot]',
+                                            __typename: 'Bot',
+                                        },
+                                        commit: { oid: 'head' },
                                     },
-                                    commit: { oid: 'head' },
-                                },
-                            ],
-                            hasPreviousPage: true,
-                            startCursor: 'older-reviews',
-                        },
-                        { nodes: [], hasNextPage: false, endCursor: null }
-                    );
-                }
-                if (before === 'reviewsBefore=older-reviews') {
-                    return reviewStateResponse(
-                        {
-                            nodes: [
-                                {
-                                    id: 'review-older',
-                                    databaseId: 1,
-                                    state: 'APPROVED',
-                                    submittedAt,
-                                    author: {
-                                        id: REVIEWER_BOT_NODE_ID,
-                                        login: 'renamed-reviewer[bot]',
-                                        __typename: 'Bot',
+                                ],
+                                hasPreviousPage: true,
+                                startCursor: 'older-reviews',
+                            },
+                            { nodes: [], hasNextPage: false, endCursor: null }
+                        );
+                    }
+                    if (before === 'reviewsBefore=older-reviews') {
+                        return reviewStateResponse(
+                            {
+                                nodes: [
+                                    {
+                                        id: 'review-greatest-id',
+                                        databaseId: 2,
+                                        state: 'CHANGES_REQUESTED',
+                                        submittedAt,
+                                        author: {
+                                            id: REVIEWER_BOT_NODE_ID,
+                                            login: 'renamed-reviewer[bot]',
+                                            __typename: 'Bot',
+                                        },
+                                        commit: { oid: 'head' },
                                     },
-                                    commit: { oid: 'head' },
-                                },
-                            ],
-                            hasPreviousPage: false,
-                            startCursor: null,
-                        },
-                        { nodes: [], hasNextPage: false, endCursor: null }
-                    );
-                }
-                throw new Error(`unexpected review cursor: ${before}`);
-            },
-            run: () => undefined,
-        };
+                                ],
+                                hasPreviousPage: false,
+                                startCursor: null,
+                            },
+                            { nodes: [], hasNextPage: false, endCursor: null }
+                        );
+                    }
+                    throw new Error(`unexpected review cursor: ${before}`);
+                },
+                run: () => undefined,
+            };
 
-        expect(shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')).toEqual({
-            latestReviewerCommitOid: 'head',
-            latestReviewerReviewDatabaseId: null,
-            latestReviewerStateOnHead: 'CHANGES_REQUESTED',
-            unresolvedThreads: 0,
-        });
-        expect(captures).toHaveLength(4);
-    });
+            expect(
+                shellPort('jcosta33/sourdaw', shell, { mergeCapture: shell.capture }).reviewState(42, 'head')
+            ).toEqual({
+                latestReviewerCommitOid: 'head',
+                latestReviewerReviewDatabaseId: null,
+                latestReviewerStateOnHead: 'CHANGES_REQUESTED',
+                unresolvedThreads: 0,
+            });
+            expect(captures).toHaveLength(4);
+        }
+    );
 
     it('counts unresolved review threads beyond the first page', () => {
         const captures: string[][] = [];
