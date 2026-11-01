@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { clipSelectionStore, defaultClipSelectionState } from '../../../stores/clipSelectionStore';
+import { defaultDeviceSelectionState, deviceSelectionStore } from '../../../stores/deviceSelectionStore';
+import { selectDevice } from '../../deviceSelection/selectDevice';
 import { clearClipSelection } from '../clearClipSelection';
 import { selectAllClips } from '../selectAllClips';
 import { selectClip } from '../selectClip';
@@ -12,6 +14,7 @@ import { toggleClipInSelection } from '../toggleClipInSelection';
 describe('clip selection use cases', () => {
     beforeEach(() => {
         clipSelectionStore.set({ ...defaultClipSelectionState });
+        deviceSelectionStore.set(defaultDeviceSelectionState);
     });
 
     it('selectClip sets the focused clip and leaves the multi-selection untouched', () => {
@@ -175,6 +178,51 @@ describe('clip selection use cases', () => {
             ...defaultClipSelectionState,
             selectedClipId: 'a',
             selectedClipIds: ['a'],
+        });
+    });
+
+    describe('device focus', () => {
+        beforeEach(() => {
+            selectDevice('device-1');
+        });
+
+        it.each([
+            ['selectClip', () => selectClip('clip-1')],
+            ['selectClipWithFocus', () => selectClipWithFocus('clip-1')],
+            ['setClipSelection with clips', () => setClipSelection(['clip-1', 'clip-2'])],
+            ['toggleClipInSelection adding a clip', () => toggleClipInSelection('clip-1')],
+        ])('%s moves focus off the device', (_name, select) => {
+            select();
+
+            expect(deviceSelectionStore.value?.selectedDeviceId).toBeNull();
+        });
+
+        it('toggleClipInSelection removing a clip moves focus off the device too, as it makes that clip primary', () => {
+            clipSelectionStore.set({ selectedClipId: null, selectedClipIds: ['clip-1'], marqueeSelection: null });
+
+            toggleClipInSelection('clip-1');
+
+            expect(deviceSelectionStore.value?.selectedDeviceId).toBeNull();
+        });
+
+        it.each([
+            ['setClipSelection with no clips', () => setClipSelection([])],
+            ['selectAllClips', () => selectAllClips(() => ['a', 'b'])],
+            ['clearClipSelection', () => clearClipSelection()],
+            ['setMarqueeSelection', () => setMarqueeSelection({ startBeat: 0, endBeat: 4, trackIds: ['t'] })],
+        ])('%s leaves the device focused', (_name, change) => {
+            change();
+
+            expect(deviceSelectionStore.value?.selectedDeviceId).toBe('device-1');
+        });
+
+        it('leaves the clip selection alone when a device is focused', () => {
+            selectClipWithFocus('clip-1');
+
+            selectDevice('device-1');
+
+            expect(clipSelectionStore.value?.selectedClipId).toBe('clip-1');
+            expect(clipSelectionStore.value?.selectedClipIds).toEqual(['clip-1']);
         });
     });
 });
