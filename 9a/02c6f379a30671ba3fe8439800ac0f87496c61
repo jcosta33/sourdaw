@@ -1,0 +1,85 @@
+.agents/skills/review-stances/review-authorization.md
+  s_0314bb17e5dee3::t_9b8d182518748a 1,3-7,11-77
+.agents/skills/review-stances/code-craft.md
+  s_0314bb17e5dee3::t_f7da2fe6877850 28-29
+  s_0314bb17e5dee3::t_465171aef172bc 1,3-8,12-24,26
+.agents/skills/review-stances/command-entry-and-state-oracles.md
+  s_0314bb17e5dee3::t_f49ec78d2f62fe 13-66
+.agents/skills/review-stances/async-file-imports.md
+  s_0314bb17e5dee3::t_78f50493349ee4 3-8,12-47
+.agents/skills/review-stances/startup-entry-availability.md
+  s_0314bb17e5dee3::t_da06d72828317f 1-84
+.agents/skills/review-stances/validation-scope-selection.md
+  s_0314bb17e5dee3::t_2416f15b95e730 1-77
+.agents/skills/review-stances/test-validity.md
+  s_0314bb17e5dee3::t_4c95391ea2882c 18-19
+  s_0314bb17e5dee3::t_0dd61b4821d486 145
+.agents/skills/review-stances/asset-cache-publication.md
+  s_0314bb17e5dee3::t_5020205c32dc30 3-42
+.agents/skills/review-stances/project-integrity.md
+  s_0314bb17e5dee3::t_8a01c1aafaf083 3-12,16-129,141-144
+.agents/skills/review-stances/provider-egress.md
+  s_0314bb17e5dee3::t_4675e686e96438 1-101
+.agents/skills/review-stances/rendered-ui-layout.md
+  s_0314bb17e5dee3::t_6d3325169c83b8 1-47
+.agents/skills/review-stances/moving-coordinate-inverses.md
+  s_0314bb17e5dee3::t_4b0f0edb81c2b3 3-76
+.agents/skills/review-stances/audio-timing-format-laws.md
+  s_0314bb17e5dee3::t_9f2ad842045020 1,3-7,11-14,17-18,37-67
+.agents/skills/review-stances/audio-source-time.md
+  s_0314bb17e5dee3::t_422abd553cbf1b 1-102
+.agents/skills/review-stances/test-observation-scope.md
+  s_0314bb17e5dee3::t_fa3634c65ba861 13-68
+.agents/skills/review-stances/public-repair-records.md
+  s_0314bb17e5dee3::t_81dbbc890af2d8 1,3-9,13-80
+.agents/skills/review-stances/trusted-script-delivery.md
+  s_0314bb17e5dee3::t_a001e00a626cc4 1,3-9,13-71
+.agents/skills/review-stances/README.md
+  s_0314bb17e5dee3::t_fd377b74955379 3-4,35-45
+.agents/skills/review-stances/closure-authority-proof.md
+  s_0314bb17e5dee3::t_b782d7280296b6 5-6,105-126
+.agents/skills/review-stances/collaboration-teardown.md
+  s_0314bb17e5dee3::t_61f60faaf666ba 5
+.agents/skills/review-stances/correctness.md
+  s_0314bb17e5dee3::t_e674481c006871 9-12
+.agents/skills/review-stances/input-monitoring-ownership.md
+  s_0314bb17e5dee3::t_10991b6f5d1b83 1,4-12,137-158
+.agents/skills/review-stances/maintained-e2e-specs.md
+  s_0314bb17e5dee3::t_9fc48ec24cff2c 4-5,46-86
+.agents/skills/review-stances/release-provenance-drift.md
+  s_0314bb17e5dee3::t_6798207cb157a9 24-48
+.agents/skills/review-stances/replay-authority.md
+  s_0314bb17e5dee3::t_4a46108ce5fb7c 13-100
+.agents/skills/review-stances/runtime-instance-lifetimes.md
+  s_0314bb17e5dee3::t_7f81b979afe660 4-6,113-132
+.agents/skills/review-stances/security-and-platform.md
+  s_0314bb17e5dee3::t_3f97fcc4dd769e 46,57,65,72-82,90,98,110,137
+.agents/skills/review-stances/session-lifecycle.md
+  s_0314bb17e5dee3::t_78fe75d869c205 15
+.agents/skills/review-stances/test-timing-and-isolation.md
+  s_0314bb17e5dee3::t_e9efb3bac9eda3 4-5,74-84
+.agents/skills/test-design/SKILL.md
+  s_0314bb17e5dee3::t_0740905da50e8d 77,108,124
+.agents/skills/ui-patterns/SKILL.md
+  s_0314bb17e5dee3::t_cb15181e730896 58
+.agents/skills/web-audio-engine/SKILL.md
+  s_0314bb17e5dee3::t_2bfc4daac1ebc1 40,98,118
+docs/06-testing.md
+  s_0314bb17e5dee3::t_83ce1932d2e5d5 462,487-491
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9a02c6f379a30671ba3fe8439800ac0f87496c61",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
