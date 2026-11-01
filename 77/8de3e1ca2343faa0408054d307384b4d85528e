@@ -1,0 +1,21 @@
+src/modules/MIDI/stores/__tests__/frozenMidiTakeRepeats.spec.ts
+  s_7ef7665d7eefe6::t_b051c11e849a87 3-8,102-112
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_7ef7665d7eefe6::t_9e279116709eb9 1394-1422,1424-1436,1438-1440,1442-1475,1477-1527,1529
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "778de3e1ca2343faa0408054d307384b4d85528e",
+  "prompts": {},
+  "sessions": {
+    "s_7ef7665d7eefe6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_7ef7665d7eefe6",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
