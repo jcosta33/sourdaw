@@ -2,6 +2,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { AppActionCommittedError, AppActionConflictError } from '../errors/AppActionExecutionError';
 import { isActionEntry, type UndoEntry } from '../models/UndoEntry';
+import { newestUndoUnit, undoEntryLabel } from '../models/UndoUnit';
 import { undoStore } from '../stores/undoStore';
 
 import { executeActionGroupUndo, type UndoOutcome } from './executeActionGroupUndo';
@@ -30,10 +31,6 @@ export type UndoResult = {
 /** The undo entry now at the top of `past`, or `null` when `past` is empty. */
 function currentEntryId(past: readonly UndoEntry[]): string | null {
     return past.length > 0 ? past[past.length - 1]!.id : null;
-}
-
-function undoEntryLabel(entry: UndoEntry): string {
-    return entry.groupLabel || entry.label || (isActionEntry(entry) ? entry.action.type : 'action');
 }
 
 function notifyUndoConflict(label: string): void {
@@ -126,19 +123,11 @@ type UndoCandidate = {
 };
 
 function takeCandidate(past: readonly UndoEntry[]): UndoCandidate | null {
-    if (past.length === 0) {
+    const unit = newestUndoUnit(past);
+    if (!unit) {
         return null;
     }
-    const head = past[past.length - 1]!;
-    if (!head.groupId) {
-        return { head, entries: [head], below: past.slice(0, -1) };
-    }
-
-    let index = past.length - 1;
-    while (index >= 0 && past[index]!.groupId === head.groupId) {
-        index--;
-    }
-    return { head, entries: past.slice(index + 1), below: past.slice(0, index + 1) };
+    return { head: past[unit.last]!, entries: past.slice(unit.first), below: past.slice(0, unit.first) };
 }
 
 /** One member of a step target: an action entry whose inverse resolves to a

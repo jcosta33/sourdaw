@@ -3,6 +3,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { AppActionCommittedError, AppActionConflictError } from '../errors/AppActionExecutionError';
 import { type UndoEntry } from '../models/UndoEntry';
 import { isActionEntry } from '../models/UndoEntry';
+import { nextUndoUnit, undoEntryLabel } from '../models/UndoUnit';
 import { undoStore } from '../stores/undoStore';
 
 import { executeAppAction } from './executeAppAction';
@@ -18,10 +19,6 @@ import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
 /** The undo entry now at the top of `past`, or `null` when `past` is empty. */
 function currentEntryId(past: readonly UndoEntry[]): string | null {
     return past.length > 0 ? past[past.length - 1]!.id : null;
-}
-
-function redoEntryLabel(entry: UndoEntry): string {
-    return entry.groupLabel || entry.label || (isActionEntry(entry) ? entry.action.type : 'action');
 }
 
 function notifySkippedRedoConflict(skippedLabel: string, redoneLabel: string): void {
@@ -231,19 +228,11 @@ type RedoCandidate = {
 };
 
 function takeRedoCandidate(future: readonly UndoEntry[]): RedoCandidate | null {
-    if (future.length === 0) {
+    const unit = nextUndoUnit(future);
+    if (!unit) {
         return null;
     }
-    const head = future[0]!;
-    if (!head.groupId) {
-        return { head, entries: [head], behind: future.slice(1) };
-    }
-
-    let index = 0;
-    while (index < future.length && future[index]!.groupId === head.groupId) {
-        index++;
-    }
-    return { head, entries: future.slice(0, index), behind: future.slice(index) };
+    return { head: future[0]!, entries: future.slice(0, unit.last + 1), behind: future.slice(unit.last + 1) };
 }
 
 /** Nothing was redone. Conflicted entries stay exactly where they were; only a
@@ -329,7 +318,7 @@ async function stepOverConflictedRedoOrSettle({
         return;
     }
 
-    notifySkippedRedoConflict(redoEntryLabel(conflictedEntries[0]!), redoEntryLabel(next.head));
+    notifySkippedRedoConflict(undoEntryLabel(conflictedEntries[0]!), undoEntryLabel(next.head));
     commitRedoTransition(initialFuture, [...conflictedEntries, ...next.behind], next.entries);
     if (outcome.status === 'committed') {
         throw outcome.error;
@@ -368,7 +357,7 @@ async function redoImpl(): Promise<void> {
             if (groupEntries.every(isActionEntry)) {
                 const outcome = await executeActionGroupRedo(groupEntries);
                 if (outcome.status === 'conflict') {
-                    const label = redoEntryLabel(entry);
+                    const label = undoEntryLabel(entry);
                     notifyUser(`Cannot redo "${label}": project state has changed`, 'warning');
                     await stepOverConflictedRedoOrSettle({
                         initialFuture: state.future,
@@ -390,7 +379,7 @@ async function redoImpl(): Promise<void> {
         const outcome = await executeRedo(entry);
 
         if (outcome.status === 'conflict') {
-            const label = redoEntryLabel(entry);
+            const label = undoEntryLabel(entry);
             notifyUser(`Cannot redo "${label}": project state has changed`, 'warning');
             // Nothing was written, so the entry stays at the head of `future`
             // and remains redoable; #2878 steps onto the unit behind it when

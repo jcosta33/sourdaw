@@ -1,6 +1,8 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type UndoEntry } from '../../../models/UndoEntry';
+import { undoStore } from '../../../stores/undoStore';
 import { UndoHistoryPanel } from '../UndoHistoryPanel';
 
 // Mock external dependencies
@@ -11,10 +13,6 @@ vi.mock('#/infra/store/useStore', () => ({
         }
         return defaultValue;
     }),
-}));
-
-vi.mock('#/modules/Command/stores/undoStore', () => ({
-    undoStore: { name: 'undoStore' },
 }));
 
 vi.mock('#/modules/WorkspaceShell/stores', () => ({
@@ -31,10 +29,35 @@ vi.mock('#/modules/Command/useCases/undoToIndex', () => ({
 
 const { useStore } = await import('#/infra/store/useStore');
 const { closeUndoHistory } = await import('#/modules/WorkspaceShell/useCases');
+const { undoToIndex } = await import('#/modules/Command/useCases/undoToIndex');
+
+function entry(id: string, groupId?: string): UndoEntry {
+    return {
+        kind: 'callback',
+        id,
+        label: id,
+        timestamp: 0,
+        source: 'manual',
+        undo: () => undefined,
+        redo: () => undefined,
+        ...(groupId ? { groupId } : {}),
+    };
+}
+
+/** Opens the panel over the real undo history. */
+function openPanelOverHistory(): void {
+    (useStore as ReturnType<typeof vi.fn>).mockImplementation((store, defaultValue) => {
+        if (store?.name === 'workspaceStore') {
+            return { undoHistoryOpen: true };
+        }
+        return store.getSnapshot() ?? defaultValue;
+    });
+}
 
 describe('UndoHistoryPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        undoStore.set({ past: [], future: [] });
     });
 
     it('should render null when panel is closed', () => {
@@ -42,7 +65,7 @@ describe('UndoHistoryPanel', () => {
             if (store?.name === 'workspaceStore') {
                 return { undoHistoryOpen: false };
             }
-            return { past: [], future: [] };
+            return { pastSteps: [], futureSteps: [] };
         });
 
         const { container } = render(<UndoHistoryPanel />);
@@ -54,7 +77,7 @@ describe('UndoHistoryPanel', () => {
             if (store?.name === 'workspaceStore') {
                 return { undoHistoryOpen: true };
             }
-            return { past: [], future: [] };
+            return { pastSteps: [], futureSteps: [] };
         });
 
         render(<UndoHistoryPanel />);
@@ -66,7 +89,7 @@ describe('UndoHistoryPanel', () => {
             if (store?.name === 'workspaceStore') {
                 return { undoHistoryOpen: true };
             }
-            return { past: [], future: [] };
+            return { pastSteps: [], futureSteps: [] };
         });
 
         render(<UndoHistoryPanel />);
@@ -78,7 +101,7 @@ describe('UndoHistoryPanel', () => {
             if (store?.name === 'workspaceStore') {
                 return { undoHistoryOpen: true };
             }
-            return { past: [], future: [] };
+            return { pastSteps: [], futureSteps: [] };
         });
 
         render(<UndoHistoryPanel />);
@@ -90,12 +113,54 @@ describe('UndoHistoryPanel', () => {
             if (store?.name === 'workspaceStore') {
                 return { undoHistoryOpen: true };
             }
-            return { past: [], future: [] };
+            return { pastSteps: [], futureSteps: [] };
         });
 
         render(<UndoHistoryPanel />);
         const closeButton = screen.getByLabelText(/Close undo history/i);
         fireEvent.click(closeButton);
         expect(closeUndoHistory).toHaveBeenCalled();
+    });
+
+    it('lists a grouped gesture as one row and keeps a clicked older past step applied', () => {
+        undoStore.set({
+            past: [
+                entry('first'),
+                entry('drag a', 'drag'),
+                entry('drag b', 'drag'),
+                entry('drag c', 'drag'),
+                entry('last'),
+            ],
+            future: [],
+        });
+        openPanelOverHistory();
+
+        render(<UndoHistoryPanel />);
+
+        expect(screen.getByText('drag c')).toBeInTheDocument();
+        expect(screen.queryByText('drag a')).not.toBeInTheDocument();
+        expect(screen.queryByText('drag b')).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByText('drag c'));
+        expect(undoToIndex).toHaveBeenCalledWith(3);
+    });
+
+    it('redoes through the whole clicked future step', () => {
+        undoStore.set({
+            past: [entry('first')],
+            future: [entry('drag a', 'drag'), entry('drag b', 'drag'), entry('drag c', 'drag'), entry('last')],
+        });
+        openPanelOverHistory();
+
+        render(<UndoHistoryPanel />);
+
+        expect(screen.queryByText('drag b')).not.toBeInTheDocument();
+        expect(screen.queryByText('drag c')).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByText('drag a'));
+        expect(undoToIndex).toHaveBeenCalledWith(3);
+
+        fireEvent.click(screen.getByText('last'));
+        expect(undoToIndex).toHaveBeenLastCalledWith(4);
     });
 });

@@ -7,6 +7,10 @@ export type { MacroStoreState } from './macroStore';
 export { undoStore } from './undo-store-facade';
 export type { UndoStoreState } from './undo-store-facade';
 
+/** The undo history grouped the way one undo or redo consumes it. */
+export { undoStepStore } from './undoStepStore';
+export type { UndoStepStoreState } from './undoStepStore';
+
 /** The full undo/redo stacks — entries with their actions, inverses and buffer
  * declarations — the read surface for ownership queries over undoable state.
  * The label-only `undoStore` above is the UI projection. */

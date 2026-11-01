@@ -14,15 +14,15 @@ import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { closeUndoHistory } from '#/modules/WorkspaceShell/useCases';
 import { cn } from '#/utils/Styles/cn';
 
-import { undoStore, type UndoStoreState } from '../../stores/undoStore';
+import { undoStepStore, type UndoStepStoreState } from '../../stores/undoStepStore';
 import { undoToIndex } from '../../useCases/undoToIndex';
 
-const defaultState: UndoStoreState = { past: [], future: [] };
+const defaultState: UndoStepStoreState = { pastSteps: [], futureSteps: [] };
 
 export const UndoHistoryPanel = (): ReactElement | null => {
     const wsOpen = useStore(workspaceStore)?.undoHistoryOpen ?? false;
 
-    const state = useStore(undoStore, defaultState);
+    const state = useStore(undoStepStore, defaultState);
 
     if (!wsOpen) {
         return null;
@@ -30,11 +30,9 @@ export const UndoHistoryPanel = (): ReactElement | null => {
 
     const close = closeUndoHistory;
 
-    const handleClick = (index: number) => {
-        void undoToIndex(index);
+    const handleClick = (historyIndex: number) => {
+        void undoToIndex(historyIndex);
     };
-
-    const pastCount = state.past.length;
 
     return (
         <DawUtilityPanel className="absolute right-2 top-10 z-40 w-56">
@@ -49,7 +47,7 @@ export const UndoHistoryPanel = (): ReactElement | null => {
                 }
             />
             <div className="max-h-72 overflow-y-auto">
-                {state.past.length === 0 && state.future.length === 0 ? (
+                {state.pastSteps.length === 0 && state.futureSteps.length === 0 ? (
                     <div className="p-3">
                         <DawEmptyState
                             compact
@@ -59,23 +57,20 @@ export const UndoHistoryPanel = (): ReactElement | null => {
                     </div>
                 ) : null}
 
-                {state.future.length > 0 ? (
+                {state.futureSteps.length > 0 ? (
                     <div className="border-b border-border/30 pb-1 pt-1">
                         <DawEyebrowLabel className="block px-3 py-0.5">
                             <Redo2 className="mr-1 inline size-2.5" />
                             Redo
                         </DawEyebrowLabel>
-                        {[...state.future].reverse().map((entry, index) => {
-                            const futureIndex = pastCount + (state.future.length - 1 - index);
-                            return (
-                                <DawUtilityListRow
-                                    key={entry.id}
-                                    title={entry.label}
-                                    titleClassName="text-xs text-muted-foreground/50"
-                                    onPress={() => handleClick(futureIndex)}
-                                />
-                            );
-                        })}
+                        {[...state.futureSteps].reverse().map((step) => (
+                            <DawUtilityListRow
+                                key={step.key}
+                                title={step.label}
+                                titleClassName="text-xs text-muted-foreground/50"
+                                onPress={() => handleClick(step.historyIndex)}
+                            />
+                        ))}
                     </div>
                 ) : null}
 
@@ -86,34 +81,31 @@ export const UndoHistoryPanel = (): ReactElement | null => {
                     </DawEyebrowLabel>
                 </div>
 
-                {state.past.length > 0 ? (
+                {state.pastSteps.length > 0 ? (
                     <div className="pt-0.5 pb-1">
                         <DawEyebrowLabel className="block px-3 py-0.5">
                             <Undo2 className="mr-1 inline size-2.5" />
                             Undo
                         </DawEyebrowLabel>
-                        {[...state.past].reverse().map((entry, index) => {
-                            const entryIndex = pastCount - 1 - index;
-                            return (
-                                <DawUtilityListRow
-                                    key={entry.id}
-                                    active={index === 0}
-                                    title={entry.label}
-                                    titleClassName={cn(
-                                        'text-xs',
-                                        index === 0 ? 'text-foreground' : 'text-muted-foreground'
-                                    )}
-                                    endSlot={
-                                        entry.source !== 'manual' ? (
-                                            <DawMicroBadge className="px-1" tone="muted">
-                                                {entry.source}
-                                            </DawMicroBadge>
-                                        ) : null
-                                    }
-                                    onPress={() => handleClick(entryIndex)}
-                                />
-                            );
-                        })}
+                        {[...state.pastSteps].reverse().map((step, index) => (
+                            <DawUtilityListRow
+                                key={step.key}
+                                active={index === 0}
+                                title={step.label}
+                                titleClassName={cn(
+                                    'text-xs',
+                                    index === 0 ? 'text-foreground' : 'text-muted-foreground'
+                                )}
+                                endSlot={
+                                    step.source !== 'manual' ? (
+                                        <DawMicroBadge className="px-1" tone="muted">
+                                            {step.source}
+                                        </DawMicroBadge>
+                                    ) : null
+                                }
+                                onPress={() => handleClick(step.historyIndex)}
+                            />
+                        ))}
                     </div>
                 ) : null}
             </div>
