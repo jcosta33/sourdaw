@@ -24,6 +24,18 @@ immediately before an asynchronous handoff and cancel it on cleanup. Choose an o
 during the handoff: it must keep keyboard control. A restore that steals focus from the newly
 chosen target fails this probe.
 
+## A canvas surface must prove a fresh paint, not presence (Crumbs waveform, #5780; ruler, #5247)
+
+A setter call, mounted canvas, counter or an older matching frame cannot show stale pixels. Paint
+the production component in Chromium at the expected DPR dimensions and prove known colored
+pixels, then pass empty peaks to the same canvas without remounting or resizing: require
+transparent or exact opaque-background pixels, with refill and resize controls. Drive project or
+device authority from real committed root events, including a same-ID ABA with no newer sequence
+masking the guard. For a ruler or similar painter, save a draw cursor before each Command or map
+write and require a new drawing after it, observing the real painter's fill, labels and strokes.
+Restoring the empty-data early return, or replacing the subscribed hook with an imperative read,
+must fail the unchanged pixel or fresh-paint case.
+
 ## A layout assertion must check the requested size and the allocated rectangle separately
 
 An element's inline `style.height` (or flex basis) is the requested CSS size; its bounding rect is
