@@ -333,6 +333,10 @@ describe('check-dependency-boundaries', () => {
         );
 
         expect(new RegExp(moduleRule.to.path).test('src/modules/Bar/useCases/run.ts')).toBe(true);
+        expect(new RegExp(moduleRule.to.path).test('src/modules/AudioEngine/workers/grandBouleEngineWorker.ts')).toBe(
+            true
+        );
+        expect(new RegExp(moduleRule.to.path).test('src/modules/AudioEngine/worklets/wasmView.ts')).toBe(false);
         expect(new RegExp(desktopIpcRule.to.path).test('/node_modules/.pnpm/@tauri-apps/api/index.js')).toBe(true);
         expect(new RegExp(desktopIpcRule.from.path).test('src/modules/A/worklets/processor.ts')).toBe(true);
         expect(new RegExp(desktopIpcRule.to.path).test('src/helpers/clamp.ts')).toBe(true);
