@@ -1,4 +1,10 @@
+import {
+    captureAudioSourceState,
+    getAudioSourcePositionSeconds,
+    projectAudioLoopPassSegments,
+} from '#/utils/audioSourceTime';
 import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
 import { type TempoTimeline } from '../../models/TempoTimeline';
 import { type Clip } from '../../models/Track';
@@ -7,7 +13,6 @@ import { mapAllTracks } from '../../repositories/track/mapAllTracks';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { liveTempoTimeline } from '../liveTempoTimeline';
 
-import { audioSourceAtBeat } from './audioSourceAtBeat';
 import { captureClipAudioSource, type ClipAudioSourceFields } from './clipAudioSourceFields';
 import { consumedStretchFactor } from './consumedStretchFactor';
 
@@ -17,7 +22,7 @@ import { consumedStretchFactor } from './consumedStretchFactor';
  * back through the tempo map; a legacy entry is beats. A nonpositive entry
  * (recorded leading silence) allows none, so the start holds.
  */
-export function crossfadeClipBEarliestStart(clipB: Clip, stretchFactor: number, timeline: TempoTimeline): number {
+function crossfadeClipBEarliestStart(clipB: Clip, stretchFactor: number, timeline: TempoTimeline): number {
     if (clipB.type === 'midi') {
         return Math.max(0, clipB.startBeat - Math.max(0, clipB.midiOffsetBeats ?? 0));
     }
@@ -32,28 +37,149 @@ export function crossfadeClipBEarliestStart(clipB: Clip, stretchFactor: number, 
 }
 
 /**
- * Clip B's canonical source clock once its start retreats to `startBeat`: the
- * readers' source at that beat, so every later beat keeps its material.
- * `undefined` for a beat-only or MIDI clip B, `null` when the clock cannot be
- * read. The entry keeps the beat offset's signed lower bound: never below
- * `min(0, entry)`, absorbing rounding at the end of a nonnegative handle.
+ * Clip B's canonical clock with its start moved to `startBeat`: the entry
+ * continues the readers' line through the tempo map at the stretch rate, the
+ * unwrapped entry moves by the song time without rate, and the repeat grid
+ * (loop start, pass entry, pass origin) is materialized and kept, so passes
+ * after the old start keep their source. The entry keeps the beat offset's
+ * signed lower bound, never below `min(0, entry)`.
  */
-export function crossfadeClipBAudioSource(
-    clipB: Clip,
-    startBeat: number,
-    timeline: TempoTimeline
-): ClipAudioSourceFields | null | undefined {
-    if (clipB.type !== 'audio' || clipB.audioOffsetSeconds === undefined) {
-        return undefined;
-    }
-    const source = audioSourceAtBeat(clipB, startBeat, timeline);
+function movedClipBAudioSource(clipB: Clip, startBeat: number, timeline: TempoTimeline): ClipAudioSourceFields | null {
+    const loop = projectClipLoopExpansion({
+        clipDurationBeats: clipB.endBeat - clipB.startBeat,
+        configuredLoopLengthBeats: clipB.loopLength,
+        loopEnabled: clipB.loopEnabled ?? false,
+    });
+    const source = captureAudioSourceState(clipB, loop.loopLengthBeats, timeline.tempoAtBeat(clipB.startBeat));
     if (!source) {
+        return null;
+    }
+    const elapsedSeconds = timeline.secondsAtBeat(startBeat) - timeline.secondsAtBeat(clipB.startBeat);
+    const entry = getAudioSourcePositionSeconds(
+        source.audioOffsetSeconds,
+        elapsedSeconds,
+        consumedStretchFactor(clipB)
+    );
+    const unwrapped = source.audioUnwrappedOffsetSeconds + elapsedSeconds;
+    if (!Number.isFinite(entry) || !Number.isFinite(unwrapped)) {
         return null;
     }
     return captureClipAudioSource({
         ...source,
-        audioOffsetSeconds: Math.max(Math.min(0, clipB.audioOffsetSeconds), source.audioOffsetSeconds),
+        audioOffsetSeconds: Math.max(Math.min(0, source.audioOffsetSeconds), entry),
+        audioUnwrappedOffsetSeconds: unwrapped,
     });
+}
+
+function readerSegments(clip: Clip, fromBeat: number, toBeat: number, timeline: TempoTimeline) {
+    const loop = projectClipLoopExpansion({
+        clipDurationBeats: clip.endBeat - clip.startBeat,
+        configuredLoopLengthBeats: clip.loopLength,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
+    return projectAudioLoopPassSegments({
+        clip,
+        loopLengthBeats: loop.loopLengthBeats,
+        iterationStartBeat: fromBeat,
+        iterationEndBeat: toBeat,
+        stretchRatio: consumedStretchFactor(clip),
+        tempoAtClipStart: timeline.tempoAtBeat(clip.startBeat),
+        secondsAtBeat: timeline.secondsAtBeat,
+    });
+}
+
+const READ_TOLERANCE = 1e-9;
+
+function readsMatch(left: ReturnType<typeof readerSegments>, right: ReturnType<typeof readerSegments>): boolean {
+    return (
+        left.length === right.length &&
+        left.every((segment, index) => {
+            const other = right[index]!;
+            return (
+                Math.abs(segment.startOffsetBeats - other.startOffsetBeats) <= READ_TOLERANCE &&
+                Math.abs(segment.endOffsetBeats - other.endOffsetBeats) <= READ_TOLERANCE &&
+                Math.abs(segment.sourceStartSeconds - other.sourceStartSeconds) <= READ_TOLERANCE
+            );
+        })
+    );
+}
+
+type CanonicalClipBStart = { startBeat: number; audioSource: ClipAudioSourceFields };
+
+/**
+ * Where a canonical clip B may start, and the clock it then carries. The
+ * readers give the entry only to the loop part holding the clip start, so a
+ * retreat into an earlier part hands the old start's part to the repeat grid,
+ * which holds only when the entry lies on that grid. A start is taken only
+ * when every beat from the old start reads as before: the requested start,
+ * else the start of the part holding the old start, else no retreat.
+ */
+function planCanonicalClipBStart(
+    clipB: Clip,
+    requestedStartBeat: number,
+    timeline: TempoTimeline
+): CanonicalClipBStart | null {
+    const unmoved = captureClipAudioSource(clipB);
+    if (!unmoved) {
+        return null;
+    }
+    if (requestedStartBeat === clipB.startBeat) {
+        return { startBeat: clipB.startBeat, audioSource: unmoved };
+    }
+    const readsBefore = readerSegments(clipB, clipB.startBeat, clipB.endBeat, timeline);
+    const move = (startBeat: number) => {
+        const audioSource = movedClipBAudioSource(clipB, startBeat, timeline);
+        if (!audioSource) {
+            return null;
+        }
+        const clip: Clip = { ...clipB, ...audioSource, startBeat };
+        const holds = readsMatch(readsBefore, readerSegments(clip, clipB.startBeat, clipB.endBeat, timeline));
+        return { startBeat, audioSource, clip, holds };
+    };
+    const requested = move(requestedStartBeat);
+    if (!requested) {
+        return null;
+    }
+    if (requested.holds) {
+        return { startBeat: requested.startBeat, audioSource: requested.audioSource };
+    }
+    // The part holding the old start opens at the last seam cut between the two starts.
+    const lead = readerSegments(requested.clip, requestedStartBeat, clipB.startBeat, timeline).at(-1);
+    const atPart = lead ? move(requestedStartBeat + lead.startOffsetBeats) : null;
+    if (atPart?.holds) {
+        return { startBeat: atPart.startBeat, audioSource: atPart.audioSource };
+    }
+    return { startBeat: clipB.startBeat, audioSource: unmoved };
+}
+
+/**
+ * Clip B's start and, for a canonical audio clip B, its clock after the
+ * crossfade retreats it by up to `halfLen`. `audioSource` is absent for a
+ * beat-only or MIDI clip B; `null` when a canonical clock cannot be read.
+ */
+export function resolveCrossfadeClipB(
+    clipB: Clip,
+    halfLen: number,
+    timeline: TempoTimeline
+): { startBeat: number; audioSource?: ClipAudioSourceFields } | null {
+    const bound = crossfadeClipBEarliestStart(clipB, consumedStretchFactor(clipB), timeline);
+    const requestedStartBeat = Math.max(clipB.startBeat - halfLen, bound);
+    if (clipB.type !== 'audio' || clipB.audioOffsetSeconds === undefined) {
+        return { startBeat: requestedStartBeat };
+    }
+    return planCanonicalClipBStart(clipB, requestedStartBeat, timeline);
+}
+
+/**
+ * The loop anchor after clip B's start moves by `clipBDelta` while its legacy
+ * offset moves by `contentDelta`. A canonical clock keeps its own repeat grid
+ * (pass origin against anchor), so its anchor stays.
+ */
+export function crossfadeClipBLoopOriginEntry(clipB: Clip, clipBDelta: number, contentDelta: number) {
+    if (clipB.type !== 'audio' || clipB.audioOffsetSeconds !== undefined) {
+        return {};
+    }
+    return shiftLoopOriginEntry(clipB, clipBDelta - contentDelta);
 }
 
 /**
@@ -99,8 +225,12 @@ export function crossfadeClips(clipAId: string, clipBId: string, durationBeats =
     const unclampedClipBStart = clipB.startBeat - halfLen;
 
     const stretchFactor = consumedStretchFactor(clipB);
-    const boundedClipBStart = crossfadeClipBEarliestStart(clipB, stretchFactor, liveTempoTimeline);
-    const newClipBStart = Math.max(unclampedClipBStart, boundedClipBStart);
+    const clipBPlan = resolveCrossfadeClipB(clipB, halfLen, liveTempoTimeline);
+    if (!clipBPlan) {
+        return false;
+    }
+    const newClipBStart = clipBPlan.startBeat;
+    const newAudioSource = clipBPlan.audioSource;
     const actualOverlap = newClipAEnd - newClipBStart;
 
     const clipBDelta = newClipBStart - clipB.startBeat;
@@ -112,10 +242,6 @@ export function crossfadeClips(clipAId: string, clipBId: string, durationBeats =
     let newMidiOffsetBeats: number | undefined;
     if (clipB.midiOffsetBeats !== undefined) {
         newMidiOffsetBeats = Math.max(0, clipB.midiOffsetBeats + clipBDelta);
-    }
-    const newAudioSource = crossfadeClipBAudioSource(clipB, newClipBStart, liveTempoTimeline);
-    if (newAudioSource === null) {
-        return false;
     }
     // The loop anchor follows the offset its clip type moves (#4988). The
     // audio offset retreats by the stretched `contentDelta` while the start
@@ -129,7 +255,8 @@ export function crossfadeClips(clipAId: string, clipBId: string, durationBeats =
     // names leading silence before recorded media; the pre-roll bound keeps
     // that start fixed. Preserve its signed lower bound while retaining the
     // zero clamp for rounding at the end of a nonnegative pre-roll handle.
-    const clipBLoopOriginEntry = clipB.type === 'audio' ? shiftLoopOriginEntry(clipB, clipBDelta - contentDelta) : {};
+    // A canonical clock carries its own repeat grid, so its anchor stays.
+    const clipBLoopOriginEntry = crossfadeClipBLoopOriginEntry(clipB, clipBDelta, contentDelta);
 
     if (
         !Number.isFinite(halfLen) ||

@@ -14,6 +14,7 @@ vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
 
 import { defaultTransportState, readSecondsAtBeat, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -50,6 +51,28 @@ function readerSourceSecondsAt(clip: Clip, beat: number): number {
         iterationEndBeat: clip.endBeat,
         stretchRatio: clip.stretchMode && clip.stretchMode !== 'off' ? (clip.stretchRatio ?? 1) : 1,
         tempoAtClipStart: 120,
+        secondsAtBeat: (at) => readSecondsAtBeat({ beat: at }),
+    })[0];
+    if (!segment) {
+        throw new Error('the readers project no segment for the clip');
+    }
+    return segment.sourceStartSeconds;
+}
+
+/** The source second the readers play at `beat`, on the loop grid the scheduler projects for the clip. */
+function loopedReaderSourceSecondsAt(clip: Clip, beat: number): number {
+    const loop = projectClipLoopExpansion({
+        clipDurationBeats: clip.endBeat - clip.startBeat,
+        configuredLoopLengthBeats: clip.loopLength,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
+    const segment = projectAudioLoopPassSegments({
+        clip,
+        loopLengthBeats: loop.loopLengthBeats,
+        iterationStartBeat: beat,
+        iterationEndBeat: clip.endBeat,
+        stretchRatio: clip.stretchMode && clip.stretchMode !== 'off' ? (clip.stretchRatio ?? 1) : 1,
+        tempoAtClipStart: 60,
         secondsAtBeat: (at) => readSecondsAtBeat({ beat: at }),
     })[0];
     if (!segment) {
@@ -134,6 +157,60 @@ describe('crossfadeClips', () => {
             expect(after.startBeat).toBe(9.5);
             expect(after.audioOffsetSeconds).toBeCloseTo(2, 12);
             expect(readerSourceSecondsAt(after, 10)).toBeCloseTo(3, 12);
+        });
+
+        it('keeps a looped stretched clip B on its loop phase at every beat from its old start', () => {
+            const before = makeClip('b', 4, 8, {
+                stretchMode: 'timestretch',
+                stretchRatio: 2,
+                loopEnabled: true,
+                loopLength: 2,
+                loopOriginBeat: 4,
+                audioLoopPassOriginBeat: 4,
+                audioOffsetBeats: 2,
+                audioOffsetSeconds: 2,
+                audioUnwrappedOffsetSeconds: 2,
+                audioLoopStartSeconds: 2,
+                audioLoopPassEntrySeconds: 2,
+            });
+            const beats = [4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5];
+            const readsBefore = beats.map((beat) => loopedReaderSourceSecondsAt(before, beat));
+            expect(readsBefore).toEqual([2, 3, 4, 5, 2, 3, 4, 5]);
+
+            const after = crossfadeB(before, 4, 1);
+
+            expect(after.startBeat).toBe(3.5);
+            for (const [index, beat] of beats.entries()) {
+                expect(loopedReaderSourceSecondsAt(after, beat), `beat ${beat}`).toBeCloseTo(readsBefore[index]!, 12);
+            }
+            // The revealed half beat plays the stretched handle before the entry.
+            expect(loopedReaderSourceSecondsAt(after, 3.5)).toBeCloseTo(1, 12);
+        });
+
+        it('keeps an independent first entry by not retreating past the loop part it opens', () => {
+            // The entry at 3 s is off the repeat grid (the head reads 0 s at 4,
+            // so 1 s at 5). Retreating into the previous pass would hand beat 5
+            // back to the grid, so the retreat stops at the part start, 4.
+            const before = makeClip('b', 5, 9, {
+                loopEnabled: true,
+                loopLength: 2,
+                loopOriginBeat: 4,
+                audioLoopPassOriginBeat: 4,
+                audioOffsetSeconds: 3,
+                audioUnwrappedOffsetSeconds: 3,
+                audioLoopStartSeconds: 0,
+                audioLoopPassEntrySeconds: 0,
+            });
+            const beats = [5, 5.5, 6, 7, 8, 8.5];
+            const readsBefore = beats.map((beat) => loopedReaderSourceSecondsAt(before, beat));
+
+            const after = crossfadeB(before, 5, 4);
+
+            expect(after.startBeat).toBe(4);
+            expect(after.audioOffsetSeconds).toBeCloseTo(2, 12);
+            for (const [index, beat] of beats.entries()) {
+                expect(loopedReaderSourceSecondsAt(after, beat), `beat ${beat}`).toBeCloseTo(readsBefore[index]!, 12);
+            }
         });
 
         it('mints no canonical fields on a beat-only clip B', () => {

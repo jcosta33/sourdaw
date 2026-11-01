@@ -29,6 +29,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, readSecondsAtBeat, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import {
     type ConfirmPayload,
     type NotifyPayload,
@@ -715,10 +716,14 @@ describe('crossfade recorded leading silence through command history', () => {
         function readerSourceSecondsAt(clip: Clip, beat: number): number {
             const segment = projectAudioLoopPassSegments({
                 clip,
-                loopLengthBeats: clip.endBeat - clip.startBeat,
+                loopLengthBeats: projectClipLoopExpansion({
+                    clipDurationBeats: clip.endBeat - clip.startBeat,
+                    configuredLoopLengthBeats: clip.loopLength,
+                    loopEnabled: clip.loopEnabled ?? false,
+                }).loopLengthBeats,
                 iterationStartBeat: beat,
                 iterationEndBeat: clip.endBeat,
-                stretchRatio: 1,
+                stretchRatio: clip.stretchMode && clip.stretchMode !== 'off' ? (clip.stretchRatio ?? 1) : 1,
                 tempoAtClipStart: 60,
                 secondsAtBeat: (at) => readSecondsAtBeat({ beat: at }),
             })[0];
@@ -727,6 +732,60 @@ describe('crossfade recorded leading silence through command history', () => {
             }
             return segment.sourceStartSeconds;
         }
+
+        it('keeps a looped stretched clip B on its loop phase through crossfade, undo and redo', async () => {
+            transportStore.set({ ...defaultTransportState, tempo: 60 });
+            const track = TrackDummy.create({
+                id: 'track-1',
+                clips: [
+                    ClipDummy.create({ id: 'c1', startBeat: 0, endBeat: 4 }),
+                    ClipDummy.create({
+                        id: 'c2',
+                        startBeat: 4,
+                        endBeat: 8,
+                        stretchMode: 'timestretch',
+                        stretchRatio: 2,
+                        loopEnabled: true,
+                        loopLength: 2,
+                        loopOriginBeat: 4,
+                        audioLoopPassOriginBeat: 4,
+                        audioOffsetBeats: 2,
+                        audioOffsetSeconds: 2,
+                        audioUnwrappedOffsetSeconds: 2,
+                        audioLoopStartSeconds: 2,
+                        audioLoopPassEntrySeconds: 2,
+                    }),
+                ],
+            });
+            trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+            flushAutomergeStorageWrites();
+            const before = structuredClone(trackStore.value!.tracks[0]!.clips);
+            const beats = [4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5];
+            const reads = (clip: Clip) => beats.map((beat) => readerSourceSecondsAt(clip, beat));
+            const readsBefore = reads(before[1]!);
+            const expectReadsHeld = (clip: Clip) => {
+                for (const [index, read] of reads(clip).entries()) {
+                    expect(read, `beat ${beats[index]}`).toBeCloseTo(readsBefore[index]!, 12);
+                }
+            };
+
+            await executeAppAction({
+                type: 'crossfadeClips',
+                payload: { clipAId: 'c1', clipBId: 'c2', durationBeats: 1 },
+            });
+            const after = structuredClone(trackStore.value!.tracks[0]!.clips);
+            expect(after[1]).toMatchObject({ startBeat: 3.5, loopOriginBeat: 4, audioLoopPassOriginBeat: 4 });
+            expectReadsHeld(after[1]!);
+
+            expect((await undo()).headConsumed).toBe(true);
+            expect(notifications).toEqual([]);
+            expect(trackStore.value!.tracks[0]!.clips).toEqual(before);
+
+            await redo();
+            expect(notifications).toEqual([]);
+            expect(trackStore.value!.tracks[0]!.clips).toEqual(after);
+            expectReadsHeld(trackStore.value!.tracks[0]!.clips[1]!);
+        });
 
         it('keeps clip B material on its beats across a tempo change through crossfade, undo and redo', async () => {
             // 120 BPM to beat 8, then 60. Clip B retreats from 8.25 to 7.75,
