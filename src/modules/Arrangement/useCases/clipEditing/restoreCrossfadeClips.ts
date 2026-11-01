@@ -1,8 +1,13 @@
 import { loopOriginEntry } from '#/utils/clipLoopOrigin';
 
+import { type Clip } from '../../models/Track';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { mapAllTracks } from '../../repositories/track/mapAllTracks';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
+
+import { captureClipAudioSource, type ClipAudioSourceFields } from './clipAudioSourceFields';
+import { isSameClipAudioSource } from './isSameClipAudioSource';
+import { replaceClipAudioSource } from './replaceClipAudioSource';
 
 type CrossfadeClipsSnapshot = {
     clipAEndBeat: number;
@@ -12,6 +17,7 @@ type CrossfadeClipsSnapshot = {
     clipBAudioOffsetBeats?: number;
     clipBMidiOffsetBeats?: number;
     clipBLoopOriginBeat?: number;
+    clipBAudioSource?: ClipAudioSourceFields;
 };
 
 type RestoreCrossfadeClipsInput = {
@@ -45,7 +51,7 @@ function isValidSnapshot(replacement: CrossfadeClipsSnapshot): boolean {
 
 function snapshotDiffers(
     clipA: { endBeat: number; fadeOutBeats: number },
-    clipB: { startBeat: number; fadeInBeats: number; audioOffsetBeats?: number; midiOffsetBeats?: number },
+    clipB: Clip,
     replacement: CrossfadeClipsSnapshot
 ): boolean {
     if (clipA.endBeat !== replacement.clipAEndBeat || clipA.fadeOutBeats !== replacement.clipAFadeOutBeats) {
@@ -61,6 +67,12 @@ function snapshotDiffers(
         return true;
     }
     if (replacement.clipBMidiOffsetBeats !== undefined && clipB.midiOffsetBeats !== replacement.clipBMidiOffsetBeats) {
+        return true;
+    }
+    if (
+        replacement.clipBAudioSource !== undefined &&
+        !isSameClipAudioSource(captureClipAudioSource(clipB) ?? {}, replacement.clipBAudioSource)
+    ) {
         return true;
     }
     return false;
@@ -88,6 +100,10 @@ export function restoreCrossfadeClips({ clipAId, clipBId, replacement }: Restore
     if (!snapshotDiffers(clipA, clipB, replacement)) {
         return false;
     }
+    const clipBAudioSource = replacement.clipBAudioSource;
+    if (clipBAudioSource && !replaceClipAudioSource(clipB, clipBAudioSource)) {
+        return false;
+    }
 
     mapAllTracks((track) => ({
         ...track,
@@ -100,8 +116,10 @@ export function restoreCrossfadeClips({ clipAId, clipBId, replacement }: Restore
                 };
             }
             if (clip.id === clipBId) {
+                const sourced = clipBAudioSource ? replaceClipAudioSource(clip, clipBAudioSource) : clip;
+                const base = sourced ?? clip;
                 const updated = {
-                    ...clip,
+                    ...base,
                     startBeat: replacement.clipBStartBeat,
                     fadeInBeats: replacement.clipBFadeInBeats,
                     // The captured anchor rides only in entries recorded after

@@ -4,7 +4,7 @@ Procedural offline audio synthesis and preset sound generator for factory sample
 
 ## Public Contract Surface
 
-- **Use Cases** (`useCases/index.ts`): `renderFactorySamples`, `FACTORY_LIBRARY_ROOT_ID`, `FACTORY_SEED_FLAG_KEY`.
+Public surface: `useCases/index.ts`.
 
 ## Key Subsystems
 

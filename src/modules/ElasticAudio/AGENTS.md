@@ -8,11 +8,7 @@ Owns transient marker detection, warp marker editing/quantization, warp algorith
 
 ## Public Contract Surface
 
-- **`useCases`**: `detectTransients`, `detectTransientsForClip`, `markElasticDetectionComplete`, `selectElasticMarkers`, `openElasticEditor`, `closeElasticEditor`, `setElasticTool`, `setElasticSensitivity`, `addManualMarker`, `removeMarker`, `toggleMarkerLock`, `quantizeTransients`, `enableWarping`, `setWarpAlgorithm`, `setPitchShift`, `setDefaultAlgorithm`, `getAlgorithmInfo`.
-- **`stores`**: `elasticAudioStore` (`defaultElasticAudioState`, types `ElasticAudioState`, `ElasticEditorTool`), `audioWarpStore` (`DEFAULT_WARP_SETTINGS`, `WARP_ALGORITHMS`, types `WarpAlgorithm`, `WarpState`, `ClipWarpSettings`).
-- **`presentations/views`**: `ElasticEditorPanel`.
-- **`events`**: None.
-- **Handler maps**: Handlers for elastic audio/warping actions live in `AudioEngine/handlers/finalFeature`.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`. Handlers for elastic audio/warping actions live in `AudioEngine/handlers/finalFeature`, not here.
 
 ## Key Subsystems
 

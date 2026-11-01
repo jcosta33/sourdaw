@@ -4,9 +4,7 @@ Audio clip pitch analysis, graphical pitch editing (pitch contours, note blobs, 
 
 ## Public Contract Surface
 
-- **Use Cases** (`useCases/index.ts`): `analyzeClipPitch`, `captureClipPitchAnalysis`, `clearClipPitchAnalysis`, `restoreClipPitchAnalysis`, `hydrateKneadFromTrackStore`, `syncKneadToEngine`, `updateClipKneadState`, `getPitchHandlers`, `setPitchEditDependencies`.
-- **Stores** (`stores/index.ts`): `kneadStore`, `defaultKneadState`, `KneadClipState`, `KneadStoreState`, `NoteBlob`, `PitchContour`, `PitchPoint`.
-- **Handler Maps**: `getPitchHandlers` exposes `commitPitchEdit` and `restoreClipFileId` to cross aggregate boundaries without direct circular dependencies (ADR 0011).
+Public surface: `useCases/index.ts`, `stores/index.ts`.
 
 ## Key Subsystems
 
@@ -19,6 +17,7 @@ Audio clip pitch analysis, graphical pitch editing (pitch contours, note blobs, 
 - `commitPitchEdit` modifies track clip audio references atomically via injected pitch handlers (`getPitchHandlers`) to maintain DDD boundaries without cyclic imports.
 - Note blob pitch shifts and formant preservation calculations must clamp within valid frequency and sample index bounds.
 - Analyzed pitch contours are cached per clip audio asset to prevent redundant pitch analysis passes.
+- `getPitchHandlers` exposes `commitPitchEdit` and `restoreClipFileId` across aggregate boundaries without direct circular dependencies (ADR 0011).
 
 ## Verification
 

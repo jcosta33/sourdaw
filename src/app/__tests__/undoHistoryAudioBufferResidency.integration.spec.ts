@@ -246,8 +246,12 @@ describe('undo history audio buffer residency (#6003)', () => {
         expect(audioBufferCache.has('rec-collected')).toBe(false);
 
         // The collector runs only against a loaded project's ownership census; a
-        // negative age makes every unowned record old enough to delete.
+        // negative age makes every unowned record old enough to delete. The store
+        // write reaches the CRDT document on the next animation frame, and a
+        // document change after the census is read invalidates it and the collector
+        // deletes nothing, so land the write before the collector reads the census.
         projectStore.set({ ...defaultProjectStoreState, loading: false });
+        flushAutomergeStorageWrites();
         try {
             await expect(garbageCollectCachedAudioBuffersByAge({ maxAgeDays: -1 })).resolves.toBeGreaterThan(0);
         } finally {
