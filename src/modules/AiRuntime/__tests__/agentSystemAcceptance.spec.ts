@@ -571,12 +571,20 @@ function measuredAnswerIntakeTurn(turn: MeasuredAnswerIntakeTurn): ScriptedTurn 
  * section id, so the call names the section's beats and the application restores its identity.
  */
 function measureCall(turn: MeasureTurn): ProviderCall & { id: string } {
-    const scope =
-        turn.target.kind === 'master'
-            ? { kind: 'master' }
-            : { kind: 'tracks', ids: [fixtureMeasuredTargetId(turn.target)] };
     const { startBeat, endBeat } = fixtureSection(turn.rangeName);
-    return { id: turn.id, name: 'analysis.measure', arguments: { scope, range: { startBeat, endBeat } } };
+    return {
+        id: turn.id,
+        name: 'analysis.measure',
+        arguments: { scope: measureScope(turn.target), range: { startBeat, endBeat } },
+    };
+}
+
+/** The `analysis.measure` scope naming the measured target: the master output, or the one fixture track. */
+function measureScope(target: CorpusMeasuredTarget): Record<string, unknown> {
+    if (target.kind === 'master') {
+        return { kind: 'master' };
+    }
+    return { kind: 'tracks', ids: [fixtureMeasuredTargetId(target)] };
 }
 
 function metricAnswerCall(turn: MetricAnswerTurn): ProviderCall & { id: string } {
