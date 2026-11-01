@@ -34,6 +34,7 @@ import {
     toggleWorkspaceMode,
     TOOL_SHORTCUTS,
 } from '#/modules/WorkspaceShell/useCases';
+import { isDragGestureActive } from '#/utils/UI/activeDragGesture';
 
 import { parseLoopStationPadCallbackId, shortcutStore, type ShortcutAction } from '../../../stores/shortcutStore';
 import { getAllClipIds } from '../../selectionHelpers/getAllClipIds';
@@ -196,7 +197,7 @@ function executeDuplicateTimeRange(startBeat: number, endBeat: number): void {
 }
 
 export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }) => {
-    function executeShortcutAction(action: ShortcutAction): boolean {
+    function executeShortcutAction(action: ShortcutAction, key: string): boolean {
         if (action.type === 'appAction') {
             const appAction = action.action;
 
@@ -241,10 +242,11 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                     if (cancelActiveTimelineGesture()) {
                         return true;
                     }
-                    // The Collaborate panel is a non-modal floating surface, so it is
-                    // dismissed here, below a gesture cancel and above the selection
-                    // and transport steps, wherever focus is.
-                    if (workspaceStore.value?.collaborationPanelOpen) {
+                    // The Collaborate panel is a non-modal floating surface, so Escape
+                    // dismisses it here, below a gesture cancel and above the selection
+                    // and transport steps, wherever focus is. Enter shares this binding
+                    // but is not a dismissal, and a mouse drag owns its own Escape cancel.
+                    if (key === 'Escape' && !isDragGestureActive() && workspaceStore.value?.collaborationPanelOpen) {
                         closeCollaborationPanel();
                         return true;
                     }
@@ -635,7 +637,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                 if (repeat && !REPEATABLE_ON_HOLD_SHORTCUT_IDS.has(def.id)) {
                     return true;
                 }
-                return executeShortcutAction(def.action);
+                return executeShortcutAction(def.action, key);
             }
         }
 

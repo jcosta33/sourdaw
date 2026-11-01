@@ -36,6 +36,7 @@ import {
     toggleWorkspaceMode,
 } from '#/modules/WorkspaceShell/useCases';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
+import { beginDragGesture } from '#/utils/UI/activeDragGesture';
 
 import { parseLoopStationPadCallbackId, type ShortcutAction } from '../../../../stores/shortcutStore';
 import { getAllClipIds } from '../../../selectionHelpers/getAllClipIds';
@@ -421,6 +422,33 @@ describe('handleKeydown', () => {
 
                 expect(prevent).toBe(true);
                 expect(cancelActiveTimelineGesture).toHaveBeenCalledTimes(1);
+                expect(closeCollaborationPanel).not.toHaveBeenCalled();
+            });
+
+            it('leaves Enter to the transport stop it is bound to and keeps the panel open', () => {
+                shortcutStoreMock.value.definitions = [
+                    {
+                        id: 'transport.stopPlayback',
+                        defaultKeys: ['Escape', 'Enter'],
+                        action: { type: 'callback', id: 'stopPlayback' },
+                    },
+                ];
+
+                handleKeydown(descriptor({ key: 'Enter' }));
+
+                expect(stopPlaybackMock).toHaveBeenCalledTimes(1);
+                expect(closeCollaborationPanel).not.toHaveBeenCalled();
+            });
+
+            it('leaves Escape to a mouse drag that cancels itself and keeps the panel open', () => {
+                bindEscape();
+                const endDrag = beginDragGesture();
+                try {
+                    handleKeydown(descriptor({ key: 'Escape' }));
+                } finally {
+                    endDrag();
+                }
+
                 expect(closeCollaborationPanel).not.toHaveBeenCalled();
             });
 
