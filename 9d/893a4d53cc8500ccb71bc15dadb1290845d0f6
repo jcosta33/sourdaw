@@ -1,0 +1,23 @@
+.agents/skills/review-stances/session-lifecycle.md
+  s_0314bb17e5dee3::t_d981ca89fade8e 110-112
+  s_0314bb17e5dee3::t_a59a252265e9fd 6-7
+  s_0314bb17e5dee3::t_814d177c4e4ad7 153-154
+.agents/skills/review-stances/input-monitoring-ownership.md
+  s_0314bb17e5dee3::t_a8a490a8c2e98a 6-7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9d893a4d53cc8500ccb71bc15dadb1290845d0f6",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
