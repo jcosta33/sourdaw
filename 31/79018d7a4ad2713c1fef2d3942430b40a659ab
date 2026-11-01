@@ -1,0 +1,67 @@
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_dde1671ba022b8::t_b5bbd347a877fc 1108
+  s_dde1671ba022b8::t_f35b531d7372a9 58
+  s_dde1671ba022b8::t_5a567070b1592f 56
+  s_dde1671ba022b8::t_abb9d70710dc92 1746,1748-1751
+  s_dde1671ba022b8::t_7d7a76c9b6a31b 1329,1338
+  s_dde1671ba022b8::t_c12a47ccae2d30 1747
+src/modules/Transport/useCases/transportControls/recordingLifecycle.ts
+  s_dde1671ba022b8::t_81337f439487b9 55-59
+  s_dde1671ba022b8::t_001a0a17329041 1
+  s_dde1671ba022b8::t_85a9c35f643b7b 165-174
+  s_dde1671ba022b8::t_94b20830745faf 266
+  s_dde1671ba022b8::t_4a2c2d07c23290 54
+src/modules/Transport/useCases/playheadScheduler/initialEmissionRetirements.ts
+  s_dde1671ba022b8::t_7287f518c57bf3 1-44
+src/modules/Transport/useCases/playheadScheduler/schedulerSession.ts
+  s_dde1671ba022b8::t_7c2275a3e9d69e 140-148
+src/modules/Transport/useCases/transportControls/__tests__/startPlayback.spec.ts
+  s_dde1671ba022b8::t_9422cfa127cf96 26
+  s_dde1671ba022b8::t_bb929a7659ba88 22
+  s_dde1671ba022b8::t_ebd81ae92d97f4 81,87
+  s_dde1671ba022b8::t_fdadd0a8412c06 283-284,333-334
+  s_dde1671ba022b8::t_402a8d90abf65d 230-238,240-282,285-286
+  s_dde1671ba022b8::t_37a440406cd675 152-153
+  s_dde1671ba022b8::t_ca18f9e76a674f 92
+  s_dde1671ba022b8::t_a493a424c11682 239
+  s_dde1671ba022b8::t_dd58841b732f27 287-332
+  s_dde1671ba022b8::t_11823711e95a19 66-80,82-86
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchPausePlayCommand.integration.spec.ts
+  s_dde1671ba022b8::t_384306e1b5c8cb 763-784,794-810,814-857,861-881,923-1010
+  s_dde1671ba022b8::t_b339fa0b9cddaf 811-813
+  s_dde1671ba022b8::t_f5a267045eb636 53
+  s_dde1671ba022b8::t_340138ce2f3ff9 785-793
+  s_dde1671ba022b8::t_421dd187e0deaf 858-860
+  s_dde1671ba022b8::t_6eb57cf760dc60 1011-1012
+  s_dde1671ba022b8::t_cbebc675834690 882-922
+src/modules/Transport/useCases/playheadScheduler/opensPunchIn.ts
+  s_dde1671ba022b8::t_fdf2d15aa6271f 1-29
+src/modules/Transport/useCases/playheadScheduler/disposePlayheadScheduler.ts
+  s_dde1671ba022b8::t_0931158d072be9 58
+  s_dde1671ba022b8::t_b54c517028066b 10
+src/modules/Transport/useCases/transportControls/startPlayback.ts
+  s_dde1671ba022b8::t_db2b00f65f3962 116
+  s_dde1671ba022b8::t_7280100ecc8ac1 19
+  s_dde1671ba022b8::t_85dfecd6ae1f35 113-114
+  s_dde1671ba022b8::t_69442fe82c0838 115
+  s_dde1671ba022b8::t_a3d1542ed8af16 55
+  s_dde1671ba022b8::t_823f13aec19066 14
+  s_dde1671ba022b8::t_266a3e0c3ee9e1 25-26
+  s_dde1671ba022b8::t_548ae3e3229e4b 47-54,56-57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3179018d7a4ad2713c1fef2d3942430b40a659ab",
+  "prompts": {},
+  "sessions": {
+    "s_dde1671ba022b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e4c42ac-51ff-45eb-b81f-f43601ed01dc",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
