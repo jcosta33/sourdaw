@@ -1,0 +1,257 @@
+src/modules/AudioEngine/worklets/__tests__/bacteriaProcessorWasmViews.spec.ts
+  s_0314bb17e5dee3::t_de835cd4271f89 13
+src/modules/AudioEngine/testing/grinderProcessorTestHarness.ts
+  s_0314bb17e5dee3::t_eda5a4f58547ea 3
+  s_0314bb17e5dee3::t_0939151316831a 173
+  s_0314bb17e5dee3::t_340b388e34f5e7 165
+src/modules/AudioEngine/engine/__tests__/ProofChamberNode.spec.ts
+  s_0314bb17e5dee3::t_8c27ae95a7aabc 48
+src/modules/AudioEngine/engine/telemetryAllocator.ts
+  s_0314bb17e5dee3::t_4796cd2559d2d8 166
+  s_0314bb17e5dee3::t_650ba9c8c75402 219
+src/modules/AudioEngine/worklets/__tests__/fermenterProcessorEventOffsets.spec.ts
+  s_0314bb17e5dee3::t_d279d94d35d602 10
+src/modules/AudioEngine/worklets/__tests__/fermenterProcessorTelemetry.spec.ts
+  s_0314bb17e5dee3::t_985990b12ff23b 11
+src/modules/AudioEngine/worklets/__tests__/fermenterProcessor.spec.ts
+  s_0314bb17e5dee3::t_f989dc0f9ea4aa 11
+crates/daw-engine/src/scheduler.rs
+  s_0314bb17e5dee3::t_3c28152f244787 27939
+  s_0314bb17e5dee3::t_5413ab17252962 3974
+  s_0314bb17e5dee3::t_31611abc8c2555 3614
+crates/sourdaw-native/src/commands/levain.rs
+  s_0314bb17e5dee3::t_0f1fc825bddfc2 18
+  s_0314bb17e5dee3::t_13d294a84581b9 1262
+  s_0314bb17e5dee3::t_f3124d27bbf665 50
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_0314bb17e5dee3::t_fdf6f2b0f98b78 500
+src/modules/AudioEngine/worklets/__tests__/toasterProcessorShippedMalloc.spec.ts
+  s_0314bb17e5dee3::t_0981faef44f908 7
+src/modules/AudioEngine/engine/__tests__/FermenterNode.spec.ts
+  s_0314bb17e5dee3::t_9baf4ed8f107ad 51
+src/modules/AudioEngine/worklets/__tests__/scoringProcessor.spec.ts
+  s_0314bb17e5dee3::t_957c2bf0a99425 10
+src/modules/AudioEngine/engine/LevainNode.ts
+  s_0314bb17e5dee3::t_fcef6121031ddf 14
+src/modules/AudioEngine/engine/GrinderNode.ts
+  s_0314bb17e5dee3::t_a9da5090a854a0 14
+src/modules/AudioEngine/models/ToasterKitParamNames.ts
+  s_0314bb17e5dee3::t_ba4aa37d124158 7
+src/modules/Toaster/useCases/toasterPadEngineParamName.ts
+  s_0314bb17e5dee3::t_cb21dcebb1021e 6
+eslint.size-baseline.mjs
+  s_0314bb17e5dee3::t_cdb03f7d2336f0 250-259
+src/modules/AudioEngine/engine/__tests__/CrustNode.spec.ts
+  s_0314bb17e5dee3::t_902a630640e2e9 23
+src/modules/AudioEngine/worklets/__tests__/levainProcessorStopQueue.spec.ts
+  s_0314bb17e5dee3::t_8d12c75c1babe5 10
+src/modules/AudioEngine/worklets/__tests__/scoringProcessorShippedMalloc.spec.ts
+  s_0314bb17e5dee3::t_f99b6172426f7a 6
+src/modules/AudioEngine/models/FermenterAutomationParams.ts
+  s_0314bb17e5dee3::t_fcb6979901a216 29
+src/modules/AudioEngine/worklets/__tests__/levainProcessor.spec.ts
+  s_0314bb17e5dee3::t_8e944598b9de89 10
+src/modules/AudioEngine/useCases/offlineRender/__tests__/liveOfflineNullTest.spec.ts
+  s_0314bb17e5dee3::t_433fd58b5d537f 215
+  s_0314bb17e5dee3::t_b0aa20b8c392e0 182
+src/modules/AudioEngine/repositories/devices/toneShaping/prepareOfflineBitcrusherRate.ts
+  s_0314bb17e5dee3::t_9ef8a5c0bf8793 1
+src/modules/Toaster/useCases/projectToasterKitToNativePatch.ts
+  s_0314bb17e5dee3::t_554a4b9bcb8760 29
+oxlint.craft-baseline.mjs
+  s_0314bb17e5dee3::t_614ee4573578b1 1155-1156
+src/modules/AudioEngine/worklets/grinderProcessor.ts
+  s_0314bb17e5dee3::t_5df97d495381cb 14
+src/modules/AudioEngine/useCases/offlineRender/__tests__/levainMultiInstancePcm.spec.ts
+  s_0314bb17e5dee3::t_a2fe326fcd1ed5 11-12
+  s_0314bb17e5dee3::t_b4985e964f6973 261
+src/modules/AudioEngine/worklets/__tests__/fermenterProcessorWasmViews.spec.ts
+  s_0314bb17e5dee3::t_5733c31ba58a5e 13
+src/modules/AudioEngine/worklets/__tests__/glutenProcessorWasmViews.spec.ts
+  s_0314bb17e5dee3::t_9eb10ae17927b8 12
+src/modules/AudioEngine/worklets/__tests__/telemetrySeqlockWriters.spec.ts
+  s_0314bb17e5dee3::t_2077055b614ed1 3
+src/modules/AudioEngine/worklets/__tests__/grinderProcessorNeuralPatchProtocol.spec.ts
+  s_0314bb17e5dee3::t_1fbe1b785fa296 7
+src/modules/AudioEngine/worklets/__tests__/proofChamberProcessorWasmViews.spec.ts
+  s_0314bb17e5dee3::t_b2eb8b7e2d33ac 12
+src/modules/AudioEngine/testing/importWorkletProcessor.ts
+  s_0314bb17e5dee3::t_bf914dd018cff8 1-19
+src/modules/AudioEngine/engine/ToasterNode.ts
+  s_0314bb17e5dee3::t_028e2702d33d0e 64
+  s_0314bb17e5dee3::t_4ea2bc741bef7c 16
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/grinderOfflineStartup.integration.spec.ts
+  s_0314bb17e5dee3::t_d4197f3d27a97e 9
+docs/architecture/07-wasm-dsp-pipeline.md
+  s_0314bb17e5dee3::t_680937627b3518 26
+src/modules/AudioEngine/models/ProofChamberAutomationParams.ts
+  s_0314bb17e5dee3::t_3989e10ef85ba3 10
+src/modules/Levain/useCases/getLevainEngineParameterName.ts
+  s_0314bb17e5dee3::t_682155d09ce6c9 33
+src/modules/AudioEngine/workers/__tests__/recordingWorker.spec.ts
+  s_0314bb17e5dee3::t_51f14e5194a16f 160
+  s_0314bb17e5dee3::t_5ee17f8562140d 163
+src/modules/AudioEngine/engine/GlutenNode.ts
+  s_0314bb17e5dee3::t_95318fbcfab778 19
+src/modules/AudioEngine/worklets/__tests__/crustProcessor.spec.ts
+  s_0314bb17e5dee3::t_ce383c2ec2971f 3
+src/modules/AudioEngine/engine/__tests__/GrinderNode.spec.ts
+  s_0314bb17e5dee3::t_05c28f72a4640a 37
+src/modules/AudioEngine/engine/__tests__/TransientShaperNode.spec.ts
+  s_0314bb17e5dee3::t_34160524c60481 17
+src/modules/AudioEngine/engine/__tests__/LevainNode.spec.ts
+  s_0314bb17e5dee3::t_4b66a1e7062598 32
+src/modules/AudioEngine/engine/workletProcessorUrls.ts
+  s_0314bb17e5dee3::t_961941a191c444 1-10
+src/modules/AudioEngine/models/CrustDspParamNames.ts
+  s_0314bb17e5dee3::t_bf4a570afe3a8a 8
+src/modules/AudioEngine/worklets/__tests__/proofChamberAutomationOrdinals.spec.ts
+  s_0314bb17e5dee3::t_346d06eda6b0b7 19
+  s_0314bb17e5dee3::t_4d4d4739258ee2 43
+src/modules/AudioEngine/engine/CrustNode.ts
+  s_0314bb17e5dee3::t_e5f093209fbb29 21
+src/modules/AudioEngine/worklets/__tests__/crumbsProcessorStopQueue.spec.ts
+  s_0314bb17e5dee3::t_0ba9784f556bfc 10
+src/modules/AudioEngine/worklets/__tests__/glutenProcessor.spec.ts
+  s_0314bb17e5dee3::t_bffe6bb09ff55b 10
+src/modules/AudioEngine/engine/ScoringNode.ts
+  s_0314bb17e5dee3::t_dcbbeb0f44a4be 13
+src/modules/AudioEngine/worklets/__tests__/proofChamberProcessor.spec.ts
+  s_0314bb17e5dee3::t_0c9f64575f2f81 26
+  s_0314bb17e5dee3::t_67d9b993770e2b 38
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/recordingCapturePlacement.integration.spec.ts
+  s_0314bb17e5dee3::t_20ee629840e904 294
+  s_0314bb17e5dee3::t_87a26def6e8fe1 56
+src/modules/AudioEngine/useCases/offlineRender/__tests__/offlineNoteScheduleTiming.spec.ts
+  s_0314bb17e5dee3::t_0164a35e928889 161
+  s_0314bb17e5dee3::t_f573f099c6e3a6 9
+  s_0314bb17e5dee3::t_1314afc668d9d2 17
+src/modules/AudioEngine/worklets/__tests__/crumbsProcessor.spec.ts
+  s_0314bb17e5dee3::t_b6daeffcc7fbcf 10
+src/modules/AudioEngine/engine/BacteriaNode.ts
+  s_0314bb17e5dee3::t_85b2d6e9bb0b2d 17
+src/modules/AudioEngine/engine/ProofNode.ts
+  s_0314bb17e5dee3::t_a62af909481160 18
+src/modules/Arrangement/models/PluginDescriptors/LevainDescriptorGuidance.ts
+  s_0314bb17e5dee3::t_03cc4e7fa8abd5 10
+src/modules/AudioEngine/engine/FermenterNode.ts
+  s_0314bb17e5dee3::t_f2637447941b68 19
+src/modules/AudioEngine/worklets/__tests__/levainProcessorShippedBankRetirement.spec.ts
+  s_0314bb17e5dee3::t_2f2a4e4397815d 6-7
+src/modules/AudioEngine/worklets/__tests__/grinderProcessorControlProtocol.spec.ts
+  s_0314bb17e5dee3::t_1c57232e85129d 9
+src/modules/AudioEngine/engine/CrumbsNode.ts
+  s_0314bb17e5dee3::t_8ad998817bb9c6 19
+src/modules/AudioEngine/engine/__tests__/CrumbsNode.spec.ts
+  s_0314bb17e5dee3::t_2b7953d1ee8e5d 23
+src/modules/AudioEngine/worklets/__tests__/levainProcessorWasmViews.spec.ts
+  s_0314bb17e5dee3::t_f31e0e4ff09369 12
+src/modules/AudioEngine/engine/__tests__/ProofNode.spec.ts
+  s_0314bb17e5dee3::t_743ae3017f9262 41
+src/modules/AudioEngine/engine/__tests__/ToasterNode.spec.ts
+  s_0314bb17e5dee3::t_a715f3b76e689a 27
+src/modules/AudioEngine/worklets/__tests__/levainProcessorEndedAnswers.spec.ts
+  s_0314bb17e5dee3::t_c787f07aee24cb 6
+src/modules/AudioEngine/worklets/__tests__/levainProcessorSampleUpload.spec.ts
+  s_0314bb17e5dee3::t_8ae57f1472fbd5 8-9
+src/modules/AudioEngine/worklets/__tests__/grinderProcessorProcessPaths.spec.ts
+  s_0314bb17e5dee3::t_b55a13561722a2 7
+src/modules/AudioEngine/engine/__tests__/ScoringNode.spec.ts
+  s_0314bb17e5dee3::t_c4639fd0935763 33
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.noteTiming.spec.ts
+  s_0314bb17e5dee3::t_1594e122346e2f 10
+src/modules/AudioEngine/models/ToasterPadParamIds.ts
+  s_0314bb17e5dee3::t_4515bf07aeb168 21
+src/modules/AudioEngine/engine/ProofChamberNode.ts
+  s_0314bb17e5dee3::t_630d3bb05fa787 11
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_0314bb17e5dee3::t_9193fa5a01810b 1960
+  s_0314bb17e5dee3::t_9ccd1a95bc0666 24-28
+src/modules/AudioEngine/worklets/__tests__/recordingProcessor.spec.ts
+  s_0314bb17e5dee3::t_20d7b2baa06a01 14
+src/modules/AudioEngine/worklets/grandBouleEngineCore.ts
+  s_0314bb17e5dee3::t_7ae94ad5a622df 196
+  s_0314bb17e5dee3::t_7b70a04129904d 207
+src/modules/AudioEngine/models/ToasterAutomationParams.ts
+  s_0314bb17e5dee3::t_af5172f641950a 14
+.agents/decisions/0052-a-disposed-wasm-engine-drains-in-paced-steps-before-it-is-freed.md
+  s_0314bb17e5dee3::t_b664d01d7b120c 12
+src/modules/AudioEngine/worklets/__tests__/bacteriaProcessor.spec.ts
+  s_0314bb17e5dee3::t_02337de1676320 10
+src/modules/AudioEngine/repositories/devices/toneShaping/__tests__/bitcrusherRateReduction.spec.ts
+  s_0314bb17e5dee3::t_59eb84d425328c 4
+  s_0314bb17e5dee3::t_3271a1449dfd5c 85
+.agents/decisions/0051-wasm-bank-commit-retires-instead-of-releasing-off-thread.md
+  s_0314bb17e5dee3::t_a70001d78ddd45 13
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/grinderOfflineTargetAdmission.integration.spec.ts
+  s_0314bb17e5dee3::t_18e081b6feb35e 13
+src/modules/AudioEngine/worklets/__tests__/grinderProcessorNeuralPatch.spec.ts
+  s_0314bb17e5dee3::t_8e0e4ef1cfa267 10-288
+src/modules/AudioEngine/models/GlutenDspParamNames.ts
+  s_0314bb17e5dee3::t_69bf66bd9eea3a 8
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  s_0314bb17e5dee3::t_0e4c41629854a8 2482
+  s_0314bb17e5dee3::t_4575db97ddcefe 2569
+src/modules/AudioEngine/engine/__tests__/BacteriaNode.spec.ts
+  s_0314bb17e5dee3::t_afdbe25f852132 35
+src/modules/AudioEngine/worklets/__tests__/workletBundleHarness.ts
+  s_0314bb17e5dee3::t_c1cb4dd268f1a2 186
+  s_0314bb17e5dee3::t_0a101a9a904995 38
+  s_0314bb17e5dee3::t_8a8bc0513cd85f 69
+src/modules/AudioEngine/engine/TransientShaperNode.ts
+  s_0314bb17e5dee3::t_79f1977e41c0be 4
+src/modules/AudioEngine/worklets/__tests__/transientShaperProcessor.spec.ts
+  s_0314bb17e5dee3::t_f51a3410428fc0 8
+src/modules/AudioEngine/worklets/__tests__/grinderAudioParamAutomationRamp.spec.ts
+  s_0314bb17e5dee3::t_ad03a8f2b5dad2 3
+  s_0314bb17e5dee3::t_68cb8a234afb8a 11
+src/modules/AudioEngine/worklets/__tests__/levainProcessorDisposalRelease.spec.ts
+  s_0314bb17e5dee3::t_bcce429c5cd636 6-7
+src/modules/AudioEngine/worklets/__tests__/levainProcessorZoneTables.spec.ts
+  s_0314bb17e5dee3::t_a73c5f658abf66 8
+src/modules/AudioEngine/worklets/__tests__/grinderAudioParamDescriptors.spec.ts
+  s_0314bb17e5dee3::t_7701ec91e9840a 3
+src/modules/AudioEngine/worklets/__tests__/grinderAudioParamRtSafety.spec.ts
+  s_0314bb17e5dee3::t_b6fed94d195428 12
+src/modules/AudioEngine/worklets/__tests__/grinderProcessorWasmViews.spec.ts
+  s_0314bb17e5dee3::t_bc3ff962543809 12
+src/modules/AudioEngine/worklets/__tests__/proofChamberProcessorShippedMalloc.spec.ts
+  s_0314bb17e5dee3::t_35f0abdb8b9dd5 6
+src/modules/AudioEngine/engine/__tests__/KneadNode.spec.ts
+  s_0314bb17e5dee3::t_87f69e3283719f 22
+src/modules/AudioEngine/engine/__tests__/ProofNodeCreate.spec.ts
+  s_0314bb17e5dee3::t_b160095e09fca4 48
+src/modules/AudioEngine/worklets/__tests__/scoringProcessorWasmViews.spec.ts
+  s_0314bb17e5dee3::t_0ad946a5fbb8c7 12
+src/modules/AudioEngine/engine/KneadNode.ts
+  s_0314bb17e5dee3::t_00f2c038c7e0d2 11
+src/modules/AudioEngine/models/NativeSampleBank.ts
+  s_0314bb17e5dee3::t_3c27957049a1a7 9
+src/modules/AudioEngine/worklets/__tests__/grinderAudioParamKRate.spec.ts
+  s_0314bb17e5dee3::t_30df8df42f1e43 10
+src/modules/AudioEngine/engine/__tests__/GlutenNode.spec.ts
+  s_0314bb17e5dee3::t_6f32e0c9d9be2a 33
+src/modules/AudioEngine/engine/__tests__/grinderControlRateParams.spec.ts
+  s_0314bb17e5dee3::t_0b879b31c771ac 27
+src/modules/AudioEngine/worklets/__tests__/workletPortMessageParity.spec.ts
+  s_0314bb17e5dee3::t_18a8c583a6ffbd 10
+  s_0314bb17e5dee3::t_d5ec62f0e130d1 27
+src/modules/Toaster/useCases/toasterParamBridge/__tests__/setToasterPadParam.spec.ts
+  s_0314bb17e5dee3::t_6853f6d0788518 159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "325cda92d5422b2884fe17939646387bdb8af7b8",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
