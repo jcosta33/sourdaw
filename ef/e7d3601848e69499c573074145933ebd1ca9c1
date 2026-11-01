@@ -1,0 +1,24 @@
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_55244eb93b97d1::t_8e6e59fc180562 1570-1574,1576-1592,1594-1599,1608-1609,1611,1634-1637
+  s_55244eb93b97d1::t_2eb01d8bfb000b 1575,1593,1610,1740
+  s_55244eb93b97d1::t_3f68b74e6fab52 121-125,531-534,793,894,969-1002,1108-1116,1197-1200
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerLoopSeamTiming.spec.ts
+  s_55244eb93b97d1::t_4339f9f8d2f4c9 4,453-508,510
+  s_55244eb93b97d1::t_bf72f19fabff48 509
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "efe7d3601848e69499c573074145933ebd1ca9c1",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
