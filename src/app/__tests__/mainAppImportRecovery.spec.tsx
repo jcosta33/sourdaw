@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     render: vi.fn(),
     renderError: vi.fn(),
     reportError: vi.fn(),
+    logError: vi.fn<(error: Error) => void>(),
     renderWithoutAct: false,
     resetBrowserScale: vi.fn(),
     roots: [] as Root[],
@@ -35,6 +36,9 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     resetDisplayScaleForStartup: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('#/styles/main.css', () => ({}));
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: mocks.logError, setWriters: vi.fn() },
+}));
 vi.mock('../rejectIdentityTransitionOnBootstrapFailure', () => ({
     rejectIdentityTransitionOnBootstrapFailure: mocks.rejectBootstrap,
 }));
@@ -114,11 +118,16 @@ function appWasIssued(): boolean {
     return mocks.render.mock.calls.some(([element]) => isValidElement(element) && element.type === App);
 }
 function expectTerminalReport(firstReason: unknown, secondReason: unknown): void {
-    expect(mocks.reportError).toHaveBeenCalledOnce();
-    const reported: unknown = mocks.reportError.mock.calls[0]?.[0];
+    expect(mocks.logError).toHaveBeenCalledOnce();
+    const logged = mocks.logError.mock.calls[0]?.[0];
+    if (logged === undefined) {
+        throw new Error('The terminal App failure was not logged');
+    }
+    expect(logged.message).toBe('The application module failed to load');
+    const reported: unknown = logged.cause;
     expect(reported).toBeInstanceOf(AggregateError);
     if (!(reported instanceof AggregateError)) {
-        throw new Error('Terminal App causes were not reported');
+        throw new Error('Terminal App causes were not retained in the log');
     }
     expect(reported.message).toBe('Sourdaw App import failed after its single retry');
     expect(reported.errors).toHaveLength(2);
@@ -132,6 +141,7 @@ function expectTerminalReport(firstReason: unknown, secondReason: unknown): void
     expect(secondImportRejection.cause).toBe(secondReason);
     expect(reported.errors[0]).toBe(firstImportRejection);
     expect(reported.errors[1]).toBe(secondImportRejection);
+    expect(mocks.reportError).not.toHaveBeenCalled();
 }
 async function rejectAppTwice(firstReason: unknown, secondReason: unknown): Promise<void> {
     const first = gateApp();

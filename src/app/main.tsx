@@ -95,10 +95,7 @@ async function renderApplication(): Promise<void> {
             // Give their module-map entries time to settle before the sole retry.
             await new Promise<void>((resolve) => setTimeout(resolve, 100));
             return import('./App').catch((error: unknown) => {
-                reportError(
-                    new AggregateError([firstImportError, error], 'Sourdaw App import failed after its single retry')
-                );
-                throw error;
+                throw new AggregateError([firstImportError, error], 'Sourdaw App import failed after its single retry');
             });
         })
         .then(

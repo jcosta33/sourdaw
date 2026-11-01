@@ -523,11 +523,16 @@ describe('app main composition', () => {
                     mocks.render.mock.invocationCallOrder[0]!
                 );
             }
-            expect(mocks.reportError).toHaveBeenCalledOnce();
-            const reported: unknown = mocks.reportError.mock.calls[0]?.[0];
+            expect(mocks.logError).toHaveBeenCalledOnce();
+            const logged = mocks.logError.mock.calls[0]?.[0];
+            if (logged === undefined) {
+                throw new Error('The terminal App failure was not logged');
+            }
+            expect(logged.message).toBe('The application module failed to load');
+            const reported: unknown = logged.cause;
             expect(reported).toBeInstanceOf(AggregateError);
             if (!(reported instanceof AggregateError)) {
-                throw new Error('Terminal import causes were not reported');
+                throw new Error('Terminal import causes were not retained in the log');
             }
             expect(mocks.importRejections).toHaveLength(2);
             const [firstImportRejection, secondImportRejection] = mocks.importRejections;
@@ -540,6 +545,7 @@ describe('app main composition', () => {
             expect(reported.errors).toHaveLength(2);
             expect(reported.errors[0]).toBe(firstImportRejection);
             expect(reported.errors[1]).toBe(secondImportRejection);
+            expect(mocks.reportError).not.toHaveBeenCalled();
             const terminal = mocks.render.mock.calls[1]?.[0];
             if (!isValidElement<{ onReload: () => void }>(terminal)) {
                 throw new Error('Terminal startup view was not rendered');
@@ -560,10 +566,28 @@ describe('app main composition', () => {
 
         expect(mocks.reportError).not.toHaveBeenCalled();
         expect(mocks.logError).toHaveBeenCalledOnce();
-        // Vitest wraps a module rejection in its own mock-factory error and keeps the original as `cause`.
-        expect(mocks.logError).toHaveBeenCalledWith(
-            expect.objectContaining({ cause: expect.objectContaining({ cause: failure }) })
-        );
+        const logged = mocks.logError.mock.calls[0]?.[0];
+        if (logged === undefined) {
+            throw new Error('The terminal App failure was not logged');
+        }
+        expect(logged.message).toBe('The application module failed to load');
+        const reported: unknown = logged.cause;
+        expect(reported).toBeInstanceOf(AggregateError);
+        if (!(reported instanceof AggregateError)) {
+            throw new Error('The terminal App failure cause was not an AggregateError');
+        }
+        expect(reported.errors).toHaveLength(2);
+        expect(mocks.importRejections).toHaveLength(2);
+        expect(reported.errors[0]).toBe(mocks.importRejections[0]);
+        expect(reported.errors[1]).toBe(mocks.importRejections[1]);
+        for (const importRejection of reported.errors) {
+            expect(importRejection).toBeInstanceOf(Error);
+            if (!(importRejection instanceof Error)) {
+                throw new Error('The AggregateError did not retain an import rejection');
+            }
+            // Vitest wraps each module rejection in its own mock-factory error and keeps the original as `cause`.
+            expect(importRejection.cause).toBe(failure);
+        }
         const logOrder = mocks.logError.mock.invocationCallOrder[0];
         const terminalRenderOrder = mocks.render.mock.invocationCallOrder[1];
         expect(logOrder).toBeDefined();

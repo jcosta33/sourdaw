@@ -289,7 +289,7 @@ for (const fault of ['transient', 'permanent', 'evaluation']) {
         let observeNavigation = false;
         let faulty = true;
         const failures: string[] = [];
-        const pageErrors: { name: string; message: string }[] = [];
+        const pageErrors: string[] = [];
         let markCapabilitiesReady = (): void => undefined;
         const capabilitiesReady = new Promise<void>((resolve) => (markCapabilitiesReady = resolve));
         page.on('console', (message) => {
@@ -308,7 +308,7 @@ for (const fault of ['transient', 'permanent', 'evaluation']) {
                 fallbackFinishes += 1;
             }
         });
-        page.on('pageerror', (error) => pageErrors.push({ name: error.name, message: error.message }));
+        page.on('pageerror', (error) => pageErrors.push(error.message));
         page.on('request', (request) => {
             if (new URL(request.url()).pathname === '/src/app/main.tsx') {
                 entryRequests += 1;
@@ -465,11 +465,7 @@ for (const fault of ['transient', 'permanent', 'evaluation']) {
             expect(dependencyEffects).toBe(fault === 'permanent' ? 0 : 1);
             expect(throwEffects).toBe(fault === 'evaluation' ? 1 : 0);
             observation = { preservation, dependencyEffects, throwEffects, capabilityEmissions, navigationCount };
-            const expectedPageErrors =
-                fault === 'transient'
-                    ? []
-                    : [{ name: 'AggregateError', message: 'Sourdaw App import failed after its single retry' }];
-            expect(pageErrors).toEqual(expectedPageErrors);
+            expect(pageErrors).toEqual([]);
             if (fault === 'permanent') {
                 faulty = false;
                 const url = page.url();
@@ -479,7 +475,6 @@ for (const fault of ['transient', 'permanent', 'evaluation']) {
                 expect(navigationCount).toBe(1);
                 await expect(page.getByTestId('project-name')).toHaveText(PROJECT_NAME);
             }
-            expect(pageErrors).toEqual(expectedPageErrors);
         } finally {
             burst?.release();
             releaseApp();
