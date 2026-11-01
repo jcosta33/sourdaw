@@ -954,7 +954,7 @@ A subfolder of `useCases/` in a device module (`glutenParamBridge/`, `fermenterP
 
 A **projection** is a derived, disposable read view of project truth. It is not authoritative, and it is rebuilt from its source rather than patched (`docs/architecture/06-crdt-collaboration.md` §5).
 
-- **Logic belongs in `useCases/`**, in files whose names usually carry `Projection`. A projection is behavior that reads truth and returns or publishes a view, so it follows the use-case rules; a pure computation inside it may be extracted to `services/` or `transformers/`.
+- **Logic belongs in `useCases/`**, with no single file-naming convention. A projection is behavior that reads truth and returns or publishes a view, so it follows the use-case rules; a pure computation inside it may be extracted to `services/` or `transformers/`.
 - **Its shape is a model** when it is a stable data type (`models/`).
 - **Its output is read through the module's `stores/` barrel or a use case.** Consumers never patch a projected store by hand; they rebuild it from truth.
 - The document-to-store projection bridge lives in `CrdtDocument/useCases/projection/` because the document is what it reads.

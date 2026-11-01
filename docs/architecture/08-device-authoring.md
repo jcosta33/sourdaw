@@ -1,6 +1,6 @@
 # Authoring a Built-in Device (Bakery Playbook)
 
-The built-in instruments and effects are the bread-named modules — Fermenter (synth), Toaster (drums), Gluten (compressor), and so on. The built-in device set is defined in code, not in prose: the instrument, effect, and native-DSP descriptors in `src/modules/Arrangement/models/PluginDescriptors/` (`BUILTIN_INSTRUMENT_DESCRIPTORS`, `BUILTIN_EFFECT_DESCRIPTORS`, `NATIVE_DSP_DESCRIPTORS`) list each device and its parameters, and `src/modules/AudioEngine/engine/wasmDeviceRegistry.ts` lists the devices with an async WASM engine. Devices share a repeatable anatomy across four surfaces: a TypeScript module, a Rust DSP engine, an AudioEngine node, and a panel registration. This document is the playbook for adding a new one or changing an existing one.
+The built-in instruments and effects are the bread-named modules — Fermenter (synth), Toaster (drums), Gluten (compressor), and so on. The built-in device set is defined in code, not in prose: the built-in devices are described by descriptors (most in their own `<Device>Descriptor.ts` under `src/modules/Arrangement/models/PluginDescriptors/`), and `BUILTIN_PLUGINS` in `src/modules/Arrangement/models/DeviceParameter.ts` aggregates them. Separately, `src/modules/AudioEngine/engine/wasmDeviceRegistry.ts` lists the devices with an async WASM engine. Devices share a repeatable anatomy across four surfaces: a TypeScript module, a Rust DSP engine, an AudioEngine node, and a panel registration. This document is the playbook for adding a new one or changing an existing one.
 
 It complements:
 
@@ -12,12 +12,12 @@ It complements:
 
 ## 1. Anatomy of a device
 
-| Surface      | Location                                                   | Responsibility                                |
-| ------------ | ---------------------------------------------------------- | --------------------------------------------- |
-| TS module    | `src/modules/<Device>/`                                    | patch state, telemetry, panel UI, use cases   |
-| Rust engine  | `crates/daw-dsp/src/<device>/`                             | sample-level DSP, dual-compiled native + WASM |
-| Engine node  | `src/modules/AudioEngine/engine/<Device>Node.ts`           | wraps the WASM instance as a graph node       |
-| Panel wiring | `WorkspaceShell` device panels + `NativeDspDescriptors.ts` | how the UI opens and what parameters exist    |
+| Surface      | Location                                                              | Responsibility                                |
+| ------------ | --------------------------------------------------------------------- | --------------------------------------------- |
+| TS module    | `src/modules/<Device>/`                                               | patch state, telemetry, panel UI, use cases   |
+| Rust engine  | `crates/daw-dsp/src/<device>/`                                        | sample-level DSP, dual-compiled native + WASM |
+| Engine node  | `src/modules/AudioEngine/engine/<Device>Node.ts`                      | wraps the WASM instance as a graph node       |
+| Panel wiring | `WorkspaceShell` device panels + the device's `<Device>Descriptor.ts` | how the UI opens and what parameters exist    |
 
 Not every device has every surface. Yeast (MIDI FX) and CvGate are TS-side only; the Tuner is the `scoring` crate; ProofChamber is its own `proof-chamber` crate; Crumbs adds a desktop-only native path (`repositories/crumbsBridge/`) beside its WASM engine. Read the sibling module's own `AGENTS.md` and its entry in `wasmDeviceRegistry.ts` before copying its shape.
 
@@ -39,16 +39,16 @@ After changing an engine's WASM surface, rebuild with `pnpm wasm:dsp` (or `wasm:
 
 ## 4. Wiring checklist for a new device
 
-1. TS module with store (patch/telemetry split), use cases, `handlers/` map exported via `get<Device>Handlers()`.
-2. Register the handler map in `src/app/bootstrap.ts` — order is pinned by `src/app/__tests__/bootstrap.spec.ts`; update the spec.
+1. TS module with store (patch/telemetry split) and use cases. Add a `handlers/` map exported via `get<Device>Handlers()` only if the device owns its own `AppAction`s (`GrandBoule` does); ordinary parameter edits go through the generic `setDeviceParameter` action.
+2. If the device has a handler map, add it to `src/app/getProductionCommandHandlerMaps.ts`. `src/app/__tests__/bootstrap.spec.ts` pins which maps register and in what order; update the spec.
 3. Rust engine in `crates/daw-dsp/` + `*Instance` export; add to the workspace if new.
-4. Engine node in `AudioEngine/engine/` via `wasmDeviceRegistry.ts`; worklet processor using `src/infra/audioWorklet/workletInitShared.ts` for the init handshake.
-5. Parameter descriptor in `Arrangement/models/PluginDescriptors/NativeDspDescriptors.ts` so automation and generic inspectors see it.
+4. Engine node in `AudioEngine/engine/` via `wasmDeviceRegistry.ts`; the engine node runs the worklet init handshake through `src/infra/audioWorklet/workletInitShared.ts`.
+5. A `<Device>Descriptor.ts` in `Arrangement/models/PluginDescriptors/`, listed in `BUILTIN_PLUGINS` (`Arrangement/models/DeviceParameter.ts`), so automation and generic inspectors see it.
 6. Panel view under the module's `presentations/views` barrel; route through `panel.showDevice`.
 7. Stylesheet in `src/styles/utilities/modules/`.
 8. Specs: one per source file in `__tests__/`, per `testing-file-layout`.
 
-Skip a step and something degrades silently: no handler map → no undo; no telemetry split → 60 Hz undo churn; no descriptor → invisible to automation; wrong init path → worklet never becomes ready.
+Skip a step and something degrades silently: a parameter write outside `executeAppAction` → no undo entry; no telemetry split → 60 Hz undo churn; no descriptor → invisible to automation; wrong init path → worklet never becomes ready.
 
 ## 5. Study these first
 
@@ -58,6 +58,7 @@ Skip a step and something degrades silently: no handler map → no undo; no tele
 
 ## References
 
-- `src/modules/Arrangement/models/PluginDescriptors/` and `src/modules/AudioEngine/engine/wasmDeviceRegistry.ts` — the built-in device set
+- `BUILTIN_PLUGINS` in `src/modules/Arrangement/models/DeviceParameter.ts` and the `<Device>Descriptor.ts` files in `src/modules/Arrangement/models/PluginDescriptors/` — the built-in device set
+- `src/modules/AudioEngine/engine/wasmDeviceRegistry.ts` — the devices with an async WASM engine
 - `docs/architecture/07-wasm-dsp-pipeline.md` — build and loading
 - `docs/06-testing.md` — spec layout
