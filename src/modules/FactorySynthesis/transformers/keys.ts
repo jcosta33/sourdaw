@@ -1,12 +1,11 @@
-import { createMono, toAudioBufferMono } from '../services/bufferCreation';
+import { type RenderedFactorySample } from '../models/RenderedFactorySample';
+import { createMono, monoPcm } from '../services/bufferCreation';
 import { normalize, softClip } from '../services/dynamics';
 import { feedbackDelay } from '../services/effects';
 import { applyEnvelope, renderEnvelope } from '../services/envelopes';
 import { biquad } from '../services/filters';
 import { mixMono } from '../services/mixing';
 import { midiToFreq, renderFmOscillator, renderSaw, renderSine, renderTriangle } from '../services/oscillators';
-
-import { type FactorySample } from './types';
 
 const C3 = 48;
 const C3_FREQ = midiToFreq(C3);
@@ -159,7 +158,7 @@ function renderSupersaw(): Float32Array {
     return out;
 }
 
-export function generateKeysPack(ctx: AudioContext): FactorySample[] {
+export function generateKeysPack(): RenderedFactorySample[] {
     const base = 'factory-keys';
     const tags = ['keys', 'melodic'];
     return [
@@ -175,6 +174,6 @@ export function generateKeysPack(ctx: AudioContext): FactorySample[] {
         category: 'keys' as const,
         tags: [...tags, ...s.extra],
         pitch: C3,
-        buffer: toAudioBufferMono(ctx, s.render()),
+        ...monoPcm(s.render()),
     }));
 }

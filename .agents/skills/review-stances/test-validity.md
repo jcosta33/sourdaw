@@ -171,6 +171,22 @@ Run the whole affected file so the changed setup is exercised with its normal ho
 seeding, fewer tracks, moving work to hooks, or a timeout increase does not prove the fixture is
 both realistic and bounded.
 
+### 2026-11-01 — full-metric renders consumed the receipt-bound case's deadline (PR #6011)
+
+PR #6011 (`57af0ac45e163d83d6a857e9ef866e00a86708c4`) added the per-call receipt-bound case in
+`previewMeasurement.spec.ts`: two measurements over a four-track scope, eight renders each, every
+render a two-second buffer measured for every metric. Locally it took about 1.2 s; a later Gate on
+an unrelated head timed it out at 5,067 ms against the 5,000 ms default. A CPU profile attributes
+the case to true-peak oversampling, FFT and integrated loudness over the synthetic audio, not to
+the planning loop. Review checked that the receipt exceeded the bound but not how long its
+fixture audio cost to measure on a loaded runner.
+
+Measure a new analysis-heavy case's local duration and require headroom against the default
+deadline. Shorten case-local render length while keeping the scope, the metric set and the direct
+assertion that the raw receipt exceeds `maxReceiptBytesPerCall`. Fewer metrics or tracks drop the
+receipt below the bound and stop observing it; a timeout increase hides the cost instead of
+bounding it.
+
 ### 2026-10-30 — source-clock fixtures must match hydrated project state (PR #2169)
 
 PR #2169 (`bfbf1dd69b18c2a843472a04815ccab773a4b364`) used a 600 BPM fixture that real publication
@@ -2541,3 +2557,34 @@ file once #5917 merged. A spec must not read refs, history or remotes that a CI 
 does not fetch. Grep changed specs for `origin/`, `HEAD~` and `merge-base`, then compare against
 the checkout depth of every job that collects them: `unit` uses `fetch-depth: 0`, while
 `tooling-unit` uses the default shallow checkout.
+
+### Process-catalog fixtures must carry the production transport boundary (#5331)
+
+PR #5331 (`4781fe4e1e`) introduced a controlled process monitor whose nested
+`execFileSync` calls retained Node's smaller default output buffer while the real
+monitor allowed a bounded larger catalog. A valid catalog above that fixture
+limit failed before readiness and hid the actual error behind ignored supervisor
+output and a later wait timeout. Historical private reviewer prompts and tiers
+are unknown; the mechanical gap was an untested nested transport boundary.
+
+Exercise the actual generated monitor with a synthetic valid catalog above the
+old default and below the production ceiling through both forwarding routes.
+Require exact complete bytes, and make the old-default mutation fail. Reject
+over-ceiling output without forwarding partial bytes; reject opaque catalog
+rows before admission. Keep production monitoring unavailable on incomplete
+input. When readiness fails, capture the supervisor's actual error, exit and
+private readiness records before teardown; a later pass does not explain the
+original failure. Use synthetic process data in durable evidence rather than
+publishing real process environment values.
+
+### 2026-11-01 — a parametrised case looped heavy renders inside its body (#6000, fixed in #6014)
+
+PR #6000 added an `it.each` in `cropHistoryFromRenderedBuffer.spec.ts` whose body looped two sample
+rates and four tails, eight renders of up to millions of frames per case. On a loaded CI shard the
+case exceeded the 5 s timeout and failed the Gate of an unrelated pull request. #6014 split it into
+one row per combination.
+
+A parametrised case must not loop heavy work inside its body. Put the product in the table, so each
+case's cost fits the timeout and a failure names its combination. When reviewing an `it.each`, look
+for `for` loops, `forEach` or nested tables in the case body that multiply its renders, decodes or
+fixtures.

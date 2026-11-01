@@ -104,6 +104,7 @@ vi.mock('#/modules/Collaboration/stores', () => ({ collaborationStore: { value: 
 vi.mock('#/modules/Collaboration/useCases', () => ({ getAssetTransfer: () => null }));
 vi.mock('../../scheduling/scheduleFrozenTrack', () => ({ scheduleFrozenTrack: () => false }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    audioEngine: { beginAudioPreviewIntent: () => ({ release: vi.fn() }) },
     ensureCachedAudioBuffersDurable: vi.fn(),
     createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
     resumeEngine: mocks.resumeEngine,

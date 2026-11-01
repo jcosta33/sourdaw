@@ -1,12 +1,6 @@
-export type FactorySampleCategory = 'drums' | 'bass' | 'keys' | 'vocal-loop' | 'fx';
+import { type RenderedFactorySample } from '../models/RenderedFactorySample';
 
-export type FactorySample = {
-    id: string;
-    name: string;
-    category: FactorySampleCategory;
-    tags: string[];
-    bpm?: number;
-    pitch?: number;
+export type FactorySample = Omit<RenderedFactorySample, 'channels' | 'sampleRate'> & {
     buffer: AudioBuffer;
 };
 

@@ -28,9 +28,12 @@ export type HostedToolPlan = {
  * forces the model to call at least one tool from `toolNames`, so the loop's final allowed turn
  * cannot end in prose. It does not cap the turn at one call: a workflow's terminal shape is two
  * calls in the same turn (`selectWorkflowCapability` beside `command.batch.propose`), and the
- * turn's call count stays bounded by `maxCallsPerTurn` instead.
+ * turn's call count stays bounded by `maxCallsPerTurn` instead. Explicit false narrows a turn
+ * to at most one call, or exactly one with required; omission preserves multiple-call turns.
  */
-export type HostedToolChoiceDirective = { mode: 'auto' } | { mode: 'required'; toolNames: readonly string[] };
+export type HostedToolChoiceDirective = ({ mode: 'auto' } | { mode: 'required'; toolNames: readonly string[] }) & {
+    parallelToolCalls?: boolean;
+};
 
 export const AUTO_TOOL_CHOICE: HostedToolChoiceDirective = { mode: 'auto' };
 

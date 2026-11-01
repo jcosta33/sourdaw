@@ -70,5 +70,10 @@ export function createAudioPreviewIntents() {
         }
     }
 
-    return { beginOrdinary, beginExclusive, dispose };
+    return {
+        beginOrdinary,
+        beginExclusive,
+        dispose,
+        hasExclusive: () => exclusive !== null && !exclusive.signal.aborted,
+    };
 }

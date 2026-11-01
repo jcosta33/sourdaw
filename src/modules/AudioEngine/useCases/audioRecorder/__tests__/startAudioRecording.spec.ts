@@ -8,6 +8,11 @@ const mocks = vi.hoisted(() => ({
     startInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
     tracks: [] as Array<{ id: string; inputMonitoring: string }>,
+    loggerError: vi.fn(),
+}));
+
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { warn: vi.fn(), error: mocks.loggerError, info: vi.fn(), debug: vi.fn() },
 }));
 
 vi.mock('../../../repositories/audioRecorder/recording', () => ({
@@ -117,6 +122,20 @@ describe('startAudioRecording', () => {
 
             expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
             expect(mocks.stopTrackInputMonitoring).not.toHaveBeenCalled();
+        });
+
+        it('keeps an admitted recording and logs when the listening path fails', async () => {
+            mocks.tracks.push({ id: 'track-1', inputMonitoring: 'off' });
+            const failure = new Error('listening edge teardown failed');
+            mocks.stopTrackInputMonitoring.mockImplementationOnce(() => {
+                throw failure;
+            });
+
+            await expect(startAudioRecording('track-1', vi.fn())).resolves.toBe(true);
+
+            expect(mocks.stopTrackInputMonitoring).toHaveBeenCalledWith('track-1');
+            expect(mocks.loggerError).toHaveBeenCalledTimes(1);
+            expect(mocks.loggerError.mock.calls[0]?.[0]).toMatchObject({ cause: failure });
         });
 
         it('reads the mode after admission so a flip made while the grant was pending wins', async () => {

@@ -37,6 +37,7 @@ import { notifyAiChange } from './notifyAiChange';
 import { parsePromptToActions } from './parsePromptToActions';
 import { type PlannedPromptActions, planPromptActions } from './planPromptActions';
 import { recordAgentProviderUsage } from './recordAgentProviderUsage';
+import { stopMeasuredPreviewAudition } from './stopMeasuredPreviewAudition';
 
 export type PromptRequestSource = 'prompt-bar' | 'preset';
 
@@ -129,6 +130,7 @@ export async function submitAdmittedPromptRequest(
         return { status: 'rejected', runId };
     }
     agentRunLifecycle.transitionPhase({ runId, phase: 'planning', revision: createdRevision });
+    void stopMeasuredPreviewAudition();
 
     let cancellationAttempt: Promise<void> | null = null;
     let cancellationWarningReported = false;
@@ -402,6 +404,7 @@ export async function submitAdmittedPromptRequest(
             runId,
             summary: actionLabels.join('\n'),
             metricGoalState: compiled.metricGoalState,
+            applicationToolReceipts: planned.result.applicationToolReceipts ?? [],
             commandIds: parsed.envelope.commands.map((command) => command.commandId),
             serializedBatchIdentity: parsed.envelope.idempotencyKey,
             revision: planned.projectRevision,
