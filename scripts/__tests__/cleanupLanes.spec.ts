@@ -1,4 +1,4 @@
-import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import {
@@ -18,7 +18,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { ownedGuardReceipt, readCleanupFile } from '../cleanupLaneBookkeeping.ts';
 import {
@@ -36,9 +36,9 @@ import {
     githubAuthorizationGitEnv,
     type authenticateRole,
 } from '../githubAppIdentity.ts';
-import { CENSUS_ATTEMPTS, laneIsActive, sameUserProcessParents } from '../laneActivity.ts';
+import { CENSUS_ATTEMPTS, laneIsActive } from '../laneActivity.ts';
 import { guardFailureReceiptPath, type GuardFailureReceipt } from '../prContract.ts';
-import { shellPort, type PullRequest, type ShellRunner } from '../removeLane.ts';
+import { capture as nativeCapture, shellPort, type PullRequest, type ShellRunner } from '../removeLane.ts';
 import { writeGuardFailureReceipt } from '../resourceGuard.ts';
 import * as resourceGuard from '../resourceGuard.ts';
 
@@ -1227,29 +1227,12 @@ describe('automatic lane cleanup', () => {
 describe('complete lane activity proof', () => {
     const uid = process.getuid?.() ?? 0;
     const catalog = `p${process.pid}\0\nfcwd\0tDIR\0n/repo\0\n`;
-    const capture = (command: string) => (command === 'ps' ? `${process.pid} ${process.ppid} ${uid}` : catalog);
-
-    it('maps same-UID processes to their parents only from a complete process table', () => {
-        expect(sameUserProcessParents('1 0 0\n10 1 501\n11 10 501\n12 10 0\n', 501, 10)).toEqual(
-            new Map([
-                [10, 1],
-                [11, 10],
-            ])
-        );
-        expect(sameUserProcessParents('10 1 501\n11 ? 501\n', 501, 10)).toBeUndefined();
-        expect(sameUserProcessParents('10 1 501\n11 501\n', 501, 10)).toBeUndefined();
-        expect(sameUserProcessParents('10 1 501\n11 10 501\n11 1 501\n', 501, 10)).toBeUndefined();
-        expect(sameUserProcessParents('10 1 501\n0 1 501\n', 501, 10)).toBeUndefined();
-        expect(sameUserProcessParents('10 1 501\n11 99999999999999999 501\n', 501, 10)).toBeUndefined();
-        expect(sameUserProcessParents('10 1 0\n', 501, 10)).toBeUndefined();
-        expect(sameUserProcessParents('', 501, 10)).toBeUndefined();
-    });
+    const capture = (command: string) => (command === 'ps' ? `${process.pid} ${uid}` : catalog);
 
     it('refuses a successful but incomplete catalog omitting a live process', () => {
         expect(() =>
             laneIsActive('/repo/lane', {
-                capture: (command) =>
-                    command === 'ps' ? `${process.pid} ${process.ppid} ${uid}\n${process.ppid} 1 ${uid}` : catalog,
+                capture: (command) => (command === 'ps' ? `${process.pid} ${uid}\n${process.ppid} ${uid}` : catalog),
             })
         ).toThrow('omitted a live process');
     });
@@ -1287,22 +1270,31 @@ describe('complete lane activity proof', () => {
         ).toBe(true);
     });
     describe('retries a census made inconclusive by host churn', () => {
-        const live = `${process.pid} ${process.ppid} ${uid}\n${process.ppid} 1 ${uid}`;
+        const live = `${process.pid} ${uid}\n${process.ppid} ${uid}`;
         const self = catalog;
         const parent = `p${process.ppid}\0\nfcwd\0tDIR\0n/repo\0\n`;
         const held = `${self}f7\0tREG\0n/repo/lane/held\0\n`;
-        const replay = (catalogs: string[], processes: (sample: number) => string = () => live) => {
+        const replay = (
+            catalogs: string[],
+            processes: (sample: number) => string = () => live,
+            targeted: ShellRunner['capture'] = () => ''
+        ) => {
             let lsofCalls = 0;
             let psCalls = 0;
+            const selections: string[] = [];
             const shell = {
-                capture: (command: string) => {
+                capture: (command: string, args: string[], options?: Parameters<ShellRunner['capture']>[2]) => {
                     if (command === 'ps') {
                         return processes(psCalls++);
+                    }
+                    if (args.includes('-p')) {
+                        selections.push(args[args.indexOf('-p') + 1] ?? '');
+                        return targeted(command, args, options);
                     }
                     return catalogs[lsofCalls++ % catalogs.length] ?? '';
                 },
             };
-            return { shell, lsofCalls: () => lsofCalls };
+            return { shell, lsofCalls: () => lsofCalls, selections: () => selections };
         };
 
         it('returns the first conclusive absence after an attempt omitted a live process', () => {
@@ -1334,7 +1326,7 @@ describe('complete lane activity proof', () => {
         });
         it('throws the uncovered-successor refusal unchanged after the bound', () => {
             const gone = spawnSync(process.execPath, ['-e', '']).pid;
-            const withGone = `${process.pid} ${process.ppid} ${uid}\n${gone} 1 ${uid}`;
+            const withGone = `${process.pid} ${uid}\n${gone} ${uid}`;
             const census = replay([self], (sample) => (sample % 3 === 2 ? live : withGone));
             expect(() => laneIsActive('/repo/lane', census.shell)).toThrow(
                 /^open-file inspection has an uncovered successor process$/
@@ -1348,113 +1340,146 @@ describe('complete lane activity proof', () => {
             );
             expect(census.lsofCalls()).toBe(0);
         });
-        describe('covers a process born after the catalog only through a cataloged ancestor', () => {
-            const helpers: ChildProcess[] = [];
-            const pids = { first: 0, second: 0, gone: 0 };
-            const cataloged = `${self}${parent}`;
-            const rows = (...extra: Array<[number, number]>) =>
-                [[process.pid, process.ppid], [process.ppid, 1], ...extra]
-                    .map(([pid, ancestor]) => `${pid} ${ancestor} ${uid}`)
-                    .join('\n');
-            const alternate = (before: string, after: string) => (sample: number) =>
-                sample % 2 === 0 ? before : after;
-            const startHelper = () => {
-                const child = spawn('sleep', ['300'], { stdio: 'ignore' });
-                helpers.push(child);
-                if (child.pid === undefined) {
-                    throw new Error('helper process did not start');
-                }
-                return child.pid;
+        describe('inspects the processes the full catalog omitted', () => {
+            const alone = `${process.pid} ${uid}`;
+            const newborn = (sample: number) => (sample % 2 === 0 ? alone : live);
+            const laneCwd = `p${process.ppid}\0\nfcwd\0tDIR\0n/repo/lane\0\n`;
+            const answer = (output: string) => () => output;
+            // launchd adopts and reaps the orphan, so it is gone as soon as it dies.
+            const startOrphan = () => {
+                const pid = Number(
+                    execFileSync('/bin/sh', ['-c', 'sleep 300 >/dev/null 2>&1 & echo $!'], { encoding: 'utf8' }).trim()
+                );
+                let stopped = false;
+                const stop = () => {
+                    if (stopped) {
+                        return;
+                    }
+                    stopped = true;
+                    process.kill(pid, 'SIGKILL');
+                    const pause = new Int32Array(new SharedArrayBuffer(4));
+                    for (let wait = 0; wait < 500; wait++) {
+                        try {
+                            process.kill(pid, 0);
+                        } catch {
+                            return;
+                        }
+                        Atomics.wait(pause, 0, 0, 10);
+                    }
+                    throw new Error(`orphan ${pid} outlived SIGKILL`);
+                };
+                return { pid, stop };
             };
 
-            beforeAll(() => {
-                pids.first = startHelper();
-                pids.second = startHelper();
-                pids.gone = spawnSync(process.execPath, ['-e', '']).pid;
+            it.each([
+                { name: 'a newborn', processes: newborn },
+                { name: 'an earlier process', processes: () => live },
+            ])('returns absence when the direct catalog shows $name holding nothing in the lane', ({ processes }) => {
+                const census = replay([self], processes, answer(parent));
+                expect(laneIsActive('/repo/lane', census.shell)).toBe(false);
+                expect(census.lsofCalls()).toBe(1);
+                expect(census.selections()).toEqual([String(process.ppid)]);
             });
-            afterAll(async () => {
-                await Promise.all(
-                    helpers.map(async (child) => {
-                        const exited = once(child, 'exit');
-                        child.kill();
+            it('selects the omitted processes with an lsof call that tolerates an unmatched selection', () => {
+                const calls: Array<{ args: string[]; options: unknown }> = [];
+                const census = replay([self], newborn, (_command, args, options) => {
+                    calls.push({ args, options });
+                    return parent;
+                });
+                expect(laneIsActive('/repo/lane', census.shell)).toBe(false);
+                expect(calls).toEqual([
+                    {
+                        args: ['-nP', '-a', '-p', String(process.ppid), '-F0pftn'],
+                        options: { preserveStdout: true, unmatchedProcesses: 'allowed' },
+                    },
+                ]);
+            });
+            it('reports a lane reference held by a process only the direct catalog observed', () => {
+                const census = replay([self], newborn, answer(laneCwd));
+                expect(laneIsActive('/repo/lane', census.shell)).toBe(true);
+                expect(census.lsofCalls()).toBe(1);
+            });
+            it.each([
+                { name: 'omits a live process', output: self, reason: /^open-file inspection omitted a live process$/ },
+                {
+                    name: 'is empty while the process lives',
+                    output: '',
+                    reason: /^open-file inspection omitted a live process$/,
+                },
+                { name: 'is incomplete', output: 'p1', reason: /^open-file inspection was incomplete$/ },
+            ])('refuses after the bound when the direct catalog $name', ({ output, reason }) => {
+                const census = replay([self], newborn, answer(output));
+                expect(() => laneIsActive('/repo/lane', census.shell)).toThrow(reason);
+                expect(census.lsofCalls()).toBe(CENSUS_ATTEMPTS);
+                expect(census.selections()).toHaveLength(CENSUS_ATTEMPTS);
+            });
+            it('inspects a live successor of a missed process instead of refusing it', () => {
+                const gone = spawnSync(process.execPath, ['-e', '']).pid;
+                const withGone = `${process.pid} ${uid}\n${gone} ${uid}`;
+                const census = replay([self], (sample) => (sample === 2 ? live : withGone), answer(parent));
+                expect(laneIsActive('/repo/lane', census.shell)).toBe(false);
+                expect(census.selections()).toEqual([String(process.ppid)]);
+            });
+            it('treats an omitted process that exits before the direct catalog as missed', () => {
+                const orphan = startOrphan();
+                try {
+                    const omitted = `${process.pid} ${uid}\n${orphan.pid} ${uid}`;
+                    const census = replay(
+                        [self],
+                        (sample) => [alone, omitted][sample] ?? alone,
+                        () => {
+                            orphan.stop();
+                            return '';
+                        }
+                    );
+                    expect(laneIsActive('/repo/lane', census.shell)).toBe(false);
+                    expect(census.lsofCalls()).toBe(1);
+                    expect(census.selections()).toEqual([String(orphan.pid)]);
+                } finally {
+                    orphan.stop();
+                }
+            });
+            it('resamples successors after an omitted process exits before the direct catalog', () => {
+                const orphan = startOrphan();
+                try {
+                    const omitted = `${process.pid} ${uid}\n${orphan.pid} ${uid}`;
+                    const census = replay(
+                        [self],
+                        (sample) => [alone, omitted, live][sample % 3] ?? '',
+                        () => {
+                            orphan.stop();
+                            return '';
+                        }
+                    );
+                    expect(() => laneIsActive('/repo/lane', census.shell)).toThrow(
+                        /^open-file inspection has an uncovered successor process$/
+                    );
+                    expect(census.selections()[1]).toBe(String(process.ppid));
+                } finally {
+                    orphan.stop();
+                }
+            });
+            it.skipIf(process.platform !== 'darwin')(
+                'observes a real newborn the full catalog missed whose working directory is in the lane',
+                async () => {
+                    const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-census-newborn-')));
+                    const lane = join(root, 'lane');
+                    mkdirSync(lane);
+                    const holder = spawn('sleep', ['300'], { cwd: lane, stdio: 'ignore' });
+                    const exited = once(holder, 'exit');
+                    try {
+                        await once(holder, 'spawn');
+                        const born = `${process.pid} ${uid}\n${holder.pid} ${uid}`;
+                        const census = replay([self], (sample) => (sample % 2 === 0 ? alone : born), nativeCapture);
+                        expect(laneIsActive(lane, census.shell)).toBe(true);
+                        expect(census.selections()).toEqual([String(holder.pid)]);
+                    } finally {
+                        holder.kill();
                         await exited;
-                    })
-                );
-            });
-
-            it.each([
-                { name: 'a child of a cataloged process', after: () => rows([pids.first, process.ppid]) },
-                {
-                    name: 'a grandchild through a newborn parent',
-                    after: () => rows([pids.first, process.ppid], [pids.second, pids.first]),
-                },
-                { name: 'a child of the inspecting process', after: () => rows([pids.first, process.pid]) },
-            ])('returns absence on the first attempt for $name', ({ after }) => {
-                const census = replay([cataloged], alternate(rows(), after()));
-                expect(laneIsActive('/repo/lane', census.shell)).toBe(false);
-                expect(census.lsofCalls()).toBe(1);
-            });
-            it.each([
-                {
-                    name: 'its parent is a live earlier process absent from the catalog',
-                    before: () => rows([pids.second, process.ppid]),
-                    after: () => rows([pids.second, process.ppid], [pids.first, pids.second]),
-                    catalog: () => cataloged,
-                },
-                {
-                    name: 'its parent is a gone earlier process absent from the catalog',
-                    before: () => rows([pids.gone, process.ppid]),
-                    after: () => rows([pids.gone, process.ppid], [pids.first, pids.gone]),
-                    catalog: () => cataloged,
-                },
-                {
-                    name: 'it was reparented to launchd, even when launchd is cataloged',
-                    before: () => rows([1, 0]),
-                    after: () => rows([1, 0], [pids.first, 1]),
-                    catalog: () => `${cataloged}p1\0\nfcwd\0tDIR\0n/\0\n`,
-                },
-                {
-                    name: 'its parent is absent from the process sample',
-                    before: () => rows(),
-                    after: () => rows([pids.first, pids.gone]),
-                    catalog: () => cataloged,
-                },
-                {
-                    name: 'its ancestry is a cycle of newborns',
-                    before: () => rows(),
-                    after: () => rows([pids.first, pids.second], [pids.second, pids.first]),
-                    catalog: () => cataloged,
-                },
-                {
-                    name: 'it was in the earlier sample, even with a cataloged parent',
-                    before: () => rows([pids.first, process.ppid]),
-                    after: () => rows([pids.first, process.ppid]),
-                    catalog: () => cataloged,
-                },
-            ])('refuses a live uncataloged process when $name', ({ before, after, catalog }) => {
-                const census = replay([catalog()], alternate(before(), after()));
-                expect(() => laneIsActive('/repo/lane', census.shell)).toThrow(
-                    /^open-file inspection omitted a live process$/
-                );
-                expect(census.lsofCalls()).toBe(CENSUS_ATTEMPTS);
-            });
-            it('admits a covered newborn while resampling successors of a missed process', () => {
-                const before = rows([pids.gone, process.ppid]);
-                const after = rows([pids.gone, process.ppid], [pids.first, process.ppid]);
-                const successors = rows([pids.first, process.ppid], [pids.second, pids.first]);
-                const census = replay([cataloged], (sample) => [before, after, successors][sample] ?? '');
-                expect(laneIsActive('/repo/lane', census.shell)).toBe(false);
-                expect(census.lsofCalls()).toBe(1);
-            });
-            it('refuses a successor descending from a missed process', () => {
-                const after = rows([pids.gone, 1]);
-                const successors = rows([pids.gone, process.ppid], [pids.first, pids.gone]);
-                const census = replay([cataloged], (sample) => [rows(), after, successors][sample % 3] ?? '');
-                expect(() => laneIsActive('/repo/lane', census.shell)).toThrow(
-                    /^open-file inspection has an uncovered successor process$/
-                );
-                expect(census.lsofCalls()).toBe(CENSUS_ATTEMPTS);
-            });
+                        rmSync(root, { recursive: true, force: true });
+                    }
+                }
+            );
         });
     });
     it.skipIf(process.platform !== 'darwin')(

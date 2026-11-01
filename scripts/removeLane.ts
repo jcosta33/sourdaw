@@ -75,7 +75,7 @@ export type LaneRemovalPort = {
     clearGuardFailure: (laneName: string) => void;
 };
 
-export type ShellCaptureOptions = { preserveStdout?: true; processClock?: 'utc' };
+export type ShellCaptureOptions = { preserveStdout?: true; processClock?: 'utc'; unmatchedProcesses?: 'allowed' };
 
 export type ShellRunner = {
     capture: (command: string, args: string[], options?: ShellCaptureOptions) => string;
@@ -807,6 +807,9 @@ export function capture(command: string, args: string[], options?: ShellCaptureO
     if (options?.processClock !== undefined && command !== 'ps') {
         fail('fixed process clock requires ps inspection');
     }
+    if (options?.unmatchedProcesses !== undefined && command !== 'lsof') {
+        fail('unmatched process selection requires lsof inspection');
+    }
     let executable = command;
     if (process.platform === 'darwin' && inspection) {
         if (command === 'lsof') {
@@ -826,7 +829,10 @@ export function capture(command: string, args: string[], options?: ShellCaptureO
     if (result.error !== undefined) {
         throw result.error;
     }
-    if (result.status !== 0) {
+    // lsof exits 1 without a diagnostic when a -p selection matches no readable process. The caller
+    // that allows it must prove each unmatched process gone.
+    const unmatched = options?.unmatchedProcesses === 'allowed' && result.status === 1 && result.stderr === '';
+    if (result.status !== 0 && !unmatched) {
         throw new Error(result.stderr.trim() || `${command} failed with exit ${result.status ?? 'signal'}`);
     }
     if (inspection && result.stderr.trim() !== '') {
