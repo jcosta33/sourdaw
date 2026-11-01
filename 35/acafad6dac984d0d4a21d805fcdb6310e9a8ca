@@ -1,0 +1,30 @@
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/PitchBendLane.spec.tsx
+  s_fec7059b7a251c::t_405fe66f5661af 490,498
+src/modules/TimelineEditor/presentations/hooks/__tests__/useLaneDragSession.spec.tsx
+  s_fec7059b7a251c::t_e99192ada14599 124-133
+  s_fec7059b7a251c::t_e4b7d884eedb1f 277,288-331
+  s_fec7059b7a251c::t_7a0e6da306cb33 332
+src/modules/TimelineEditor/presentations/hooks/useLaneDragSession.ts
+  s_fec7059b7a251c::t_690944146856f9 103-105
+  s_fec7059b7a251c::t_05ebf7688951f2 208
+  s_fec7059b7a251c::t_c6d3d1a71cf4a3 188,193,238
+  s_fec7059b7a251c::t_70b033e751e74c 145-150
+  s_fec7059b7a251c::t_172a53b963423c 236-237
+  s_fec7059b7a251c::t_52c0cea03deed0 180
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "35acafad6dac984d0d4a21d805fcdb6310e9a8ca",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
