@@ -1,0 +1,19 @@
+crates/daw-dsp/benches/quantum-cost-table.md
+  s_0314bb17e5dee3::t_49f29ca838cb3b 141-153,204-224,228-231,235-239,250-255,285-306
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5a39dd787a053b41a2ba4d6d21fbd82bb8ea3e10",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
