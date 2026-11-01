@@ -1,0 +1,37 @@
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_dde1671ba022b8::t_8ef69f6eb9f8ef 1220
+  s_dde1671ba022b8::t_ce48a1ac50a0d8 1204-1218,1221-1222
+  s_dde1671ba022b8::t_4c058d5b469ace 1219
+  s_dde1671ba022b8::t_ad60f7a2da57cb 1370
+  s_dde1671ba022b8::t_e4e1c8a5c41dca 1349-1350
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchPausePlayCommand.integration.spec.ts
+  s_dde1671ba022b8::t_dc3edf92d234cc 594
+  s_dde1671ba022b8::t_3df54145682a0e 744
+  s_dde1671ba022b8::t_4239228c970781 776-777
+  s_dde1671ba022b8::t_c7aca3e6b4fc08 591-593,595-598,605-625
+  s_88fc7e0d05bab6::t_ace4897681870d 626-627
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "617cfbc4d78d73892641931032eb8cc8cfe49c64",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_dde1671ba022b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e4c42ac-51ff-45eb-b81f-f43601ed01dc",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
