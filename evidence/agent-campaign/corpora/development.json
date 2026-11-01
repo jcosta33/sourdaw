@@ -3283,7 +3283,6 @@
                 "query": {
                     "type": "tempo",
                     "facts": {
-                        "name": "Project tempo",
                         "tempo": 120
                     }
                 }
@@ -3317,6 +3316,10 @@
                                 "fact": "summary"
                             },
                             {
+                                "kind": "project-fact",
+                                "fact": "tracks"
+                            },
+                            {
                                 "kind": "query-page",
                                 "callId": "query"
                             }
@@ -3326,13 +3329,14 @@
             ],
             "oracle": {
                 "kind": "answer",
-                "text": "The project has 10 audio/MIDI track(s), 2 bus(es), and 0 folder(s). Master output is separate. Tempo is 120 BPM in 4/4.\n\nThe “object” query returned 16 item(s) on this page out of 16 matching item(s).",
+                "text": "The project has 10 audio/MIDI track(s), 2 bus(es), and 0 folder(s). Master output is separate. Tempo is 120 BPM in 4/4.\n\nProject tracks: “Kick” (“audio”, 0 captured clip(s)); “Snare” (“audio”, 0 captured clip(s)); “Hi-Hat” (“audio”, 0 captured clip(s)); “Overheads” (“audio”, 0 captured clip(s)); “Bass DI” (“audio”, 0 captured clip(s)); “Lead Vocal” (“audio”, 0 captured clip(s)); “Backing Vocals L” (“audio”, 0 captured clip(s)); “Backing Vocals R” (“audio”, 0 captured clip(s)); “Guitar” (“audio”, 0 captured clip(s)); “Keys” (“midi”, 0 captured clip(s)); “Drum Bus” (“bus”, 0 captured clip(s)); “Reverb Bus” (“bus”, 0 captured clip(s)).\n\nThe “object” query returned 16 item(s) on this page out of 16 matching item(s).",
                 "query": {
                     "type": "object",
                     "facts": {
                         "name": "Drum Bus",
                         "trackKind": "bus"
-                    }
+                    },
+                    "total": 16
                 }
             }
         },
