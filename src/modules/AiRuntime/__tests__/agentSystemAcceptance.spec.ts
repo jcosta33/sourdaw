@@ -3201,7 +3201,7 @@ type AnswerOracle = {
  * (1 is not in 16, 8 is not in 0.8, 3 is not in -3), a word never inside a longer word.
  */
 function textStatesValue(text: string, value: Fact): boolean {
-    const escaped = String(value).replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+    const escaped = String(value).replaceAll(/[.*+?^${}()|[\]\\]/gu, '\\$&');
     const wordBefore = typeof value === 'number' ? '(?<![\\p{L}\\p{N}_-])' : '(?<![\\p{L}\\p{N}_])';
     const decimalBefore = '(?<!\\p{N}[.,])';
     const wordAfter = '(?![\\p{L}\\p{N}_])';
@@ -3246,20 +3246,22 @@ function parseAnswerOracle(value: unknown): AnswerOracle {
         throw new TypeError('Answer oracle total must be a positive integer.');
     }
     // Identity facts (id, kind) locate the cited item; every other fact is a claim the answer makes.
-    const stated: Record<string, Fact> = {
-        ...Object.fromEntries(Object.entries(facts).filter(([key]) => key !== 'id' && key !== 'kind')),
-        ...(total === undefined ? {} : { total }),
-    };
+    const stated: Record<string, Fact> = Object.fromEntries(
+        Object.entries(facts).filter(([key]) => key !== 'id' && key !== 'kind')
+    );
+    if (total !== undefined) {
+        stated.total = total;
+    }
     for (const [key, fact] of Object.entries(stated)) {
         if (!textStatesValue(value.text, fact)) {
             throw new TypeError(`Answer oracle text does not state the ${key} fact ${JSON.stringify(fact)}.`);
         }
     }
-    return {
-        kind: 'answer',
-        text: value.text,
-        query: { type: value.query.type, facts, ...(total === undefined ? {} : { total }) },
-    };
+    const query: AnswerOracle['query'] = { type: value.query.type, facts };
+    if (total !== undefined) {
+        query.total = total;
+    }
+    return { kind: 'answer', text: value.text, query };
 }
 
 /** Compare only the cited, successful query from this actual result and its current project. */
