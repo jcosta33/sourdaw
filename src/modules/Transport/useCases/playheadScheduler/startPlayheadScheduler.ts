@@ -200,6 +200,8 @@ function stageLoopWrapTakes(
         endBeat?: number;
         nextPassStartBeat?: number;
         deferredClock?: boolean;
+        /** Boundaries counted this tick after the one this take closes. */
+        laterPassEnds?: number;
     } = {},
     kinds: 'all' | 'audio' | 'midi' = 'all'
 ): Array<NonNullable<ReturnType<typeof stageRecordingTake>>> {
@@ -279,7 +281,11 @@ function stageLoopWrapTakes(
             // an edit, a jump or a loop edit may close a pass whose take the
             // look-ahead already staged; that take is retimed, never doubled.
             const countedPasses = playheadWrapCountRef.current - activeRecordingRef.startWrapCount;
-            const closedPassIndex = boundary.planned ? countedPasses : countedPasses - 1;
+            // A tick that crossed several boundaries counted them all at once;
+            // each closes the pass that many boundaries before the last.
+            const closedPassIndex = boundary.planned
+                ? countedPasses
+                : countedPasses - 1 - (boundary.laterPassEnds ?? 0);
             const stagedPassTake = lane?.takes.find(
                 (take) =>
                     take.clipId === recordingClip.id &&
@@ -1525,23 +1531,26 @@ export function startPlayheadScheduler(
         // the detection branches, after the punch checks above, on the same law
         // as the seam path: a punch-out due at the wrap finalizes its recording
         // this tick, and a take staged before that finalization would name the
-        // punch clip with a full pass span it never recorded.
-        const passEnd = lateWrapPassEnds[0];
+        // punch clip with a full pass span it never recorded. One take per
+        // boundary crossed, oldest first, so each pass keeps its own media.
         if (
-            passEnd &&
+            lateWrap &&
             (seam === null || seam.afterLateWrap) &&
             capturedJumpBoundary === null &&
             capturedEditBoundary === null
         ) {
-            stageLoopWrapTakes(
-                current,
-                passEnd.contextSeconds,
-                {
-                    endBeat: passEnd.endBeat,
-                    nextPassStartBeat: passEnd.endBeat === undefined ? undefined : newPosition,
-                },
-                browserCaptureKinds
-            );
+            lateWrapPassEnds.forEach((passEnd, index) => {
+                stageLoopWrapTakes(
+                    current,
+                    passEnd.contextSeconds,
+                    {
+                        endBeat: passEnd.endBeat,
+                        nextPassStartBeat: passEnd.endBeat === undefined ? undefined : newPosition,
+                        laterPassEnds: lateWrapPassEnds.length - 1 - index,
+                    },
+                    browserCaptureKinds
+                );
+            });
         }
         if (seam) {
             // Staged here rather than in the detection branch, after the punch

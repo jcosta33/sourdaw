@@ -116,7 +116,7 @@ const trackStoreState = {
 const takeLaneStoreState: { value: { lanes: unknown[] } | null } = { value: { lanes: [] } };
 // The clip ids `startRecording` marks active; the loop-wrap path resolves each
 // armed track's take onto the clip actually recording the pass.
-const activeRecordingRefState: { current: string[] } = { current: [] };
+const activeRecordingRefState: { current: string[]; startWrapCount?: number } = { current: [] };
 // currentTime holder so tests can advance the clock BETWEEN init and a tick
 // without vi.mocked() overrides that don't reach the module's bound import.
 const ctxTime = { now: 0 };
@@ -194,6 +194,9 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
         activeRecordingRef: {
             get current() {
                 return activeRecordingRefState.current;
+            },
+            get startWrapCount() {
+                return activeRecordingRefState.startWrapCount;
             },
         },
     };
@@ -507,6 +510,7 @@ describe('startPlayheadScheduler', () => {
         trackStoreState.value = { tracks: [] };
         takeLaneStoreState.value = { lanes: [] };
         activeRecordingRefState.current = [];
+        activeRecordingRefState.startWrapCount = undefined;
         ctxTime.now = 0;
         ctxLatency.base = 0;
         ctxLatency.output = 0;
@@ -1375,6 +1379,79 @@ describe('startPlayheadScheduler', () => {
             sourceOffsetBeats: 4,
             passEndContextSeconds: expect.closeTo(0.15, 10),
         });
+    });
+
+    /**
+     * A main-thread stall can carry one tick past a staged seam and two more
+     * boundaries. Each of those boundaries closed a pass whose capture is
+     * already in the one recording clip, so each needs its own take at its own
+     * depth, and the take the staged seam closed keeps its pass.
+     */
+    async function stageAcrossStalledBoundaries(kind: 'audio' | 'midi') {
+        trackStoreState.value = {
+            tracks: [{ id: 'rec-1', armed: true, kind, clips: [{ id: 'clip-rec-1', startBeat: 0 }] }],
+        };
+        activeRecordingRefState.current = ['clip-rec-1'];
+        activeRecordingRefState.startWrapCount = 0;
+        const takes: Record<string, unknown>[] = [
+            { id: 'take-open', clipId: 'clip-rec-1', name: 'Take 1', startBeat: 0, endBeat: 0 },
+        ];
+        takeLaneStoreState.value = { lanes: [{ trackId: 'rec-1', takes }] };
+        // The real recorder adds each staged take to the lane, which is what
+        // the next take's pass depth counts from.
+        arrangementMocks.stageRecordingTake.mockImplementation((input: Record<string, unknown>) => {
+            if (input.replacedTakeId === undefined) {
+                takes.push({ ...input, id: `take-pass-${takes.length - 1}` });
+            }
+            return undefined;
+        });
+        transportStoreState.value = playingState({
+            playheadPosition: 3.5,
+            isLooping: true,
+            loopStart: 0,
+            loopEnd: 4,
+            isRecording: true,
+        });
+        startPlayheadScheduler();
+        const worker = schedulerSession.worker as unknown as SchedulerWorkerHarness;
+        // Beat 3.9: the look-ahead stages the seam at 0.25 s and its pass take.
+        ctxTime.now = 0.2;
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(schedulerSession.pendingSeam?.seamAudioTime).toBeCloseTo(0.25, 9);
+        expect(arrangementMocks.stageRecordingTake).toHaveBeenCalledTimes(1);
+
+        // The staged seam at 0.25 s and the boundaries at 2.25 s and 4.25 s all
+        // sounded before this tick.
+        ctxTime.now = 4.3;
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        return arrangementMocks.stageRecordingTake.mock.calls.map(([input]) => input as Record<string, unknown>);
+    }
+
+    it('stages one MIDI take per loop boundary a stalled tick crossed, leaving the staged pass alone', async () => {
+        const staged = await stageAcrossStalledBoundaries('midi');
+
+        expect(staged).toHaveLength(3);
+        expect(staged[0]).toMatchObject({ sourceOffsetBeats: 0, recordingPassIndex: 0, plannedPassEnd: true });
+        expect(staged.slice(1).map((input) => input.replacedTakeId)).toEqual([undefined, undefined]);
+        expect(staged.slice(1).map((input) => input.recordingPassIndex)).toEqual([1, 2]);
+        expect(staged.slice(1).map((input) => input.sourceOffsetBeats)).toEqual([4, 8]);
+        expect(staged[1]?.passEndContextSeconds).toBeCloseTo(2.25, 9);
+        expect(staged[2]?.passEndContextSeconds).toBeCloseTo(4.25, 9);
+    });
+
+    it('stages one audio take per loop boundary a stalled tick crossed, each at its own depth', async () => {
+        const staged = await stageAcrossStalledBoundaries('audio');
+
+        expect(staged).toHaveLength(3);
+        expect(staged[0]).toMatchObject({ sourceOffsetBeats: 0, plannedPassEnd: true });
+        expect(staged.slice(1).map((input) => input.sourceOffsetBeats)).toEqual([4, 8]);
+        expect(staged.slice(1).map((input) => input.endBeat)).toEqual([4, 4]);
+        expect(staged[1]?.passEndContextSeconds).toBeCloseTo(2.25, 9);
+        expect(staged[2]?.passEndContextSeconds).toBeCloseTo(4.25, 9);
     });
 
     it('mints no take for a partial final loop pass', async () => {

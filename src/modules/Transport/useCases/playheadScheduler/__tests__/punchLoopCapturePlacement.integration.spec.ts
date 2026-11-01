@@ -3106,6 +3106,56 @@ describe('punch audio capture loop placement', () => {
         expect(hardware.buffer!.getChannelData(0)[Math.round(sourceSeconds * hardware.sampleRate)]).toBe(196800);
     });
 
+    it('places one pass per loop boundary a stalled tick crossed', async () => {
+        hardware.now = 51;
+        transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 9 });
+        playheadPositionRef.current = 9;
+        playheadClockRef.beat = 9;
+        playheadClockRef.audioTimeSeconds = 51;
+        toggleRecording();
+        await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1));
+        startPlayheadScheduler();
+        await tick();
+        expect(schedulerSession.pendingSeam).toBeNull();
+        // 4.5 s at 2 beats/s carries the playhead past the boundaries that end
+        // the first pass (beat 12) and the whole second one (beat 16).
+        await tick(4.5);
+        expect(playheadWrapCountRef.current).toBe(2);
+        await tick();
+        await stopActiveRecording();
+        const placed = lane()
+            .takes.filter((take) => take.passDepthSeconds !== undefined)
+            .sort((left, right) => left.passDepthSeconds! - right.passDepthSeconds!);
+        // Each pass reads its own span of the one buffer: the first from the
+        // record point, the second whole, the third up to Stop.
+        expect(placed.map((take) => [take.startBeat, take.endBeat])).toEqual([
+            [9, 12],
+            [8, 12],
+            [8, expect.closeTo(10.05, 10)],
+        ]);
+        expect(placed.map((take) => take.passDepthSeconds)).toEqual([
+            expect.closeTo(0.1, 10),
+            expect.closeTo(1.6, 10),
+            expect.closeTo(3.6, 10),
+        ]);
+        expect(placed.map((take) => take.passSourceEndSeconds)).toEqual([
+            expect.closeTo(1.6, 10),
+            expect.closeTo(3.6, 10),
+            expect.closeTo(4.625, 10),
+        ]);
+        expectProjectProjection();
+        const secondPass = placed[1]!;
+        await executeAppAction(
+            { type: 'setCompRegion', payload: { trackId: TRACK_ID, takeId: secondPass.id, startBeat: 8, endBeat: 12 } },
+            { skipUndo: true }
+        );
+        const selected = resolveClipsWithComping(TRACK_ID, recordedClips()).find((clip) => clip.regionStartBeat === 8)!;
+        const sourceSeconds = (selected.audioOffsetBeats ?? 0) / 2;
+        expect(sourceSeconds).toBeCloseTo(1.6, 10);
+        const frame = Math.round(sourceSeconds * hardware.sampleRate);
+        expect(hardware.buffer!.getChannelData(0)[frame]).toBe(frame);
+    });
+
     it('keeps the first short-loop pass on its physical run-up entry and late wrap', async () => {
         hardware.now = 51;
         transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 7.9, loopEnd: 8.1 });
