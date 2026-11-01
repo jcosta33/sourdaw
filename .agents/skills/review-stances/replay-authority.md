@@ -84,7 +84,7 @@ boundaries.
   never turn restored truth or Undo into a failure), and Crumbs sample publications (own metadata commit and knob edits
   keep authority, replaced root/device or fresh sample leaf revokes). Runtime ownership follows committed intent: hold
   a removal projecting absence, commit a replacement input, observe raw root, projection and runtime together; abort
-  keeps committed On (`session-lifecycle.md`). Stop: land one sibling before replacing the root and refuse another
+  keeps committed On (`input-monitoring-ownership.md`). Stop: land one sibling before replacing the root and refuse another
   afterward (landed entry plus exactly one settled gesture kept); removing dispatch-option forwarding fails the case.
 
 ### 5. Authority tokens ignore the guarded action's own writes yet revoke on foreign ones (#5573, #2747, #5677, #5681)

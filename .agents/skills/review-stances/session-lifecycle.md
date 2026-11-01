@@ -1,8 +1,9 @@
 # Standing probes: runtime session lifecycle
 
 Defects in anything that starts, stops, parks, replaces or disposes a long-lived runtime the app holds on behalf of
-a user-facing mode: the native live graph session, the playhead scheduler and feed, a recording session, the
-input-monitoring capture, a plugin host instance, a collaboration transport. A lifecycle stance carries this file.
+a user-facing mode. This file keeps the transport-side runtimes: the native live graph session, the playhead
+scheduler and feed, and the take a recording opens and closes around them. A lifecycle stance on one of the split-out
+classes named below carries that file instead of this one.
 Each probe names the failure mode, the input or state to drive and the check that must go red, and names the
 mutation that must fail it where its source lesson established one. Controlled ports (media, graph, scheduler,
 wall-clock) prove ordering, ownership and cleanup; they never establish physical hardware audibility. Runtime-monitor
