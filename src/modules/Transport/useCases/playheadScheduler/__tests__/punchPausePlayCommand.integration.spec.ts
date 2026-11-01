@@ -53,6 +53,7 @@ import { pausePlayback } from '../../transportControls/pausePlayback';
 import { recordingLifecycle } from '../../transportControls/recordingLifecycle';
 import { startPlayback } from '../../transportControls/startPlayback';
 import { stopPlayback } from '../../transportControls/stopPlayback';
+import { toggleRecording } from '../../transportControls/toggleRecording';
 
 const TRACK_ID = 'track-recording';
 const INPUT_START_FAILURE = 'Punch-in recording failed to start — the take was discarded.';
@@ -729,6 +730,28 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         expect(transportStore.value?.isPlaying).toBe(true);
         expect(transportStore.value?.isRecording).toBe(false);
         expect(schedulerSession.worker).not.toBeNull();
+        pausePlayback();
+        await recordingLifecycle.waitForClosing();
+        expect(commits()).toBe(0);
+    });
+
+    it('stays quiet when the input fails after Record is turned off with the roll still going', async () => {
+        const start = Promise.withResolvers<boolean>();
+        mocks.startAudioRecording.mockImplementationOnce(() => start.promise);
+        const errors = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        await punchInOnLaterTick([recordingTrack('audio')]);
+        expect(transportStore.value?.isRecording).toBe(true);
+
+        toggleRecording();
+        expect(transportStore.value?.isRecording).toBe(false);
+        expect(transportStore.value?.isPlaying).toBe(true);
+        start.reject(new Error('microphone permission denied'));
+
+        await vi.waitFor(() => expect(startFailureLogs(errors)).toHaveLength(1));
+        await vi.waitFor(() => expect(trackStore.value?.tracks[0]?.clips).toEqual([]));
+        await recordingLifecycle.waitForClosing();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+        expect(transportStore.value?.isPlaying).toBe(true);
         pausePlayback();
         await recordingLifecycle.waitForClosing();
         expect(commits()).toBe(0);

@@ -1220,6 +1220,7 @@ export function startPlayheadScheduler(
                             updateTransportState({ isRecording: false });
                         }
                     };
+                    const recordingStopsAtAdmission = recordingLifecycle.recordingStopCount;
                     const admission = Promise.resolve(
                         startAudioRecording(
                             track.id,
@@ -1354,23 +1355,22 @@ export function startPlayheadScheduler(
                         .catch((error: unknown) => {
                             captureClocks.remove(track.id);
                             logger.error(new Error('Punch-in audio recording failed to start', { cause: error }));
-                            // Decided when the failure arrives, against this
-                            // start's own roll: a Pause or Stop parks the
-                            // transport, and the next Play claims a new scheduler
-                            // generation, so a start whose roll was ended stays
-                            // quiet even when the musician is rolling again. A
-                            // punch-out keeps the roll and the generation, and
-                            // the musician is told. A seek or repair restarts the
-                            // scheduler and abandons the pass; its successor's
-                            // own start reports.
-                            const rollEnded =
-                                transportStore.value?.isPlaying !== true ||
-                                schedulerSession.generation !== schedulerGeneration;
+                            // Decided when the failure arrives: a start whose
+                            // recording a stop gesture closed after it was
+                            // admitted (Pause, Stop, Record off, or a seek while
+                            // recording) stays quiet, even once the musician is
+                            // rolling again. A punch-out, a loop wrap or a
+                            // runtime repair closes nothing through that route,
+                            // so the musician is told. After a seek, only a
+                            // pass the seek lands inside opens a start that can
+                            // report.
+                            const stoppedByMusician =
+                                recordingLifecycle.recordingStopCount !== recordingStopsAtAdmission;
                             initialEmissionRetirements.defer(() => {
                                 if (!ownsCapture()) {
                                     return;
                                 }
-                                if (!rollEnded) {
+                                if (!stoppedByMusician) {
                                     notifyUser('Punch-in recording failed to start — the take was discarded.', 'error');
                                 }
                                 retireUnstartedCapture();
