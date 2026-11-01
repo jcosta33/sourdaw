@@ -125,9 +125,10 @@ function isExpressionValueInRange(dimension: MidiExpressionDimension, value: num
     return value >= 0 && value <= MAX_MIDI_DATA_7BIT;
 }
 
+// String keys only: an Automerge document object also carries symbol keys for its own metadata.
 function hasExactOwnKeys(value: object, keys: readonly string[]): boolean {
-    const ownKeys = Reflect.ownKeys(value);
-    return ownKeys.length === keys.length && ownKeys.every((key) => typeof key === 'string' && keys.includes(key));
+    const ownKeys = Object.keys(value);
+    return ownKeys.length === keys.length && ownKeys.every((key) => keys.includes(key));
 }
 
 function isExpressionPoint(dimension: MidiExpressionDimension, value: unknown): value is MidiExpressionPoint {
@@ -187,17 +188,15 @@ export function isValidMidiNoteExpression(value: unknown, duration: number): val
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         return false;
     }
-    const ownKeys = Reflect.ownKeys(value);
+    const ownKeys = Object.keys(value);
     if (ownKeys.length === 0) {
         return false;
     }
-    return ownKeys.every(
-        (key) =>
-            typeof key === 'string' &&
-            MIDI_EXPRESSION_DIMENSIONS.some(
-                (dimension) =>
-                    dimension === key && isValidMidiExpressionCurve(dimension, Reflect.get(value, dimension), duration)
-            )
+    return ownKeys.every((key) =>
+        MIDI_EXPRESSION_DIMENSIONS.some(
+            (dimension) =>
+                dimension === key && isValidMidiExpressionCurve(dimension, Reflect.get(value, dimension), duration)
+        )
     );
 }
 
