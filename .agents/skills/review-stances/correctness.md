@@ -2,11 +2,9 @@
 
 The generic defect class a derived stance must specialize beyond, never a stance name to dispatch: the
 change does something other than what it claims, or breaks an invariant its callers, readers, replays
-or siblings rely on. Read the whole unit at head, state the invariant it must maintain, and construct
-the input or state that breaks it. A behavior-risk stance matching no more specific file carries this
-file; a stance with a more specific match never carries it in addition. Each probe names the failure
-mode, the input, state or mutation to run, and the check that must go red. Report the concrete break
-or report none; a hedge without a break is discarded.
+or siblings rely on. A behavior-risk stance matching no more specific file carries this file; a stance
+with a more specific match never carries it in addition. Each probe names the failure mode, the input,
+state or mutation to run, and the check that must go red. Report the concrete break or none.
 
 ## Standing probes
 
@@ -14,7 +12,7 @@ or report none; a hedge without a break is discarded.
    its callers and its callee contracts at head; state the invariant in one sentence; construct the
    violating input. Where the change touches a shared control, read the sibling components on the same
    surface first: their comments carry measured browser behaviour (`lostpointercapture`, a tab switch
-   that never delivers `pointerup`) the change must survive.
+   with no `pointerup`) the change must survive.
 2. **A check that observes nothing.** Name what must break for each existing check to fail. Probe:
    destroy the value after the assertion, or apply one targeted mutation, and run the named spec; still
    green fails the round. Blind forms: a fixture that sets explicitly what a fresh instance defaults
@@ -29,14 +27,13 @@ or report none; a hedge without a break is discarded.
    `proven_popped`, #3363); render the persisted state the owner refuses (enabled mapping to a
    nonautomatable parameter must show no Inspector halo, #831/#5379); change the owner after detection
    and require the mounted reader to follow without a pointer refresh (Elastic markers; selected-only
-   target resolution); drive a carried meter through the mounted ruler (#5247); write points to a linked
-   follower the sampler ignores (#4506). Ask what a one-bit-per-key model cannot represent (two of one
-   key, an order, a count).
+   target resolution); write points to a linked follower the sampler ignores (#4506). Ask what a
+   one-bit-per-key model cannot represent (two of one key, an order, a count).
 4. **Population and producer sweep.** When a detector, sanitizer, adapter or narrowed store rule
    asserts an invariant over a registered population or every writer of a record, enumerate every member
-   and every producer at head and drive each through the new clause; the population, not the incident,
-   bounds the sweep (#3112: promotion wrote `sourceRevision` for generic effects, an empty catch hid
-   the throw). Name the throw any empty catch around persistence hides and construct the input.
+   and producer at head and drive each through the new clause; the population, not the incident, bounds
+   the sweep (#3112: promotion wrote `sourceRevision` for generic effects). Name the throw any empty
+   catch around persistence hides and construct the input.
 5. **Witnesses outside the author's list.** A change to a durable record's contents or to a UI label,
    selector or layout has readers the author did not name. Grep `src/**/__tests__`, `tests/e2e/**` and
    `scripts/desktopLatency*.ts` for the field, type, literal placeholder or label, name every hit, and
@@ -58,8 +55,7 @@ or report none; a hedge without a break is discarded.
    grammar-legal forms the rule does not name (nested property, parameter, return, annotation,
    conditional branch, mapped type, decorator, union member) and drive each with the named member first
    and after another member, plus a genuine computed load as positive control, since an empty result is
-   otherwise indistinguishable from a scanner that never ran (#4775/#4835). Pinning refused forms states
-   the bound; it does not close the defect.
+   otherwise indistinguishable from a scanner that never ran (#4775/#4835). Pinning refused forms states the bound; it does not fix it.
 8. **One enforcement route of several.** A rule enforced on one route admits the same request on
    another. List every route that returns actions or reads the state (direct, coordinated, atomic,
    compiled, refined; constructors' defaults, releases, removal arms, re-deriving commands; dispatcher
@@ -152,8 +148,7 @@ or report none; a hedge without a break is discarded.
     arrangement IDs stay repair-required. For a batch-admitted restored clip preceding a split, compare
     captured IDs with the committed IDs before reloading and replaying twice; a live execution that
     remints a preflight capture is not replay-stable. Read executable entries from the full history
-    owner, not its label-only view; a draw is singleton-only, so a rejected draw/split batch proves
-    admission, not prefix execution.
+    owner, not its label-only view; draw is singleton-only, so a rejected draw/split proves admission only.
 16. **Saved inverse authority.** Probe a saved inverse through production hydration before any write:
     duplicate note identities, malformed CC or bend rows, a missing capture, one side of a mirrored
     optional satellite absent (present empty is distinct), and a durable-head change alone must not
@@ -188,15 +183,13 @@ or report none; a hedge without a break is discarded.
     input: short-window output and gain against an already-open reference (zero crossing, near-threshold
     detector), enable-time hold seeding, and a single NaN or infinity compared sample for sample with a
     healthy reference through attack, hold, release and reopening; an output scrub proves nothing about
-    recursive state. Revert only the default, cap or fence and the named PCM case must fail.
+    recursive state. Revert only the default, cap or fence and the named PCM case must fail; follow the
+    source through regenerated served WASM when the claim is about the shipped carrier.
 21. **Format conformance by an independent decoder.** Compare real encoded output through the shipped
     decoder against the originating PCM at each bit depth, including container checksums and decoder
     warnings (FLAC Rice polarity per RFC 9639); reverting the grammar fix must fail the parity case.
-    Follow source through regenerated served WASM when the claim is about the shipped carrier.
 
 ## AI action bridge, prompt segmentation and request authority
-
-Each probe names the input that breaks and the mutation that should fail the named check.
 
 22. **Context and cancellation at every dispatcher route.** Drive execution context through single and
     batch dispatch and both runtime and project handlers; prove cancellation and deferred-work attempts
@@ -246,11 +239,10 @@ Each probe names the input that breaks and the mutation that should fail the nam
 28. **Note-correlation regressions cross the rack boundary.** When a transform stores a Note On decision
     for a later Note Off, drive supplied `noteInstanceId` values through `MidiRack`: one equal-pitch note,
     change the deciding parameter while held, then attack and release a second identity first. Assert
-    emitted identity and pitch or suppression; replacing correlation with channel/pitch FIFO must fail.
-    Keep identityless FIFO coverage separate.
+    emitted identity and pitch or suppression; channel/pitch FIFO must fail. Keep identityless FIFO apart.
 29. **Expression ordering around note release.** Hold the note-on's async worker, admit pressure, CC74,
-    bend, release and the next note on the same channel, then read the recorded curve points and exact
-    execution order; an idle unrelated channel stays immediate (#805).
+    bend, release and the next same-channel note; read the curve points and execution order; an idle
+    unrelated channel stays immediate (#805).
 
 ## Trusted scripts and delivery
 
@@ -260,8 +252,7 @@ Each probe names the input that breaks and the mutation that should fail the nam
     the command from the launcher's fenced set, or restoring a direct package route to the transaction
     script, must fail before remote I/O; lock fixtures that inject owner fences cannot show it (#5639).
 31. **Validated tree vs merged tree.** When the base tip moved after the head's last run, especially
-    in the same file, require evidence covering base plus head; reverting either contributing hunk must
-    fail that combined typecheck (#5243).
+    in the same file, require evidence covering base plus head; reverting either hunk must fail it (#5243).
 
 ## Retired lessons
 
