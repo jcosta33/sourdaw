@@ -1,0 +1,23 @@
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_6a96dd8c5782c6::t_0b815fcf85ff96 496-501
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_6a96dd8c5782c6::t_27bf49fd6e9da3 586-634
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_6a96dd8c5782c6::t_74cca5bbda029c 1275-1300,1318-1319,1322-1323,1362-1363,1385
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3831bff7cf4ded842f1a7366f6f288e92c5f04b5",
+  "prompts": {},
+  "sessions": {
+    "s_6a96dd8c5782c6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_6a96dd8c5782c6",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
