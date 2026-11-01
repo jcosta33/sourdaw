@@ -1,11 +1,10 @@
-import { createMono, toAudioBufferMono } from '../services/bufferCreation';
+import { type RenderedFactorySample } from '../models/RenderedFactorySample';
+import { createMono, monoPcm } from '../services/bufferCreation';
 import { normalize, softClip } from '../services/dynamics';
 import { applyEnvelope, renderEnvelope } from '../services/envelopes';
 import { biquad, biquadSweep } from '../services/filters';
 import { mixMono } from '../services/mixing';
 import { midiToFreq, renderSaw, renderSine, renderSquare, renderTriangle } from '../services/oscillators';
-
-import { type FactorySample } from './types';
 
 const C1 = 24;
 const C1_FREQ = midiToFreq(C1);
@@ -132,7 +131,7 @@ function renderPadBass(): Float32Array {
     return out;
 }
 
-export function generateBassPack(ctx: AudioContext): FactorySample[] {
+export function generateBassPack(): RenderedFactorySample[] {
     const base = 'factory-bass';
     const tags = ['bass', 'low-end'];
     return [
@@ -148,6 +147,6 @@ export function generateBassPack(ctx: AudioContext): FactorySample[] {
         category: 'bass' as const,
         tags: [...tags, ...s.extra],
         pitch: C1,
-        buffer: toAudioBufferMono(ctx, s.render()),
+        ...monoPcm(s.render()),
     }));
 }

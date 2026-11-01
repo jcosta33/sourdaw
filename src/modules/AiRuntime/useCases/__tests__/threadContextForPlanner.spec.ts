@@ -104,6 +104,38 @@ const MEASURED_PREVIEW: MeasuredPreview = {
         {
             targetId: 'master',
             targetKind: 'master',
+            audition: {
+                baseline: {
+                    route: 'mixdown',
+                    artifact: { contentAddress: 'local-audition-baseline-address' },
+                    sampleRate: 48_000,
+                    frameCount: 96_000,
+                    channelCount: 2,
+                    durationSeconds: 2,
+                },
+                preview: {
+                    route: 'mixdown',
+                    artifact: { contentAddress: 'local-audition-preview-address' },
+                    sampleRate: 44_100,
+                    frameCount: 66_150,
+                    channelCount: 1,
+                    durationSeconds: 1.5,
+                },
+                baselineIntegratedLoudness: {
+                    status: 'measured',
+                    metricVersion: 1,
+                    unit: 'LUFS',
+                    value: -12,
+                    confidence: 'exact',
+                },
+                previewIntegratedLoudness: {
+                    status: 'measured',
+                    metricVersion: 1,
+                    unit: 'LUFS',
+                    value: -13.5,
+                    confidence: 'exact',
+                },
+            },
             baseline: {},
             preview: {},
             deltas: {
@@ -427,7 +459,11 @@ describe('thread context for the planner', () => {
                 commands: [{ name: 'setTrackGain', label: 'Set Bass gain to -3 dB', arguments: GAIN_ACTION.payload }],
                 measuredDeltas: [{ targetId: 'master', metric: 'integratedLoudness', delta: -1.5, unit: 'LUFS' }],
             });
-            expect(readSection(buildContext(thread).message)).toMatchObject({
+            const providerContext = buildContext(thread);
+            expect(providerContext.message).not.toContain('local-audition-');
+            expect(providerContext.localMessage).not.toContain('local-audition-');
+            expect(providerContext.message).not.toContain('baselineIntegratedLoudness');
+            expect(readSection(providerContext.message)).toMatchObject({
                 lastCommit: {
                     receiptIds: ['command:run-committed:batch-1'],
                     commands: [{ name: 'setTrackGain' }],

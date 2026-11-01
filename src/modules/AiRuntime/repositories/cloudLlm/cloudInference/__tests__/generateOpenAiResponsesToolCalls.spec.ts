@@ -251,6 +251,32 @@ describe('generateOpenAiResponsesToolCalls', () => {
         ]);
     });
 
+    it.each(['auto', 'required'] as const)(
+        'disables parallel calls only for an explicit single %s step',
+        async (mode) => {
+            respondWith({ id: 'resp_single', status: 'completed', output: [] });
+            let directive: HostedToolChoiceDirective;
+            if (mode === 'required') {
+                directive = { mode, toolNames: ['muteTrack'], parallelToolCalls: false };
+            } else {
+                directive = { mode, parallelToolCalls: false };
+            }
+            await planTools(runtime, directive);
+            const body = readSentBody();
+            expect(body.parallel_tool_calls).toBe(false);
+            expect(body.tools).toHaveLength(2);
+            if (mode === 'required') {
+                expect(body.tool_choice).toEqual({
+                    type: 'allowed_tools',
+                    mode: 'required',
+                    tools: [{ type: 'function', name: 'muteTrack' }],
+                });
+            } else {
+                expect(body.tool_choice).toBe('auto');
+            }
+        }
+    );
+
     it('throws before any network call when a required directive names no tool', async () => {
         await expect(planTools(runtime, { mode: 'required', toolNames: [] })).rejects.toThrow(
             'Hosted AI tool-choice directive named an empty tool set'

@@ -24,6 +24,7 @@ const TRACK_IDS = ['track-kick', 'track-snare', 'track-hat'] as const;
 const ACTION_LABELS = ['Set Kick gain', 'Set Snare gain', 'Set Hat gain'] as const;
 
 const mocks = vi.hoisted(() => ({
+    stop: vi.fn(async () => ({ status: 'idle' })),
     appendChatMessage: vi.fn(),
     cancelRun: vi.fn(),
     compileApproval: vi.fn(),
@@ -39,6 +40,8 @@ const mocks = vi.hoisted(() => ({
     updateBatchStatus: vi.fn(),
     updateChatMessage: vi.fn(),
 }));
+
+vi.mock('../stopMeasuredPreviewAudition', () => ({ stopMeasuredPreviewAudition: mocks.stop }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
@@ -364,6 +367,11 @@ describe('reproposePendingChatActions', () => {
     // Red when the replacement is not bound to the superseded proposal, or the run is torn down with it.
     it('replaces the whole proposal against the current revision and keeps the run alive', async () => {
         propose('confirmation-stale');
+
+        mocks.refresh.mockImplementationOnce(() => {
+            expect(mocks.stop).toHaveBeenCalledExactlyOnceWith({ confirmationId: 'confirmation-stale' });
+            return readyRefresh(refreshedBatch);
+        });
 
         const result = await reproposePendingChatActions({ confirmationId: 'confirmation-stale' });
 

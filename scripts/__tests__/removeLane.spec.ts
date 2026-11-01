@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
     existsSync,
     mkdirSync,
@@ -18,7 +18,9 @@ import { AUTHOR_BOT_NODE_ID, AUTHOR_LOCK_REASON } from '../githubAppIdentity.ts'
 import { guardFailureReceiptPath, supersessionCommentBody, type GuardFailureReceipt } from '../prContract.ts';
 import { prunableEntries } from '../pruneLane.ts';
 import {
+    capture,
     disposableIgnored,
+    inside,
     isExpectedReviewLaneName,
     isExpectedReviewLanePath,
     parseReviewLanePrNumber,
@@ -442,8 +444,25 @@ describe('isExpectedReviewLanePath', () => {
         ['/tmp/review-1976', false],
         ['/repo/.agents/worktrees/other/1976', false],
         ['/repo/.agents/worktrees/review/1976/nested', false],
+        ['/repo/.agents/review-worktrees/..probe', true],
+        ['/repo/.agents/worktrees/..-review', true],
+        ['/repo/.agents/worktrees-review/review', false],
     ])('evaluates %s as expected review lane path under /repo: %s', (path, expected) => {
         expect(isExpectedReviewLanePath(path, '/repo')).toBe(expected);
+    });
+});
+
+describe('inside', () => {
+    it.each([
+        ['/repo', '/repo', true],
+        ['/repo', '/repo/lane/scripts', true],
+        ['/repo', '/repo/..cache/file', true],
+        ['/repo', '/repo/..', false],
+        ['/repo', '/repo/../other', false],
+        ['/repo', '/repo-sibling/file', false],
+        ['/repo/lane', '/repo', false],
+    ])('evaluates %s containing %s: %s', (parent, candidate, expected) => {
+        expect(inside(parent, candidate)).toBe(expected);
     });
 });
 
@@ -793,6 +812,7 @@ describe('lane removal', () => {
         ],
         ['outside', '/tmp/feature', { lane: worktree({ path: '/tmp/feature' }) }, /not an agent worktree/],
         ['active', target, { currentDirectory: `${target}/scripts` }, /active worktree/],
+        ['active in a dot-dot-prefixed child', target, { currentDirectory: `${target}/..cache` }, /active worktree/],
         ['other process', target, { active: true }, /active in another process/],
         ['locked', target, { lane: worktree({ locked: true }) }, /locked or shared/],
         ['detached', target, { lane: worktree({ branch: undefined, detached: true }) }, /ownership is unknown/],
@@ -1576,6 +1596,23 @@ describe('worktree parser', () => {
 });
 
 describe('lane-removal shell boundary', () => {
+    it.skipIf(process.platform !== 'darwin')(
+        'admits an unmatched lsof process selection only when the caller allows it',
+        () => {
+            const gone = spawnSync(process.execPath, ['-e', '']).pid;
+            const selection = ['-nP', '-a', '-p', `${process.pid},${gone}`, '-F0pftn'];
+            const output = capture('lsof', selection, { preserveStdout: true, unmatchedProcesses: 'allowed' });
+            expect(output.startsWith(`p${process.pid}\0\n`)).toBe(true);
+            expect(output).not.toContain(`p${gone}\0`);
+            expect(() => capture('lsof', selection, { preserveStdout: true })).toThrow('lsof failed with exit 1');
+            expect(() =>
+                capture('lsof', ['-nP', '-a', '-p', 'unknown', '-F0pftn'], { unmatchedProcesses: 'allowed' })
+            ).toThrow(/^lsof: illegal process ID: unknown/);
+            expect(() => capture('ps', ['-p', String(gone)], { unmatchedProcesses: 'allowed' })).toThrow(
+                'unmatched process selection requires lsof inspection'
+            );
+        }
+    );
     it('recognizes an active lsof cwd through an alias', () => {
         const repository = mkdtempSync(join(tmpdir(), 'sourdaw-lane-active-alias-'));
         const aliasParent = mkdtempSync(join(tmpdir(), 'sourdaw-lane-active-alias-link-'));

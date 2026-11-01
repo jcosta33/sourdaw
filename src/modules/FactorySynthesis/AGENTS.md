@@ -4,17 +4,22 @@ Procedural offline audio synthesis and preset sound generator for factory sample
 
 ## Public Contract Surface
 
-- **Use Cases** (`useCases/index.ts`): `generateFactorySamples`, `FACTORY_LIBRARY_ROOT_ID`, `FACTORY_SEED_FLAG_KEY`.
+- **Use Cases** (`useCases/index.ts`): `renderFactorySamples`, `FACTORY_LIBRARY_ROOT_ID`, `FACTORY_SEED_FLAG_KEY`.
 
 ## Key Subsystems
 
 - **DSP Building Blocks** (`services/`): Mathematical oscillators, envelopes, filters, dynamics, distortion, delay, reverb, and buffer mixing primitives.
-- **Pack Generators** (`useCases/`): Programmatic instrument and kit generators (`drums808`, `drums909`, `drumsAcoustic`, `drumsLofi`, `percWorld`, `percElectronic`, `bass`, `keys`, `generateRisersPack`, `generateImpactsPack`).
-- **Generation Pipeline** (`useCases/generateFactorySamples.ts`): Batch orchestrator generating AudioBuffers into factory sample categories.
+- **Pack Generators** (`transformers/`): Programmatic instrument and kit generators (`drums808`, `drums909`, `drumsAcoustic`, `drumsLofi`, `percWorld`, `percElectronic`, `bass`, `keys`, `generateRisersPack`, `generateImpactsPack`) and the render-all orchestrator `generateFactorySamples`. They return raw PCM records (`models/RenderedFactorySample.ts`), never AudioBuffers.
+- **Synthesis Worker** (`workers/factorySynthesisWorker.ts`, runtime in `factorySynthesisWorkerRuntime.ts`): renders every pack off the main thread and transfers each channel buffer back. `repositories/factorySynthesisWorkerClient.ts` owns the Worker lifetime, timeout, and reply validation.
+- **Generation Pipeline** (`useCases/renderFactorySamples.ts`): awaits the worker and builds AudioBuffers on the main thread in chunks, yielding between them.
 
 ## Invariants & Traps
 
-- Pure offline DSP: executes in standard JS/TS runtime environments without depending on AudioContext hardware threads or DOM state.
+- Pure offline DSP: generators run in a dedicated Worker, so they must not touch AudioContext, DOM, or any main-thread state. AudioBuffer construction happens only in `useCases/renderFactorySamples.ts`.
+- Workers may import only `models/` and `transformers/` (`workers-no-module-runtime-imports`); keep generators out of `useCases/` and `services/` imports out of the worker entry.
+- Register the worker's `onmessage` synchronously at module top level, with no top-level await: Chromium drops messages posted to a module worker while its top-level evaluation is suspended, and builds emit workers as IIFE.
+- No in-process fallback: a failed or timed-out render rejects, and the seed retries on the next launch.
+- Sample ids, order, lengths, channel counts, sample rate, and samples are persisted project references; generators must keep them stable. `factory-fx-impact-glitch-stutter` alone uses `Math.random`.
 - Deterministic seeding: procedural generator logic must produce identical sample buffers across runs given the same seed parameters.
 
 ## Verification

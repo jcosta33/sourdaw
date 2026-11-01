@@ -1,12 +1,11 @@
-import { createStereo, toAudioBufferStereo } from '../services/bufferCreation';
+import { type RenderedFactorySample } from '../models/RenderedFactorySample';
+import { createStereo, stereoPcm } from '../services/bufferCreation';
 import { SAMPLE_RATE } from '../services/constants';
 import { normalizeStereo, softClipStereo } from '../services/dynamics';
 import { applyEnvelope, renderEnvelope } from '../services/envelopes';
 import { biquadSweep } from '../services/filters';
 import { mixMonoIntoStereo } from '../services/mixing';
 import { renderNoise, renderSine } from '../services/oscillators';
-
-import { type FactorySample } from './types';
 
 function renderWhiteNoiseRiser(): [Float32Array, Float32Array] {
     const dur = 3.5;
@@ -98,7 +97,7 @@ function renderSweptNoiseRiser(): [Float32Array, Float32Array] {
     return out;
 }
 
-export function generateRisersPack(ctx: AudioContext): FactorySample[] {
+export function generateRisersPack(): RenderedFactorySample[] {
     const base = 'factory-fx-riser';
     const tags = ['fx', 'riser', 'build-up'];
     return [
@@ -111,6 +110,6 @@ export function generateRisersPack(ctx: AudioContext): FactorySample[] {
         name: s.name,
         category: 'fx' as const,
         tags: [...tags, ...s.extra],
-        buffer: toAudioBufferStereo(ctx, s.render()),
+        ...stereoPcm(s.render()),
     }));
 }

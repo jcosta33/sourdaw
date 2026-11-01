@@ -155,7 +155,7 @@ describe('actual current-preview comparison approval', () => {
         agentRunLifecycle.transitionPhase({ runId, phase: 'planning' });
         let turn = 0;
         vi.mocked(generateToolPlanningOutcome).mockImplementation(async (_system, message, schemas) => {
-            const phase = turn % 3;
+            const phase = turn % 4;
             turn += 1;
             if (phase === 0) {
                 const catalog = readCreativeInterpretationCatalog(message, schemas);
@@ -214,6 +214,18 @@ describe('actual current-preview comparison approval', () => {
                     ],
                 };
             }
+            if (phase === 3) {
+                return {
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'mixed-measure',
+                            name: 'analysis.measure',
+                            arguments: { scope: { kind: 'master' }, range: { sectionId: 'missing-section' } },
+                        },
+                    ],
+                };
+            }
             return {
                 status: 'complete',
                 toolCalls: [
@@ -239,6 +251,20 @@ describe('actual current-preview comparison approval', () => {
         });
         expect(planned.planningOutcome, planned.rejectionReason).toEqual({ kind: 'proposal' });
         expect(planned.actions.map((action) => action.type)).toEqual(['muteTrack', 'setTrackGain']);
+        expect(planned.applicationToolReceipts).toContainEqual(
+            expect.objectContaining({
+                callId: 'mixed-measure',
+                toolName: 'analysis.measure',
+                status: 'failure',
+                error: expect.objectContaining({ code: 'unknown-section' }),
+            })
+        );
+        expect(planned.applicationToolReceipts).toContainEqual(
+            expect.objectContaining({
+                callId: 'mixed-proposal',
+                error: expect.objectContaining({ code: 'measurement-required' }),
+            })
+        );
         expect(metricGoalStateCodec(planned.metricGoalState)?.authorities).toMatchObject([
             {
                 kind: 'perceptual',

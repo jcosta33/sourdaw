@@ -30,6 +30,7 @@ const getAgentApprovalViewMock = vi.hoisted(() => vi.fn());
 const confirmPendingChatActionsMock = vi.hoisted(() => vi.fn());
 const cancelPendingChatActionsMock = vi.hoisted(() => vi.fn().mockResolvedValue({ status: 'cancelled' }));
 const reproposePendingChatActionsMock = vi.hoisted(() => vi.fn());
+const stopMeasuredPreviewAuditionMock = vi.hoisted(() => vi.fn());
 const agentRunCancellationMock = vi.hoisted(() => ({ cancel: vi.fn() }));
 const revertAiActionGroupMock = vi.hoisted(() => vi.fn());
 const agentChangeComparisonMock = vi.hoisted(() => ({
@@ -49,6 +50,7 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
     confirmPendingChatActions: confirmPendingChatActionsMock,
     cancelPendingChatActions: cancelPendingChatActionsMock,
     reproposePendingChatActions: reproposePendingChatActionsMock,
+    stopMeasuredPreviewAudition: stopMeasuredPreviewAuditionMock,
     revertAiActionGroup: revertAiActionGroupMock,
     agentChangeComparison: agentChangeComparisonMock,
     getAgentChangeComparisonView: getAgentChangeComparisonViewMock,
@@ -73,6 +75,11 @@ vi.mock('#/modules/AiRuntime/stores', async () => {
 
 vi.mock('#/modules/AiRuntime/presentations/views', () => ({
     AgentRunDecisionPanel: () => <div data-testid="agent-decision-panel" />,
+    MeasuredPreviewAudition: (input: { confirmationId: string; selectedIntentGroupIds: readonly string[] }) => (
+        <section aria-label="Measured audio comparison" data-confirmation-id={input.confirmationId}>
+            {input.selectedIntentGroupIds.join(',')}
+        </section>
+    ),
 }));
 
 type ProjectionOverrides = {
@@ -334,6 +341,34 @@ beforeEach(() => {
 });
 
 describe('AgentWorkspace', () => {
+    it('connects one proposed audition and retires its sound before changing the selected groups', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        getAgentApprovalViewMock.mockReturnValue(
+            approvalView({
+                canConfirm: false,
+                intentGroups: [
+                    intentGroup({ id: 'group-a', summary: 'First edit' }),
+                    intentGroup({ id: 'group-b', summary: 'Second edit' }),
+                ],
+            })
+        );
+        render(<AgentWorkspace />);
+        const comparison = screen.getByRole('region', { name: 'Measured audio comparison' });
+        expect(screen.getAllByRole('region', { name: 'Measured audio comparison' })).toHaveLength(1);
+        expect(comparison).toHaveAttribute('data-confirmation-id', 'confirmation-1');
+        expect(comparison).toHaveTextContent('group-a,group-b');
+        stopMeasuredPreviewAuditionMock.mockImplementationOnce((input: { confirmationId: string }) => {
+            expect(input).toEqual({ confirmationId: 'confirmation-1' });
+            expect(comparison).toHaveTextContent('group-a,group-b');
+        });
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Include group 2: Second edit' }));
+        expect(stopMeasuredPreviewAuditionMock).toHaveBeenCalledTimes(1);
+        expect(comparison).toHaveTextContent('group-a');
+        expect(screen.getByRole('button', { name: 'Confirm agent actions' })).toBeDisabled();
+    });
     it('renders an empty state when no agent runs exist', () => {
         render(<AgentWorkspace />);
 

@@ -159,11 +159,14 @@ const measuredScriptBudgets = new Map<string, number>([
     ['lint:full', 6500 * 1024 ** 2],
     // The focused batch that touched seven spec files at once peaked at 4423 MiB.
     ['test:run', 6144 * 1024 ** 2],
+    // A focused single-crate cargo:test filter peaked at about 4710 MiB under the guard.
+    ['cargo:test', 5632 * 1024 ** 2],
     ['test:command-schema', 2 * 1024 ** 3],
     ['typecheck', 3072 * 1024 ** 2],
     // A guarded pnpm typecheck:test (tsc -p tsconfig.test.json) peaked at 6498 MiB.
     ['typecheck:test', 7168 * 1024 ** 2],
-    ['test:e2e', 5.5 * 1024 ** 3],
+    // A single-worker targeted browser diagnostic peaked at 7034 MiB under the guard.
+    ['test:e2e', 8 * 1024 ** 3],
     ['test:e2e:browser-ai-webgpu-admission', 5.5 * 1024 ** 3],
     ['deps:validate', 6.5 * 1024 ** 3],
 ]);

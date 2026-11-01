@@ -1,12 +1,11 @@
-import { createMono, toAudioBufferMono } from '../services/bufferCreation';
+import { type RenderedFactorySample } from '../models/RenderedFactorySample';
+import { createMono, monoPcm } from '../services/bufferCreation';
 import { SAMPLE_RATE } from '../services/constants';
 import { normalize, softClip } from '../services/dynamics';
 import { applyEnvelope, renderEnvelope } from '../services/envelopes';
 import { biquad } from '../services/filters';
 import { mixMono } from '../services/mixing';
 import { renderNoise, renderSine, renderTriangle } from '../services/oscillators';
-
-import { type FactorySample } from './types';
 
 // 808 kicks rely on a long sine sub tail (~0.8 s) and very light saturation.
 // The pitch envelope is shallower than a 909 — only a ~20 Hz drop.
@@ -183,7 +182,7 @@ function render808Tom(): Float32Array {
     return out;
 }
 
-export function generate808Kit(ctx: AudioContext): FactorySample[] {
+export function generate808Kit(): RenderedFactorySample[] {
     const base = 'factory-808';
     const tags = ['808', 'trap', 'hip-hop', 'electronic'];
     const specs: { id: string; name: string; render: () => Float32Array; extra: string[] }[] = [
@@ -201,6 +200,6 @@ export function generate808Kit(ctx: AudioContext): FactorySample[] {
         name: s.name,
         category: 'drums' as const,
         tags: [...tags, ...s.extra],
-        buffer: toAudioBufferMono(ctx, s.render()),
+        ...monoPcm(s.render()),
     }));
 }

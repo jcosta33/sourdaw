@@ -1040,6 +1040,8 @@ export type AudioGraphApplyResult =
            * applied.
            */
           admittedBatch?: number;
+          /** Same native handle as admittedBatch; absent on legacy or unavailable witnesses. */
+          engineIncarnation?: string;
           engineId?: string;
           grinderModels?: readonly NativeGrinderModelReceipt[];
           reports: readonly AudioGraphStripReport[];

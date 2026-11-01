@@ -281,7 +281,14 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     relocateNoteExpression: ({ timeline }: { timeline: unknown }) => ({ timeline, expression: undefined }),
     registerScheduledSource: vi.fn(),
     scheduleFaustNote: vi.fn(),
-    audioEngine: { setTransportInfo: vi.fn() },
+    audioEngine: {
+        beginAudioPreviewIntent: () => ({
+            signal: new AbortController().signal,
+            isCurrent: () => true,
+            release: vi.fn(),
+        }),
+        setTransportInfo: vi.fn(),
+    },
     stopAllScheduled: vi.fn(),
     startAudioRecording: vi.fn(),
     stopAudioRecording: vi.fn(),

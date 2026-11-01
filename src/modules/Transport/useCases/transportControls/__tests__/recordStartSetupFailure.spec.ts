@@ -58,6 +58,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     prepareRecoveredRecording: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    audioEngine: { beginAudioPreviewIntent: () => ({ release: vi.fn() }) },
     createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
     resumeEngine: () => Promise.resolve(),
     nativeLiveGraphSessionOffered: () => false,

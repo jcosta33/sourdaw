@@ -13,7 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 
 import {
@@ -65,6 +65,30 @@ const WORKFLOW_PATH = '.github/workflows/health-gates.yml';
 // Cases that spawn git or node, or create and remove real fixture directories, pass an explicit 30 s ceiling
 // because they measured up to ~6 s on a loaded machine (#5229). In-memory cases keep vitest's 5 s default so an
 // injected delay in them still fails.
+
+// Fixture repositories must not inherit the host's global git config. A global trace2 consumer (git-ai) keeps writing
+// refs/notes/ai and working logs into a fixture's .git after `git commit` returns, which raced fixture teardown into
+// ENOTEMPTY and moved refs/notes/ai under assertions (#5933). Assigned directly because per-test
+// `vi.unstubAllEnvs()` would drop a stub.
+const HERMETIC_GIT_ENV = { GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } as const;
+const hostGitEnv = new Map<string, string | undefined>();
+
+beforeAll(() => {
+    for (const [name, value] of Object.entries(HERMETIC_GIT_ENV)) {
+        hostGitEnv.set(name, process.env[name]);
+        process.env[name] = value;
+    }
+});
+
+afterAll(() => {
+    for (const [name, value] of hostGitEnv) {
+        if (value === undefined) {
+            delete process.env[name];
+        } else {
+            process.env[name] = value;
+        }
+    }
+});
 
 /**
  * A throwaway mint key composed at runtime, so no credential-shaped literal is committed: the
@@ -9959,7 +9983,8 @@ describe('delivery author authentication', () => {
             } finally {
                 rmSync(root, { recursive: true, force: true });
             }
-        }
+        },
+        30_000
     );
 });
 
@@ -12839,7 +12864,7 @@ describe('delivery shell boundary', () => {
         const captures: string[][] = [];
         const latestUnrelatedReviews = Array.from({ length: 100 }, (_, index) => ({
             id: `review-unrelated-${index}`,
-            databaseId: 1,
+            databaseId: 100 + index,
             state: 'COMMENTED',
             submittedAt: null,
             author: {
@@ -12910,7 +12935,7 @@ describe('delivery shell boundary', () => {
         { label: 'null', submittedAt: null },
         { label: 'equal', submittedAt: '2026-08-19T00:00:00Z' },
     ])(
-        'uses GitHub connection order for opposite same-head reviewer states with $label timestamps',
+        'uses database id order, not list order, for opposite same-head reviewer states with $label timestamps',
         ({ submittedAt }) => {
             const captures: string[][] = [];
             const shell: ShellRunner = {
@@ -12922,9 +12947,9 @@ describe('delivery shell boundary', () => {
                             {
                                 nodes: [
                                     {
-                                        id: 'review-newest',
+                                        id: 'review-listed-last',
                                         databaseId: 1,
-                                        state: 'CHANGES_REQUESTED',
+                                        state: 'APPROVED',
                                         submittedAt,
                                         author: {
                                             id: REVIEWER_BOT_NODE_ID,
@@ -12945,9 +12970,9 @@ describe('delivery shell boundary', () => {
                             {
                                 nodes: [
                                     {
-                                        id: 'review-older',
-                                        databaseId: 1,
-                                        state: 'APPROVED',
+                                        id: 'review-greatest-id',
+                                        databaseId: 2,
+                                        state: 'CHANGES_REQUESTED',
                                         submittedAt,
                                         author: {
                                             id: REVIEWER_BOT_NODE_ID,

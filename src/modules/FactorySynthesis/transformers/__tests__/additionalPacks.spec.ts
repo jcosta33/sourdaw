@@ -1,15 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
-
-const mock_ctx = {
-    sampleRate: 48000,
-    createBuffer: vi.fn((channels: number, length: number, sampleRate: number) => ({
-        numberOfChannels: channels,
-        length,
-        sampleRate,
-        duration: length / sampleRate,
-        getChannelData: () => new Float32Array(length),
-    })),
-} as unknown as AudioContext;
+import { describe, it, expect } from 'vitest';
 
 import { generateImpactsPack } from '../generateImpactsPack';
 import { generateRisersPack } from '../generateRisersPack';
@@ -18,7 +7,7 @@ import { generateWorldPerc } from '../percWorld';
 
 describe('factory synthesis additional packs', () => {
     it('world percussion generates samples', () => {
-        const samples = generateWorldPerc(mock_ctx);
+        const samples = generateWorldPerc();
         expect(samples.length).toBeGreaterThan(0);
         for (const s of samples) {
             expect(s.id).toBeTruthy();
@@ -27,7 +16,7 @@ describe('factory synthesis additional packs', () => {
     });
 
     it('electronic percussion generates samples', () => {
-        const samples = generateElectronicPerc(mock_ctx);
+        const samples = generateElectronicPerc();
         expect(samples.length).toBeGreaterThan(0);
         for (const s of samples) {
             expect(s.category).toBe('drums');
@@ -35,7 +24,7 @@ describe('factory synthesis additional packs', () => {
     });
 
     it('risers pack generates samples', () => {
-        const samples = generateRisersPack(mock_ctx);
+        const samples = generateRisersPack();
         expect(samples.length).toBeGreaterThan(0);
         for (const s of samples) {
             expect(s.category).toBe('fx');
@@ -43,7 +32,7 @@ describe('factory synthesis additional packs', () => {
     });
 
     it('impacts pack generates samples', () => {
-        const samples = generateImpactsPack(mock_ctx);
+        const samples = generateImpactsPack();
         expect(samples.length).toBeGreaterThan(0);
         for (const s of samples) {
             expect(s.category).toBe('fx');
@@ -51,13 +40,13 @@ describe('factory synthesis additional packs', () => {
     });
 
     it('world percussion has unique IDs', () => {
-        const samples = generateWorldPerc(mock_ctx);
+        const samples = generateWorldPerc();
         const ids = samples.map((s) => s.id);
         expect(new Set(ids).size).toBe(ids.length);
     });
 
     it('risers have unique IDs', () => {
-        const samples = generateRisersPack(mock_ctx);
+        const samples = generateRisersPack();
         const ids = samples.map((s) => s.id);
         expect(new Set(ids).size).toBe(ids.length);
     });

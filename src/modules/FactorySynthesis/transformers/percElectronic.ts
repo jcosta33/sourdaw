@@ -1,4 +1,5 @@
-import { createMono, toAudioBufferMono } from '../services/bufferCreation';
+import { type RenderedFactorySample } from '../models/RenderedFactorySample';
+import { createMono, monoPcm } from '../services/bufferCreation';
 import { SAMPLE_RATE } from '../services/constants';
 import { normalize, softClip } from '../services/dynamics';
 import { feedbackDelay } from '../services/effects';
@@ -6,8 +7,6 @@ import { applyEnvelope, renderEnvelope } from '../services/envelopes';
 import { biquad, biquadSweep } from '../services/filters';
 import { mixMono } from '../services/mixing';
 import { renderFmOscillator, renderNoise, renderSine, renderSquare, renderTriangle } from '../services/oscillators';
-
-import { type FactorySample } from './types';
 
 function renderZap(): Float32Array {
     const dur = 0.15;
@@ -118,7 +117,7 @@ function renderSweepDown(): Float32Array {
     return out;
 }
 
-export function generateElectronicPerc(ctx: AudioContext): FactorySample[] {
+export function generateElectronicPerc(): RenderedFactorySample[] {
     const base = 'factory-electronic-perc';
     const tags = ['electronic', 'percussion', 'synthetic'];
     return [
@@ -135,6 +134,6 @@ export function generateElectronicPerc(ctx: AudioContext): FactorySample[] {
         name: s.name,
         category: 'drums' as const,
         tags: [...tags, ...s.extra],
-        buffer: toAudioBufferMono(ctx, s.render()),
+        ...monoPcm(s.render()),
     }));
 }

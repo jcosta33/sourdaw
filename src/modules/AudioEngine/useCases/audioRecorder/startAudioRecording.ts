@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
 
 import { startAudioRecording as startAudioRecordingRepo } from '../../repositories/audioRecorder/recording';
@@ -21,7 +22,13 @@ export async function startAudioRecording(
     if (!admitted) {
         return false;
     }
-    engageModeListeningPath(trackId, selectedInputId);
+    // The session is already recording; a caller told it failed would retire
+    // a take whose capture is still running and lose its audio.
+    try {
+        engageModeListeningPath(trackId, selectedInputId);
+    } catch (error) {
+        logger.error(new Error(`Failed to engage the recording listening path on track ${trackId}`, { cause: error }));
+    }
     return true;
 }
 

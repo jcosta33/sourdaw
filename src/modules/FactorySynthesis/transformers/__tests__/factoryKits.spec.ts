@@ -1,15 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
-
-const mock_ctx = {
-    sampleRate: 48000,
-    createBuffer: vi.fn((channels: number, length: number, sampleRate: number) => ({
-        numberOfChannels: channels,
-        length,
-        sampleRate,
-        duration: length / sampleRate,
-        getChannelData: () => new Float32Array(length),
-    })),
-} as unknown as AudioContext;
+import { describe, it, expect } from 'vitest';
 
 import { generateBassPack } from '../bass';
 import { generate808Kit } from '../drums808';
@@ -19,29 +8,29 @@ import { generateKeysPack } from '../keys';
 
 describe('Factory synthesis kits', () => {
     it('808 kit generates samples', () => {
-        const samples = generate808Kit(mock_ctx);
+        const samples = generate808Kit();
         expect(samples.length).toBeGreaterThan(0);
         for (const s of samples) {
             expect(s.id).toBeTruthy();
             expect(s.name).toBeTruthy();
             expect(s.category).toBe('drums');
-            expect(s.buffer).toBeDefined();
+            expect(s.channels).toHaveLength(1);
             expect(s.tags.length).toBeGreaterThan(0);
         }
     });
 
     it('909 kit generates samples', () => {
-        const samples = generate909Kit(mock_ctx);
+        const samples = generate909Kit();
         expect(samples.length).toBeGreaterThan(0);
     });
 
     it('lofi kit generates samples', () => {
-        const samples = generateLofiKit(mock_ctx);
+        const samples = generateLofiKit();
         expect(samples.length).toBeGreaterThan(0);
     });
 
     it('bass generates samples', () => {
-        const samples = generateBassPack(mock_ctx);
+        const samples = generateBassPack();
         expect(samples.length).toBeGreaterThan(0);
         for (const s of samples) {
             expect(s.category).toBe('bass');
@@ -49,7 +38,7 @@ describe('Factory synthesis kits', () => {
     });
 
     it('keys generates samples', () => {
-        const samples = generateKeysPack(mock_ctx);
+        const samples = generateKeysPack();
         expect(samples.length).toBeGreaterThan(0);
         for (const s of samples) {
             expect(s.category).toBe('keys');
@@ -57,15 +46,15 @@ describe('Factory synthesis kits', () => {
     });
 
     it('all 808 samples have unique ids', () => {
-        const samples = generate808Kit(mock_ctx);
+        const samples = generate808Kit();
         const ids = samples.map((s) => s.id);
         expect(new Set(ids).size).toBe(ids.length);
     });
 
-    it('all 808 sample buffers have positive length', () => {
-        const samples = generate808Kit(mock_ctx);
+    it('all 808 sample channels have positive length', () => {
+        const samples = generate808Kit();
         for (const s of samples) {
-            expect(s.buffer.length).toBeGreaterThan(0);
+            expect(s.channels[0]!.length).toBeGreaterThan(0);
         }
     });
 });

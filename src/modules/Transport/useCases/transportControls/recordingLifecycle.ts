@@ -1,4 +1,4 @@
-import { countSettledOverdubPasses, isOverdubLanding } from '#/modules/MIDI/useCases';
+import { countSettledOverdubPasses, isOverdubLanding, waitForOverdubLanding } from '#/modules/MIDI/useCases';
 
 import type { createNativeRecordingCaptureClock } from '#/modules/AudioEngine/useCases';
 import type { NativeCaptureSnapshot, NativeCaptureBoundary } from './nativeRecordingCaptureHistory';
@@ -20,6 +20,14 @@ type RecordingLifecycle = {
     readonly countInTimerId: ReturnType<typeof setTimeout> | null;
     /** How many take commits and overdub passes have settled, whether they landed or were retired. */
     readonly settledCommitCount: number;
+    /**
+     * How many recordings a stop gesture has closed (Pause, Stop, Record off,
+     * or a seek while recording). A punch-out and a loop wrap end a pass on
+     * their own and never count, so a start that fails after one is still
+     * the musician's to hear about.
+     */
+    readonly recordingStopCount: number;
+    noteRecordingStop: () => void;
     beginPendingRecordingStart: () => number;
     cancelPendingRecordingStart: () => void;
     completePendingRecordingStart: (token: number) => boolean;
@@ -52,6 +60,12 @@ type RecordingLifecycle = {
     /** Resolve once every closing stop has settled, including ones registered while waiting. */
     waitForClosing: () => Promise<void>;
     /**
+     * Resolve once `isClosingRecording` is false: every closing stop, tracked
+     * commit and overdub landing has settled. Unlike `waitForCommits` it takes
+     * nothing from the stops, so a caller other than a stop may use it.
+     */
+    waitUntilRecordingClosed: () => Promise<void>;
+    /**
      * Resolve once every tracked commit has settled, including ones registered while waiting.
      * Only a stop may call it: it takes the commits it awaits away from every later caller.
      */
@@ -62,6 +76,7 @@ let countInTimerId: ReturnType<typeof setTimeout> | null = null;
 let nextRecordingStartToken = 0;
 let pendingRecordingStartToken: number | null = null;
 let settledCommitCount = 0;
+let recordingStopCount = 0;
 
 /**
  * Commit promises a capture terminal started but nobody awaits. The terminal
@@ -156,12 +171,28 @@ async function waitForClosing(): Promise<void> {
     }
 }
 
+async function waitUntilRecordingClosed(): Promise<void> {
+    // Each pass awaits what is closing now; a stop, commit or landing that
+    // registers meanwhile keeps `isClosingRecording` true for the next pass.
+    while (isClosingRecording()) {
+        await waitForClosing();
+        await Promise.allSettled([...commitsInFlight]);
+        await waitForOverdubLanding();
+    }
+}
+
 export const recordingLifecycle: RecordingLifecycle = {
     get countInTimerId() {
         return countInTimerId;
     },
     get settledCommitCount() {
         return settledCommitCount + countSettledOverdubPasses();
+    },
+    get recordingStopCount() {
+        return recordingStopCount;
+    },
+    noteRecordingStop: () => {
+        recordingStopCount += 1;
     },
     beginPendingRecordingStart: () => {
         const token = ++nextRecordingStartToken;
@@ -247,4 +278,5 @@ export const recordingLifecycle: RecordingLifecycle = {
     trackTakeCommit,
     waitForClosing,
     waitForCommits,
+    waitUntilRecordingClosed,
 };

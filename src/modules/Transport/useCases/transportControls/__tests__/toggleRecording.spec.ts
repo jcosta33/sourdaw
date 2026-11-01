@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
+
 import { secondsBetweenBeats, type TempoChange } from '../../../models/TempoMap';
 import { type TimeSignatureChange } from '../../../models/TimeSignatureMap';
 import { defaultTransportState } from '../../../models/TransportState';
@@ -85,6 +87,32 @@ const mocks = vi.hoisted(() => {
         panicYeastRuntime: vi.fn<() => Promise<void>>(),
     };
 });
+const previewIntents = vi.hoisted(() => {
+    let exclusive: AbortController | null = null;
+    let ordinarySignal: AbortSignal | null = null;
+    return {
+        get ordinarySignal() {
+            return ordinarySignal;
+        },
+        beginExclusive() {
+            const controller = new AbortController();
+            exclusive = controller;
+            return { signal: controller.signal, release: () => controller.abort('released') };
+        },
+        beginOrdinary() {
+            const previous = exclusive;
+            exclusive = null;
+            previous?.abort('preempted');
+            const controller = new AbortController();
+            ordinarySignal = controller.signal;
+            return { signal: controller.signal, release: () => controller.abort('released') };
+        },
+        reset() {
+            exclusive?.abort('reset');
+            exclusive = null;
+        },
+    };
+});
 
 vi.mock('../../../repositories/transport/getTransportState', () => ({
     getTransportState: vi.fn(),
@@ -142,6 +170,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     ensureCachedAudioBuffersDurable: vi.fn(),
     createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
     audioEngine: {
+        beginAudioPreviewIntent: previewIntents.beginOrdinary,
+        beginExclusiveAudioPreviewIntent: previewIntents.beginExclusive,
         setTransportInfo: vi.fn(),
     },
     resumeEngine: mocks.resumeEngine,
@@ -187,6 +217,7 @@ describe('toggleRecording', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        previewIntents.reset();
         vi.useFakeTimers();
         // resumeEngine returns Promise<void>; default to resolved so the `.catch`
         // chain in the count-in path has a thenable.
@@ -241,6 +272,29 @@ describe('toggleRecording', () => {
         toggleRecording();
 
         expect(update).not.toHaveBeenCalled();
+    });
+
+    it('retires an exclusive preview before a pending recording admission', () => {
+        const events: string[] = [];
+        const exclusive = previewIntents.beginExclusive();
+        exclusive.signal.addEventListener('abort', () => events.push('preview-abort'));
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            isRecording: false,
+            countInEnabled: false,
+        });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: armedAudioTrack() });
+        mocks.startAudioRecording.mockImplementationOnce(() => {
+            expect(previewIntents.ordinarySignal?.aborted).toBe(true);
+            events.push('recording-admission');
+            return new Promise<boolean>(() => undefined);
+        });
+
+        toggleRecording();
+
+        expect(exclusive.signal.aborted).toBe(true);
+        expect(events).toEqual(['preview-abort', 'recording-admission']);
     });
 
     it('should count in using the resolved meter at the playhead, not the flat numerator', () => {
@@ -917,6 +971,72 @@ describe('toggleRecording', () => {
         expect(mocks.startRecording).not.toHaveBeenCalled();
         expect(updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
         expect(mocks.startPlayback).not.toHaveBeenCalled();
+    });
+
+    it('says the input failed and stops cleanly when an audio recorder start rejects', async () => {
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            isRecording: false,
+            countInEnabled: false,
+            punchInEnabled: false,
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
+        });
+        mocks.startAudioRecording.mockRejectedValueOnce(new Error('microphone permission denied'));
+
+        toggleRecording();
+
+        await vi.waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                'Unable to start recording. Check the selected audio input.',
+                'error'
+            );
+        });
+        expect(mocks.notifyUser).toHaveBeenCalledOnce();
+        expect(mocks.stopAudioRecording).toHaveBeenCalledOnce();
+        expect(mocks.startRecording).not.toHaveBeenCalled();
+        expect(updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
+        expect(mocks.startPlayback).not.toHaveBeenCalled();
+    });
+
+    it('stays quiet when a superseded recorder start rejects after recording is toggled again', async () => {
+        const start = Promise.withResolvers<boolean>();
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            isRecording: false,
+            countInEnabled: false,
+            punchInEnabled: false,
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
+        });
+        mocks.startAudioRecording.mockReturnValueOnce(start.promise);
+
+        toggleRecording();
+        await vi.waitFor(() => expect(mocks.startAudioRecording).toHaveBeenCalledOnce());
+        toggleRecording();
+        expect(mocks.stopActiveRecording).toHaveBeenCalledOnce();
+
+        const loggedErrors = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        try {
+            start.reject(new Error('microphone permission denied'));
+            // The failure is logged once the start settles; the superseded
+            // admission then returns before any notice or cleanup.
+            await vi.waitFor(() =>
+                expect(loggedErrors).toHaveBeenCalledWith(
+                    expect.objectContaining({ message: 'Audio recording failed to start' })
+                )
+            );
+        } finally {
+            loggedErrors.mockRestore();
+        }
+
+        expect(mocks.startRecording).not.toHaveBeenCalled();
+        expect(mocks.stopAudioRecording).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 
     it('cancels a pending recorder start when recording is toggled again', async () => {

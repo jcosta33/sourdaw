@@ -105,6 +105,7 @@ import { claimCarriedStrips } from './claimCarriedStrips';
 import { clearNativeChains } from './clearNativeChains';
 import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWriter';
 import { disarmNativeLiveMidiWriter } from './disarmNativeLiveMidiWriter';
+import { invalidateNativeAuditionMonitoring } from './invalidateNativeAuditionMonitoring';
 import { isHostedPluginDevice } from './isHostedPluginDevice';
 import { latchedPedalCommands } from './latchedPedalCommands';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
@@ -465,7 +466,13 @@ async function applyTopologyBatch(input: {
     const { backend } = input;
     const session = { backend: nativeLiveGraphSession.backend, epoch: nativeLiveGraphSession.rearmEpoch };
     const project = trackStore.value;
-    const commands = [...input.commands, ...latchedPedalCommands(builtDeviceAddresses(input.commands))];
+    const projected = input.commands.map((command): AudioGraphCommand => {
+        if (command.kind !== 'set-monitor-shadow') {
+            return command;
+        }
+        return { ...command, shadowed: command.shadowed || nativeLiveGraphSession.auditionOwner !== null };
+    });
+    const commands = [...projected, ...latchedPedalCommands(builtDeviceAddresses(input.commands))];
     const result = await backend.apply({ schemaVersion: 1, replaceTopology: true, commands });
     // A batch that starts the engine takes over the plugin instances loaded
     // before there was one — reported to their devices as loaded but processing
@@ -581,6 +588,7 @@ function reasonOf(error: unknown): string {
 function abandonSessionStart(backend: ReturnType<typeof createNativeLiveGraphBackend>): void {
     claimCarriedStrips(new Set());
     nativeLiveGraphSession.audibleCarrier = false;
+    nativeLiveGraphSession.programmeCarrier = false;
     // A topology batch may already have written its chains before the throw,
     // and they describe a graph this start is walking away from.
     clearNativeChains();
@@ -953,6 +961,9 @@ async function installRolledSession(input: {
     validateModelRoll?: () => void;
 }): Promise<void> {
     const { session, backend, topology, installed, rebound, monitor } = input;
+    // Its admission already preempted older gestures. Installing that request
+    // is not a new gesture over an audition admitted while this start waited.
+    invalidateNativeAuditionMonitoring(false);
     nativeLiveGraphSession.backend?.dispose();
     // This session's `replaceTopology` batch has already replaced the whole
     // topology a still-orphaned handle was left rolling, so that handle has
@@ -969,7 +980,11 @@ async function installRolledSession(input: {
     // contributing strip, and the note writer has to agree with the engine
     // rather than with what Web Audio was told to give up.
     const reboundStripIds = carriedStripIds(rebound.commands);
-    nativeLiveGraphSession.audibleCarrier = !input.validateModelRoll && reboundStripIds.size > 0 && !shadowed;
+    // A model roll defers the programme claim to its admitted roll below.
+    nativeLiveGraphSession.programmeCarrier = !input.validateModelRoll && reboundStripIds.size > 0 && !shadowed;
+    nativeLiveGraphSession.auditionOutputSuppressed = nativeLiveGraphSession.auditionOwner !== null;
+    nativeLiveGraphSession.audibleCarrier =
+        nativeLiveGraphSession.programmeCarrier && !nativeLiveGraphSession.auditionOutputSuppressed;
     nativeLiveGraphSession.rolling = false;
     nativeLiveGraphSession.captureAdmissions = [];
     disarmNativeLiveAutomationWriter();
@@ -998,7 +1013,9 @@ async function installRolledSession(input: {
                               programme: installed.programme,
                           });
                       }
-                      nativeLiveGraphSession.audibleCarrier = reboundStripIds.size > 0 && !shadowed;
+                      nativeLiveGraphSession.programmeCarrier = reboundStripIds.size > 0 && !shadowed;
+                      nativeLiveGraphSession.audibleCarrier =
+                          nativeLiveGraphSession.programmeCarrier && !nativeLiveGraphSession.auditionOutputSuppressed;
                   },
               }
             : undefined,
@@ -1011,6 +1028,7 @@ async function installRolledSession(input: {
         // Only the audio goes back.
         releaseCarriedStrips();
         nativeLiveGraphSession.audibleCarrier = false;
+        nativeLiveGraphSession.programmeCarrier = false;
         notifyNativeDecline(parkedReason);
     }
     startNativeEnginePlayheadFeed();
@@ -1022,6 +1040,7 @@ async function installRolledSession(input: {
 export function startNativeLiveGraphSession(
     input: StartNativeLiveGraphSessionInput
 ): Promise<NativeLiveGraphSessionResult> {
+    invalidateNativeAuditionMonitoring();
     // Synchronously, before anything is queued: a start is the session for the
     // play running now, so any recovery in flight for an earlier one — a claim
     // already taken, or a retire about to publish its offer — has to stand
@@ -1062,7 +1081,6 @@ export function startNativeLiveGraphSession(
                 validateModelRoll,
                 projectTopology,
             } = prepared;
-            const audible = monitor === 'audible';
             // Everything past the claim, so that every way out of it reopens the
             // gates — a rejected sample registration, a bridge that drops mid-apply,
             // a reporter that throws. An unwind that left them shut would silence
@@ -1125,7 +1143,7 @@ export function startNativeLiveGraphSession(
                 // Restated against the batch that actually stands: binding an instance
                 // can move a strip from web to native, and the optimistic claim above
                 // was made before the engine held it.
-                if (audible && !waitsForModels) {
+                if (monitor === 'audible' && !waitsForModels) {
                     claimCarriersOf({
                         ...topology,
                         commands: rebound.commands,
