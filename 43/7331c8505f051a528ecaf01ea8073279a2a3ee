@@ -1,0 +1,19 @@
+src/modules/WorkspaceShell/presentations/hooks/useStatusBarMetrics.ts
+  s_3ad01992bbadc3::t_149fe0f97bba3d 519
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "437331c8505f051a528ecaf01ea8073279a2a3ee",
+  "prompts": {},
+  "sessions": {
+    "s_3ad01992bbadc3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_3ad01992bbadc3",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
