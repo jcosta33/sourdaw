@@ -1,0 +1,54 @@
+src/modules/Arrangement/handlers/preset/__tests__/handleLoadPreset.spec.ts
+  s_fec7059b7a251c::t_4d7a0c5c9cd10a 679-685,690
+  s_fec7059b7a251c::t_2ba5f00b18934d 618-678,686-689,691-692
+  s_fec7059b7a251c::t_dc6b2fa46c51b9 461-485,492-527,529-533,535-537
+  s_fec7059b7a251c::t_cb16c9dbd56f26 70-74
+  s_fec7059b7a251c::t_79e5dd0ea568c5 489-490
+  s_fec7059b7a251c::t_e269c19f1ac94c 486-488,491
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_fec7059b7a251c::t_4f7c1ef83be249 980-988
+src/modules/Arrangement/handlers/projectTrackThroughPriorBatchActions.ts
+  s_fec7059b7a251c::t_ead7d6bd9f58cb 9-10
+  s_fec7059b7a251c::t_a72970272f12a0 156-157
+src/modules/Arrangement/handlers/preset/handleLoadPreset.ts
+  s_fec7059b7a251c::t_da6e373123c136 98
+  s_fec7059b7a251c::t_edd5c67932203d 93,96,292-300
+  s_fec7059b7a251c::t_09b9d73f714b2a 94-95
+  s_fec7059b7a251c::t_03c1bde7f41cd7 97
+  s_fec7059b7a251c::t_bf0dacb3fc404a 99-100
+  s_fec7059b7a251c::t_51c48b07600bee 18,33-34,102,325,341
+  s_fec7059b7a251c::t_9ddfa859385d77 123,129,140-185,191-193,229
+src/modules/ContentBrowser/useCases/__tests__/executePresetLoad.undo.integration.spec.ts
+  s_fec7059b7a251c::t_d5da6d074c62a1 141
+  s_fec7059b7a251c::t_1d2639f4d6edaf 2-8,10-11,14,16-60,62-68,70-72,74-77,79-108,110-140,142-159,162-204,206-259
+  s_fec7059b7a251c::t_c29ccd3aa007d5 1
+  s_fec7059b7a251c::t_9b06523247bbae 12-13
+  s_fec7059b7a251c::t_3b6a4ec3db422f 15
+  s_fec7059b7a251c::t_732fc712b3a82a 78
+  s_fec7059b7a251c::t_83fa15021f136d 109
+  s_fec7059b7a251c::t_23e4c045988c19 160-161
+  s_fec7059b7a251c::t_ac453542549906 205
+  s_fec7059b7a251c::t_544d1e61af1bec 73
+  s_fec7059b7a251c::t_2844df9f7215d4 9
+  s_fec7059b7a251c::t_0cea1e0362af0d 69
+  s_fec7059b7a251c::t_be126611b6c37d 61
+src/modules/Arrangement/handlers/preset/toPresetProjectDevices.ts
+  s_fec7059b7a251c::t_ecfc2bd954024c 1-4,33-34,36
+  s_fec7059b7a251c::t_b29fe080141bef 5-32,35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5f9877978f925d7bb01f74c5751f5c533b7a2afb",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
