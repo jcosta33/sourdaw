@@ -63,11 +63,27 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
 }));
-// The recording lifecycle reads overdub landings; none land in this spec.
+// MIDI owns the overdub landings the recording lifecycle reads, with the
+// semantics of its registry: one in flight until it lands or is refused.
+const overdub = vi.hoisted(() => {
+    const state = { landing: null as Promise<void> | null, settled: 0 };
+    return {
+        state,
+        land(landing: Promise<void>): void {
+            const settle = (): void => {
+                state.landing = null;
+                state.settled += 1;
+            };
+            state.landing = landing.then(settle, settle);
+        },
+    };
+});
 vi.mock('#/modules/MIDI/useCases', () => ({
-    countSettledOverdubPasses: () => 0,
-    isOverdubLanding: () => false,
-    waitForOverdubLanding: () => Promise.resolve(),
+    countSettledOverdubPasses: () => overdub.state.settled,
+    isOverdubLanding: () => overdub.state.landing !== null,
+    waitForOverdubLanding: async () => {
+        await overdub.state.landing;
+    },
 }));
 vi.mock('../../playheadScheduler/startPlayheadScheduler', () => ({
     startPlayheadScheduler: vi.fn(),
@@ -267,6 +283,52 @@ describe('startPlayback', () => {
             expect(prepareInitialBrowserPlayback).toHaveBeenCalledTimes(1);
             expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
             expect(recordingLifecycle.isClosingRecording()).toBe(false);
+        });
+
+        /** Let every queued continuation run, so a Play that is not held reaches its preparation. */
+        function drainPendingWork(): Promise<void> {
+            return new Promise((resolve) => {
+                setTimeout(resolve, 0);
+            });
+        }
+
+        it.each([
+            [
+                'a take commit still in flight with no stop closing',
+                () => {
+                    const commit = Promise.withResolvers<void>();
+                    recordingLifecycle.trackCommit(commit.promise);
+                    return commit.resolve;
+                },
+            ],
+            [
+                'an overdub pass still landing',
+                () => {
+                    const landing = Promise.withResolvers<void>();
+                    overdub.land(landing.promise);
+                    return landing.resolve;
+                },
+            ],
+        ])('holds a punch Play while %s', async (_, startClosing) => {
+            playFrom(6);
+            vi.mocked(opensPunchIn).mockReturnValue(true);
+            const closingAtPreparation: boolean[] = [];
+            const prepare = vi.mocked(prepareInitialBrowserPlayback).getMockImplementation();
+            vi.mocked(prepareInitialBrowserPlayback).mockImplementationOnce((generation) => {
+                closingAtPreparation.push(recordingLifecycle.isClosingRecording());
+                return prepare ? prepare(generation) : null;
+            });
+            const settle = startClosing();
+            expect(recordingLifecycle.isClosingRecording()).toBe(true);
+
+            const playback = startPlayback();
+            await drainPendingWork();
+            expect(prepareInitialBrowserPlayback).not.toHaveBeenCalled();
+            settle();
+            await playback;
+
+            expect(closingAtPreparation).toEqual([false]);
+            expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
         });
     });
 

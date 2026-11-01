@@ -879,6 +879,47 @@ describe('automatic punch Pause and Play with real recording commits', () => {
             expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual([successor]);
         });
 
+        it('retires a held refused start when the scheduler is disposed while the next Play prepares', async () => {
+            const admitStart = mocks.startAudioRecording.getMockImplementation();
+            if (!admitStart) {
+                throw new Error('Expected the recorder fake admission');
+            }
+            const pausedStart = Promise.withResolvers<boolean>();
+            const successorAdmission = Promise.withResolvers<void>();
+            mocks.startAudioRecording
+                .mockImplementationOnce(() => pausedStart.promise)
+                .mockImplementationOnce(async (trackId, callback) => {
+                    await successorAdmission.promise;
+                    return admitStart(trackId, callback);
+                });
+            armFirstWindowPunch(null);
+            const pausedPlay = startPlayback();
+            await vi.waitFor(() => expect(mocks.startAudioRecording).toHaveBeenCalledTimes(1));
+            const refused = activeRecordingRef.current[0];
+            expect(refused).toBeTruthy();
+            pausePlayback();
+            await recordingLifecycle.waitForClosing();
+            const successorPlay = startPlayback();
+            await vi.waitFor(() => expect(mocks.startAudioRecording).toHaveBeenCalledTimes(2));
+            pausedStart.resolve(false);
+            await pausedPlay;
+            // The successor is still preparing, so the refused start's retirement is held.
+            expect(trackStore.value?.tracks[0]?.clips.some((clip) => clip.id === refused)).toBe(true);
+
+            disposePlayheadScheduler();
+
+            expect(trackStore.value?.tracks[0]?.clips.some((clip) => clip.id === refused)).toBe(false);
+            expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes.map((take) => take.clipId))).not.toContain(
+                refused
+            );
+
+            successorAdmission.resolve();
+            await successorPlay;
+            pausePlayback();
+            mocks.release(pcm(0.5));
+            await recordingLifecycle.waitForClosing();
+        });
+
         it.each([
             [
                 'a transport field',
