@@ -1,9 +1,10 @@
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { expect, test, type Page, type Request, type Route } from '@playwright/test';
+import { type Page, type Request, type Route } from '@playwright/test';
 import { stringify } from 'superjson';
 
+import { expect, test } from './e2eTest';
 import { enable_direct_e2e_viewport, launch_new_project } from './e2eUtils';
 
 const ROOT = realpathSync(fileURLToPath(new URL('../../', import.meta.url)));

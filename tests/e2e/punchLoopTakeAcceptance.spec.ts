@@ -2,8 +2,9 @@
 import { randomUUID } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 
-import { chromium, expect, test, type Page, type TestInfo } from '@playwright/test';
+import { chromium, type Page, type TestInfo } from '@playwright/test';
 
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace, wait_for_launch_first_paint, wait_for_workspace_ready } from './e2eUtils';
 import { attach_first_paint_console, CAPABILITIES_MARKER, wait_for_console_marker } from './firstPaintDiagnostics';
 import { installFilePickerCapture } from './exportFilePickerCapture';

@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 // A 2-second sine WAV (~4 beats at 120 BPM) so the clip has a wide enough body
@@ -31,7 +30,9 @@ function buildDragWav(): Buffer {
 // Set up an audio track with an imported clip, open the bottom dock's Editor
 // tab so the ClipView strip mounts, and select the clip. Returns the timeline
 // canvas locator.
-async function setupAudioClipForDrag(page: import('@playwright/test').Page): Promise<import('@playwright/test').Locator> {
+async function setupAudioClipForDrag(
+    page: import('@playwright/test').Page
+): Promise<import('@playwright/test').Locator> {
     const isMac = await page.evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
     await page.keyboard.press(isMac ? 'Meta+K' : 'Control+K');
     const paletteInput = page.getByTestId('command-palette-input');

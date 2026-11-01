@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 async function openTrackMenu(page: import('@playwright/test').Page, trackName: RegExp | string): Promise<void> {

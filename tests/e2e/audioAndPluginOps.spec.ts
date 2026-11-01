@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './e2eTest';
 import { launch_from_template, open_browser_instrument, setupWorkspace } from './e2eUtils';
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 async function openMixer(page: import('@playwright/test').Page): Promise<void> {
@@ -52,7 +51,10 @@ test.describe('Mixer snapshots & AI health — test-id targeted', () => {
 
         // A snapshot list should appear.
         const list = page.getByText(/snapshot/i);
-        const hasList = await list.first().isVisible().catch(() => false);
+        const hasList = await list
+            .first()
+            .isVisible()
+            .catch(() => false);
         // At minimum, the save didn't crash.
         await expect(save).toBeVisible();
     });

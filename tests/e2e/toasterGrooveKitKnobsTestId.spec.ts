@@ -1,5 +1,6 @@
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
+import { expect, test } from './e2eTest';
 import { launch_new_project, open_browser_instrument, setupWorkspace } from './e2eUtils';
 
 async function stepKitKnob(
