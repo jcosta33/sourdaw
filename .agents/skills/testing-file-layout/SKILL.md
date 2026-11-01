@@ -37,7 +37,7 @@ From `useCases/__tests__/addTrack.spec.ts`, import `../addTrack`. For a multi-su
 
 **Why:** a foreign deep import is the same architecture violation in a test that it is in production code.
 
-**Enforced by:** dependency-cruiser `external-tests-contract-only` and `external-tests-no-relative-module-imports` (`.dependency-cruiser.tests.cjs`).
+**Enforced by:** dependency-cruiser (`.dependency-cruiser.tests.cjs`): `cross-module-index-only` and `no-relative-cross-module-imports` for specs inside `src/modules`; `external-tests-contract-only` and `external-tests-no-relative-module-imports` for specs outside `src/modules`.
 
 ### 4. Put shared helpers in their canonical folder
 

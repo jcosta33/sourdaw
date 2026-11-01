@@ -51,7 +51,7 @@ Document lifecycle — create/load/save, branches, merge, semantic action histor
 
 **Why:** two writable copies of one truth diverge; a projection you cannot throw away becomes the bug you cannot find.
 
-**Enforced by:** `src/modules/CrdtDocument/useCases/projection/__tests__/projectionIsReadOnly.spec.ts` (a projection pass writes nothing to the document); the rest is review only.
+**Enforced by:** `src/modules/CrdtDocument/useCases/projection/__tests__/projectionIsReadOnly.spec.ts` (a projection pass writes to the document only in slots declaring `derivedFromSiblingSlot`); the rest is review only.
 
 ### 4. Dispatch the owning action; never `store.set` a CRDT-backed store
 

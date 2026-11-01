@@ -80,7 +80,7 @@ Never persist a derivative as truth. Selectors stay read-only — no write side 
 
 **Why:** stored derivatives drift from source truth and become a second model.
 
-**Enforced by:** `src/modules/CrdtDocument/useCases/projection/__tests__/projectionIsReadOnly.spec.ts` for projections; selectors are review only.
+**Enforced by:** `src/modules/CrdtDocument/useCases/projection/__tests__/projectionIsReadOnly.spec.ts` for projections (document writes only in slots declaring `derivedFromSiblingSlot`); selectors are review only.
 
 ### 8. Async fetch/cache is not editable business state
 

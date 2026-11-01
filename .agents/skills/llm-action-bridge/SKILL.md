@@ -71,7 +71,7 @@ The shape is: AI proposes → validation → confirm if required → execute →
 
 **Why:** bulk delete from a bad parse is worse than a refused action.
 
-**Enforced by:** `src/modules/Command/useCases/__tests__/commandApprovalBoundary.spec.ts`.
+**Enforced by:** the risk-to-confirmation map in `getExecutableCommandConfirmation.ts` is observed by `commandRegistryCompleteness.spec.ts` (confirmation required exactly when risk is not `bounded-reversible`, for every registered command) and `appActionExecutionPolicy.spec.ts` (single and batch policy); the confirmation reason text is review only. `commandApprovalBoundary.spec.ts` covers approval-binding consumption, not the map.
 
 ### 8. Make AI execution observable
 
