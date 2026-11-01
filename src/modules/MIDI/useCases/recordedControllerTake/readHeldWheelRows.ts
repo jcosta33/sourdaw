@@ -13,7 +13,7 @@ import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
  */
 export function readHeldWheelRows(): MidiPitchBend[] {
     const mpeEnabled = getMpeEnabled();
-    return [...channelPitchBendState]
+    return Array.from(channelPitchBendState)
         .filter(([channel, value]) => value !== 0 && !(mpeEnabled && channel >= MPE_FIRST_MEMBER_CHANNEL))
         .toSorted(([left], [right]) => left - right)
         .map(([channel, value]) => createMidiPitchBend(value, 0, channel, !mpeEnabled));

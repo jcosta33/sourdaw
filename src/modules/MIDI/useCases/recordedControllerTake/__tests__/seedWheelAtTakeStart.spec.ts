@@ -29,6 +29,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
             return mocks.trackState.value;
         },
     },
+    resolveEligibleClipWriteTarget: vi.fn(),
 }));
 
 vi.mock('#/modules/ControlSurface/useCases', () => ({
@@ -217,6 +218,17 @@ describe('the pitch wheel a keyboard held off centre when a take began', () => {
             expect(playedBend()).toEqual([
                 { beat: 4, value: WHEEL_DOWN.delta, channel: CHANNEL_1, channelScoped: false, rangeSemitones: 2 },
             ]);
+        });
+
+        it('seeds only the zone master when the first member channel also holds its wheel off centre', () => {
+            webMidiRuntime.mpeEnabled = true;
+            holdWheel(CHANNEL_1, WHEEL_DOWN);
+            holdWheel(CHANNEL_2, WHEEL_UP);
+            beginTake();
+
+            commitRecordedControllers({ clip: spanOf(CLIP) });
+
+            expect(bare(storedBends())).toEqual([{ value: WHEEL_DOWN.delta, beat: 0, channel: CHANNEL_1 }]);
         });
 
         it('seeds no member channel wheel, whose bend is per-note data the take records on the note', () => {

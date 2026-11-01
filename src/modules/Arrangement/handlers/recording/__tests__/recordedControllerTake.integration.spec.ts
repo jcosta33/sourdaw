@@ -369,7 +369,7 @@ describe('recorded controller take commit', () => {
             expect(midiStore.value?.pitchBendByClipId[clipId]).toEqual(committedBend);
         });
 
-        it('writes nothing for a discarded take and starts the next take empty', async () => {
+        it('writes nothing for a discarded take and starts the next take with none of its rows, only the wheel it left held', async () => {
             const discardedClipId = await startLiveTake();
             sendLive(4.5, 0xb0, 1, 55);
             sendLive(5, 0xe0, 104, 71);
