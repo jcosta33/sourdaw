@@ -15,6 +15,7 @@ import {
     audioEngine,
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
+    initEngineDeviceCollaborators,
 } from '#/modules/AudioEngine/useCases';
 import {
     captureProjectRevision,
@@ -202,6 +203,7 @@ describe('project strip initialization before bus facade and send publication', 
         });
         configureRuntimeGraphProjectRevisionValidator((revision) => revision === captureProjectRevision());
         configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
+        initEngineDeviceCollaborators();
         workspaceStore.set({ ...defaultWorkspaceState, soloMode: 'sip' });
     });
 
@@ -210,6 +212,7 @@ describe('project strip initialization before bus facade and send publication', 
         sidechainStore.set({ routes: [] });
         configureRuntimeGraphProjectRevisionValidator(null);
         configureRuntimeGraphTopologyValidator(null);
+        audioEngine.setUseCaseDeviceCollaborators(null);
         restoreTrackSnapshot({ tracks: [], selectedTrackId: null });
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);

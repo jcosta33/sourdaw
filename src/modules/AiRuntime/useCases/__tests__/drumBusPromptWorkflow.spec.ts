@@ -1281,6 +1281,7 @@ describe('drum bus prompt workflow', () => {
             (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
         );
         audioEngineUseCases.configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
+        audioEngineUseCases.initEngineDeviceCollaborators();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         registerHandlerMap(getAudioRenderingHandlers());
@@ -1333,6 +1334,7 @@ describe('drum bus prompt workflow', () => {
         commandBatchPreflightPort.setProvider(null);
         audioEngineUseCases.configureRuntimeGraphProjectRevisionValidator(null);
         audioEngineUseCases.configureRuntimeGraphTopologyValidator(null);
+        audioEngineUseCases.audioEngine.setUseCaseDeviceCollaborators(null);
         clearAgentSectionRenderArtifacts();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         markerStore.set({ markers: [], sections: [] });
