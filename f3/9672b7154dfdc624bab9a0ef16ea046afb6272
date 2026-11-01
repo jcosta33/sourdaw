@@ -1,0 +1,43 @@
+src/modules/MIDI/useCases/midiEvent/restorePitchBend.ts
+  s_9091c7fb2989db::t_ced6d61da0c918 8-12,14-18,25-33,39
+src/modules/TimelineEditor/presentations/views/AutomationLane/PitchBendLane.tsx
+  s_0314bb17e5dee3::t_ca9daeb593d8fe 139-141,147
+src/modules/MIDI/AGENTS.md
+  s_9091c7fb2989db::t_ab5ef8b625f3d4 27
+src/modules/MIDI/services/__tests__/transformMidiGlobalTimeState.spec.ts
+  s_9091c7fb2989db::t_75096a9449bc18 786-808
+src/modules/MIDI/services/projectMidiClipWindow.ts
+  s_9091c7fb2989db::t_2ec12da9fa723f 104-105,108-109,111,131,136,145-146,162,174-175,177-180,222-228
+src/modules/MIDI/services/transformMidiGlobalTimeState.ts
+  s_9091c7fb2989db::t_5bf66dc299232e 523-524,687
+src/modules/MIDI/useCases/midiClipData/__tests__/projectChannelBend.spec.ts
+  s_9091c7fb2989db::t_f9691252edf122 85-108
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/PitchBendLane.spec.tsx
+  s_9091c7fb2989db::t_46406fd6ac1e0e 70,674-676,687
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/laneUndoRoundTrip.spec.tsx
+  s_9091c7fb2989db::t_b88737a43e5ecb 6,259-303
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f39672b7154dfdc624bab9a0ef16ea046afb6272",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9091c7fb2989db": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3cde0d3-cad6-4d0d-93a9-91700b2ed782",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
