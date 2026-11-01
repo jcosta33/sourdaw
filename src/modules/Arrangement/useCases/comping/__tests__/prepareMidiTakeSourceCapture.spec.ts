@@ -116,6 +116,27 @@ describe('prepare MIDI take source capture', () => {
         });
     });
 
+    it('strides every pass of a recording begun before the loop by the loop length', () => {
+        // Recorded from 6 in loop [8, 12): the first pass keeps its loop window at depth 0, the second sits a loop deeper.
+        const clip = ClipDummy.create({ id: 'source', type: 'midi', startBeat: 6, endBeat: 16 });
+        const first = { ...createTake('source', 'First pass', 8, 12, 0), recordingPassIndex: 0 };
+        const second = { ...createTake('source', 'Second pass', 8, 12, 4), recordingPassIndex: 1 };
+        const siblingTakes = [first, second];
+
+        expect(prepareMidiTakeSourceCapture({ clip, take: first, siblingTakes, rows, timeline })).toMatchObject({
+            sourceEntryBeat: 2,
+            sourceEndBeat: 6,
+            phaseHeadBeat: 8,
+            passLengthBeats: 4,
+        });
+        expect(prepareMidiTakeSourceCapture({ clip, take: second, siblingTakes, rows, timeline })).toMatchObject({
+            sourceEntryBeat: 6,
+            sourceEndBeat: 10,
+            phaseHeadBeat: 8,
+            passLengthBeats: 4,
+        });
+    });
+
     it('accepts a negative source entry and refuses an incomplete present snapshot', () => {
         const clip = ClipDummy.create({
             id: 'source',

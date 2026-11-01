@@ -87,6 +87,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     readMusicalRangeInputs: vi.fn(),
     resolveEligibleDeviceWriteTarget: vi.fn(),
 
+    activeRecordingRef: { current: [] },
     trackStore: { value: null, subscribe: vi.fn(() => () => {}) },
     resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
         () => ({ status: 'missing' })

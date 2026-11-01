@@ -6,6 +6,7 @@ import { type AnswerOnsets } from '../models/AnswerEvidence';
 import { ANSWER_RESPOND_MAX_COMPOSED_CHARACTERS, type PlanningAnswer } from '../models/AnswerRespond';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type AnswerSuggestion } from '../models/PlanningOutcome';
+import { formatAnswerNumber, quoteSourceData } from '../services/answerSourceFormat';
 
 import {
     type AnswerMeasurement,
@@ -44,17 +45,6 @@ const LIMITATIONS = {
     'bounded-evidence': 'This answer is limited to the available bounded evidence.',
     'perception-not-inferred': 'These objective measurements do not establish perceived sound quality or its cause.',
 };
-/** Names are attributed data, including digits, units and Markdown metacharacters. */
-function quoteSourceData(value: string): string {
-    return `“${value.replaceAll(/[\\`*_{}[\]()<>!#|~]/g, '\\$&').replaceAll(/[\r\n]/g, ' ')}”`;
-}
-function formatAnswerNumber(value: number): string {
-    if (!Number.isFinite(value)) {
-        return 'unavailable';
-    }
-    const rounded = Math.round(value * 100) / 100;
-    return String(Object.is(rounded, -0) ? 0 : rounded);
-}
 function formatSubjectLabel(authority: AnswerRequestAuthority, id: string): string {
     if (id === 'master') {
         return 'Master output';
