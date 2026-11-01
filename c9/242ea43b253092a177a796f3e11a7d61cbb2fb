@@ -1,0 +1,19 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/cropHistoryFromRenderedBuffer.spec.ts
+  s_dde1671ba022b8::t_26badf1f959cbf 122,128-145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c9242ea43b253092a177a796f3e11a7d61cbb2fb",
+  "prompts": {},
+  "sessions": {
+    "s_dde1671ba022b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e4c42ac-51ff-45eb-b81f-f43601ed01dc",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
