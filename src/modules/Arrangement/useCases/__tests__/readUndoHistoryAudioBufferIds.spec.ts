@@ -24,13 +24,24 @@ function callbackEntry(id: string, restoresBufferIds?: readonly string[]): UndoH
         kind: 'callback',
         undo: () => undefined,
         redo: () => undefined,
-        ...(restoresBufferIds ? { restoresBufferIds } : {}),
+        restoresBufferIds,
     };
 }
 
 function restoreClipAction(clipId: string, bufferId: string): AppAction {
     const clipSnapshot = ClipDummy.create({ id: clipId, trackId: 'track-1', audioBufferId: bufferId });
-    return { type: 'restoreClip', payload: { clipId, trackId: 'track-1', clipSnapshot } };
+    return {
+        type: 'restoreClip',
+        payload: {
+            clipId,
+            trackId: 'track-1',
+            clipSnapshot,
+            ripplePlan: null,
+            midiNotesSnapshot: null,
+            midiCcSnapshot: null,
+            midiPitchBendSnapshot: null,
+        },
+    };
 }
 
 /** `removeClip` as the handler records it: the inverse carries the whole clip. */

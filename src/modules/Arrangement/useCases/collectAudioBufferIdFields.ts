@@ -23,21 +23,28 @@ function readIdString(value: unknown): string | undefined {
     return undefined;
 }
 
+/** The items of a list, plain or as the codec's encoded `{ type: 'array', items }` node. */
+function readListItems(value: unknown): readonly unknown[] {
+    if (Array.isArray(value)) {
+        return value;
+    }
+    if (isRecord(value) && value.type === 'array' && Array.isArray(value.items)) {
+        return value.items;
+    }
+    return [];
+}
+
+function isDefined(value: string | undefined): value is string {
+    return value !== undefined;
+}
+
 /** The ids a buffer-named field holds: one string or a list of them, plain or codec-encoded. */
 function readIdStrings(value: unknown): string[] {
     const single = readIdString(value);
     if (single !== undefined) {
         return [single];
     }
-    const items = Array.isArray(value)
-        ? value
-        : isRecord(value) && value.type === 'array' && Array.isArray(value.items)
-          ? value.items
-          : [];
-    return items.flatMap((item) => {
-        const id = readIdString(item);
-        return id === undefined ? [] : [id];
-    });
+    return readListItems(value).map(readIdString).filter(isDefined);
 }
 
 /**
