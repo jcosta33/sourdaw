@@ -239,6 +239,40 @@ function readCompleteReviewState(
     };
 }
 
+/**
+ * GitHub orders the reviews connection by `submittedAt`, and it has stamped a newer review with an
+ * earlier time than older ones on the same pull request. `review:publish` creates and submits each
+ * reviewer review in one request, so the greatest database id is the latest submission; a reviewer
+ * review without a unique id cannot be ordered and refuses the read.
+ */
+function latestReviewerReview(
+    number: number,
+    reviews: readonly PullRequestReviewRecord[]
+): PullRequestReviewRecord | undefined {
+    let latest: { review: PullRequestReviewRecord; databaseId: number } | undefined;
+    const seen = new Set<number>();
+    for (const review of reviews) {
+        if (
+            review.state === 'PENDING' ||
+            review.author?.__typename !== 'Bot' ||
+            review.author.id !== REVIEWER_BOT_NODE_ID
+        ) {
+            continue;
+        }
+        if (review.databaseId === null) {
+            fail(`PR #${number} has incomplete reviewer review identity; retry when the live state is complete`);
+        }
+        if (seen.has(review.databaseId)) {
+            fail(`cannot prove reviewer review order for PR #${number}`);
+        }
+        seen.add(review.databaseId);
+        if (latest === undefined || review.databaseId > latest.databaseId) {
+            latest = { review, databaseId: review.databaseId };
+        }
+    }
+    return latest?.review;
+}
+
 export function readPullRequestReviewState(
     number: number,
     expectedHead: string,
@@ -272,14 +306,7 @@ export function readPullRequestReviewState(
     if (!isDeepStrictEqual(first, second)) {
         fail(`cannot prove stable review state for PR #${number}`);
     }
-    // Connection order is authoritative even when GitHub gives two reviews the same timestamp.
-    const reviewerIndex = second.reviews.findLastIndex(
-        (review) =>
-            review.state !== 'PENDING' &&
-            review.author?.__typename === 'Bot' &&
-            review.author.id === REVIEWER_BOT_NODE_ID
-    );
-    const reviewer = second.reviews[reviewerIndex];
+    const reviewer = latestReviewerReview(number, second.reviews);
     return {
         latestReviewerStateOnHead: reviewer?.commitOid === expectedHead ? reviewer.state : null,
         latestReviewerReviewDatabaseId:
