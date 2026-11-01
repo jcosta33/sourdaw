@@ -19,16 +19,21 @@ A built-in device is one identity spread over a descriptor, a Rust engine, an en
 | Concern                                         | Path                                                                                                                      |
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | Descriptor (one per device) and its guidance    | `src/modules/Arrangement/models/PluginDescriptors/<Device>Descriptor.ts`                                                  |
-| Aggregate of every built-in descriptor          | `BUILTIN_PLUGINS` in `src/modules/Arrangement/models/DeviceParameter.ts`                                                  |
+| Register the descriptor                         | add it to `BUILTIN_PLUGINS` in `src/modules/Arrangement/models/DeviceParameter.ts`                                        |
+| Device type id                                  | `NATIVE_DSP_DEVICE_TYPES` and `DEVICE_TYPE_IDS` in `src/utils/nativeDspDeviceTypes.ts`                                    |
 | Parameter law (range, quantise, automatable)    | `src/modules/Arrangement/models/DeviceParameterLaw.ts`                                                                    |
 | Parameter write boundary                        | `src/modules/Arrangement/stores/clampDeviceParamWrite.ts`, `persistDeviceParam.ts`                                        |
 | Rust DSP                                        | `crates/daw-dsp/src/<device>/` (reverb: `crates/proof-chamber`, tuner: `crates/scoring`)                                  |
 | wasm package and build script                   | `scripts/wasm-artifacts.ts`; generated glue in `src/modules/AudioEngine/wasm/`                                            |
 | Engine node and init handshake                  | `src/modules/AudioEngine/engine/<Device>Node.ts` via `src/infra/audioWorklet/workletInitShared.ts`                        |
+| Engine parameter names, where not camelCase     | `src/modules/AudioEngine/models/<Device>*ParamNames.ts`                                                                   |
 | Node registration                               | `src/modules/AudioEngine/engine/wasmDeviceRegistry.ts`                                                                    |
 | Worklet processor                               | `src/modules/AudioEngine/worklets/<device>Processor.ts`                                                                   |
 | Offline render                                  | `src/modules/AudioEngine/repositories/deviceStrategy/` (`nativeDspDeviceFactories.ts`, `setupDeviceStrategies.ts`)        |
-| Panel                                           | the device module's `presentations/views` barrel, opened through `src/modules/WorkspaceShell` (`useActiveDevicePanel.ts`) |
+| Offline project hydration                       | `OFFLINE_DEVICE_HYDRATION` in `src/app/prepareOfflineDeviceSetup.ts`                                                      |
+| Panel                                           | the device module's `presentations/views` barrel, mounted by `WorkspaceShell/presentations/hooks/useActiveDevicePanel.ts` |
+| Panel gate                                      | `PANELLED_DEVICE_TYPES` in `src/modules/WorkspaceShell/useCases/panels/devicePanels/showDevicePanelForType.ts`            |
+| Stylesheet                                      | `src/styles/utilities/modules/<device>.css`                                                                               |
 | Handler map, only if the device owns AppActions | `src/app/getProductionCommandHandlerMaps.ts`                                                                              |
 
 ## Core rules
@@ -39,7 +44,7 @@ The descriptor parameter id, the engine parameter name, the processor translatio
 
 **Why:** every layer forwards a parameter name verbatim, so the mismatch surfaces nowhere.
 
-**Enforced by:** `src/modules/Arrangement/models/PluginDescriptors/__tests__/descriptorEngineParamWeld.spec.ts` (reads descriptors, processor translation and Rust arms from the shipped files), `nativeDspDeviceTypeWeld.spec.ts` in `repositories/deviceStrategy/__tests__/` for device types. Add the new processor to the weld's translation table when you add a device.
+**Enforced by:** `src/modules/Arrangement/models/PluginDescriptors/__tests__/descriptorEngineParamWeld.spec.ts` (reads descriptors, processor translation and Rust arms from the shipped files), `nativeDspDeviceTypeWeld.spec.ts` in `repositories/deviceStrategy/__tests__/` for device types. Fill the device's row in the weld's `PARAM_NAME_TRANSLATIONS` (keyed by device type; the compiler demands the row): the processor's translation and, where the engine names differ, its `*ParamNames.ts` table.
 
 ### 2. Every exposed control does something
 
@@ -55,7 +60,7 @@ A write is clamped and quantised by the descriptor's declared law (`clampDeviceP
 
 **Why:** the law is the only place a declared range or automatable flag has effect; a side door bypasses both and undo.
 
-**Enforced by:** `src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` (per-file census of device-write sinks; a new sink moves a count, restate the row with its provenance).
+**Enforced by:** `src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts` catches a new write sink (a per-file census; a new sink moves a count, restate the row with its provenance). Clamping and quantising on an existing path is review only.
 
 ### 4. Processors stay real-time safe and isolated
 
@@ -63,7 +68,7 @@ No allocation, locks or blocking on the audio thread. A processor imports nothin
 
 **Why:** a missed deadline is an audible dropout, and worklet scope has no app runtime.
 
-**Enforced by:** dependency-cruiser `worklets-no-module-runtime-imports` and `worklets-no-app-helper-or-desktop-ipc` (`.dependency-cruiser.cjs`, match `src/modules/<M>/worklets/**` only); `assert_no_alloc` dev-dependency tests in `crates/daw-dsp` for the Rust path; review only for TypeScript allocation.
+**Enforced by:** dependency-cruiser `worklets-no-module-runtime-imports` and `worklets-no-app-helper-or-desktop-ipc` (`.dependency-cruiser.cjs`, match `src/modules/<M>/worklets/**` only); `crates/daw-dsp/tests/device_process_rt.rs` for the Rust render path, which guards only the devices it lists: add the new device there, driven into a configured, audible state (see `crates/daw-dsp/AGENTS.md`). Review only for TypeScript allocation.
 
 ### 5. Live and offline agree
 
@@ -79,7 +84,7 @@ A panel control must write to the object that renders audio, not to a mirror of 
 
 **Why:** a panel can pass its own tests and move nothing.
 
-**Enforced by:** `src/modules/AudioEngine/engine/__tests__/panelReachesTheEngine.spec.tsx`.
+**Enforced by:** `src/modules/AudioEngine/engine/__tests__/panelReachesTheEngine.spec.tsx`, for the device types in its `COVERED_DEVICE_TYPES` only. A new panelled device joins that list, or records in `NOT_COVERED_DEVICE_TYPES` why the spec cannot drive it; an uncovered panel is review only. A device missing from `PANELLED_DEVICE_TYPES` never opens its panel.
 
 ### 7. Generated and pinned artifacts move with the change
 
