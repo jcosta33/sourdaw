@@ -242,32 +242,24 @@ function sameToken(left: Token | undefined, right: Token | undefined): boolean {
     );
 }
 
-// esbuild and TypeScript read these comment pragmas per file, so comments carrying them are not
-// trivia. Matching anywhere in the text, case-insensitively, can only over-match.
-const JSX_PRAGMA = /@jsx\w*(?:[^\S\r\n]+\S+)?/gi;
-
-type Pragma = { text: string; pos: number };
-
-function jsxPragmas(text: string): Pragma[] {
-    return Array.from(text.matchAll(JSX_PRAGMA), (match) => ({ text: match[0], pos: match.index }));
-}
+// Compilers and bundlers act on these comments by position and by tool-specific rules: pure-call
+// and side-effect-free elision, import analysis opt-outs, source-map URLs, and JSX factories.
+// Rather than model each tool, a changed file holding one anywhere keeps the full suite; matching
+// the raw text case-insensitively can only over-match.
+const BUILD_ANNOTATION = /[@#]__(?:PURE|NO_SIDE_EFFECTS)__|@vite-ignore|[@#]\s*source(?:Mapping)?URL|@jsx/i;
 
 // Counted as git counts lines, so lone CR, U+2028 and U+2029 never shift the report.
 function lineOf(text: string, position: number): number {
     return text.slice(0, position).split('\n').length;
 }
 
-function pragmaDifference(baseText: string, headText: string): string | null {
-    const base = jsxPragmas(baseText);
-    const head = jsxPragmas(headText);
-    const length = Math.max(base.length, head.length);
-    for (let index = 0; index < length; index += 1) {
-        if (base[index]?.text !== head[index]?.text) {
-            const pragma = head[index];
-            return `head line ${pragma === undefined ? 1 : lineOf(headText, pragma.pos)}`;
-        }
+function annotationLine(baseText: string, headText: string): string | null {
+    const head = headText.search(BUILD_ANNOTATION);
+    if (head >= 0) {
+        return `head line ${lineOf(headText, head)}`;
     }
-    return null;
+    const base = baseText.search(BUILD_ANNOTATION);
+    return base >= 0 ? `base line ${lineOf(baseText, base)}` : null;
 }
 
 function firstDifference(base: readonly Token[], head: readonly Token[]): number {
@@ -280,24 +272,27 @@ function firstDifference(base: readonly Token[], head: readonly Token[]): number
     return -1;
 }
 
-type FileVerdict = { kind: 'body' | 'inert' } | { kind: 'outside'; where: string };
+type FileVerdict = { kind: 'body' | 'inert' } | { kind: 'outside'; reason: string };
 
 /**
- * Compares the runtime parse trees and JSX pragmas of both sides directly. Equal streams are
- * inert; streams that differ only inside function bodies are a body change; anything else is
- * outside, located at the head side's first differing token or pragma for diagnosis.
+ * Compares the runtime parse trees of both sides directly. Equal streams are inert; streams that
+ * differ only inside function bodies are a body change; anything else, or a build annotation
+ * comment on either side, is outside, located by line for diagnosis.
  */
 export function classifyChange(path: string, baseText: string, headText: string): FileVerdict {
     const base = tokenStreams(path, baseText);
     const head = tokenStreams(path, headText);
-    const pragmaAt = pragmaDifference(baseText, headText);
-    if (pragmaAt !== null) {
-        return { kind: 'outside', where: pragmaAt };
+    const annotationAt = annotationLine(baseText, headText);
+    if (annotationAt !== null) {
+        return { kind: 'outside', reason: `build annotation comment present at ${annotationAt}` };
     }
     const outsideAt = firstDifference(base.outside, head.outside);
     if (outsideAt >= 0) {
         const position = head.outside[outsideAt]?.pos ?? headText.length;
-        return { kind: 'outside', where: `head line ${lineOf(headText, position)}` };
+        return {
+            kind: 'outside',
+            reason: `change outside a function body at head line ${lineOf(headText, position)}`,
+        };
     }
     return firstDifference(base.full, head.full) >= 0 ? { kind: 'body' } : { kind: 'inert' };
 }
@@ -401,7 +396,7 @@ export function selectCoverageSpecs(input: CoverageSelectionInput): CoverageSele
             return { kind: 'full', reason: verdict };
         }
         if (verdict.kind === 'outside') {
-            return { kind: 'full', reason: `${path}: change outside a function body at ${verdict.where}` };
+            return { kind: 'full', reason: `${path}: ${verdict.reason}` };
         }
         const fileSpecs =
             verdict.kind === 'body' ? (map.files[path]?.specs ?? []).map((index) => map.specs[index]!) : [];

@@ -109,12 +109,14 @@ decided:
 - Each changed file's blob at the merge-base equals the map's blob, so the map describes the code
   being changed. A file the map does not list must exist unchanged at the map commit; no browser
   spec then executed any of its functions.
-- The merge-base and head contents parse, their JSX pragma comments (`@jsx`, `@jsxFrag`,
-  `@jsxImportSource`, `@jsxRuntime`) match, and their parse trees agree outside function bodies.
-  Each side is flattened to its syntax nodes in pre-order and its tokens by kind and exact text, so
-  comments and whitespace drop out while string and template-literal contents, including blank
-  lines inside a template, still count, and a line break that automatic semicolon insertion parses
-  differently changes the tree. Pragma comments count because the compilers apply them per file.
+- The merge-base and head contents parse, neither holds a build annotation comment, and their parse
+  trees agree outside function bodies. Annotation comments are those compilers and bundlers act on
+  (`@__PURE__`, `@__NO_SIDE_EFFECTS__`, `@vite-ignore`, `sourceURL` and `sourceMappingURL`,
+  `@jsx` pragmas); tools read them by position and by tool-specific rules, so their presence in a
+  changed file, not a difference, keeps the full suite. Each side is flattened to its syntax nodes
+  in pre-order and its tokens by kind and exact text, so other comments and whitespace drop out
+  while string and template-literal contents, including blank lines inside a template, still count,
+  and a line break that automatic semicolon insertion parses differently changes the tree.
   Type-only declarations are dropped from both sides, and the outside comparison collapses each
   function, method, constructor, or accessor body to one placeholder. Equal full trees are a
   comment or type-only change; trees equal only outside bodies are a body change. Comparing trees

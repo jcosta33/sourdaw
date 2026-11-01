@@ -129,6 +129,13 @@ const SPLIT_RETURN = FEED_BASE.replace('return this.name;', 'return\n           
 const POSTFIX = 'let a = 0;\nlet b = 0;\na++\nb\n';
 const STEP = `export function step(): number {\n    ${POSTFIX.replaceAll('\n', '\n    ')}return a + b;\n}\n`;
 const PANEL_PRAGMA = `/** @jsxImportSource preact */\n${PANEL_BASE}`;
+const PANEL_IMPORTED = `import { h } from 'preact';\n/** @jsx h */\n${PANEL_BASE}`;
+// Unused calls a pure annotation would let the bundler drop: one top-level, one in a body.
+const UNUSED = FEED_BASE.replace('const LIMIT = 10;\n', 'const LIMIT = 10;\nclamp(LIMIT);\n').replace(
+    '    const kept',
+    '    clamp(0);\n    const kept'
+);
+const PURE_TOP = UNUSED.replace('\nclamp(LIMIT);', '\n/*#__PURE__*/ clamp(LIMIT);');
 
 function select(
     files: Readonly<Record<string, FileFixture>>,
@@ -238,6 +245,13 @@ describe('coverage-map selection narrows', () => {
         ],
         ['block-comment', FEED_BASE.replace('// Feed helpers.\n', '// Feed helpers.\n/* More helpers. */\n')],
         ['JSDoc', DOCUMENTED.replace('first items', 'leading items'), DOCUMENTED],
+        [
+            'JSDoc @param',
+            FEED_BASE.replace(
+                'export function feed',
+                '/**\n * @param items The items to keep.\n */\nexport function feed'
+            ),
+        ],
         ['top-level blank-lines', FEED_BASE.replace('}\n\nexport class', '}\n\n\n\nexport class')],
         [
             'call-wrapping',
@@ -405,14 +419,52 @@ describe('coverage-map selection stays full', () => {
     });
 
     it.each([
-        ['added', PANEL_BASE, PANEL_PRAGMA, 'head line 1'],
-        ['removed', PANEL_PRAGMA, PANEL_BASE, 'head line 1'],
-        ['edited', PANEL_PRAGMA, PANEL_PRAGMA.replace('preact', 'solid-js'), 'head line 1'],
-        ['added after the first line', PANEL_BASE, `${PANEL_BASE}/* @jsx h */\n`, 'head line 4'],
-    ])('for a JSX pragma %s', (_, base, head, where) => {
-        expect(select({ [PANEL]: { base, head, baseBlob: 'e'.repeat(40) } })).toEqual({
+        ['a pure annotation added at the top level', FEED, UNUSED, PURE_TOP, 'head line 6'],
+        [
+            'a pure annotation added in a body',
+            FEED,
+            UNUSED,
+            UNUSED.replace('    clamp(0);', '    /* @__PURE__ */ clamp(0);'),
+            'head line 9',
+        ],
+        [
+            'a side-effect-free annotation added',
+            FEED,
+            FEED_BASE,
+            FEED_BASE.replace('export function feed', '/* #__NO_SIDE_EFFECTS__ */\nexport function feed'),
+            'head line 7',
+        ],
+        [
+            'a Vite import opt-out added',
+            FEED,
+            FEED_BASE,
+            FEED_BASE.replace('items.slice(0, LIMIT)', 'items.slice(/* @vite-ignore */ 0, LIMIT)'),
+            'head line 8',
+        ],
+        ['a source URL added', FEED, FEED_BASE, `${FEED_BASE}//# sourceURL=feed.ts\n`, 'head line 24'],
+        [
+            'a body edit in a file already holding an annotation',
+            FEED,
+            PURE_TOP,
+            PURE_TOP.replace('slice(0, LIMIT)', 'slice(1, LIMIT)'),
+            'head line 6',
+        ],
+        ['a JSX pragma added', PANEL, PANEL_BASE, PANEL_PRAGMA, 'head line 1'],
+        ['a JSX pragma removed', PANEL, PANEL_PRAGMA, PANEL_BASE, 'base line 1'],
+        ['a JSX pragma edited', PANEL, PANEL_PRAGMA, PANEL_PRAGMA.replace('preact', 'solid-js'), 'head line 1'],
+        ['a JSX pragma added after the first line', PANEL, PANEL_BASE, `${PANEL_BASE}/* @jsx h */\n`, 'head line 4'],
+        [
+            'an unchanged JSX pragma moved above an import',
+            PANEL,
+            PANEL_IMPORTED,
+            `/** @jsx h */\nimport { h } from 'preact';\n${PANEL_BASE}`,
+            'head line 1',
+        ],
+    ])('for %s', (_, path, base, head, where) => {
+        const fixture = path === FEED ? feedEdit(head, base) : { base, head, baseBlob: 'e'.repeat(40) };
+        expect(select({ [path]: fixture })).toEqual({
             kind: 'full',
-            reason: `${PANEL}: change outside a function body at ${where}`,
+            reason: `${path}: build annotation comment present at ${where}`,
         });
     });
 
