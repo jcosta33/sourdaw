@@ -171,11 +171,11 @@ describe('PianoRollContextMenu Paste records one undo entry', () => {
     it('undoes and redoes a menu Paste as one entry that keeps every expression field', async () => {
         stageClipboard([selectedNote]);
         renderMenu();
-        const notesBefore = getNotesForClip('clip-1').map((node) => ({ ...node }));
+        const notesBefore = getNotesForClip('clip-1');
 
         fireEvent.click(screen.getByText('Paste'));
 
-        const notesAfter = getNotesForClip('clip-1').map((node) => ({ ...node }));
+        const notesAfter = getNotesForClip('clip-1');
         expect(notesAfter).toHaveLength(3);
         expect(notesAfter.slice(0, 2)).toEqual(notesBefore);
         expect(notesAfter[2]).toMatchObject({ ...selectedNote, id: expect.stringMatching(/^note-/), startBeat: 4 });
