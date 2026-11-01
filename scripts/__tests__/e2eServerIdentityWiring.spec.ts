@@ -577,8 +577,8 @@ describe('cold first-paint warmup', () => {
         vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
         try {
             const warming = warmFirstPaint(config);
-            // The first advance fires the marker timer once the overlay has
-            // been read; the second lets the marker poll observe the marker.
+            // The advance fires the marker timer once the overlay has been
+            // read, then lets the marker poll observe the marker.
             await vi.advanceTimersByTimeAsync(100);
             await warming;
         } finally {
