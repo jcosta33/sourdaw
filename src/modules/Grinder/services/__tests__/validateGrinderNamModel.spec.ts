@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import { validateGrinderNamModel } from '../validateGrinderNamModel';
@@ -41,6 +45,64 @@ function mutate(mutator: (value: Record<string, unknown>) => void): string {
 
 function expectError(text: string, pattern: RegExp): void {
     expect(() => validateGrinderNamModel(JSON.parse(text), 'probe.nam')).toThrow(pattern);
+}
+
+const NAM_FIXTURES = resolve(
+    fileURLToPath(import.meta.url),
+    '../../../../../../crates/daw-dsp/src/grinder/nam/fixtures'
+);
+
+/** `[input_size, channels, head_size]` for one legacy-head layer array. */
+type WaveNetArrayShape = readonly [number, number, number];
+
+type WaveNetCaptureJson = {
+    version: string;
+    architecture: string;
+    config: Record<string, unknown> & { layers: Array<Record<string, unknown>> };
+    weights: number[];
+    sample_rate: number;
+};
+
+/** A mono WaveNet over arrays with no head bias, kernel 1, one dilation,
+ * ungated and layer1x1 active, with its exact weight count, and a single-conv
+ * post-stack head when the last head is not mono. Each array's head width is
+ * the legacy `head_size` key, or only the nested `head` object. */
+function waveNetCapture(
+    shapes: readonly WaveNetArrayShape[],
+    heads: 'legacy' | 'nested' = 'legacy'
+): WaveNetCaptureJson {
+    let weight_count = 1;
+    const layers = shapes.map(([input_size, channels, head_size]): Record<string, unknown> => {
+        // Rechannel, dilated conv with bias, input mixin, layer1x1 with bias,
+        // and the head rechannel fed by the bottleneck (channels).
+        weight_count += input_size * channels + 2 * (channels * channels + channels) + channels + channels * head_size;
+        const head_width =
+            heads === 'legacy' ? { head_size } : { head: { out_channels: head_size, kernel_size: 1, bias: false } };
+        return {
+            input_size,
+            condition_size: 1,
+            channels,
+            ...head_width,
+            head_bias: false,
+            kernel_size: 1,
+            dilations: [1],
+            activation: 'Tanh',
+            gated: false,
+        };
+    });
+    const last_head = shapes.at(-1)![2];
+    let head: unknown = null;
+    if (last_head !== 1) {
+        weight_count += last_head + 1;
+        head = { channels: 1, out_channels: 1, kernel_sizes: [1], activation: 'Tanh' };
+    }
+    return {
+        version: '0.5.4',
+        architecture: 'WaveNet',
+        config: { layers, head, head_scale: 0.02 },
+        weights: Array.from({ length: weight_count }, (_, index) => Math.sin(index + 1) * 0.25),
+        sample_rate: 48_000,
+    };
 }
 
 describe('validateGrinderNamModel', () => {
@@ -155,6 +217,235 @@ describe('validateGrinderNamModel', () => {
             }),
             /input_size must equal the preceding array's channels/
         );
+    });
+
+    it('rejects an array that feeds another at a narrower channel count than the first array', () => {
+        // #5981: array 1 feeds array 2 at one channel; the runtime carries
+        // array outputs through scratch sized from array 0's two channels.
+        expect(() =>
+            validateGrinderNamModel(
+                waveNetCapture([
+                    [1, 2, 1],
+                    [2, 1, 1],
+                    [1, 1, 1],
+                ]),
+                'narrowing.nam'
+            )
+        ).toThrow(/layer array 1: channels must equal the first array's channels; only the final array may differ/);
+    });
+
+    it('rejects an array seeded with a head wider than its own head accumulation', () => {
+        for (const shapes of [
+            [
+                [1, 2, 2],
+                [2, 2, 3],
+            ],
+            [
+                [1, 2, 2],
+                [2, 2, 1],
+                [2, 1, 1],
+            ],
+        ] satisfies WaveNetArrayShape[][]) {
+            expect(() => validateGrinderNamModel(waveNetCapture(shapes), 'wide-head.nam')).toThrow(
+                /head input size \(\d+\) must equal the widest array head_size \([23]\)/
+            );
+        }
+    });
+
+    it('accepts the WaveNet shapes native admission accepts', () => {
+        const captures: unknown[] = [
+            JSON.parse(readFileSync(resolve(NAM_FIXTURES, 'wavenet.nam'), 'utf8')),
+            JSON.parse(readFileSync(resolve(NAM_FIXTURES, 'gated_wavenet_synthetic.nam'), 'utf8')),
+            // Equal widths throughout, mono final head.
+            waveNetCapture([
+                [1, 2, 2],
+                [2, 2, 2],
+                [2, 2, 1],
+            ]),
+            // The final array may narrow: nothing reads its channels afterwards.
+            waveNetCapture([
+                [1, 2, 1],
+                [2, 1, 1],
+            ]),
+            // A final head narrower than the heads before it.
+            waveNetCapture([
+                [1, 2, 2],
+                [2, 2, 1],
+            ]),
+        ];
+        for (const capture of captures) {
+            expect(validateGrinderNamModel(capture, 'admitted.nam').architecture).toBe('WaveNet');
+        }
+    });
+
+    it('accepts a multi-array WaveNet whose heads are given only as nested heads', () => {
+        const capture = waveNetCapture(
+            [
+                [1, 2, 2],
+                [2, 2, 1],
+            ],
+            'nested'
+        );
+        expect(validateGrinderNamModel(capture, 'nested-head.nam').architecture).toBe('WaveNet');
+    });
+
+    it('chains array channels to the legacy head_size when a nested head is also given', () => {
+        // Native admission and the WASM parser match array 1's channels to
+        // array 0's head_size (3) and its head accumulation to the nested
+        // head width (2); array 1's head1x1 narrows its accumulation to fit.
+        const capture = {
+            version: '0.5.4',
+            architecture: 'WaveNet',
+            config: {
+                layers: [
+                    {
+                        input_size: 1,
+                        condition_size: 1,
+                        channels: 2,
+                        head_size: 3,
+                        head_bias: false,
+                        head: { out_channels: 2, kernel_size: 1, bias: false },
+                        kernel_size: 1,
+                        dilations: [1],
+                        activation: 'Tanh',
+                        gated: false,
+                    },
+                    {
+                        input_size: 2,
+                        condition_size: 1,
+                        channels: 3,
+                        head_size: 1,
+                        head_bias: false,
+                        head1x1: { active: true, out_channels: 2 },
+                        kernel_size: 1,
+                        dilations: [1],
+                        activation: 'Tanh',
+                        gated: false,
+                    },
+                ],
+                head: null,
+                head_scale: 0.02,
+            },
+            weights: Array.from({ length: 64 }, (_, index) => Math.sin(index + 1) * 0.25),
+            sample_rate: 48_000,
+        };
+        expect(validateGrinderNamModel(capture, 'both-head-keys.nam').weights).toHaveLength(64);
+    });
+
+    it('rejects a first array that reads more than the mono input', () => {
+        expect(() => validateGrinderNamModel(waveNetCapture([[2, 2, 1]]), 'wide-input.nam')).toThrow(
+            /layer array 0: input_size must be 1/
+        );
+    });
+
+    it('rejects a WaveNet whose input or output is not mono', () => {
+        const headless = waveNetCapture([[1, 2, 2]]);
+        headless.config.head = null;
+        headless.weights.length -= 3;
+        const stereo_head = waveNetCapture([[1, 2, 2]]);
+        stereo_head.config.head = { channels: 1, out_channels: 2, kernel_sizes: [1], activation: 'Tanh' };
+        stereo_head.weights.push(0.1, 0.1, 0.1);
+        for (const capture of [headless, stereo_head]) {
+            expect(() => validateGrinderNamModel(capture, 'stereo.nam')).toThrow(
+                /multi-channel WaveNet output \(2 channels\)/
+            );
+        }
+        for (const key of ['in_channels', 'out_channels']) {
+            const capture = waveNetCapture([[1, 2, 1]]);
+            capture.config[key] = 2;
+            expect(() => validateGrinderNamModel(capture, 'stereo.nam')).toThrow(
+                new RegExp(`multi-channel WaveNet \\(${key} = 2\\)`)
+            );
+        }
+    });
+
+    it('lets a gating_mode string decide over the legacy gated flag', () => {
+        const none_over_gated = waveNetCapture([[1, 2, 1]]);
+        none_over_gated.config.layers[0]!.gating_mode = 'none';
+        none_over_gated.config.layers[0]!.gated = true;
+        // A gating_mode that is not a string leaves the decision to gated.
+        const flag_decides = waveNetCapture([[1, 2, 1]]);
+        flag_decides.config.layers[0]!.gating_mode = 5;
+        for (const capture of [none_over_gated, flag_decides]) {
+            expect(validateGrinderNamModel(capture, 'gating.nam').weights).toHaveLength(capture.weights.length);
+        }
+    });
+
+    it('refuses each WaveNet array rule native admission and the runtime enforce', () => {
+        const cases: Array<[string, (layer: Record<string, unknown>, capture: WaveNetCaptureJson) => void, RegExp]> = [
+            ['boolean FiLM key', (layer) => (layer.conv_pre_film = true), /FiLM modulation \("conv_pre_film"\)/],
+            ['null FiLM key', (layer) => (layer.conv_pre_film = null), /FiLM modulation \("conv_pre_film"\)/],
+            ['numeric FiLM key', (layer) => (layer.conv_pre_film = 3), /FiLM modulation \("conv_pre_film"\)/],
+            [
+                'unlisted FiLM key',
+                (layer) => (layer.custom_film = { active: true }),
+                /FiLM modulation \("custom_film"\)/,
+            ],
+            [
+                'grouped inactive head1x1',
+                (layer) => (layer.head1x1 = { active: false, groups: 2 }),
+                /grouped head1x1 convolutions/,
+            ],
+            ['non-boolean gated', (layer) => (layer.gated = 'yes'), /gated must be a boolean/],
+            [
+                'non-boolean layer1x1 active',
+                (layer) => (layer.layer1x1 = { active: 'no' }),
+                /layer1x1 active must be a boolean/,
+            ],
+            [
+                'non-boolean head1x1 active',
+                (layer) => (layer.head1x1 = { active: 'yes', out_channels: 1 }),
+                /head1x1 active must be a boolean/,
+            ],
+            [
+                'unknown secondary activation',
+                (layer, capture) => {
+                    layer.gated = true;
+                    layer.secondary_activation = 'Bogus';
+                    // Gating doubles the dilated conv and the input mixin.
+                    capture.weights.push(...Array.from({ length: 8 }, () => 0.1));
+                },
+                /requires a known secondary_activation/,
+            ],
+            ['non-object array head', (layer) => (layer.head = 5), /layer array head must be an object/],
+        ];
+        for (const [label, change, reason] of cases) {
+            const capture = waveNetCapture([[1, 2, 1]]);
+            change(capture.config.layers[0]!, capture);
+            // Soft, so one run names every rule the validator misses.
+            expect.soft(() => validateGrinderNamModel(capture, `${label}.nam`), label).toThrow(reason);
+        }
+
+        const nested_without_head_bias = waveNetCapture([[1, 2, 1]], 'nested');
+        delete nested_without_head_bias.config.layers[0]!.head_bias;
+        expect(() => validateGrinderNamModel(nested_without_head_bias, 'nested.nam')).toThrow(
+            /layer array requires head_bias/
+        );
+        const zero_head_dilation = waveNetCapture([[1, 2, 1]], 'nested');
+        zero_head_dilation.config.layers[0]!.head = { out_channels: 1, kernel_size: 1, bias: false, head_dilation: 0 };
+        expect(() => validateGrinderNamModel(zero_head_dilation, 'nested.nam')).toThrow(
+            /head_dilation must be a positive integer/
+        );
+    });
+
+    it('accepts the inactive and ungrouped array options native admission accepts', () => {
+        const changes: Array<(layer: Record<string, unknown>, capture: WaveNetCaptureJson) => void> = [
+            (layer) => {
+                layer.conv_pre_film = false;
+                layer.conv_post_film = { active: false };
+            },
+            (layer) => (layer.head1x1 = { active: false, groups: 1 }),
+            (layer, capture) => {
+                layer.gated = true;
+                layer.secondary_activation = 'Tanh';
+                capture.weights.push(...Array.from({ length: 8 }, () => 0.1));
+            },
+        ];
+        for (const change of changes) {
+            const capture = waveNetCapture([[1, 2, 1]]);
+            change(capture.config.layers[0]!, capture);
+            expect(validateGrinderNamModel(capture, 'admitted.nam').architecture).toBe('WaveNet');
+        }
     });
 
     it('rejects unknown activations by name', () => {
