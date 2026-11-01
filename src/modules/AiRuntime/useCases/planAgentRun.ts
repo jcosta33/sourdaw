@@ -1,3 +1,5 @@
+import { digest } from '#/utils/canonicalDigest';
+
 import {
     type AgentPlanUncertainty,
     type AgentRunBudgets,
@@ -7,8 +9,14 @@ import {
     type AgentRunProviderProposal,
     type AgentRunScope,
 } from '../models/AgentRun';
-import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import {
+    APPLICATION_TOOL_RECEIPT_MAX_BYTES,
+    type ApplicationToolReceipt,
+    type TerminalMeasurementSettlement,
+} from '../models/ApplicationOwnedTool';
+import { CREATIVE_INTERPRETATION_TOOL_NAME } from '../models/CreativeInterpretation';
 import { RUNTIME_ACTION_TYPES } from '../models/RuntimeAction';
+import { WORKFLOW_CAPABILITY_TOOL_NAME } from '../models/WorkflowCapability';
 
 import { ANALYSIS_MEASURE_TOOL_NAME } from './agentToolCatalog';
 import { metricGoalStateCodec } from './metricGoalStateCodec';
@@ -43,6 +51,7 @@ type PlanAgentRunInput = {
     budgets: AgentRunBudgets;
     requiresConfirmation: boolean;
     applicationToolReceipts?: readonly ApplicationToolReceipt[];
+    terminalMeasurementSettlement?: string;
     providerProposal?: AgentRunProviderProposal;
     /** Application-derived scope containing only the direct targets the provider was required to name. */
     providerKnownScope?: AgentRunScope;
@@ -136,7 +145,134 @@ function isComplex(input: PlanAgentRunInput): boolean {
     );
 }
 
-function deriveCapabilities(input: PlanAgentRunInput): AgentRunPlan['capabilities'] {
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isSettledReceipt(value: unknown): value is TerminalMeasurementSettlement['intake'] {
+    return (
+        isRecord(value) &&
+        Object.keys(value).length === 4 &&
+        typeof value.callId === 'string' &&
+        value.callId.length > 0 &&
+        typeof value.toolName === 'string' &&
+        value.toolName.length > 0 &&
+        typeof value.receiptDigest === 'string' &&
+        value.receiptDigest.length > 0 &&
+        typeof value.turn === 'number' &&
+        Number.isSafeInteger(value.turn) &&
+        value.turn > 0
+    );
+}
+
+function readTerminalSettlement(serialized: string): TerminalMeasurementSettlement | null {
+    if (new TextEncoder().encode(serialized).byteLength > APPLICATION_TOOL_RECEIPT_MAX_BYTES) {
+        return null;
+    }
+    try {
+        const value: unknown = JSON.parse(serialized);
+        if (
+            !isRecord(value) ||
+            Object.keys(value).length !== 6 ||
+            value.schemaVersion !== 1 ||
+            typeof value.authorityId !== 'string' ||
+            value.authorityId.length === 0 ||
+            typeof value.revision !== 'string' ||
+            value.revision.length === 0 ||
+            !isSettledReceipt(value.intake) ||
+            !isSettledReceipt(value.measurement) ||
+            !Array.isArray(value.deferredCalls) ||
+            value.deferredCalls.length === 0 ||
+            !value.deferredCalls.every(isSettledReceipt)
+        ) {
+            return null;
+        }
+        return {
+            schemaVersion: 1,
+            authorityId: value.authorityId,
+            revision: value.revision,
+            intake: value.intake,
+            measurement: value.measurement,
+            deferredCalls: value.deferredCalls,
+        };
+    } catch {
+        return null;
+    }
+}
+
+/** Re-preview and later batches can move the plan revision; these controls belong to their original intake. */
+function readSettledControlIds(input: PlanAgentRunInput): Set<string> | null {
+    if (input.terminalMeasurementSettlement === undefined) {
+        return new Set();
+    }
+    const settlement = readTerminalSettlement(input.terminalMeasurementSettlement);
+    if (settlement === null) {
+        return null;
+    }
+    const receipts = input.applicationToolReceipts ?? [];
+    const find = (identity: TerminalMeasurementSettlement['intake']): ApplicationToolReceipt | null => {
+        const matches = receipts.filter((receipt) => receipt.callId === identity.callId);
+        const receipt = matches[0];
+        return matches.length === 1 &&
+            receipt !== undefined &&
+            receipt.toolName === identity.toolName &&
+            receipt.turn === identity.turn &&
+            digest(receipt) === identity.receiptDigest
+            ? receipt
+            : null;
+    };
+    const intake = find(settlement.intake);
+    const measurement = find(settlement.measurement);
+    const authority = metricGoalStateCodec(input.metricGoalState)?.authorities.find(
+        (candidate) =>
+            candidate.authorityId === settlement.authorityId &&
+            candidate.callId === settlement.intake.callId &&
+            candidate.turn === settlement.intake.turn &&
+            candidate.revision === settlement.revision &&
+            candidate.kind !== 'literal'
+    );
+    if (
+        intake?.status !== 'success' ||
+        intake.origin !== undefined ||
+        measurement === null ||
+        measurement.origin !== undefined ||
+        authority === undefined ||
+        !(
+            (authority.origin === 'configured-joint-intake' && intake.toolName === CREATIVE_INTERPRETATION_TOOL_NAME) ||
+            (authority.origin === 'admitted-workflow' && intake.toolName === WORKFLOW_CAPABILITY_TOOL_NAME)
+        ) ||
+        measurement.toolName !== ANALYSIS_MEASURE_TOOL_NAME ||
+        measurement.turn <= intake.turn ||
+        !(
+            measurement.revision === settlement.revision ||
+            (measurement.status === 'failure' && measurement.revision === null)
+        )
+    ) {
+        return null;
+    }
+    const ids = new Set<string>();
+    for (const identity of settlement.deferredCalls) {
+        const receipt = find(identity);
+        if (
+            receipt === null ||
+            receipt.status !== 'failure' ||
+            receipt.origin !== undefined ||
+            receipt.error?.code !== 'measurement-required' ||
+            receipt.turn <= intake.turn ||
+            receipt.turn >= measurement.turn ||
+            ids.has(receipt.callId)
+        ) {
+            return null;
+        }
+        ids.add(receipt.callId);
+    }
+    return ids;
+}
+
+function deriveCapabilities(
+    input: PlanAgentRunInput,
+    settledControls: ReadonlySet<string>
+): AgentRunPlan['capabilities'] {
     const capabilities: AgentRunPlan['capabilities'] = input.actions.map((action) => {
         const allowed = input.grants.allowedOperationPrefixes.some(
             (prefix) => action.type.startsWith(prefix) || prefix.startsWith(action.type)
@@ -151,6 +287,9 @@ function deriveCapabilities(input: PlanAgentRunInput): AgentRunPlan['capabilitie
         };
     });
     for (const receipt of input.applicationToolReceipts ?? []) {
+        if (settledControls.has(receipt.callId)) {
+            continue;
+        }
         capabilities.push({
             id: receipt.toolName,
             source: 'application-tool-catalog',
@@ -249,7 +388,14 @@ export function planAgentRun(input: PlanAgentRunInput): PlanAgentRunResult {
     ) {
         return { status: 'rejected', reason: 'Provider attempted to enlarge or omit the application-owned scope.' };
     }
-    const capabilities = deriveCapabilities(input);
+    const settledControls = readSettledControlIds(input);
+    if (settledControls === null) {
+        return {
+            status: 'rejected',
+            reason: 'Terminal measurement settlement does not match the original intake and admitted receipts.',
+        };
+    }
+    const capabilities = deriveCapabilities(input, settledControls);
     const goals = metricGoalStateCodec(input.metricGoalState);
     const blockedMetricProposal =
         input.requiresConfirmation &&
@@ -305,6 +451,7 @@ export function planAgentRun(input: PlanAgentRunInput): PlanAgentRunResult {
             commandIds: [],
             serializedBatchIdentity: null,
             applicationToolReceipts: structuredClone([...(input.applicationToolReceipts ?? [])]),
+            terminalMeasurementSettlement: input.terminalMeasurementSettlement,
             revision: input.revision,
             classification: complex ? 'complex' : 'simple',
             showPlanPanel: complex,

@@ -1018,7 +1018,7 @@ describe('application-owned tool loop', () => {
         });
         expect(exhausted).toMatchObject({
             status: 'rejected',
-            reason: 'Provider exhausted the bounded application tool-loop turns.',
+            reason: 'Provider returned a tool outside the required application tool-loop set.',
             turns: 4,
         });
         expect(querySemanticProject).toHaveBeenCalledTimes(3);
@@ -2012,7 +2012,7 @@ describe('application-owned tool loop', () => {
             });
             expect(uncalledInterpretation).toMatchObject({
                 status: 'rejected',
-                reason: 'Provider exhausted the bounded application tool-loop turns.',
+                reason: 'Provider returned a tool outside the required application tool-loop set.',
                 turns: 4,
             });
 
@@ -2023,7 +2023,7 @@ describe('application-owned tool loop', () => {
             });
             expect(withoutInterpretation).toMatchObject({
                 status: 'rejected',
-                reason: 'Provider exhausted the bounded application tool-loop turns.',
+                reason: 'Provider returned a tool outside the required application tool-loop set.',
                 turns: 4,
             });
         });
@@ -2045,7 +2045,7 @@ describe('application-owned tool loop', () => {
 
             expect(withInterpretation).toMatchObject({
                 status: 'rejected',
-                reason: 'Provider exhausted the bounded application tool-loop turns.',
+                reason: 'Provider returned a tool outside the required application tool-loop set.',
                 turns: 5,
             });
         });

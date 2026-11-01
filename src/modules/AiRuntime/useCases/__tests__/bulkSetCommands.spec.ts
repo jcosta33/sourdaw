@@ -1930,6 +1930,28 @@ describe('a bulk request confirmed one batch at a time', () => {
         expect(proposedConfirmations()).toEqual([]);
     });
 
+    it('does not drop corrupt historical settlement when a persisted schedule proposes its next batch', async () => {
+        const layerIds = await seedLayerTracks();
+        scriptMuteLayersProposal();
+        await requestMuteLayers();
+        const first = requireOnlyProposedConfirmation();
+        const stored = structuredClone(readAgentRunState());
+        const run = stored.runs.find((entry) => entry.runId === first.runId);
+        if (run?.plan === null || run?.plan === undefined) {
+            throw new TypeError('Expected the actual scheduled run.');
+        }
+        const originalGrants = structuredClone(run.grants);
+        run.plan.terminalMeasurementSettlement = '{}';
+        persistAgentRunState(sanitizeAgentRunState(stored));
+        await expect(confirmPendingChatActions({ confirmationId: first.id })).resolves.toEqual({ status: 'executed' });
+        expect(mutedTrackIds()).toEqual(layerIds.slice(0, MAX_LLM_ACTIONS_PER_BATCH));
+        expect(proposedConfirmations()).toEqual([]);
+        expect(agentRunLifecycle.get(first.runId)?.phase).toBe('partially-completed');
+        expect(chatStore.value?.messages.at(-1)?.content).toContain('Terminal measurement settlement does not match');
+        expect(agentRunLifecycle.get(first.runId)?.grants).toEqual(originalGrants);
+        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(4);
+    });
+
     it('carries named protection facts into each scheduled card scope', async () => {
         await seedTracks([...layerNames(LAYER_COUNT), 'Vocals']);
         const vocals = trackStore.value?.tracks.find((track) => track.name === 'Vocals');

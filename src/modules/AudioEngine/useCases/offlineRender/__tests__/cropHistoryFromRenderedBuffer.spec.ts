@@ -119,26 +119,30 @@ describe('cropHistoryFromRenderedBuffer', () => {
         expect(renderFrameCount).toBe(8 * 48_000);
     });
 
-    it.each([
+    const cropRegions = [
         { startBeat: 165, durationBeats: 39 },
         { startBeat: 4, durationBeats: 8 },
         { startBeat: 100, durationBeats: 20 },
         { startBeat: 148, durationBeats: 10 },
         { startBeat: 33, durationBeats: 7 },
-    ])(
-        'crops beats $startBeat+$durationBeats from its absolute first frame to the render end at every rate and tail',
-        ({ startBeat, durationBeats }) => {
-            for (const sampleRate of [44_100, 48_000]) {
-                for (const tailSeconds of [0, 0.37, 1.5, 2]) {
-                    const request = { startBeat, durationBeats, tailSeconds, sampleRate };
+    ];
+    const cropSampleRates = [44_100, 48_000];
+    const cropTails = [0, 0.37, 1.5, 2];
 
-                    const { output, renderFrameCount } = renderRegion(request);
+    it.each(
+        cropRegions.flatMap((region) =>
+            cropSampleRates.flatMap((sampleRate) =>
+                cropTails.map((tailSeconds) => ({ ...region, sampleRate, tailSeconds }))
+            )
+        )
+    )(
+        'crops beats $startBeat+$durationBeats at $sampleRate Hz with a $tailSeconds s tail from its absolute first frame to the render end',
+        (request) => {
+            const { output, renderFrameCount } = renderRegion(request);
 
-                    const samples = output.getChannelData(0);
-                    expect(samples[0]).toBe(regionStartFrame(request));
-                    expect(samples[output.length - 1]).toBe(renderFrameCount - 1);
-                }
-            }
+            const samples = output.getChannelData(0);
+            expect(samples[0]).toBe(regionStartFrame(request));
+            expect(samples[output.length - 1]).toBe(renderFrameCount - 1);
         }
     );
 
