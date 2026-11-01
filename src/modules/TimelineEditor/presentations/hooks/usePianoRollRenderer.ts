@@ -69,6 +69,7 @@ import {
     EMPTY_NOTES,
     PITCH_RAIL_WIDTH,
     getVisiblePitches,
+    getPianoRollContentHeight,
     colorWithAlpha,
     brightenColor,
 } from '../helpers/pianoRollConstants';
@@ -232,7 +233,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                 pitchToRow.set(visiblePitches[index]!, index);
             }
             const noteAreaHeight = visiblePitches.length * ROW_HEIGHT;
-            const height = noteAreaHeight + RULER_HEIGHT;
+            const height = getPianoRollContentHeight(visiblePitches.length);
 
             // ── Viewport, not content extent ─────────────────────────────
             // The backing store covers what is on screen. The content extent

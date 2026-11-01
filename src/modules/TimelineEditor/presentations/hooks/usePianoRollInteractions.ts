@@ -60,6 +60,7 @@ import {
     type PianoRollMenu,
     INITIAL_DRAG_STATE,
     getVisiblePitches,
+    getPianoRollRowAtY,
 } from '../helpers/pianoRollConstants';
 import { type PianoRollTakeNotes } from '../helpers/projectPianoRollTakeNotes';
 
@@ -759,9 +760,9 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 return;
             }
 
-            const row = Math.floor(noteY / ROW_HEIGHT);
             const visiblePitches = getVisiblePitches(scaleType, scaleRoot, isFolded);
-            if (row >= 0 && row < visiblePitches.length) {
+            const row = getPianoRollRowAtY(rawY, visiblePitches.length);
+            if (row !== null) {
                 // R-A12: snap to nearest scale degree when constrainToScale is active
                 const pitch = snapToScalePitch(visiblePitches[row]!);
                 if (pitch >= 0 && pitch < 128) {
