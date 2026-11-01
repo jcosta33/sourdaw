@@ -1823,6 +1823,43 @@ describe('check-dependency-boundaries', () => {
         });
     });
 
+    it('should refuse a module that names a tier the manifest does not define', () => {
+        withModuleTierFixture({}, (repositoryRoot) => {
+            const manifest = {
+                ...moduleTierManifest,
+                modules: { ...moduleTierManifest.modules, Peer: { tier: 'platform', reason: 'Misplaced.' } },
+            };
+
+            expect(findModuleTierState(repositoryRoot, manifest).findings).toEqual([
+                {
+                    file: '.dependency-cruiser.module-tiers.cjs',
+                    line: 1,
+                    reason: 'module Peer names unknown tier "platform"',
+                },
+            ]);
+        });
+    });
+
+    it('should refuse a tier that may depend on a tier the manifest does not define', () => {
+        withModuleTierFixture({}, (repositoryRoot) => {
+            const manifest = {
+                ...moduleTierManifest,
+                tiers: [
+                    moduleTierManifest.tiers[0],
+                    { name: 'core domain', meaning: 'Owns project truth.', mayDependOn: ['kernel', 'platform'] },
+                ],
+            };
+
+            expect(findModuleTierState(repositoryRoot, manifest).findings).toEqual([
+                {
+                    file: '.dependency-cruiser.module-tiers.cjs',
+                    line: 1,
+                    reason: 'tier "core domain" may depend on unknown tier "platform"',
+                },
+            ]);
+        });
+    });
+
     it('should report a two-module cycle as one strongly connected component row', () => {
         withModuleTierFixture(
             {
