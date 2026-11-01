@@ -36,7 +36,7 @@ import {
     githubAuthorizationGitEnv,
     type authenticateRole,
 } from '../githubAppIdentity.ts';
-import { CENSUS_ATTEMPTS, laneIsActive } from '../laneActivity.ts';
+import { CENSUS_ATTEMPTS, laneIsActive, sameUserProcessParents } from '../laneActivity.ts';
 import { guardFailureReceiptPath, type GuardFailureReceipt } from '../prContract.ts';
 import { shellPort, type PullRequest, type ShellRunner } from '../removeLane.ts';
 import { writeGuardFailureReceipt } from '../resourceGuard.ts';
@@ -1228,6 +1228,22 @@ describe('complete lane activity proof', () => {
     const uid = process.getuid?.() ?? 0;
     const catalog = `p${process.pid}\0\nfcwd\0tDIR\0n/repo\0\n`;
     const capture = (command: string) => (command === 'ps' ? `${process.pid} ${process.ppid} ${uid}` : catalog);
+
+    it('maps same-UID processes to their parents only from a complete process table', () => {
+        expect(sameUserProcessParents('1 0 0\n10 1 501\n11 10 501\n12 10 0\n', 501, 10)).toEqual(
+            new Map([
+                [10, 1],
+                [11, 10],
+            ])
+        );
+        expect(sameUserProcessParents('10 1 501\n11 ? 501\n', 501, 10)).toBeUndefined();
+        expect(sameUserProcessParents('10 1 501\n11 501\n', 501, 10)).toBeUndefined();
+        expect(sameUserProcessParents('10 1 501\n11 10 501\n11 1 501\n', 501, 10)).toBeUndefined();
+        expect(sameUserProcessParents('10 1 501\n0 1 501\n', 501, 10)).toBeUndefined();
+        expect(sameUserProcessParents('10 1 501\n11 99999999999999999 501\n', 501, 10)).toBeUndefined();
+        expect(sameUserProcessParents('10 1 0\n', 501, 10)).toBeUndefined();
+        expect(sameUserProcessParents('', 501, 10)).toBeUndefined();
+    });
 
     it('refuses a successful but incomplete catalog omitting a live process', () => {
         expect(() =>
