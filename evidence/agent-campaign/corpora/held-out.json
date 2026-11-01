@@ -3195,6 +3195,7 @@
             "id": "AC005-HO-QUESTION-1",
             "promptClass": "question",
             "class": "answer-exact",
+            "questionKind": "descriptive",
             "prompt": "Give me a quick overview of this project.",
             "providerTurns": [
                 {
@@ -3246,6 +3247,7 @@
             "id": "AC005-HO-QUESTION-2",
             "promptClass": "question",
             "class": "answer-exact",
+            "questionKind": "descriptive",
             "prompt": "Is Keys a MIDI track or an audio track?",
             "providerTurns": [
                 {
@@ -3293,6 +3295,7 @@
             "id": "AC005-HO-QUESTION-3",
             "promptClass": "question",
             "class": "answer-exact",
+            "questionKind": "descriptive",
             "prompt": "What level is the Bass DI fader at right now?",
             "providerTurns": [
                 {
@@ -3333,6 +3336,102 @@
                         "name": "Bass DI",
                         "gain": 1
                     }
+                }
+            }
+        },
+        {
+            "id": "AC005-HO-QUESTION-4",
+            "promptClass": "question",
+            "class": "answer-exact",
+            "questionKind": "suggestion",
+            "prompt": "what would you do to brighten up the guitar?",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "answer-catalog",
+                    "scopeTrack": "Guitar"
+                },
+                {
+                    "kind": "recipe",
+                    "id": "recipe",
+                    "descriptors": ["brighter"],
+                    "targetName": "Guitar",
+                    "role": "guitar",
+                    "limit": 1
+                },
+                {
+                    "kind": "answer",
+                    "id": "answer",
+                    "args": {
+                        "intakeCallId": "intake",
+                        "statements": [
+                            {
+                                "kind": "recipe",
+                                "callId": "recipe",
+                                "recipeId": "guitar-bright"
+                            }
+                        ]
+                    }
+                }
+            ],
+            "oracle": {
+                "kind": "answer",
+                "text": "The catalog recipe “Pick attack and top shelf raised together” describes “bright” (“produces”). These are authored suggestions, not measurements of this project. Prerequisites: “The guitar is not already fighting the vocal between 2 kHz and 4 kHz.”. Contraindications: “Skip when a lead vocal needs that same presence region to stay intelligible.”; “Skip on a distorted rhythm part where the region is already dense with harmonics.”. Authored parameter windows: “Mid Freq” 2500–4000 “Hz”; “Mid Gain” 2–4 “dB”; “Mid Q” 0.8–1.5 “”; “High Freq” 8000–12000 “Hz”; “High Gain” 2–3.5 “dB”. Choose Propose this to prepare it for “Guitar” as a proposal, using the middle of each authored window; nothing changes until you approve it.",
+                "recipe": {
+                    "recipeId": "guitar-bright",
+                    "targetName": "Guitar"
+                },
+                "suggestion": {
+                    "recipeId": "guitar-bright",
+                    "targetId": "track-guitar"
+                }
+            }
+        },
+        {
+            "id": "AC005-HO-QUESTION-5",
+            "promptClass": "question",
+            "class": "answer-exact",
+            "questionKind": "suggestion",
+            "prompt": "Any ideas for getting the keys to sound wider?",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "answer-catalog",
+                    "scopeTrack": "Keys"
+                },
+                {
+                    "kind": "recipe",
+                    "id": "recipe",
+                    "descriptors": ["wider"],
+                    "targetName": "Keys",
+                    "role": "keys",
+                    "limit": 1
+                },
+                {
+                    "kind": "answer",
+                    "id": "answer",
+                    "args": {
+                        "intakeCallId": "intake",
+                        "statements": [
+                            {
+                                "kind": "recipe",
+                                "callId": "recipe",
+                                "recipeId": "keys-wide"
+                            }
+                        ]
+                    }
+                }
+            ],
+            "oracle": {
+                "kind": "answer",
+                "text": "The catalog recipe “Slow autopan across a sustaining part” describes “wide” (“produces”). These are authored suggestions, not measurements of this project. Prerequisites: “The part sustains long enough for movement below 1 Hz to be perceived as image rather than as tremolo.”. Contraindications: “Skip on a rhythmic comping part, where movement fights the groove instead of supporting it.”; “Skip when the mix will be judged primarily in mono, where the pan collapses to level modulation.”. Authored parameter windows: “Rate” 0.3–1 “Hz”; “Depth” 0.3–0.6 “”; “Shape” 0–0 “”. Choose Propose this to prepare it for “Keys” as a proposal, using the middle of each authored window; nothing changes until you approve it.",
+                "recipe": {
+                    "recipeId": "keys-wide",
+                    "targetName": "Keys"
+                },
+                "suggestion": {
+                    "recipeId": "keys-wide",
+                    "targetId": "track-keys"
                 }
             }
         }

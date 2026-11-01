@@ -13,7 +13,7 @@ description: >-
 
 The AI layer interprets intent and emits structured actions. It never mutates app state directly. Free-form tool calls into stores, engine, or DOM are how model mistakes become irreversible project damage.
 
-## Core rules
+## Rules
 
 ### 1. The model outputs actions, not mutations
 
@@ -21,11 +21,15 @@ Model output is structured actions, or a plan of actions — never ad-hoc store 
 
 **Why:** unconstrained model writes bypass undo, ownership, and every domain invariant.
 
+**Enforced by:** `src/modules/Command/useCases/__tests__/agentControlBoundary.spec.ts` for the voice route; otherwise review only.
+
 ### 2. The action registry is explicit
 
 Every executable AI action is a named, typed entry with a known payload shape and an owning execution path. Never execute model output as code or shell. Grow the registry one validated action at a time — never start from "the chatbot can do anything". Start with actions that map to existing commands.
 
 **Why:** an open-ended tool surface is an open-ended corruption surface.
+
+**Enforced by:** `src/modules/Command/useCases/__tests__/executableAppActionRegistry.spec.ts` and `commandRegistryCompleteness.spec.ts`.
 
 ### 3. Separate planning from execution
 
@@ -33,11 +37,15 @@ Planning (prompt → proposed actions) is separate from execution (validate → 
 
 **Why:** conflating plan and execute makes partial failures and user confirmation impossible.
 
+**Enforced by:** review only.
+
 ### 4. Validate all model output before execution
 
 Check structure, bounds, ID existence, and capability before any write. A rejected action must not partially apply.
 
 **Why:** models emit confident nonsense; validation is the last line before truth mutates.
+
+**Enforced by:** `src/modules/Command/useCases/__tests__/commandBatchPreflight.spec.ts` (rejection before the first handler effect).
 
 ### 5. Inference placement is free; execution placement is fixed
 
@@ -45,9 +53,15 @@ Where the model runs — cloud, local, browser — can vary. Where actions execu
 
 **Why:** a privileged AI write path that skips Command/use cases is a second architecture.
 
+**Enforced by:** review only.
+
 ### 6. Actions are specific, undoable, and cheap to validate
 
+Each registry entry names one bounded effect: declared typed arguments, the target capabilities each argument must satisfy, and a risk level (`ExecutableAppActionRisk` in `executableAppActionRegistry.ts`). Prefer several small actions over one broad action, and give each a replay (undo) path through the command boundary.
+
 **Why:** vague mega-actions cannot be validated, undone, or explained.
+
+**Enforced by:** `executableAppActionRegistry.spec.ts` (every descriptor has a valid risk level and a unique action type); specificity and undoability are otherwise review only.
 
 ### 7. Gate risky operations behind confirmation
 
@@ -57,39 +71,42 @@ The shape is: AI proposes → validation → confirm if required → execute →
 
 **Why:** bulk delete from a bad parse is worse than a refused action.
 
+**Enforced by:** the risk-to-confirmation map in `getExecutableCommandConfirmation.ts` is observed by `commandRegistryCompleteness.spec.ts` (confirmation required exactly when risk is not `bounded-reversible`, for every registered command); the confirmation reason text is review only. `appActionExecutionPolicy.spec.ts` covers the app-action execution policy's confirmation, not the registration map. `commandApprovalBoundary.spec.ts` covers approval-binding consumption, not the map.
+
 ### 8. Make AI execution observable
 
 For any prompt, answer: what the model proposed, what validation accepted, what actually executed, and what failed and why.
 
 **Why:** without those four answers, partial model wrongness is undiagnosable.
 
-### Review escape: execution context reaches every dispatcher route
-
-Review public command execution context through single and batch dispatch, and through both runtime and project handlers. Prove cancellation and deferred-work attempts at a real consumer, not only a forwarding mock. PR 1949 (`ce2ffea3fd`) added the public signal and batch propagation/direct-handler coverage; PR 2988 (`1a1aabfe68`) added deferred-work telemetry. The single-action dispatcher entrypoint was not covered.
+**Enforced by:** review only.
 
 ### 9. Preserve qualifiers through prompt segmentation
 
-When a multi-action prompt is segmented, retain each action's exclusions, qualifiers, and reference ambiguity without borrowing adjacent action text. Test connector and punctuation variants, and mutate literal-ID versus display-name and Unicode-overlap evidence so exact identifiers never erase genuine ambiguity.
+When a multi-action prompt is segmented, retain each action's exclusions, qualifiers, and reference ambiguity without borrowing adjacent action text. Exact identifiers never erase genuine ambiguity.
 
 **Why:** clause boundaries are a parsing convenience, not permission to widen a destructive action or collapse competing targets.
 
-### 10. Prove complete deterministic admission
+**Enforced by:** review only (probe: `review-stances/correctness.md`).
 
-Deterministic execution requires a grammar that consumes the whole request and resolves every target uniquely. Test a complete exact command across the registry before applying open-ended complexity heuristics. Resolve reserved context references before unquoted display names, and treat unquoted multiword values as semantic input unless a bounded grammar proves that the whole value is literal. Fuzzy search rank, partial text, context availability, or the first matching registry entry are discovery evidence only; they never authorize an action.
+### 10. Deterministic execution needs complete admission
+
+Deterministic execution requires a grammar that consumes the whole request and resolves every target uniquely. Reserved context references resolve before unquoted display names; an unquoted multiword value is semantic input unless a bounded grammar proves it literal. Fuzzy rank, partial text, context availability, and the first matching registry entry are discovery evidence only and never authorize an action.
 
 **Why:** once a partial proposal reaches validation, approval, and receipts, the omitted intent cannot be reconstructed and an ambiguity can look like a deliberate edit.
 
-### 11. Keep source authority and protections on original request text
+**Enforced by:** review only (probe: `review-stances/correctness.md`).
 
-Masked text supports intent discovery and segmentation; it never proves literal source syntax or target authority. Compiler-resolved identities validate selector structure, but deterministic, direct, and compiler-backed proposals must derive source authority from the same original request text and the same complete selection set; a primary selection field does not prove that the selection is unique. Reserved selection phrases apply only outside quotes so quoted project names remain literal references. Parse quote boundaries once with an offset-preserving scanner that treats in-word apostrophes as content. Extract preservation clauses quote-aware from the original whole request, resolve every bounded list member independently while retaining whole-name evidence, and conservatively union every protected candidate. An incomplete explicit protection is a rejection, not an empty permission set. Enforce protections after final target resolution including compiler overrides, and carry protected objects into the application-owned proposal scope.
+### 11. Source authority and protections come from the original request text
 
-Build project-reference masks from immutable original-text spans and render them once; a generated intent marker must never become evidence for a later reference match. When one command grammar permits an optional connector, classify source and value from one quote-aware original-text parse, and keep semantic whitespace inside a protection reference without joining separate punctuation-bounded clauses.
+Masked text supports discovery and segmentation only. Every proposal route derives source authority, selection sets, and protections from the original request text, parsed once and quote-aware. An incomplete explicit protection is a rejection, never an empty permission set, and protections are enforced after final target resolution, compiler overrides included.
 
-When a free-form value can contain the same connector that separates a target from that value, enumerate whitespace-delimited, quote-aware source boundaries and ground each source prefix through the canonical reference resolver. Reference evidence must consume the complete source prefix, including a complete known owner qualifier; a contained name is insufficient. Admit only one uniquely grounded source-and-value interpretation, and never let a provider target choose between competing boundaries.
+**Why:** a project-name placeholder can resemble executable grammar, and a qualifier split away from an action still limits what the whole request authorizes.
 
-**Why:** a project-name placeholder can resemble executable grammar, while a qualifier split away from an action still limits what the whole request authorizes.
+**Enforced by:** review only (probe: `review-stances/correctness.md`).
 
 ## References
 
 - [docs/architecture/03-typescript-module.md](../../../docs/architecture/03-typescript-module.md) — use cases and command surfaces actions must hit.
 - [docs/03-state-management.md](../../../docs/03-state-management.md) — who may write which state.
+- Review probes for dispatcher context, segmentation, admission, and protections: `../review-stances/correctness.md`.

@@ -4,9 +4,7 @@ User-facing snapshot version control for projects, including point-in-time miles
 
 ## Public Contract Surface
 
-- `stores`: `versionControlStore` (`VersionControlState`).
-- `useCases`: `getVersionControlHandlers`.
-- Handlers: `getVersionControlHandlers` (`createProjectVersion`, `restoreProjectVersion`, `createVersionBranch`).
+Public surface: `useCases/index.ts`, `stores/index.ts`.
 
 ## Key Subsystems
 
