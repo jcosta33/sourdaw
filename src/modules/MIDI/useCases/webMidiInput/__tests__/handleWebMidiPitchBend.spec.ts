@@ -560,6 +560,25 @@ describe('handleWebMidiPitchBend', () => {
             expect(recorded_rows()).toEqual([{ value: -8192, beat: 2, channel: 5 }]);
         });
 
+        it('scopes a wheel recorded with MPE off to its channel, and leaves the MPE master’s unscoped', () => {
+            // Live, a wheel moves only its own channel's notes outside MPE, while the zone master reaches every
+            // member channel: the row says which, so playback bends the same notes.
+            const scopes = () =>
+                (recordedControllerTakeState.buffers.get(RECORDING_CLIP_ID)?.pitchBend ?? []).map((row) => [
+                    row.channel,
+                    row.channelScoped,
+                ]);
+            mpe_enabled.value = false;
+            handleWebMidiPitchBend._factory(recording_dependencies())(2, 0, 96, at_beat(6));
+            mpe_enabled.value = true;
+            handleWebMidiPitchBend._factory(recording_dependencies())(0, 0, 96, at_beat(7));
+
+            expect(scopes()).toEqual([
+                [2, true],
+                [0, undefined],
+            ]);
+        });
+
         it('records nothing while the transport is not recording', () => {
             mpe_enabled.value = false;
             const fn = handleWebMidiPitchBend._factory(

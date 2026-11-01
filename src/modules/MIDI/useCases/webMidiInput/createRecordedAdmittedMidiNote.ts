@@ -33,6 +33,8 @@ export function createRecordedAdmittedMidiNote(
         Math.max(durationBeats, 0.0625),
         admitted.velocity
     );
+    // Stored playback bends a note only by its own channel's recorded wheel, as the live input does.
+    note.channel = admitted.channel;
     if (admitted.onsetPassIndex !== undefined) {
         note.recordingPassIndex = admitted.onsetPassIndex;
     }

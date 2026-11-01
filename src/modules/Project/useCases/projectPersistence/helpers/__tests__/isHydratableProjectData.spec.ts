@@ -223,6 +223,29 @@ describe('isHydratableProjectData', () => {
         expect(isHydratableProjectData(project)).toBe(false);
     });
 
+    it('accepts a recorded bend scoped to its channel and an older bend without a scope, and rejects any other scope', () => {
+        const base = buildValidProjectData();
+        const withBends = (bends: unknown[]) => ({
+            ...base,
+            midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: { 'clip-1': bends } },
+        });
+
+        expect(
+            isHydratableProjectData(
+                withBends([
+                    { beat: 0, value: 4096, channel: 2, channelScoped: true },
+                    { beat: 1, value: 0, channel: 0 },
+                ])
+            )
+        ).toBe(true);
+        expect(isHydratableProjectData(withBends([{ beat: 0, value: 4096, channel: 2, channelScoped: 'yes' }]))).toBe(
+            false
+        );
+        expect(isHydratableProjectData(withBends([{ beat: 0, value: 4096, channel: 2, channelScoped: null }]))).toBe(
+            false
+        );
+    });
+
     it('accepts a note recorded in a later pass', () => {
         const base = buildValidProjectData();
         const note = { id: 'recorded', pitch: 60, startBeat: 0, duration: 1, velocity: 100, recordingPassIndex: 2 };

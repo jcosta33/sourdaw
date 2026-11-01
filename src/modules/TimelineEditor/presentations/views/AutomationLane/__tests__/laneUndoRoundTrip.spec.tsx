@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
+import { projectChannelBend } from '#/modules/MIDI/useCases';
 
 import { type MidiCC, type MidiPitchBend } from '../../../../models/MidiNoteViewTypes';
 import { CCLane } from '../CCLane';
@@ -253,6 +254,72 @@ describe('lane undo round-trips (#4795)', () => {
 
             entry.redo();
             expect(storedPBs()).toEqual([{ id: addedId, value: clickPitchBend, beat: clickBeat, channel: 0 }]);
+        });
+
+        it('remove: undo puts a point back where it stood among rows on its beat, so each channel keeps its bend', () => {
+            // The player reads the last same-beat row that reaches a note, so a point restored at the end of the
+            // list would take the bend from the channels whose wheels followed it.
+            const rows = [
+                { id: 'pb-centre', value: 0, beat: 2, channel: 0 },
+                { id: 'pb-ch1', value: 4000, beat: 2, channel: 1, channelScoped: true },
+                { id: 'pb-ch2', value: -3000, beat: 2, channel: 2, channelScoped: true },
+            ];
+            const bendInForce = () => {
+                const points = projectChannelBend({
+                    clips: [
+                        {
+                            clip: { startBeat: 0, endBeat: 8, midiOffsetBeats: 0 },
+                            controlChanges: [],
+                            pitchBends: storedPBs(),
+                        },
+                    ],
+                    frameAtBeat: (beat) => beat * 24_000,
+                });
+                return [0, 1, 2].map(
+                    (channel) => points.findLast((point) => !point.channelScoped || point.channel === channel)?.value
+                );
+            };
+            midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: { 'clip-1': rows } });
+            const before = bendInForce();
+            expect(before).toEqual([0, 4000, -3000]);
+            renderLane();
+
+            // The lane lists same-beat points in store order, so the first is the centred row.
+            fireEvent.doubleClick(document.querySelectorAll('[data-pb-point="true"]')[0]!);
+            expect(storedPBs()).toEqual(rows.slice(1));
+            const entry = lastEntry();
+
+            entry.undo();
+            expect(storedPBs()).toEqual(rows);
+            expect(bendInForce()).toEqual(before);
+
+            entry.redo();
+            expect(storedPBs()).toEqual(rows.slice(1));
+
+            entry.undo();
+            expect(storedPBs()).toEqual(rows);
+            expect(bendInForce()).toEqual(before);
+        });
+
+        it('remove: undo restores a recorded point with its channel-scoped mark', () => {
+            const recorded = { id: 'pb-recorded', value: 40, beat: 2, channel: 1, channelScoped: true };
+            midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: { 'clip-1': [recorded] } });
+            renderLane();
+            const point = document.querySelector('[data-pb-point="true"]');
+            expect(point).not.toBeNull();
+
+            fireEvent.doubleClick(point!);
+            expect(storedPBs()).toEqual([]);
+            const entry = lastEntry();
+
+            entry.undo();
+            expect(storedPBs()).toEqual([recorded]);
+
+            entry.redo();
+            expect(storedPBs()).toEqual([]);
+
+            entry.undo();
+            expect(storedPBs()).toEqual([recorded]);
         });
 
         it('remove: undo re-creates the removed point under its own id, and redo still removes it', () => {

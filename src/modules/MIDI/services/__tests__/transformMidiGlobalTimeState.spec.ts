@@ -762,6 +762,50 @@ describe('transformMidiGlobalTimeState split edge cases', () => {
         ]);
     });
 
+    it('carries a drawn bend and a later recorded wheel of one channel onto the right clip, in recorded order', () => {
+        // The drawn row was added after the take, so it follows the recorded one in the list though it sits
+        // earlier. A channel-1 note hears only the drawn (unscoped) row and a channel-0 note the later wheel, so
+        // the right clip keeps both, the earlier one first.
+        const recorded = { id: 'wheel', value: 8191, beat: 2, channel: 0, channelScoped: true };
+        const drawn = { id: 'drawn', value: 4096, beat: 1, channel: 0 };
+        const prepared = state({ pitchBendByClipId: { source: [recorded, drawn] } });
+
+        const result = transformMidiGlobalTimeState({
+            state: prepared,
+            commands: [{ type: 'split-notes', sourceClipId: 'source', targetClipId: 'right', splitBeat: 4 }],
+            targetNoteIds: [],
+        });
+
+        expect(result.status).toBe('ready');
+        expect(result.state.pitchBendByClipId.right).toStrictEqual([
+            { ...drawn, id: 'pb-split:right:1', beat: 0 },
+            { ...recorded, id: 'pb-split:right:0', beat: 0 },
+        ]);
+    });
+
+    it('carries same-beat rows of one channel onto the right clip in their source order', () => {
+        // An MPE switch-off writes a centred unscoped row and the channel's scoped wheel in one call, on one beat,
+        // and the later of them in the list is the one in force for the channel's notes. The earlier scoped wheel
+        // put the scoped lane first, which must not reorder the two on the right clip.
+        const s1 = { id: 's1', value: 1000, beat: 1, channel: 0, channelScoped: true };
+        const u1 = { id: 'u1', value: 2000, beat: 3, channel: 0 };
+        const u2 = { id: 'u2', value: 0, beat: 5, channel: 0 };
+        const s2 = { id: 's2', value: 1000, beat: 5, channel: 0, channelScoped: true };
+        const prepared = state({ pitchBendByClipId: { source: [s1, u1, u2, s2] } });
+
+        const result = transformMidiGlobalTimeState({
+            state: prepared,
+            commands: [{ type: 'split-notes', sourceClipId: 'source', targetClipId: 'right', splitBeat: 6 }],
+            targetNoteIds: [],
+        });
+
+        expect(result.status).toBe('ready');
+        expect(result.state.pitchBendByClipId.right).toStrictEqual([
+            { ...u2, id: 'pb-split:right:2', beat: 0 },
+            { ...s2, id: 'pb-split:right:3', beat: 0 },
+        ]);
+    });
+
     it('rejects when a note end overflows to non-finite during a discard-window split', () => {
         const prepared = state({
             notesByClipId: {
@@ -1375,9 +1419,10 @@ describe('transformMidiGlobalTimeState split controllers and pitch bends', () =>
 
         const result = split(prepared, 4);
 
+        // The carried rows keep the order they were recorded in, so the latest of them stays the last.
         expect(result.state.pitchBendByClipId.right).toEqual([
-            pitchBend('pb-split:right:0', 0, 4900, 0),
             pitchBend('pb-split:right:2', 0, -3200, 1),
+            pitchBend('pb-split:right:0', 0, 4900, 0),
         ]);
     });
 

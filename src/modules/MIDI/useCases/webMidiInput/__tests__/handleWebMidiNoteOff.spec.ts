@@ -184,7 +184,7 @@ describe('handleWebMidiNoteOff', () => {
         expect(create_midi_note).toHaveBeenCalledWith(60, 4, 2, 100);
         expect(append_recorded_midi_note).toHaveBeenCalledWith({
             clipId: 'clip-1',
-            note: recorded_note,
+            note: { ...recorded_note, channel: 0 },
         });
     });
 
@@ -1189,6 +1189,33 @@ describe('handleWebMidiNoteOff', () => {
         expect(captured[0]?.note.pressure).toBeUndefined();
         expect(captured[0]?.note.slide).toBeUndefined();
         expect(captured[0]?.note.pitchBend).toBeUndefined();
+    });
+
+    it.each([false, true])('keeps the channel the note sounded on (MPE %s)', async (mpe) => {
+        // Stored playback bends a note only by its own channel's recorded wheel, as the live input does.
+        mpe_enabled.value = mpe;
+        const captured: Record<string, unknown>[] = [];
+        const fn = handleWebMidiNoteOff._factory(
+            make_dependencies({
+                createMidiNote: () => ({ id: 'n', pitch: 60, startBeat: 4, duration: 2, velocity: 80 }),
+                appendRecordedMidiNote: (input: { note: Record<string, unknown> }) => {
+                    captured.push(input.note);
+                },
+            })
+        );
+        activeNotes.set(createWebMidiNoteKey(5, 60), {
+            channel: 5,
+            note: 60,
+            velocity: 80,
+            trackId: 'track-1',
+            instrumentTrackId: 'track-1',
+            startTime: 1,
+            startBeat: 4,
+        });
+
+        await fn(5, 60, 0);
+
+        expect(captured[0]?.channel).toBe(5);
     });
 
     it('skips recording when no clip is found for the armed track', async () => {

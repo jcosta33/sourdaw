@@ -128,6 +128,42 @@ describe('hydrateProjectMidi', () => {
         expect(pb?.channel).toBe(0);
     });
 
+    it('keeps a recorded bend scoped to its channel across save and reopen, and an unscoped bend unscoped', () => {
+        const scoped: MidiStoreState = {
+            ...midi,
+            pitchBendByClipId: {
+                'clip-1': [
+                    { id: 'wheel', value: 4096, beat: 1, channel: 2, channelScoped: true },
+                    { id: 'drawn', value: -100, beat: 2, channel: 0 },
+                ],
+            },
+        };
+
+        const saved = serializeProjectMidi(scoped);
+        const reopened = hydrateProjectMidi(saved);
+
+        expect(saved.pitchBendByClipId['clip-1']).toStrictEqual([
+            { beat: 1, value: 4096, channel: 2, channelScoped: true },
+            { beat: 2, value: -100, channel: 0 },
+        ]);
+        expect(reopened.pitchBendByClipId['clip-1']).toStrictEqual([
+            { id: 'pb-clip-1-0', value: 4096, beat: 1, channel: 2, channelScoped: true },
+            { id: 'pb-clip-1-1', value: -100, beat: 2, channel: 0 },
+        ]);
+    });
+
+    it('opens a bend saved before bends were scoped as unscoped, bending the whole track as it did', () => {
+        const reopened = hydrateProjectMidi({
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: { 'clip-1': [{ beat: 1, value: 4096, channel: 2 }] },
+        });
+
+        expect(reopened.pitchBendByClipId['clip-1']).toStrictEqual([
+            { id: 'pb-clip-1-0', value: 4096, beat: 1, channel: 2 },
+        ]);
+    });
+
     it('mints deterministic CC/pitch-bend ids so re-imports are stable', () => {
         const first = hydrateProjectMidi(serializeProjectMidi(midi));
         const second = hydrateProjectMidi(serializeProjectMidi(midi));

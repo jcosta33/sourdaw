@@ -449,6 +449,27 @@ describe('restoreMidiClipData', () => {
         }).toThrow(INVALID_MIDI_CLIP_DATA_SNAPSHOT);
     });
 
+    it('restores a recorded pitch bend with its channel scope, and rejects a scope that is not a boolean', () => {
+        const scoped = { ...createPitchBend('pb-scoped'), channelScoped: true };
+
+        restoreMidiClipData({
+            clipId: 'clip-restore',
+            notesSnapshot: null,
+            controlChangeSnapshot: null,
+            pitchBendSnapshot: [scoped],
+        });
+
+        expect(mocks.state.value?.pitchBendByClipId['clip-restore']).toEqual([scoped]);
+        expect(() => {
+            restoreMidiClipData({
+                clipId: 'clip-restore',
+                notesSnapshot: null,
+                controlChangeSnapshot: null,
+                pitchBendSnapshot: [{ ...createPitchBend('pb-bad-scope'), channelScoped: 1 }],
+            });
+        }).toThrow(INVALID_MIDI_CLIP_DATA_SNAPSHOT);
+    });
+
     it('copies supplied arrays without cloning their row objects', () => {
         const note = createNote('note-restored');
         const controlChange = createControlChange('cc-restored');
