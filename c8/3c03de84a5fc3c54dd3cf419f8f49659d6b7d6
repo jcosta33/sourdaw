@@ -1,0 +1,27 @@
+src/modules/Transport/useCases/playheadScheduler/prepareInitialBrowserPlayback.ts
+  s_dde1671ba022b8::t_e5635e65965158 1
+  s_dde1671ba022b8::t_cd6395e16f4b96 54-56
+  s_dde1671ba022b8::t_6dbf3d5d4ec046 110
+  s_dde1671ba022b8::t_2e6eec53f8868d 97
+  s_dde1671ba022b8::t_87243b5de6c315 44-48
+  s_dde1671ba022b8::t_272cf153c28320 36-43,49-53,57-76,84-87,93-96,98-104
+  s_dde1671ba022b8::t_288cf33fb5a249 108-109,169-170
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWitnessInputs.integration.spec.ts
+  s_dde1671ba022b8::t_ce7e04c933df05 1-552
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c83c03de84a5fc3c54dd3cf419f8f49659d6b7d6",
+  "prompts": {},
+  "sessions": {
+    "s_dde1671ba022b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e4c42ac-51ff-45eb-b81f-f43601ed01dc",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
