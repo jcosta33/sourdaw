@@ -37,13 +37,15 @@ import {
     prepareTimelineMapStateRestore,
     prepareTimelineMapTimeOperation,
 } from '#/modules/Transport/useCases';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type Take } from '../../../models/TakeLane';
+import { type TempoTimeline } from '../../../models/TempoTimeline';
 import { type Clip } from '../../../models/Track';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
+import { prepareMidiTakeSourceCapture } from '../../../useCases/comping/prepareMidiTakeSourceCapture';
 import { admitRecordingMidiNoteOff } from '../../../useCases/recording/admitRecordingMidiNoteOff';
 import { admitRecordingMidiNoteOn } from '../../../useCases/recording/admitRecordingMidiNoteOn';
 import { recordingMidiSourceBeatAt } from '../../../useCases/recording/recordingMidiSourceBeatAt';
@@ -56,6 +58,18 @@ import { setTimeOperationDependencies } from '../../../useCases/timeOperations/t
 const TRACK_ID = 'track-midi';
 const LOOP_START_BEAT = 8;
 const LOOP_END_BEAT = 16;
+
+const constantTempo: TempoTimeline = {
+    secondsAtBeat: (beat) => beat / 2,
+    beatAtSeconds: (seconds) => seconds * 2,
+    tempoAtBeat: () => 120,
+};
+
+const noRows: MidiClipDataActionSnapshot = {
+    notes: { present: true, value: [] },
+    controlChanges: { present: false, value: [] },
+    pitchBends: { present: false, value: [] },
+};
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -587,19 +601,57 @@ describe('MIDI loop recordings', () => {
             await compFirstPassAfterOneWrap(9);
 
             expect(heardPitches(6, 12)).toEqual([null, null, null, 60, null, null]);
+            expect(passTake('Pass 0')).toMatchObject({ startBeat: 8, endBeat: 12, sourceOffsetBeats: 0 });
+            // Re-keying a take (split, Delete Time) strides by a finished pass, which spans the loop.
+            const takes = takeLaneStore.value?.lanes[0]?.takes ?? [];
+            for (const take of [passTake('Pass 0'), passTake('Take 1')]) {
+                expect(
+                    prepareMidiTakeSourceCapture({
+                        clip: recordedClip(),
+                        take,
+                        siblingTakes: takes,
+                        rows: noRows,
+                        timeline: constantTempo,
+                    })?.passLengthBeats
+                ).toBe(4);
+            }
+        });
+
+        it('plays a comped first pass on the beats it was struck when looping is switched on inside it', async () => {
+            transportStore.set({
+                ...defaultTransportState,
+                isLooping: false,
+                loopStart: 8,
+                loopEnd: 12,
+                playheadPosition: 6,
+            });
+            const [clip] = startRecording(6);
+            if (!clip) {
+                throw new Error('Expected a provisional MIDI recording');
+            }
+            transportStore.set({ ...transportStore.value!, isPlaying: true, isRecording: true, isLooping: true });
+            holdNote(10, 0);
+            releaseNote(10.5, 0);
+            stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 2, index: 0 });
+
+            await compFirstPassAfterOneWrap(9);
+
+            expect(heardPitches(8, 12)).toEqual([null, null, 60, null]);
+            expect(passTake('Pass 0')).toMatchObject({ startBeat: 8, endBeat: 12, sourceOffsetBeats: 0 });
         });
 
         it('plays a comped first pass on the beats it was struck when the loop start moves forward inside it', async () => {
             const clip = recordFromLoopStart();
-            holdNote(9, 0);
-            releaseNote(9.5, 0);
             transportStore.set({ ...transportStore.value!, loopStart: 10 });
+            holdNote(11, 0);
+            releaseNote(11.5, 0);
             // The scheduler derives the first pass's offset from the moved loop start.
             stageWrap(clip, { name: 'Pass 0', startBeat: 10, endBeat: 12, sourceOffsetBeats: 2, index: 0 });
 
             await compFirstPassAfterOneWrap(11);
 
-            expect(heardPitches(8, 12)).toEqual([null, 60, null, null]);
+            expect(heardPitches(10, 12)).toEqual([null, 60]);
+            expect(passTake('Pass 0')).toMatchObject({ startBeat: 10, endBeat: 12, sourceOffsetBeats: 0 });
         });
 
         it('plays a comped first pass recorded from the loop start on the beats it was struck', async () => {
