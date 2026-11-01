@@ -1,0 +1,24 @@
+.agents/skills/review-stances/project-integrity.md
+  s_0314bb17e5dee3::t_a7ed237171392a 212
+  s_0314bb17e5dee3::t_612b5b7d99215b 213-215
+  s_0314bb17e5dee3::t_cdbeafe4e1a50a 48
+  s_0314bb17e5dee3::t_8a76595ceafac2 49-50
+  s_0314bb17e5dee3::t_eeb7ad234e6743 117-118
+  s_0314bb17e5dee3::t_76db9ce9a3e251 144-146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5f101a6f4c565ddc9e32cbbb5756e431bc34e88d",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
