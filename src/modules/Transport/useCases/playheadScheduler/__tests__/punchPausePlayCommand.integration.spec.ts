@@ -50,6 +50,7 @@ import { executePlayheadSeek } from '../../transportControls/executePlayheadSeek
 import { pausePlayback } from '../../transportControls/pausePlayback';
 import { recordingLifecycle } from '../../transportControls/recordingLifecycle';
 import { startPlayback } from '../../transportControls/startPlayback';
+import { stopPlayback } from '../../transportControls/stopPlayback';
 
 const TRACK_ID = 'track-recording';
 const SESSION_KEY = 'sourdaw-undo-session';
@@ -758,5 +759,255 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         expect(toJS(after)).toEqual(before);
         expect(captured()).toEqual(beforeProjection);
         expect(commits()).toBe(0);
+    });
+
+    describe('a Play pressed inside the region while the paused punch is still closing (#5998)', () => {
+        const PREPARATION_REFUSAL = 'Playback changed while preparing. Press Play again.';
+
+        /** Pause the open punch with its flush held, seek inside the region, and press Play. */
+        async function playInsideRegionBehindHeldFlush() {
+            const old = await openFirst();
+            pausePlayback();
+            expect(mocks.pendingCount()).toBe(1);
+            await executePlayheadSeek(6);
+            const closingChecks = vi.spyOn(recordingLifecycle, 'isClosingRecording');
+            const playing = startPlayback();
+            // Play is now waiting on the held flush: either through its punch's
+            // recorder start, or on the earlier punch's closing itself.
+            await vi.waitFor(() =>
+                expect(mocks.startAudioRecording.mock.calls.length === 2 || closingChecks.mock.calls.length > 0).toBe(
+                    true
+                )
+            );
+            return { old, playing };
+        }
+
+        /** Resolve once Play has settled, or once a stop is flushing the punch Play admitted. */
+        async function untilPlaySettlesOrStops(playing: Promise<void>): Promise<void> {
+            let settled = false;
+            void playing.then(() => {
+                settled = true;
+            });
+            await vi.waitFor(() => expect(settled || mocks.pendingCount() > 0).toBe(true));
+        }
+
+        function replaceProjectRoot(): void {
+            flushAutomergeStorageWrites();
+            const root = getCrdtDoc(DOC_PREFIX_ROOT);
+            if (!root) {
+                throw new Error('Expected outgoing project root');
+            }
+            replaceCrdtDoc({ id: DOC_PREFIX_ROOT, doc: cloneAutomergeDoc(root) });
+            projectCrdtToStores({ resetProjections: true });
+            flushAutomergeStorageWrites();
+        }
+
+        it('keeps Play rolling and both captures when the earlier punch commits while Play prepares', async () => {
+            const oldBuffer = pcm(0.25);
+            const successorBuffer = pcm(0.5);
+            const { old, playing } = await playInsideRegionBehindHeldFlush();
+
+            mocks.release(oldBuffer);
+            await untilPlaySettlesOrStops(playing);
+            expect(transportStore.value?.isPlaying, 'Play keeps rolling').toBe(true);
+            expect(mocks.pendingCount(), 'no stop is flushing the successor punch').toBe(0);
+            await playing;
+            await vi.waitFor(() => expect(commits()).toBe(1));
+
+            expect(mocks.notifyUser).not.toHaveBeenCalledWith(PREPARATION_REFUSAL, 'warning');
+            expect(schedulerSession.punchRecordingActive).toBe(true);
+            expect(mocks.recordingSessions()).toBe(1);
+            expect(mocks.refusedStarts()).toBe(0);
+            const successor = activeRecordingRef.current[0];
+            expect(successor).toBeTruthy();
+            expect(successor).not.toBe(old);
+            const clips = trackStore.value?.tracks[0]?.clips ?? [];
+            expect(clips.find((clip) => clip.id === old)?.startBeat).toBe(4);
+            expect(clips.find((clip) => clip.id === successor)?.startBeat).toBe(6);
+            expectPcm(old, oldBuffer, 0.25);
+            await expectBothCapturesRetained({ old, oldBuffer, successor, successorBuffer });
+        });
+
+        it('keeps the next Play rolling when a paused session retires its refused start during preparation', async () => {
+            const admitStart = mocks.startAudioRecording.getMockImplementation();
+            if (!admitStart) {
+                throw new Error('Expected the recorder fake admission');
+            }
+            const pausedStart = Promise.withResolvers<boolean>();
+            const successorAdmission = Promise.withResolvers<void>();
+            mocks.startAudioRecording
+                .mockImplementationOnce(() => pausedStart.promise)
+                .mockImplementationOnce(async (trackId, callback) => {
+                    await successorAdmission.promise;
+                    return admitStart(trackId, callback);
+                });
+            armFirstWindowPunch(null);
+            const pausedPlay = startPlayback();
+            await vi.waitFor(() => expect(mocks.startAudioRecording).toHaveBeenCalledTimes(1));
+            const refused = activeRecordingRef.current[0];
+            expect(refused).toBeTruthy();
+            pausePlayback();
+            await recordingLifecycle.waitForClosing();
+
+            const successorPlay = startPlayback();
+            // The successor has taken its programme witness and waits on its own start.
+            await vi.waitFor(() => expect(mocks.startAudioRecording).toHaveBeenCalledTimes(2));
+            pausedStart.resolve(false);
+            await pausedPlay;
+            successorAdmission.resolve();
+            await untilPlaySettlesOrStops(successorPlay);
+            expect(transportStore.value?.isPlaying, 'Play keeps rolling').toBe(true);
+            expect(mocks.pendingCount(), 'no stop is flushing the successor punch').toBe(0);
+            await successorPlay;
+
+            expect(mocks.notifyUser).not.toHaveBeenCalledWith(PREPARATION_REFUSAL, 'warning');
+            expect(schedulerSession.punchRecordingActive).toBe(true);
+            expect(mocks.recordingSessions()).toBe(1);
+            const successor = activeRecordingRef.current[0];
+            expect(successor).toBeTruthy();
+            expect(successor).not.toBe(refused);
+            // The refused start's provisional clip is still retired, once the successor settled.
+            expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual([successor]);
+            expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes.map((take) => take.clipId))).toEqual([
+                successor,
+            ]);
+
+            pausePlayback();
+            mocks.release(pcm(0.5));
+            await vi.waitFor(() => expect(commits()).toBe(1));
+            await recordingLifecycle.waitForClosing();
+            expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual([successor]);
+        });
+
+        it('retires a held refused start when the scheduler is disposed while the next Play prepares', async () => {
+            const admitStart = mocks.startAudioRecording.getMockImplementation();
+            if (!admitStart) {
+                throw new Error('Expected the recorder fake admission');
+            }
+            const pausedStart = Promise.withResolvers<boolean>();
+            const successorAdmission = Promise.withResolvers<void>();
+            mocks.startAudioRecording
+                .mockImplementationOnce(() => pausedStart.promise)
+                .mockImplementationOnce(async (trackId, callback) => {
+                    await successorAdmission.promise;
+                    return admitStart(trackId, callback);
+                });
+            armFirstWindowPunch(null);
+            const pausedPlay = startPlayback();
+            await vi.waitFor(() => expect(mocks.startAudioRecording).toHaveBeenCalledTimes(1));
+            const refused = activeRecordingRef.current[0];
+            expect(refused).toBeTruthy();
+            pausePlayback();
+            await recordingLifecycle.waitForClosing();
+            const successorPlay = startPlayback();
+            await vi.waitFor(() => expect(mocks.startAudioRecording).toHaveBeenCalledTimes(2));
+            pausedStart.resolve(false);
+            await pausedPlay;
+            // The successor is still preparing, so the refused start's retirement is held.
+            expect(trackStore.value?.tracks[0]?.clips.some((clip) => clip.id === refused)).toBe(true);
+
+            disposePlayheadScheduler();
+
+            expect(trackStore.value?.tracks[0]?.clips.some((clip) => clip.id === refused)).toBe(false);
+            expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes.map((take) => take.clipId))).not.toContain(
+                refused
+            );
+
+            successorAdmission.resolve();
+            await successorPlay;
+            pausePlayback();
+            mocks.release(pcm(0.5));
+            await recordingLifecycle.waitForClosing();
+        });
+
+        it.each([
+            [
+                'a transport field',
+                () => {
+                    const transport = transportStore.value;
+                    if (!transport) {
+                        throw new Error('Expected transport state');
+                    }
+                    transportStore.set({ ...transport, metronomeVolume: transport.metronomeVolume / 2 });
+                },
+            ],
+            [
+                'another clip',
+                (old: string | undefined) => {
+                    const tracks = trackStore.value;
+                    if (!tracks) {
+                        throw new Error('Expected track state');
+                    }
+                    trackStore.set({
+                        ...tracks,
+                        tracks: tracks.tracks.map((track) => ({
+                            ...track,
+                            clips: track.clips.map((clip) => (clip.id === old ? { ...clip, name: 'Edited' } : clip)),
+                        })),
+                    });
+                },
+            ],
+        ])('still refuses Play when %s changes before its punch is admitted', async (_, edit) => {
+            const admitStart = mocks.startAudioRecording.getMockImplementation();
+            if (!admitStart) {
+                throw new Error('Expected the recorder fake admission');
+            }
+            const successorAdmission = Promise.withResolvers<void>();
+            mocks.startAudioRecording
+                .mockImplementationOnce(admitStart)
+                .mockImplementationOnce(async (trackId, callback) => {
+                    await successorAdmission.promise;
+                    return admitStart(trackId, callback);
+                });
+            const { old, playing } = await playInsideRegionBehindHeldFlush();
+            mocks.release(pcm(0.25));
+            await vi.waitFor(() => expect(mocks.startAudioRecording).toHaveBeenCalledTimes(2));
+            await vi.waitFor(() => expect(commits()).toBe(1));
+
+            edit(old);
+            successorAdmission.resolve();
+            // The refusal stops the transport, which flushes the punch it admitted.
+            await vi.waitFor(() => expect(mocks.pendingCount()).toBe(1));
+            mocks.release(pcm(0.5));
+            await playing;
+
+            expect(mocks.notifyUser).toHaveBeenCalledWith(PREPARATION_REFUSAL, 'warning');
+            expect(transportStore.value?.isPlaying).toBe(false);
+            expect(schedulerSession.punchRecordingActive).toBe(false);
+            await recordingLifecycle.waitForClosing();
+        });
+
+        it('stops Play quietly without arming a punch when the project root is replaced while it waits', async () => {
+            const { playing } = await playInsideRegionBehindHeldFlush();
+            const epoch = schedulerSession.discontinuityEpoch;
+            replaceProjectRoot();
+
+            mocks.release(pcm(0.25));
+            await playing;
+            await recordingLifecycle.waitForClosing();
+
+            expect(mocks.notifyUser).not.toHaveBeenCalledWith(PREPARATION_REFUSAL, 'warning');
+            expect(mocks.startAudioRecording).toHaveBeenCalledTimes(1);
+            expect(schedulerSession.discontinuityEpoch).toBe(epoch);
+            expect(schedulerSession.punchRecordingActive).toBe(false);
+            expect(activeRecordingRef.current).toEqual([]);
+        });
+
+        it('leaves nothing rolling when Stop is pressed while Play waits', async () => {
+            const { playing } = await playInsideRegionBehindHeldFlush();
+            const epoch = schedulerSession.discontinuityEpoch;
+            const stopping = stopPlayback();
+
+            mocks.release(pcm(0.25));
+            await Promise.all([playing, stopping]);
+            await vi.waitFor(() => expect(commits()).toBe(1));
+
+            expect(mocks.notifyUser).not.toHaveBeenCalledWith(PREPARATION_REFUSAL, 'warning');
+            expect(transportStore.value?.isPlaying).toBe(false);
+            expect(mocks.startAudioRecording).toHaveBeenCalledTimes(1);
+            expect(schedulerSession.discontinuityEpoch).toBe(epoch);
+            expect(schedulerSession.punchRecordingActive).toBe(false);
+            expect(schedulerSession.worker).toBeNull();
+        });
     });
 });
