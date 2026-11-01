@@ -1,0 +1,73 @@
+src/modules/ContentBrowser/presentations/views/Sidebar/SidebarTypes.ts
+  s_88fc7e0d05bab6::t_68d7f224f9f76f 39-40
+src/modules/Arrangement/stores/deviceSelectionStore.ts
+  s_88fc7e0d05bab6::t_79f7f1ce851052 1-15
+src/modules/Arrangement/useCases/deviceSelection/clearDeviceSelection.ts
+  s_88fc7e0d05bab6::t_79f7f1ce851052 1-5
+src/modules/Arrangement/useCases/deviceSelection/selectDevice.ts
+  s_88fc7e0d05bab6::t_79f7f1ce851052 1-3,5
+  s_88fc7e0d05bab6::t_6f028bb50206ac 4
+src/modules/Arrangement/stores/index.ts
+  s_88fc7e0d05bab6::t_fe5e3ddda05b9e 6-7
+src/modules/Arrangement/AGENTS.md
+  s_88fc7e0d05bab6::t_f866e5dc314f3e 7
+src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx
+  s_88fc7e0d05bab6::t_8cb885d0682e04 6,98-99,136,149,162,175,188,201,216,233
+  s_88fc7e0d05bab6::t_c3f2243a7ebda3 31-39,261-268,354-361
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/DeviceChainSection.spec.tsx
+  s_88fc7e0d05bab6::t_df4ada0174cb80 14,25,103-112
+  s_88fc7e0d05bab6::t_3b7b2890aa6596 113-114
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_88fc7e0d05bab6::t_68d7f224f9f76f 82
+  s_88fc7e0d05bab6::t_7d91e5b47bd284 132
+src/modules/Arrangement/useCases/deviceSelection/__tests__/deviceSelection.spec.ts
+  s_88fc7e0d05bab6::t_79f7f1ce851052 1-8,10-32
+  s_88fc7e0d05bab6::t_1f84177c892dbd 9
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/EffectsTab.spec.tsx
+  s_88fc7e0d05bab6::t_8324d6c66dfc31 283-332
+  s_88fc7e0d05bab6::t_a48e4ba24dc4ef 84
+src/modules/TimelineEditor/presentations/views/__tests__/InspectorPanel.spec.tsx
+  s_88fc7e0d05bab6::t_1f84177c892dbd 17-22
+  s_88fc7e0d05bab6::t_c3f2243a7ebda3 114
+  s_88fc7e0d05bab6::t_93b587351984f1 12-15,43-44,50-51,56-57,115-120,136-142,149-150,251-296
+src/modules/WorkspaceShell/useCases/panels/revealDeviceInInspector.ts
+  s_88fc7e0d05bab6::t_68d7f224f9f76f 1-13
+src/modules/Arrangement/useCases/index.ts
+  s_88fc7e0d05bab6::t_fe5e3ddda05b9e 129-133
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/effectsTabHelpers.spec.tsx
+  s_88fc7e0d05bab6::t_8324d6c66dfc31 149-152
+  s_88fc7e0d05bab6::t_c3f2243a7ebda3 159-161
+  s_88fc7e0d05bab6::t_a48e4ba24dc4ef 1,8,24-40,110-148,153-158,162-167
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_88fc7e0d05bab6::t_1966eb2e9ee7d4 42-45,92-105,254-257,479-484
+  s_88fc7e0d05bab6::t_d8b339bc3bd2c6 485-486
+src/modules/TimelineEditor/presentations/views/InspectorPanel.tsx
+  s_88fc7e0d05bab6::t_dc11677c2805c1 1,12-23,64,94,104
+  s_88fc7e0d05bab6::t_c3f2243a7ebda3 72
+src/modules/WorkspaceShell/useCases/panels/__tests__/revealDeviceInInspector.spec.ts
+  s_88fc7e0d05bab6::t_68d7f224f9f76f 1-37
+src/modules/MixerConsole/presentations/views/Mixer/DeviceChainSection.tsx
+  s_88fc7e0d05bab6::t_a257cf91b6db8d 10,34-38,54
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/InstrumentsTab.spec.tsx
+  s_88fc7e0d05bab6::t_8324d6c66dfc31 111
+src/modules/ContentBrowser/presentations/views/Sidebar/effectsTabHelpers.tsx
+  s_88fc7e0d05bab6::t_c3f2243a7ebda3 224-234,236-265
+  s_88fc7e0d05bab6::t_09389dd4b49ee4 33-34,39-53,207,211-217,220-223,266-267
+  s_88fc7e0d05bab6::t_82df54c4f1c555 218
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3573a318e873575abe24a381ce84016f603fddce",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
