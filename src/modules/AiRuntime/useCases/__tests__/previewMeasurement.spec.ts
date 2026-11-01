@@ -1540,6 +1540,42 @@ describe('real caller sequential measurement opportunity', () => {
         assertUnchanged(before);
     });
 
+    it('shows a clarify sent on the penultimate measurement step with no actions and nothing written', async () => {
+        const before = captureBefore();
+        const questions = ['Which drum element should get more punch?'];
+        scriptTurns(before.revision, [
+            [queryCall()],
+            [recipeExpansionCall()],
+            [
+                {
+                    id: 'step-clarify',
+                    name: 'command.batch.decline',
+                    arguments: { kind: 'clarify', reason: 'The drums target is ambiguous.', questions },
+                },
+            ],
+            [proposeCall({ commands: [], compiledCallIds: ['expand-1'] })],
+        ]);
+        const planned = await parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: before.revision,
+        });
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[8]).toEqual({
+            mode: 'required',
+            toolNames: ['analysis.measure'],
+            parallelToolCalls: false,
+        });
+        expect(planned.planningOutcome).toEqual({
+            kind: 'clarify',
+            reason: 'The drums target is ambiguous.',
+            questions,
+        });
+        expect(planned.actions).toEqual([]);
+        expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        assertUnchanged(before);
+    });
+
     it.each(['matched', 'contradicted', 'incomparable'] as const)(
         'keeps sequencing separate from actual %s frozen metric proof',
         async (kind) => {

@@ -212,6 +212,7 @@ describe('caller-bound measurement receipt sequence', () => {
             readPolicy?: () => typeof opportunity;
             onTurn?: (turn: number) => void;
             terminalToolNames?: readonly string[];
+            declineAdmission?: Parameters<typeof runApplicationOwnedToolLoop>[0]['declineAdmission'];
         } = {}
     ) {
         const execute =
@@ -277,6 +278,7 @@ describe('caller-bound measurement receipt sequence', () => {
             },
             signal: options.signal,
             limits: options.limits,
+            declineAdmission: options.declineAdmission,
         });
         return { result, execute, requestTurn };
     }
@@ -412,6 +414,145 @@ describe('caller-bound measurement receipt sequence', () => {
         expect(result).toMatchObject({ status: 'complete', turns: 5, toolCalls: [terminal] });
         expect(run.requestTurn).toHaveBeenCalledTimes(5);
         expect(result.receipts.some((entry) => entry.callId.startsWith('proposal-'))).toBe(false);
+    });
+
+    const clarify = {
+        id: 'clarify',
+        name: 'command.batch.decline',
+        arguments: { kind: 'clarify', reason: 'Which key?', questions: ['Which key?'] },
+    };
+    const declineTerminals = ['setTempo', 'selectWorkflowCapability', 'command.batch.decline'];
+
+    it.each([
+        { label: 'alone', calls: [clarify] },
+        { label: 'beside a measure', calls: [measure, clarify] },
+    ])('completes with a clarify sent on the unheld measurement step $label', async ({ calls }) => {
+        const run = runSequence([[intake], [read('read-2')], [read('read-3')], calls, [terminal]], {
+            terminalToolNames: declineTerminals,
+        });
+        const result = await run.result;
+        expect(result).toMatchObject({
+            status: 'complete',
+            turns: 4,
+            toolCalls: [clarify],
+            decline: { kind: 'clarify', reason: 'Which key?', questions: ['Which key?'] },
+            answer: null,
+        });
+        expect(run.requestTurn).toHaveBeenCalledTimes(4);
+        expect(run.execute).not.toHaveBeenCalled();
+        expect(result.receipts.some((entry) => entry.turn === 4)).toBe(false);
+    });
+
+    it.each([
+        { maxTotalCalls: 4, status: 'complete' },
+        { maxTotalCalls: 3, status: 'rejected' },
+    ])(
+        'charges a step decline once and its unrun measure nothing within $maxTotalCalls calls',
+        async ({ maxTotalCalls, status }) => {
+            const run = runSequence([[intake], [read('read-2')], [read('read-3')], [measure, clarify], [terminal]], {
+                terminalToolNames: declineTerminals,
+                limits: { maxTotalCalls },
+            });
+            const result = await run.result;
+            expect(result).toMatchObject({ status, turns: 4 });
+            if (result.status === 'rejected') {
+                expect(result.reason).toContain('total application tool-call budget');
+            }
+        }
+    );
+
+    it('completes with a step decline its admission admits, as on any other turn', async () => {
+        const declineAdmission = vi.fn(() => ({ status: 'admitted' as const }));
+        const run = runSequence([[intake], [read('read-2')], [read('read-3')], [clarify], [terminal]], {
+            terminalToolNames: declineTerminals,
+            declineAdmission,
+        });
+        expect(await run.result).toMatchObject({ status: 'complete', turns: 4, decline: { kind: 'clarify' } });
+        expect(declineAdmission).toHaveBeenCalledOnce();
+    });
+
+    it('refuses a step decline its admission refuses, as on any other turn, and runs no measure beside it', async () => {
+        const reason = 'This is work to plan.';
+        const run = runSequence(
+            [[intake], [read('read-2')], [read('read-3')], [measure, clarify], [{ ...clarify, id: 'clarify-2' }]],
+            {
+                terminalToolNames: declineTerminals,
+                declineAdmission: () => ({ status: 'refused', reason }),
+                history: true,
+            }
+        );
+        const result = await run.result;
+        expect(result).toMatchObject({
+            status: 'rejected',
+            turns: 5,
+            reason: 'Provider declined a request the application plans, and no turn remained to plan it.',
+        });
+        expect(run.execute).not.toHaveBeenCalled();
+        expect(result.receipts.filter((entry) => entry.turn === 4)).toEqual([
+            expect.objectContaining({
+                callId: 'clarify',
+                status: 'failure',
+                error: expect.objectContaining({ code: 'decline-not-admitted', safeMessage: reason }),
+            }),
+        ]);
+        expect(run.requestTurn.mock.calls[4]?.[0]).toMatchObject({
+            history: expect.arrayContaining([
+                expect.objectContaining({
+                    turn: 4,
+                    calls: [measure, clarify],
+                    receipts: [
+                        expect.objectContaining({
+                            callId: 'measure',
+                            error: expect.objectContaining({ code: 'measurement-step-refused' }),
+                        }),
+                        expect.objectContaining({
+                            callId: 'clarify',
+                            error: expect.objectContaining({ code: 'decline-not-admitted' }),
+                        }),
+                    ],
+                }),
+            ]),
+        });
+    });
+
+    it('refuses an answer sent on the measurement step, which no answer intake grounds', async () => {
+        const answer = {
+            id: 'step-answer',
+            name: 'answer.respond',
+            arguments: { intakeCallId: 'intake', statements: [] },
+        };
+        const run = runSequence([[intake], [read('read-2')], [read('read-3')], [answer], [terminal]], {
+            terminalToolNames: [...declineTerminals, 'answer.respond'],
+            history: true,
+        });
+        const result = await run.result;
+        expect(result).toMatchObject({ status: 'complete', turns: 5, toolCalls: [terminal], answer: null });
+        expect(result.receipts.some((entry) => entry.callId === 'step-answer')).toBe(false);
+        expect(run.requestTurn.mock.calls[4]?.[0]).toMatchObject({
+            history: expect.arrayContaining([
+                expect.objectContaining({
+                    turn: 4,
+                    receipts: expect.arrayContaining([
+                        expect.objectContaining({
+                            callId: 'step-answer',
+                            error: expect.objectContaining({ code: 'measurement-step-refused' }),
+                        }),
+                    ]),
+                }),
+            ]),
+        });
+    });
+
+    it.each([
+        { label: 'alone', calls: [clarify], measured: false },
+        { label: 'beside a measure', calls: [measure, clarify], measured: true },
+    ])('releases the held proposal over a decline sent on the step $label', async ({ calls, measured }) => {
+        const run = runSequence([[intake], [terminal], calls], { terminalToolNames: declineTerminals });
+        const result = await run.result;
+        expect(result).toMatchObject({ status: 'complete', turns: 3, toolCalls: [terminal], decline: null });
+        expect(result.receipts.some((entry) => entry.callId === 'clarify')).toBe(false);
+        expect(settlementOf(result)).toMatchObject({ deferredCalls: [{ callId: 'terminal', turn: 2 }] });
+        expect(run.execute).toHaveBeenCalledTimes(measured ? 1 : 0);
     });
 
     it.each(['before the reply is admitted', 'during the measure'] as const)(

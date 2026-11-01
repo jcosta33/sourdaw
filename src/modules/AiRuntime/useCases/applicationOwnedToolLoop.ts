@@ -1854,6 +1854,19 @@ function orderReceiptsByCalls(
     return calls.flatMap(({ callId }) => receipts.filter((receipt) => receipt.callId === callId));
 }
 
+/** A measurement step's native record with the receipts its admitted calls earned, in call order. */
+function withStepRecord(
+    record: NativeTurnRecord | undefined,
+    turnReceipts: readonly ApplicationToolReceipt[]
+): NativeTurnRecord | undefined {
+    return (
+        record && {
+            calls: record.calls,
+            receipts: orderReceiptsByCalls(record.calls, [...turnReceipts, ...record.receipts]),
+        }
+    );
+}
+
 function resolveCallId(call: ToolCallResult, loopId: string, turn: number, index: number): string | null {
     if (call.id === undefined) {
         const synthesised = `${loopId}-${String(turn)}-${String(index)}`;
@@ -2180,6 +2193,61 @@ export async function runApplicationOwnedToolLoop(
         return totalCalls > limits.maxTotalCalls ? 'Provider exceeded the total application tool-call budget.' : null;
     };
 
+    const stepRefusalReceipt = (
+        call: ToolCallResult,
+        callId: string,
+        turn: number,
+        safeMessage: string
+    ): ApplicationToolReceipt =>
+        boundReceipt(
+            failureReceipt({
+                callId,
+                toolName: call.name,
+                turn,
+                code: 'measurement-step-refused',
+                safeMessage,
+                retryable: false,
+            }),
+            limits.maxReceiptBytesPerCall
+        );
+
+    // A valid decline sent on the measurement step, with no proposal held, needs no measurement: it
+    // is answered as on any other turn, and every other call of the reply, a measure included, is
+    // refused in native history only.
+    const readStepDecline = (
+        toolName: string,
+        identifiedCalls: readonly IdentifiedToolCall[],
+        turn: number
+    ): { calls: IdentifiedToolCall[]; record: NativeTurnRecord } | null => {
+        const terminalCalls = identifiedCalls.filter(
+            ({ call }) => call.name !== toolName && input.terminalToolNames.has(call.name)
+        );
+        if (heldTerminal !== null || terminalCalls.length === 0) {
+            return null;
+        }
+        const validation = validateTerminalCalls(terminalCalls);
+        if (validation.status === 'rejected' || validation.decline === null) {
+            return null;
+        }
+        const declineCallIds = new Set(terminalCalls.map(({ callId }) => callId));
+        return {
+            calls: terminalCalls,
+            record: {
+                calls: identifiedCalls,
+                receipts: identifiedCalls
+                    .filter(({ callId }) => !declineCallIds.has(callId))
+                    .map(({ call, callId }) =>
+                        stepRefusalReceipt(
+                            call,
+                            callId,
+                            turn,
+                            'The decline on this step was answered; this call did not run.'
+                        )
+                    ),
+            },
+        };
+    };
+
     // A valid proposal sent on the measurement step, with none held yet, is kept as one sent on the
     // turn before would be held: the step's own measurement, or its absence, then releases it.
     const keepStepTerminal = (
@@ -2230,17 +2298,11 @@ export async function runApplicationOwnedToolLoop(
                 .map(({ call, callId }) =>
                     keptCallIds.has(callId)
                         ? deferredCompletionReceipt(call, callId, turn)
-                        : boundReceipt(
-                              failureReceipt({
-                                  callId,
-                                  toolName: call.name,
-                                  turn,
-                                  code: 'measurement-step-refused',
-                                  safeMessage:
-                                      'Only the required measurement runs on this step; this call did not run.',
-                                  retryable: false,
-                              }),
-                              limits.maxReceiptBytesPerCall
+                        : stepRefusalReceipt(
+                              call,
+                              callId,
+                              turn,
+                              'Only the required measurement runs on this step; this call did not run.'
                           )
                 ),
         };
@@ -2379,7 +2441,16 @@ export async function runApplicationOwnedToolLoop(
 
         let measurementStepRecord: NativeTurnRecord | undefined;
         let stepTerminal: HeldTerminal | null = null;
-        if (measurementStepToolName !== undefined && measurementOpportunity !== null) {
+        const stepDecline =
+            measurementStepToolName === undefined
+                ? null
+                : readStepDecline(measurementStepToolName, identifiedCalls, turn);
+        if (stepDecline !== null) {
+            measurementStepRecord = stepDecline.record;
+            identifiedCalls = stepDecline.calls;
+            outcome = { ...outcome, toolCalls: stepDecline.calls.map(({ call }) => call) };
+        }
+        if (stepDecline === null && measurementStepToolName !== undefined && measurementOpportunity !== null) {
             const reply = answerMeasurementStepReply(
                 measurementStepToolName,
                 measurementOpportunity,
@@ -2785,7 +2856,14 @@ export async function runApplicationOwnedToolLoop(
                 }),
                 limits.maxReceiptBytesPerCall
             );
-            const refusalOverBudget = admitTurnReceipts([refusalReceipt], turn, outcome, terminalCalls);
+            const refusalOverBudget = admitTurnReceipts(
+                [refusalReceipt],
+                turn,
+                outcome,
+                terminalCalls,
+                undefined,
+                withStepRecord(measurementStepRecord, [refusalReceipt])
+            );
             if (refusalOverBudget !== null) {
                 return {
                     status: 'rejected',
@@ -2943,13 +3021,7 @@ export async function runApplicationOwnedToolLoop(
             outcome,
             safeReadCalls,
             undefined,
-            measurementStepRecord && {
-                calls: measurementStepRecord.calls,
-                receipts: orderReceiptsByCalls(measurementStepRecord.calls, [
-                    ...turnReceipts,
-                    ...measurementStepRecord.receipts,
-                ]),
-            }
+            withStepRecord(measurementStepRecord, turnReceipts)
         );
         if (overBudget !== null) {
             return { status: 'rejected', reason: overBudget.reason, receipts: overBudget.receipts, turns: turn };
