@@ -1,17 +1,59 @@
 import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 
+import { type TempoTimeline } from '../../models/TempoTimeline';
 import { type Clip } from '../../models/Track';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { mapAllTracks } from '../../repositories/track/mapAllTracks';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
+import { liveTempoTimeline } from '../liveTempoTimeline';
 
+import { audioSourceAtBeat } from './audioSourceAtBeat';
+import { captureClipAudioSource, type ClipAudioSourceFields } from './clipAudioSourceFields';
 import { consumedStretchFactor } from './consumedStretchFactor';
 
-function computeMaxTimelinePreRoll(clipB: Clip, stretchFactor: number): number {
+/**
+ * The earliest start clip B's own media allows: only material before its entry
+ * can be revealed. A canonical entry is source seconds, so its pre-roll walks
+ * back through the tempo map; a legacy entry is beats. A nonpositive entry
+ * (recorded leading silence) allows none, so the start holds.
+ */
+export function crossfadeClipBEarliestStart(clipB: Clip, stretchFactor: number, timeline: TempoTimeline): number {
     if (clipB.type === 'midi') {
-        return Math.max(0, clipB.midiOffsetBeats ?? 0);
+        return Math.max(0, clipB.startBeat - Math.max(0, clipB.midiOffsetBeats ?? 0));
     }
-    return Math.max(0, clipB.audioOffsetBeats ?? 0) / stretchFactor;
+    if (clipB.audioOffsetSeconds === undefined) {
+        return Math.max(0, clipB.startBeat - Math.max(0, clipB.audioOffsetBeats ?? 0) / stretchFactor);
+    }
+    const preRollSeconds = Math.max(0, clipB.audioOffsetSeconds) / stretchFactor;
+    if (preRollSeconds === 0) {
+        return Math.max(0, clipB.startBeat);
+    }
+    return Math.max(0, timeline.beatAtSeconds(timeline.secondsAtBeat(clipB.startBeat) - preRollSeconds));
+}
+
+/**
+ * Clip B's canonical source clock once its start retreats to `startBeat`: the
+ * readers' source at that beat, so every later beat keeps its material.
+ * `undefined` for a beat-only or MIDI clip B, `null` when the clock cannot be
+ * read. The entry keeps the beat offset's signed lower bound: never below
+ * `min(0, entry)`, absorbing rounding at the end of a nonnegative handle.
+ */
+export function crossfadeClipBAudioSource(
+    clipB: Clip,
+    startBeat: number,
+    timeline: TempoTimeline
+): ClipAudioSourceFields | null | undefined {
+    if (clipB.type !== 'audio' || clipB.audioOffsetSeconds === undefined) {
+        return undefined;
+    }
+    const source = audioSourceAtBeat(clipB, startBeat, timeline);
+    if (!source) {
+        return null;
+    }
+    return captureClipAudioSource({
+        ...source,
+        audioOffsetSeconds: Math.max(Math.min(0, clipB.audioOffsetSeconds), source.audioOffsetSeconds),
+    });
 }
 
 /**
@@ -57,9 +99,7 @@ export function crossfadeClips(clipAId: string, clipBId: string, durationBeats =
     const unclampedClipBStart = clipB.startBeat - halfLen;
 
     const stretchFactor = consumedStretchFactor(clipB);
-    const maxTimelinePreRoll = computeMaxTimelinePreRoll(clipB, stretchFactor);
-
-    const boundedClipBStart = Math.max(0, clipB.startBeat - maxTimelinePreRoll);
+    const boundedClipBStart = crossfadeClipBEarliestStart(clipB, stretchFactor, liveTempoTimeline);
     const newClipBStart = Math.max(unclampedClipBStart, boundedClipBStart);
     const actualOverlap = newClipAEnd - newClipBStart;
 
@@ -72,6 +112,10 @@ export function crossfadeClips(clipAId: string, clipBId: string, durationBeats =
     let newMidiOffsetBeats: number | undefined;
     if (clipB.midiOffsetBeats !== undefined) {
         newMidiOffsetBeats = Math.max(0, clipB.midiOffsetBeats + clipBDelta);
+    }
+    const newAudioSource = crossfadeClipBAudioSource(clipB, newClipBStart, liveTempoTimeline);
+    if (newAudioSource === null) {
+        return false;
     }
     // The loop anchor follows the offset its clip type moves (#4988). The
     // audio offset retreats by the stretched `contentDelta` while the start
@@ -104,7 +148,8 @@ export function crossfadeClips(clipAId: string, clipBId: string, durationBeats =
         clipB.startBeat !== newClipBStart ||
         clipB.fadeInBeats !== actualOverlap ||
         (newAudioOffsetBeats !== undefined && clipB.audioOffsetBeats !== newAudioOffsetBeats) ||
-        (newMidiOffsetBeats !== undefined && clipB.midiOffsetBeats !== newMidiOffsetBeats);
+        (newMidiOffsetBeats !== undefined && clipB.midiOffsetBeats !== newMidiOffsetBeats) ||
+        (newAudioSource !== undefined && clipB.audioOffsetSeconds !== newAudioSource.audioOffsetSeconds);
     if (!didChangeClipA && !didChangeClipB) {
         return false;
     }
@@ -121,6 +166,7 @@ export function crossfadeClips(clipAId: string, clipBId: string, durationBeats =
                     startBeat: newClipBStart,
                     fadeInBeats: actualOverlap,
                     ...clipBLoopOriginEntry,
+                    ...newAudioSource,
                 };
                 if (newAudioOffsetBeats !== undefined) {
                     updated.audioOffsetBeats = newAudioOffsetBeats;

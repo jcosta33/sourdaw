@@ -12,6 +12,9 @@ vi.mock('../../../stores/resolveEligibleClipWriteTarget', () => ({
     resolveEligibleClipWriteTarget: mocks.resolveEligibleClipWriteTarget,
 }));
 
+import { defaultTransportState, readSecondsAtBeat, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
+
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type Clip, type Track } from '../../../models/Track';
@@ -38,10 +41,108 @@ function capturedMapper(): (track: Track) => Track {
     return mapper;
 }
 
+/** The source second the live and offline readers play at `beat` inside an unlooped clip. */
+function readerSourceSecondsAt(clip: Clip, beat: number): number {
+    const segment = projectAudioLoopPassSegments({
+        clip,
+        loopLengthBeats: clip.endBeat - clip.startBeat,
+        iterationStartBeat: beat,
+        iterationEndBeat: clip.endBeat,
+        stretchRatio: clip.stretchMode && clip.stretchMode !== 'off' ? (clip.stretchRatio ?? 1) : 1,
+        tempoAtClipStart: 120,
+        secondsAtBeat: (at) => readSecondsAtBeat({ beat: at }),
+    })[0];
+    if (!segment) {
+        throw new Error('the readers project no segment for the clip');
+    }
+    return segment.sourceStartSeconds;
+}
+
 describe('crossfadeClips', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.resolveEligibleClipWriteTarget.mockReturnValue({ status: 'eligible', trackId: 't1', clipId: 'a' });
+        tempoMapStore.set({ changes: [] });
+        transportStore.set({ ...defaultTransportState, tempo: 60 });
+    });
+
+    describe('canonical clip B source entry', () => {
+        function crossfadeB(clipB: Clip, clipAEnd: number, durationBeats: number): Clip {
+            const track = makeTrack([makeClip('a', 0, clipAEnd), clipB]);
+            mocks.getTrackState.mockReturnValue({ tracks: [track], selectedTrackId: 't1' });
+            expect(crossfadeClips('a', 'b', durationBeats)).toBe(true);
+            const result = capturedMapper()(track).clips.find((clip) => clip.id === 'b');
+            if (!result) {
+                throw new Error('expected clip B in the mapper result');
+            }
+            return result;
+        }
+
+        it('retreats the entry by the source seconds the retreat spans across a tempo change', () => {
+            // 120 BPM to beat 8, then 60. Clip B retreats from 8.25 to 7.75:
+            // 0.25 beat at 120 plus 0.25 beat at 60 is 0.375 s of source.
+            tempoMapStore.set({
+                changes: [
+                    { id: 'tempo-a', beat: 0, tempo: 120, curve: 'instant' },
+                    { id: 'tempo-b', beat: 8, tempo: 60, curve: 'instant' },
+                ],
+            });
+            const before = makeClip('b', 8.25, 12, {
+                audioOffsetBeats: 4,
+                audioOffsetSeconds: 2,
+                audioUnwrappedOffsetSeconds: 2.5,
+            });
+
+            const after = crossfadeB(before, 8, 1);
+
+            expect(after.startBeat).toBe(7.75);
+            expect(after.audioOffsetSeconds).toBeCloseTo(1.625, 12);
+            expect(after.audioUnwrappedOffsetSeconds).toBeCloseTo(2.125, 12);
+            // The material at the old start, and downstream of it, stays on its beat.
+            expect(readerSourceSecondsAt(after, 8.25)).toBeCloseTo(readerSourceSecondsAt(before, 8.25), 12);
+            expect(readerSourceSecondsAt(after, 10)).toBeCloseTo(readerSourceSecondsAt(before, 10), 12);
+        });
+
+        it('bounds the retreat by the canonical pre-roll, not the legacy beat offset', () => {
+            // 0.25 s of media before the entry at 60 BPM allows a quarter beat,
+            // though the stale beat offset would allow four.
+            const after = crossfadeB(makeClip('b', 10, 14, { audioOffsetBeats: 4, audioOffsetSeconds: 0.25 }), 10, 2);
+
+            expect(after.startBeat).toBe(9.75);
+            expect(after.fadeInBeats).toBe(1.25);
+            expect(after.audioOffsetSeconds).toBeCloseTo(0, 12);
+            expect(after.audioOffsetSeconds).toBeGreaterThanOrEqual(0);
+        });
+
+        it('keeps a signed leading-silence entry and its start in place', () => {
+            const after = crossfadeB(makeClip('b', 10, 14, { audioOffsetBeats: 1, audioOffsetSeconds: -0.5 }), 10, 2);
+
+            expect(after.startBeat).toBe(10);
+            expect(after.audioOffsetSeconds).toBe(-0.5);
+            expect(after.fadeInBeats).toBe(1);
+        });
+
+        it('retreats a stretched entry by the source the stretched readers consume', () => {
+            const before = makeClip('b', 10, 14, {
+                audioOffsetSeconds: 3,
+                stretchMode: 'timestretch',
+                stretchRatio: 2,
+            });
+
+            const after = crossfadeB(before, 10, 1);
+
+            expect(after.startBeat).toBe(9.5);
+            expect(after.audioOffsetSeconds).toBeCloseTo(2, 12);
+            expect(readerSourceSecondsAt(after, 10)).toBeCloseTo(3, 12);
+        });
+
+        it('mints no canonical fields on a beat-only clip B', () => {
+            const after = crossfadeB(makeClip('b', 4, 8, { audioOffsetBeats: 2 }), 4, 0.5);
+
+            expect(after).toMatchObject({ startBeat: 3.75, audioOffsetBeats: 1.75 });
+            expect(Object.hasOwn(after, 'audioOffsetSeconds')).toBe(false);
+            expect(Object.hasOwn(after, 'audioUnwrappedOffsetSeconds')).toBe(false);
+        });
     });
 
     it('does nothing with no state', () => {

@@ -27,6 +27,8 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultTransportState, readSecondsAtBeat, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import {
     type ConfirmPayload,
     type NotifyPayload,
@@ -36,6 +38,7 @@ import {
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { type Clip } from '../../../models/Track';
 import { trackStore, type TrackStoreState } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 import { handleCrossfadeClips } from '../handleCrossfadeClips';
@@ -702,4 +705,84 @@ describe('crossfade recorded leading silence through command history', () => {
             expect(undoStore.value?.future).toHaveLength(0);
         }
     );
+
+    describe('canonical clip B source entry', () => {
+        afterEach(() => {
+            tempoMapStore.set({ changes: [] });
+            transportStore.set({ ...defaultTransportState });
+        });
+
+        function readerSourceSecondsAt(clip: Clip, beat: number): number {
+            const segment = projectAudioLoopPassSegments({
+                clip,
+                loopLengthBeats: clip.endBeat - clip.startBeat,
+                iterationStartBeat: beat,
+                iterationEndBeat: clip.endBeat,
+                stretchRatio: 1,
+                tempoAtClipStart: 60,
+                secondsAtBeat: (at) => readSecondsAtBeat({ beat: at }),
+            })[0];
+            if (!segment) {
+                throw new Error('the readers project no segment for the clip');
+            }
+            return segment.sourceStartSeconds;
+        }
+
+        it('keeps clip B material on its beats across a tempo change through crossfade, undo and redo', async () => {
+            // 120 BPM to beat 8, then 60. Clip B retreats from 8.25 to 7.75,
+            // spanning 0.125 s + 0.25 s of song time.
+            transportStore.set({ ...defaultTransportState, tempo: 120 });
+            tempoMapStore.set({
+                changes: [
+                    { id: 'tempo-a', beat: 0, tempo: 120, curve: 'instant' },
+                    { id: 'tempo-b', beat: 8, tempo: 60, curve: 'instant' },
+                ],
+            });
+            const track = TrackDummy.create({
+                id: 'track-1',
+                clips: [
+                    ClipDummy.create({ id: 'c1', startBeat: 0, endBeat: 8 }),
+                    ClipDummy.create({
+                        id: 'c2',
+                        startBeat: 8.25,
+                        endBeat: 12,
+                        audioOffsetBeats: 4,
+                        audioOffsetSeconds: 2,
+                        audioUnwrappedOffsetSeconds: 2.5,
+                    }),
+                ],
+            });
+            trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+            flushAutomergeStorageWrites();
+            const before = structuredClone(trackStore.value!.tracks[0]!.clips);
+            const clipB = () => {
+                flushAutomergeStorageWrites();
+                const projected = trackStore.value!.tracks[0]!.clips;
+                expect(getCrdtDoc<{ tracks: TrackStoreState }>('root')?.tracks.tracks[0]?.clips).toEqual(projected);
+                return projected[1]!;
+            };
+            const downbeatSource = readerSourceSecondsAt(before[1]!, 8.25);
+            expect(downbeatSource).toBe(2);
+
+            await executeAppAction({
+                type: 'crossfadeClips',
+                payload: { clipAId: 'c1', clipBId: 'c2', durationBeats: 1 },
+            });
+            const after = structuredClone(trackStore.value!.tracks[0]!.clips);
+            expect(clipB()).toMatchObject({ startBeat: 7.75 });
+            expect(clipB().audioOffsetSeconds).toBeCloseTo(1.625, 12);
+            expect(clipB().audioUnwrappedOffsetSeconds).toBeCloseTo(2.125, 12);
+            expect(readerSourceSecondsAt(clipB(), 8.25)).toBeCloseTo(downbeatSource, 12);
+
+            expect((await undo()).headConsumed).toBe(true);
+            expect(notifications).toEqual([]);
+            expect(clipB()).toEqual(before[1]);
+            expect(readerSourceSecondsAt(clipB(), 8.25)).toBe(downbeatSource);
+
+            await redo();
+            expect(notifications).toEqual([]);
+            expect(clipB()).toEqual(after[1]);
+            expect(readerSourceSecondsAt(clipB(), 8.25)).toBeCloseTo(downbeatSource, 12);
+        });
+    });
 });

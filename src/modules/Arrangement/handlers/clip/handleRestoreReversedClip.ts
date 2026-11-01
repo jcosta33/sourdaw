@@ -1,7 +1,9 @@
 import { restoreClipPitchAnalysis } from '#/modules/Knead/useCases';
 import { createHandler } from '#/utils/createHandler';
 
+import { type Clip } from '../../models/Track';
 import { updateClipInStore } from '../../stores/updateClipInStore';
+import { type ClipAudioSourceFields, replaceClipAudioSource } from '../../useCases/clipEditing/clipAudioSourceFields';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
 function findClip(clipId: string) {
@@ -12,6 +14,11 @@ function findClip(clipId: string) {
         }
     }
     return undefined;
+}
+
+/** A capture replaces the source clock whole; an entry recorded without one leaves it untouched. */
+function restoreAudioSource(clip: Clip, audioSource: ClipAudioSourceFields | undefined): Clip | null {
+    return audioSource ? replaceClipAudioSource(clip, audioSource) : clip;
 }
 
 /**
@@ -25,8 +32,12 @@ export const handleRestoreReversedClip = createHandler<'restoreReversedClip'>({
         if (!clip || clip.audioBufferId !== action.payload.expectedAudioBufferId) {
             return { status: 'conflict' };
         }
+        const audioSource = action.payload.audioSource;
+        if (!restoreAudioSource(clip, audioSource)) {
+            return { status: 'no-write' };
+        }
         updateClipInStore(action.payload.clipId, (candidate) => ({
-            ...candidate,
+            ...(restoreAudioSource(candidate, audioSource) ?? candidate),
             audioBufferId: action.payload.audioBufferId,
             name: action.payload.name,
             ...(action.payload.fadeInBeats !== undefined ? { fadeInBeats: action.payload.fadeInBeats } : {}),
