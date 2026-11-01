@@ -1,0 +1,24 @@
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_dde1671ba022b8::t_1b25506bd8c608 1780,1783,1789
+  s_dde1671ba022b8::t_54435aff77c10d 339-356
+  s_dde1671ba022b8::t_b37f538b58176c 1359-1363,1368-1376
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchPausePlayCommand.integration.spec.ts
+  s_dde1671ba022b8::t_8bcd11314d9e17 584-606,608-624
+  s_dde1671ba022b8::t_b56827baef05e5 607
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0ea40369c2d1c63c03e15ab48d117d3a6152fb0e",
+  "prompts": {},
+  "sessions": {
+    "s_dde1671ba022b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e4c42ac-51ff-45eb-b81f-f43601ed01dc",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
