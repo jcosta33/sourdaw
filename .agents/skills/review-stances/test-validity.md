@@ -187,6 +187,20 @@ assertion that the raw receipt exceeds `maxReceiptBytesPerCall`. Fewer metrics o
 receipt below the bound and stop observing it; a timeout increase hides the cost instead of
 bounding it.
 
+### 2026-11-01 — a dev-server resolve waited on whole-app dependency discovery (introduced by PR #5964)
+
+PR #5964 (`7f1b87369d`) added the `viteAutomergeStreamingEntry.spec.ts` case that creates a real
+Vite dev server and asks it to resolve `@automerge/automerge`. With dependency discovery on, that
+first resolve waits for the optimizer to crawl the whole app and answers with the pre-bundle id.
+Locally that took about 0.7 s. On a loaded Unit shard (Gate run 41315957312, shard 3, PR #6007 head
+`6465cd9df5`) it ran past the 5,000 ms default and failed an unrelated head. Review checked what
+the resolve returned but not what the resolve waited on.
+
+When a spec starts a real dev server, name what its first request awaits. Turn off what the
+assertion does not observe (`optimizeDeps: { noDiscovery: true, include: [] }` here), and assert
+the exact source file the resolve pipeline chose instead of an inequality. A timeout increase or a
+warm-up call keeps the crawl and only hides its cost.
+
 ### 2026-10-30 — source-clock fixtures must match hydrated project state (PR #2169)
 
 PR #2169 (`bfbf1dd69b18c2a843472a04815ccab773a4b364`) used a 600 BPM fixture that real publication
