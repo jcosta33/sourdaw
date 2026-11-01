@@ -6,8 +6,8 @@ import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigu
 import { type AgentRunCreationRefusalReason, describeAgentRunCreationRefusal } from '../models/AgentResourceLimits';
 import { getCreativeSelectionSnapshot } from '../models/CreativeInterpretation';
 import { type PlannedIntentResult } from '../models/IntentResult';
-import { type AnswerSuggestion } from '../models/PlanningOutcome';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
+import { type AnswerSuggestion } from '../models/PlanningOutcome';
 import { type PlanningProfile, guardReadonlyPlanningResult } from '../models/PlanningProfile';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
 import { type ThreadContext } from '../models/ThreadContext';

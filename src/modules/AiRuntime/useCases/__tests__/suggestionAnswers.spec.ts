@@ -32,8 +32,8 @@ import {
     clearPendingActionConfirmations,
     pendingActionConfirmationStore,
 } from '../../stores/pendingActionConfirmationStore';
-import { proposeAnswerSuggestion } from '../aiPanelActions/proposeAnswerSuggestion';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { proposeAnswerSuggestion } from '../aiPanelActions/proposeAnswerSuggestion';
 import { getAgentApprovalView } from '../getAgentApprovalView';
 import { getProjectContext } from '../getProjectContext';
 import { parsePromptToActions } from '../parsePromptToActions';

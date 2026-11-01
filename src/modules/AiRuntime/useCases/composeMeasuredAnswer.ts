@@ -244,6 +244,22 @@ type StatementText = { text: string; callIds: string[] };
 const SUGGESTION_TRACK_KINDS: ReadonlySet<string> = new Set(['audio', 'midi']);
 
 /**
+ * The discovered track an offer may change: one audio or MIDI track the frozen read holds and, when the
+ * question named its subjects, one of them, so an answer never offers to change a track it was not asked about.
+ */
+function readSuggestionTrack(
+    targetId: string | undefined,
+    authority: AnswerRequestAuthority
+): AnswerRequestAuthority['context']['tracks'][number] | undefined {
+    const track = authority.context.tracks.find((entry) => entry.id === targetId);
+    if (track === undefined || !SUGGESTION_TRACK_KINDS.has(track.kind)) {
+        return undefined;
+    }
+    const scoped = interpretedTargetIds(authority);
+    return scoped.length === 0 || scoped.includes(track.id) ? track : undefined;
+}
+
+/**
  * The proposal an answer may offer, read only from the admitted discovery receipt and the frozen
  * project read: exactly one recipe statement, whose discovery named one audio or MIDI track that read
  * holds and resolved a role the recipe is authored for. Several recipes, an untargeted discovery or
@@ -267,13 +283,11 @@ function readAnswerSuggestion(
     }
     const discovery = read.source.value;
     const candidate = discovery.candidates.find((entry) => entry.id === statement.recipeId);
-    const targetId = discovery.target?.id;
-    const track = intake.authority.context.tracks.find((entry) => entry.id === targetId);
+    const track = readSuggestionTrack(discovery.target?.id, intake.authority);
     const { recipeRole, source } = discovery.role;
     if (
         candidate === undefined ||
         track === undefined ||
-        !SUGGESTION_TRACK_KINDS.has(track.kind) ||
         recipeRole === null ||
         source === 'none' ||
         !candidate.roles.includes(recipeRole)
@@ -288,6 +302,30 @@ function readAnswerSuggestion(
         recipeRole,
         roleSource: source,
     };
+}
+
+/**
+ * The answer's text, with the offer stated after the recipe it prepares. Composed statements keep the
+ * document's order, so the recipe's paragraph sits at the recipe statement's index. An offer that would
+ * push the text past the composed bound is dropped and the answer kept as it was, so offering a change
+ * never costs the user an answer that fits.
+ */
+function composeAnswerText(
+    resolved: readonly StatementText[],
+    statements: readonly AnswerStatement[],
+    suggestion: AnswerSuggestion | null
+): { text: string } | { text: string; suggestion: AnswerSuggestion } {
+    const text = resolved.map((statement) => statement.text).join('\n\n');
+    if (suggestion === null) {
+        return { text };
+    }
+    const offerIndex = statements.findIndex((entry) => entry.kind === 'recipe');
+    const offered = resolved
+        .map((statement, index) =>
+            index === offerIndex ? `${statement.text} ${describeSuggestionOffer(suggestion)}` : statement.text
+        )
+        .join('\n\n');
+    return offered.length > ANSWER_RESPOND_MAX_COMPOSED_CHARACTERS ? { text } : { text: offered, suggestion };
 }
 
 function describeSuggestionOffer(suggestion: AnswerSuggestion): string {
@@ -482,6 +520,21 @@ function coversInterpretedTargets(statements: AnswerStatement[], authority: Answ
     return interpretedTargetIds(authority).every((id) => targets.has(id));
 }
 
+/** The limitation that answers in place of every statement, if the frozen measured question cannot be answered. */
+function readAnswerLimitation(
+    authority: AnswerRequestAuthority,
+    completeMeasurement: boolean,
+    unsupportedTiming: boolean
+): 'timing-unavailable' | 'measurement-unavailable' | null {
+    if (unsupportedTiming) {
+        return 'timing-unavailable';
+    }
+    if (authority.kind === 'measured-audio' && !completeMeasurement) {
+        return 'measurement-unavailable';
+    }
+    return null;
+}
+
 /** Every factual clause and calculation is application-owned; provider input selects finite references only. */
 export function composeMeasuredAnswer(input: {
     document: AnswerRespondArguments;
@@ -514,18 +567,11 @@ export function composeMeasuredAnswer(input: {
     ) {
         return rejection;
     }
-    const missingMeasurement = authority.kind === 'measured-audio' && !completeMeasurement;
-    let statements: Array<StatementText | null>;
-    if (missingMeasurement || unsupportedTiming) {
-        statements = [
-            {
-                text: unsupportedTiming ? LIMITATIONS['timing-unavailable'] : LIMITATIONS['measurement-unavailable'],
-                callIds: [],
-            },
-        ];
-    } else {
-        statements = document.statements.map((statement) => composeStatement(statement, intake, reads));
-    }
+    const limitation = readAnswerLimitation(authority, completeMeasurement, unsupportedTiming);
+    const statements: Array<StatementText | null> =
+        limitation === null
+            ? document.statements.map((statement) => composeStatement(statement, intake, reads))
+            : [{ text: LIMITATIONS[limitation], callIds: [] }];
     if (statements.some((statement) => statement === null)) {
         return rejection;
     }
@@ -539,22 +585,11 @@ export function composeMeasuredAnswer(input: {
         }
         evidence.push({ callId, toolName: receipt.toolName, summary: receipt.summary });
     }
-    const suggestion =
-        missingMeasurement || unsupportedTiming ? null : readAnswerSuggestion(document.statements, intake, reads);
-    // Composed statements keep the document's order, so the offer follows the recipe it prepares.
-    const offerIndex = suggestion === null ? -1 : document.statements.findIndex((entry) => entry.kind === 'recipe');
-    const text = resolved
-        .map((statement, index) =>
-            index === offerIndex && suggestion !== null
-                ? `${statement.text} ${describeSuggestionOffer(suggestion)}`
-                : statement.text
-        )
-        .join('\n\n');
-    if (text.length > ANSWER_RESPOND_MAX_COMPOSED_CHARACTERS) {
+    // A limitation replaces the statements, so beside one there is no recipe to offer.
+    const offer = limitation === null ? readAnswerSuggestion(document.statements, intake, reads) : null;
+    const composed = composeAnswerText(resolved, document.statements, offer);
+    if (composed.text.length > ANSWER_RESPOND_MAX_COMPOSED_CHARACTERS) {
         return { status: 'accepted', answer: { text: LIMITATIONS['bounded-evidence'], evidence } };
     }
-    if (suggestion === null) {
-        return { status: 'accepted', answer: { text, evidence } };
-    }
-    return { status: 'accepted', answer: { text, evidence, suggestion } };
+    return { status: 'accepted', answer: { ...composed, evidence } };
 }
