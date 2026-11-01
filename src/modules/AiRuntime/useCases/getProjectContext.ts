@@ -5,7 +5,12 @@ import {
     trackStore,
     vcaGroupStore,
 } from '#/modules/Arrangement/stores';
-import { getGlueEligibleClipPairs, getPlatformPlugins, getPluginById } from '#/modules/Arrangement/useCases';
+import {
+    getAlternativeClips,
+    getGlueEligibleClipPairs,
+    getPlatformPlugins,
+    getPluginById,
+} from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationLaneCeiling, isLinearGainAutomationLane } from '#/modules/Automation/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
@@ -254,7 +259,9 @@ export function getProjectContext(): ProjectContext {
             vcaGroupId: time.vcaGroupId ?? null,
             outputId: time.outputId,
             clipCount: time.clips.length,
-            alternativeClipIds: time.alternatives.flatMap((alternative) => alternative.clips.map((clip) => clip.id)),
+            alternativeClipIds: time.alternatives.flatMap((alternative) =>
+                getAlternativeClips(time, alternative).map((clip) => clip.id)
+            ),
             deviceCount: time.devices.length,
             clips: time.clips.map((context) => ({
                 id: context.id,
