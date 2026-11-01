@@ -4,6 +4,7 @@ import { hasSharedArrayBuffer } from '#/utils/capabilities';
 import { runAllEffects } from '#/utils/runEffects';
 
 import { SIDECHAIN_COMPRESSOR_WORKLET_OPTIONS } from '../models/BuiltinDeviceRuntime';
+import { projectPersistentRuntimeDevices } from '../services/matchesRuntimeDeviceChainTopology';
 import { captureDeviceParameterRuntimeWriteReceipt } from '../useCases/deviceControls/captureDeviceParameterRuntimeWriteReceipt';
 import { applyParams } from '../useCases/deviceResolvers/applyParams';
 import { createBuiltinDeviceNode } from '../useCases/deviceResolvers/createBuiltinDeviceNode';
@@ -1429,6 +1430,7 @@ export class TrackNode {
             return this.removeDevice(removed.id);
         }
 
+        const persistentAfterDevices = projectPersistentRuntimeDevices(delta.after.devices);
         if (delta.operation === 'replace-device-chain') {
             let changed = false;
             try {
@@ -1437,7 +1439,7 @@ export class TrackNode {
                 for (const device of [...this.strip.deviceNodes]) {
                     changed = this.detachDevice(device.deviceId, !afterIds.has(device.deviceId)) || changed;
                 }
-                for (const device of delta.after.devices) {
+                for (const device of persistentAfterDevices) {
                     const added = this.addDevice(
                         device.id,
                         device.type,
@@ -1474,7 +1476,7 @@ export class TrackNode {
         const currentNodes = [...this.strip.deviceNodes];
         const nodesById = new Map(currentNodes.map((device) => [device.deviceId, device]));
         const orderedNodes: BuiltinDeviceNode[] = [];
-        for (const device of delta.after.devices) {
+        for (const device of persistentAfterDevices) {
             const liveDevice = nodesById.get(device.id);
             if (!liveDevice) {
                 throw new RuntimeGraphMutationRejected('Compiled device reorder has no live device', delta);
