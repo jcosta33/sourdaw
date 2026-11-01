@@ -45,6 +45,7 @@ import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/
 import * as transportStateReader from '../../../repositories/transport/getTransportState';
 import { disposePlayheadScheduler } from '../../playheadScheduler/disposePlayheadScheduler';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
+import { scheduleMidiNotes } from '../../scheduling/scheduleMidiNotes';
 import { executePlayheadSeek } from '../../transportControls/executePlayheadSeek';
 import { pausePlayback } from '../../transportControls/pausePlayback';
 import { recordingLifecycle } from '../../transportControls/recordingLifecycle';
@@ -581,8 +582,7 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         expect(commits()).toBe(0);
     });
 
-    async function playIntoRefusedFirstWindowPunch(loop: { loopStart: number; loopEnd: number } | null) {
-        mocks.startAudioRecording.mockResolvedValueOnce(false);
+    function armFirstWindowPunch(loop: { loopStart: number; loopEnd: number } | null): void {
         trackStore.set({ tracks: [recordingTrack('audio')], selectedTrackId: TRACK_ID, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
         transportStore.set({
@@ -599,6 +599,18 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         });
         tempoMapStore.set({ changes: [] });
         flushAutomergeStorageWrites();
+    }
+
+    function expectRefusedPunchRetired(): void {
+        expect(trackStore.value?.tracks[0]?.clips).toEqual([]);
+        expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes)).toEqual([]);
+        expect(actionHistoryStore.value?.entries).toEqual([]);
+        expect(commits()).toBe(0);
+    }
+
+    async function playIntoRefusedFirstWindowPunch(loop: { loopStart: number; loopEnd: number } | null) {
+        mocks.startAudioRecording.mockResolvedValueOnce(false);
+        armFirstWindowPunch(loop);
         await startPlayback();
         // The punch opened on Play's own first window.
         expect(mocks.startAudioRecording).toHaveBeenCalledTimes(1);
@@ -620,6 +632,39 @@ describe('automatic punch Pause and Play with real recording commits', () => {
 
     it('keeps Play rolling when a refused first-window punch-in start shares the window with a loop seam', async () => {
         await playIntoRefusedFirstWindowPunch({ loopStart: 0, loopEnd: 8 });
+    });
+
+    it('retires a refused first-window start when the initial emission goes stale', async () => {
+        const start = Promise.withResolvers<boolean>();
+        mocks.startAudioRecording.mockImplementationOnce(() => start.promise);
+        armFirstWindowPunch(null);
+        const playing = startPlayback();
+        await vi.waitFor(() => expect(mocks.startAudioRecording).toHaveBeenCalledTimes(1));
+        expect(trackStore.value?.tracks[0]?.clips).toHaveLength(1);
+        // A tempo-map edit while the start waits stales the prepared programme
+        // without moving capture ownership.
+        tempoMapStore.set({ changes: [] });
+        start.resolve(false);
+        await playing;
+        expect(mocks.notifyUser).toHaveBeenCalledWith('Playback changed while preparing. Press Play again.', 'warning');
+        expect(transportStore.value?.isPlaying).toBe(false);
+        expect(schedulerSession.worker).toBeNull();
+        await recordingLifecycle.waitForClosing();
+        expectRefusedPunchRetired();
+    });
+
+    it('retires a refused first-window start when the initial emission fails', async () => {
+        mocks.startAudioRecording.mockResolvedValueOnce(false);
+        vi.mocked(scheduleMidiNotes).mockRejectedValueOnce(new Error('initial MIDI window failed'));
+        armFirstWindowPunch(null);
+        await startPlayback();
+        expect(mocks.startAudioRecording).toHaveBeenCalledTimes(1);
+        expect(scheduleMidiNotes).toHaveBeenCalled();
+        expect(mocks.notifyUser).toHaveBeenCalledWith('Playback changed while preparing. Press Play again.', 'warning');
+        expect(transportStore.value?.isPlaying).toBe(false);
+        expect(schedulerSession.worker).toBeNull();
+        await recordingLifecycle.waitForClosing();
+        expectRefusedPunchRetired();
     });
 
     it('commits an ordinary pause before resuming without a held predecessor', async () => {
