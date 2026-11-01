@@ -113,11 +113,19 @@ function isDocumentation(path: string): boolean {
     return path.endsWith('.md') && (path.startsWith('docs/') || path.startsWith('.agents/') || !path.includes('/'));
 }
 
+/** Per-vendor agent guidance, read by coding agents and never loaded by the product. */
+const AGENT_GUIDANCE_NAMES = new Set(['AGENTS.md', 'CLAUDE.md', 'CODEX.md', 'GEMINI.md', 'KIMI.md', 'ZCODE.md']);
+
+function isAgentGuidance(path: string): boolean {
+    return /^(?:src|tests)\//.test(path) && AGENT_GUIDANCE_NAMES.has(path.slice(path.lastIndexOf('/') + 1));
+}
+
 /**
  * Repository tooling and prose never select browser execution, though they keep broad non-browser
  * validation. Generator and build scripts reach the browser only through their outputs, which land
  * under src/ or public/ and select browser coverage there. Product trees may load Markdown, so it
- * stays classified with them.
+ * stays classified with them. Agent guidance under src/ and tests/ is the exception, because no
+ * product code loads it.
  */
 function isRepositoryTooling(path: string): boolean {
     return (
@@ -126,7 +134,7 @@ function isRepositoryTooling(path: string): boolean {
         path === '.gitleaksignore' ||
         path === '.gitleaks.toml' ||
         /^release\/[^/]+\.json$/.test(path) ||
-        (path.endsWith('.md') && !/^(?:src|public|tests)\//.test(path))
+        (path.endsWith('.md') && (!/^(?:src|public|tests)\//.test(path) || isAgentGuidance(path)))
     );
 }
 
