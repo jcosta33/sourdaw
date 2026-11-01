@@ -777,6 +777,26 @@ describe('useStatusBarMetrics', () => {
         expect(refs.masterLevelBar.current!.style.width).toBe('100%');
     });
 
+    it('shows -∞ dB when the master peak is NaN', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 44100,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: 0.01,
+            outputLatency: 0,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(Number.NaN);
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+        capturedTick!();
+
+        expect(refs.masterLevelText.current!.textContent).toBe('-∞ dB');
+    });
+
     it('keeps a finite master peak above full scale as a one-decimal dB reading', () => {
         vi.mocked(getEngineState).mockReturnValue({
             isReady: true,

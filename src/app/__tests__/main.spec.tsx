@@ -454,6 +454,7 @@ describe('app main composition', () => {
         expect(createRoot).toHaveBeenCalledOnce();
         expectFirstPaintBusesRegisteredBeforeRender();
         expect(mocks.reloadApplication).not.toHaveBeenCalled();
+        expect(mocks.reportError).not.toHaveBeenCalled();
         expect(appRenderObserved).toBe(true);
     });
 
@@ -490,6 +491,14 @@ describe('app main composition', () => {
         expect(mocks.reportError).toHaveBeenCalledOnce();
         // Vitest wraps a module rejection in its own mock-factory error and keeps the original as `cause`.
         expect(mocks.reportError).toHaveBeenCalledWith(expect.objectContaining({ cause: failure }));
+        const reportOrder = mocks.reportError.mock.invocationCallOrder[0];
+        const terminalRenderOrder = mocks.render.mock.invocationCallOrder[1];
+        expect(reportOrder).toBeDefined();
+        expect(terminalRenderOrder).toBeDefined();
+        if (reportOrder === undefined || terminalRenderOrder === undefined) {
+            throw new Error('The report or the terminal render did not run');
+        }
+        expect(reportOrder).toBeLessThan(terminalRenderOrder);
     });
 
     it('renders only the fatal startup surface when a desktop document has no bridge', async () => {
