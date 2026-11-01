@@ -1,0 +1,148 @@
+src/modules/FactorySynthesis/transformers/__tests__/drumsAcoustic.spec.ts
+  s_3bb122e91d89a5::t_2db8cbd36baa31 1
+  s_3bb122e91d89a5::t_67316e6b306451 61,64-66
+  s_3bb122e91d89a5::t_4096fe450dd3c6 7-41,62
+src/modules/FactorySynthesis/repositories/factorySynthesisWorkerClient.ts
+  s_3bb122e91d89a5::t_67fdf1f37ecaf1 68-69
+  s_3bb122e91d89a5::t_28aea7eb59592b 5-67,70-128,131-135
+  s_3bb122e91d89a5::t_9d04ce94e3da0c 1-4
+  s_3bb122e91d89a5::t_a4e589536693c2 129-130
+src/modules/FactorySynthesis/useCases/__tests__/renderFactorySamples.spec.ts
+  s_3bb122e91d89a5::t_1c613cb826474b 1-54,56-66,68,71-76,78-80,87-98
+  s_3bb122e91d89a5::t_ba729fdc4ebaab 77,81-86
+  s_3bb122e91d89a5::t_ff24250d9be643 55
+  s_3bb122e91d89a5::t_6a1699dd6883e3 67,69-70
+src/modules/FactorySynthesis/transformers/bass.ts
+  s_3bb122e91d89a5::t_75f34e396b488f 1-2
+  s_3bb122e91d89a5::t_198ff9c22607b5 134
+  s_3bb122e91d89a5::t_3401374504ae52 150
+src/modules/FactorySynthesis/transformers/__tests__/additionalPacks.spec.ts
+  s_3bb122e91d89a5::t_ad70e2f326695c 1
+  s_3bb122e91d89a5::t_626183b9156e9d 10-49
+src/modules/FactorySynthesis/useCases/types.ts
+  s_3bb122e91d89a5::t_3ae67e824492c9 1,3
+src/modules/FactorySynthesis/useCases/index.ts
+  s_3bb122e91d89a5::t_1440dcf28f412c 1
+src/modules/FactorySynthesis/transformers/drumsAcoustic.ts
+  s_3bb122e91d89a5::t_a62a502867c398 221
+  s_3bb122e91d89a5::t_6097de87f01bb2 207
+  s_3bb122e91d89a5::t_f5aeb6f40e294d 193
+  s_3bb122e91d89a5::t_cc7bc6fb1f4735 235
+  s_3bb122e91d89a5::t_ef28232a6726ef 186
+  s_3bb122e91d89a5::t_f34f0db3b02cdc 214
+  s_3bb122e91d89a5::t_8e07f7630f2e0d 228
+  s_3bb122e91d89a5::t_64b5cb2d134321 177-180
+  s_3bb122e91d89a5::t_f0b37edb7d04ff 1-2
+  s_3bb122e91d89a5::t_de94c8ca58fe10 200
+src/modules/FactorySynthesis/transformers/percWorld.ts
+  s_3bb122e91d89a5::t_4bb4b6270cd41d 1-2
+  s_3bb122e91d89a5::t_966d8e832e44b2 166
+  s_3bb122e91d89a5::t_9eef6774209fad 183
+src/modules/FactorySynthesis/transformers/generateFactorySamples.ts
+  s_3bb122e91d89a5::t_edfa5b83428e3c 1-25
+src/modules/SampleLibrary/useCases/seedFactoryLibrary.ts
+  s_3bb122e91d89a5::t_48f234bbc75d0b 101
+  s_3bb122e91d89a5::t_8e8e735d412f8a 15
+  s_3bb122e91d89a5::t_5baa683a780b45 5
+src/modules/FactorySynthesis/workers/__tests__/factorySynthesisWorkerRuntime.spec.ts
+  s_3bb122e91d89a5::t_5b367f4516635f 16-18
+  s_3bb122e91d89a5::t_06eca3db9b3e1d 36-38,40
+  s_3bb122e91d89a5::t_3b81f4b1b195d1 43-48
+  s_3bb122e91d89a5::t_24fe71e051945a 1-14,19-35,39,41-42,49
+  s_3bb122e91d89a5::t_1e0490bdf68839 15
+src/modules/FactorySynthesis/workers/__tests__/factorySynthesisWorker.spec.ts
+  s_3bb122e91d89a5::t_3948ec2568c2b7 33-34
+  s_3bb122e91d89a5::t_53285e1bcd646e 6-8,11-18,20-26,31,35-36
+  s_3bb122e91d89a5::t_a33d4c8e998407 27-30,32
+  s_3bb122e91d89a5::t_3a876e0a7e5c48 1,5,9-10
+  s_3bb122e91d89a5::t_b627f822b6486a 3-4
+  s_3bb122e91d89a5::t_221777cbe8dde4 2
+  s_3bb122e91d89a5::t_ffac042655d941 19
+src/modules/FactorySynthesis/repositories/__tests__/factorySynthesisWorkerClient.spec.ts
+  s_3bb122e91d89a5::t_eed5eb6fdcfb4c 1-130
+src/modules/FactorySynthesis/transformers/__tests__/generateFactorySamples.spec.ts
+  s_3bb122e91d89a5::t_dcb723fe0c91b8 7-58,62-63
+src/modules/FactorySynthesis/transformers/drums909.ts
+  s_3bb122e91d89a5::t_05bd3fb6f890e0 203
+  s_3bb122e91d89a5::t_8277db1a9cae21 1-2
+  s_3bb122e91d89a5::t_e490fcfd6d7dda 221
+src/modules/FactorySynthesis/transformers/keys.ts
+  s_3bb122e91d89a5::t_b4c480280a13c4 161
+  s_3bb122e91d89a5::t_3ee7d69e754f94 1-2
+  s_3bb122e91d89a5::t_846da77229c8aa 177
+src/modules/FactorySynthesis/workers/factorySynthesisWorkerRuntime.ts
+  s_3bb122e91d89a5::t_b996953e7c1504 11
+  s_3bb122e91d89a5::t_45f2c0f0e5470c 1
+  s_3bb122e91d89a5::t_160bd56e5a93fd 2-10,12-35
+release/open-source-inventory.json
+  s_3bb122e91d89a5::t_40c1fdb9b60359 1564,2539
+  s_3bb122e91d89a5::t_ae855fbe89959e 1563,2512
+src/modules/FactorySynthesis/AGENTS.md
+  s_3bb122e91d89a5::t_039e64708cda04 7,12-14,18-22
+src/modules/FactorySynthesis/services/__tests__/bufferCreation.spec.ts
+  s_3bb122e91d89a5::t_0b8f82a0c244e5 3
+  s_3bb122e91d89a5::t_c5729309dd290a 83-98,103,107,115,118-126
+src/modules/FactorySynthesis/transformers/drumsLofi.ts
+  s_3bb122e91d89a5::t_9e5bbcf145fb3b 198
+  s_3bb122e91d89a5::t_771c0adef183a2 219
+  s_3bb122e91d89a5::t_59e2de68045455 184
+  s_3bb122e91d89a5::t_a94e3f8ebe3873 170
+  s_3bb122e91d89a5::t_bf3cb929c431a4 161-164
+  s_3bb122e91d89a5::t_ff31048ddd876d 177
+  s_3bb122e91d89a5::t_e3f9b8086ec08b 191
+  s_3bb122e91d89a5::t_1a25622de81c3d 1-2
+  s_3bb122e91d89a5::t_43cea7d2cc4359 205
+  s_3bb122e91d89a5::t_e09deb6ae1a024 212
+src/modules/FactorySynthesis/workers/factorySynthesisWorker.ts
+  s_3bb122e91d89a5::t_acf6916db16d91 1-21
+src/modules/FactorySynthesis/transformers/generateImpactsPack.ts
+  s_3bb122e91d89a5::t_6e04fb9e0e74cc 115
+  s_3bb122e91d89a5::t_3e8cbf104c6260 1-2
+  s_3bb122e91d89a5::t_a4bbfffd05e213 102
+src/modules/FactorySynthesis/services/__tests__/mixingBuffers.spec.ts
+  s_3bb122e91d89a5::t_3b5f3f8ff9dcd4 93
+  s_3bb122e91d89a5::t_665f9191dc5041 3
+  s_3bb122e91d89a5::t_7f0870fba2bd0d 108
+src/modules/FactorySynthesis/models/RenderedFactorySample.ts
+  s_3bb122e91d89a5::t_18f4e329de6305 1-13
+src/modules/FactorySynthesis/transformers/percElectronic.ts
+  s_3bb122e91d89a5::t_0734075a60f795 1-2
+  s_3bb122e91d89a5::t_85fdf51be83242 137
+  s_3bb122e91d89a5::t_764fe405287940 120
+src/modules/FactorySynthesis/transformers/drums808.ts
+  s_3bb122e91d89a5::t_38e05d4a69bb65 185
+  s_3bb122e91d89a5::t_4f42641c96744b 1-2
+  s_3bb122e91d89a5::t_13d2c0dd99d76e 203
+src/modules/FactorySynthesis/services/bufferCreation.ts
+  s_3bb122e91d89a5::t_63d0d5ce2c4c5d 1-2,7-8,18-23,26-31,33
+  s_3bb122e91d89a5::t_c1899ed0acdef1 32,34
+src/modules/FactorySynthesis/transformers/generateRisersPack.ts
+  s_3bb122e91d89a5::t_6db4cd1ff3dc1e 1-2
+  s_3bb122e91d89a5::t_a3be381cec2173 100
+  s_3bb122e91d89a5::t_260babdae2cd00 113
+src/modules/FactorySynthesis/useCases/renderFactorySamples.ts
+  s_3bb122e91d89a5::t_d60e8b4de00c32 1-40
+src/modules/FactorySynthesis/transformers/__tests__/factoryKits.spec.ts
+  s_3bb122e91d89a5::t_788f414843c426 1-57
+src/modules/FactorySynthesis/models/FactorySynthesisWorker.ts
+  s_3bb122e91d89a5::t_a2f01ffc72b1ac 1-5,7-10
+  s_3bb122e91d89a5::t_3b81f4b1b195d1 6
+src/modules/SampleLibrary/useCases/__tests__/seedFactoryLibrary.spec.ts
+  s_3bb122e91d89a5::t_7b82728e78b45e 83-89,91,95,97-103,105-114,117-118,120-121,128-129,135,137,140-141,145,148-150,152-153,155-157,159,162-172,176-177,182-185,187-216,232,235,239
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4fd74d306d83f4b1483e4d895f9298f8997c7da8",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
