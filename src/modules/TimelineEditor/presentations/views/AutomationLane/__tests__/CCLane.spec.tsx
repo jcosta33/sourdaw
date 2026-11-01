@@ -890,6 +890,30 @@ describe('CCLane', () => {
                 expect(pushUndoEntry).toHaveBeenCalledWith('Move CC point', expect.any(Function), expect.any(Function));
             });
 
+            it('Escape mid-drag puts the point back where it was pressed and records no undo entry', () => {
+                seedPoint();
+                const { container } = render(<CCLane {...defaultProps} />);
+                const point = getPoint(container);
+
+                fireEvent.pointerDown(point, { pointerId: 2, button: 0, clientX: 8, clientY: 76 });
+                fireEvent.pointerMove(point, { pointerId: 2, clientX: 88, clientY: 20 });
+                expect(readPoint()).toEqual(expect.objectContaining({ beat: draggedBeat, value: draggedValue }));
+
+                fireEvent.keyDown(window, { key: 'Escape' });
+
+                expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([
+                    { id: 'cc-a', controller: 1, value: 20, beat: 0, channel: 0 },
+                ]);
+                expect(pushUndoEntry).not.toHaveBeenCalled();
+                expect(point.className).not.toContain('cursor-grabbing');
+
+                // The release the browser still delivers after the cancel neither moves nor commits.
+                fireEvent.pointerMove(point, { pointerId: 2, clientX: 208, clientY: 40 });
+                fireEvent.pointerUp(point, { pointerId: 2, clientX: 208, clientY: 40 });
+                expect(readPoint()).toEqual(expect.objectContaining({ beat: 0, value: 20 }));
+                expect(pushUndoEntry).not.toHaveBeenCalled();
+            });
+
             it('commits the drag even when releasing capture throws', () => {
                 seedPoint();
                 const { container } = render(<CCLane {...defaultProps} />);
