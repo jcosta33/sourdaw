@@ -585,7 +585,7 @@ describe('automatic punch Pause and Play with real recording commits', () => {
     function armFirstWindowPunch(loop: { loopStart: number; loopEnd: number } | null): void {
         trackStore.set({ tracks: [recordingTrack('audio')], selectedTrackId: TRACK_ID, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
-        transportStore.set({
+        const transport = {
             ...defaultTransportState,
             tempo: 120,
             isPlaying: false,
@@ -595,8 +595,13 @@ describe('automatic punch Pause and Play with real recording commits', () => {
             punchInBeat: 4,
             punchOutBeat: 8,
             playheadPosition: loop ? 7.9 : 4,
-            ...(loop ? { isLooping: true, ...loop } : {}),
-        });
+        };
+        if (loop) {
+            transport.isLooping = true;
+            transport.loopStart = loop.loopStart;
+            transport.loopEnd = loop.loopEnd;
+        }
+        transportStore.set(transport);
         tempoMapStore.set({ changes: [] });
         flushAutomergeStorageWrites();
     }
