@@ -1,0 +1,113 @@
+src/modules/AudioEngine/useCases/__tests__/initEngineDeviceCollaborators.spec.ts
+  s_0314bb17e5dee3::t_eb04bc922d04a6 1-69
+.dependency-cruiser.types.cjs
+  s_0314bb17e5dee3::t_8dfa229391f8b0 48
+src/modules/AudioEngine/models/EngineDeviceCollaborators.ts
+  s_0314bb17e5dee3::t_b6f11df43cbc12 1-44
+scripts/__tests__/engineDirectionRule.spec.ts
+  s_0314bb17e5dee3::t_46815d71e035f6 1-85
+docs/architecture/03-typescript-module.md
+  s_0314bb17e5dee3::t_c2cd8f066b2490 884
+.dependency-cruiser.cjs
+  s_0314bb17e5dee3::t_634883846f0a12 645-660
+src/app/__tests__/bootstrap.spec.ts
+  s_fec7059b7a251c::t_557becf47192e8 175,324,453,1111
+src/app/bootstrap.ts
+  s_fec7059b7a251c::t_5345ae19497e5c 70,287
+src/modules/AudioEngine/engine/AdjustmentBusNode.ts
+  s_3bb122e91d89a5::t_5fbd8e382d8f57 3,10,109,121,162,170,259
+src/modules/AudioEngine/engine/AdjustmentLayerRuntime.ts
+  s_3bb122e91d89a5::t_360ede2f6b455f 6-7,34,121
+src/modules/AudioEngine/engine/TrackNode.ts
+  s_fec7059b7a251c::t_f014e4f259c30e 18-19,124-125,182,191,795,1218,1220,1235-1236,1270,1517
+src/modules/AudioEngine/engine/__tests__/AdjustmentBusNode.spec.ts
+  s_55244eb93b97d1::t_32631b0c09f0f4 11,29,42,57,70,94,110,131,191,211-216,315,323,331,341,356-361
+src/modules/AudioEngine/engine/__tests__/AdjustmentLayerRuntime.spec.ts
+  s_55244eb93b97d1::t_d1add770dc6d02 9,28,216,355
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  s_3bb122e91d89a5::t_55525ff45146ce 12,88
+src/modules/AudioEngine/engine/__tests__/TransientShaperNode.spec.ts
+  s_0314bb17e5dee3::t_9f430cc76ca178 252,260,267,272,297,303,326,330
+src/modules/AudioEngine/engine/__tests__/panelReachesTheEngine.spec.tsx
+  s_3bb122e91d89a5::t_968dcea4ad83ad 17,266
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_9091c7fb2989db::t_bc056dbe46d912 3,542-543
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_fec7059b7a251c::t_33e23316fa148e 43,45,64-89,447-458,563,1310-1314,1778,1791
+src/modules/AudioEngine/useCases/engineDeviceCollaborators.ts
+  s_fec7059b7a251c::t_e79e280ba8a433 1-18
+src/modules/AudioEngine/useCases/index.ts
+  s_fec7059b7a251c::t_e1c495f8704724 224
+src/modules/AudioEngine/useCases/initEngineDeviceCollaborators.ts
+  s_fec7059b7a251c::t_190682aa6c4f6f 1-8
+src/modules/AudioEngine/useCases/offlineRender/__tests__/liveOfflineNullTest.spec.ts
+  s_3bb122e91d89a5::t_a17906803afb91 183,378
+src/modules/AudioEngine/useCases/offlineRender/createOfflineAdjustmentBusChain.ts
+  s_fec7059b7a251c::t_65b79fe465b64a 2,35
+src/modules/Arrangement/handlers/device/__tests__/midiNodelessEffectCommands.integration.spec.ts
+  s_0314bb17e5dee3::t_53dcd98fc0be96 12,96
+src/modules/AudioEngine/engine/__tests__/TrackNode.spec.ts
+  s_0314bb17e5dee3::t_0bbca51accffe7 7,60
+src/modules/AudioEngine/engine/__tests__/faustLookaheadLatency.spec.ts
+  s_0314bb17e5dee3::t_eccac004f2425e 23,73
+src/modules/AudioEngine/engine/__tests__/faustMeterReadings.spec.ts
+  s_0314bb17e5dee3::t_f60328620d20f2 24,84
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistry.spec.ts
+  s_0314bb17e5dee3::t_66f92b55f60afe 6,141,183,221,265,302,328,358,391
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  s_0314bb17e5dee3::t_783c83fea35a4f 7,128
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_0314bb17e5dee3::t_51e5c4405d79b8 16,52-53,751,782,788,817,853,892,907,937,974,1011,1017,1035,1065,1107,1161,1170,1201,1240,1338,1351,1386,1415,1466,1539,1557,1795,1814-1815,1833,1866,1872,1897,1946,1963
+src/modules/AudioEngine/repositories/__tests__/kneadStateDuringDeviceLoad.spec.ts
+  s_0314bb17e5dee3::t_07456d77101c90 5-6,94
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/deviceParameterGestureUndo.integration.spec.tsx
+  s_0314bb17e5dee3::t_0c0b2e0031459c 15,294
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "076c41c8fb608fd8d640aaf198606ce125aab058",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9091c7fb2989db": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3cde0d3-cad6-4d0d-93a9-91700b2ed782",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
