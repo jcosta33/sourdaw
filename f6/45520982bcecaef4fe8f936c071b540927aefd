@@ -1,0 +1,721 @@
+tests/e2e/e2eTest.ts
+  s_3bb122e91d89a5::t_0742f3b28995a0 1-5
+tests/e2e/agentMixingRequest.spec.ts
+  s_3bb122e91d89a5::t_4a858295827f86 1,5
+tests/e2e/agentWorkspace.spec.ts
+  s_3bb122e91d89a5::t_1bda146882130b 1,4
+tests/e2e/aiBackendPreference.spec.ts
+  s_3bb122e91d89a5::t_a58bc56db64700 1,3
+tests/e2e/aiChatActionButtonsTestId.spec.ts
+  s_3bb122e91d89a5::t_8a808c42a7242c 1,3
+tests/e2e/aiConfirmApplyUndo.spec.ts
+  s_3bb122e91d89a5::t_704b055c27b33c 1,6
+tests/e2e/aiProviderToolAuthority.spec.ts
+  s_3bb122e91d89a5::t_8ea13245aae528 1,4
+tests/e2e/applicationModuleRecovery.spec.ts
+  s_3bb122e91d89a5::t_15afc6bd5603aa 4,7
+tests/e2e/audioAndPluginOps.spec.ts
+  s_3bb122e91d89a5::t_14d515e6cd8cf5 1
+tests/e2e/audioEnginePickersTestId.spec.ts
+  s_3bb122e91d89a5::t_562e31b29a9288 1,3
+tests/e2e/audioMidiMisc.spec.ts
+  s_3bb122e91d89a5::t_75b2cca1b58540 1,3
+tests/e2e/autoSaveInterval.spec.ts
+  s_3bb122e91d89a5::t_3fd6847e6654a4 1,3
+tests/e2e/automation.spec.ts
+  s_3bb122e91d89a5::t_ebdbad3205173f 1,3
+tests/e2e/automationDrawPlaybackTestId.spec.ts
+  s_3bb122e91d89a5::t_ef08e39da09020 1,3
+tests/e2e/automationLanesTestId.spec.ts
+  s_3bb122e91d89a5::t_634c19306d0861 1,3
+tests/e2e/automationModeSelectTestId.spec.ts
+  s_3bb122e91d89a5::t_81e83233c5feae 1,3
+tests/e2e/automationPointDrawUndo.spec.ts
+  s_3bb122e91d89a5::t_3a63da3e9db2b9 1,3
+tests/e2e/bottomDockRoutingAnalysis.spec.ts
+  s_3bb122e91d89a5::t_1296c54a2cfaf0 1
+tests/e2e/browserAiAdmittedPresentation.spec.ts
+  s_3bb122e91d89a5::t_9b8dc55b4311fe 1,8
+tests/e2e/browserAiPanelsTestId.spec.ts
+  s_3bb122e91d89a5::t_031a3e5f048b8c 1,5
+tests/e2e/browserAiRedetectKokoroTestId.spec.ts
+  s_3bb122e91d89a5::t_bf573ffe04226b 1,3
+tests/e2e/browserAiWebGpuAdmission.spec.ts
+  s_3bb122e91d89a5::t_befc75bc57a31c 1,8
+tests/e2e/browserDisplayScale.spec.ts
+  s_3bb122e91d89a5::t_3e36341931bbe1 1,4
+tests/e2e/browserInstrumentsTestId.spec.ts
+  s_3bb122e91d89a5::t_37d0e8753dc051 1,3
+tests/e2e/chatComposerTestId.spec.ts
+  s_3bb122e91d89a5::t_3307912571729b 1,4
+tests/e2e/chordExpressionTestId.spec.ts
+  s_3bb122e91d89a5::t_5fda645196a6a6 1,3
+tests/e2e/clipDragDeleteTestId.spec.ts
+  s_3bb122e91d89a5::t_003b93793a8fc0 1,3
+tests/e2e/clipTrimStartTestId.spec.ts
+  s_3bb122e91d89a5::t_35d8572232fc86 1,3
+tests/e2e/collabPreferences.spec.ts
+  s_3bb122e91d89a5::t_ae586c7c073d84 1
+tests/e2e/countInCycleTestId.spec.ts
+  s_3bb122e91d89a5::t_5f4cc5f1d94b7d 1
+tests/e2e/crdtPersistence.native.spec.ts
+  s_3bb122e91d89a5::t_1fd0d3686d39ac 1-3
+tests/e2e/crossFeatureWorkflowTestId.spec.ts
+  s_3bb122e91d89a5::t_dceed78df52486 1,3
+tests/e2e/deviceAndModulator.spec.ts
+  s_3bb122e91d89a5::t_df1937244e5af7 1,3
+tests/e2e/deviceChainTestId.spec.ts
+  s_3bb122e91d89a5::t_d0c6e87bb0cd9f 1,3
+tests/e2e/deviceKnobKeyboardTestId.spec.ts
+  s_3bb122e91d89a5::t_6ded666bfe9596 1,3
+tests/e2e/devicePanelAllTestId.spec.ts
+  s_3bb122e91d89a5::t_9a129f18984f3a 1,3
+tests/e2e/devicePanelTestId.spec.ts
+  s_3bb122e91d89a5::t_90d5923350536f 1,3
+tests/e2e/dynamicAndEdge.spec.ts
+  s_3bb122e91d89a5::t_a05e82670a3bf6 1
+tests/e2e/e2eHmrDisconnectBoundary.spec.ts
+  s_3bb122e91d89a5::t_2cf7475605babf 8-9
+tests/e2e/e2eUtils.ts
+  s_3bb122e91d89a5::t_4281409dc62e10 1,6
+tests/e2e/effectPanelsTestId.spec.ts
+  s_3bb122e91d89a5::t_0da407acdf7414 1,3
+tests/e2e/elasticDetectQuantizeTestId.spec.ts
+  s_3bb122e91d89a5::t_e8fe812f205f57 1,3
+tests/e2e/elasticEditorTestId.spec.ts
+  s_3bb122e91d89a5::t_d0d04815572b61 1,3
+tests/e2e/entryLoadRecovery.spec.ts
+  s_3bb122e91d89a5::t_b54e261bb38b7b 1,3
+tests/e2e/exportAudioEvidence.spec.ts
+  s_3bb122e91d89a5::t_ff49f0324c72ba 4,7
+tests/e2e/exportFilePickerCapture.spec.ts
+  s_3bb122e91d89a5::t_7b66bf73153544 4,6
+tests/e2e/exportOggCodecs.spec.ts
+  s_3bb122e91d89a5::t_f68f5c504e2fdc 4,10
+tests/e2e/exportStemsModeTestId.spec.ts
+  s_3bb122e91d89a5::t_d1ce28423ddff6 5
+tests/e2e/expressionLaneDeepTestId.spec.ts
+  s_3bb122e91d89a5::t_6306c831b31373 1,3
+tests/e2e/finalE2EGaps.spec.ts
+  s_3bb122e91d89a5::t_008cc2d2a13ecc 1
+tests/e2e/generativeOptionGridsTestId.spec.ts
+  s_3bb122e91d89a5::t_8307639d399aae 1,3
+tests/e2e/glutenPresetSearchTestId.spec.ts
+  s_3bb122e91d89a5::t_02d7e28bac5004 1,3
+tests/e2e/grinderStackedLstmAdmission.spec.ts
+  s_3bb122e91d89a5::t_a6cffedf515d59 3,5
+tests/e2e/grooveAssignRenameDelete.spec.ts
+  s_3bb122e91d89a5::t_936875c95f87b9 1,3
+tests/e2e/grooveExtractionCommit.spec.ts
+  s_3bb122e91d89a5::t_8cf5987daaec55 1,3
+tests/e2e/inspectorTestId.spec.ts
+  s_3bb122e91d89a5::t_ff1e648abbab76 1,3
+tests/e2e/instrumentPanelsTestId.spec.ts
+  s_3bb122e91d89a5::t_8bc7c5dec6d1b0 1,3
+tests/e2e/keyboardShortcutFlows.spec.ts
+  s_3bb122e91d89a5::t_58f468dbcfa9b6 1
+tests/e2e/keyboardShortcuts.spec.ts
+  s_3bb122e91d89a5::t_1c995efaf77f4b 1
+tests/e2e/launchFlows.spec.ts
+  s_3bb122e91d89a5::t_e8fda270964d67 1
+tests/e2e/levainArticulationTestId.spec.ts
+  s_3bb122e91d89a5::t_fb7d8ef4f5a6cb 1,3
+tests/e2e/levainEngineStatusTestId.spec.ts
+  s_3bb122e91d89a5::t_f020847d9bdfa5 1,3
+tests/e2e/levainFamilyFilterTestId.spec.ts
+  s_3bb122e91d89a5::t_5cebad76d87070 1,3
+tests/e2e/levainSearchFilterTestId.spec.ts
+  s_3bb122e91d89a5::t_b91068a01ff241 1,3
+tests/e2e/loopStationSlotsTestId.spec.ts
+  s_fec7059b7a251c::t_935c027da4eabf 1,4-5
+tests/e2e/marqueeShortcut.spec.ts
+  s_3bb122e91d89a5::t_fd41d4e975323b 1,3
+tests/e2e/masterChannelTestId.spec.ts
+  s_3bb122e91d89a5::t_8607b47f14010e 1,3
+tests/e2e/metricGoalAdmission.spec.ts
+  s_3bb122e91d89a5::t_f369a93424978f 1,6
+tests/e2e/metronomeVolumeSliderTestId.spec.ts
+  s_3bb122e91d89a5::t_97d60c75e04430 1
+tests/e2e/midiCycleTakeAcceptance.spec.ts
+  s_3bb122e91d89a5::t_cd657b0d7d6a4c 5,7
+tests/e2e/midiNoteVelocityTestId.spec.ts
+  s_3bb122e91d89a5::t_7adea0a7f29f40 1,3
+tests/e2e/midiScaleInteractionTestId.spec.ts
+  s_3bb122e91d89a5::t_7cf73e53b03922 1,3
+tests/e2e/midiScaleRootTestId.spec.ts
+  s_3bb122e91d89a5::t_03fcf68c0df955 1,3
+tests/e2e/midiToolbarAllToggles.spec.ts
+  s_3bb122e91d89a5::t_6b446b6ecdbd66 1,3
+tests/e2e/midiUndoPlaybackTestId.spec.ts
+  s_3bb122e91d89a5::t_a5ba8a96d21844 1,3
+tests/e2e/mixAnalysisChatTestId.spec.ts
+  s_3bb122e91d89a5::t_2fee2d4e23e5f2 1,3
+tests/e2e/mixerAdvanced.spec.ts
+  s_3bb122e91d89a5::t_404ec455d1d989 1
+tests/e2e/mixerFullWorkflowTestId.spec.ts
+  s_3bb122e91d89a5::t_62ba9f88dc51d9 1,3
+tests/e2e/mixerStripDeviceChain.spec.ts
+  s_3bb122e91d89a5::t_72e975f219da29 1,3
+tests/e2e/mixerWidthSendsTestId.spec.ts
+  s_3bb122e91d89a5::t_edcac22b2eba5d 1,3
+tests/e2e/mobileGate.spec.ts
+  s_3bb122e91d89a5::t_9b4d6a403aabf8 1,3
+tests/e2e/modelManagerAdmission.spec.ts
+  s_3bb122e91d89a5::t_461e1b1a16f941 1,5
+tests/e2e/modulationHaloInteraction.spec.ts
+  s_3bb122e91d89a5::t_e92b114e382f5b 1,3
+tests/e2e/modulationMatrixTestId.spec.ts
+  s_3bb122e91d89a5::t_2fbe18dc1f69e2 1,3
+tests/e2e/monitoringIndicators.spec.ts
+  s_3bb122e91d89a5::t_48bb8939c2de90 1,4
+tests/e2e/nativeButtonKeyboardActivation.spec.ts
+  s_3bb122e91d89a5::t_0c4e0797d9fa4d 1,3
+tests/e2e/offlineAudioWorkletTrace.spec.ts
+  s_3bb122e91d89a5::t_bce30f7180490b 5,14-15
+tests/e2e/onboardingSkipFinishTestId.spec.ts
+  s_3bb122e91d89a5::t_f8d3349efa001e 1,4
+tests/e2e/onboardingTour.spec.ts
+  s_3bb122e91d89a5::t_c37bb652740ffb 1,4
+tests/e2e/persistedClipEditAcceptance.spec.ts
+  s_3bb122e91d89a5::t_5e24e9b044feb3 4,10
+tests/e2e/pianoRollDockAcceptance.spec.ts
+  s_3bb122e91d89a5::t_314168f291bd29 3,6
+tests/e2e/pianoRollScaleTestId.spec.ts
+  s_3bb122e91d89a5::t_0f1c288cef7ea4 1,3
+tests/e2e/projectMenuTestId.spec.ts
+  s_3bb122e91d89a5::t_e0b43ffe5cf603 1,3
+tests/e2e/promptBarCancelRecentTestId.spec.ts
+  s_3bb122e91d89a5::t_b693fb47601187 1,4
+tests/e2e/punchLoopTakeAcceptance.spec.ts
+  s_3bb122e91d89a5::t_0582f680d68105 5,7
+tests/e2e/railTabBarScrollTestId.spec.ts
+  s_3bb122e91d89a5::t_e841875280ff86 1,3
+tests/e2e/recordEditPlayback.spec.ts
+  s_3bb122e91d89a5::t_68b8ab07e60dac 1,3
+tests/e2e/remainingCoverage.spec.ts
+  s_3bb122e91d89a5::t_6ee3c53852dfe3 1
+tests/e2e/routingGraphTestId.spec.ts
+  s_3bb122e91d89a5::t_e865a4f3563738 1,3
+tests/e2e/sampleLibraryFavoritesTestId.spec.ts
+  s_3bb122e91d89a5::t_eddbd9c5d03738 3,5
+tests/e2e/sessionLoopStationControlsDeep.spec.ts
+  s_fec7059b7a251c::t_478c1936571896 1,4-5
+tests/e2e/setlistAsRemoveTestId.spec.ts
+  s_3bb122e91d89a5::t_a60b94a4108ff9 1,3
+tests/e2e/setlistLoopStationTestId.spec.ts
+  s_3bb122e91d89a5::t_4482c09b536d17 1,3
+tests/e2e/shortcutBehavioralE2E.spec.ts
+  s_3bb122e91d89a5::t_1d01ba99cd2a20 1,3
+tests/e2e/smoke.spec.ts
+  s_3bb122e91d89a5::t_7a84e88518f33a 1,4
+tests/e2e/statusBarResponsive.spec.ts
+  s_3bb122e91d89a5::t_7fdbe5e01e4ed9 1,4
+tests/e2e/statusBarTestId.spec.ts
+  s_3bb122e91d89a5::t_24346b88860bfd 1,3
+tests/e2e/takeLanesTestId.spec.ts
+  s_3bb122e91d89a5::t_266116e8be7996 1,3
+tests/e2e/tempoSourceTimeAcceptance.spec.ts
+  s_3bb122e91d89a5::t_7c5507bba68577 7,10
+tests/e2e/toasterGrooveKitKnobsTestId.spec.ts
+  s_3bb122e91d89a5::t_9177fb2bc84a4a 1,3
+tests/e2e/toasterKneadPanelsTestId.spec.ts
+  s_3bb122e91d89a5::t_0a4d59c0f95a27 1,3
+tests/e2e/trackArmLinkTestId.spec.ts
+  s_3bb122e91d89a5::t_313d354179a41e 1,3
+tests/e2e/transientOnsetRead.spec.ts
+  s_3bb122e91d89a5::t_51c4d3e765d367 1,6
+tests/e2e/transientShaperEffect.spec.ts
+  s_3bb122e91d89a5::t_bf79890118def3 4,7
+tests/e2e/undo.spec.ts
+  s_3bb122e91d89a5::t_b8bef7e4c17453 1,3
+tests/e2e/undoClipSplitTestId.spec.ts
+  s_3bb122e91d89a5::t_26e9b8a8a8612c 1,3
+tests/e2e/undoRedoAutoScrollTestId.spec.ts
+  s_3bb122e91d89a5::t_c1936b82269b1b 1,3
+tests/e2e/virtualKeyboardChord.spec.ts
+  s_3bb122e91d89a5::t_33ebc705321a00 1
+tests/e2e/virtualKeyboardGlide.spec.ts
+  s_3bb122e91d89a5::t_013673cafe13a6 1,3
+tests/e2e/virtualKeyboardPlayTestId.spec.ts
+  s_3bb122e91d89a5::t_59bca504452ad0 1
+tests/e2e/yeastParamMatrix.spec.ts
+  s_3bb122e91d89a5::t_6c75a2074bcc91 1,3
+tests/e2e/yeastRecorderTestId.spec.ts
+  s_3bb122e91d89a5::t_e4561fcae2b6c3 1,3
+tests/e2e/additionalUi.spec.ts
+  s_3bb122e91d89a5::t_84c5f1e18f0639 1
+tests/e2e/agentExecutionMode.spec.ts
+  s_3bb122e91d89a5::t_329199c58f3216 1,3,30,33,40,46
+tests/e2e/aiAndCollabFinal.spec.ts
+  s_3bb122e91d89a5::t_456d00c5657159 2
+tests/e2e/aiFeatures.spec.ts
+  s_3bb122e91d89a5::t_c67c7f505d3bc2 1
+tests/e2e/aiGenerationPatternTestId.spec.ts
+  s_3bb122e91d89a5::t_2c127b2a5d2ba6 1
+tests/e2e/aiPatternSearchTestId.spec.ts
+  s_3bb122e91d89a5::t_545142a4ff48fc 1
+tests/e2e/arrangement.spec.ts
+  s_3bb122e91d89a5::t_a356debc442f98 1
+tests/e2e/audioImportDropTestId.spec.ts
+  s_3bb122e91d89a5::t_3a97e409249776 1,51-56
+tests/e2e/audioOwnership.native.spec.ts
+  s_3bb122e91d89a5::t_960eadaee03c3b 1-3
+tests/e2e/bacteriaCulturesSearchTestId.spec.ts
+  s_3bb122e91d89a5::t_2cc2b3dbb25d4a 1
+tests/e2e/bakeryControlGeometry.spec.ts
+  s_3bb122e91d89a5::t_7422d153265c74 1
+tests/e2e/branchManager.spec.ts
+  s_3bb122e91d89a5::t_9244997e06b04f 1
+tests/e2e/browser.spec.ts
+  s_3bb122e91d89a5::t_a185e87e968914 1,17,27,36
+tests/e2e/browserAiTestId.spec.ts
+  s_3bb122e91d89a5::t_831ac78f587485 1
+tests/e2e/browserAndDeviceDeep.spec.ts
+  s_3bb122e91d89a5::t_47cffe9860c3ea 3
+tests/e2e/builtinDeviceAutomationOffline.spec.ts
+  s_3bb122e91d89a5::t_5353ae73b5c5c1 1
+tests/e2e/busTrackDeviceAddTestId.spec.ts
+  s_3bb122e91d89a5::t_6b2e9f7193600d 1,27-32
+tests/e2e/clipContextMenuDeepTestId.spec.ts
+  s_3bb122e91d89a5::t_5564c022f8b79d 1
+tests/e2e/clipDetectStripTestId.spec.ts
+  s_3bb122e91d89a5::t_70c885b1aa1e24 1
+tests/e2e/clipDragMoveTestId.spec.ts
+  s_3bb122e91d89a5::t_ec9c5ee4c549a3 1,33-35
+tests/e2e/clipEditorControls.spec.ts
+  s_3bb122e91d89a5::t_9fdf5040d0f2e9 1
+tests/e2e/clipInspectorControls.spec.ts
+  s_3bb122e91d89a5::t_1a2d100c96b5bb 1
+tests/e2e/clipNormalizeReverseTestId.spec.ts
+  s_3bb122e91d89a5::t_c216458507b01f 1
+tests/e2e/clipSplitDuplicateTestId.spec.ts
+  s_3bb122e91d89a5::t_4a65cdda5deb72 1
+tests/e2e/clipTrimEndFadeOutTestId.spec.ts
+  s_3bb122e91d89a5::t_fa741b0d23cf08 1,22-29
+tests/e2e/clipTrimFadeKeyboardTestId.spec.ts
+  s_3bb122e91d89a5::t_d285e98453d40b 1,24-29
+tests/e2e/clips.spec.ts
+  s_3bb122e91d89a5::t_8931f25b410754 1
+tests/e2e/collaborationTestId.spec.ts
+  s_3bb122e91d89a5::t_150a6b8c4033de 1
+tests/e2e/commandPalette.spec.ts
+  s_3bb122e91d89a5::t_84e72e6ad64af6 1
+tests/e2e/commandPaletteTestId.spec.ts
+  s_3bb122e91d89a5::t_a788eb34033f2b 1
+tests/e2e/compiledPersistenceTest.ts
+  s_3bb122e91d89a5::t_255d94f95040a7 7
+tests/e2e/controlGallery.spec.ts
+  s_3bb122e91d89a5::t_ffb0b676298463 1
+tests/e2e/controlSurface.spec.ts
+  s_3bb122e91d89a5::t_da6883a04ac128 1
+tests/e2e/controlledRecipesEffect.spec.ts
+  s_3bb122e91d89a5::t_a035bce548d057 2
+tests/e2e/corruptAudioImportTestId.spec.ts
+  s_3bb122e91d89a5::t_39ddc61c1d7d67 1,19-24
+tests/e2e/crustAttackAutoTestId.spec.ts
+  s_3bb122e91d89a5::t_c7a7132e5166b4 1
+tests/e2e/crustAttackTimeTestId.spec.ts
+  s_3bb122e91d89a5::t_177e87457fd235 1
+tests/e2e/crustCeilingTestId.spec.ts
+  s_3bb122e91d89a5::t_f3f6099353908e 1
+tests/e2e/crustChannelLinkTestId.spec.ts
+  s_3bb122e91d89a5::t_0acf6f79a2a630 1
+tests/e2e/crustInputGainTestId.spec.ts
+  s_3bb122e91d89a5::t_0c035b48510e04 1
+tests/e2e/crustLevelChipsTestId.spec.ts
+  s_3bb122e91d89a5::t_059476a8310d53 1
+tests/e2e/crustOversamplingTestId.spec.ts
+  s_3bb122e91d89a5::t_de4d4bedb0fc56 1
+tests/e2e/crustPresetSelectTestId.spec.ts
+  s_3bb122e91d89a5::t_f29fb670de81d5 1,35-38,40-41
+tests/e2e/crustReleaseAutoTestId.spec.ts
+  s_3bb122e91d89a5::t_7a5dd40614e4e9 1
+tests/e2e/crustReleaseLookaheadTestId.spec.ts
+  s_3bb122e91d89a5::t_d636af5b19404a 1
+tests/e2e/crustRemainingKnobsTestId.spec.ts
+  s_3bb122e91d89a5::t_c7f680b7e984aa 1
+tests/e2e/crustResetMetersTestId.spec.ts
+  s_3bb122e91d89a5::t_6ada537e392f46 1
+tests/e2e/crustStreamingPresetTestId.spec.ts
+  s_3bb122e91d89a5::t_c8009bec5a236b 1,34-37
+tests/e2e/crustTruePeakToggleTestId.spec.ts
+  s_3bb122e91d89a5::t_ac077717e2726e 1
+tests/e2e/crustUnityDeltaTestId.spec.ts
+  s_3bb122e91d89a5::t_89be26ba36cc95 1
+tests/e2e/deepCoverage.spec.ts
+  s_3bb122e91d89a5::t_8b229a93dbb1b9 1
+tests/e2e/deepInteractions.spec.ts
+  s_3bb122e91d89a5::t_c8d75f5d4d6efb 1,93-98,180-183
+tests/e2e/desktopRuntime.spec.ts
+  s_3bb122e91d89a5::t_51041b41820e5f 1
+tests/e2e/devicePanels.spec.ts
+  s_3bb122e91d89a5::t_ea874d45d81f15 1
+tests/e2e/devices.spec.ts
+  s_3bb122e91d89a5::t_f1bf5e68d9f35a 1
+tests/e2e/e2eWorkflow.spec.ts
+  s_3bb122e91d89a5::t_6606cbd2c60a1c 1
+tests/e2e/edmFullCycleTestId.spec.ts
+  s_3bb122e91d89a5::t_49e9cb47ba7cc9 1
+tests/e2e/effectsPanels.spec.ts
+  s_3bb122e91d89a5::t_febd9029a3a37c 1
+tests/e2e/export.spec.ts
+  s_3bb122e91d89a5::t_6700d8992421b4 1
+tests/e2e/exportAudioEvidenceFullLength.spec.ts
+  s_3bb122e91d89a5::t_bb857328b5eed7 7
+tests/e2e/exportAudioEvidenceHarness.ts
+  s_3bb122e91d89a5::t_a8dab8a8f19a3a 1-3
+tests/e2e/exportFidelityTestId.spec.ts
+  s_3bb122e91d89a5::t_90c566716ddbc9 1
+tests/e2e/exportFormatsTestId.spec.ts
+  s_3bb122e91d89a5::t_653c9ed87b22be 1
+tests/e2e/exportRangeSelection.spec.ts
+  s_3bb122e91d89a5::t_6d5d0499532e27 1
+tests/e2e/exportRangeTailTestId.spec.ts
+  s_3bb122e91d89a5::t_a4f940c08f0826 1
+tests/e2e/exportTailInputTestId.spec.ts
+  s_3bb122e91d89a5::t_bdef5e89233c38 1
+tests/e2e/exportTestId.spec.ts
+  s_3bb122e91d89a5::t_81f892cbd6c80f 1
+tests/e2e/fermenterCoarseFineTestId.spec.ts
+  s_3bb122e91d89a5::t_cab175051e88f4 1
+tests/e2e/fermenterEffectsTabsTestId.spec.ts
+  s_3bb122e91d89a5::t_d6d01bdc58c77f 1
+tests/e2e/fermenterEnvDecayReleaseTestId.spec.ts
+  s_3bb122e91d89a5::t_09e38c5a9eb2ca 1
+tests/e2e/fermenterEnvelopeKnobsTestId.spec.ts
+  s_3bb122e91d89a5::t_54666e88cdaa09 1
+tests/e2e/fermenterFilterKnobsTestId.spec.ts
+  s_3bb122e91d89a5::t_1d486edfca5905 1
+tests/e2e/fermenterFilterResoDriveTestId.spec.ts
+  s_3bb122e91d89a5::t_a3da4089ebdcd8 1
+tests/e2e/fermenterFxCompKnobsTestId.spec.ts
+  s_3bb122e91d89a5::t_790e7619e1d959 1
+tests/e2e/fermenterFxDelayKnobsTestId.spec.ts
+  s_3bb122e91d89a5::t_29e66bbff47b74 1
+tests/e2e/fermenterFxDistKnobsDepthTestId.spec.ts
+  s_3bb122e91d89a5::t_52dfae47b6c235 1
+tests/e2e/fermenterFxMasterKnobsTestId.spec.ts
+  s_3bb122e91d89a5::t_b7d735ee45c90a 1
+tests/e2e/fermenterFxModKnobsTestId.spec.ts
+  s_3bb122e91d89a5::t_be3c72e8dd3e57 1
+tests/e2e/fermenterFxReverbKnobsTestId.spec.ts
+  s_3bb122e91d89a5::t_29d86ba7541cbe 1
+tests/e2e/fermenterLevelPwTestId.spec.ts
+  s_3bb122e91d89a5::t_f6516467dd4c5c 1
+tests/e2e/fermenterLfoKnobsTestId.spec.ts
+  s_3bb122e91d89a5::t_6e041246baaf1c 1
+tests/e2e/fermenterLfoRoutingTestId.spec.ts
+  s_3bb122e91d89a5::t_7c6582f77f463a 1
+tests/e2e/fermenterMacroKnobsTestId.spec.ts
+  s_3bb122e91d89a5::t_0e462c28afaba4 1
+tests/e2e/fermenterMacroRemainingTestId.spec.ts
+  s_3bb122e91d89a5::t_34838f0ee8c373 1
+tests/e2e/fermenterNoiseKnobsTestId.spec.ts
+  s_3bb122e91d89a5::t_01a7f469d75a03 1
+tests/e2e/fermenterPanelDeepTestId.spec.ts
+  s_3bb122e91d89a5::t_851d121f04b240 1
+tests/e2e/fermenterPresetSearchTestId.spec.ts
+  s_3bb122e91d89a5::t_e26c74b6ace7c0 1
+tests/e2e/fermenterUnisonKnobsTestId.spec.ts
+  s_3bb122e91d89a5::t_52e108ebeb29eb 1
+tests/e2e/fermenterWaveformTestId.spec.ts
+  s_3bb122e91d89a5::t_ab6fdfb215dc67 1
+tests/e2e/finalBatch.spec.ts
+  s_3bb122e91d89a5::t_7832a211414d36 1
+tests/e2e/flowCoverage.spec.ts
+  s_3bb122e91d89a5::t_f9faab7c93c2c2 1
+tests/e2e/fullWorkflowTestId.spec.ts
+  s_3bb122e91d89a5::t_b90903a26ac4a7 1
+tests/e2e/generatePanelTestId.spec.ts
+  s_3bb122e91d89a5::t_8b31dd7d3a46ec 1
+tests/e2e/grinderOfflineNumericParity.spec.ts
+  s_3bb122e91d89a5::t_82e2ad369a1e10 1
+tests/e2e/grinderPresetSearchTestId.spec.ts
+  s_3bb122e91d89a5::t_5a0dee597f66eb 1
+tests/e2e/importErrorPathsTestId.spec.ts
+  s_3bb122e91d89a5::t_22b4877535f551 1
+tests/e2e/inputMonitoringTestId.spec.ts
+  s_3bb122e91d89a5::t_94e979afeb8301 1
+tests/e2e/inspectorAndRouting.spec.ts
+  s_3bb122e91d89a5::t_3c42a67d158472 1,82-86
+tests/e2e/inspectorClip.spec.ts
+  s_3bb122e91d89a5::t_e51a726d062549 1
+tests/e2e/inspectorDeepTestId.spec.ts
+  s_3bb122e91d89a5::t_0eba7f3bb64ad9 1
+tests/e2e/inspectorPanKeyboardTestId.spec.ts
+  s_3bb122e91d89a5::t_5e1788bc52322c 1
+tests/e2e/inspectorTrack.spec.ts
+  s_3bb122e91d89a5::t_ca6f9c265716d7 1
+tests/e2e/instrumentPanels.spec.ts
+  s_3bb122e91d89a5::t_7630df7ff83cc3 1
+tests/e2e/keyboardShortcutsTestId.spec.ts
+  s_3bb122e91d89a5::t_2e75f26fc4dbab 1
+tests/e2e/kneadPitchDeepTestId.spec.ts
+  s_3bb122e91d89a5::t_50fcdf21d0bddb 1,68-73
+tests/e2e/library.spec.ts
+  s_3bb122e91d89a5::t_b51f432feaa74e 3
+tests/e2e/llmBadgeDownload.spec.ts
+  s_3bb122e91d89a5::t_d34fbcab1417f6 2
+tests/e2e/macrosPanelRecordingTestId.spec.ts
+  s_3bb122e91d89a5::t_9789526c2796c2 1
+tests/e2e/masterGainKeyboardTestId.spec.ts
+  s_3bb122e91d89a5::t_fd4cd1bf20302e 1
+tests/e2e/meteringViewsTestId.spec.ts
+  s_3bb122e91d89a5::t_28234e130b35a7 1
+tests/e2e/midiClipDeepTestId.spec.ts
+  s_3bb122e91d89a5::t_bee0c96edbf86f 1
+tests/e2e/midiEditor.spec.ts
+  s_3bb122e91d89a5::t_ea4b38a438103f 1,42
+tests/e2e/midiEditorTestId.spec.ts
+  s_3bb122e91d89a5::t_12c45a79d115c6 1
+tests/e2e/midiExportDownloadTestId.spec.ts
+  s_3bb122e91d89a5::t_852569adb8a4d7 1,82-89
+tests/e2e/midiModSetlistDeep.spec.ts
+  s_3bb122e91d89a5::t_cf61c6fcb7482b 1
+tests/e2e/midiVelocityKeyboardTestId.spec.ts
+  s_3bb122e91d89a5::t_62faa3bb72051f 1
+tests/e2e/mixer.spec.ts
+  s_3bb122e91d89a5::t_525719b98c5ab2 1,63
+tests/e2e/mixerAiHealthTestId.spec.ts
+  s_3bb122e91d89a5::t_8d169808b6cfcb 1
+tests/e2e/mixerBusMasterChain.spec.ts
+  s_3bb122e91d89a5::t_06af9a3da561db 1,3,18-21
+tests/e2e/mixerChannelGainTestId.spec.ts
+  s_3bb122e91d89a5::t_fe7c4c6c01fc73 1
+tests/e2e/mixerChannelWidthKeyboardTestId.spec.ts
+  s_3bb122e91d89a5::t_12acb8459cec8f 1
+tests/e2e/mixerDeepTemplateTestId.spec.ts
+  s_3bb122e91d89a5::t_6ee5440e73abec 1
+tests/e2e/mixerSendsRoutingTestId.spec.ts
+  s_3bb122e91d89a5::t_7e1b32aabd2c72 1
+tests/e2e/mixerSnapshotRecallTestId.spec.ts
+  s_3bb122e91d89a5::t_292b9b9374b99a 1
+tests/e2e/mixerSnapshotTestId.spec.ts
+  s_3bb122e91d89a5::t_16d3088d44865f 1,54-57
+tests/e2e/mixerTestId.spec.ts
+  s_3bb122e91d89a5::t_dda5bb96131c06 1
+tests/e2e/mixerUndoRedo.spec.ts
+  s_3bb122e91d89a5::t_71a6b1c9388b9c 1
+tests/e2e/modulationElastic.spec.ts
+  s_3bb122e91d89a5::t_fcc1231536446d 1
+tests/e2e/modulationTargetSelectsTestId.spec.ts
+  s_3bb122e91d89a5::t_3c47b0caa50456 1
+tests/e2e/modulatorRoutingTestId.spec.ts
+  s_3bb122e91d89a5::t_629fdc4a70f038 1,41-44,48-52
+tests/e2e/monoModulationInput.spec.ts
+  s_3bb122e91d89a5::t_44ef5bb9630750 1
+tests/e2e/multiTrackWorkflowTestId.spec.ts
+  s_3bb122e91d89a5::t_367e3274a0b6ff 1
+tests/e2e/mutationUndoRedoTestId.spec.ts
+  s_3bb122e91d89a5::t_88866db9857ca9 1,3,29,59-62
+tests/e2e/paletteCommandExecutionTestId.spec.ts
+  s_3bb122e91d89a5::t_a5bdcc1f3a4deb 1
+tests/e2e/panelDeepCoverage.spec.ts
+  s_3bb122e91d89a5::t_33d4e46b69042a 1
+tests/e2e/panelTogglesTestId.spec.ts
+  s_3bb122e91d89a5::t_1cae5e829c8146 1
+tests/e2e/pianoRollZoomKeyboardTestId.spec.ts
+  s_3bb122e91d89a5::t_dbfcafa3d96df0 1,21-23
+tests/e2e/pianoRollZoomTestId.spec.ts
+  s_3bb122e91d89a5::t_5107925ed76519 1
+tests/e2e/popSongDeepTestId.spec.ts
+  s_3bb122e91d89a5::t_c8fece8731b04a 1,40-43
+tests/e2e/preferencesDialogDeepTestId.spec.ts
+  s_3bb122e91d89a5::t_bfc5e9888f707e 1
+tests/e2e/project.spec.ts
+  s_3bb122e91d89a5::t_a7eab1a91d93cb 1,17,25
+tests/e2e/projectLifecycleTestId.spec.ts
+  s_3bb122e91d89a5::t_e0dde4145a49a8 1
+tests/e2e/projectPreferencesTestId.spec.ts
+  s_3bb122e91d89a5::t_4a635fdcc3156b 1
+tests/e2e/projectSaveFlowTestId.spec.ts
+  s_3bb122e91d89a5::t_69376aefc95bf7 1
+tests/e2e/promptBarTestId.spec.ts
+  s_3bb122e91d89a5::t_721a4fc9547e3a 1
+tests/e2e/proofAbCompareTestId.spec.ts
+  s_3bb122e91d89a5::t_5f92b00dd35b13 1
+tests/e2e/proofChamberDecayMixTestId.spec.ts
+  s_3bb122e91d89a5::t_e2310082a6a4d1 1
+tests/e2e/proofChamberPanelTestId.spec.ts
+  s_3bb122e91d89a5::t_019eb0a96ab0ca 1
+tests/e2e/proofChamberPreKnobTestId.spec.ts
+  s_3bb122e91d89a5::t_dc9a34364e48a4 1
+tests/e2e/proofChamberTailKnobsTestId.spec.ts
+  s_3bb122e91d89a5::t_78123ab79dde7c 1
+tests/e2e/proofChamberWidthKnobTestId.spec.ts
+  s_3bb122e91d89a5::t_4f6fae4089389d 1
+tests/e2e/proofDynKnobsTestId.spec.ts
+  s_3bb122e91d89a5::t_9b674d949ceebf 1
+tests/e2e/proofEqKnobsTestId.spec.ts
+  s_3bb122e91d89a5::t_69ee139e023dc2 1
+tests/e2e/proofImagerExciterKnobsTestId.spec.ts
+  s_3bb122e91d89a5::t_7b1a3ffe9584ef 1
+tests/e2e/proofLimiterBypassTestId.spec.ts
+  s_3bb122e91d89a5::t_579fa89306c3ee 1
+tests/e2e/proofLimiterCeilingTestId.spec.ts
+  s_3bb122e91d89a5::t_3a44720f87da1c 1
+tests/e2e/proofLoudnessGateTestId.spec.ts
+  s_3bb122e91d89a5::t_90f4b91499ec9d 1
+tests/e2e/proofMissionCeilingTestId.spec.ts
+  s_3bb122e91d89a5::t_6e95b60286861e 1
+tests/e2e/proofModuleTogglesTestId.spec.ts
+  s_3bb122e91d89a5::t_2fd57e60aea3d7 1
+tests/e2e/proofPanelTestId.spec.ts
+  s_3bb122e91d89a5::t_8e73267acc2354 1
+tests/e2e/proofPresetSelectTestId.spec.ts
+  s_3bb122e91d89a5::t_5d5e1d514c29e7 1
+tests/e2e/proofStreamingTargetTestId.spec.ts
+  s_3bb122e91d89a5::t_e8a62068f4b965 1
+tests/e2e/punchCountInTestId.spec.ts
+  s_3bb122e91d89a5::t_7b7de34fec02d1 1
+tests/e2e/punchPrePostRollTestId.spec.ts
+  s_3bb122e91d89a5::t_c1a2a57d05768b 1
+tests/e2e/recording.spec.ts
+  s_3bb122e91d89a5::t_559d61fd57fe2e 1
+tests/e2e/sessionLoopStationDeepTestId.spec.ts
+  s_3bb122e91d89a5::t_35c9d77bdbcb17 1
+tests/e2e/sessionViewTestId.spec.ts
+  s_3bb122e91d89a5::t_68a7a2c50b894e 1
+tests/e2e/setlistLoopStation.spec.ts
+  s_3bb122e91d89a5::t_178958a3e12cca 1
+tests/e2e/setlistMoveReorder.spec.ts
+  s_3bb122e91d89a5::t_c5da25150c80e7 1,3,28
+tests/e2e/soloModeTestId.spec.ts
+  s_3bb122e91d89a5::t_a5e30091b99d88 1
+tests/e2e/soloSafeToggleTestId.spec.ts
+  s_3bb122e91d89a5::t_948ba73c5db538 1
+tests/e2e/spatialPannerArrangementTestId.spec.ts
+  s_3bb122e91d89a5::t_7f4d844abd5ef7 1
+tests/e2e/statusBarMetricsTestId.spec.ts
+  s_3bb122e91d89a5::t_456c8612c572f3 1
+tests/e2e/templateAndInspectorFinal.spec.ts
+  s_3bb122e91d89a5::t_06bc78f3510f6d 1
+tests/e2e/timeDisplayToggleTestId.spec.ts
+  s_3bb122e91d89a5::t_c968f16c749070 1
+tests/e2e/timelineClipAccessibility.spec.ts
+  s_3bb122e91d89a5::t_cf4486927ad307 1
+tests/e2e/timelineClipTestId.spec.ts
+  s_3bb122e91d89a5::t_8d6ee9285ad4e6 1
+tests/e2e/timelineNavigation.spec.ts
+  s_3bb122e91d89a5::t_08ec339232d2ca 1
+tests/e2e/timelineNavigationTestId.spec.ts
+  s_3bb122e91d89a5::t_e0b4cf375126a3 1
+tests/e2e/toastDismissTestId.spec.ts
+  s_3bb122e91d89a5::t_7c3f47b88312c7 1
+tests/e2e/toasterBrightKnobTestId.spec.ts
+  s_3bb122e91d89a5::t_108a91f38a5555 1
+tests/e2e/toasterEuclidTestId.spec.ts
+  s_3bb122e91d89a5::t_33e5ed6ad39bca 1
+tests/e2e/toasterGrooveTemplateTestId.spec.ts
+  s_3bb122e91d89a5::t_09163b3da00a28 1
+tests/e2e/toasterKitGainPanTestId.spec.ts
+  s_3bb122e91d89a5::t_9eb99919ca5ec1 1
+tests/e2e/toasterKitPresetTestId.spec.ts
+  s_3bb122e91d89a5::t_0412ef5e61e892 1
+tests/e2e/toasterKitSearchTestId.spec.ts
+  s_3bb122e91d89a5::t_a2d452fd59955f 1
+tests/e2e/toasterKitSelectTestId.spec.ts
+  s_3bb122e91d89a5::t_e05e44d53b9fcf 1
+tests/e2e/toasterLevelPanTestId.spec.ts
+  s_3bb122e91d89a5::t_65cb77cd761ed9 1
+tests/e2e/toasterPadDriveTestId.spec.ts
+  s_3bb122e91d89a5::t_6a2a9134f387d2 1
+tests/e2e/toasterPadInteractionTestId.spec.ts
+  s_3bb122e91d89a5::t_18ee053861d70f 1
+tests/e2e/toasterPadMixerTestId.spec.ts
+  s_3bb122e91d89a5::t_4b8c8941b07f0b 1
+tests/e2e/toasterPerPadParamsTestId.spec.ts
+  s_3bb122e91d89a5::t_5a65d35417c88b 1
+tests/e2e/toasterStepSequencerTestId.spec.ts
+  s_3bb122e91d89a5::t_0848a2f4e6633e 1
+tests/e2e/toasterTextureCharacterTestId.spec.ts
+  s_3bb122e91d89a5::t_92ff9da6fb8a23 1
+tests/e2e/toasterTransportChipsTestId.spec.ts
+  s_3bb122e91d89a5::t_99bffe3e63c01d 1
+tests/e2e/toolsTestId.spec.ts
+  s_3bb122e91d89a5::t_9504d13778ae16 1
+tests/e2e/tooltipPopoverPointer.spec.ts
+  s_3bb122e91d89a5::t_7392696a2e4ab5 1
+tests/e2e/trackContextMenuTestId.spec.ts
+  s_3bb122e91d89a5::t_4f4c2a4e3214db 1
+tests/e2e/trackFreezeTestId.spec.ts
+  s_3bb122e91d89a5::t_8abe420f6dfa19 1
+tests/e2e/trackGainKeyboardTestId.spec.ts
+  s_3bb122e91d89a5::t_b86512e4546d24 1
+tests/e2e/trackListHeaderTestId.spec.ts
+  s_3bb122e91d89a5::t_316f95a32515f7 1
+tests/e2e/trackRenameInlineTestId.spec.ts
+  s_3bb122e91d89a5::t_9199e42485512e 1
+tests/e2e/tracks.spec.ts
+  s_3bb122e91d89a5::t_77eba7cb99ca85 1
+tests/e2e/tracksTestId.spec.ts
+  s_3bb122e91d89a5::t_40f6bcc1c29898 1
+tests/e2e/transport.spec.ts
+  s_3bb122e91d89a5::t_a2538ecbdedb9c 1,14,21,27,35,40,49,52,60
+tests/e2e/transportAdvanced.spec.ts
+  s_3bb122e91d89a5::t_70feb2f3e6e59f 1,122-125
+tests/e2e/transportAndWorkspaceDeep.spec.ts
+  s_3bb122e91d89a5::t_afd49363366586 1
+tests/e2e/transportCompleteLifecycle.spec.ts
+  s_3bb122e91d89a5::t_98a1235883d68b 1
+tests/e2e/transportDeep.spec.ts
+  s_3bb122e91d89a5::t_bfef457129d586 1
+tests/e2e/transportResponsive.spec.ts
+  s_3bb122e91d89a5::t_9c5f9a0b248bda 1
+tests/e2e/transportTemplateTestId.spec.ts
+  s_3bb122e91d89a5::t_ea41cddd130bf2 1
+tests/e2e/transportTestId.spec.ts
+  s_3bb122e91d89a5::t_e652f45ea51b44 1
+tests/e2e/tuner.spec.ts
+  s_3bb122e91d89a5::t_02d367633da7d9 1,10,35
+tests/e2e/tunerReferenceHomeEnd.spec.ts
+  s_3bb122e91d89a5::t_4a534b1fc16818 1,10
+tests/e2e/uiScaleKeyboardTestId.spec.ts
+  s_3bb122e91d89a5::t_a822ea1e6e2132 1
+tests/e2e/uncoveredControls.spec.ts
+  s_3bb122e91d89a5::t_9df08d7093e2cb 1,66-69,76-78
+tests/e2e/virtualKeyboardTestId.spec.ts
+  s_3bb122e91d89a5::t_8136a4e251105b 1
+tests/e2e/voiceTempoTestId.spec.ts
+  s_3bb122e91d89a5::t_354c5e37a7485e 1
+tests/e2e/workspacePanels.spec.ts
+  s_3bb122e91d89a5::t_0476c9bae34438 1
+tests/e2e/yeast.spec.ts
+  s_3bb122e91d89a5::t_676eb7e960814f 1
+tests/e2e/yeastMidiFxDeepTestId.spec.ts
+  s_3bb122e91d89a5::t_6294ff979e4cad 1,24-27,45-48,80-83
+eslint.config.mjs
+  s_3bb122e91d89a5::t_61d58e5aac28bc 2420
+docs/06-testing.md
+  s_3bb122e91d89a5::t_addc306d79e9d7 12
+scripts/__tests__/e2eSharedTestFixture.spec.ts
+  s_3bb122e91d89a5::t_a20d2c9a55e458 1-57,64-98
+  s_3bb122e91d89a5::t_840b3b8d8caa8c 58-61
+  s_fec7059b7a251c::t_6947be34e5e3f5 62-63
+evidence/agent-campaign/manifest.json
+  s_3bb122e91d89a5::t_1134ac84584e43 752
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f645520982bcecaef4fe8f936c071b540927aefd",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
