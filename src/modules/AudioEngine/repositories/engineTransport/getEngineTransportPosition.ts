@@ -16,9 +16,21 @@ function readNumber(payload: Record<string, unknown>, key: keyof EngineTransport
 }
 
 /**
- * Keep only the strip peaks that are actually finite numbers, on their own
- * keys — a payload from an untrusted bridge call gets no benefit of the
- * doubt, and a malformed or missing entry is dropped rather than coerced.
+ * A linear peak as itself, and `null` for anything else.
+ *
+ * `+Infinity` is a peak: an output that blew up is a measurement, and reading
+ * it as silence would hide the very fault a meter exists to show. NaN, a
+ * negative, `-Infinity` and a non-number are not peaks.
+ */
+function peakLevel(value: unknown): number | null {
+    return typeof value === 'number' && value >= 0 ? value : null;
+}
+
+/**
+ * Keep only the strip peaks that are non-negative numbers — an infinite one
+ * from a blown-up strip included — on their own keys. A payload from an
+ * untrusted bridge call gets no benefit of the doubt, and a malformed or
+ * missing entry is dropped rather than coerced.
  */
 function readStripPeaks(payload: Record<string, unknown>): Readonly<Record<string, number>> {
     const raw = payload.stripPeaks;
@@ -28,8 +40,9 @@ function readStripPeaks(payload: Record<string, unknown>): Readonly<Record<strin
 
     const peaks: Record<string, number> = {};
     for (const [trackId, value] of Object.entries(raw as Record<string, unknown>)) {
-        if (typeof value === 'number' && Number.isFinite(value)) {
-            peaks[trackId] = value;
+        const peak = peakLevel(value);
+        if (peak !== null) {
+            peaks[trackId] = peak;
         }
     }
     return peaks;
@@ -238,7 +251,7 @@ function toEngineTransportPosition(response: unknown): EngineTransportPosition {
         tempo: readNumber(payload, 'tempo'),
         timeSigNum: readNumber(payload, 'timeSigNum'),
         timeSigDenom: readNumber(payload, 'timeSigDenom'),
-        masterPeak: readNumber(payload, 'masterPeak'),
+        masterPeak: peakLevel(payload.masterPeak) ?? 0,
         stripPeaks: readStripPeaks(payload),
         tunerTelemetry: readTunerTelemetry(payload),
     };
