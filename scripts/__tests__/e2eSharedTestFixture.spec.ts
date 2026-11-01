@@ -55,10 +55,12 @@ function bindsRuntimeRunnerValue(declaration: ts.ImportDeclaration): boolean {
 }
 
 function listE2eSourceFiles(): string[] {
-    return readdirSync(join(root, playwrightTestDir), { recursive: true, withFileTypes: true })
-        .filter((entry) => entry.isFile() && entry.name.endsWith('.ts'))
-        .map((entry) => relative(root, join(entry.parentPath, entry.name)).split('\\').join('/'))
-        .filter((path) => path !== SHARED_FIXTURE);
+    const entries = readdirSync(join(root, playwrightTestDir), { recursive: true, withFileTypes: true });
+    const sourceEntries = entries.filter((entry) => entry.isFile() && entry.name.endsWith('.ts'));
+    const paths = sourceEntries.map((entry) =>
+        relative(root, join(entry.parentPath, entry.name)).split('\\').join('/')
+    );
+    return paths.filter((path) => path !== SHARED_FIXTURE);
 }
 
 describe('E2E files take test and expect from the shared fixture', () => {
