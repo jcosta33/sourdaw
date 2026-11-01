@@ -36,7 +36,7 @@ function current(operation: ExclusiveOperation): boolean {
     );
 }
 
-function stopExclusive(operation: ExclusiveOperation, recover = false): Promise<void> {
+function stopExclusive(operation: ExclusiveOperation): Promise<void> {
     if (operation.restoration !== null) {
         return operation.restoration;
     }
@@ -46,7 +46,7 @@ function stopExclusive(operation: ExclusiveOperation, recover = false): Promise<
     operation.restoration = settled.promise;
     audioEngine.holdAudioPreviewRestoration(operation.restoration);
     if (operation.stopped) {
-        return retryRestoration(operation, settled, recover);
+        return retryRestoration(operation, settled);
     }
     operation.stopped = true;
     operation.acquisition.abort();
@@ -70,18 +70,11 @@ function stopExclusive(operation: ExclusiveOperation, recover = false): Promise<
     }
     nativeLiveGraphSession.auditionOwner = null;
     nativeLiveGraphSession.auditionRestorationOwner = operation.owner;
-    return restoreProgramme(operation, settled, true);
+    return restoreProgramme(operation, settled);
 }
 
-/**
- * Reconcile the released output. A rejection leaves the gate closed until a retry: the next
- * Stop, or for a first release the recovery below.
- */
-function restoreProgramme(
-    operation: ExclusiveOperation,
-    settled: PromiseWithResolvers<void>,
-    recover: boolean
-): Promise<void> {
+/** Reconcile the released output. A rejection leaves the gate closed until the recovery below retries it. */
+function restoreProgramme(operation: ExclusiveOperation, settled: PromiseWithResolvers<void>): Promise<void> {
     const release = new AbortController();
     void reconcileNativeAuditionMonitoring({
         signal: release.signal,
@@ -96,9 +89,7 @@ function restoreProgramme(
                 operation.restoration = null;
             }
             settled.reject(error);
-            if (recover) {
-                recoverWhenSessionChanges(operation);
-            }
+            recoverWhenSessionChanges(operation);
         }
     );
     return settled.promise;
@@ -107,9 +98,10 @@ function restoreProgramme(
 /**
  * A release the engine started (a native start or abandon), or one whose caller is gone (an
  * unmounted card), has nobody left to press Stop. It can time out behind a hung command, or meet
- * a native refusal that a later session command clears. A failed first release therefore tries
- * again, with a fresh readiness window, each time a session command settles, until it reopens the
- * programme, a newer owner or an unsafe context ends it, or a user Stop takes over.
+ * a native refusal that a later session command clears. A refused release therefore tries again,
+ * with a fresh readiness window, each time a session command settles, until it reopens the
+ * programme or a newer owner or an unsafe context ends it. A user Stop replaces the pending
+ * recovery with its own attempt, which arms a new one only if it is refused.
  */
 function recoverWhenSessionChanges(operation: ExclusiveOperation): void {
     operation.recovering = true;
@@ -117,18 +109,14 @@ function recoverWhenSessionChanges(operation: ExclusiveOperation): void {
         .then(async () => {
             if (operation.recovering) {
                 operation.recovering = false;
-                await stopExclusive(operation, true);
+                await stopExclusive(operation);
             }
         })
         .catch(report);
 }
 
 /** A Stop after a rejected restoration: the source is already gone, only the output is retried. */
-function retryRestoration(
-    operation: ExclusiveOperation,
-    settled: PromiseWithResolvers<void>,
-    recover: boolean
-): Promise<void> {
+function retryRestoration(operation: ExclusiveOperation, settled: PromiseWithResolvers<void>): Promise<void> {
     if (unsafeOutputContexts.has(audioEngine.context)) {
         settled.reject(new Error('Audition source cleanup failed. Reload to restore listening.'));
         return settled.promise;
@@ -141,7 +129,7 @@ function retryRestoration(
         settled.resolve();
         return settled.promise;
     }
-    return restoreProgramme(operation, settled, recover);
+    return restoreProgramme(operation, settled);
 }
 
 function failed(operation: ExclusiveOperation, error: unknown): Promise<void> {

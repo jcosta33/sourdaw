@@ -618,21 +618,49 @@ describe('exclusive retained buffer listening lifetime', () => {
         expect(getEngineTransportPosition).toHaveBeenCalledOnce();
     });
 
-    it('ends recovery when the user presses Stop again', async () => {
+    it('keeps exactly one recovery pending across a refused user Stop', async () => {
         const apply = refusingSession(2);
         const playback = audition();
         await playback.ready;
         await expect(playback.stop()).rejects.toThrow('native output gate refused');
+        // A refused user Stop replaces the pending recovery and arms its own.
         await expect(playback.stop()).rejects.toThrow('native output gate refused');
-        expect(apply).toHaveBeenCalledTimes(3);
-        await sessionCommand();
         await idle();
-        // The user's Stop owns the retry now: a settled session command starts none.
         expect(apply).toHaveBeenCalledTimes(3);
         expect(driven.gate.gain.value).toBe(0);
-        await playback.stop();
+        await sessionCommand();
+        await vi.waitFor(() => expect(driven.gate.gain.value).toBe(1));
         expect(apply).toHaveBeenCalledTimes(4);
-        expect(driven.gate.gain.value).toBe(1);
+        await sessionCommand();
+        await idle();
+        expect(apply).toHaveBeenCalledTimes(4);
+    });
+
+    it('ends the pending recovery when the user presses Stop', async () => {
+        const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+        const apply = refusingSession(1);
+        const first = audition();
+        await first.ready;
+        await expect(first.stop()).rejects.toThrow('native output gate refused');
+        const second = audition();
+        await second.ready;
+        driven.sources[1]?.stop.mockImplementation(() => {
+            throw new Error('source stop failed');
+        });
+        await expect(second.stop()).rejects.toThrow('source stop failed');
+        // The user's own Stop meets the unsafe context and arms nothing; the earlier recovery is over.
+        await expect(first.stop()).rejects.toThrow('Reload to restore listening');
+        await sessionCommand();
+        await idle();
+        const recoveryReports = warn.mock.calls.filter(
+            ([error]) =>
+                error instanceof Error &&
+                error.cause instanceof Error &&
+                error.cause.message === 'Audition source cleanup failed. Reload to restore listening.'
+        );
+        expect(recoveryReports).toHaveLength(0);
+        expect(apply).toHaveBeenCalledTimes(3);
+        warn.mockRestore();
     });
 
     it('sends nothing native from a release that timed out waiting for the session queue head', async () => {
