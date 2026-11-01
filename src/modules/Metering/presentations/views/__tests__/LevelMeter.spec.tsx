@@ -149,7 +149,7 @@ describe('LevelMeter', () => {
             }
 
             expect(drawnArguments(fillRectSpy).every(Number.isFinite)).toBe(true);
-            const lastFrameHold = fillRectSpy.mock.calls.filter((call) => call[3] === 1.5).at(-1);
+            const lastFrameHold = fillRectSpy.mock.calls.findLast((call) => call[3] === 1.5);
             expect(lastFrameHold).toBeDefined();
             expect(lastFrameHold![1]).toBeGreaterThan(0);
         });
