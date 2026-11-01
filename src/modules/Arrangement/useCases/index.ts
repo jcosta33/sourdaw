@@ -105,6 +105,7 @@ export { removeGainEnvelopePoint } from './clipGainEnvelope/removeGainEnvelopePo
 export { resetClipGainEnvelope } from './clipGainEnvelope/resetClipGainEnvelope';
 export { toggleClipGainEnvelope } from './clipGainEnvelope/toggleClipGainEnvelope';
 export { isAudioBufferReferencedByUndoHistory } from './isAudioBufferReferencedByUndoHistory';
+export { readUndoEntriesAudioBufferIds } from './readUndoEntriesAudioBufferIds';
 export { readUndoHistoryAudioBufferIds } from './readUndoHistoryAudioBufferIds';
 
 // ── Clipboard ─────────────────────────────────────────────────────────────────

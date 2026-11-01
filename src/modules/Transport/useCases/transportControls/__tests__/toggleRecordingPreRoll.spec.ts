@@ -111,6 +111,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: mocks.getAudioContext,
     scheduleClick: mocks.scheduleClick,
     cacheAudioBuffer: vi.fn(),
+    openCachedAudioBufferHold: () => ({ retain: vi.fn(), release: vi.fn() }),
     startAudioRecording: mocks.startAudioRecording,
     stopAudioRecording: vi.fn(() => Promise.resolve()),
     getCompensationDelay: () => 0,

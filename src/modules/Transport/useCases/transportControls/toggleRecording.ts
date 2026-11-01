@@ -10,6 +10,7 @@ import {
     stopAudioRecording,
     getCompensationDelay,
     cacheAudioBuffer,
+    openCachedAudioBufferHold,
 } from '#/modules/AudioEngine/useCases';
 import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -251,18 +252,23 @@ function prepareManualNativeTerminal(
         return recClip;
     }
     const bufferId = `rec-${crypto.randomUUID()}`;
+    // The take stays resident until its commit places it or fails.
+    const takeHold = openCachedAudioBufferHold();
+    takeHold.retain(bufferId);
     cacheAudioBuffer({ buffer: result.buffer, bufferId });
     commitRecoveredAudioRecording(
         { ...recClip, audioBufferId: bufferId },
         samplesToBeat(input.admissionChanges, result.buffer.duration, input.admissionTempo, 1),
         input.stillOwnsCaptureRoot
-    ).catch((error: unknown) => {
-        logger.error(new Error('Recovered recording terminal failed', { cause: error }));
-        notifyUser(
-            'The recovered audio could not be added to this project. Keep the project open and try saving again.',
-            'error'
-        );
-    });
+    )
+        .catch((error: unknown) => {
+            logger.error(new Error('Recovered recording terminal failed', { cause: error }));
+            notifyUser(
+                'The recovered audio could not be added to this project. Keep the project open and try saving again.',
+                'error'
+            );
+        })
+        .finally(takeHold.release);
     return undefined;
 }
 
@@ -401,6 +407,9 @@ function completeManualRecording(input: ManualRecordingTerminalInput): void {
         }
 
         const bufferId = `rec-${crypto.randomUUID()}`;
+        // The take stays resident until its commit places it or fails.
+        const takeHold = openCachedAudioBufferHold();
+        takeHold.retain(bufferId);
         cacheAudioBuffer({ buffer, bufferId });
 
         const recordedClip = {
@@ -422,31 +431,37 @@ function completeManualRecording(input: ManualRecordingTerminalInput): void {
         // for the entry; a commit that fails retires the provisional
         // result instead of leaving it visible with no entry (#4439),
         // and says so the way the capture-failure sibling does.
+        const captureEvidence = {
+            ...capture,
+            sourceContextOriginSeconds: result.sampleZeroContextFrame / result.sampleRate - totalLatencySec,
+            sourceDurationSeconds: buffer.duration,
+        };
         recordingLifecycle.trackCommit(
-            Promise.resolve().then(() => {
-                // A fork can replace the root after the terminal queues this
-                // continuation but before commitRecording places its takes.
-                if (!stillOwnsCaptureRoot()) {
-                    notifyUser(
-                        'Recording stopped — the project switched branches while the take was finishing, so it was not kept.',
-                        'warning'
-                    );
-                    return 'refused' as const;
-                }
-                return commitRecording(
-                    recordedClip,
-                    {
-                        ...capture,
-                        sourceContextOriginSeconds: result.sampleZeroContextFrame / result.sampleRate - totalLatencySec,
-                        sourceDurationSeconds: buffer.duration,
-                    },
-                    { shouldExecute: stillOwnsCaptureRoot }
-                ).catch((error: unknown) =>
-                    handleManualRecordingCommitFailure(error, recordedClip.id, stillOwnsCaptureRoot)
-                );
-            })
+            commitManualTake(recordedClip, captureEvidence, stillOwnsCaptureRoot).finally(takeHold.release)
         );
     }
+}
+
+/** Commits a completed take on a later turn, refusing it when a fork replaced the root first. */
+function commitManualTake(
+    recordedClip: Parameters<typeof commitRecording>[0],
+    captureEvidence: Parameters<typeof commitRecording>[1],
+    stillOwnsCaptureRoot: () => boolean
+): Promise<void | 'refused'> {
+    return Promise.resolve().then(() => {
+        // A fork can replace the root after the terminal queues this
+        // continuation but before commitRecording places its takes.
+        if (!stillOwnsCaptureRoot()) {
+            notifyUser(
+                'Recording stopped — the project switched branches while the take was finishing, so it was not kept.',
+                'warning'
+            );
+            return 'refused' as const;
+        }
+        return commitRecording(recordedClip, captureEvidence, { shouldExecute: stillOwnsCaptureRoot }).catch(
+            (error: unknown) => handleManualRecordingCommitFailure(error, recordedClip.id, stillOwnsCaptureRoot)
+        );
+    });
 }
 
 function readManualRecordingAdmission() {

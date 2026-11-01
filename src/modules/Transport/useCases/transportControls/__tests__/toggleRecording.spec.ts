@@ -71,6 +71,8 @@ const mocks = vi.hoisted(() => {
         startPlayback: vi.fn<(onRoll?: (contextSeconds: number, beat: number) => void) => Promise<void>>(),
         stopActiveRecording: vi.fn<() => Promise<void>>(),
         cacheAudioBuffer: vi.fn<(input: { buffer: TestRecordingBuffer; bufferId: string }) => string>(),
+        retainHeldBuffer: vi.fn<(id: string) => void>(),
+        releaseHeldBuffers: vi.fn<() => void>(),
         startAudioRecording: vi.fn<StartAudioRecording>(),
         stopAudioRecording: vi.fn<() => Promise<void>>(),
         getCompensationDelay: vi.fn<(trackId: string) => number>(() => 0),
@@ -176,6 +178,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: mocks.getAudioContext,
     scheduleClick: mocks.scheduleClick,
     cacheAudioBuffer: mocks.cacheAudioBuffer,
+    openCachedAudioBufferHold: () => ({ retain: mocks.retainHeldBuffer, release: mocks.releaseHeldBuffers }),
     startAudioRecording: mocks.startAudioRecording,
     stopAudioRecording: mocks.stopAudioRecording,
     getCompensationDelay: mocks.getCompensationDelay,
@@ -501,6 +504,52 @@ describe('toggleRecording', () => {
         // A delivered take is kept: no retirement and no failure notice.
         expect(mocks.discardRecording).not.toHaveBeenCalled();
         expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('holds the take resident from before its cache write until its commit settles (#6003)', async () => {
+        const recording_clip = { id: 'clip-held', trackId: 'track-audio', startBeat: 10, endBeat: 10 };
+        let settleCommit = (): void => undefined;
+        mocks.commitRecording.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    settleCommit = resolve;
+                })
+        );
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: true,
+            isRecording: false,
+            countInEnabled: false,
+            punchInEnabled: false,
+            tempo: 120,
+        });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'track-audio', kind: 'audio', armed: true }] });
+        mocks.startRecording.mockReturnValue([recording_clip]);
+        publishPlaybackClock(recording_clip.startBeat);
+
+        toggleRecording();
+        await vi.waitFor(() => expect(mocks.startRecording).toHaveBeenCalledOnce());
+        const recording_callback = mocks.startAudioRecording.mock.calls[0]?.[1];
+        if (!recording_callback) {
+            throw new Error('Expected recording callback to be registered');
+        }
+        recording_callback({
+            kind: 'completed',
+            sampleZeroContextFrame: sampleZeroFrame,
+            sampleRate: 48000,
+            buffer: { duration: 2 },
+        });
+
+        const cached_buffer_id = mocks.cacheAudioBuffer.mock.calls[0]?.[0].bufferId;
+        expect(mocks.retainHeldBuffer).toHaveBeenCalledExactlyOnceWith(cached_buffer_id);
+        expect(mocks.retainHeldBuffer.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.cacheAudioBuffer.mock.invocationCallOrder[0]!
+        );
+        await vi.waitFor(() => expect(mocks.commitRecording).toHaveBeenCalledOnce());
+        expect(mocks.releaseHeldBuffers).not.toHaveBeenCalled();
+
+        settleCommit();
+        await vi.waitFor(() => expect(mocks.releaseHeldBuffers).toHaveBeenCalledOnce());
     });
 
     it.each([

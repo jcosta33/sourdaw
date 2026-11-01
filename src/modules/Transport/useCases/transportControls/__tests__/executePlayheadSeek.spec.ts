@@ -142,6 +142,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         setTransportInfo: mockSetTransportInfo,
     },
     cacheAudioBuffer: vi.fn(() => 'recorded-audio-buffer'),
+    openCachedAudioBufferHold: () => ({ retain: vi.fn(), release: vi.fn() }),
     scheduleClick: vi.fn(),
     stopAllScheduled: mockStopAllScheduled,
     stopAudioRecording: vi.fn(() => Promise.resolve()),

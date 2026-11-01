@@ -1,5 +1,5 @@
 /**
- * Read seam for the buffer ids the open arrangement references right now.
+ * Read seams for the buffer ids the runtime cache must answer for.
  *
  * Scheduling and offline renders read PCM synchronously from the runtime
  * cache, so its LRU must never evict a buffer a clip or frozen track still
@@ -7,25 +7,38 @@
  * imported or a bounce made later in the session is referenced without being
  * pinned, and enough unrelated cache writes (the first-launch factory seed
  * alone caches more than the cap) would otherwise evict it and leave the clip
- * silent in playback and export.
+ * silent in playback and export. The live reader answers for those, and for a
+ * buffer cached before anything places it (a prepared stem import its agent
+ * run still owns).
  *
- * The same holds for a buffer only undo or redo can bring back, and for one
- * cached before anything places it (a prepared stem import awaiting its
- * confirmed placement): the reader answers for everything a synchronous read
- * can still need, not the open arrangement alone.
+ * A buffer only undo or redo can bring back is different: nothing plays it
+ * until the replay lands, and the history that names it has no cap. The
+ * history reader names those ids so the cache keeps each one until its PCM is
+ * durably stored, and lets it go after that: the replay rehydrates it from
+ * storage before it applies.
  *
  * The references live in the arrangement, the undo history and the agent runs,
  * none of which this store imports, so the composition root injects the
- * reader. With no reader registered, nothing beyond the pinned set is protected.
+ * readers. With no reader registered, nothing beyond the pinned and held sets
+ * is protected.
  */
-export type LiveAudioBufferReferenceReader = () => readonly string[];
+export type LiveAudioBufferReferenceReader = () => Iterable<string>;
 
-let reader: LiveAudioBufferReferenceReader | null = null;
+let liveReader: LiveAudioBufferReferenceReader | null = null;
+let historyReader: LiveAudioBufferReferenceReader | null = null;
 
 export function setLiveAudioBufferReferenceReader(next: LiveAudioBufferReferenceReader | null): void {
-    reader = next;
+    liveReader = next;
+}
+
+export function setHistoryAudioBufferReferenceReader(next: LiveAudioBufferReferenceReader | null): void {
+    historyReader = next;
 }
 
 export function readLiveAudioBufferReferences(): ReadonlySet<string> {
-    return new Set(reader?.() ?? []);
+    return new Set(liveReader?.() ?? []);
+}
+
+export function readHistoryAudioBufferReferences(): ReadonlySet<string> {
+    return new Set(historyReader?.() ?? []);
 }

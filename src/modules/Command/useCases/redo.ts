@@ -12,6 +12,7 @@ import { recordAction } from './macro/recording/recordAction';
 import { normalizeSingletonUndoGroups } from './normalizeSingletonUndoGroups';
 import { REDO_NOT_APPLIED } from './redoResult';
 import { runUndoRedoExclusive } from './undoRedo';
+import { runPreparedUndoReplay } from './undoReplayPreparationPort';
 import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
 
 /** The undo entry now at the top of `past`, or `null` when `past` is empty. */
@@ -108,7 +109,11 @@ function recordCommittedGroupActions(entries: readonly UndoEntry[], committedAct
     }
 }
 
-async function executeActionGroupRedo(entries: readonly UndoEntry[]): Promise<RedoOutcome> {
+function executeActionGroupRedo(entries: readonly UndoEntry[]): Promise<RedoOutcome> {
+    return runPreparedUndoReplay(entries, () => replayActionGroupRedo(entries));
+}
+
+async function replayActionGroupRedo(entries: readonly UndoEntry[]): Promise<RedoOutcome> {
     if (!entries.every(isActionEntry)) {
         return { status: 'not-applied' };
     }
@@ -154,7 +159,11 @@ async function executeActionGroupRedo(entries: readonly UndoEntry[]): Promise<Re
     return { status: 'applied' };
 }
 
-async function executeRedo(entry: UndoEntry): Promise<RedoOutcome> {
+function executeRedo(entry: UndoEntry): Promise<RedoOutcome> {
+    return runPreparedUndoReplay([entry], () => replayRedo(entry));
+}
+
+async function replayRedo(entry: UndoEntry): Promise<RedoOutcome> {
     if (entry.kind === 'callback') {
         if (entry.redo() === REDO_NOT_APPLIED) {
             return { status: 'not-applied' };

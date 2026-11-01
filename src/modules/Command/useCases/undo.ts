@@ -12,6 +12,7 @@ import { getProjectMutationAdmissionFailure } from './getProjectMutationAdmissio
 import { normalizeLegacyLoopAnchorInverse } from './normalizeLegacyLoopAnchorInverse';
 import { normalizeSingletonUndoGroups } from './normalizeSingletonUndoGroups';
 import { runUndoRedoExclusive } from './undoRedo';
+import { runPreparedUndoReplay } from './undoReplayPreparationPort';
 import { undoTreeMoveTo } from './undoTree/undoTreeMoveTo';
 
 /** What one `undo()` call did to the entry that headed `past` when it began. */
@@ -75,7 +76,11 @@ type ExecuteUndoInput = {
  * older undoable entries. Dropped inert entries never reach `future` — nothing
  * was undone, so redo must not re-apply their action.
  */
-async function executeUndo({ entry, runExecuteAppAction }: ExecuteUndoInput): Promise<UndoOutcome> {
+function executeUndo(input: ExecuteUndoInput): Promise<UndoOutcome> {
+    return runPreparedUndoReplay([input.entry], () => applyUndo(input));
+}
+
+async function applyUndo({ entry, runExecuteAppAction }: ExecuteUndoInput): Promise<UndoOutcome> {
     if (entry.kind === 'callback') {
         entry.undo();
         return { status: 'undone' };

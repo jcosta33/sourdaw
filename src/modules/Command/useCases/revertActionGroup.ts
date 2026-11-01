@@ -8,6 +8,7 @@ import { getLegacyTrimInverseReplayFailure } from './getLegacyTrimInverseReplayF
 import { isAppActionCommittedError } from './isAppActionCommittedError';
 import { normalizeLegacyLoopAnchorInverse } from './normalizeLegacyLoopAnchorInverse';
 import { runUndoRedoExclusive } from './undoRedo';
+import { runPreparedUndoReplay } from './undoReplayPreparationPort';
 
 /**
  * Undo a single undo entry, returning whether anything was actually undone. An
@@ -21,7 +22,11 @@ import { runUndoRedoExclusive } from './undoRedo';
  * restore anchorless — a slip's captured offset verbatim, rows unmoved — not
  * replay the fresh-action mint or wrap laws.
  */
-async function revertEntry(entry: UndoEntry, authorizeFirstHandler?: () => string | null): Promise<boolean> {
+function revertEntry(entry: UndoEntry, authorizeFirstHandler?: () => string | null): Promise<boolean> {
+    return runPreparedUndoReplay([entry], () => replayEntryInverse(entry, authorizeFirstHandler));
+}
+
+async function replayEntryInverse(entry: UndoEntry, authorizeFirstHandler?: () => string | null): Promise<boolean> {
     if (entry.kind === 'callback') {
         entry.undo();
         return true;
