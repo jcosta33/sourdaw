@@ -1,0 +1,24 @@
+src/modules/AiRuntime/useCases/composeMeasuredAnswer.ts
+  s_55244eb93b97d1::t_bea760dad8f7a9 604
+  s_55244eb93b97d1::t_ea4725d70f8fec 307,311-313,322-323
+  s_55244eb93b97d1::t_23473c81d8275b 270-273
+  s_55244eb93b97d1::t_dcceb10c758823 558-570
+src/modules/AiRuntime/AGENTS.md
+  s_55244eb93b97d1::t_b479ad6b8ab4fc 37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3e4a14fabff2bb65ea2007ef31b6aa1957433ef2",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
