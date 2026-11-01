@@ -1,0 +1,22 @@
+scripts/__tests__/viteAutomergeStreamingEntry.spec.ts
+  s_fec7059b7a251c::t_cbfdd3e5d3b3aa 92
+  s_fec7059b7a251c::t_a7a07dc1e25696 46-51,58,62
+.agents/skills/review-stances/test-validity.md
+  s_fec7059b7a251c::t_96f77af7c2aa66 190-203
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5938b1cf89e0d4910d03496f7166e28a50ad6e84",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
