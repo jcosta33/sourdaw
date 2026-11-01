@@ -36,3 +36,20 @@ probe that would have caught it runs real Chromium: suspend, resume and suspend 
 suspended frame sits above its integer frame, make the write, resume, and capture the first
 rendered quantum; or suspend an `OfflineAudioContext` at every quantum and write through the
 AudioParam alone, which shows where the clamp moves the event.
+
+## Escape: the playhead scheduler capped its advance on a wrong `currentTime` premise
+
+Commit `7de4d3ddd9` capped each scheduler tick's advance at the look-ahead (`MAX_DELTA_SECONDS`),
+on the stated premise that a suspended context leaps `currentTime` forward by the whole gap. The
+Web Audio specification says the opposite: `currentTime` counts rendered frames and stops while the
+context is suspended. A tick later than the look-ahead therefore only happens when the main thread
+stalls while audio keeps rendering, and the cap threw that span away, leaving the transport behind
+the sources already playing on the audio clock. A clip ending at a loop seam then left the shortfall
+as silence before the next pass; #5914's audition test caught the dropout on an unrelated head.
+`6681b5bf50` later pinned the cap with a coverage test that asserted the clamped advance, so the
+check guarded the defect instead of the clock.
+
+Probe that would have caught it: advance a fake audio clock by more than the look-ahead between
+two ticks while the context stays running, then require the playhead position, the next pass's
+seam time and the scheduling window to follow the whole clock span. Read the platform clock rule
+from the specification before accepting a comment's claim about it.
