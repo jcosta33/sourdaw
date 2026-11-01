@@ -1,0 +1,44 @@
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingTakeFromZero.spec.ts
+  s_55244eb93b97d1::t_6c9811129f88e1 110-114
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/recordingCapturePlacement.integration.spec.ts
+  s_55244eb93b97d1::t_6c9811129f88e1 117-121
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_55244eb93b97d1::t_963d0ee08cb652 259-267
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerPunchHandover.spec.ts
+  s_55244eb93b97d1::t_0c8bff3d303549 221,227-228
+  s_55244eb93b97d1::t_6c9811129f88e1 222-226
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/recordingTerminalRealBranches.integration.spec.ts
+  s_55244eb93b97d1::t_2f907a38b11d38 139,145-146
+  s_55244eb93b97d1::t_6c9811129f88e1 140-144
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWindow.integration.spec.ts
+  s_55244eb93b97d1::t_b98928604ecd30 174,180-181
+  s_55244eb93b97d1::t_6c9811129f88e1 175-179
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchPausePlayCommand.integration.spec.ts
+  s_55244eb93b97d1::t_350a37c8c5f371 157,163-164
+  s_55244eb93b97d1::t_6c9811129f88e1 158-162
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllerStaleMoves.spec.ts
+  s_55244eb93b97d1::t_7157113b62530f 284,290-291
+  s_55244eb93b97d1::t_6c9811129f88e1 285-289
+src/modules/AudioEngine/useCases/audioRecorder/__tests__/reconcileAutoInputMonitoring.stopGesture.integration.spec.ts
+  s_55244eb93b97d1::t_c2cac2d8f91346 30,36-37
+  s_55244eb93b97d1::t_6c9811129f88e1 31-35
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchSwitchStopsTransport.integration.spec.ts
+  s_55244eb93b97d1::t_9210188ad2c134 45,51-52
+  s_55244eb93b97d1::t_6c9811129f88e1 46-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "46d61c024911238b84178f35ed91ab31a46c593c",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
