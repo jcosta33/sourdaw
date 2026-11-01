@@ -19,9 +19,11 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 
 import { isValidMidiNoteExpression } from '../../models/MidiNote';
-import { defaultMidiStoreState, midiStore } from '../midiStore';
+import { defaultMidiStoreState, midiStore, type MidiStoreState } from '../midiStore';
 
 const NOTE_DURATION = 2;
+
+type Project = { midi?: MidiStoreState };
 
 type ExpressionFixture = Record<string, unknown>;
 
@@ -79,7 +81,15 @@ describe('note expression read from the raw project document (#5972)', () => {
         });
         flushAutomergeStorageWrites();
 
-        expect(findAutomergeStorageRawProjectionLosses({ docId: 'root', document: getCrdtDoc('root') })).toEqual([]);
+        const document = getCrdtDoc<Project>('root');
+        if (!document) {
+            throw new Error('Expected the project document');
+        }
+        // An absent slot reports no loss, so the saved curve is observed first.
+        expect(document.midi?.notesByClipId['clip-1']?.[0]?.expression).toEqual({
+            pitchBend: [{ offsetBeats: 0.5, value: 100 }],
+        });
+        expect(findAutomergeStorageRawProjectionLosses({ docId: 'root', document })).toEqual([]);
     });
 
     describe.each([
