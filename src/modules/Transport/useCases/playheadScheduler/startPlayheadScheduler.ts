@@ -1201,6 +1201,25 @@ export function startPlayheadScheduler(
                     if (initial && browserCapture && captureAnchor) {
                         initialRecordingAnchors.push(captureAnchor);
                     }
+                    // A start that never opened retires its provisional clip.
+                    // When that leaves this punch pass with no live capture,
+                    // REC goes dark so Record arms again instead of stopping.
+                    // `punchRecordingActive` stays set, so later ticks inside
+                    // the region do not reopen the punch (and ask for the
+                    // input again); the punch-out retires it as before. A
+                    // pass a stop, seek or punch-out already closed has no
+                    // active clips left, and its REC is not this start's to
+                    // touch.
+                    const retireUnstartedCapture = (): void => {
+                        if (!recClip) {
+                            return;
+                        }
+                        const passStillOpen = activeRecordingRef.current.includes(recClip.id);
+                        discardRecording(recClip.id);
+                        if (passStillOpen && activeRecordingRef.current.length === 0) {
+                            updateTransportState({ isRecording: false });
+                        }
+                    };
                     const admission = Promise.resolve(
                         startAudioRecording(
                             track.id,
@@ -1327,8 +1346,8 @@ export function startPlayheadScheduler(
                             // below (#6009).
                             captureClocks.remove(track.id);
                             initialEmissionRetirements.defer(() => {
-                                if (recClip && ownsCapture()) {
-                                    discardRecording(recClip.id);
+                                if (ownsCapture()) {
+                                    retireUnstartedCapture();
                                 }
                             });
                         })
@@ -1348,9 +1367,7 @@ export function startPlayheadScheduler(
                                 if (!stoppedByMusician) {
                                     notifyUser('Punch-in recording failed to start — the take was discarded.', 'error');
                                 }
-                                if (recClip) {
-                                    discardRecording(recClip.id);
-                                }
+                                retireUnstartedCapture();
                             });
                         });
                     if (initial) {

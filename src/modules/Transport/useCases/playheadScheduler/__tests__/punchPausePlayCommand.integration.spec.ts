@@ -588,10 +588,41 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         expect(mocks.notifyUser).toHaveBeenCalledWith(INPUT_START_FAILURE, 'error');
         expect(transportStore.value?.isPlaying).toBe(true);
         expect(schedulerSession.worker).not.toBeNull();
+        // REC goes dark, while the open punch keeps later ticks inside the
+        // region from asking for the input again.
+        expect(transportStore.value?.isRecording).toBe(false);
+        expect(schedulerSession.punchRecordingActive).toBe(true);
+        await tick(1);
+        await tick(1);
+        expect(mocks.startAudioRecording).toHaveBeenCalledTimes(1);
+        expect(transportStore.value?.isRecording).toBe(false);
         pausePlayback();
         await recordingLifecycle.waitForClosing();
         expect(actionHistoryStore.value?.entries).toEqual([]);
         expect(commits()).toBe(0);
+    });
+
+    it('keeps REC lit and the live take when another track’s punch-in start fails', async () => {
+        const liveBuffer = pcm(0.5);
+        mocks.startAudioRecording.mockImplementationOnce(() => Promise.reject(new Error('input could not open')));
+        await punchInOnLaterTick([recordingTrack('audio'), recordingTrack('audio', 'track-live')]);
+        const liveClipId = trackStore.value?.tracks[1]?.clips[0]?.id;
+        expect(liveClipId).toBeDefined();
+
+        await vi.waitFor(() => expect(trackStore.value?.tracks[0]?.clips).toEqual([]));
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(INPUT_START_FAILURE, 'error');
+        expect(transportStore.value?.isRecording).toBe(true);
+        expect(activeRecordingRef.current).toEqual([liveClipId]);
+        expect(mocks.recordingSessions()).toBe(1);
+
+        pausePlayback();
+        mocks.release(liveBuffer);
+        await vi.waitFor(() => expect(commits()).toBe(1));
+        await recordingLifecycle.waitForCommits();
+        const liveClip = trackStore.value?.tracks[1]?.clips.find((clip) => clip.id === liveClipId);
+        expect(liveClip?.audioBufferId?.startsWith('rec-')).toBe(true);
+        expect(trackStore.value?.tracks[0]?.clips).toEqual([]);
     });
 
     /** Roll from just before the region and cross the punch-in point on a later tick. */
@@ -710,6 +741,7 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         expect(trackStore.value?.tracks[0]?.clips).toEqual([]);
         expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes)).toEqual([]);
         expect(mocks.notifyUser).not.toHaveBeenCalled();
+        expect(transportStore.value?.isRecording).toBe(false);
         expect(actionHistoryStore.value?.entries).toEqual([]);
         pausePlayback();
         await recordingLifecycle.waitForClosing();
@@ -741,6 +773,8 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes)).toEqual([]);
         expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
         expect(mocks.notifyUser).toHaveBeenCalledWith(INPUT_START_FAILURE, 'error');
+        expect(transportStore.value?.isRecording).toBe(false);
+        expect(schedulerSession.punchRecordingActive).toBe(true);
         pausePlayback();
         await recordingLifecycle.waitForClosing();
         expectRefusedPunchRetired();
