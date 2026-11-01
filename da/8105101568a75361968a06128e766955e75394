@@ -1,0 +1,20 @@
+src/app/__tests__/main.spec.tsx
+  h_beb54bf43b47b7 526-532,535,548,569-590
+src/app/__tests__/mainAppImportRecovery.spec.tsx
+  h_beb54bf43b47b7 21,39-41,121-127,130,144
+src/app/main.tsx
+  h_beb54bf43b47b7 98
+tests/e2e/applicationModuleRecovery.spec.ts
+  h_beb54bf43b47b7 292,311,468
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "da8105101568a75361968a06128e766955e75394",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
