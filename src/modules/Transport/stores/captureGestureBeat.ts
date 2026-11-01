@@ -17,12 +17,18 @@
  *    event.
  *
  * So while the transport plays, this projects the scheduler's committed anchor
- * (`playheadClockRef`) forward over the audio clock's elapsed time at the live
- * tempo — the same integration the next tick is about to perform, evaluated at
- * the event instead of at the grain — and when the native engine is the audible
- * transport, it reads the engine's own cursor through the registered clock
- * source, the same integration `runTick` uses for the drawn playhead. A parked
- * transport answers from the store, which is authoritative exactly then.
+ * (`playheadClockRef`) forward over all of the audio clock's elapsed time since
+ * it, exactly as the next tick will advance: through the tempo map, and around
+ * the loop, every seam crossed counted (`seamsCrossed`, beyond the wrap count
+ * the scheduler has published). The song position is a function of the audio
+ * clock: a suspended context does not leap (`suspend()` stops `currentTime`),
+ * so a gap longer than a grain is a main thread that was late while the audio
+ * kept playing, and a gesture captured just after it happened at the beat the
+ * audio clock reached, on the pass it reached it in. When the native engine is
+ * the audible transport, it reads the engine's own cursor through the
+ * registered clock source, the same integration `runTick` uses for the drawn
+ * playhead. A parked transport answers from the store, which is authoritative
+ * exactly then.
  *
  * The capture must run on the gesture's own synchronous path. Reading it after
  * queued or awaited work would date the event at the completion's beat, which
@@ -31,30 +37,78 @@
 
 import { valuesEqual } from '#/utils/structuralEquality';
 
-import { getTempoAtBeat } from '../models/TempoMap';
+import { beatAtSecondsFromAnchor, secondsBetweenBeats, type TempoChange } from '../models/TempoMap';
 
 import { getGestureClockSource } from './gestureClockSource';
 import { playheadClockRef } from './playheadClockRef';
 import { tempoMapStore } from './tempoMapStore';
 import { transportStore } from './transportStore';
 
-/**
- * Upper bound on the elapsed audio time a capture will integrate, matching the
- * scheduler's own per-tick clamp (`MAX_DELTA_SECONDS`). A suspended AudioContext
- * leaps `currentTime` forward by the whole gap; an unclamped projection would
- * claim beats the scheduler deliberately declines to advance through, so the
- * capture stays bounded to the same grain window the next tick will admit.
- */
-export const MAX_PROJECTION_SECONDS = 0.1;
-
 type GestureClockCapture = {
     beat: number;
     audioTimeSeconds: number | null;
     pendingLoopSeam: typeof playheadClockRef.pendingLoopSeam;
+    /** Loop seams the projection crossed that the scheduler has not counted yet. */
+    seamsCrossed: number;
 };
 
+type TransportState = NonNullable<typeof transportStore.value>;
+
 function withoutSeam(beat: number): GestureClockCapture {
-    return { beat, audioTimeSeconds: null, pendingLoopSeam: null };
+    return { beat, audioTimeSeconds: null, pendingLoopSeam: null, seamsCrossed: 0 };
+}
+
+/**
+ * The audio time from the anchor to the next loop seam, or null when the next
+ * tick will not wrap: the loop is off, or the anchor is already past loopEnd (a
+ * roll started there plays straight through). A seam the scheduler already
+ * emitted is dated by its own instant, which the anchor pair clamped at loopEnd
+ * cannot give.
+ */
+function secondsToNextSeam(
+    transport: TransportState,
+    changes: readonly TempoChange[],
+    ownedSeam: typeof playheadClockRef.pendingLoopSeam
+): number | null {
+    if (ownedSeam) {
+        return ownedSeam.audioTimeSeconds - playheadClockRef.audioTimeSeconds;
+    }
+    if (
+        !transport.isLooping ||
+        transport.loopEnd <= transport.loopStart ||
+        playheadClockRef.beat >= transport.loopEnd
+    ) {
+        return null;
+    }
+    return secondsBetweenBeats(changes, playheadClockRef.beat, transport.loopEnd, transport.tempo);
+}
+
+/**
+ * Advance the anchor over `elapsedSeconds` exactly as the next tick will:
+ * through the tempo map, and around the loop, folding every whole pass past
+ * the first seam by the loop's own integrated span.
+ */
+function projectFromAnchor(
+    transport: TransportState,
+    changes: readonly TempoChange[],
+    elapsedSeconds: number,
+    ownedSeam: typeof playheadClockRef.pendingLoopSeam
+): { beat: number; seamsCrossed: number } {
+    const toSeam = secondsToNextSeam(transport, changes, ownedSeam);
+    if (toSeam === null || elapsedSeconds < toSeam) {
+        return {
+            beat: beatAtSecondsFromAnchor(changes, playheadClockRef.beat, elapsedSeconds, transport.tempo),
+            seamsCrossed: 0,
+        };
+    }
+    const passSeconds = secondsBetweenBeats(changes, transport.loopStart, transport.loopEnd, transport.tempo);
+    const pastFirstSeam = elapsedSeconds - toSeam;
+    const wholePassesPastFirstSeam = Math.floor(pastFirstSeam / passSeconds);
+    const intoPass = Math.max(0, pastFirstSeam - wholePassesPastFirstSeam * passSeconds);
+    return {
+        beat: beatAtSecondsFromAnchor(changes, transport.loopStart, intoPass, transport.tempo),
+        seamsCrossed: 1 + wholePassesPastFirstSeam,
+    };
 }
 
 /** The scalar beat and any scheduled browser boundary share one carrier and clock read. */
@@ -91,8 +145,8 @@ export function captureGestureClock(): GestureClockCapture {
     }
 
     const audioTime = source.getAudioTimeSeconds();
-    const elapsedSeconds = Math.max(0, Math.min(audioTime - playheadClockRef.audioTimeSeconds, MAX_PROJECTION_SECONDS));
-    const tempo = getTempoAtBeat(tempoMapStore.value?.changes ?? [], playheadClockRef.beat, transport.tempo);
+    const elapsedSeconds = Math.max(0, audioTime - playheadClockRef.audioTimeSeconds);
+    const changes = tempoMapStore.value?.changes ?? [];
     const pending = playheadClockRef.pendingLoopSeam;
     const ownsClock =
         pending !== null &&
@@ -104,10 +158,13 @@ export function captureGestureClock(): GestureClockCapture {
         pending.loopEnd === transport.loopEnd &&
         pending.tempo === transport.tempo &&
         valuesEqual(pending.tempoMapChanges, tempoMapStore.value?.changes ?? null);
+    const ownedSeam = ownsClock ? pending : null;
+    const projection = projectFromAnchor(transport, changes, elapsedSeconds, ownedSeam);
     return {
-        beat: Math.max(0, playheadClockRef.beat + (elapsedSeconds * tempo) / 60),
+        beat: Math.max(0, projection.beat),
         audioTimeSeconds: audioTime,
-        pendingLoopSeam: ownsClock ? pending : null,
+        pendingLoopSeam: ownedSeam,
+        seamsCrossed: projection.seamsCrossed,
     };
 }
 

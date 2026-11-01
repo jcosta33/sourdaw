@@ -16,7 +16,9 @@ import { defaultProjectStoreState, projectStore } from '../../../../stores/proje
 import { hydrateArrangementStoreFromProjectData } from '../../helpers/hydrateArrangementStoreFromProjectData';
 import { resetModuleStoresToDefault } from '../../helpers/resetModuleStoresToDefault';
 import { runProjectLoadTransaction } from '../../helpers/runProjectLoadTransaction';
+import { unsavedClosedTakes } from '../../helpers/unsavedClosedTakes';
 import { setProjectIdentityTransitionDependencies } from '../../projectIdentityTransitionDependencies';
+import { saveProject } from '../../saveProject/saveProject';
 import { applyImportedProjectData } from '../applyImportedProjectData';
 import { serializeProjectMidi } from '../serializeProjectMidi';
 
@@ -58,6 +60,7 @@ const {
     stopAllScheduled,
     stopAudioRecording,
     stopRecording,
+    takesSettled,
 } = vi.hoisted(() => {
     function prepared(): PreparedImportedAudioBuffers {
         return { persist: () => Promise.resolve(true), publish: () => 0 };
@@ -99,6 +102,8 @@ const {
         stopAllScheduled: vi.fn(),
         stopAudioRecording: vi.fn(),
         stopRecording: vi.fn(),
+        /** How many take commits have settled, as the Transport counts them. */
+        takesSettled: { value: 0 },
     };
 });
 
@@ -198,6 +203,7 @@ vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Transport/useCases')>();
     return {
         ...actual,
+        countSettledTakes: () => takesSettled.value,
         ensureTrackStrips: restoreOldAudioGraph,
         restoreTimelineMapSnapshot: vi.fn(),
     };
@@ -1556,5 +1562,35 @@ describe('applyImportedProjectData round-trip hydration', () => {
 
         expect(arrangementStore.value?.arrangements.map(({ id }) => id)).toEqual(['verse', 'chorus']);
         expect(arrangementStore.value?.activeArrangementId).toBe('chorus');
+    });
+
+    // A take closed into the open project after its last save; its save fails.
+    describe('when a take the open project has not saved closed before the import', () => {
+        const takeDiscardedNotice = 'Recording discarded — the take could not be saved to the project you are leaving.';
+
+        beforeEach(() => {
+            unsavedClosedTakes.acknowledgeAll();
+            takesSettled.value += 1;
+            vi.mocked(saveProject).mockReset();
+            vi.mocked(saveProject).mockResolvedValue(false);
+        });
+
+        it('saves the outgoing project for it, and reports the take lost when that save fails', async () => {
+            await expect(applyImportedProjectData({ data: makeProject() })).resolves.toBe(true);
+
+            expect(saveProject).toHaveBeenCalledOnce();
+            expect(notifyUser).toHaveBeenCalledWith(takeDiscardedNotice, 'warning');
+        });
+
+        // Don't Save: the user chose to drop the outgoing project, so saving it
+        // would persist every edit they dropped, and the loss is what they asked for.
+        it("neither saves the outgoing project nor reports the take after the user chose Don't Save", async () => {
+            await expect(applyImportedProjectData({ data: makeProject(), outgoingProject: 'discard' })).resolves.toBe(
+                true
+            );
+
+            expect(saveProject).not.toHaveBeenCalled();
+            expect(notifyUser).not.toHaveBeenCalledWith(takeDiscardedNotice, 'warning');
+        });
     });
 });

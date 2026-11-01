@@ -1,6 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
 import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import {
+    captureProjectIdentity,
     captureProjectMutationAuthorization,
     captureProjectRootIdentity,
     settlePendingProjectWritesAndCaptureRevision,
@@ -330,12 +331,19 @@ export async function submitAdmittedPromptRequest(
             if (settlePendingProjectWritesAndCaptureRevision() !== planned.projectRevision) {
                 throw new AiProposalInvalidatedError();
             }
+            const answeredProjectIdentity = captureProjectIdentity();
             transitionTerminalRun(runId, 'completed');
             const answerText = describePlanningOutcome(planningOutcome);
             if (answerText === null) {
                 notifyAiChange(NO_PROMPT_ACTIONS_NOTICE, []);
             } else {
-                notifyAiAnswer({ prompt, text: answerText, evidence: planningOutcome.evidence });
+                notifyAiAnswer({
+                    prompt,
+                    text: answerText,
+                    evidence: planningOutcome.evidence,
+                    projectIdentity: answeredProjectIdentity,
+                    projectRevision: planned.projectRevision,
+                });
             }
             return { status: 'no-op', runId };
         }

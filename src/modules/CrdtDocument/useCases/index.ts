@@ -7,6 +7,7 @@ export { captureProjectRootIdentity } from './captureProjectRootIdentity';
 export { captureProjectRevision } from './captureProjectRevision';
 export { captureDurableDocumentWitness } from './captureDurableDocumentWitness';
 export { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from './projectRevisionMatchesLiveIgnoringCommandCheckpoint';
+export { projectRevisionMatchesLiveIgnoringSaveWrites } from './projectRevisionMatchesLiveIgnoringSaveWrites';
 export { settlePendingProjectWritesAndCaptureRevision } from './settlePendingProjectWritesAndCaptureRevision';
 export { captureProjectMutationAuthorization } from './captureProjectMutationAuthorization';
 export { readOwnedProjectPublications } from './readOwnedProjectPublications';
