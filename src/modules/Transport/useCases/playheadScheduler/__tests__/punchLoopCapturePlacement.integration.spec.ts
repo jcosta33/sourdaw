@@ -3187,10 +3187,15 @@ describe('punch audio capture loop placement', () => {
         const incomingBeat = playheadClockRef.beat;
         const dyingEndBeat = oldPair.beat + (editClock - oldPair.audioTimeSeconds) * 2;
         const soundedWrapsAtEdit = playheadWrapCountRef.current;
+        // One tick can cross several 0.1-beat passes and stage a take for each,
+        // so wait on the capture as well: its PCM must reach the end of the
+        // third take, two passes after the edit, through the input latency.
+        const editedPassSeconds = (0.1 * 60) / 210;
         await advanceUntil(
             () =>
                 lane().takes.filter((take) => take.sourceOffsetBeats !== undefined).length >= 3 &&
-                playheadWrapCountRef.current >= soundedWrapsAtEdit + 3
+                playheadWrapCountRef.current >= soundedWrapsAtEdit + 3 &&
+                hardware.now - hardware.latencySeconds > editClock + 2 * editedPassSeconds
         );
         const second = lane().takes.filter((take) => take.sourceOffsetBeats !== undefined)[1]!;
         const third = lane().takes.filter((take) => take.sourceOffsetBeats !== undefined)[2]!;

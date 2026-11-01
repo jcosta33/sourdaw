@@ -449,4 +449,74 @@ describe('startPlayheadScheduler loop-seam timing', () => {
 
         expect(playheadWrapCountRef.current).toBe(2);
     });
+
+    async function tickAt(worker: SchedulerWorkerHarness, contextSeconds: number): Promise<void> {
+        ctxTime.now = contextSeconds;
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    // A main-thread stall can hold one tick back across more than one loop
+    // pass. Each boundary the audio clock crossed ends one pass, so the count
+    // a capture reads must step once per boundary, not once per tick.
+    it('counts every loop boundary one stalled tick crossed', async () => {
+        transportStoreState.value = playingState({ playheadPosition: 0, isLooping: true, loopStart: 0, loopEnd: 2 });
+        startPlayheadScheduler();
+        const worker = schedulerWorker();
+        await tickAt(worker, 0.05);
+        expect(schedulerSession.pendingSeam).toBeNull();
+
+        // 2.55 s at 2 beats/s is beat 5.1: past the boundaries at beats 2 and 4.
+        await tickAt(worker, 2.55);
+
+        expect(playheadWrapCountRef.current).toBe(2);
+        expect(schedulerSession.accumulatedPosition).toBeCloseTo(1.1, 9);
+    });
+
+    it('counts a staged seam the stall carried past once, beside the boundaries after it', async () => {
+        transportStoreState.value = playingState({ playheadPosition: 0, isLooping: true, loopStart: 0, loopEnd: 2 });
+        startPlayheadScheduler();
+        const worker = schedulerWorker();
+        // Beat 1.84: the look-ahead reaches the seam at 1 s and stages it.
+        await tickAt(worker, 0.92);
+        expect(schedulerSession.pendingSeam?.seamAudioTime).toBeCloseTo(1, 9);
+        expect(playheadWrapCountRef.current).toBe(0);
+
+        // The staged seam at 1 s and the boundary at 2 s both passed.
+        await tickAt(worker, 2.55);
+
+        expect(playheadWrapCountRef.current).toBe(2);
+        expect(schedulerSession.accumulatedPosition).toBeCloseTo(1.1, 9);
+        await tickAt(worker, 2.6);
+        expect(playheadWrapCountRef.current).toBe(2);
+    });
+
+    it('stages the next seam when a stalled tick wraps just before the loop end', async () => {
+        const AFTER_LOOP_PITCH = 72;
+        trackStoreState.value = {
+            tracks: [midiTrack([midiClip('clip-loop', 0, 8), midiClip('clip-after', 8, 12)])],
+        };
+        midiStoreState.value = {
+            notesByClipId: {
+                'clip-loop': [midiNote('note-downbeat', 0, DOWNBEAT_PITCH)],
+                'clip-after': [midiNote('note-after', 0, AFTER_LOOP_PITCH)],
+            },
+            probabilitySeed: 1,
+        };
+        transportStoreState.value = playingState({ playheadPosition: 0, isLooping: true, loopStart: 0, loopEnd: 8 });
+        startPlayheadScheduler();
+        const worker = schedulerWorker();
+        await tickAt(worker, 0.05);
+        scheduled = [];
+
+        // Beat 15.95 wraps to 7.95: one look-ahead reaches past the loop end.
+        await tickAt(worker, 7.975);
+
+        expect(scheduled.filter((note) => note.pitch === AFTER_LOOP_PITCH)).toEqual([]);
+        expect(schedulerSession.pendingSeam?.seamAudioTime).toBeCloseTo(8, 9);
+        const downbeats = scheduled.filter((note) => note.pitch === DOWNBEAT_PITCH).map((note) => note.time);
+        expect(downbeats.some((time) => Math.abs(time - 8) < 1e-9)).toBe(true);
+        expect(playheadWrapCountRef.current).toBe(1);
+    });
 });
