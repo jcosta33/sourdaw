@@ -1,0 +1,66 @@
+src/modules/Arrangement/models/TakeLaneSpan.ts
+  s_ba80576e6f5cb5::t_0e683834597eb8 1-25
+src/modules/Arrangement/models/__tests__/TakeLaneSpan.spec.ts
+  s_ba80576e6f5cb5::t_bfda49ccb07473 1-39
+src/modules/Arrangement/presentations/views/TakeLanesView.tsx
+  s_7a8e1107313040::t_3f155238e7d15c 1,12,81-85,134,150-151,154,156,160-167,179-181,188,191-193,196,199-200,204-209,282,287,290,292-295,349
+  s_7a8e1107313040::t_6f498a42edd2a7 123-126,128-131,168-172,176,177-178,184-187,197-198,201,480-487,496-501
+  s_731e81b5ec2c03::t_fa29dea7c1f9c8 86-111,116-117,127,147-149,173-175,233-238,488-495
+src/modules/Arrangement/presentations/views/__tests__/TakeLanesView.spec.tsx
+  s_3bb122e91d89a5::t_3142d3585b54ed 1,85-86,252,254,296,305-318,320-321,324,327-328,330-335,337,339-344,346-354,356-357,360-365,367-371,373-382,385,444-446,448,450-455,457-464,466-470
+  s_7a8e1107313040::t_902ce7ce285576 245,253,297,319,322-323,325-326,329,336,338,345,355,358-359,366,383,386-389,393-397,423-443,447,449,456,465
+  s_731e81b5ec2c03::t_533204ba09e3e9 372,384,390-392,398-422
+tests/e2e/punchLoopTakeAcceptance.spec.ts
+  s_3bb122e91d89a5::t_068fb2f4269b82 254
+tests/e2e/tempoSourceTimeAcceptance.spec.ts
+  s_88fc7e0d05bab6::t_bac7339298d1a7 461-462
+  s_88fc7e0d05bab6::t_ad56bf4085b7c1 1338-1340
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "30a681476f81338aaadb3a415d1799eaea28aa02",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_731e81b5ec2c03": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_731e81b5ec2c03",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_7a8e1107313040": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54399ae9-2148-45f8-8043-53b64cc39d76",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
