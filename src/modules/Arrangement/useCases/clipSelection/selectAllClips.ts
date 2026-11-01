@@ -1,6 +1,12 @@
 import { clipSelectionStore, defaultClipSelectionState } from '../../stores/clipSelectionStore';
+import { resolvePrimaryClip } from './resolvePrimaryClip';
 
 export function selectAllClips(getAllClipIds: () => string[]): void {
     const current = clipSelectionStore.value ?? defaultClipSelectionState;
-    clipSelectionStore.set({ ...current, selectedClipIds: getAllClipIds(), selectedClipId: null });
+    const selectedClipIds = getAllClipIds();
+    clipSelectionStore.set({
+        ...current,
+        selectedClipIds,
+        selectedClipId: resolvePrimaryClip(selectedClipIds, current.selectedClipId),
+    });
 }

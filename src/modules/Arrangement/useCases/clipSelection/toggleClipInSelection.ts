@@ -1,5 +1,6 @@
 import { clipSelectionStore } from '../../stores/clipSelectionStore';
 import { clearDeviceSelection } from '../deviceSelection/clearDeviceSelection';
+import { resolvePrimaryClip } from './resolvePrimaryClip';
 
 function resolvePrimaryAfterRemoval(
     currentPrimary: string | null,
@@ -28,7 +29,10 @@ export function toggleClipInSelection(clipId: string): void {
     const remainingIds = [...ids];
     clipSelectionStore.set({
         ...current,
-        selectedClipId: resolvePrimaryAfterRemoval(current.selectedClipId, clipId, remainingIds),
+        selectedClipId: resolvePrimaryClip(
+            remainingIds,
+            resolvePrimaryAfterRemoval(current.selectedClipId, clipId, remainingIds)
+        ),
         selectedClipIds: remainingIds,
     });
 }
