@@ -6,18 +6,31 @@ import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeL
 import { reportAttachedPlugins } from './reportAttachedPlugins';
 
 const READINESS_TIMEOUT_MS = 3_000;
+// Session commands carry no timeout of their own, so a release's wait for the queue head is
+// bounded separately; recovery resumes once the session's commands settle.
+const QUEUE_HEAD_TIMEOUT_MS = 10_000;
 const POSITION_POLL_MS = 8;
 
 function cancelled(): Error {
     return new Error('The audition listening request changed.');
 }
 
-function bounded<Value>(work: () => Promise<Value>, signal: AbortSignal, timeoutMs: number): Promise<Value> {
+function timedOut(): Error {
+    return new Error('Native audition listening readiness timed out.');
+}
+
+/** `work` may re-arm the timeout when the window it measures opens; `rearm` is false once settled. */
+function bounded<Value>(
+    work: (rearm: (timeoutMs: number) => boolean) => Promise<Value>,
+    signal: AbortSignal,
+    timeoutMs: number
+): Promise<Value> {
     if (signal.aborted) {
         return Promise.reject(cancelled());
     }
     return new Promise((resolve, reject) => {
         let settled = false;
+        let timer: ReturnType<typeof setTimeout> | undefined;
         const finish = (complete: () => void) => {
             if (settled) {
                 return;
@@ -28,13 +41,21 @@ function bounded<Value>(work: () => Promise<Value>, signal: AbortSignal, timeout
             complete();
         };
         const abort = () => finish(() => reject(cancelled()));
-        const timer = setTimeout(
-            () => finish(() => reject(new Error('Native audition listening readiness timed out.'))),
-            timeoutMs
-        );
+        const arm = (ms: number) => {
+            clearTimeout(timer);
+            timer = setTimeout(() => finish(() => reject(timedOut())), ms);
+        };
+        arm(timeoutMs);
         signal.addEventListener('abort', abort, { once: true });
         void Promise.resolve()
-            .then(work)
+            .then(() =>
+                work((ms) => {
+                    if (!settled) {
+                        arm(ms);
+                    }
+                    return !settled;
+                })
+            )
             .then(
                 (value) => finish(() => resolve(value)),
                 (error: unknown) => finish(() => reject(error))
@@ -54,34 +75,49 @@ type MonitoringInput = {
 };
 type MonitoringScope = {
     input: MonitoringInput;
-    deadline: number;
+    remaining: () => number;
     current: () => boolean;
     assertCurrent: () => void;
     queued: <Value>(work: () => Promise<Value>) => Promise<Value>;
 };
 
 function createScope(input: MonitoringInput): MonitoringScope {
-    const deadline = performance.now() + READINESS_TIMEOUT_MS;
+    const release = input.restoreWebProgramme !== undefined;
+    // Admission keeps one window from the gesture. A release's window opens when its first
+    // command reaches the session queue's head, and every later wait for the head extends it:
+    // it measures the native answer, never the session commands queued ahead of it.
+    let deadline: number | null = release ? null : performance.now() + READINESS_TIMEOUT_MS;
+    const remaining = () => (deadline === null ? READINESS_TIMEOUT_MS : Math.max(1, deadline - performance.now()));
     const current = () => !input.signal.aborted && input.isCurrent();
     const assertCurrent = () => {
         if (!current()) {
             throw cancelled();
         }
-        if (performance.now() >= deadline) {
-            throw new Error('Native audition listening readiness timed out.');
+        if (deadline !== null && performance.now() >= deadline) {
+            throw timedOut();
         }
     };
-    const queued = <Value>(work: () => Promise<Value>) =>
-        bounded(
-            () =>
+    const queued = <Value>(work: () => Promise<Value>) => {
+        const queuedAt = performance.now();
+        return bounded(
+            (rearm) =>
                 queueOnNativeLiveGraphSession(async () => {
+                    if (release) {
+                        const atHead = performance.now();
+                        deadline = deadline === null ? atHead + READINESS_TIMEOUT_MS : deadline + (atHead - queuedAt);
+                        // An attempt that gave up waiting for the head must not act when it gets there.
+                        if (!rearm(remaining())) {
+                            throw timedOut();
+                        }
+                    }
                     assertCurrent();
                     return work();
-                }),
+                }, 'monitoring'),
             input.signal,
-            Math.max(1, deadline - performance.now())
+            release ? QUEUE_HEAD_TIMEOUT_MS : remaining()
         );
-    return { input, deadline, current, assertCurrent, queued };
+    };
+    return { input, remaining, current, assertCurrent, queued };
 }
 
 function admitOutputGate(scope: MonitoringScope) {
@@ -185,7 +221,7 @@ async function witnessOutputGate(scope: MonitoringScope, admitted: AdmittedGate)
         await bounded(
             () => new Promise<void>((resolve) => setTimeout(resolve, POSITION_POLL_MS)),
             scope.input.signal,
-            Math.max(1, scope.deadline - performance.now())
+            scope.remaining()
         );
     }
 }

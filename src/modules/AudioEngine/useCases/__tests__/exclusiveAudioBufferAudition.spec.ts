@@ -10,7 +10,7 @@ import { getEngineTransportPosition } from '../../repositories/engineTransport/g
 import { type createNativeLiveGraphBackend } from '../../repositories/nativeGraph/createNativeLiveGraphBackend';
 import { abandonNativeLiveGraphSession } from '../livePlayback/abandonNativeLiveGraphSession';
 import { nativeLiveGraphSessionOffered } from '../livePlayback/nativeLiveGraphSessionOffered';
-import { nativeLiveGraphSession } from '../livePlayback/nativeLiveGraphSessionState';
+import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from '../livePlayback/nativeLiveGraphSessionState';
 import { startNativeLiveGraphSession } from '../livePlayback/startNativeLiveGraphSession';
 import { playAudioBufferPreview } from '../playAudioBufferPreview';
 import { playExclusiveAudioBufferPreview } from '../playExclusiveAudioBufferPreview';
@@ -388,7 +388,16 @@ describe('exclusive retained buffer listening lifetime', () => {
         expect(driven.sources.at(-1)?.start).toHaveBeenCalledOnce();
     });
 
-    it('recovers an engine-started release that times out queued behind a slow native start', async () => {
+    function readinessTimeouts(warn: { mock: { calls: unknown[][] } }) {
+        return warn.mock.calls.filter(
+            ([error]) =>
+                error instanceof Error &&
+                error.cause instanceof Error &&
+                error.cause.message === 'Native audition listening readiness timed out.'
+        );
+    }
+
+    it('recovers an engine-started release queued behind a slow native start', async () => {
         vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(true);
         const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
         let fence = 0;
@@ -420,60 +429,153 @@ describe('exclusive retained buffer listening lifetime', () => {
         expect(driven.sources[0]?.stop).toHaveBeenCalledTimes(1);
         await expect(start).resolves.toMatchObject({ outcome: 'started' });
         await vi.waitFor(() => expect(driven.gate.gain.value).toBe(1));
-        expect(
-            warn.mock.calls.some(
-                ([error]) =>
-                    error instanceof Error &&
-                    error.cause instanceof Error &&
-                    error.cause.message === 'Native audition listening readiness timed out.'
-            )
-        ).toBe(true);
+        // The queue wait behind the start spends none of the release's window.
+        expect(readinessTimeouts(warn)).toHaveLength(0);
         warn.mockRestore();
     }, 10_000);
 
-    it.each([
-        { label: 'once', refusals: 1, reopened: true },
-        { label: 'twice', refusals: 2, reopened: false },
-    ])(
-        'retries a failed first release at most once without another Stop when it fails $label',
-        async ({ refusals, reopened }) => {
-            vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(true);
-            let fence = 0;
-            const apply = vi
-                .fn<AudioGraphBackend['apply']>()
-                .mockImplementation(async () => applied(++fence))
-                .mockImplementationOnce(async () => applied(++fence));
-            for (let refusal = 0; refusal < refusals; refusal += 1) {
-                apply.mockRejectedValueOnce(new Error('native output gate refused'));
+    it('reopens the programme after two overlapping slow starts without timing out', async () => {
+        vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(true);
+        const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+        let fence = 0;
+        const apply = vi.fn<AudioGraphBackend['apply']>().mockImplementation(async (batch) => {
+            const result = applied(++fence);
+            if (batch.commands.some((command) => command.kind === 'set-transport' && !command.playing)) {
+                await new Promise((resolve) => setTimeout(resolve, 3_500));
             }
-            Object.assign(nativeLiveGraphSession, {
-                backend: { backendId: 'native/live', apply, dispose: vi.fn() },
-                programmeCarrier: true,
-                audibleCarrier: true,
-                monitorShadowed: false,
-            });
-            vi.mocked(getEngineTransportPosition).mockImplementation(async () => ({
-                ...stoppedEngineTransportPosition,
-                running: true,
-                engineIncarnation: ID,
-                batchesApplied: fence,
-            }));
-            const playback = playExclusiveAudioBufferPreview({
-                buffer: buffer(),
-                gain: 1,
-                isCurrent: () => true,
-                onEnded: vi.fn(),
-            });
+            return result;
+        });
+        fixture.startBackend = nativeStartBackend(apply);
+        nativeLiveGraphSession.backend = fixture.startBackend;
+        vi.mocked(getEngineTransportPosition).mockImplementation(async () => ({
+            ...stoppedEngineTransportPosition,
+            running: true,
+            engineIncarnation: ID,
+            batchesApplied: fence,
+        }));
+        const playback = playExclusiveAudioBufferPreview({
+            buffer: buffer(),
+            gain: 1,
+            isCurrent: () => true,
+            onEnded: vi.fn(),
+        });
+        await playback.ready;
+        expect(driven.gate.gain.value).toBe(0);
+        const first = startNativeLiveGraphSession(START);
+        await new Promise((resolve) => setTimeout(resolve, 3_200));
+        const second = startNativeLiveGraphSession(START);
+        await expect(first).resolves.toMatchObject({ outcome: 'started' });
+        await expect(second).resolves.toMatchObject({ outcome: 'started' });
+        await vi.waitFor(() => expect(driven.gate.gain.value).toBe(1));
+        expect(readinessTimeouts(warn)).toHaveLength(0);
+        warn.mockRestore();
+    }, 15_000);
+
+    function refusingSession(refusals: number) {
+        vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(true);
+        let fence = 0;
+        const apply = vi
+            .fn<AudioGraphBackend['apply']>()
+            .mockImplementation(async () => applied(++fence))
+            .mockImplementationOnce(async () => applied(++fence));
+        for (let refusal = 0; refusal < refusals; refusal += 1) {
+            apply.mockRejectedValueOnce(new Error('native output gate refused'));
+        }
+        Object.assign(nativeLiveGraphSession, {
+            backend: { backendId: 'native/live', apply, dispose: vi.fn() },
+            programmeCarrier: true,
+            audibleCarrier: true,
+            monitorShadowed: false,
+        });
+        vi.mocked(getEngineTransportPosition).mockImplementation(async () => ({
+            ...stoppedEngineTransportPosition,
+            running: true,
+            engineIncarnation: ID,
+            batchesApplied: fence,
+        }));
+        return apply;
+    }
+
+    function audition() {
+        return playExclusiveAudioBufferPreview({ buffer: buffer(), gain: 1, isCurrent: () => true, onEnded: vi.fn() });
+    }
+
+    /** Let every queued command and timer-free continuation run, with no new session command. */
+    async function idle() {
+        await nativeLiveGraphSession.pending;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    const sessionCommand = () => queueOnNativeLiveGraphSession(async () => undefined);
+
+    it.each([1, 2])(
+        'reopens after %i gate refusals only as session commands settle, never while the session is idle',
+        async (refusals) => {
+            const apply = refusingSession(refusals);
+            const playback = audition();
             await playback.ready;
             // An unmounting card's one Stop: nobody remains to press another.
             await expect(playback.stop()).rejects.toThrow('native output gate refused');
-            await vi.waitFor(() => expect(apply).toHaveBeenCalledTimes(3));
-            await nativeLiveGraphSession.pending;
-            await new Promise((resolve) => setTimeout(resolve, 50));
-            expect(apply).toHaveBeenCalledTimes(3);
-            expect(driven.gate.gain.value).toBe(reopened ? 1 : 0);
+            for (let attempt = 1; attempt <= refusals; attempt += 1) {
+                await idle();
+                expect(apply).toHaveBeenCalledTimes(1 + attempt);
+                expect(driven.gate.gain.value).toBe(0);
+                await sessionCommand();
+                await vi.waitFor(() => expect(apply).toHaveBeenCalledTimes(2 + attempt));
+            }
+            await vi.waitFor(() => expect(driven.gate.gain.value).toBe(1));
+            await sessionCommand();
+            await idle();
+            expect(apply).toHaveBeenCalledTimes(2 + refusals);
         }
     );
+
+    it('stops recovering once a newer audition owns the output', async () => {
+        const apply = refusingSession(1);
+        const first = audition();
+        await first.ready;
+        await expect(first.stop()).rejects.toThrow('native output gate refused');
+        const second = audition();
+        const successor = nativeLiveGraphSession.auditionOwner;
+        await second.ready;
+        await sessionCommand();
+        await idle();
+        expect(apply).toHaveBeenCalledTimes(3);
+        expect(successor).not.toBeNull();
+        expect(nativeLiveGraphSession.auditionOwner).toBe(successor);
+        expect(driven.gate.gain.value).toBe(0);
+        expect(driven.sources[1]?.stop).not.toHaveBeenCalled();
+        await second.stop();
+        expect(driven.gate.gain.value).toBe(1);
+    });
+
+    it('stops recovering once the output context is unsafe', async () => {
+        const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+        const apply = refusingSession(1);
+        const first = audition();
+        await first.ready;
+        await expect(first.stop()).rejects.toThrow('native output gate refused');
+        const second = audition();
+        await second.ready;
+        driven.sources[1]?.stop.mockImplementation(() => {
+            throw new Error('source stop failed');
+        });
+        await expect(second.stop()).rejects.toThrow('source stop failed');
+        await sessionCommand();
+        await idle();
+        await sessionCommand();
+        await idle();
+        const unsafeRefusals = warn.mock.calls.filter(
+            ([error]) =>
+                error instanceof Error &&
+                error.cause instanceof Error &&
+                error.cause.message === 'Audition source cleanup failed. Reload to restore listening.'
+        );
+        expect(unsafeRefusals).toHaveLength(1);
+        expect(apply).toHaveBeenCalledTimes(3);
+        expect(driven.gate.gain.value).toBe(0);
+        warn.mockRestore();
+    });
 
     it('a superseded audition stop leaves its successor owning the output', async () => {
         const first = playExclusiveAudioBufferPreview({

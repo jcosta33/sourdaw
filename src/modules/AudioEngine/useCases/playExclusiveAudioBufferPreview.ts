@@ -21,6 +21,8 @@ type ExclusiveOperation = {
     playback: ReturnType<typeof playAudioBufferPreview>;
     stopped: boolean;
     restoration: Promise<void> | null;
+    /** A failed release is waiting for the session to change before it tries again. */
+    recovering: boolean;
     invalidate: () => void;
 };
 const report = (error: unknown) => logger.warn(new Error('Retained audition listening failed', { cause: error }));
@@ -34,7 +36,7 @@ function current(operation: ExclusiveOperation): boolean {
     );
 }
 
-function stopExclusive(operation: ExclusiveOperation): Promise<void> {
+function stopExclusive(operation: ExclusiveOperation, recover = false): Promise<void> {
     if (operation.restoration !== null) {
         return operation.restoration;
     }
@@ -44,7 +46,7 @@ function stopExclusive(operation: ExclusiveOperation): Promise<void> {
     operation.restoration = settled.promise;
     audioEngine.holdAudioPreviewRestoration(operation.restoration);
     if (operation.stopped) {
-        return retryRestoration(operation, settled);
+        return retryRestoration(operation, settled, recover);
     }
     operation.stopped = true;
     operation.acquisition.abort();
@@ -73,12 +75,12 @@ function stopExclusive(operation: ExclusiveOperation): Promise<void> {
 
 /**
  * Reconcile the released output. A rejection leaves the gate closed until a retry: the next
- * Stop, or for a first release the one unattended retry below.
+ * Stop, or for a first release the recovery below.
  */
 function restoreProgramme(
     operation: ExclusiveOperation,
     settled: PromiseWithResolvers<void>,
-    retryUnattended: boolean
+    recover: boolean
 ): Promise<void> {
     const release = new AbortController();
     void reconcileNativeAuditionMonitoring({
@@ -94,8 +96,8 @@ function restoreProgramme(
                 operation.restoration = null;
             }
             settled.reject(error);
-            if (retryUnattended) {
-                retryWhenSessionSettles(operation);
+            if (recover) {
+                recoverWhenSessionChanges(operation);
             }
         }
     );
@@ -104,17 +106,29 @@ function restoreProgramme(
 
 /**
  * A release the engine started (a native start or abandon), or one whose caller is gone (an
- * unmounted card), has nobody left to press Stop. It can time out queued behind a slow start, or
- * meet a native refusal that the next session command clears. Every first release takes this one
- * retry, with a fresh readiness window, after the session's queued commands drain; a release
- * cannot tell whether a Stop will follow, and only Stop retries after that.
+ * unmounted card), has nobody left to press Stop. It can time out behind a hung command, or meet
+ * a native refusal that a later session command clears. A failed first release therefore tries
+ * again, with a fresh readiness window, each time a session command settles, until it reopens the
+ * programme, a newer owner or an unsafe context ends it, or a user Stop takes over.
  */
-function retryWhenSessionSettles(operation: ExclusiveOperation): void {
-    void nativeLiveGraphSession.pending.then(() => stopExclusive(operation)).catch(report);
+function recoverWhenSessionChanges(operation: ExclusiveOperation): void {
+    operation.recovering = true;
+    void nativeLiveGraphSession.commandSettled.promise
+        .then(async () => {
+            if (operation.recovering) {
+                operation.recovering = false;
+                await stopExclusive(operation, true);
+            }
+        })
+        .catch(report);
 }
 
 /** A Stop after a rejected restoration: the source is already gone, only the output is retried. */
-function retryRestoration(operation: ExclusiveOperation, settled: PromiseWithResolvers<void>): Promise<void> {
+function retryRestoration(
+    operation: ExclusiveOperation,
+    settled: PromiseWithResolvers<void>,
+    recover: boolean
+): Promise<void> {
     if (unsafeOutputContexts.has(audioEngine.context)) {
         settled.reject(new Error('Audition source cleanup failed. Reload to restore listening.'));
         return settled.promise;
@@ -127,7 +141,7 @@ function retryRestoration(operation: ExclusiveOperation, settled: PromiseWithRes
         settled.resolve();
         return settled.promise;
     }
-    return restoreProgramme(operation, settled, false);
+    return restoreProgramme(operation, settled, recover);
 }
 
 function failed(operation: ExclusiveOperation, error: unknown): Promise<void> {
@@ -215,11 +229,15 @@ export function playExclusiveAudioBufferPreview(input: ExclusiveInput): {
         playback: null,
         stopped: false,
         restoration: null,
+        recovering: false,
         invalidate: () => {
             void stopExclusive(operation).catch(report);
         },
     };
-    const stop = () => stopExclusive(operation);
+    const stop = () => {
+        operation.recovering = false;
+        return stopExclusive(operation);
+    };
     // Publish the successor before cancelling the old owner. An old abort or
     // ended callback can release only its own token, never this suppression.
     nativeLiveGraphSession.programmeCarrier ||= nativeLiveGraphSession.audibleCarrier;
