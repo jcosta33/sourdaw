@@ -6,7 +6,7 @@ import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { TrackAlternativesSection } from '../TrackAlternativesSection';
 
-import type { Track } from '../../../../models/TrackViewTypes';
+import type { Clip, Track } from '../../../../models/TrackViewTypes';
 
 const renderWithTooltip = (ui: React.ReactElement) => {
     return render(<TooltipProvider>{ui}</TooltipProvider>);
@@ -21,6 +21,23 @@ vi.mock('#/modules/Command/useCases', () => ({
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     isAppActionCommittedError: vi.fn(() => false),
 }));
+
+function makeClip(id: string): Clip {
+    return {
+        id,
+        trackId: 'track-1',
+        name: id,
+        startBeat: 0,
+        endBeat: 4,
+        type: 'midi',
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 1,
+        color: '#ff0000',
+        locked: false,
+        muted: false,
+    };
+}
 
 describe('TrackAlternativesSection', () => {
     const mockTrack: Track = {
@@ -117,5 +134,26 @@ describe('TrackAlternativesSection', () => {
             type: 'deleteTrackAlternative',
             payload: { trackId: 'track-1', alternativeId: 'alt-2' },
         });
+    });
+
+    it("counts the active alternative's clips from the track, not its stale stored copy", () => {
+        const track: Track = {
+            ...mockTrack,
+            clips: [makeClip('live-1'), makeClip('live-2')],
+            alternatives: [
+                { id: 'alt-1', name: 'Alternative 1', clips: [makeClip('removed')] },
+                {
+                    id: 'alt-2',
+                    name: 'Alternative 2',
+                    clips: [makeClip('parked-1'), makeClip('parked-2'), makeClip('parked-3')],
+                },
+            ],
+        };
+
+        renderWithTooltip(<TrackAlternativesSection track={track} />);
+
+        expect(screen.getByText('2c')).toBeInTheDocument();
+        expect(screen.getByText('3c')).toBeInTheDocument();
+        expect(screen.queryByText('1c')).not.toBeInTheDocument();
     });
 });

@@ -373,6 +373,7 @@ describe('duplicateTrack', () => {
                 },
             ],
             activeAlternativeId: 'alt-source-two',
+            clips: [sourceMidiTwo],
         });
         mocks.getTrackById.mockReturnValue(source);
         returnCreatedTrack();
@@ -442,6 +443,36 @@ describe('duplicateTrack', () => {
         expect(mocks.callOrder).toEqual(['updateTrack', 'duplicateMidiClipData', 'duplicateClipAutomationBatch']);
     });
 
+    it('copies the active alternative from the track clips, not from its stale stored copy', () => {
+        const removedFromMainRow = createClip({ id: 'clip-removed', type: 'audio' });
+        const liveClip = createClip({ id: 'clip-live', type: 'audio' });
+        const parkedClip = createClip({ id: 'clip-parked', type: 'audio' });
+        const source = createTrack({
+            id: 'track-source',
+            kind: 'audio',
+            alternatives: [
+                { id: 'alt-active', name: 'Active', clips: [removedFromMainRow] },
+                { id: 'alt-parked', name: 'Parked', clips: [parkedClip] },
+            ],
+            activeAlternativeId: 'alt-active',
+            clips: [liveClip],
+        });
+        mocks.getTrackById.mockReturnValue(source);
+        returnCreatedTrack();
+
+        duplicateTrack(source.id);
+
+        const updatedTrack = requireUpdatedTrack();
+        expect(updatedTrack.clips.map((copy) => copy.name)).toEqual([liveClip.name]);
+        expect(updatedTrack.alternatives.map((alternative) => alternative.clips.length)).toEqual([1, 1]);
+        expect(mocks.duplicateClipAutomationBatch).toHaveBeenCalledWith({
+            copies: [
+                expect.objectContaining({ sourceClipId: liveClip.id }),
+                expect.objectContaining({ sourceClipId: parkedClip.id }),
+            ],
+        });
+    });
+
     it('emits track.added after the duplicate is fully visible to event handlers', async () => {
         const sourceMidi = createClip({ id: 'clip-midi', type: 'midi' });
         const sourceAudio = createClip({ id: 'clip-audio', type: 'audio' });
@@ -451,6 +482,7 @@ describe('duplicateTrack', () => {
             kind: 'midi',
             alternatives: [{ id: 'alt-source', name: 'Source alternative', clips: [sourceMidi, sourceAudio] }],
             activeAlternativeId: 'alt-source',
+            clips: [sourceMidi, sourceAudio],
         });
         mocks.getTrackById.mockReturnValue(source);
 
@@ -575,6 +607,7 @@ describe('duplicateTrack', () => {
                 id: 'track-source',
                 alternatives: [{ id: 'alt-source', name: 'Source alternative', clips: [sourceClip] }],
                 activeAlternativeId: 'alt-source',
+                clips: [sourceClip],
             });
             const arrangementSnapshot: TrackState = {
                 tracks: [source],
@@ -684,16 +717,12 @@ describe('duplicateTrack', () => {
     );
 
     it('continues reverse rollback after a rollback error without masking the original failure', () => {
+        const sourceClip = createClip({ id: 'clip-midi', type: 'midi' });
         const source = createTrack({
             id: 'track-source',
-            alternatives: [
-                {
-                    id: 'alt-source',
-                    name: 'Source alternative',
-                    clips: [createClip({ id: 'clip-midi', type: 'midi' })],
-                },
-            ],
+            alternatives: [{ id: 'alt-source', name: 'Source alternative', clips: [sourceClip] }],
             activeAlternativeId: 'alt-source',
+            clips: [sourceClip],
         });
         const arrangementSnapshot: TrackState = { tracks: [source], selectedTrackId: source.id };
         const originalFailure = new Error('automation failed');
@@ -750,6 +779,7 @@ describe('duplicateTrack', () => {
             kind: 'audio',
             alternatives: [{ id: 'alt-source', name: 'Audio alternative', clips: [sourceAudio] }],
             activeAlternativeId: 'alt-source',
+            clips: [sourceAudio],
         });
         mocks.getTrackById.mockReturnValue(source);
         returnCreatedTrack();
