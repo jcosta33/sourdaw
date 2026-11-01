@@ -465,6 +465,7 @@ Assert a parameter call's time only when the claim is timing, and then assert th
 import { describe, it, expect } from 'vitest';
 import { TrackNode } from '../TrackNode';
 import { createMockAudioContext } from '#/helpers/__tests__/audioContext.mock';
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 describe('TrackNode', () => {
     it('should wire gain → preFaderTap → fader → pan → analyser in order', () => {
@@ -477,12 +478,12 @@ describe('TrackNode', () => {
         expect(node.strip.panNode.connect).toHaveBeenCalledWith(node.strip.analyserNode);
     });
 
-    it('should clamp gain to [0, 1] when setGain is called with out-of-range input', () => {
+    it('should clamp gain to [0, FADER_MAX_GAIN] when setGain is called with out-of-range input', () => {
         const ctx = createMockAudioContext();
         const node = new TrackNode('track-1', { context: ctx });
 
-        node.setGain(1.5);
-        expect(node.strip.faderNode.gain.setTargetAtTime).toHaveBeenCalledWith(1, expect.any(Number), 0.01);
+        node.setGain(3);
+        expect(node.strip.faderNode.gain.setTargetAtTime).toHaveBeenCalledWith(FADER_MAX_GAIN, expect.any(Number), 0.01);
 
         node.setGain(-0.2);
         expect(node.strip.faderNode.gain.setTargetAtTime).toHaveBeenCalledWith(0, expect.any(Number), 0.01);
