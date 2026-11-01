@@ -1321,11 +1321,10 @@ export function startPlayheadScheduler(
                             // A refused start never runs the terminal, so its
                             // provisional clip and take would be left with no
                             // buffer and no history entry (#4265). The recorder
-                            // resolves `false` only when a Pause or Stop moved its
-                            // start generation or the track is already recording;
-                            // an input that failed to open rejects into the
-                            // `.catch` below, which tells the musician (#6009).
-                            // The user's own stop stays quiet.
+                            // resolves `false` only when a stop moved its start
+                            // generation or the track is already recording; an
+                            // input that failed to open rejects into the `.catch`
+                            // below (#6009).
                             captureClocks.remove(track.id);
                             initialEmissionRetirements.defer(() => {
                                 if (recClip && ownsCapture()) {
@@ -1336,11 +1335,19 @@ export function startPlayheadScheduler(
                         .catch((error: unknown) => {
                             captureClocks.remove(track.id);
                             logger.error(new Error('Punch-in audio recording failed to start', { cause: error }));
+                            // Decided when the failure arrives: the musician's
+                            // Pause or Stop parks the transport synchronously, so
+                            // an input that fails after it stays quiet. A
+                            // punch-out, a seek or a repair keeps the transport
+                            // rolling, and the musician is still told.
+                            const stoppedByMusician = transportStore.value?.isPlaying !== true;
                             initialEmissionRetirements.defer(() => {
                                 if (!ownsCapture()) {
                                     return;
                                 }
-                                notifyUser('Punch-in recording failed to start — the take was discarded.', 'error');
+                                if (!stoppedByMusician) {
+                                    notifyUser('Punch-in recording failed to start — the take was discarded.', 'error');
+                                }
                                 if (recClip) {
                                     discardRecording(recClip.id);
                                 }

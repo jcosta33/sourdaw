@@ -194,7 +194,7 @@ describe('startAudioRecording', () => {
         expect(media_track_stop).toHaveBeenCalledOnce();
     });
 
-    it('refuses quietly when the microphone fails after a stop during its request', async () => {
+    it('rejects a microphone failure that arrives after a stop during its request', async () => {
         const request = Promise.withResolvers<MediaStream>();
         vi.mocked(globalThis.navigator.mediaDevices.getUserMedia).mockReturnValueOnce(request.promise);
         const starting = startAudioRecording('track-denied-after-stop', vi.fn());
@@ -202,7 +202,9 @@ describe('startAudioRecording', () => {
         await Promise.resolve(stopAudioRecording());
         request.reject(new Error('microphone permission denied'));
 
-        await expect(starting).resolves.toBe(false);
+        // The generation a stop moves also moves on a punch-out, a seek or a
+        // repair, so the caller, not the recorder, decides who stopped.
+        await expect(starting).rejects.toMatchObject({ cause: new Error('microphone permission denied') });
         expect(logger.error).not.toHaveBeenCalled();
         expect(audioEngine.context.createMediaStreamSource).not.toHaveBeenCalled();
         expect(worklet_nodes).toEqual([]);

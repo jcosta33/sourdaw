@@ -245,14 +245,10 @@ export const startAudioRecording: StartAudioRecording = inject({ logger })(
                     sourceNode?.disconnect();
                     releaseSharedMediaStream(mediaStream);
                 }
-                // A stop wins: a start whose generation a Pause or Stop moved
-                // while it was pending resolves `false` like every other
-                // stop-caused refusal, even when its input then failed. Only a
-                // failure on a start nobody stopped reaches the caller, which
-                // tells the musician and logs it.
-                if (startGeneration !== recordingLifecycleState.startGeneration) {
-                    return false;
-                }
+                // Every genuine start failure rejects, even one a stop raced:
+                // the start generation also moves on a punch-out, a seek or a
+                // repair, so it cannot say the musician stopped. The caller
+                // decides whether to tell the musician, and logs it.
                 throw new Error(`Failed to start recording on track ${trackId}`, { cause: error });
             }
         }

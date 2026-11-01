@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
 import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
+import { logger } from '#/infra/logger/appLogger';
 import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
 import {
     configureAutomergeStoragePort,
@@ -590,6 +591,79 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         pausePlayback();
         await recordingLifecycle.waitForClosing();
         expect(actionHistoryStore.value?.entries).toEqual([]);
+        expect(commits()).toBe(0);
+    });
+
+    /** Roll from just before the region and cross the punch-in point on a later tick. */
+    async function punchInOnLaterTick(tracks: Track[], punchOutBeat = 8): Promise<void> {
+        trackStore.set({ tracks, selectedTrackId: TRACK_ID, ghostClips: [] });
+        takeLaneStore.set({ lanes: [] });
+        transportStore.set({
+            ...defaultTransportState,
+            tempo: 120,
+            isPlaying: false,
+            isRecording: false,
+            countInEnabled: false,
+            punchInEnabled: true,
+            punchInBeat: 4,
+            punchOutBeat,
+            playheadPosition: 3.95,
+        });
+        tempoMapStore.set({ changes: [] });
+        flushAutomergeStorageWrites();
+        await startPlayback();
+        expect(schedulerSession.punchRecordingActive).toBe(false);
+        mocks.audioClock.currentTime += 0.1;
+        await tick(tracks.length);
+        expect(schedulerSession.punchRecordingActive).toBe(true);
+    }
+
+    function startFailureLogs(errors: { mock: { calls: unknown[][] } }): unknown[] {
+        return errors.mock.calls
+            .map(([error]) => error)
+            .filter((error) => error instanceof Error && error.message === 'Punch-in audio recording failed to start');
+    }
+
+    it('stays quiet and discards the clip when the input fails after a Pause during its start', async () => {
+        const start = Promise.withResolvers<boolean>();
+        mocks.startAudioRecording.mockImplementationOnce(() => start.promise);
+        const errors = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        await punchInOnLaterTick([recordingTrack('audio')]);
+        expect(trackStore.value?.tracks[0]?.clips).toHaveLength(1);
+
+        pausePlayback();
+        start.reject(new Error('microphone permission denied'));
+
+        await vi.waitFor(() => expect(startFailureLogs(errors)).toHaveLength(1));
+        await vi.waitFor(() => expect(trackStore.value?.tracks[0]?.clips).toEqual([]));
+        await recordingLifecycle.waitForClosing();
+        expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes)).toEqual([]);
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+        expect(commits()).toBe(0);
+    });
+
+    it('says the input failed when it fails after the punch-out passed during its start', async () => {
+        const start = Promise.withResolvers<boolean>();
+        mocks.startAudioRecording.mockImplementationOnce(() => start.promise);
+        const errors = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        // A short region, so a few ticks carry the roll past its punch-out.
+        await punchInOnLaterTick([recordingTrack('audio')], 4.5);
+
+        // The roll passes the punch-out point while the input is still opening.
+        for (let ticks = 0; ticks < 8 && schedulerSession.punchRecordingActive; ticks++) {
+            mocks.audioClock.currentTime += 0.03;
+            await tick(1);
+        }
+        expect(schedulerSession.punchRecordingActive).toBe(false);
+        expect(transportStore.value?.isPlaying).toBe(true);
+        start.reject(new Error('microphone permission denied'));
+
+        await vi.waitFor(() => expect(mocks.notifyUser).toHaveBeenCalledWith(INPUT_START_FAILURE, 'error'));
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        expect(startFailureLogs(errors)).toHaveLength(1);
+        expect(trackStore.value?.tracks[0]?.clips).toEqual([]);
+        pausePlayback();
+        await recordingLifecycle.waitForClosing();
         expect(commits()).toBe(0);
     });
 
