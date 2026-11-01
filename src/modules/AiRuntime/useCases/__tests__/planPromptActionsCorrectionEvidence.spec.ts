@@ -219,10 +219,10 @@ describe('planPromptActions bounded correction evidence', () => {
         let correctionDiagnostic: UserMessageSection | null = null;
         vi.mocked(generateToolPlanningOutcome).mockImplementation(async (_systemPrompt, userMessage, schemas) => {
             turn += 1;
-            if (turn === 1 || turn === 4) {
+            if (turn === 1 || turn === 5) {
                 return bluesIntake(userMessage, schemas);
             }
-            if (turn === 2 || turn === 5) {
+            if (turn === 2 || turn === 6) {
                 return discoverTurn(['addTrack', 'setTrackPan']);
             }
             if (turn === 3) {
@@ -246,6 +246,18 @@ describe('planPromptActions bounded correction evidence', () => {
                         },
                     },
                 ]);
+            }
+            if (turn === 4 || turn === 8) {
+                return {
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: `measurement-${turn}`,
+                            name: 'analysis.measure',
+                            arguments: { scope: { kind: 'master' }, range: { sectionId: 'missing-section' } },
+                        },
+                    ],
+                };
             }
             const failures = parseSection(userMessage, 'validation_failures');
             correctionDiagnostic = (failures?.correction as UserMessageSection | undefined) ?? null;
@@ -293,8 +305,8 @@ describe('planPromptActions bounded correction evidence', () => {
         });
 
         expect(correctionDiagnostic).not.toBeNull();
-        // One bounded correction: intake, discovery and proposal on each attempt.
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(6);
+        // One bounded correction: intake, discovery, proposal and measurement on each attempt.
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(8);
         expect(result.result.rejectionReason).toBeUndefined();
         expect(result.result.actions.map((action) => action.type)).toEqual(['addTrack', 'setTrackPan']);
         // The corrected creative plan has no measurement proof and does not claim approval.

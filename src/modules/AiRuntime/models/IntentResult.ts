@@ -34,6 +34,8 @@ export type IntentResult = {
     workflowCapabilityId?: WorkflowCapabilityId;
     /** Correlated, bounded receipts produced by application-owned read tools during provider planning. */
     applicationToolReceipts?: ApplicationToolReceipt[];
+    /** Bounded application-owned settlement of deferred terminal controls, separate from metric proof. */
+    terminalMeasurementSettlement?: string;
     /** Bounded metadata retained from the normalized provider proposal; never authority on its own. */
     providerProposal?: AgentRunProviderProposal;
     /** Direct stable targets proven from the provider's semantic list against one project snapshot. */
