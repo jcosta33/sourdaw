@@ -4,8 +4,8 @@ import { streamExportToNative } from '../streamExportToNative';
 
 const native = vi.hoisted(() => ({
     begin: vi.fn(async (_path: string) => 'opaque-token'),
-    append: vi.fn(async () => {}),
-    seal: vi.fn(async () => {}),
+    append: vi.fn(async (_token: string, _bytes: Uint8Array) => {}),
+    seal: vi.fn(async (_token: string) => {}),
     commit: vi.fn(async (_tokens: readonly string[]) => {}),
     abort: vi.fn(async (_tokens: readonly string[]) => {}),
     join: vi.fn(async (directory: string, name: string) => `${directory}/${name}`),
@@ -59,6 +59,23 @@ function controlledNativeReservations() {
         }
     });
     return { reservations, reserve };
+}
+
+/** Stage one WAV and its report the way a reported stem does: WAV sealed, then report sealed, then paired. */
+async function stageReportedPair(
+    batch: Awaited<ReturnType<typeof streamExportToNative>>,
+    audioName: string,
+    beforeRegister: () => void = () => {}
+): Promise<void> {
+    const audio = await batch.beginFile(audioName);
+    await audio.writer.write(new Uint8Array([1]));
+    await audio.finish();
+    const reportName = `${audioName}.loudness.json`;
+    const report = await batch.beginFile(reportName);
+    await report.writer.write(new Uint8Array([2]));
+    await report.finish();
+    beforeRegister();
+    batch.registerReportPair(audioName, reportName);
 }
 describe('native export transaction adapter', () => {
     it('commits each report token before its WAV using only native-issued tokens', async () => {
@@ -186,6 +203,88 @@ describe('native export transaction adapter', () => {
         expect(start).not.toHaveBeenCalled();
         expect(native.commit).not.toHaveBeenCalled();
         await batch.abort();
+        expect(reservations.size).toBe(0);
+    });
+
+    it.each(['begin', 'seal'] as const)('commits nothing when a report fails to %s', async (step) => {
+        const { reservations, reserve } = controlledNativeReservations();
+        native.begin.mockImplementation(async (path) => {
+            if (step === 'begin' && path.endsWith('.loudness.json')) {
+                throw new Error('disk full');
+            }
+            return reserve(path);
+        });
+        native.seal.mockImplementation(async (token) => {
+            if (step === 'seal' && reservations.get('/picked/mix.wav.loudness.json') === token) {
+                throw new Error('disk full');
+            }
+        });
+        const batch = await streamExportToNative({
+            directoryPath: '/picked',
+            requireReportPairs: true,
+            checkCancelled: () => {},
+        });
+        await expect(stageReportedPair(batch, 'mix.wav')).rejects.toThrow('disk full');
+        const start = vi.fn();
+        await expect(batch.commit(start)).rejects.toThrow();
+        await batch.abort();
+        expect(start).not.toHaveBeenCalled();
+        expect(native.commit).not.toHaveBeenCalled();
+        expect(reservations.size).toBe(0);
+    });
+
+    it.each([
+        ['the WAV path resolves', 'join', 'two.wav'],
+        ['the WAV opens', 'begin', 'two.wav'],
+        ['the WAV is staging', 'append', 'two.wav'],
+        ['the WAV seals', 'seal', 'two.wav'],
+        ['the report path resolves', 'join', 'two.wav.loudness.json'],
+        ['the report opens', 'begin', 'two.wav.loudness.json'],
+        ['the report is staging', 'append', 'two.wav.loudness.json'],
+        ['the report seals', 'seal', 'two.wav.loudness.json'],
+        ['the pair registers', 'register', 'two.wav'],
+    ] as const)('aborts every issued token and commits nothing when Cancel lands as %s', async (_case, step, name) => {
+        const { reservations, reserve } = controlledNativeReservations();
+        const issued: string[] = [];
+        let cancelled = false;
+        const pathOf = (token: string) => [...reservations].find(([, owned]) => owned === token)?.[0] ?? '';
+        const trip = (operation: typeof step, subject: string) => {
+            if (operation === step && subject.endsWith(`/${name}`)) {
+                cancelled = true;
+            }
+        };
+        native.join.mockImplementation(async (directory, file) => {
+            trip('join', `${directory}/${file}`);
+            return `${directory}/${file}`;
+        });
+        native.begin.mockImplementation(async (path) => {
+            trip('begin', path);
+            const token = reserve(path);
+            issued.push(token);
+            return token;
+        });
+        native.append.mockImplementation(async (token: string) => trip('append', pathOf(token)));
+        native.seal.mockImplementation(async (token: string) => trip('seal', pathOf(token)));
+        const batch = await streamExportToNative({
+            directoryPath: '/picked',
+            requireReportPairs: true,
+            checkCancelled: () => {
+                if (cancelled) {
+                    throw new Error('Export cancelled');
+                }
+            },
+        });
+        await stageReportedPair(batch, 'one.wav');
+        await expect(stageReportedPair(batch, 'two.wav', () => trip('register', `/picked/${name}`))).rejects.toThrow(
+            'Export cancelled'
+        );
+        const start = vi.fn();
+        await expect(batch.commit(start)).rejects.toThrow('Export cancelled');
+        await batch.abort();
+        expect(start).not.toHaveBeenCalled();
+        expect(native.commit).not.toHaveBeenCalled();
+        expect(issued.length).toBeGreaterThanOrEqual(2);
+        expect(native.abort.mock.calls.flatMap(([tokens]) => tokens).toSorted()).toEqual(issued.toSorted());
         expect(reservations.size).toBe(0);
     });
 

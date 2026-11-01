@@ -2,9 +2,9 @@ import { createHash } from 'node:crypto';
 
 import { expect } from 'vitest';
 
-import { type streamExport } from '../../../useCases/audioExport/streamExport';
-import { resolveDeliveryTargets } from '../../../useCases/resolveDeliveryTargets';
-import { toneSource } from '../../audioEncoders/__tests__/oggCodecTestWorker';
+import { toneSource } from '../../../repositories/audioEncoders/__tests__/oggCodecTestWorker';
+import { resolveDeliveryTargets } from '../../resolveDeliveryTargets';
+import { type streamExport } from '../streamExport';
 
 type ExportTarget = Extract<Parameters<typeof streamExport>[0], { targets: unknown }>['targets'][number];
 

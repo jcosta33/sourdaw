@@ -9,6 +9,8 @@ import {
 
 import { type ExportByteWriter } from '../../models/ExportAudioSource';
 
+import { createWavReportPairLedger } from './wavReportPairLedger';
+
 type NativeExportBatch = {
     beginFile: (name: string) => Promise<{ writer: ExportByteWriter; finish: () => Promise<void> }>;
     registerReportPair: (audioName: string, reportName: string) => void;
@@ -40,52 +42,13 @@ function createNativeExportEntry(
     };
 }
 
-/**
- * Pairs each completed WAV with its completed `.loudness.json` report and orders their commit.
- * Reports need a picked directory: a single picked file has no place for its neighbour.
- */
+/** Reports need a picked directory: a single picked file has no place for its neighbour. */
 function createReportPairLedger(input: { requireReportPairs?: boolean; directoryPath?: string }) {
     const required = input.requireReportPairs === true;
     if (required && !input.directoryPath) {
         throw new Error('WAV reports require a native export directory.');
     }
-    const completed = new Map<string, string>();
-    const pairs = new Map<string, string>();
-    const tokenOf = (name: string): string => {
-        const token = completed.get(name);
-        if (token === undefined) {
-            throw new Error('Invalid WAV report pair.');
-        }
-        return token;
-    };
-    return {
-        complete(name: string, token: string) {
-            completed.set(name, token);
-        },
-        register(audioName: string, reportName: string) {
-            if (
-                !required ||
-                !audioName.endsWith('.wav') ||
-                reportName !== `${audioName}.loudness.json` ||
-                !completed.has(audioName) ||
-                !completed.has(reportName) ||
-                pairs.has(audioName)
-            ) {
-                throw new Error('Invalid WAV report pair.');
-            }
-            pairs.set(audioName, reportName);
-        },
-        commitOrder(tokens: readonly string[]): readonly string[] {
-            if (!required) {
-                return tokens;
-            }
-            if (pairs.size * 2 !== completed.size) {
-                throw new Error('WAV report pairs are incomplete.');
-            }
-            // Native replacement is ordered, not atomic across the batch: publish each report before its WAV.
-            return [...pairs].flatMap(([audio, report]) => [tokenOf(report), tokenOf(audio)]);
-        },
-    };
+    return createWavReportPairLedger(required);
 }
 
 /** A batch owns only native-issued transaction tokens; paths are granted and checked in Rust. */

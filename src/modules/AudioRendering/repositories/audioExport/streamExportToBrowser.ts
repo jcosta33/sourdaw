@@ -2,6 +2,8 @@ import { Zip, ZipPassThrough } from 'fflate';
 
 import { type ExportByteWriter } from '../../models/ExportAudioSource';
 
+import { createWavReportPairLedger } from './wavReportPairLedger';
+
 type WritableExportFile = {
     write: (bytes: Uint8Array) => Promise<void>;
     close: () => Promise<void>;
@@ -148,6 +150,41 @@ function createExportByteWriter(
     };
 }
 
+async function addArchiveEntry(
+    zip: Zip | undefined,
+    name: string,
+    drain: () => Promise<void>
+): Promise<ZipPassThrough | undefined> {
+    if (!zip) {
+        return undefined;
+    }
+    const entry = new ZipPassThrough(name);
+    zip.add(entry);
+    await drain();
+    return entry;
+}
+
+type ArchiveEntries = { count: number; centralBytes: number };
+
+/** Admit one more entry within the ZIP32 entry count, name length and archive size limits. */
+function admitArchiveEntry(
+    entries: ArchiveEntries,
+    name: string,
+    archived: boolean,
+    archiveBytes: number
+): ArchiveEntries {
+    const nameBytes = new TextEncoder().encode(name).length;
+    const count = entries.count + 1;
+    if (count > 0xffff || nameBytes > 0xffff || (!archived && count > 1)) {
+        throw new Error('Export exceeds ZIP32 entry limits.');
+    }
+    const centralBytes = entries.centralBytes + 46 + nameBytes;
+    if (archived && archiveBytes + 30 + nameBytes + 16 + centralBytes > ZIP32_MAX) {
+        throw new Error('Export archive exceeds ZIP32 limits.');
+    }
+    return { count, centralBytes };
+}
+
 /** Owns one transactional picker writable. No Blob or retained OPFS download is created. */
 export async function streamExportToBrowser(input: BrowserExportInput) {
     if (input.requireReportPairs && !input.archive) {
@@ -155,15 +192,13 @@ export async function streamExportToBrowser(input: BrowserExportInput) {
     }
     const writable = await openBrowserWritable(input);
     const drainState: ArchiveDrainState = { archiveBytes: 0 };
-    let centralBytes = 22;
-    let count = 0;
+    let entries: ArchiveEntries = { count: 0, centralBytes: 22 };
     let closed = false;
     let fileOpen = false;
     let abortPromise: Promise<void> | undefined;
     const emitted: Uint8Array[] = [];
     const names = new Set<string>();
-    const completed = new Set<string>();
-    const pairs = new Map<string, string>();
+    const reportPairs = createWavReportPairLedger(input.requireReportPairs === true);
     const zip = input.archive ? createZipOutput(emitted, drainState) : undefined;
     const drain = () => drainZipOutput(emitted, writable, input.checkCancelled, drainState, input.signal);
     const abort = (): Promise<void> => {
@@ -194,27 +229,16 @@ export async function streamExportToBrowser(input: BrowserExportInput) {
             if (closed || fileOpen || names.has(name) || /[\\/]/u.test(name)) {
                 throw new Error('Invalid export entry order or name.');
             }
-            const nameBytes = new TextEncoder().encode(name).length;
-            if (++count > 0xffff || nameBytes > 0xffff || (!zip && count > 1)) {
-                throw new Error('Export exceeds ZIP32 entry limits.');
-            }
-            centralBytes += 46 + nameBytes;
-            if (zip && drainState.archiveBytes + 30 + nameBytes + 16 + centralBytes > ZIP32_MAX) {
-                throw new Error('Export archive exceeds ZIP32 limits.');
-            }
+            entries = admitArchiveEntry(entries, name, zip !== undefined, drainState.archiveBytes);
             names.add(name);
             fileOpen = true;
-            const entry = zip ? new ZipPassThrough(name) : undefined;
-            if (entry) {
-                zip!.add(entry);
-                await drain();
-            }
+            const entry = await addArchiveEntry(zip, name, drain);
             const writer = createExportByteWriter(
                 input,
                 writable,
                 entry,
                 drainState,
-                centralBytes,
+                entries.centralBytes,
                 drain,
                 () => fileOpen
             );
@@ -227,33 +251,24 @@ export async function streamExportToBrowser(input: BrowserExportInput) {
                         await drain();
                     }
                     fileOpen = false;
-                    completed.add(name);
+                    reportPairs.complete(name, name);
                 },
             };
         },
         registerReportPair(audioName: string, reportName: string) {
             input.checkCancelled();
-            if (
-                closed ||
-                !input.requireReportPairs ||
-                !audioName.endsWith('.wav') ||
-                reportName !== `${audioName}.loudness.json` ||
-                !completed.has(audioName) ||
-                !completed.has(reportName) ||
-                pairs.has(audioName)
-            ) {
+            if (closed) {
                 throw new Error('Invalid WAV report pair.');
             }
-            pairs.set(audioName, reportName);
+            reportPairs.register(audioName, reportName);
         },
         async commit(onCommitBegin: () => void) {
             input.checkCancelled();
-            if (fileOpen || count === 0 || closed) {
+            if (fileOpen || entries.count === 0 || closed) {
                 throw new Error('Export has no completed files.');
             }
-            if (input.requireReportPairs && (!zip || pairs.size * 2 !== completed.size)) {
-                throw new Error('WAV report pairs are incomplete.');
-            }
+            // Required pairs always have an archive: the adapter refuses them without one before opening.
+            reportPairs.assertComplete();
             if (zip) {
                 zip.end();
                 await drain();

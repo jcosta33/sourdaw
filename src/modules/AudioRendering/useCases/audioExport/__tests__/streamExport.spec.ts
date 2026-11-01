@@ -17,14 +17,10 @@ import {
 } from '../../../repositories/audioEncoders/__tests__/oggCodecTestWorker';
 import { createDeliveryPcmSource } from '../../../repositories/audioEncoders/createDeliveryPcmSource';
 import { readExportPcmBlock } from '../../../repositories/audioEncoders/readExportPcmBlock';
-import {
-    expectReportDescribes,
-    reportStem,
-    twoWavReportTargets,
-    wavReportTargets,
-} from '../../../repositories/audioExport/__tests__/wavReportFixtures';
 import { resolveDeliveryTargets } from '../../resolveDeliveryTargets';
 import { streamExport } from '../streamExport';
+
+import { expectReportDescribes, reportStem, twoWavReportTargets, wavReportTargets } from './wavReportFixtures';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -600,7 +596,7 @@ describe('multi-target actual output', () => {
     });
 });
 
-// Native reported stems are proved through the desktop bridge in the repository spec beside the adapter.
+// Native reported stems are proved against a recording adapter in streamExport.nativeReports.spec.ts.
 describe('WAV loudness reports in the browser archive', () => {
     const zipDestination = {
         kind: 'browser' as const,
