@@ -1,3 +1,5 @@
+import { logger } from '#/infra/logger/appLogger';
+
 import { mountBrowserDisplayScaleHost, resetBrowserDisplayScaleForChildStartup } from './browserDisplayScaleHost';
 import { reloadApplication } from './reloadApplication';
 import { resolveAppComposition } from './resolveAppComposition';
@@ -95,7 +97,12 @@ async function renderApplication(): Promise<void> {
         })
         .then(
             ({ App }) => reactRoot.render(<App />),
-            () => reactRoot.render(<ApplicationFirstPaint onReload={() => reloadApplication(window.location)} />)
+            (error: unknown) => {
+                // Logged, not raised: the reload view below recovers this failure, so it is
+                // no uncaught page error, unlike a failed first paint.
+                logger.error(new Error('The application module failed to load', { cause: error }));
+                reactRoot.render(<ApplicationFirstPaint onReload={() => reloadApplication(window.location)} />);
+            }
         );
 }
 
