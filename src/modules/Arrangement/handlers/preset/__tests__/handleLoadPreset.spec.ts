@@ -453,10 +453,84 @@ describe('handleLoadPreset', () => {
             expect(mocks.deactivateTrackStrip).not.toHaveBeenCalled();
         });
 
-        it('leaves the strip to the action that made the folder live again in the same commit', async () => {
-            await commitRestore([{ id: 'toaster-folder', kind: 'folder', frozen: false, devices: [toasterDevice] }]);
+        it('composes its live strip straight to the chain a later load in the same commit makes live again', async () => {
+            const nextToasterDevice: DeviceSnapshot = {
+                id: 'toaster-device-2',
+                name: 'Toaster',
+                type: 'toaster',
+                bypassed: false,
+                parameterValues: { masterGain: 0.7 },
+            };
+            const load = action({
+                trackId: 'toaster-folder',
+                expectedProjectRevision: undefined,
+                expectedBefore: { id: 'toaster-folder', kind: 'folder', devices: [] },
+                devices: [nextToasterDevice],
+            });
+            const actions = [restore, load];
+            const folder = (devices: DeviceSnapshot[]) => ({
+                tracks: [{ id: 'toaster-folder', kind: 'folder', frozen: false, devices }],
+            });
+            const deviceIds = (track: { devices: readonly { id: string }[] }) =>
+                track.devices.map((device) => device.id).join(',');
+            // Models the engine contract the real delta enforces: `before` must
+            // match the live strip, and a step with a later same-track chain
+            // mutation in its batch composes straight to final project truth.
+            let liveChain = 'toaster-device';
+            mocks.applyDeviceChainRuntimeDelta.mockImplementation(({ before, after, batchContext }) => {
+                const committed = folder([nextToasterDevice]).tracks[0]!;
+                const composes =
+                    deviceIds(after) !== deviceIds(committed) &&
+                    (batchContext?.actions
+                        .slice(batchContext.actionIndex + 1)
+                        .some((later) => 'trackId' in later.payload && later.payload.trackId === after.id) ??
+                        false);
+                const target = deviceIds(after) === deviceIds(committed) || composes ? committed : undefined;
+                if (target && deviceIds(target) === liveChain) {
+                    return dischargedPresetDelta;
+                }
+                if (!target || deviceIds(before) !== liveChain) {
+                    return {
+                        acceptance: 'rejected',
+                        application: 'not-applied',
+                        reason: 'Live source strip does not match the compiled device-chain delta',
+                    };
+                }
+                liveChain = deviceIds(target);
+                return {
+                    acceptance: 'accepted',
+                    application: 'applied',
+                    correlation: { appRevision: 4, projectRevision: 'project-2' },
+                    runtimeRevision: 5,
+                };
+            });
 
+            mocks.getTrackStoreState.mockReturnValue(folder([toasterDevice]));
+            const restored = await handleRestorePresetDeviceChain.execute(restore, { actions, actionIndex: 0 });
+            mocks.getTrackStoreState.mockReturnValue(folder([]));
+            const loaded = await handleLoadPreset.execute(load, { actions, actionIndex: 1 });
+            if (
+                restored?.status !== 'written' ||
+                !restored.afterCommit ||
+                loaded?.status !== 'written' ||
+                !loaded.afterCommit
+            ) {
+                throw new Error('The batch did not schedule both post-commit runtime effects');
+            }
+            mocks.getTrackStoreState.mockReturnValue(folder([nextToasterDevice]));
+
+            await expect(Promise.resolve().then(() => restored.afterCommit?.())).resolves.toBeUndefined();
+            await expect(Promise.resolve().then(() => loaded.afterCommit?.())).resolves.toBeUndefined();
+
+            expect(mocks.applyDeviceChainRuntimeDelta.mock.results.map((result) => result.value)).toEqual([
+                expect.objectContaining({ acceptance: 'accepted', application: 'applied' }),
+                dischargedPresetDelta,
+            ]);
+            expect(liveChain).toBe('toaster-device-2');
             expect(mocks.deactivateTrackStrip).not.toHaveBeenCalled();
+            expect(mocks.updateDeviceParam.mock.calls).toEqual([
+                ['toaster-folder', 'toaster-device-2', 'masterGain', 0.7],
+            ]);
         });
 
         it('has nothing to tear down when the folder has no live strip', async () => {
