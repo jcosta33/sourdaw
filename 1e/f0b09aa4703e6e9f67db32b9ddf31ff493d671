@@ -1,0 +1,35 @@
+evidence/agent-campaign/corpora/development.json
+  s_55244eb93b97d1::t_e3da9c70b00442 44,3244-3281,3283-3305,3307-3328,3330-3352,3354-3375,3377-3384
+  s_55244eb93b97d1::t_51b2059eec6ddf 3282,3329,3376
+  s_55244eb93b97d1::t_c838f67d1b4025 3306,3353
+src/modules/AiRuntime/AGENTS.md
+  s_55244eb93b97d1::t_5eca37420b188d 36
+evidence/agent-campaign/manifest.json
+  s_55244eb93b97d1::t_a3e5bbdd31c1b8 800,808,820
+evidence/agent-campaign/corpora/held-out.json
+  s_55244eb93b97d1::t_51b2059eec6ddf 3222-3225,3282,3329
+  s_55244eb93b97d1::t_346c3872b7e7eb 3235
+  s_55244eb93b97d1::t_e3da9c70b00442 44,3193-3221,3226-3234,3236-3258,3260-3281,3283-3305,3307-3328,3330-3337
+  s_55244eb93b97d1::t_c838f67d1b4025 3259,3306
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  s_55244eb93b97d1::t_cb2d45af2cbc9b 31,163-165,882-883,885-890,894
+  s_55244eb93b97d1::t_052b9dcaaa355b 73,185,408-409,420-424,426
+  s_55244eb93b97d1::t_9f85d43ad19055 404-407
+  s_55244eb93b97d1::t_b08409f16f6c13 878-881,884,891-893,895-903,1754,1760-1761,1764
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1ef0b09aa4703e6e9f67db32b9ddf31ff493d671",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
