@@ -98,7 +98,7 @@ import {
     type DrumPreviewBranchesRequestScope,
 } from './getDrumPreviewBranchesPromptScope';
 import { getDrumRoutingPromptScope } from './getDrumRoutingPromptScope';
-import { getExplicitClipProtection, getUnresolvedClipProtectionMembers } from './getExplicitlyProtectedClips';
+import { getExplicitClipProtection } from './getExplicitlyProtectedClips';
 import {
     getMidiOverlapTransformPromptScope,
     type MidiOverlapTransformRequestScope,
@@ -109,6 +109,7 @@ import {
     getSyncopatedArpeggioPromptScope,
     type SyncopatedArpeggioRequestScope,
 } from './getSyncopatedArpeggioPromptScope';
+import { getUnresolvedClipProtectionMembers } from './getUnresolvedClipProtectionMembers';
 import { getWholeProjectVibeMixScope } from './getWholeProjectVibeMixScope';
 import {
     bindDecibelFiguresToReferences,
@@ -159,8 +160,8 @@ import { isAgentReferenceCapabilityCandidate } from './isAgentReferenceCapabilit
 import { isBatchLocalDeviceParameterTarget } from './isBatchLocalDeviceParameterTarget';
 import { projectBatchLocalCreation } from './projectBatchLocalCreation';
 import { proposalCommandShape } from './proposalCommandShape';
-import { protectionObjectForms } from './protectionObjectForms';
 import { proposalProtection } from './proposalProtection';
+import { protectionObjectForms } from './protectionObjectForms';
 import { readExplicitProtections } from './readExplicitProtections';
 import { readStoredCardRemoval } from './readStoredCardRemoval';
 import { refinementCardCommands } from './refinementCardCommands';
