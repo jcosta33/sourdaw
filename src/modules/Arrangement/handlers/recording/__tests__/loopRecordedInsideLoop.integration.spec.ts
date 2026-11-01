@@ -559,6 +559,61 @@ describe('MIDI loop recordings', () => {
             expect(heardPitches(10, 12)).toEqual([null, 60]);
         });
 
+        async function compFirstPassAfterOneWrap(stopBeat: number): Promise<void> {
+            playheadWrapCountRef.current = 1;
+            await stopRecording(stopBeat);
+            flushAutomergeStorageWrites();
+            await compPass('Pass 0');
+        }
+
+        it('plays a comped first pass of a recording begun before the loop on the beats it was struck', async () => {
+            transportStore.set({
+                ...defaultTransportState,
+                isLooping: true,
+                loopStart: 8,
+                loopEnd: 12,
+                playheadPosition: 6,
+            });
+            const [clip] = startRecording(6);
+            if (!clip) {
+                throw new Error('Expected a provisional MIDI recording');
+            }
+            transportStore.set({ ...transportStore.value!, isPlaying: true, isRecording: true });
+            holdNote(9, 0);
+            releaseNote(9.5, 0);
+            // The scheduler stages the first pass with the run-up as its offset.
+            stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 2, index: 0 });
+
+            await compFirstPassAfterOneWrap(9);
+
+            expect(heardPitches(6, 12)).toEqual([null, null, null, 60, null, null]);
+        });
+
+        it('plays a comped first pass on the beats it was struck when the loop start moves forward inside it', async () => {
+            const clip = recordFromLoopStart();
+            holdNote(9, 0);
+            releaseNote(9.5, 0);
+            transportStore.set({ ...transportStore.value!, loopStart: 10 });
+            // The scheduler derives the first pass's offset from the moved loop start.
+            stageWrap(clip, { name: 'Pass 0', startBeat: 10, endBeat: 12, sourceOffsetBeats: 2, index: 0 });
+
+            await compFirstPassAfterOneWrap(11);
+
+            expect(heardPitches(8, 12)).toEqual([null, 60, null, null]);
+        });
+
+        it('plays a comped first pass recorded from the loop start on the beats it was struck', async () => {
+            const clip = recordFromLoopStart();
+            holdNote(9, 0);
+            releaseNote(9.5, 0);
+            stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 0, index: 0 });
+
+            await compFirstPassAfterOneWrap(9);
+
+            expect(heardPitches(8, 12)).toEqual([null, 60, null, null]);
+            expect(passTake('Pass 0')).toMatchObject({ startBeat: 8, endBeat: 12, sourceOffsetBeats: 0 });
+        });
+
         it('seals a pass a jump entered where the jump landed', async () => {
             const clip = recordFromLoopStart();
             stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 0, index: 0 });
