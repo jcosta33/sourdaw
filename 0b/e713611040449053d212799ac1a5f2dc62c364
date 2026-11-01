@@ -1,0 +1,29 @@
+src/modules/TimelineEditor/presentations/hooks/useLaneDragSession.ts
+  s_6c55a9cb88d372::t_362063ae3fd7db 3-4,8-11
+src/modules/TimelineEditor/presentations/views/Timeline/ChordTrackLane.tsx
+  s_6c55a9cb88d372::t_211338855f3736 33-34,205-208,276-277,279,283-284,286-290,292-294,296-304,306-315,536
+src/modules/TimelineEditor/presentations/views/Timeline/__tests__/ChordTrackLane.spec.tsx
+  s_6c55a9cb88d372::t_259311483a6192 2,58-61,198,205,207-208,211,222-250,254-287
+src/modules/WorkspaceShell/AGENTS.md
+  s_6c55a9cb88d372::t_3e3bc6db7d696c 33
+src/modules/WorkspaceShell/presentations/views/VirtualKeyboard.tsx
+  s_6c55a9cb88d372::t_266e7381aa5a9f 48,300-314,321
+src/modules/WorkspaceShell/presentations/views/__tests__/VirtualKeyboard.spec.tsx
+  s_6c55a9cb88d372::t_25677d1c88e2c9 1279-1314
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0be713611040449053d212799ac1a5f2dc62c364",
+  "prompts": {},
+  "sessions": {
+    "s_6c55a9cb88d372": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_6c55a9cb88d372",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
