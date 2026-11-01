@@ -1,0 +1,65 @@
+src/modules/Arrangement/useCases/collectAudioBufferIdFields.ts
+  s_3bb122e91d89a5::t_9c2f7edb4215eb 70
+  s_3bb122e91d89a5::t_52985453db26a2 3
+  s_3bb122e91d89a5::t_afdf8b977b4bc8 1-2,4-69,71-85
+src/modules/AudioEngine/stores/liveAudioBufferReferences.ts
+  s_3bb122e91d89a5::t_0c72480f487725 12-19
+src/modules/Arrangement/useCases/__tests__/readUndoHistoryAudioBufferIds.spec.ts
+  s_3bb122e91d89a5::t_e6bbf9b1f5aede 31-35,38-39
+  s_3bb122e91d89a5::t_374ceba8c81134 1-30,36-37,40-146,148-150
+  s_3bb122e91d89a5::t_d5627ceb88f40f 147
+  s_3bb122e91d89a5::t_460ba11da032d7 151-158
+src/modules/Arrangement/useCases/__tests__/collectAudioBufferIdFields.spec.ts
+  s_3bb122e91d89a5::t_3be41a8ff5de2b 1-55
+  s_3bb122e91d89a5::t_3c5a3fcae7ee4e 56-57
+src/app/initAudioBufferCacheAccess.ts
+  s_3bb122e91d89a5::t_fd9b59a7ff1684 23-24
+  s_3bb122e91d89a5::t_ff6618627e4097 1,3,10-22,25-27,38-40
+src/modules/Arrangement/useCases/isAudioBufferReferencedByUndoHistory.ts
+  s_3bb122e91d89a5::t_b777a61d752f0a 1,5,10
+src/app/__tests__/initAudioBufferCacheAccess.spec.ts
+  s_3bb122e91d89a5::t_4164a0ec82d387 5-6,9-11,17,19,23,25-27,37-47,72,75,78-114
+src/app/__tests__/undoHistoryAudioBufferResidency.integration.spec.ts
+  s_3bb122e91d89a5::t_c87dcce9d5d791 141,143
+  s_3bb122e91d89a5::t_a2a72cbaa0ed74 14
+  s_3bb122e91d89a5::t_d6dcbdd48f0514 2-6,8-13,15,21-85,92-94,99-100,110-121,123-130,133-140,142,145-176,179-188,192-205
+  s_3bb122e91d89a5::t_d5d70df232eef9 144
+  s_3bb122e91d89a5::t_e23e19ad9925e1 16-20
+  s_3bb122e91d89a5::t_dfa57492db32ac 122
+  s_3bb122e91d89a5::t_180b5894e3f24f 177-178,189-191
+  s_3bb122e91d89a5::t_636436da1b6f0c 7
+  s_3bb122e91d89a5::t_ea49fcb53ec0aa 1
+  s_3bb122e91d89a5::t_9ae81b9c8a748c 86-91,95-98,101-109
+  s_3bb122e91d89a5::t_57d4be31ad9784 131-132
+  s_3bb122e91d89a5::t_8539aa96079fe8 206-213
+src/modules/Arrangement/useCases/readUndoHistoryAudioBufferIds.ts
+  s_3bb122e91d89a5::t_fed6f66e430414 25
+  s_3bb122e91d89a5::t_5a6d7c489d111b 1-5,7-8,10-12,14,17-18,21,24,26-27,30,40-53,55-65
+  s_3bb122e91d89a5::t_5c7db5c19b0be4 54
+  s_3bb122e91d89a5::t_7620bb05ae3382 6,9,13,15-16,19-20,22-23,28-29,31-39
+src/modules/Arrangement/useCases/comping/flattenComp.ts
+  s_3bb122e91d89a5::t_d3adc4f4f21a01 218-220
+  s_3bb122e91d89a5::t_0ff21afe837540 221
+  s_3bb122e91d89a5::t_760e9d32b8eeaf 15
+src/modules/Arrangement/useCases/index.ts
+  s_3bb122e91d89a5::t_7f6a00dca7e257 108
+src/modules/Arrangement/useCases/comping/__tests__/flattenComp.spec.ts
+  s_3bb122e91d89a5::t_585d321d6f4592 218-239
+  s_3bb122e91d89a5::t_b47b43d0b8ed11 18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "448bdcf757ac5118328b4e0668c8811b1d719b7d",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
