@@ -1,0 +1,35 @@
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/CCLane.spec.tsx
+  s_fec7059b7a251c::t_f1b0c31f4419a1 907-909
+  s_fec7059b7a251c::t_0acecf2c35f23b 893-906,910-912
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/PitchBendLane.spec.tsx
+  s_fec7059b7a251c::t_f1b0c31f4419a1 476-478
+  s_fec7059b7a251c::t_3a3a61d42925cd 462-475,479-481
+src/modules/TimelineEditor/presentations/hooks/__tests__/useLaneDragSession.spec.tsx
+  s_55244eb93b97d1::t_6ba4f0d0dce1f1 13-14,33,39-44,47,49-64,86,93-94,182-348,357
+src/modules/TimelineEditor/presentations/hooks/useLaneDragSession.ts
+  s_fec7059b7a251c::t_ccd3a0b627468b 16,53-68,70,76-77,90-142,149-152,165-180,184,188,202-204,235,247,255,260
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5f4e7b18cb3245c01e45ad90011455bdd29a920d",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
