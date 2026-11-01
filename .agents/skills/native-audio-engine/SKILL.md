@@ -79,7 +79,7 @@ Put allocation guards in a `#[cfg(debug_assertions)]` module: `disable_release` 
 
 **Why:** offline is the null-test oracle for live playback; one implementation means a difference is a transport defect.
 
-**Enforced by:** `the_same_batch_renders_bit_identical_output_twice` (`offline.rs`) for determinism; `a_clip_through_a_gain_renders_the_expected_samples` and `a_render_spanning_many_blocks_places_the_clip_on_its_absolute_frames` (`offline.rs`) for exact samples across an `OFFLINE_BLOCK_FRAMES` boundary at that one block size; `a_fermenter_note_renders_the_same_samples_live_and_offline` (`scheduler.rs`) for 128- against 512-frame blocks, for that instrument only. Block-size independence for any other body is review only.
+**Enforced by:** `the_same_batch_renders_bit_identical_output_twice` (`offline.rs`) for determinism; `a_clip_through_a_gain_renders_the_expected_samples` and `a_render_spanning_many_blocks_places_the_clip_on_its_absolute_frames` (`offline.rs`) for absolute frame placement across multiple blocks; `a_fermenter_note_renders_the_same_samples_live_and_offline` (`scheduler.rs`) is the only full-array comparison across block edges (128- against 512-frame blocks), for that instrument. Exact samples at a block edge for anything else is review only.
 
 ### 9. Teardown order is field order
 
