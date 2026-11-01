@@ -1332,9 +1332,11 @@ export function startPlayheadScheduler(
                             }
                             // A refused start never runs the terminal, so its
                             // provisional clip and take would be left with no
-                            // buffer and no history entry (#4265). A refusal is
-                            // what a Pause or Stop during the wait produces, so
-                            // it stays quiet.
+                            // buffer and no history entry (#4265). The recorder's
+                            // `false` covers both a Pause or Stop during the
+                            // same-track wait and an input that failed to open;
+                            // the stop-caused refusal must stay quiet, so no
+                            // notice is posted until #6009 tells them apart.
                             captureClocks.remove(track.id);
                             if (recClip && ownsCapture()) {
                                 discardRecording(recClip.id);
