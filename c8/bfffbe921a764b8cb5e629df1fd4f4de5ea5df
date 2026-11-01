@@ -1,0 +1,49 @@
+src/modules/Arrangement/useCases/comping/resolveCompingProgramme.ts
+  s_7a8e1107313040::t_20ff06986841fb 1,51-52,61
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveMidiProgramme.spec.ts
+  s_7a8e1107313040::t_c208deacc00d05 1240-1286
+src/modules/AudioEngine/useCases/offlineRender/resolveTrackClipsWithComping.ts
+  s_7a8e1107313040::t_db38574345a4b0 2,258-259,268
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_7a8e1107313040::t_0b3434ca653e30 953
+src/modules/MIDI/stores/__tests__/isFrozenMidiTakeSource.spec.ts
+  s_7a8e1107313040::t_8276e8c706a161 77-78,92-96
+src/modules/MIDI/stores/frozenMidiTakeRepeats.ts
+  s_55244eb93b97d1::t_a0c24e68603a17 104-114
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_7a8e1107313040::t_cfbfe981050eb8 3,1394-1505
+src/modules/Arrangement/useCases/comping/__tests__/prepareMidiTakeSourceCapture.spec.ts
+  s_7a8e1107313040::t_a77077a0724a83 49-51,101
+src/modules/Arrangement/useCases/comping/prepareMidiTakeSourceCapture.ts
+  s_7a8e1107313040::t_0f795004a02a4b 60
+src/modules/MIDI/stores/index.ts
+  s_7a8e1107313040::t_8244f4ca6894fa 34-38
+src/modules/MIDI/stores/isFrozenMidiTakeSource.ts
+  s_7a8e1107313040::t_27bddffa867353 16,35-39,56-60
+src/utils/handlerContract.ts
+  s_7a8e1107313040::t_1ca11c6d159b44 716-722
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c8bfffbe921a764b8cb5e629df1fd4f4de5ea5df",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_7a8e1107313040": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54399ae9-2148-45f8-8043-53b64cc39d76",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
