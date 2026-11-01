@@ -393,7 +393,10 @@ describe('recorded controller take commit', () => {
             flushAutomergeStorageWrites();
 
             expect(pedalsOf(next.id)).toEqual([{ controller: 1, value: 33, beat: 0.25, channel: 0 }]);
-            expect(midiStore.value?.pitchBendByClipId[next.id]).toBeUndefined();
+            // None of the discarded take's rows: only the wheel it left off centre, which the next take begins under.
+            expect((midiStore.value?.pitchBendByClipId[next.id] ?? []).map(({ id: _id, ...row }) => row)).toEqual([
+                { value: 1000, beat: 0, channel: 0, channelScoped: true },
+            ]);
             expect(midiStore.value?.ccByClipId[discardedClipId]).toBeUndefined();
         });
 
@@ -868,6 +871,67 @@ describe('recorded controller take commit', () => {
                     { controller: 64, value: 127, beat: 0, channel: 0 },
                     { controller: 64, value: 0, beat: 2, channel: 0 },
                 ]);
+            });
+        });
+
+        describe('a pitch wheel already off centre when the take begins', () => {
+            it('leads the take with the wheel scoped to its channel at clip beat 0, removed by undo and restored by redo', async () => {
+                setWebMidiRuntimeEventBus({ eventBus: { emit: () => Promise.resolve(), on: () => () => {} } });
+                await initWebMidi();
+                setMidiInputTrack(TRACK_ID);
+                // Channel 2's wheel a quarter up (4096 above centre), held through Record.
+                sendLive(4, 0xe1, 0, 96);
+                const [provisional] = startRecording(4);
+                if (!provisional) {
+                    throw new Error('expected a provisional recording clip');
+                }
+                transportStore.set({ ...transportStore.value!, isRecording: true });
+
+                appendRecordedMidiNote({
+                    clipId: provisional.id,
+                    note: { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100, channel: 0 },
+                });
+                appendRecordedMidiNote({
+                    clipId: provisional.id,
+                    note: { id: 'note-2', pitch: 64, startBeat: 0, duration: 1, velocity: 100, channel: 1 },
+                });
+                await stopRecording(8);
+                flushAutomergeStorageWrites();
+
+                const bendsOf = (clipId: string) =>
+                    (midiStore.value?.pitchBendByClipId[clipId] ?? []).map(({ id: _id, ...row }) => row);
+                const expected = [{ value: 4096, beat: 0, channel: 1, channelScoped: true }];
+                expect(bendsOf(provisional.id)).toEqual(expected);
+
+                await undo();
+                flushAutomergeStorageWrites();
+                expect(midiStore.value?.pitchBendByClipId[provisional.id]).toBeUndefined();
+
+                await redo();
+                flushAutomergeStorageWrites();
+                expect(bendsOf(provisional.id)).toEqual(expected);
+            });
+
+            it('adds no bend row when every wheel is centred', async () => {
+                setWebMidiRuntimeEventBus({ eventBus: { emit: () => Promise.resolve(), on: () => () => {} } });
+                await initWebMidi();
+                setMidiInputTrack(TRACK_ID);
+                sendLive(4, 0xe1, 0, 96);
+                sendLive(4, 0xe1, 0, 64);
+                const [provisional] = startRecording(4);
+                if (!provisional) {
+                    throw new Error('expected a provisional recording clip');
+                }
+                transportStore.set({ ...transportStore.value!, isRecording: true });
+
+                appendRecordedMidiNote({
+                    clipId: provisional.id,
+                    note: { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 },
+                });
+                await stopRecording(8);
+                flushAutomergeStorageWrites();
+
+                expect(midiStore.value?.pitchBendByClipId[provisional.id]).toBeUndefined();
             });
         });
 
