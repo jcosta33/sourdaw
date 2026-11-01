@@ -5,9 +5,10 @@ repair or root replacement. Monitor edges and streams are owned per track and pe
 that settle later, and released by track removal, Off, selector change, root replacement and graph reset. Each probe
 names the failure mode, the input or state to drive and the check that must go red, and names the mutation that must
 fail it where its source lesson established one. Observe actual source edges and MediaStreamTrack stops at the
-monitor outputs, never forwarded identifiers or owner keys alone. Capability comes from Arrangement's `getTrackEligibility(...).acceptsMonitoring`, not a recorder-owned
-kind list. Controlled media and graph ports prove ownership and cleanup, never physical hardware audibility.
-Lifecycle companions for the runtime session live in `session-lifecycle.md`.
+monitor outputs, never forwarded identifiers or owner keys alone. Capability comes from Arrangement's
+`getTrackEligibility(...).acceptsMonitoring`, not a recorder-owned kind list. Controlled media and graph ports prove
+ownership and cleanup, never physical hardware audibility. Lifecycle companions for the runtime session live in
+`session-lifecycle.md`.
 
 ## Standing probes
 
