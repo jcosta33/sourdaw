@@ -2,7 +2,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
-import { basename, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -88,7 +88,7 @@ function fail(message: string): never {
 
 export function inside(parent: string, candidate: string): boolean {
     const path = relative(parent, candidate);
-    return path === '' || (!path.startsWith('..') && !isAbsolute(path));
+    return path === '' || (path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path));
 }
 
 function canonicalPath(path: string): string {

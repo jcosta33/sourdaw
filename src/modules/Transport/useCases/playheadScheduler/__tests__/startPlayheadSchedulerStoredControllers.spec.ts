@@ -634,4 +634,25 @@ describe('startPlayheadScheduler stored controller restore at a relocation', () 
             expect(otherPedalCalls).toEqual([]);
         });
     });
+
+    describe('main-thread stall', () => {
+        it('chases the lift a stall skipped, so the pedal pressed before it is not left down', async () => {
+            // Down at 0.5 and up at 2.5: the lift falls inside a stall from 0.35 s
+            // to 1.55 s (beats 0.7 to 3.1) that no tick runs through.
+            loadClip([pedal('up-0', 0, 0), pedal('down', 127, 0.5), pedal('up', 0, 2.5)]);
+            transportStoreState.value = playingState();
+            startPlayheadScheduler();
+            for (let tick = 0; tick < 5; tick++) {
+                await runTick();
+            }
+            expect(pedalCalls.map((call) => call.position)).toEqual([0, 1]);
+
+            ctxTime.now += 1.2 - TICK_SECONDS;
+            await runTick();
+
+            // The lift is not replayed at its passed frame; the value in force at
+            // the playhead is sent where the window opens, which is now.
+            expect(pedalCalls.slice(2)).toEqual([{ position: 0, frame: frameOf(ctxTime.now) }]);
+        });
+    });
 });

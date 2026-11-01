@@ -1,9 +1,9 @@
 import { closeSync, constants, fchownSync, fstatSync, openSync, readdirSync, readlinkSync } from 'node:fs';
-import { isAbsolute, relative } from 'node:path';
+import { isAbsolute, relative, sep } from 'node:path';
 
 function within(root: string, path: string): boolean {
     const suffix = relative(root, path);
-    return suffix === '' || (!suffix.startsWith('..') && !isAbsolute(suffix));
+    return suffix === '' || (suffix !== '..' && !suffix.startsWith(`..${sep}`) && !isAbsolute(suffix));
 }
 
 export type DirectoryPorts = {

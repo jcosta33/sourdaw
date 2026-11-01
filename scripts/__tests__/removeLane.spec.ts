@@ -19,6 +19,7 @@ import { guardFailureReceiptPath, supersessionCommentBody, type GuardFailureRece
 import { prunableEntries } from '../pruneLane.ts';
 import {
     disposableIgnored,
+    inside,
     isExpectedReviewLaneName,
     isExpectedReviewLanePath,
     parseReviewLanePrNumber,
@@ -442,8 +443,25 @@ describe('isExpectedReviewLanePath', () => {
         ['/tmp/review-1976', false],
         ['/repo/.agents/worktrees/other/1976', false],
         ['/repo/.agents/worktrees/review/1976/nested', false],
+        ['/repo/.agents/review-worktrees/..probe', true],
+        ['/repo/.agents/worktrees/..-review', true],
+        ['/repo/.agents/worktrees-review/review', false],
     ])('evaluates %s as expected review lane path under /repo: %s', (path, expected) => {
         expect(isExpectedReviewLanePath(path, '/repo')).toBe(expected);
+    });
+});
+
+describe('inside', () => {
+    it.each([
+        ['/repo', '/repo', true],
+        ['/repo', '/repo/lane/scripts', true],
+        ['/repo', '/repo/..cache/file', true],
+        ['/repo', '/repo/..', false],
+        ['/repo', '/repo/../other', false],
+        ['/repo', '/repo-sibling/file', false],
+        ['/repo/lane', '/repo', false],
+    ])('evaluates %s containing %s: %s', (parent, candidate, expected) => {
+        expect(inside(parent, candidate)).toBe(expected);
     });
 });
 
@@ -793,6 +811,7 @@ describe('lane removal', () => {
         ],
         ['outside', '/tmp/feature', { lane: worktree({ path: '/tmp/feature' }) }, /not an agent worktree/],
         ['active', target, { currentDirectory: `${target}/scripts` }, /active worktree/],
+        ['active in a dot-dot-prefixed child', target, { currentDirectory: `${target}/..cache` }, /active worktree/],
         ['other process', target, { active: true }, /active in another process/],
         ['locked', target, { lane: worktree({ locked: true }) }, /locked or shared/],
         ['detached', target, { lane: worktree({ branch: undefined, detached: true }) }, /ownership is unknown/],

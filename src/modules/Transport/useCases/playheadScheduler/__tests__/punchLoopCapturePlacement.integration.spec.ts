@@ -2464,14 +2464,18 @@ describe('punch audio capture loop placement', () => {
             getAudioTimeSeconds: () => hardware.now,
             readNativeCursorBeats: () => hardware.nativeCursorBeat?.(hardware.now) ?? null,
         });
-        transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 11.5 });
-        playheadPositionRef.current = 11.5;
-        playheadClockRef.beat = 11.5;
+        // The browser integration trails the native cursor by 0.4 beats, so
+        // 0.2 s later the native engine has wrapped (8.1) while the browser
+        // stands at 11.7 with its look-ahead horizon short of the seam.
+        transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 11.3 });
+        playheadPositionRef.current = 11.3;
+        playheadClockRef.beat = 11.3;
         playheadClockRef.audioTimeSeconds = 51;
         toggleRecording();
         await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1));
         startPlayheadScheduler();
         await tick(0.2);
+        expect(playheadClockRef.beat).toBeCloseTo(11.7, 10);
         expect(schedulerSession.pendingSeam).toBeNull();
         await tick(0.01);
         hardware.now = 51.25;
@@ -3135,6 +3139,109 @@ describe('punch audio capture loop placement', () => {
         expect(hardware.buffer!.getChannelData(0)[Math.round(sourceSeconds * hardware.sampleRate)]).toBe(7200);
     });
 
+    it('stages a take for every pass a main-thread stall played through', async () => {
+        hardware.now = 51;
+        transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 8 });
+        playheadPositionRef.current = 8;
+        playheadClockRef.beat = 8;
+        playheadClockRef.audioTimeSeconds = 51;
+        toggleRecording();
+        await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1));
+        startPlayheadScheduler();
+        await tick();
+        expect(schedulerSession.pendingSeam).toBeNull();
+        // Loop [8, 12) at 120 BPM is a two-second pass. No tick runs from
+        // 51.0625 s to 56 s while the audio and the recorder keep going: the
+        // seams at 53 s and 55 s both sound, and the roll stands 1 s into the
+        // third pass.
+        await tick(56 - hardware.now);
+        expect(playheadWrapCountRef.current).toBe(2);
+        expect(playheadClockRef.beat).toBeCloseTo(10, 10);
+        const staged = lane().takes.filter((take) => take.sourceOffsetBeats !== undefined);
+        expect(staged.map((take) => take.sourceOffsetBeats)).toEqual([0, 4]);
+        await stopActiveRecording();
+        // The capture's first sample is at 51 s less the 0.1 s input latency;
+        // each pass's source window runs from its own entry to its own seam.
+        const passTakes = lane().takes.filter((take) => take.sourceOffsetBeats !== undefined);
+        const passWindows = passTakes.map(({ sourceOffsetBeats, passDepthSeconds, passSourceEndSeconds }) => ({
+            sourceOffsetBeats,
+            passDepthSeconds,
+            passSourceEndSeconds,
+        }));
+        const placed = passWindows.sort(
+            (left, right) => (left.sourceOffsetBeats ?? 0) - (right.sourceOffsetBeats ?? 0)
+        );
+        expect(placed).toEqual([
+            {
+                sourceOffsetBeats: 0,
+                passDepthSeconds: expect.closeTo(0.1, 10),
+                passSourceEndSeconds: expect.closeTo(2.1, 10),
+            },
+            {
+                sourceOffsetBeats: 4,
+                passDepthSeconds: expect.closeTo(2.1, 10),
+                passSourceEndSeconds: expect.closeTo(4.1, 10),
+            },
+            {
+                sourceOffsetBeats: 8,
+                passDepthSeconds: expect.closeTo(4.1, 10),
+                passSourceEndSeconds: expect.closeTo(5, 10),
+            },
+        ]);
+        expectProjectProjection();
+    });
+
+    it('counts the planned seam a stall supersedes and stages each pass after it once', async () => {
+        hardware.now = 51;
+        transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 8 });
+        playheadPositionRef.current = 8;
+        playheadClockRef.beat = 8;
+        playheadClockRef.audioTimeSeconds = 51;
+        toggleRecording();
+        await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1));
+        startPlayheadScheduler();
+        await advanceUntil(() => schedulerSession.pendingSeam !== null);
+        const plannedSeam = schedulerSession.pendingSeam!.seamAudioTime;
+        expect(plannedSeam).toBeCloseTo(53, 10);
+        expect(playheadWrapCountRef.current).toBe(0);
+        // The tick right after the seam detection stalls: no tick runs until
+        // 56 s, so the planned seam at 53 s and the next at 55 s both sound and
+        // the roll stands 1 s into the third pass.
+        await tick(56 - hardware.now);
+        expect(playheadWrapCountRef.current).toBe(2);
+        expect(playheadClockRef.beat).toBeCloseTo(10, 10);
+        const staged = lane().takes.filter((take) => take.sourceOffsetBeats !== undefined);
+        expect(staged.map((take) => take.sourceOffsetBeats)).toEqual([0, 4]);
+        await stopActiveRecording();
+        const passTakes = lane().takes.filter((take) => take.sourceOffsetBeats !== undefined);
+        const passWindows = passTakes.map(({ sourceOffsetBeats, passDepthSeconds, passSourceEndSeconds }) => ({
+            sourceOffsetBeats,
+            passDepthSeconds,
+            passSourceEndSeconds,
+        }));
+        const placed = passWindows.sort(
+            (left, right) => (left.sourceOffsetBeats ?? 0) - (right.sourceOffsetBeats ?? 0)
+        );
+        expect(placed).toEqual([
+            {
+                sourceOffsetBeats: 0,
+                passDepthSeconds: expect.closeTo(0.1, 10),
+                passSourceEndSeconds: expect.closeTo(2.1, 10),
+            },
+            {
+                sourceOffsetBeats: 4,
+                passDepthSeconds: expect.closeTo(2.1, 10),
+                passSourceEndSeconds: expect.closeTo(4.1, 10),
+            },
+            {
+                sourceOffsetBeats: 8,
+                passDepthSeconds: expect.closeTo(4.1, 10),
+                passSourceEndSeconds: expect.closeTo(5, 10),
+            },
+        ]);
+        expectProjectProjection();
+    });
+
     it('dates the first physical entry when a loop edit moves its start behind the run-up', async () => {
         hardware.now = 51;
         transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 6 });
@@ -3185,10 +3292,16 @@ describe('punch audio capture loop placement', () => {
         const incomingBeat = playheadClockRef.beat;
         const dyingEndBeat = oldPair.beat + (editClock - oldPair.audioTimeSeconds) * 2;
         const soundedWrapsAtEdit = playheadWrapCountRef.current;
+        // Every seam the audio crosses counts and stages its own pass, several
+        // per tick in a region this short, so wait for the capture to cover the
+        // third pass (the PCM trails the clock by the input latency) rather
+        // than for a number of ticks.
+        const thirdPassEnd = editClock + ((12 - incomingBeat) * 60) / 210 + ((12 - 11.9) * 60) / 210;
         await advanceUntil(
             () =>
                 lane().takes.filter((take) => take.sourceOffsetBeats !== undefined).length >= 3 &&
-                playheadWrapCountRef.current >= soundedWrapsAtEdit + 3
+                playheadWrapCountRef.current >= soundedWrapsAtEdit + 3 &&
+                hardware.now - hardware.latencySeconds >= thirdPassEnd
         );
         const second = lane().takes.filter((take) => take.sourceOffsetBeats !== undefined)[1]!;
         const third = lane().takes.filter((take) => take.sourceOffsetBeats !== undefined)[2]!;

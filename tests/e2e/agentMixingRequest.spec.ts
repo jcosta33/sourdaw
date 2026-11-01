@@ -201,10 +201,9 @@ declare global {
             close: () => void;
             holdResume: () => Promise<void>;
             releaseResume: () => void;
-            resumeGate: () => number | null;
             resumeFrame: () => number | null;
-            scheduledGate: () => { value: number; time: number; calledAt: number; stack: string }[];
-            resumeCalls: () => { gate: number; time: number; frame: number; calledAt: number; stack: string }[];
+            gateCuts: () => { toPreviewOutput: boolean; time: number; calledAt: number; stack: string }[];
+            resumeCalls: () => { time: number; frame: number; calledAt: number; stack: string }[];
             residual: () => { residual: number; outputEnergy: number; upstreamEnergy: number; count: number } | null;
         };
     }
@@ -326,30 +325,29 @@ async function installOutputProbe(page: Page, confirmationId: string) {
             },
         });
         let releaseResume = () => {};
-        let resumeGate: number | null = null;
         let resumeFrame: number | null = null;
-        const scheduledGate: { value: number; time: number; calledAt: number; stack: string }[] = [];
-        const resumeCalls: { gate: number; time: number; frame: number; calledAt: number; stack: string }[] = [];
+        const gateCuts: { toPreviewOutput: boolean; time: number; calledAt: number; stack: string }[] = [];
+        const resumeCalls: { time: number; frame: number; calledAt: number; stack: string }[] = [];
         let releaseGateObserver = () => {};
         const originalResume = context.resume;
         const holdResume = async () => {
             await context.suspend();
             const gate: unknown = Reflect.get(audio.audioEngine, 'previewProgrammeGate');
-            if (!(gate instanceof GainNode)) throw new Error('Missing actual programme gain.');
-            const originalSchedule = gate.gain.setValueAtTime;
-            gate.gain.setValueAtTime = new Proxy(originalSchedule, {
-                apply(schedule, receiver, args) {
-                    scheduledGate.push({
-                        value: Number(args[0]),
-                        time: Number(args[1]),
+            if (!(gate instanceof GainNode)) throw new Error('Missing actual programme gate.');
+            const originalDisconnect = gate.disconnect;
+            gate.disconnect = new Proxy(originalDisconnect, {
+                apply(disconnect, receiver, args) {
+                    gateCuts.push({
+                        toPreviewOutput: args[0] === audio.audioEngine.audioPreviewOutput,
+                        time: context.currentTime,
                         calledAt: performance.now(),
-                        stack: new Error('Programme gate scheduling caller').stack ?? '',
+                        stack: new Error('Programme gate disconnect caller').stack ?? '',
                     });
-                    return Reflect.apply(schedule, receiver, args);
+                    return Reflect.apply(disconnect, receiver, args);
                 },
             });
             releaseGateObserver = () => {
-                gate.gain.setValueAtTime = originalSchedule;
+                gate.disconnect = originalDisconnect;
             };
             const held = Promise.withResolvers<void>();
             releaseResume = () => {
@@ -361,14 +359,12 @@ async function installOutputProbe(page: Page, confirmationId: string) {
                 apply(resume, receiver, args) {
                     const time = context.currentTime;
                     const call = {
-                        gate: gate.gain.value,
                         time,
                         frame: Math.round(time * context.sampleRate),
                         calledAt: performance.now(),
                         stack: new Error('Actual AudioContext resume caller').stack ?? '',
                     };
                     resumeCalls.push(call);
-                    resumeGate ??= call.gate;
                     resumeFrame ??= call.frame;
                     const resumed: Promise<void> = Reflect.apply(resume, receiver, args);
                     return Promise.all([resumed, held.promise]).then(() => undefined);
@@ -380,9 +376,8 @@ async function installOutputProbe(page: Page, confirmationId: string) {
             starts,
             holdResume,
             releaseResume: () => releaseResume(),
-            resumeGate: () => resumeGate,
             resumeFrame: () => resumeFrame,
-            scheduledGate: () => scheduledGate,
+            gateCuts: () => gateCuts,
             resumeCalls: () => resumeCalls,
             reset: () => {
                 blocks.length = 0;
@@ -737,7 +732,7 @@ test('auditions one genuine retained measured request before Confirm without pro
         await expect(comparison.getByRole('button', { name: 'Baseline', exact: true })).toBeEnabled();
         await expect(comparison.getByRole('status')).toHaveText('Stopped');
         // Resume is genuinely invoked in the click, but its completion is held.
-        // This observes gate0 at the actual invocation and real software silence
+        // This observes the gate cut before the actual invocation and real software silence
         // while upstream programme/metronome continue, then cancels by selection.
         await page.evaluate(async () => {
             await window.measuredAuditionProbe?.holdResume();
@@ -756,9 +751,8 @@ test('auditions one genuine retained measured request before Confirm without pro
             )
             .toBeGreaterThanOrEqual(8);
         const pending = await page.evaluate(() => ({
-            gate: window.measuredAuditionProbe?.resumeGate(),
             frame: window.measuredAuditionProbe?.resumeFrame(),
-            scheduled: window.measuredAuditionProbe?.scheduledGate(),
+            cuts: window.measuredAuditionProbe?.gateCuts(),
             resumeCalls: window.measuredAuditionProbe?.resumeCalls(),
             starts: window.measuredAuditionProbe?.starts.length,
             blocks: window.measuredAuditionProbe?.blocks
@@ -766,7 +760,10 @@ test('auditions one genuine retained measured request before Confirm without pro
                 .slice(0, 8)
                 .map((block) => ({
                     frame: block.frame,
-                    selected: Math.max(...block.selected.map(Math.abs)),
+                    // With the programme cut and no source started, nothing feeds the listening
+                    // output, so its tap input carries zero channels: silence, read as a 0 peak.
+                    // https://webaudio.github.io/web-audio-api/#dom-audioworkletprocesscallback-inputs
+                    selected: Math.max(0, ...block.selected.map(Math.abs)),
                     upstream: block.upstream.reduce((sum, x) => sum + x * x, 0),
                 })),
         }));
@@ -774,16 +771,17 @@ test('auditions one genuine retained measured request before Confirm without pro
             body: JSON.stringify(pending),
             contentType: 'application/json',
         });
-        // AudioParam.value is a rendering-updated slot, so its suspended
-        // readback can lag the scheduled zero. Prove call order and output:
-        // https://www.w3.org/TR/2021/REC-webaudio-20210617/#computation-of-value
+        // The gate is the programme's edge into the listening output. A disconnect is a control
+        // message the rendering loop runs before the next quantum it renders, so one made while the
+        // context is still suspended on the resume frame closes that frame's first sample:
+        // https://webaudio.github.io/web-audio-api/#rendering-loop
         const firstResume = pending.resumeCalls?.[0];
-        const zero = pending.scheduled?.[0];
-        if (firstResume === undefined || zero === undefined) throw new Error('Missing actual gate/resume calls.');
-        expect(zero.value).toBe(0);
-        expect(zero.time).toBe(firstResume.time);
-        expect(zero.calledAt).toBeLessThan(firstResume.calledAt);
-        expect(zero.stack).toContain('beginExclusiveAudioPreviewIntent');
+        const cut = pending.cuts?.[0];
+        if (firstResume === undefined || cut === undefined) throw new Error('Missing actual gate/resume calls.');
+        expect(cut.toPreviewOutput).toBe(true);
+        expect(cut.time).toBe(firstResume.time);
+        expect(cut.calledAt).toBeLessThan(firstResume.calledAt);
+        expect(cut.stack).toContain('beginExclusiveAudioPreviewIntent');
         expect(firstResume.stack).toContain('prepareSource');
         expect(pending.starts).toBe(0);
         expect(pending.blocks?.map((block) => block.frame)).toEqual(

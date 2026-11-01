@@ -41,8 +41,7 @@
             "sealed": true
         },
         "question": {
-            "sealed": false,
-            "pendingContract": "PlanningOutcome kind answer"
+            "sealed": true
         },
         "boundary": {
             "sealed": true
@@ -3240,6 +3239,151 @@
                         "track-bass-di"
                     ],
                     "maxCommands": 2
+                }
+            }
+        },
+        {
+            "id": "AC005-DEV-QUESTION-1",
+            "promptClass": "question",
+            "class": "answer-exact",
+            "prompt": "What tempo is this song at?",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "answer"
+                },
+                {
+                    "kind": "query",
+                    "id": "query",
+                    "args": {
+                        "type": "tempo"
+                    }
+                },
+                {
+                    "kind": "answer",
+                    "id": "answer",
+                    "args": {
+                        "intakeCallId": "intake",
+                        "statements": [
+                            {
+                                "kind": "project-fact",
+                                "fact": "tempo"
+                            },
+                            {
+                                "kind": "query-page",
+                                "callId": "query"
+                            }
+                        ]
+                    }
+                }
+            ],
+            "oracle": {
+                "kind": "answer",
+                "text": "The project tempo setting is 120 BPM; the time signature is 4/4.\n\nThe “tempo” query returned 1 item(s) on this page out of 1 matching item(s).",
+                "query": {
+                    "type": "tempo",
+                    "facts": {
+                        "tempo": 120
+                    }
+                }
+            }
+        },
+        {
+            "id": "AC005-DEV-QUESTION-2",
+            "promptClass": "question",
+            "class": "answer-exact",
+            "prompt": "How many buses are in this session?",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "answer"
+                },
+                {
+                    "kind": "query",
+                    "id": "query",
+                    "args": {
+                        "type": "object"
+                    }
+                },
+                {
+                    "kind": "answer",
+                    "id": "answer",
+                    "args": {
+                        "intakeCallId": "intake",
+                        "statements": [
+                            {
+                                "kind": "project-fact",
+                                "fact": "summary"
+                            },
+                            {
+                                "kind": "project-fact",
+                                "fact": "tracks"
+                            },
+                            {
+                                "kind": "query-page",
+                                "callId": "query"
+                            }
+                        ]
+                    }
+                }
+            ],
+            "oracle": {
+                "kind": "answer",
+                "text": "The project has 10 audio/MIDI track(s), 2 bus(es), and 0 folder(s). Master output is separate. Tempo is 120 BPM in 4/4.\n\nProject tracks: “Kick” (“audio”, 0 captured clip(s)); “Snare” (“audio”, 0 captured clip(s)); “Hi-Hat” (“audio”, 0 captured clip(s)); “Overheads” (“audio”, 0 captured clip(s)); “Bass DI” (“audio”, 0 captured clip(s)); “Lead Vocal” (“audio”, 0 captured clip(s)); “Backing Vocals L” (“audio”, 0 captured clip(s)); “Backing Vocals R” (“audio”, 0 captured clip(s)); “Guitar” (“audio”, 0 captured clip(s)); “Keys” (“midi”, 0 captured clip(s)); “Drum Bus” (“bus”, 0 captured clip(s)); “Reverb Bus” (“bus”, 0 captured clip(s)).\n\nThe “object” query returned 16 item(s) on this page out of 16 matching item(s).",
+                "query": {
+                    "type": "object",
+                    "facts": {
+                        "name": "Drum Bus",
+                        "trackKind": "bus"
+                    },
+                    "total": 16
+                }
+            }
+        },
+        {
+            "id": "AC005-DEV-QUESTION-3",
+            "promptClass": "question",
+            "class": "answer-exact",
+            "prompt": "Where's the Lead Vocal fader set?",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "answer"
+                },
+                {
+                    "kind": "query",
+                    "id": "query",
+                    "args": {
+                        "type": "object"
+                    }
+                },
+                {
+                    "kind": "answer",
+                    "id": "answer",
+                    "args": {
+                        "intakeCallId": "intake",
+                        "statements": [
+                            {
+                                "kind": "project-fact",
+                                "fact": "settings"
+                            },
+                            {
+                                "kind": "query-page",
+                                "callId": "query"
+                            }
+                        ]
+                    }
+                }
+            ],
+            "oracle": {
+                "kind": "answer",
+                "text": "Project fader settings (linear gain, not measured audio): master 0.8; “Kick” 1; “Snare” 1; “Hi-Hat” 1; “Overheads” 1; “Bass DI” 1; “Lead Vocal” 1; “Backing Vocals L” 1; “Backing Vocals R” 1; “Guitar” 1; “Keys” 1; “Drum Bus” 1; “Reverb Bus” 1.\n\nThe “object” query returned 16 item(s) on this page out of 16 matching item(s).",
+                "query": {
+                    "type": "object",
+                    "facts": {
+                        "name": "Lead Vocal",
+                        "gain": 1
+                    }
                 }
             }
         }
