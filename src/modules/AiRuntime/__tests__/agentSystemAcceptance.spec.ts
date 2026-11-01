@@ -3198,14 +3198,15 @@ type AnswerOracle = {
 };
 
 /**
- * Whether the text states the value as a whole token: a number never inside a longer number
- * (1 is not in 16, 8 is not in 0.8, 3 is not in -3), a word never inside a longer word.
+ * Whether the text states the value as a whole token: a number never inside a longer number or a
+ * fraction (1 is not in 16, 8 is not in 0.8, 3 is not in -3, 4 is not in 3/4), a word never inside
+ * a longer word.
  */
 function textStatesValue(text: string, value: Fact): boolean {
     const escaped = String(value).replaceAll(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-    const wordBefore = typeof value === 'number' ? '(?<![\\p{L}\\p{N}_-])' : '(?<![\\p{L}\\p{N}_])';
+    const wordBefore = typeof value === 'number' ? '(?<![\\p{L}\\p{N}_/-])' : '(?<![\\p{L}\\p{N}_])';
     const decimalBefore = '(?<!\\p{N}[.,])';
-    const wordAfter = '(?![\\p{L}\\p{N}_])';
+    const wordAfter = typeof value === 'number' ? '(?![\\p{L}\\p{N}_/])' : '(?![\\p{L}\\p{N}_])';
     const decimalAfter = '(?![.,]\\p{N})';
     return new RegExp(`${wordBefore}${decimalBefore}${escaped}${wordAfter}${decimalAfter}`, 'u').test(text);
 }
@@ -3224,14 +3225,43 @@ function textStatesFact(text: string, fact: Fact): boolean {
     return textStatesValue(text, fact);
 }
 
-/** The text of each clause that starts at the subject's quoted name, up to the next clause boundary. */
+/**
+ * Where the clause after a subject's name ends: at a semicolon, a sentence-final period, a newline,
+ * or the next quoted name outside parentheses, which opens a sibling subject's statement. Quoted
+ * values in parentheses, such as a track kind, stay in the clause; an escaped character is quoted
+ * data, never punctuation.
+ */
+function clauseEnd(text: string, start: number): number {
+    let depth = 0;
+    for (let index = start; index < text.length; index += 1) {
+        const character = text[index];
+        if (character === '\\') {
+            index += 1;
+        } else if (character === '(') {
+            depth += 1;
+        } else if (character === ')') {
+            depth = Math.max(0, depth - 1);
+        } else if (character === ';' || character === '\r' || character === '\n') {
+            return index;
+        } else if (character === '.' && /\s/u.test(text[index + 1] ?? ' ')) {
+            return index;
+        } else if (character === '“' && depth === 0) {
+            return index;
+        }
+    }
+    return text.length;
+}
+
+/**
+ * The text of each clause that follows the subject's quoted name, up to the next clause boundary.
+ * The name itself is left out, so its own digits or words never state one of its facts.
+ */
 function clausesOfSubject(text: string, quotedName: string): string[] {
     const clauses: string[] = [];
     let from = text.indexOf(quotedName);
     while (from !== -1) {
         const afterName = from + quotedName.length;
-        const boundary = text.slice(afterName).search(/;|\.(?=\s|$)|[\r\n]/u);
-        clauses.push(text.slice(from, boundary === -1 ? text.length : afterName + boundary));
+        clauses.push(text.slice(afterName, clauseEnd(text, afterName)));
         from = text.indexOf(quotedName, afterName);
     }
     return clauses;
@@ -3688,6 +3718,27 @@ describe('answer acceptance oracle', () => {
             { gain: 1 },
             undefined,
             'Answer oracle text does not state the gain fact 1.',
+        ],
+        [
+            "a sibling subject's value later in the same clause",
+            'Project fader settings: “Kick” 1, “Snare” 0.8.',
+            { name: 'Kick', gain: 0.8 },
+            undefined,
+            'Answer oracle text does not state the gain fact 0.8 in the clause for “Kick”.',
+        ],
+        [
+            "a value stated only by the subject's own name",
+            'Fader: “Track 1” 0.5.',
+            { name: 'Track 1', gain: 1 },
+            undefined,
+            'Answer oracle text does not state the gain fact 1 in the clause for “Track 1”.',
+        ],
+        [
+            'a number that is part of a fraction',
+            '“Song” is in 3/4 time.',
+            { name: 'Song', beats: 4 },
+            undefined,
+            'Answer oracle text does not state the beats fact 4 in the clause for “Song”.',
         ],
         [
             'facts spread over separate clauses of one name',
