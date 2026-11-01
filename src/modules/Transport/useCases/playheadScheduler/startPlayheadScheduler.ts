@@ -1354,17 +1354,23 @@ export function startPlayheadScheduler(
                         .catch((error: unknown) => {
                             captureClocks.remove(track.id);
                             logger.error(new Error('Punch-in audio recording failed to start', { cause: error }));
-                            // Decided when the failure arrives: the musician's
-                            // Pause or Stop parks the transport synchronously, so
-                            // an input that fails after it stays quiet. A
-                            // punch-out, a seek or a repair keeps the transport
-                            // rolling, and the musician is still told.
-                            const stoppedByMusician = transportStore.value?.isPlaying !== true;
+                            // Decided when the failure arrives, against this
+                            // start's own roll: a Pause or Stop parks the
+                            // transport, and the next Play claims a new scheduler
+                            // generation, so a start whose roll was ended stays
+                            // quiet even when the musician is rolling again. A
+                            // punch-out keeps the roll and the generation, and
+                            // the musician is told. A seek or repair restarts the
+                            // scheduler and abandons the pass; its successor's
+                            // own start reports.
+                            const rollEnded =
+                                transportStore.value?.isPlaying !== true ||
+                                schedulerSession.generation !== schedulerGeneration;
                             initialEmissionRetirements.defer(() => {
                                 if (!ownsCapture()) {
                                     return;
                                 }
-                                if (!stoppedByMusician) {
+                                if (!rollEnded) {
                                     notifyUser('Punch-in recording failed to start — the take was discarded.', 'error');
                                 }
                                 retireUnstartedCapture();

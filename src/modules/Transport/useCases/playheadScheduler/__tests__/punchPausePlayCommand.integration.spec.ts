@@ -45,6 +45,7 @@ import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/
 
 import * as transportStateReader from '../../../repositories/transport/getTransportState';
 import { disposePlayheadScheduler } from '../../playheadScheduler/disposePlayheadScheduler';
+import { initialEmissionRetirements } from '../../playheadScheduler/initialEmissionRetirements';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { scheduleMidiNotes } from '../../scheduling/scheduleMidiNotes';
 import { executePlayheadSeek } from '../../transportControls/executePlayheadSeek';
@@ -694,6 +695,88 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         expect(startFailureLogs(errors)).toHaveLength(1);
         expect(trackStore.value?.tracks[0]?.clips).toEqual([]);
         pausePlayback();
+        await recordingLifecycle.waitForClosing();
+        expect(commits()).toBe(0);
+    });
+
+    /** Pause the roll and wait for its deferred teardown to retire the scheduler. */
+    async function pauseAndSettle(): Promise<void> {
+        pausePlayback();
+        await vi.waitFor(() => expect(schedulerSession.worker).toBeNull());
+        await recordingLifecycle.waitForClosing();
+    }
+
+    it('tells the musician once when a Play inside the region shares a paused start’s failing input', async () => {
+        const start = Promise.withResolvers<boolean>();
+        // The resumed punch-in joins the same pending input request.
+        mocks.startAudioRecording
+            .mockImplementationOnce(() => start.promise)
+            .mockImplementationOnce(() => start.promise);
+        const errors = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        await punchInOnLaterTick([recordingTrack('audio')]);
+        await pauseAndSettle();
+
+        const playing = startPlayback();
+        await vi.waitFor(() => expect(mocks.startAudioRecording).toHaveBeenCalledTimes(2));
+        expect(trackStore.value?.tracks[0]?.clips).toHaveLength(2);
+        start.reject(new Error('microphone permission denied'));
+        await playing;
+
+        await vi.waitFor(() => expect(trackStore.value?.tracks[0]?.clips).toEqual([]));
+        expect(startFailureLogs(errors)).toHaveLength(2);
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(INPUT_START_FAILURE, 'error');
+        expect(transportStore.value?.isPlaying).toBe(true);
+        expect(transportStore.value?.isRecording).toBe(false);
+        expect(schedulerSession.worker).not.toBeNull();
+        pausePlayback();
+        await recordingLifecycle.waitForClosing();
+        expect(commits()).toBe(0);
+    });
+
+    it('stays quiet when a paused start fails after Play resumes outside the region', async () => {
+        const start = Promise.withResolvers<boolean>();
+        mocks.startAudioRecording.mockImplementationOnce(() => start.promise);
+        const errors = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        await punchInOnLaterTick([recordingTrack('audio')]);
+        await pauseAndSettle();
+        await executePlayheadSeek(1);
+        await startPlayback();
+        expect(transportStore.value?.isPlaying).toBe(true);
+        expect(mocks.startAudioRecording).toHaveBeenCalledTimes(1);
+
+        start.reject(new Error('microphone permission denied'));
+
+        await vi.waitFor(() => expect(trackStore.value?.tracks[0]?.clips).toEqual([]));
+        expect(startFailureLogs(errors)).toHaveLength(1);
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+        pausePlayback();
+        await recordingLifecycle.waitForClosing();
+        expect(commits()).toBe(0);
+    });
+
+    it('decides whether to tell the musician when the failure arrives, not when its retirement drains', async () => {
+        const start = Promise.withResolvers<boolean>();
+        mocks.startAudioRecording.mockImplementationOnce(() => start.promise);
+        const errors = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        await punchInOnLaterTick([recordingTrack('audio')]);
+        // An initial emission preparing elsewhere holds the retirement.
+        const releaseRetirements = initialEmissionRetirements.open();
+        try {
+            start.reject(new Error('microphone permission denied'));
+            await vi.waitFor(() => expect(startFailureLogs(errors)).toHaveLength(1));
+            expect(trackStore.value?.tracks[0]?.clips).toHaveLength(1);
+            // The roll was live when the input failed; a Pause before the drain
+            // does not take the notice back.
+            pausePlayback();
+            expect(transportStore.value?.isPlaying).toBe(false);
+        } finally {
+            releaseRetirements();
+        }
+
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(INPUT_START_FAILURE, 'error');
+        expect(trackStore.value?.tracks[0]?.clips).toEqual([]);
         await recordingLifecycle.waitForClosing();
         expect(commits()).toBe(0);
     });
