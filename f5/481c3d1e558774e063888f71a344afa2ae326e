@@ -1,0 +1,34 @@
+scripts/__tests__/e2eUncachedResponses.spec.ts
+  s_88fc7e0d05bab6::t_45b789a2e524fa 1-23,25-28,30-33,42-92,96-103,105-121
+  s_88fc7e0d05bab6::t_4d231f2593edd2 93-95
+  s_88fc7e0d05bab6::t_3a0307dd25f298 24
+  s_88fc7e0d05bab6::t_b080eeac228828 104
+  s_88fc7e0d05bab6::t_ce082081c0abb0 29,34-41
+  s_88fc7e0d05bab6::t_ceadd0ec9c9778 122-123
+vite.config.ts
+  s_88fc7e0d05bab6::t_676236e2276ff5 152
+  s_88fc7e0d05bab6::t_5421172a9ad3b6 13
+scripts/e2eUncachedResponses.ts
+  s_88fc7e0d05bab6::t_b646b7cf9643e2 52
+  s_88fc7e0d05bab6::t_4749f67eb1c9c7 1-19,23-37,39-51,53-54,56-65,67-71
+  s_88fc7e0d05bab6::t_a43bfb7eb55e4d 66
+  s_88fc7e0d05bab6::t_de29305afc4cc8 20-22
+  s_88fc7e0d05bab6::t_322c608d5f3a54 38
+  s_88fc7e0d05bab6::t_bc9d162b5c8a6e 55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f5481c3d1e558774e063888f71a344afa2ae326e",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
