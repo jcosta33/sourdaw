@@ -1,11 +1,10 @@
 // @vitest-environment node
-import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { unzipSync } from 'fflate';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DELIVERY_PRESETS } from '../../../models/DeliveryPresets';
 import {
@@ -18,25 +17,14 @@ import {
 } from '../../../repositories/audioEncoders/__tests__/oggCodecTestWorker';
 import { createDeliveryPcmSource } from '../../../repositories/audioEncoders/createDeliveryPcmSource';
 import { readExportPcmBlock } from '../../../repositories/audioEncoders/readExportPcmBlock';
+import {
+    expectReportDescribes,
+    reportStem,
+    twoWavReportTargets,
+    wavReportTargets,
+} from '../../../repositories/audioExport/__tests__/wavReportFixtures';
 import { resolveDeliveryTargets } from '../../resolveDeliveryTargets';
 import { streamExport } from '../streamExport';
-
-const native = vi.hoisted(() => ({
-    begin: vi.fn<(path: string) => Promise<string>>(),
-    append: vi.fn<(token: string, bytes: Uint8Array) => Promise<void>>(),
-    seal: vi.fn<(token: string) => Promise<void>>(),
-    commit: vi.fn<(tokens: readonly string[]) => Promise<void>>(),
-    abort: vi.fn<(tokens: readonly string[]) => Promise<void>>(),
-    join: vi.fn<(directory: string, name: string) => Promise<string>>(),
-}));
-vi.mock('#/utils/desktopBridge', () => ({
-    beginExportFile: native.begin,
-    appendExportFile: native.append,
-    sealExportFile: native.seal,
-    commitExportFiles: native.commit,
-    abortExportFiles: native.abort,
-    desktopPathJoin: native.join,
-}));
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -612,33 +600,8 @@ describe('multi-target actual output', () => {
     });
 });
 
-describe('WAV loudness reports', () => {
-    type ExportTarget = Extract<Parameters<typeof streamExport>[0], { targets: unknown }>['targets'][number];
-
-    beforeEach(() => vi.clearAllMocks());
-
-    function wavTargets(overrides: Partial<ExportTarget> = {}): ExportTarget[] {
-        return resolveDeliveryTargets({
-            targets: [
-                {
-                    id: 'custom',
-                    name: 'Custom',
-                    settings: {
-                        formats: ['wav'],
-                        sampleRate: 48000,
-                        bitDepth: 24,
-                        channels: 2,
-                        mp3BitRate: 192,
-                        normalization: 'off',
-                        targetLufs: -14,
-                        ceilingDbTp: -1,
-                    },
-                    dither: { mode: 'tpdf' },
-                },
-            ],
-        }).map((target) => ({ ...target, ...overrides }));
-    }
-
+// Native reported stems are proved through the desktop bridge in the repository spec beside the adapter.
+describe('WAV loudness reports in the browser archive', () => {
     const zipDestination = {
         kind: 'browser' as const,
         suggestedName: 'stems.zip',
@@ -647,44 +610,16 @@ describe('WAV loudness reports', () => {
         archive: true,
     };
 
-    function nativeStaging() {
-        const paths = new Map<string, string>();
-        const bytes = new Map<string, Uint8Array[]>();
-        let next = 0;
-        native.join.mockImplementation(async (directory, name) => `${directory}/${name}`);
-        native.begin.mockImplementation(async (path) => {
-            const token = `token-${++next}`;
-            paths.set(token, path);
-            bytes.set(token, []);
-            return token;
-        });
-        native.append.mockImplementation(async (token, chunk) => {
-            bytes.get(token)?.push(chunk.slice());
-        });
-        native.seal.mockImplementation(async () => {});
-        native.commit.mockImplementation(async () => {});
-        native.abort.mockImplementation(async () => {});
-        const fileBytes = (path: string) => {
-            const token = [...paths].find(([, candidate]) => candidate === path)?.[0];
-            return joinBytes((token && bytes.get(token)) || []);
-        };
-        return { paths, fileBytes };
-    }
-
-    function stem(extraFrames: number) {
-        return toneSource(48000, 2, 48000 + extraFrames);
-    }
-
     async function writeStems(output: Awaited<ReturnType<typeof streamExport>>) {
         await output.writeAudio({
-            source: stem(0),
+            source: reportStem(0),
             name: 'Kick',
             stemId: 'track-kick',
             onProgress: () => {},
             onLimited: () => {},
         });
         await output.writeAudio({
-            source: stem(11),
+            source: reportStem(11),
             name: 'Snare',
             stemId: 'track-snare',
             onProgress: () => {},
@@ -692,73 +627,36 @@ describe('WAV loudness reports', () => {
         });
     }
 
-    function expectReportDescribes(
-        reportBytes: Uint8Array,
-        wav: Uint8Array,
-        audioFile: string,
-        stemId: string,
-        target = { id: 'custom', sampleRate: 48000 }
-    ) {
-        expect(wav.length).toBeGreaterThan(44);
-        const report: unknown = JSON.parse(new TextDecoder().decode(reportBytes));
-        expect(report).toMatchObject({
-            measurementBasis: 'decoded-WAV-bytes',
-            stemId,
-            targetId: target.id,
-            audioFile,
-            wav: {
-                channels: 2,
-                sampleRate: target.sampleRate,
-                bitDepth: 24,
-                bytes: wav.length,
-                md5: createHash('md5').update(wav).digest('hex'),
-            },
-            integrated: { value: expect.any(Number), unit: 'LUFS' },
-            maxMomentary: { value: expect.any(Number), unit: 'LUFS' },
-            maxShortTerm: { unit: 'LUFS' },
-            truePeak: { value: expect.any(Number), unit: 'dBTP' },
-        });
-    }
-
-    it.each(['browser', 'native'] as const)('pairs each target its own report on the %s destination', async (kind) => {
+    it('pairs each target its own report', async () => {
         const sink = browserOutput();
-        const staged = nativeStaging();
-        const [base] = wavTargets();
-        const targets = [
-            { ...base!, id: 'a', name: 'A', sampleRate: 48000 },
-            { ...base!, id: 'b', name: 'B', sampleRate: 96000 },
-        ];
+        const targets = twoWavReportTargets();
         const output = await streamExport({
             targets,
-            destination: kind === 'browser' ? zipDestination : { kind: 'native', directoryPath: '/stems' },
+            destination: zipDestination,
             checkCancelled: () => {},
             includeWavLoudnessReports: true,
             exportMode: 'stems',
         });
         await output.writeAudio({
-            source: stem(0),
+            source: reportStem(0),
             name: 'Kick',
             stemId: 'track-kick',
             onProgress: () => {},
             onLimited: () => {},
         });
         await output.commit(() => {});
-        const names = ['Kick__a.wav', 'Kick__a.wav.loudness.json', 'Kick__b.wav', 'Kick__b.wav.loudness.json'];
-        let fileBytes: (name: string) => Uint8Array;
-        if (kind === 'browser') {
-            const entries = unzipSync(joinBytes(sink.chunks));
-            expect(Object.keys(entries)).toEqual(names);
-            fileBytes = (name) => entries[name] ?? new Uint8Array();
-        } else {
-            const committed = native.commit.mock.calls[0]?.[0].map((token) => staged.paths.get(token));
-            expect(committed).toEqual([names[1], names[0], names[3], names[2]].map((name) => `/stems/${name}`));
-            fileBytes = (name) => staged.fileBytes(`/stems/${name}`);
-        }
+        const entries = unzipSync(joinBytes(sink.chunks));
+        expect(Object.keys(entries)).toEqual([
+            'Kick__a.wav',
+            'Kick__a.wav.loudness.json',
+            'Kick__b.wav',
+            'Kick__b.wav.loudness.json',
+        ]);
         for (const target of targets) {
             const audioFile = `Kick__${target.id}.wav`;
             expectReportDescribes(
-                fileBytes(`${audioFile}.loudness.json`),
-                fileBytes(audioFile),
+                entries[`${audioFile}.loudness.json`] ?? new Uint8Array(),
+                entries[audioFile] ?? new Uint8Array(),
                 audioFile,
                 'track-kick',
                 target
@@ -770,7 +668,7 @@ describe('WAV loudness reports', () => {
     it('pairs a report with each WAV stem inside the browser archive', async () => {
         const sink = browserOutput();
         const output = await streamExport({
-            targets: wavTargets(),
+            targets: wavReportTargets(),
             destination: zipDestination,
             checkCancelled: () => {},
             includeWavLoudnessReports: true,
@@ -790,95 +688,26 @@ describe('WAV loudness reports', () => {
         expect(output.reportedFiles()).toBe(2);
     });
 
-    it('commits each native report before the WAV it describes', async () => {
-        const staged = nativeStaging();
-        const output = await streamExport({
-            targets: wavTargets(),
-            destination: { kind: 'native', directoryPath: '/stems' },
-            checkCancelled: () => {},
-            includeWavLoudnessReports: true,
-            exportMode: 'stems',
-        });
-        await writeStems(output);
-        expect(output.reportedFiles()).toBe(0);
-        await output.commit(() => {});
-        const committed = native.commit.mock.calls[0]?.[0].map((token) => staged.paths.get(token));
-        expect(committed).toEqual([
-            '/stems/Kick.wav.loudness.json',
-            '/stems/Kick.wav',
-            '/stems/Snare.wav.loudness.json',
-            '/stems/Snare.wav',
-        ]);
-        expectReportDescribes(
-            staged.fileBytes('/stems/Kick.wav.loudness.json'),
-            staged.fileBytes('/stems/Kick.wav'),
-            'Kick.wav',
-            'track-kick'
-        );
-        expect(output.reportedFiles()).toBe(2);
-    });
-
-    it.each(['begin', 'seal'] as const)('commits no WAV whose report fails to %s', async (step) => {
-        const staged = nativeStaging();
-        const begin = native.begin.getMockImplementation();
-        native.begin.mockImplementation(async (path) => {
-            if (step === 'begin' && path.endsWith('.loudness.json')) {
-                throw new Error('disk full');
-            }
-            return begin ? begin(path) : '';
-        });
-        native.seal.mockImplementation(async (token) => {
-            if (step === 'seal' && staged.paths.get(token)?.endsWith('.loudness.json')) {
-                throw new Error('disk full');
-            }
-        });
-        const output = await streamExport({
-            targets: wavTargets(),
-            destination: { kind: 'native', directoryPath: '/stems' },
-            checkCancelled: () => {},
-            includeWavLoudnessReports: true,
-            exportMode: 'stems',
-        });
-        await expect(
-            output.writeAudio({
-                source: stem(0),
-                name: 'Kick',
-                stemId: 'track-kick',
-                onProgress: () => {},
-                onLimited: () => {},
-            })
-        ).rejects.toThrow('disk full');
-        const onCommitBegin = vi.fn();
-        await expect(output.commit(onCommitBegin)).rejects.toThrow();
-        expect(onCommitBegin).not.toHaveBeenCalled();
-        expect(native.commit).not.toHaveBeenCalled();
-        expect(output.reportedFiles()).toBe(0);
-    });
-
     it.each([
         ['a mixdown', { exportMode: 'mixdown' as const }],
-        ['an MP3 beside the WAV', { targets: wavTargets({ formats: ['wav', 'mp3'] }) }],
-        ['a FLAC-only target', { targets: wavTargets({ formats: ['flac'] }) }],
-        ['an unsupported rate', { targets: wavTargets({ sampleRate: 22050 }) }],
-        ['more than two channels', { targets: wavTargets({ channels: 6 }) }],
-    ])('refuses %s before opening any destination', async (_case, override) => {
-        nativeStaging();
+        ['an MP3 beside the WAV', { targets: wavReportTargets({ formats: ['wav', 'mp3'] }) }],
+        ['a FLAC-only target', { targets: wavReportTargets({ formats: ['flac'] }) }],
+        ['an unsupported rate', { targets: wavReportTargets({ sampleRate: 22050 }) }],
+        ['more than two channels', { targets: wavReportTargets({ channels: 6 }) }],
+    ])('refuses %s before opening the save picker', async (_case, override) => {
         const picker = vi.fn();
         vi.stubGlobal('window', { showSaveFilePicker: picker });
-        for (const destination of [zipDestination, { kind: 'native' as const, directoryPath: '/stems' }]) {
-            await expect(
-                streamExport({
-                    targets: wavTargets(),
-                    destination,
-                    checkCancelled: () => {},
-                    includeWavLoudnessReports: true,
-                    exportMode: 'stems',
-                    ...override,
-                })
-            ).rejects.toThrow(/WAV loudness reports/);
-        }
+        await expect(
+            streamExport({
+                targets: wavReportTargets(),
+                destination: zipDestination,
+                checkCancelled: () => {},
+                includeWavLoudnessReports: true,
+                exportMode: 'stems',
+                ...override,
+            })
+        ).rejects.toThrow(/WAV loudness reports/);
         expect(picker).not.toHaveBeenCalled();
-        expect(native.begin).not.toHaveBeenCalled();
     });
 
     it('refuses reports for settings that carry no explicit delivery targets', async () => {
@@ -894,13 +723,13 @@ describe('WAV loudness reports', () => {
         const sink = browserOutput();
         const progress: string[] = [];
         const output = await streamExport({
-            targets: wavTargets(),
+            targets: wavReportTargets(),
             destination: zipDestination,
             checkCancelled: () => {},
         });
         for (const name of ['Kick', 'Snare']) {
             await output.writeAudio({
-                source: stem(0),
+                source: reportStem(0),
                 name,
                 onProgress: (format, fraction) => progress.push(`${name}:${format}:${fraction}`),
                 onLimited: () => {},
@@ -909,58 +738,6 @@ describe('WAV loudness reports', () => {
         await output.commit(() => {});
         expect(Object.keys(unzipSync(joinBytes(sink.chunks)))).toEqual(['Kick.wav', 'Snare.wav']);
         expect(progress.at(-1)).toBe('Snare:wav:1');
-        expect(output.reportedFiles()).toBe(0);
-    });
-
-    it.each([
-        ['while the WAV is staging', '.wav', 'append'],
-        ['as the report opens', '.loudness.json', 'begin'],
-        ['while the report is staging', '.loudness.json', 'append'],
-    ] as const)('commits nothing when Cancel lands %s', async (_case, suffix, step) => {
-        const staged = nativeStaging();
-        const controller = new AbortController();
-        const begin = native.begin.getMockImplementation();
-        const append = native.append.getMockImplementation();
-        native.begin.mockImplementation(async (path) => {
-            if (step === 'begin' && path.endsWith(suffix)) {
-                controller.abort();
-            }
-            return begin ? begin(path) : '';
-        });
-        native.append.mockImplementation(async (token, bytes) => {
-            if (step === 'append' && staged.paths.get(token)?.endsWith(suffix)) {
-                controller.abort();
-            }
-            await append?.(token, bytes);
-        });
-        const output = await streamExport({
-            targets: wavTargets(),
-            destination: { kind: 'native', directoryPath: '/stems' },
-            checkCancelled: () => {
-                if (controller.signal.aborted) {
-                    throw new Error('Export cancelled');
-                }
-            },
-            signal: controller.signal,
-            includeWavLoudnessReports: true,
-            exportMode: 'stems',
-        });
-        await expect(
-            output.writeAudio({
-                source: stem(0),
-                name: 'Kick',
-                stemId: 'track-kick',
-                onProgress: () => {},
-                onLimited: () => {},
-            })
-        ).rejects.toThrow('Export cancelled');
-        expect(controller.signal.aborted).toBe(true);
-        await expect(output.commit(() => {})).rejects.toThrow();
-        await output.abort();
-        expect(native.commit).not.toHaveBeenCalled();
-        const aborted = native.abort.mock.calls.flatMap(([tokens]) => [...tokens]);
-        expect(staged.paths.size).toBeGreaterThan(0);
-        expect(new Set(aborted)).toEqual(new Set(staged.paths.keys()));
         expect(output.reportedFiles()).toBe(0);
     });
 });

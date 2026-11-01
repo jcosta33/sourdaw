@@ -66,7 +66,9 @@ function options(output = destination()) {
 
 function report(output: ReturnType<typeof destination>): WavLoudnessReport {
     const entry = output.entries.get('renamed-take.wav.loudness.json');
-    if (!entry) throw new Error('Expected a staged report.');
+    if (!entry) {
+        throw new Error('Expected a staged report.');
+    }
     return JSON.parse(new TextDecoder().decode(collect(entry.chunks)));
 }
 
@@ -94,7 +96,6 @@ describe('reported WAV staging', () => {
     it.each([16, 24, 32] as const)('binds the report to real %i-bit output and decoded levels', async (bitDepth) => {
         const random = vi.spyOn(Math, 'random').mockReturnValueOnce(0.125).mockReturnValue(0.875);
         const input = { ...options(), bitDepth };
-        const originalDither = { ...input.dither };
         const originalPcm = input.source.getChannelData().slice();
         await writeReportedWav(input);
         const audio = input.destination.entries.get(input.audioName)!;
@@ -104,7 +105,8 @@ describe('reported WAV staging', () => {
         );
         expect(bytes).toEqual(expectedBytes);
         expect(random).toHaveBeenCalledOnce();
-        expect(input.dither).toEqual(originalDither);
+        // The seed is added to a copy; the caller's dither stays unseeded.
+        expect(input.dither).toEqual({ mode: 'tpdf' });
         expect(input.source.getChannelData()).toEqual(originalPcm);
         const measured = report(input.destination);
         expect(measured).toMatchObject({
@@ -232,11 +234,12 @@ describe('reported WAV staging', () => {
         const begin = input.destination.beginFile.getMockImplementation()!;
         input.destination.beginFile.mockImplementation(async (name) => {
             const entry = await begin(name);
-            if (name === input.audioName)
+            if (name === input.audioName) {
                 entry.finish.mockImplementation(() => {
                     entered.resolve();
                     return release.promise;
                 });
+            }
             return entry;
         });
         const writing = writeReportedWav(input);
@@ -254,7 +257,9 @@ describe('reported WAV staging', () => {
         const begin = input.destination.beginFile.getMockImplementation()!;
         input.destination.beginFile.mockImplementation(async (name) => {
             const entry = await begin(name);
-            if (name.endsWith('.json')) entry.writer.write.mockRejectedValue(failure);
+            if (name.endsWith('.json')) {
+                entry.writer.write.mockRejectedValue(failure);
+            }
             return entry;
         });
         await expect(writeReportedWav(input)).rejects.toBe(failure);
@@ -315,7 +320,9 @@ describe('reported WAV staging', () => {
             const name = stage === 'WAV' ? input.audioName : `${input.audioName}.loudness.json`;
             expect(input.destination.entries.get(name)!.finish).not.toHaveBeenCalled();
             expect(input.destination.registerReportPair).not.toHaveBeenCalled();
-            if (stage === 'WAV') expect(input.destination.beginFile).toHaveBeenCalledTimes(1);
+            if (stage === 'WAV') {
+                expect(input.destination.beginFile).toHaveBeenCalledTimes(1);
+            }
         }
     );
 

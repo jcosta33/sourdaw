@@ -144,7 +144,9 @@ describe('native export transaction adapter', () => {
                 directoryPath: '/picked',
                 requireReportPairs: true,
                 checkCancelled: () => {
-                    if (cancelled) throw new Error('Export cancelled');
+                    if (cancelled) {
+                        throw new Error('Export cancelled');
+                    }
                 },
             });
             const audio = await batch.beginFile('mix.wav');
@@ -168,7 +170,9 @@ describe('native export transaction adapter', () => {
             directoryPath: '/picked',
             requireReportPairs: true,
             checkCancelled: () => {
-                if (cancelled) throw new Error('Export cancelled');
+                if (cancelled) {
+                    throw new Error('Export cancelled');
+                }
             },
         });
         for (const name of ['mix.wav', 'mix.wav.loudness.json']) {

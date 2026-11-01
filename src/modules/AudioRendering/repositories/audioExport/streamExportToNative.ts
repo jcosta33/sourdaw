@@ -40,6 +40,54 @@ function createNativeExportEntry(
     };
 }
 
+/**
+ * Pairs each completed WAV with its completed `.loudness.json` report and orders their commit.
+ * Reports need a picked directory: a single picked file has no place for its neighbour.
+ */
+function createReportPairLedger(input: { requireReportPairs?: boolean; directoryPath?: string }) {
+    const required = input.requireReportPairs === true;
+    if (required && !input.directoryPath) {
+        throw new Error('WAV reports require a native export directory.');
+    }
+    const completed = new Map<string, string>();
+    const pairs = new Map<string, string>();
+    const tokenOf = (name: string): string => {
+        const token = completed.get(name);
+        if (token === undefined) {
+            throw new Error('Invalid WAV report pair.');
+        }
+        return token;
+    };
+    return {
+        complete(name: string, token: string) {
+            completed.set(name, token);
+        },
+        register(audioName: string, reportName: string) {
+            if (
+                !required ||
+                !audioName.endsWith('.wav') ||
+                reportName !== `${audioName}.loudness.json` ||
+                !completed.has(audioName) ||
+                !completed.has(reportName) ||
+                pairs.has(audioName)
+            ) {
+                throw new Error('Invalid WAV report pair.');
+            }
+            pairs.set(audioName, reportName);
+        },
+        commitOrder(tokens: readonly string[]): readonly string[] {
+            if (!required) {
+                return tokens;
+            }
+            if (pairs.size * 2 !== completed.size) {
+                throw new Error('WAV report pairs are incomplete.');
+            }
+            // Native replacement is ordered, not atomic across the batch: publish each report before its WAV.
+            return [...pairs].flatMap(([audio, report]) => [tokenOf(report), tokenOf(audio)]);
+        },
+    };
+}
+
 /** A batch owns only native-issued transaction tokens; paths are granted and checked in Rust. */
 export async function streamExportToNative(input: {
     directoryPath?: string;
@@ -47,15 +95,10 @@ export async function streamExportToNative(input: {
     requireReportPairs?: boolean;
     checkCancelled: () => void;
 }): Promise<NativeExportBatch> {
-    if (input.requireReportPairs && !input.directoryPath) {
-        throw new Error('WAV reports require a native export directory.');
-    }
+    const reportPairs = createReportPairLedger(input);
     const tokens: string[] = [];
     const pendingBegins = new Set<Promise<string>>();
     const names = new Set<string>();
-    const completed = new Set<string>();
-    const tokenByName = new Map<string, string>();
-    const pairs = new Map<string, string>();
     let closed = false;
     let closing = false;
     let abortPending: Promise<void> | undefined;
@@ -121,39 +164,22 @@ export async function streamExportToNative(input: {
                 pendingBegins.delete(beginning);
             }
             names.add(name);
-            tokenByName.set(name, token);
             fileOpen = true;
             return createNativeExportEntry(token, checkOpen, input.checkCancelled, () => {
                 fileOpen = false;
-                completed.add(name);
+                reportPairs.complete(name, token);
             });
         },
         registerReportPair(audioName: string, reportName: string) {
             checkOpen();
-            if (
-                !input.requireReportPairs ||
-                !audioName.endsWith('.wav') ||
-                reportName !== `${audioName}.loudness.json` ||
-                !completed.has(audioName) ||
-                !completed.has(reportName) ||
-                pairs.has(audioName)
-            ) {
-                throw new Error('Invalid WAV report pair.');
-            }
-            pairs.set(audioName, reportName);
+            reportPairs.register(audioName, reportName);
         },
         async commit(onCommitBegin: () => void) {
             checkOpen();
             if (fileOpen || tokens.length === 0) {
                 throw new Error('Export has no completed files.');
             }
-            if (input.requireReportPairs && pairs.size * 2 !== completed.size) {
-                throw new Error('WAV report pairs are incomplete.');
-            }
-            // Native replacement is ordered, not atomic across the batch: publish each report before its WAV.
-            const commitTokens = input.requireReportPairs
-                ? [...pairs].flatMap(([audio, report]) => [tokenByName.get(report)!, tokenByName.get(audio)!])
-                : tokens;
+            const commitTokens = reportPairs.commitOrder(tokens);
             onCommitBegin();
             await commitExportFiles(commitTokens);
             closed = true;
