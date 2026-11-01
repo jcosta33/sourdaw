@@ -1,0 +1,21 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamPunch.spec.ts
+  s_110858ed9fcabf::t_8177120223a3a4 567-677
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_110858ed9fcabf::t_db783a8ac8b7b4 414-418,1224-1238,1486-1495,1504-1507
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "483549e17821f85a68af4406f95165c8490f2185",
+  "prompts": {},
+  "sessions": {
+    "s_110858ed9fcabf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_110858ed9fcabf",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
