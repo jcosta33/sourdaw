@@ -1,0 +1,19 @@
+src/modules/AiRuntime/AGENTS.md
+  s_55244eb93b97d1::t_84b1c07046257f 36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2796ff59dbda160423b3fe9944836222909cc66f",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
