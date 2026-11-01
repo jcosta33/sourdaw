@@ -1,0 +1,21 @@
+src/modules/AudioEngine/useCases/__tests__/exclusiveAudioBufferAudition.spec.ts
+  s_55244eb93b97d1::t_d11dc6d4041b37 621,626,631-632,634-663
+src/modules/AudioEngine/useCases/playExclusiveAudioBufferPreview.ts
+  s_55244eb93b97d1::t_1d544f87c16938 39,49,73,76-77,92,101-104,112,119,132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fb118163881911a9211f413d2455cb74ea024076",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
