@@ -1,0 +1,27 @@
+.agents/skills/review-stances/security-and-platform.md
+  s_dce66f6bf439db::t_c76892eb07ee19 143-158
+.agents/skills/review-stances/test-validity.md
+  s_dce66f6bf439db::t_8c2aedb8b5dcea 2544-2562
+scripts/__tests__/hostedAptInstall.spec.ts
+  s_dce66f6bf439db::t_8f1cc38cde444e 18,441-444,447,458-474,476,478-487,489-490
+scripts/__tests__/resourceGuardStorage.spec.ts
+  s_dce66f6bf439db::t_b3b52880ff1dff 1,1287,1308,1312,1348-1445,4561-4576,4608-4609,4710-4733
+scripts/resourceGuardStorage.ts
+  s_dce66f6bf439db::t_c728cb34fb501a 124,152
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9270d8e38e54e7e0fb6e10bbdcf11cc6ae6dc173",
+  "prompts": {},
+  "sessions": {
+    "s_dce66f6bf439db": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_dce66f6bf439db",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
