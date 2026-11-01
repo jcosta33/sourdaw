@@ -2357,7 +2357,7 @@ export async function runApplicationOwnedToolLoop(
             readCurrentMeasurementOpportunity(input, receipts, measurementIntake, turn) ??
             heldTerminal?.opportunity ??
             null;
-        const needsMeasurementStep =
+        const needsMeasurementStep: boolean =
             measurementOpportunity !== null &&
             !hasMeasurementWitness(measurementOpportunity) &&
             (heldTerminal !== null || turn === maxTurns() - 1);
@@ -2417,7 +2417,9 @@ export async function runApplicationOwnedToolLoop(
         }
         // A run outlives a measurement step its provider did not honour: some providers cannot
         // disable parallel calls or ignore the directive outright.
-        const measurementStepToolName = needsMeasurementStep ? input.measurement?.toolName : undefined;
+        const measurementStepToolName: string | undefined = needsMeasurementStep
+            ? input.measurement?.toolName
+            : undefined;
         const directiveRefusal =
             measurementStepToolName === undefined ? toolChoiceRefusal(outcome.toolCalls, directive, isFinalTurn) : null;
         if (directiveRefusal !== null) {
@@ -2441,7 +2443,7 @@ export async function runApplicationOwnedToolLoop(
 
         let measurementStepRecord: NativeTurnRecord | undefined;
         let stepTerminal: HeldTerminal | null = null;
-        const stepDecline =
+        const stepDecline: { calls: IdentifiedToolCall[]; record: NativeTurnRecord } | null =
             measurementStepToolName === undefined
                 ? null
                 : readStepDecline(measurementStepToolName, identifiedCalls, turn);
