@@ -25,7 +25,7 @@ function findRule(config: { forbidden: CruiserRule[] }, name: string): CruiserRu
 
 /** dependency-cruiser fills `$n` in `to` from the `from` match; a group the match lacks stays literal. */
 function substituteGroups(pattern: string, groups: readonly (string | undefined)[]): string {
-    return pattern.replace(/\$(\d)/g, (token, index: string) => groups[Number(index)] ?? token);
+    return pattern.replaceAll(/\$(\d)/g, (token, index: string) => groups[Number(index)] ?? token);
 }
 
 function violates(rule: CruiserRule, from: string, to: string): boolean {
