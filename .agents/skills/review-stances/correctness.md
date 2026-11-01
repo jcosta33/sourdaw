@@ -26,8 +26,10 @@ state or mutation to run, and the check that must go red. Report the concrete br
    from the owner's source and drive the one-poll-interval-inside case of each (loop-end seam half of
    `proven_popped`, #3363); render the persisted state the owner refuses (enabled mapping to a
    nonautomatable parameter must show no Inspector halo, #831/#5379); change the owner after detection
-   and require the mounted reader to follow without a pointer refresh (Elastic markers; selected-only
-   target resolution); write points to a linked follower the sampler ignores (#4506). Ask what a
+   and require the mounted reader to follow without a pointer refresh (Elastic markers; the real
+   slider with a selected clip and no open editor must change authoritative automatic markers while
+   locked/user rows, another clip and PCM stay exact, and selected-only resolution must not override an
+   explicitly opened editor; do not open the editor to satisfy the test); write points to a linked follower the sampler ignores (#4506). Ask what a
    one-bit-per-key model cannot represent (two of one key, an order, a count).
 4. **Population and producer sweep.** When a detector, sanitizer, adapter or narrowed store rule
    asserts an invariant over a registered population or every writer of a record, enumerate every member
@@ -46,7 +48,9 @@ state or mutation to run, and the check that must go red. Report the concrete br
    a widened tolerance or threshold changes which population is admitted, so construct an input inside
    the new band (`joinNotes` joined stacked same-pitch notes at `gridSize/8`); finite windows must also
    hit a fractional change origin before the outgoing next tick (meter seam 4/4 to 3/4 at 5.5, window
-   5.4..5.6) and must adopt the segment boundary's exact origin once. Validate the entered unit and
+   5.4..5.6) and must adopt the segment boundary's exact origin once, even when another distinct origin
+   is within grid rounding tolerance; keep equal-point queries, negative starts, inclusive right
+   tolerance and last-change governance at duplicate beats. Validate the entered unit and
    segment, not only the initial one: drive an invalid later unit and a walk finite arithmetic cannot
    advance, and require the valid prefix. Frame limits get the `2^30` boundary (`2^30 + 1` requested vs
    `2^30` returned, with and without tail, nonzero start). Trace binder: equal end timestamp and one
@@ -89,7 +93,9 @@ state or mutation to run, and the check that must go red. Report the concrete br
     result was built, #5274; a void replay marked Reverted for an absent group, #5565; Faust runtime
     failure inside a musician export, #5215; short offline render placed at the requested end, #5013/#4986;
     guarded solo whose target already holds, #5643; device delta against an uninitialized live strip,
-    #2083, whose Undo must change the existing live chain rather than send an initialization snapshot).
+    #2083: complete a MIDI import, leave the strip actually absent, and run Remove Synth with no Play
+    gesture, since a Play masked the missing strip; Undo must change the existing live chain rather than
+    send an initialization snapshot; reverting the missing-strip admission must fail the cold Command case).
     Specific inputs: overlapping sink requests wait for their predecessor; a plain-click exclusive solo
     makes the guarded inverse target already hold, so Undo consumes the entry with no root, revision or
     projection write and the next Undo reaches the older entry (Redo likewise; keep the differing-live,
@@ -252,7 +258,7 @@ state or mutation to run, and the check that must go red. Report the concrete br
     the command from the launcher's fenced set, or restoring a direct package route to the transaction
     script, must fail before remote I/O; lock fixtures that inject owner fences cannot show it (#5639).
 31. **Validated tree vs merged tree.** When the base tip moved after the head's last run, especially
-    in the same file, require evidence covering base plus head; reverting either hunk must fail it (#5243).
+    in the same file, require evidence covering base plus head; reverting either contributing hunk must fail that combined typecheck (#5243).
 
 ## Retired lessons
 
