@@ -1,0 +1,39 @@
+.agents/skills/review-stances/README.md
+  s_4a2eace01669d5::t_1e64fe0eadbd12 44-45
+.agents/skills/review-stances/async-file-imports.md
+  s_4a2eace01669d5::t_265ecac3764fe0 32-41
+.agents/skills/review-stances/audio-source-time.md
+  s_4a2eace01669d5::t_d5bf4e27290041 71-75,89,91-92,105-107
+.agents/skills/review-stances/audio-timing-format-laws.md
+  s_4a2eace01669d5::t_6e7d43259efb56 53-60
+.agents/skills/review-stances/project-integrity.md
+  s_4a2eace01669d5::t_9ac803b635b928 3-12,35
+.agents/skills/review-stances/provider-egress.md
+  s_4a2eace01669d5::t_7a6e7f23d53f75 73-77
+.agents/skills/review-stances/security-and-platform.md
+  s_4a2eace01669d5::t_7f58fddf1d4dc9 136-149
+.agents/skills/review-stances/session-lifecycle.md
+  s_4a2eace01669d5::t_a995bd8a7f5110 170-178
+.agents/skills/review-stances/test-observation-scope.md
+  s_4a2eace01669d5::t_4313f9e4063728 49,53-63
+.agents/skills/review-stances/test-validity.md
+  s_4a2eace01669d5::t_69281c0f373875 3-10,66,77,86,95,116,140-151
+.agents/skills/review-stances/validation-scope-selection.md
+  s_4a2eace01669d5::t_3c896d60ddfe4d 38-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "720340785b0c3825962ceb008468680f603d39a2",
+  "prompts": {},
+  "sessions": {
+    "s_4a2eace01669d5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_4a2eace01669d5",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
