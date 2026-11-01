@@ -1,0 +1,29 @@
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  s_55244eb93b97d1::t_750ad21ff64b2f 575-587
+evidence/agent-campaign/manifest.json
+  s_0314bb17e5dee3::t_07591bcf4cdcb6 820
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "65450b97cb07f537daa89f593ec6b8b4b6cf2d68",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
