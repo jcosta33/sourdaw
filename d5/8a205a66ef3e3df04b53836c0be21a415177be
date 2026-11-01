@@ -1,0 +1,37 @@
+.agents/skills/native-audio-engine/SKILL.md
+  s_0314bb17e5dee3::t_7aa2262b03952a 1-25,27-45,47-81,83-120
+  s_422865f62f3967::t_5522be628575e3 26,46
+  s_3bb122e91d89a5::t_a2a8c66a47e99f 82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d58a205a66ef3e3df04b53836c0be21a415177be",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_422865f62f3967": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_422865f62f3967",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
