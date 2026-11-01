@@ -101,12 +101,14 @@ function isOnClosingLine(beat: number, window: MidiClipWindow): boolean {
     return Math.abs(beat - window.visibleEndBeat) <= SAME_BEAT_TOLERANCE;
 }
 
+type CarriedRow<TRow> = { row: TRow; sourceIndex: number };
+
 type ProjectedControllerRows<TRow> = {
     /**
-     * The source rows whose values each lane carries onto the window start, at their own beats, in the order
-     * their lanes first appear; `placeOnWindowStart` puts them there.
+     * The source rows whose values each lane carries onto the window start, at their own beats, with their
+     * index in the source rows, in the order their lanes first appear; `placeOnWindowStart` puts them there.
      */
-    carried: TRow[];
+    carried: CarriedRow<TRow>[];
     /** The rows inside the window, rebased, in source order, up to (not on) its closing line. */
     visible: TRow[];
     /** The rows on the closing line, placed at `closingLineBeat`; none when the window has no closing line of its own. */
@@ -126,12 +128,12 @@ function projectVisibleControllerRows<TRow extends ControllerRow>(
     closingLineBeat: number | undefined,
     carriesIntoWindow: (row: TRow) => boolean = () => true
 ): ProjectedControllerRows<TRow> {
-    const inForceAtStart = new Map<string, TRow>();
+    const inForceAtStart = new Map<string, CarriedRow<TRow>>();
     const lanesStartingAtWindow = new Set<string>();
     const visible: TRow[] = [];
     const closing: TRow[] = [];
 
-    for (const row of rows) {
+    for (const [sourceIndex, row] of rows.entries()) {
         if (!Number.isFinite(row.beat)) {
             continue;
         }
@@ -140,8 +142,8 @@ function projectVisibleControllerRows<TRow extends ControllerRow>(
                 continue;
             }
             const current = inForceAtStart.get(laneKey(row));
-            if (!current || current.beat <= row.beat) {
-                inForceAtStart.set(laneKey(row), row);
+            if (!current || current.row.beat <= row.beat) {
+                inForceAtStart.set(laneKey(row), { row, sourceIndex });
             }
             continue;
         }
@@ -157,7 +159,7 @@ function projectVisibleControllerRows<TRow extends ControllerRow>(
         visible.push({ ...row, beat: row.beat + window.beatOffset });
     }
 
-    const carried = [...inForceAtStart].flatMap(([key, row]) => (lanesStartingAtWindow.has(key) ? [] : [row]));
+    const carried = [...inForceAtStart].flatMap(([key, carry]) => (lanesStartingAtWindow.has(key) ? [] : [carry]));
 
     return { carried, visible, closing };
 }
@@ -169,10 +171,13 @@ function placeOnWindowStart<TRow extends ControllerRow>(rows: readonly TRow[], w
 /**
  * The bends carried onto one window start all play on it, and the player reads the last that reaches a note,
  * so they keep the order they were recorded in: the later of a drawn row and a recorded wheel of one channel
- * stays the one in force for that channel's notes.
+ * stays the one in force for that channel's notes. Rows on one beat keep their source order, which is how the
+ * player breaks the tie on the untrimmed clip (an MPE switch writes its rows on one beat).
  */
-function orderByRecordedBeat<TRow extends ControllerRow>(rows: readonly TRow[]): TRow[] {
-    return rows.toSorted((left, right) => left.beat - right.beat);
+function orderByRecordedBeat<TRow extends ControllerRow>(carried: readonly CarriedRow<TRow>[]): TRow[] {
+    return carried
+        .toSorted((left, right) => left.row.beat - right.row.beat || left.sourceIndex - right.sourceIndex)
+        .map(({ row }) => row);
 }
 
 /**
@@ -214,7 +219,13 @@ export function projectMidiClipWindow<TPitchBend extends MidiPitchBend>({
     const bends = projectVisibleControllerRows(pitchBends, pitchBendLaneKey, window, undefined);
     return {
         notes: notes.flatMap((note) => projectVisibleNote(note, window, locatesOwnBend) ?? []),
-        controlChanges: [...placeOnWindowStart(controllers.carried, window), ...controllers.visible],
+        controlChanges: [
+            ...placeOnWindowStart(
+                controllers.carried.map(({ row }) => row),
+                window
+            ),
+            ...controllers.visible,
+        ],
         closingControlChanges: controllers.closing.filter(playsOnClosingLine),
         pitchBends: [...placeOnWindowStart(orderByRecordedBeat(bends.carried), window), ...bends.visible],
     };

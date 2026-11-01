@@ -67,7 +67,7 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
         const existing = laneMocks.midiState.pitchBendByClipId[clipId] ?? [];
         laneMocks.midiState.pitchBendByClipId[clipId] = existing.filter((point) => point.id !== pbId);
     }),
-    restorePitchBend: vi.fn((clipId: string, row: MidiPitchBend): void => {
+    restorePitchBend: vi.fn((clipId: string, row: MidiPitchBend, _previousOrder?: readonly { id: string }[]): void => {
         const existing = laneMocks.midiState.pitchBendByClipId[clipId] ?? [];
         laneMocks.midiState.pitchBendByClipId[clipId] = [...existing, row];
     }),
@@ -671,7 +671,9 @@ describe('PitchBendLane', () => {
 
             const undoFn = vi.mocked(pushUndoEntry).mock.calls[0]?.[1];
             undoFn!();
-            expect(restorePitchBend).toHaveBeenCalledWith('clip-1', { id: 'pb-a', value: 20, beat: 0, channel: 0 });
+            expect(restorePitchBend).toHaveBeenCalledWith('clip-1', { id: 'pb-a', value: 20, beat: 0, channel: 0 }, [
+                { id: 'pb-a' },
+            ]);
         });
 
         it('should hand the whole removed row, its channel-scoped mark included, to the undo entry', () => {
@@ -682,7 +684,7 @@ describe('PitchBendLane', () => {
             fireEvent.doubleClick(container.querySelector('[data-pb-point="true"]')!);
             vi.mocked(pushUndoEntry).mock.calls[0]?.[1]();
 
-            expect(restorePitchBend).toHaveBeenCalledWith('clip-1', recorded);
+            expect(restorePitchBend).toHaveBeenCalledWith('clip-1', recorded, [{ id: 'pb-r' }]);
         });
     });
 });

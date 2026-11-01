@@ -520,8 +520,8 @@ type SplitEventsInput<TRow extends SplitEventRow> = {
     /** Rows that share a key share one controller lane; the lane's value in force at the cut is carried per key. */
     laneKey: (event: TRow) => string;
     /**
-     * Whether the rows carried onto the right clip's origin keep the order they were recorded in rather than the
-     * order their lanes first appear. A player that reads the last of them that reaches a note needs it (pitch
+     * Whether the rows carried onto the right clip's origin keep the order they were recorded in (by beat, rows on
+     * one beat in source order) rather than the order their lanes first appear. A player that reads the last of them that reaches a note needs it (pitch
      * bend, whose lanes overlap); a controller lane's carry is the only one of its lane.
      */
     carriesInRecordedOrder?: boolean;
@@ -684,7 +684,7 @@ function splitSourceEvents<TRow extends SplitEventRow>({
     }) ?? { origin: [], beforeMoved: [] };
     const carries = [...inForceAtCut].flatMap(([key, carry]) => (lanesStartingAtOrigin.has(key) ? [] : [carry]));
     const orderedCarries = carriesInRecordedOrder
-        ? carries.toSorted((left, right) => left.event.beat - right.event.beat)
+        ? carries.toSorted((left, right) => left.event.beat - right.event.beat || left.sourceIndex - right.sourceIndex)
         : carries;
     const carriedFromBefore = orderedCarries.map(({ event }) => event);
     const carried = orderedCarries.map(({ event, sourceIndex }) => ({

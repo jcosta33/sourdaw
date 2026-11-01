@@ -783,6 +783,29 @@ describe('transformMidiGlobalTimeState split edge cases', () => {
         ]);
     });
 
+    it('carries same-beat rows of one channel onto the right clip in their source order', () => {
+        // An MPE switch-off writes a centred unscoped row and the channel's scoped wheel in one call, on one beat,
+        // and the later of them in the list is the one in force for the channel's notes. The earlier scoped wheel
+        // put the scoped lane first, which must not reorder the two on the right clip.
+        const s1 = { id: 's1', value: 1000, beat: 1, channel: 0, channelScoped: true };
+        const u1 = { id: 'u1', value: 2000, beat: 3, channel: 0 };
+        const u2 = { id: 'u2', value: 0, beat: 5, channel: 0 };
+        const s2 = { id: 's2', value: 1000, beat: 5, channel: 0, channelScoped: true };
+        const prepared = state({ pitchBendByClipId: { source: [s1, u1, u2, s2] } });
+
+        const result = transformMidiGlobalTimeState({
+            state: prepared,
+            commands: [{ type: 'split-notes', sourceClipId: 'source', targetClipId: 'right', splitBeat: 6 }],
+            targetNoteIds: [],
+        });
+
+        expect(result.status).toBe('ready');
+        expect(result.state.pitchBendByClipId.right).toStrictEqual([
+            { ...u2, id: 'pb-split:right:2', beat: 0 },
+            { ...s2, id: 'pb-split:right:3', beat: 0 },
+        ]);
+    });
+
     it('rejects when a note end overflows to non-finite during a discard-window split', () => {
         const prepared = state({
             notesByClipId: {

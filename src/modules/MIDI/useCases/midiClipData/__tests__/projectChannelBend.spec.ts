@@ -82,6 +82,30 @@ describe('projectChannelBend', () => {
         ]);
     });
 
+    it('plays a trimmed head as the untrimmed clip when carried rows of one channel share a beat', () => {
+        // An MPE switch-off writes a centred unscoped row and the channel's scoped wheel in one call, on one beat,
+        // and the later of them in the list is the one in force. The carry must keep that order, not the order
+        // the lanes first appeared in, where the earlier scoped wheel put the scoped lane first.
+        const pitchBends = [
+            { ...bend('s1', 1, 1_000), channelScoped: true },
+            bend('u1', 3, 2_000),
+            bend('u2', 5, 0),
+            { ...bend('s2', 5, 1_000), channelScoped: true },
+        ];
+        const heardAt = (clip: { startBeat: number; endBeat: number; midiOffsetBeats: number }) => {
+            const points = projectChannelBend({ clips: [{ clip, controlChanges: [], pitchBends }], frameAtBeat });
+            const inForce = (channel: number) =>
+                points.findLast((point) => point.beat <= 6 && (!point.channelScoped || point.channel === channel))
+                    ?.value;
+            return { channel0: inForce(0), channel1: inForce(1) };
+        };
+
+        const untrimmed = heardAt({ startBeat: 0, endBeat: 10, midiOffsetBeats: 0 });
+
+        expect(untrimmed).toEqual({ channel0: 1_000, channel1: 0 });
+        expect(heardAt({ startBeat: 6, endBeat: 10, midiOffsetBeats: 6 })).toEqual(untrimmed);
+    });
+
     it('carries a drawn bend and a later recorded wheel of one channel onto a trimmed head, in recorded order', () => {
         // Keyed by channel alone, the carry kept only the later (scoped) row, so a note of another channel lost the
         // drawn bend it hears on the untrimmed clip.
