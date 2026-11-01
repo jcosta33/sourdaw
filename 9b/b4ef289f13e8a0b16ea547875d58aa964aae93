@@ -1,0 +1,78 @@
+src/modules/AudioRendering/useCases/audioExport/__tests__/streamExport.spec.ts
+  s_9091c7fb2989db::t_a989e74ff145ae 24-40
+  s_9091c7fb2989db::t_5674febe5647a4 908-910
+  s_9091c7fb2989db::t_708bc6d217f0fe 768,772,776-780
+  s_9091c7fb2989db::t_a95b690efa9cb1 2
+  s_9091c7fb2989db::t_6299c66927478e 8
+  s_9091c7fb2989db::t_c4f14f11274e48 798-800
+  s_9091c7fb2989db::t_84a647e2e42033 614-615,619-767,769-771,773-775,781-797,801-907,911-913
+  s_9091c7fb2989db::t_7a1beb135f27e0 616-618
+crates/sourdaw-native/src/commands/filesystem/mod.rs
+  s_9091c7fb2989db::t_206a5d1127cab1 2549-2584
+  s_fec7059b7a251c::t_f219fbf0107b68 2548
+src/modules/AudioRendering/useCases/audioExport/streamExport.ts
+  s_9091c7fb2989db::t_2ca460ce42e550 32-33
+  s_9091c7fb2989db::t_6528f0aa820954 49-50
+  s_9091c7fb2989db::t_3f37e95b46ddc0 283-288
+  s_9091c7fb2989db::t_9fd083897e1a87 181-186,190-194,198,203-204
+  s_9091c7fb2989db::t_b834c3f67fac49 245-268
+  s_9091c7fb2989db::t_de32710bdb3d5b 13-14
+  s_9091c7fb2989db::t_90dd971e603181 48
+src/modules/AudioRendering/useCases/audioExport/validateWavLoudnessReportPlan.ts
+  s_9091c7fb2989db::t_c41cc471ae91b6 1-35
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_9091c7fb2989db::t_b017525adad7b6 2
+  s_9091c7fb2989db::t_8687c42493f153 453-456
+  s_9091c7fb2989db::t_3fcf06736b1a95 196
+  s_9091c7fb2989db::t_8ffb38fd2526d2 485-488
+  s_9091c7fb2989db::t_cf8fe3cb11ce6f 141
+  s_9091c7fb2989db::t_a69b8ef0aec358 1
+  s_9091c7fb2989db::t_fb84cb0bf6d68f 3342-3386,3389-3458
+  s_9091c7fb2989db::t_588e0c3821bdc4 3387-3388
+  s_7a8e1107313040::t_596f06697588c1 3459
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_9091c7fb2989db::t_d5ee902b9b1006 786
+  s_9091c7fb2989db::t_59e390a4779f13 858-865
+  s_9091c7fb2989db::t_6a3e6666fecb0c 46
+  s_9091c7fb2989db::t_69c97f87731e79 875
+  s_9091c7fb2989db::t_100c0f6c32acc8 109-115
+  s_9091c7fb2989db::t_7e88a9eb042abf 690-691,702
+  s_9091c7fb2989db::t_20fb129cf14ff1 1313-1328
+  s_9091c7fb2989db::t_70662fa12b94be 472
+  s_9091c7fb2989db::t_25d560c5dc2044 573-574
+  s_9091c7fb2989db::t_a7871e93c4fc9e 874
+  s_9091c7fb2989db::t_5998b2b5777c99 180
+  s_9091c7fb2989db::t_086acf30d14153 436
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9bb4ef289f13e8a0b16ea547875d58aa964aae93",
+  "prompts": {},
+  "sessions": {
+    "s_7a8e1107313040": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54399ae9-2148-45f8-8043-53b64cc39d76",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9091c7fb2989db": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3cde0d3-cad6-4d0d-93a9-91700b2ed782",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
