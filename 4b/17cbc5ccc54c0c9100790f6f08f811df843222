@@ -1,0 +1,21 @@
+src/modules/Arrangement/handlers/preset/__tests__/handleLoadPreset.spec.ts
+  s_fec7059b7a251c::t_cb16c9dbd56f26 70-74
+  s_fec7059b7a251c::t_79e5dd0ea568c5 489-490
+  s_fec7059b7a251c::t_e269c19f1ac94c 486-488,491
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4b17cbc5ccc54c0c9100790f6f08f811df843222",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
