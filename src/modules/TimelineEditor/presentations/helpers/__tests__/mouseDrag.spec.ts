@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
+import { isDragGestureActive } from '#/utils/UI/activeDragGesture';
+
 import { startMouseDrag } from '../mouseDrag';
 
 describe('startMouseDrag', () => {
@@ -138,5 +140,25 @@ describe('startMouseDrag', () => {
         cancel();
 
         expect(onUp).toHaveBeenCalledTimes(1);
+    });
+
+    describe('active drag marker', () => {
+        it('is active from start until mouseup', () => {
+            startMouseDrag(vi.fn(), vi.fn());
+            expect(isDragGestureActive()).toBe(true);
+            window.dispatchEvent(new MouseEvent('mouseup'));
+            expect(isDragGestureActive()).toBe(false);
+        });
+
+        it('is cleared by Escape cancel and by a caller-initiated cancel', () => {
+            startMouseDrag(vi.fn(), vi.fn());
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+            expect(isDragGestureActive()).toBe(false);
+
+            const cancel = startMouseDrag(vi.fn(), vi.fn());
+            expect(isDragGestureActive()).toBe(true);
+            cancel();
+            expect(isDragGestureActive()).toBe(false);
+        });
     });
 });

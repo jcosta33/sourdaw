@@ -1,5 +1,7 @@
 import { createStore } from '#/infra/store/createStore';
 
+import { getTimelineContentHeight } from '../transformers/getTimelineContentHeight';
+
 import { trackStore } from './trackStore';
 
 export type TimelineViewState = {
@@ -8,8 +10,8 @@ export type TimelineViewState = {
     pixelsPerBeat: number;
     autoScrollEnabled: boolean;
     /**
-     * The real, currently-visible track-list viewport height in pixels, as
-     * last reported by a mounted view via {@link setTimelineViewportHeight}.
+     * The real, currently-visible timeline canvas viewport height in pixels,
+     * as last reported by the canvas owner via {@link setTimelineViewportHeight}.
      * Optional (and treated as `0` when absent) so the many pre-existing
      * `useStore(timelineViewStore, { ...fallback })` call sites across other
      * modules — which predate this field and are out of this module's scope
@@ -96,22 +98,35 @@ export function toggleAutoScroll(): void {
 }
 
 /**
- * Records the real, currently-visible track-list viewport height so
- * {@link setScrollY} can clamp against it. Call this from whichever view
- * owns the scrollable container, with its real measured height (e.g.
- * `el.clientHeight`), whenever that height is known to have changed.
+ * Records the real, currently-visible timeline canvas viewport height so
+ * {@link setScrollY} can clamp against it. The timeline canvas owner calls
+ * this with its measured height (`clientHeight`) whenever that height is known
+ * to have changed. The track-list scroller never writes it: it carries a
+ * bottom spacer that makes its scroll range equal the canvas's.
  */
 export function setTimelineViewportHeight(viewportHeight: number): void {
     const state = timelineViewStore.value;
     if (!state || (state.viewportHeight ?? 0) === viewportHeight) {
         return;
     }
-    timelineViewStore.set({ ...state, viewportHeight });
+    // A taller viewport lowers the scroll ceiling: pull the offset back in the
+    // same write so the canvas never shows blank space below the last row.
+    timelineViewStore.set({
+        ...state,
+        viewportHeight,
+        scrollY: clampScrollY(state.scrollY, viewportHeight),
+    });
+}
+
+function clampScrollY(scrollY: number, viewportHeight: number): number {
+    const totalHeight = getTimelineContentHeight(trackStore.value?.tracks ?? []);
+    const maxY = Math.max(0, totalHeight - viewportHeight);
+    return Math.max(0, Math.min(maxY, scrollY));
 }
 
 /**
- * F7 — the shared `viewportHeight` field is written by exactly one caller
- * (`TrackListView`, via {@link setTimelineViewportHeight}), so it is only
+ * F7 — the shared `viewportHeight` field is written by exactly one owner
+ * (the timeline canvas, via {@link setTimelineViewportHeight}), so it is only
  * ever correct for that view's own clamp. A second scrollable view (the
  * automation panel) must not clamp against it: doing so makes its scroll
  * ceiling depend on an unrelated view's size, and — because a mounted
@@ -137,12 +152,7 @@ export function setScrollY(scrollY: number, viewportHeightOverride?: number): vo
     // the caller supplied its own real height, in which case that value is
     // authoritative for this call.
     const viewportHeight = viewportHeightOverride ?? state.viewportHeight ?? 0;
-    const tracks = trackStore.value?.tracks ?? [];
-    const totalHeight = tracks
-        .filter((time) => time.kind !== 'master')
-        .reduce((sum, time) => sum + (time.height ?? 64), 0);
-    const maxY = Math.max(0, totalHeight - viewportHeight);
-    const clamped = Math.max(0, Math.min(maxY, scrollY));
+    const clamped = clampScrollY(scrollY, viewportHeight);
     if (state.scrollY !== clamped) {
         timelineViewStore.set({ ...state, scrollY: clamped });
     }

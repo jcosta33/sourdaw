@@ -1,9 +1,7 @@
-import { type ReactElement } from 'react';
+import { Fragment, type ReactElement } from 'react';
 
 import { Shield, Waves as WavesIcon, Gauge, Sparkles, AudioLines, Layers, Guitar, Bug, GitBranch } from 'lucide-react';
 
-import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
-import { Stack } from '#/components/layout';
 import { logger } from '#/infra/logger/appLogger';
 import { compileLoadPresetActions, executeAddDeviceAction, getFactoryPresets } from '#/modules/Arrangement/useCases';
 import { PluginBrowser } from '#/modules/AudioEngine/presentations/views';
@@ -13,6 +11,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { type PluginDescriptorView as PluginDescriptor } from '../../../models/PluginDescriptorViewTypes';
 import { type SoundPresetView as SoundPreset } from '../../../models/SoundPresetViewTypes';
 import { executePresetLoad } from '../../../useCases/executePresetLoad';
+import { BrowserRouteBody, BrowserRouteFooter, BrowserRouteSection } from '../../components/Sidebar/BrowserRouteBody';
 import { EmptyState } from '../../components/Sidebar/EmptyState';
 import {
     InstrumentCard,
@@ -247,64 +246,49 @@ export const EffectsTab = ({
         const total = filteredEffects.length + filteredFxPresets.length + filteredMidi.length;
 
         return (
-            <Stack gap={1} className="animate-in fade-in duration-150">
+            <BrowserRouteBody>
                 <SearchSummary count={total} query={query} />
                 {total === 0 ? <EmptyState message="No effects found." /> : null}
                 {filteredEffects.length > 0 ? (
-                    <>
-                        <DawSectionDivider
-                            label="Audio FX"
-                            className="mt-1 px-1.5 py-0.5"
-                            lineClassName="bg-border/15"
-                        />
-                        <Stack>
-                            {filteredEffects.map((plugin) => {
-                                const card = renderPremiumCard(plugin.id);
-                                if (card) {
-                                    return (
-                                        <div key={plugin.id} className="mb-1 mt-1.5 px-0.5 drop-shadow-sm">
-                                            {card}
-                                        </div>
-                                    );
-                                }
-                                return <EffectItem key={plugin.id} plugin={plugin} selectedTrackId={selectedTrackId} />;
-                            })}
-                        </Stack>
-                    </>
+                    <BrowserRouteSection label="Audio FX" lineClassName="bg-border/15">
+                        {filteredEffects.map((plugin) => {
+                            const card = renderPremiumCard(plugin.id);
+                            if (card) {
+                                return <Fragment key={plugin.id}>{card}</Fragment>;
+                            }
+                            return <EffectItem key={plugin.id} plugin={plugin} selectedTrackId={selectedTrackId} />;
+                        })}
+                    </BrowserRouteSection>
                 ) : null}
                 {filteredFxPresets.length > 0 ? (
-                    <>
-                        <DawSectionDivider
-                            label="FX Chain Presets"
-                            startSlot={<Sparkles className="size-3 text-muted-foreground" aria-hidden="true" />}
-                            className="mt-2 px-1.5 py-0.5"
-                            lineClassName="bg-border/15"
-                        />
-                        <Stack className="gap-[2px]">
-                            {filteredFxPresets.map((preset) => (
-                                <PresetItem
-                                    key={preset.id}
-                                    preset={preset}
-                                    selectedTrackId={selectedTrackId}
-                                    favorites={favorites}
-                                    onToggleFavorite={onToggleFavorite}
-                                    onClick={() => handleFxPresetClick(preset)}
-                                    preview={preview}
-                                />
-                            ))}
-                        </Stack>
-                    </>
+                    <BrowserRouteSection
+                        label="FX Chain Presets"
+                        startSlot={<Sparkles className="size-3 text-muted-foreground" aria-hidden="true" />}
+                        lineClassName="bg-border/15"
+                    >
+                        {filteredFxPresets.map((preset) => (
+                            <PresetItem
+                                key={preset.id}
+                                preset={preset}
+                                selectedTrackId={selectedTrackId}
+                                favorites={favorites}
+                                onToggleFavorite={onToggleFavorite}
+                                onClick={() => handleFxPresetClick(preset)}
+                                preview={preview}
+                            />
+                        ))}
+                    </BrowserRouteSection>
                 ) : null}
-                <div className="px-1.5 mt-2">
+                <BrowserRouteFooter>
                     <PluginBrowser selectedTrackId={selectedTrackId} searchQuery={searchQuery} />
-                </div>
-            </Stack>
+                </BrowserRouteFooter>
+            </BrowserRouteBody>
         );
     }
 
     if (currentRoute.id === 'effects-fxpresets') {
         return (
-            <Stack gap={1.5} className="animate-in fade-in duration-100">
+            <BrowserRouteBody>
                 {fxPresets.length > 0 ? (
                     fxPresets.map((preset) => (
                         <PresetItem
@@ -320,16 +304,16 @@ export const EffectsTab = ({
                 ) : (
                     <EmptyState message="No FX chain presets." />
                 )}
-            </Stack>
+            </BrowserRouteBody>
         );
     }
 
     if (currentRoute.id === 'effects-midifx') {
         return (
-            <Stack className="gap-[2px] animate-in fade-in duration-100">
-                <div className="mb-2 px-1.5">{renderPremiumCard('yeast')}</div>
+            <BrowserRouteBody>
+                {renderPremiumCard('yeast')}
                 <EmptyState message="No native MIDI effects available yet." />
-            </Stack>
+            </BrowserRouteBody>
         );
     }
 
@@ -351,26 +335,22 @@ export const EffectsTab = ({
         });
 
         return (
-            <Stack className="gap-[2px] animate-in fade-in duration-100">
+            <BrowserRouteBody>
                 {sortedItems.length === 0 ? <EmptyState message="Empty category." /> : null}
                 {sortedItems.map((plugin) => {
                     const card = renderPremiumCard(plugin.id);
                     if (card) {
-                        return (
-                            <div key={plugin.id} className="mb-3 mt-1.5 px-0.5 drop-shadow-sm">
-                                {card}
-                            </div>
-                        );
+                        return <Fragment key={plugin.id}>{card}</Fragment>;
                     }
                     return <EffectItem key={plugin.id} plugin={plugin} selectedTrackId={selectedTrackId} />;
                 })}
-            </Stack>
+            </BrowserRouteBody>
         );
     }
 
     if (currentRoute.id === 'effects-audiofx') {
         return (
-            <Stack gap={1.5} className="animate-in fade-in duration-100 px-1.5">
+            <BrowserRouteBody>
                 {visibleEffectGroups.map((group) => {
                     const count = (groupedEffects.get(group.id) ?? []).length;
                     return (
@@ -395,62 +375,60 @@ export const EffectsTab = ({
                         onClick={() => pushRoute({ id: 'effects-audiofx-other', title: 'Other' })}
                     />
                 ) : null}
-                <div className="pt-1 border-t border-border/20 mt-1">
+                <BrowserRouteFooter>
                     <PluginBrowser selectedTrackId={selectedTrackId} searchQuery={searchQuery} />
-                </div>
-            </Stack>
+                </BrowserRouteFooter>
+            </BrowserRouteBody>
         );
     }
 
     return (
-        <Stack className="gap-.75 px-1.5 pb-4 animate-in fade-in duration-100">
-            <DawSectionDivider
+        <BrowserRouteBody>
+            <BrowserRouteSection
                 label="Seeds & Spores"
-                className="mb-1 px-1 mt-1"
                 labelClassName="font-bold text-[var(--color-accent-orange)]"
                 lineClassName="bg-[var(--color-accent-orange)]/15"
-            />
-
-            <NavCard
-                icon={Waves}
-                label="Audio FX"
-                description="EQ, dynamics, tone, delay & space"
-                count={totalAudioFx}
-                color="bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)]"
-                onClick={() => pushRoute({ id: 'effects-audiofx', title: 'Audio FX' })}
-            />
-
-            {fxPresets.length > 0 ? (
+            >
                 <NavCard
-                    icon={Sparkles}
-                    label="FX Chain Presets"
-                    description="Vocal strips, mastering chains"
-                    count={fxPresets.length}
-                    color="bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)]"
-                    onClick={() => pushRoute({ id: 'effects-fxpresets', title: 'FX Chain Presets' })}
+                    icon={Waves}
+                    label="Audio FX"
+                    description="EQ, dynamics, tone, delay & space"
+                    count={totalAudioFx}
+                    color="bg-[var(--color-accent-lavender)]/20 text-[var(--color-accent-lavender)]"
+                    onClick={() => pushRoute({ id: 'effects-audiofx', title: 'Audio FX' })}
                 />
-            ) : null}
 
-            <DawSectionDivider
+                {fxPresets.length > 0 ? (
+                    <NavCard
+                        icon={Sparkles}
+                        label="FX Chain Presets"
+                        description="Vocal strips, mastering chains"
+                        count={fxPresets.length}
+                        color="bg-[var(--color-accent-peach)]/20 text-[var(--color-accent-peach)]"
+                        onClick={() => pushRoute({ id: 'effects-fxpresets', title: 'FX Chain Presets' })}
+                    />
+                ) : null}
+            </BrowserRouteSection>
+
+            <BrowserRouteSection
                 label="Control & Routing"
-                className="mb-1 mt-3 px-1"
                 labelClassName="text-muted-foreground/50"
                 lineClassName="bg-border/15"
-            />
+            >
+                <NavCard
+                    icon={Music2}
+                    label="MIDI FX"
+                    description="Chord gen, scale filter, quantizer"
+                    count={MIDI_EFFECT_FACTORIES.length}
+                    color="bg-[var(--color-accent-cyan)]/20 text-[var(--color-accent-cyan)]"
+                    dimmed
+                    onClick={() => pushRoute({ id: 'effects-midifx', title: 'MIDI FX' })}
+                />
+            </BrowserRouteSection>
 
-            <NavCard
-                icon={Music2}
-                label="MIDI FX"
-                description="Chord gen, scale filter, quantizer"
-                count={MIDI_EFFECT_FACTORIES.length}
-                color="bg-[var(--color-accent-cyan)]/20 text-[var(--color-accent-cyan)]"
-                dimmed
-                onClick={() => pushRoute({ id: 'effects-midifx', title: 'MIDI FX' })}
-            />
-
-            <div className="border-t border-border/20 pt-2 mt-1">
+            <BrowserRouteFooter>
                 <PluginBrowser selectedTrackId={selectedTrackId} searchQuery={searchQuery} />
-            </div>
-        </Stack>
+            </BrowserRouteFooter>
+        </BrowserRouteBody>
     );
 };

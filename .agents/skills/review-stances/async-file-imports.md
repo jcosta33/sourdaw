@@ -1,5 +1,11 @@
 # Lesson library: asynchronous file imports
 
+## Escape: Prompt Bar stem preparation had no local-work budget admission
+
+PR #1986 (`e36b9589c2`) made stem preparation refuse a missing work-budget callback before decode or staging. PR #2648 (`7b41fd731c`) introduced `submitAdmittedPromptRequest` without passing that callback to `planPromptActions`; PR #4479 retained the route. The public #2648 approval covered run and recovery settlement, but its described checks did not establish a real Prompt Bar file-preparation admission. The missed stance was route parity at the picker-to-budget-to-decode boundary.
+
+Submit a two-file stem import through the real Prompt Bar planner with only picker, decode and storage ports replaced. An admitted budget must produce one confirmable card and commit once; an exceeded storage limit must preserve the exact refusal, reserve none of the three stem categories, and reach neither decode nor staging. Keep cancelled and invalid selections at the same boundary. A mocked planner or prepared-scope result cannot prove this route carries the callback. Historical private review prompts and tiers are unknown.
+
 For file requests that read or parse asynchronously before changing an open project, distinguish
 the project's lifetime from the user's latest request within that lifetime. A matching project
 alone does not authorize an older request to publish its result.

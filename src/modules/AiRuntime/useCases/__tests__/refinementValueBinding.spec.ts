@@ -55,6 +55,7 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 
 /**
  * #4380: a terse refinement of a pending card inherits the card's grounded commands and binds only
@@ -5931,6 +5932,8 @@ const runtimeMocks = vi.hoisted(() => ({
     setTrackSoloGate: vi.fn(),
 }));
 
+const providerScriptState = { phase: 'intake' as 'intake' | 'discover' | 'propose', planningRun: 0 };
+
 vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({ getBackendChain: () => ['webllm'] }));
 
 vi.mock('../llmOrchestration/backendResolution/helpers', () => ({ resolveBackend: () => 'webllm' }));
@@ -6067,21 +6070,28 @@ function asCommandBatchProposal(script: ProposalScript): ProviderCall {
     return proposal;
 }
 
-/** Each planning run is a discovery turn and a proposal turn; a run past the last script repeats it. */
+/** Admit, discover and propose on every attempt; later attempts repeat the last script. */
 function scriptProvider(scripts: readonly ProposalScript[]): void {
-    let turn = 0;
-    runtimeMocks.generateWebLlmCompletion.mockImplementation(() => {
-        turn += 1;
-        const script = scripts[Math.min(Math.floor((turn - 1) / 2), scripts.length - 1)];
+    providerScriptState.phase = 'intake';
+    providerScriptState.planningRun = 0;
+    runtimeMocks.generateWebLlmCompletion.mockImplementation((systemPrompt: string, userMessage: string) => {
+        if (providerScriptState.phase === 'intake') {
+            providerScriptState.phase = 'discover';
+            return Promise.resolve(JSON.stringify(literalMetricIntakeTurn(userMessage, systemPrompt)));
+        }
+        const script = scripts[Math.min(providerScriptState.planningRun, scripts.length - 1)];
         if (script === undefined) {
             throw new Error('Expected a scripted planning run.');
         }
-        if (turn % 2 === 1) {
+        if (providerScriptState.phase === 'discover') {
+            providerScriptState.phase = 'propose';
             const names = [...new Set(script.calls.map((call) => call.name))];
             return Promise.resolve(
                 JSON.stringify([{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }])
             );
         }
+        providerScriptState.phase = 'intake';
+        providerScriptState.planningRun += 1;
         script.beforeProposal?.();
         return Promise.resolve(JSON.stringify([asCommandBatchProposal(script)]));
     });
@@ -6089,6 +6099,7 @@ function scriptProvider(scripts: readonly ProposalScript[]): void {
 
 async function sendChatMessage(prompt: string) {
     flushAutomergeStorageWrites();
+    providerScriptState.phase = 'intake';
     await sendChatMessageWithoutDocumentFlush(prompt);
 }
 
@@ -6582,7 +6593,7 @@ describe('refining a held card through the chat', () => {
         expect(getTrack('track-vocals').gain).toBeCloseTo(10 ** (-1 / 20), 6);
         expect(getTrack('track-snare').gain).toBe(1);
         expect(getTrack('track-drum-bus').gain).toBe(1);
-        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(16);
+        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(24);
     });
 
     it('row 19: refuses an inherited command whose target was deleted from the project', async () => {

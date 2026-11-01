@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 
 import { change, clone, Counter, toJS } from '@automerge/automerge';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     configureAutomergeStoragePort,
@@ -28,7 +28,10 @@ import {
     resetCrdtProjectAuthority,
     settlePendingProjectWritesAndCaptureRevision,
 } from '#/modules/CrdtDocument/useCases';
-import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
+import { parseSemanticProjectQueryInput, querySemanticProject } from '#/modules/Project/useCases';
+import { defaultTransportState, transportStore, type TransportState } from '#/modules/Transport/stores';
+import { restoreTransportSnapshot } from '#/modules/Transport/useCases';
 import { clampFaderGain, resolveLevelFields, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
 import { type AppAction } from '#/utils/handlerContract';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
@@ -46,6 +49,8 @@ import {
     type AgentPromptClass,
     type AgentScoredPromptClass,
 } from '../models/AgentAcceptanceOutcome';
+import { type AgentPlanProposal } from '../models/AgentRun';
+import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type PlanningOutcome } from '../models/PlanningOutcome';
 import { type ProjectContext } from '../models/ProjectContext';
 import {
@@ -66,24 +71,30 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from '../useCases/__tests__/aiWorkflowCommandPreflightFixture';
+import { advertisedAnswerIntake } from '../useCases/__tests__/answerWireFixture';
 import {
     assertDiscoveredCommandSchemas,
     declineCall,
     discoverSearchedCalls,
     isRecord,
+    proposeCall,
     proposeDiscoveredCalls,
     scriptProviderTurns,
     searchCalls,
     type ProviderCall,
     type ScriptedTurn,
 } from '../useCases/__tests__/highLevelIntentWorkflowFixture';
+import { literalMetricIntakeTurn } from '../useCases/__tests__/metricGoalWorkflowFixture';
 import { GENERATED_BATCH_LOCAL_ID_PREFIXES } from '../useCases/agentReference/batchLocalBindingProducers';
 import { confirmPendingChatActions } from '../useCases/confirmPendingChatActions';
 import { getPlannedActionAffectedIds } from '../useCases/getPlannedActionAffectedIds';
+import { getProjectContext } from '../useCases/getProjectContext';
 import { parsePromptToActions } from '../useCases/parsePromptToActions';
 import { type planPromptActions } from '../useCases/planPromptActions';
 import { readChatThreadContext } from '../useCases/readChatThreadContext';
 import { sendChatMessage } from '../useCases/sendChatMessage';
+
+import { completeAcceptanceResults, createAcceptanceFixtureLifetime } from './acceptanceFixtureLifetime';
 
 type PlannedChatRequest = Awaited<ReturnType<typeof planPromptActions>>['result'];
 
@@ -151,6 +162,9 @@ const THRESHOLDS_DOC_PATH = 'docs/architecture/agent-release-gates.md';
 /** The file name both corpora must name, so one project answers every case in both of them. */
 const FIXTURE_PROJECT_FILE = 'fixture-project.json';
 
+/** The identity the fixture project is opened under when a question queries it. */
+const FIXTURE_PROJECT_ID = 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa';
+
 /** The outcome classes the `boundary` prompt class exists to hold, each needing a case of its own. */
 const BOUNDARY_OUTCOME_CLASSES: readonly AgentAcceptanceOutcomeClass[] = [
     'clarify-required',
@@ -170,11 +184,13 @@ const MINIMUM_SEALED_CLASS_CASES = 3;
  * generator.
  */
 type CorpusProviderTurn =
+    | { kind: 'intake'; intent: 'literal' | 'answer' }
     | { kind: 'search'; intents: string[] }
     | { kind: 'discover'; names: string[] }
-    | { kind: 'propose'; items: Record<string, unknown>[] }
+    | { kind: 'propose'; items: Record<string, unknown>[]; plan?: AgentPlanProposal }
     | ProposeCommandsTurn
-    | { kind: 'decline'; args: Record<string, unknown> };
+    | { kind: 'decline'; args: Record<string, unknown> }
+    | { kind: 'query' | 'answer'; id: string; args: Record<string, unknown> };
 
 /**
  * A proposal of plain commands, the form whose card carries the grounding basis a terse refinement
@@ -206,6 +222,7 @@ type CorpusOracleInvariants = {
 };
 
 type CorpusOracle =
+    | AnswerOracle
     | {
           kind: 'proposal';
           actions: CorpusOracleAction[];
@@ -387,6 +404,12 @@ function isString(value: unknown): value is string {
 }
 
 /**
+ * A descriptive question's intake: the project-facts answer branch of the interpretation selector the
+ * provider was actually offered, read from its advertised schema rather than restated here.
+ */
+const answerIntakeTurn: ScriptedTurn = (_userMessage, providerView) => [advertisedAnswerIntake(providerView)];
+
+/**
  * Maps one corpus-declared provider turn to the same scripted-turn builders the workflow fixture
  * proves against production. `priorProposalId` reads the card a refinement names in `refines`.
  */
@@ -395,13 +418,21 @@ function toScriptedTurn(
     priorProposalId: () => string | undefined = () => undefined
 ): ScriptedTurn {
     switch (turn.kind) {
+        case 'intake':
+            if (turn.intent === 'literal') {
+                return literalMetricIntakeTurn;
+            }
+            if (turn.intent === 'answer') {
+                return answerIntakeTurn;
+            }
+            throw new TypeError('The corpus intake variant has no configured producer.');
         case 'search':
             return () => searchCalls(turn.intents);
         case 'discover':
             return discoverSearchedCalls(turn.names);
         case 'propose': {
             const names = [...new Set(turn.items.map((item) => String(item.name)))];
-            return proposeDiscoveredCalls(turn.items, names);
+            return proposeDiscoveredCalls(turn.items, names, turn.plan);
         }
         case 'propose-commands': {
             const names = [...new Set(turn.commands.map((command) => command.name))];
@@ -416,6 +447,15 @@ function toScriptedTurn(
         }
         case 'decline':
             return () => [declineCall(turn.args)];
+        case 'query':
+        case 'answer': {
+            const call = {
+                id: turn.id,
+                name: turn.kind === 'query' ? 'project.query' : 'answer.respond',
+                arguments: turn.args,
+            };
+            return () => [call];
+        }
         default: {
             const exhaustive: never = turn;
             throw new Error(`Corpus provider turn kind is not supported: ${JSON.stringify(exhaustive)}`);
@@ -459,6 +499,7 @@ const PROVIDER_FAILURE_REASON_PREFIX = 'Provider planning failed';
 /** Maps a corpus case's `class` to the `PlanningOutcome.kind` the frozen oracle contract requires it to declare. */
 const ORACLE_KIND_BY_CLASS: Record<AgentAcceptanceOutcomeClass, AgentAcceptanceOracleKind> = {
     'execute-exact': 'proposal',
+    'answer-exact': 'answer',
     'clarify-required': 'clarify',
     'abstain-unsupported': 'unsupported',
     'deny-policy': 'denied',
@@ -836,6 +877,32 @@ async function runCorpusCase(
     if (testCase.promptClass === 'refinement') {
         return runRefinementCase(testCase, barrel);
     }
+    if (testCase.oracle.kind !== 'answer') {
+        return runSingleTurnCase(testCase, barrel, alongside);
+    }
+    // `project.query` reads the open project, so a question is asked of the fixture project loaded
+    // into the real stores and document, under a canonical identity a semantic query can answer for.
+    const projectBefore = projectStore.value;
+    openChatProject();
+    projectStore.set({
+        ...structuredClone(defaultProjectStoreState),
+        projectId: FIXTURE_PROJECT_ID,
+        initialized: true,
+        loading: false,
+    });
+    try {
+        return await runSingleTurnCase(testCase, barrel, alongside);
+    } finally {
+        projectStore.set(projectBefore);
+        closeChatProject();
+    }
+}
+
+async function runSingleTurnCase(
+    testCase: CorpusCase,
+    barrel: BarrelWriteLog,
+    alongside?: () => Promise<void>
+): Promise<CaseRun> {
     const writesBefore = barrel.count();
     const projectBefore = captureProjectTruth();
     const observed = await observeProjectChanges(async () => {
@@ -843,13 +910,15 @@ async function runCorpusCase(
         await alongside?.();
         return { result, projectAfter: captureProjectTruth() };
     });
+    const unintendedMutations = Math.max(
+        barrel.count() - writesBefore,
+        projectDifferences(projectBefore, observed.result.projectAfter),
+        observedDifferences(observed, [projectBefore])
+    );
+    const result = observed.result.result;
     return {
-        result: observed.result.result,
-        unintendedMutations: Math.max(
-            barrel.count() - writesBefore,
-            projectDifferences(projectBefore, observed.result.projectAfter),
-            observedDifferences(observed, [projectBefore])
-        ),
+        result: result.class === 'answer-exact' && unintendedMutations > 0 ? { ...result, exactMatch: false } : result,
+        unintendedMutations,
     };
 }
 
@@ -867,10 +936,11 @@ async function runPlannedCorpusCase(testCase: CorpusCase): Promise<AgentAcceptan
             testCase.providerTurns.map((turn) => toScriptedTurn(turn))
         );
     }
+    const projectRevision = testCase.oracle.kind === 'answer' ? captureSettledRevision() : `revision-${testCase.id}`;
     const result = await parsePromptToActions({
         prompt: testCase.prompt,
         context,
-        projectRevision: `revision-${testCase.id}`,
+        projectRevision,
     });
 
     if (testCase.providerTurns.length > 0) {
@@ -897,6 +967,16 @@ async function runPlannedCorpusCase(testCase: CorpusCase): Promise<AgentAcceptan
     }
 
     let matchesOracle = true;
+    if (testCase.oracle.kind === 'answer') {
+        matchesOracle = answerMatchesOracle({
+            oracle: parseAnswerOracle(testCase.oracle),
+            outcome: result.planningOutcome,
+            actions: result.actions,
+            receipts: result.applicationToolReceipts ?? [],
+            projectId: projectStore.value?.projectId ?? null,
+            projectRevision,
+        });
+    }
     if (testCase.oracle.kind === 'proposal') {
         const expectedActions = testCase.oracle.actions;
         matchesOracle =
@@ -972,10 +1052,36 @@ function toStoreTrack(track: ProjectContext['tracks'][number]): Track {
 }
 
 /**
- * Opens the fixture project as the chat sees it — real stores, Command and CRDT document, as the
- * refinement specs drive the chat route — with an empty thread and an empty undo history.
+ * The transport slice of a project context as the transport store holds it. The store keeps master
+ * gain on a 0–100 scale where the context carries linear gain, the inverse of `getProjectContext`.
  */
-function openChatProject(): void {
+function toTransportSnapshot(fixture: ProjectContext): TransportState {
+    return {
+        ...defaultTransportState,
+        tempo: fixture.tempo,
+        timeSignatureNumerator: fixture.timeSignature[0],
+        timeSignatureDenominator: fixture.timeSignature[1],
+        isPlaying: fixture.isPlaying,
+        isRecording: fixture.isRecording,
+        isLooping: fixture.isLooping,
+        loopStart: fixture.loopStart,
+        loopEnd: fixture.loopEnd,
+        punchInEnabled: fixture.punchInEnabled,
+        punchInBeat: fixture.punchInBeat,
+        punchOutBeat: fixture.punchOutBeat,
+        metronomeEnabled: fixture.metronomeEnabled,
+        metronomeVolume: fixture.metronomeVolume,
+        masterGain: fixture.masterGain * 100,
+    };
+}
+
+/**
+ * Opens the fixture project as the chat sees it — real stores, Command and CRDT document, as the
+ * refinement specs drive the chat route — with an empty thread and an empty undo history. Its
+ * transport comes from the fixture through the app's own project-load route, so a query that reads
+ * the transport store answers for the fixture rather than for the store defaults.
+ */
+function openChatProject(fixture: ProjectContext = context): void {
     configureAiWorkflowCommandPreflightFixture();
     configureAutomergeStoragePort(null);
     resetCrdtProjectAuthority('agent acceptance refinement case');
@@ -996,9 +1102,10 @@ function openChatProject(): void {
     setArrangementEventBus({ emit: () => Promise.resolve() });
     setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
     macroStore.set({ macros: [], recording: false, currentRecording: [] });
-    trackStore.set({ tracks: context.tracks.map(toStoreTrack), selectedTrackId: null, ghostClips: [] });
+    trackStore.set({ tracks: fixture.tracks.map(toStoreTrack), selectedTrackId: null, ghostClips: [] });
     automationStore.set({ lanes: [] });
     transportStore.set(defaultTransportState);
+    restoreTransportSnapshot(toTransportSnapshot(fixture));
     chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
 }
 
@@ -1468,12 +1575,14 @@ function parseFrozenThresholds(doc: string): Record<AgentAcceptanceCorpusName, A
     const perClassF1Min = readThresholdRow(doc, 'per-class F1 (each of four classes)');
     const promptClassExecuteRecallMin = readThresholdRow(
         doc,
-        'per-prompt-class execute recall (each sealed class of twelve)'
+        'per-prompt-class execute recall (each sealed class of eleven)'
     );
     const promptClassExecutePrecisionMin = readThresholdRow(
         doc,
-        'per-prompt-class execute precision (each sealed class of twelve)'
+        'per-prompt-class execute precision (each sealed class of eleven)'
     );
+    const answerPrecisionMin = readThresholdRow(doc, 'answer-exact precision (all observed answers)');
+    const answerRecallMin = readThresholdRow(doc, 'question answer-exact recall');
     const clarifyRequiredPrecision = readThresholdRow(doc, 'clarify-required precision');
     const clarificationOnNonClarifyOracleMax = readThresholdRow(doc, 'clarification on non-clarify oracles');
     const falseAbstentionOnExecuteExactMax = readThresholdRow(doc, 'false abstention on execute-exact ground truth');
@@ -1486,6 +1595,8 @@ function parseFrozenThresholds(doc: string): Record<AgentAcceptanceCorpusName, A
             perClassF1Min: perClassF1Min.development,
             promptClassExecuteRecallMin: promptClassExecuteRecallMin.development,
             promptClassExecutePrecisionMin: promptClassExecutePrecisionMin.development,
+            answerPrecisionMin: answerPrecisionMin.development,
+            answerRecallMin: answerRecallMin.development,
             clarifyRequiredPrecision: clarifyRequiredPrecision.development,
             clarificationOnNonClarifyOracleMax: clarificationOnNonClarifyOracleMax.development,
             falseAbstentionOnExecuteExactMax: falseAbstentionOnExecuteExactMax.development,
@@ -1498,6 +1609,8 @@ function parseFrozenThresholds(doc: string): Record<AgentAcceptanceCorpusName, A
             perClassF1Min: perClassF1Min.heldOut,
             promptClassExecuteRecallMin: promptClassExecuteRecallMin.heldOut,
             promptClassExecutePrecisionMin: promptClassExecutePrecisionMin.heldOut,
+            answerPrecisionMin: answerPrecisionMin.heldOut,
+            answerRecallMin: answerRecallMin.heldOut,
             clarifyRequiredPrecision: clarifyRequiredPrecision.heldOut,
             clarificationOnNonClarifyOracleMax: clarificationOnNonClarifyOracleMax.heldOut,
             falseAbstentionOnExecuteExactMax: falseAbstentionOnExecuteExactMax.heldOut,
@@ -1546,7 +1659,54 @@ function assertHeldOutDisjointness(development: Corpus, heldOut: Corpus): void {
     }
 }
 
+const fixtureLifetime = createAcceptanceFixtureLifetime();
+function deferredFixtureEvent() {
+    let release!: () => void;
+    const promise = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    return { promise, release };
+}
+const parentBoundary = {
+    body: deferredFixtureEvent(),
+    deadline: deferredFixtureEvent(),
+    integrationAdmission: deferredFixtureEvent(),
+    events: [] as string[],
+    reason: '',
+    owner: undefined as Promise<void> | undefined,
+    controller: undefined as Promise<void> | undefined,
+};
+
+describe('scripted proposal plans', () => {
+    it('preserves the original default and forwards an explicit plan unchanged', () => {
+        const items = [{ id: 'item', name: 'setTrackGain', arguments: { gainDb: -3 } }];
+        expect(proposeCall(items)).toEqual({
+            name: 'command.batch.propose',
+            arguments: {
+                plan: {
+                    semantic: { classification: 'complex', uncertainty: [] },
+                    objective: 'Lay out a blues chord progression on a MIDI track this batch creates.',
+                    constraints: ['Leave every object the project already holds unchanged.'],
+                    scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                    capabilityIds: [],
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: ['Validate that the notes land inside the clip the batch creates.'],
+                    stoppingConditions: ['Stop if the created clip cannot hold the progression.'],
+                },
+                list: { schemaVersion: 1, items },
+            },
+        });
+        const turn = corpusCase('development', 'AC054-DEV-BULK-1').providerTurns[3];
+        if (turn?.kind !== 'propose' || turn.plan === undefined) {
+            throw new Error('Missing explicit bulk plan');
+        }
+        expect(proposeCall(items, turn.plan).arguments.plan).toBe(turn.plan);
+    });
+});
+
 describe('agent acceptance corpora', () => {
+    beforeEach(() => fixtureLifetime.drain());
     it('carries unique case ids across both corpora and held-out prompts disjoint from development', () => {
         const allIds = [...corpora.development.cases, ...corpora['held-out'].cases].map((testCase) => testCase.id);
         expect(new Set(allIds).size).toBe(allIds.length);
@@ -1604,10 +1764,40 @@ describe('agent acceptance corpora', () => {
                     MINIMUM_SEALED_CLASS_CASES
                 );
                 for (const testCase of cases) {
+                    if (promptClass === 'question') {
+                        expect(testCase.class).toBe('answer-exact');
+                        expect(testCase.oracle.kind).toBe('answer');
+                        parseAnswerOracle(testCase.oracle);
+                    } else {
+                        expect(testCase.class).not.toBe('answer-exact');
+                        expect(testCase.oracle.kind).not.toBe('answer');
+                    }
                     expect(
                         testCase.oracle.kind,
                         `Case ${testCase.id} is pending inside sealed ${promptClass}`
                     ).not.toBe('pending');
+                }
+            }
+        });
+
+        it('declares one positive intake before every scripted mutation or answer within the existing turn ceiling', () => {
+            for (const testCase of corpus.cases) {
+                for (const frame of [testCase, testCase.prior]) {
+                    if (frame === undefined) {
+                        continue;
+                    }
+                    const interpreted = frame.providerTurns.some(
+                        (turn) => turn.kind === 'propose' || turn.kind === 'propose-commands' || turn.kind === 'answer'
+                    );
+                    const intakes = frame.providerTurns.filter((turn) => turn.kind === 'intake');
+                    if (interpreted) {
+                        expect(frame.providerTurns[0]?.kind, `${testCase.id}: ${frame.prompt}`).toBe('intake');
+                        expect(frame.providerTurns[0]).toEqual(intakes[0]);
+                        expect(intakes).toHaveLength(1);
+                        expect(frame.providerTurns.length).toBeLessThanOrEqual(5);
+                    } else {
+                        expect(intakes).toEqual([]);
+                    }
                 }
             }
         });
@@ -1632,38 +1822,50 @@ describe('agent acceptance corpora', () => {
     });
 
     describe.each(AGENT_ACCEPTANCE_CORPORA)('%s corpus', (corpusName) => {
-        it(
-            'scores every sealed-class case within the frozen thresholds with zero unintended mutations',
-            async () => {
-                const barrel = spyOnBarrelWrites();
-                const cases = scoredCases(corpora[corpusName]);
-                const results: AgentAcceptanceCaseResult[] = [];
-                let unintendedMutations = 0;
-                for (const testCase of cases) {
-                    const run = await runCorpusCase(testCase, barrel.log);
-                    results.push(run.result);
-                    unintendedMutations += run.unintendedMutations;
-                }
-
-                expect(results).toHaveLength(cases.length);
-                for (const result of results) {
-                    expect(result.observed).toBeDefined();
-                }
-
-                const metrics = computeAgentAcceptanceMetrics(results, unintendedMutations);
-                expect(metrics.unintendedMutations).toBe(0);
-
-                const failed = failedAgentAcceptanceThresholds(
-                    metrics,
-                    corpusName,
-                    sealedScoredClasses(corpora[corpusName])
-                );
-                expect(failed).toEqual([]);
-
-                barrel.restore();
-            },
-            CORPUS_RUN_TIMEOUT_MS
-        );
+        const cases = scoredCases(corpora[corpusName]);
+        const completed = new Map<string, CaseRun>();
+        for (const testCase of cases) {
+            it(
+                `scores ${testCase.id}`,
+                async (context) => {
+                    let run: CaseRun | undefined;
+                    context.onTestFinished(() => {
+                        if (context.task.result?.state === 'pass' && !context.signal.aborted && run !== undefined) {
+                            if (completed.has(testCase.id)) {
+                                throw new Error(`Duplicate case ${testCase.id}`);
+                            }
+                            completed.set(testCase.id, run);
+                        }
+                    });
+                    await fixtureLifetime.track(async () => {
+                        const barrel = spyOnBarrelWrites();
+                        try {
+                            run = await runCorpusCase(testCase, barrel.log);
+                        } finally {
+                            barrel.restore();
+                        }
+                    });
+                },
+                CORPUS_RUN_TIMEOUT_MS
+            );
+        }
+        afterAll(() => {
+            const runs = completeAcceptanceResults(
+                cases.map((testCase) => testCase.id),
+                completed
+            );
+            const results = runs.map((run) => run.result);
+            expect(results).toHaveLength(cases.length);
+            for (const result of results) {
+                expect(result.observed).toBeDefined();
+            }
+            const unintendedMutations = runs.reduce((total, run) => total + run.unintendedMutations, 0);
+            const metrics = computeAgentAcceptanceMetrics(results, unintendedMutations);
+            expect(metrics.unintendedMutations).toBe(0);
+            expect(
+                failedAgentAcceptanceThresholds(metrics, corpusName, sealedScoredClasses(corpora[corpusName]))
+            ).toEqual([]);
+        });
     });
 
     describe('corpus validation self-checks', () => {
@@ -1738,6 +1940,7 @@ describe('agent acceptance corpora', () => {
     describe('write-counter self-checks', () => {
         let previousHistory: NonNullable<typeof undoHistoryStore.value>;
         let previousConfirmations: NonNullable<typeof pendingActionConfirmationStore.value>;
+        let setupCompleted = false;
 
         beforeEach(() => {
             const history = undoHistoryStore.value;
@@ -1747,12 +1950,19 @@ describe('agent acceptance corpora', () => {
             }
             previousHistory = history;
             previousConfirmations = confirmations;
+            setupCompleted = true;
             undoHistoryStore.set({ past: [], future: [] });
             clearPendingActionConfirmations();
         });
         afterEach(() => {
-            undoHistoryStore.set(previousHistory);
-            pendingActionConfirmationStore.set(previousConfirmations);
+            if (!setupCompleted) {
+                return Promise.resolve();
+            }
+            setupCompleted = false;
+            return fixtureLifetime.cleanup(() => {
+                undoHistoryStore.set(previousHistory);
+                pendingActionConfirmationStore.set(previousConfirmations);
+            });
         });
 
         function truthFixture() {
@@ -1932,46 +2142,47 @@ describe('agent acceptance corpora', () => {
             expect(projectDifferences(before, after)).toBe(1);
         });
 
-        it('surfaces capture failures, preserves run failures and unsubscribes', async () => {
-            openChatProject();
-            let captures = 0;
-            const captureFailure = new Error('capture failure');
-            const capture = () => {
-                captures++;
-                throw captureFailure;
-            };
-            let writes = 0;
-            const write = () =>
-                mutateCrdtDoc<Record<string, unknown>>({
-                    id: 'root',
-                    changeFn: (document) => {
-                        document.observerProbe = ++writes;
-                    },
-                });
-            try {
-                await expect(
-                    observeProjectChanges(async () => {
-                        write();
-                    }, capture)
-                ).rejects.toBe(captureFailure);
-                const afterCapture = captures;
-                write();
-                expect(captures).toBe(afterCapture);
-                const runFailure = new Error('run failure');
-                await expect(
-                    observeProjectChanges(async () => {
-                        write();
-                        throw runFailure;
-                    }, capture)
-                ).rejects.toBe(runFailure);
-                const afterRun = captures;
-                expect(afterRun).toBeGreaterThan(afterCapture);
-                write();
-                expect(captures).toBe(afterRun);
-            } finally {
-                closeChatProject();
-            }
-        });
+        it('surfaces capture failures, preserves run failures and unsubscribes', () =>
+            fixtureLifetime.track(async () => {
+                openChatProject();
+                let captures = 0;
+                const captureFailure = new Error('capture failure');
+                const capture = () => {
+                    captures++;
+                    throw captureFailure;
+                };
+                let writes = 0;
+                const write = () =>
+                    mutateCrdtDoc<Record<string, unknown>>({
+                        id: 'root',
+                        changeFn: (document) => {
+                            document.observerProbe = ++writes;
+                        },
+                    });
+                try {
+                    await expect(
+                        observeProjectChanges(async () => {
+                            write();
+                        }, capture)
+                    ).rejects.toBe(captureFailure);
+                    const afterCapture = captures;
+                    write();
+                    expect(captures).toBe(afterCapture);
+                    const runFailure = new Error('run failure');
+                    await expect(
+                        observeProjectChanges(async () => {
+                            write();
+                            throw runFailure;
+                        }, capture)
+                    ).rejects.toBe(runFailure);
+                    const afterRun = captures;
+                    expect(afterRun).toBeGreaterThan(afterCapture);
+                    write();
+                    expect(captures).toBe(afterRun);
+                } finally {
+                    closeChatProject();
+                }
+            }));
 
         it('surfaces root capture failures, preserves run failures and unsubscribes', async () => {
             openChatProject();
@@ -2227,13 +2438,21 @@ describe('agent acceptance corpora', () => {
             alongsidePrior?: () => Promise<void>,
             beforeFollowUp?: () => Promise<void>
         ): Promise<CaseRun & { observedBarrelWrites: number }> {
-            const barrel = spyOnBarrelWrites();
-            try {
-                const result = await runRefinementCase(testCase, barrel.log, alongside, alongsidePrior, beforeFollowUp);
-                return { ...result, observedBarrelWrites: barrel.log.count() };
-            } finally {
-                barrel.restore();
-            }
+            return fixtureLifetime.track(async () => {
+                const barrel = spyOnBarrelWrites();
+                try {
+                    const result = await runRefinementCase(
+                        testCase,
+                        barrel.log,
+                        alongside,
+                        alongsidePrior,
+                        beforeFollowUp
+                    );
+                    return { ...result, observedBarrelWrites: barrel.log.count() };
+                } finally {
+                    barrel.restore();
+                }
+            });
         }
 
         describe.each(AGENT_ACCEPTANCE_CORPORA)('%s expanded refinement cases', (corpusName) => {
@@ -2317,6 +2536,21 @@ describe('agent acceptance corpora', () => {
             ).toBe(0.27);
             createCrdtDoc('root', original);
         }
+
+        it('counts a restored root installation while scoring a role-selected bulk plan', async () => {
+            openChatProject();
+            const barrel = spyOnBarrelWrites();
+            try {
+                const testCase = corpusCase('development', 'AC054-DEV-BULK-1');
+                const run = await runCorpusCase(testCase, barrel.log, installKickPanAndRestore);
+                expect(run.result.exactMatch).toBe(true);
+                expect(barrel.log.count()).toBe(0);
+                expect(run.unintendedMutations).toBeGreaterThan(0);
+            } finally {
+                barrel.restore();
+                closeChatProject();
+            }
+        });
 
         it.each(['follow-up', 'undo'] as const)('counts installed restored root content beside %s', async (phase) => {
             const testCase = phase === 'follow-up' ? relativeCase : undoCase;
@@ -2576,23 +2810,24 @@ describe('agent acceptance corpora', () => {
             }
         );
 
-        it('counts persisted restored writes beside single-turn planning', async () => {
-            const testCase = scoredCases(corpora.development).find((entry) => entry.promptClass !== 'refinement');
-            if (testCase === undefined) {
-                throw new Error('Missing single-turn case');
-            }
-            openChatProject();
-            const barrel = spyOnBarrelWrites();
-            try {
-                const run = await runCorpusCase(testCase, barrel.log, persistKickPanAndRestore);
-                expect(run.result.exactMatch).toBe(true);
-                expect(barrel.log.count()).toBe(0);
-                expect(run.unintendedMutations).toBeGreaterThan(0);
-            } finally {
-                barrel.restore();
-                closeChatProject();
-            }
-        });
+        it('counts persisted restored writes beside single-turn planning', () =>
+            fixtureLifetime.track(async () => {
+                const testCase = scoredCases(corpora.development).find((entry) => entry.promptClass !== 'refinement');
+                if (testCase === undefined) {
+                    throw new Error('Missing single-turn case');
+                }
+                openChatProject();
+                const barrel = spyOnBarrelWrites();
+                try {
+                    const run = await runCorpusCase(testCase, barrel.log, persistKickPanAndRestore);
+                    expect(run.result.exactMatch).toBe(true);
+                    expect(barrel.log.count()).toBe(0);
+                    expect(run.unintendedMutations).toBeGreaterThan(0);
+                } finally {
+                    barrel.restore();
+                    closeChatProject();
+                }
+            }));
 
         it('scores the unaltered relative follow-up clean', async () => {
             const run = await runWithBarrel(relativeCase);
@@ -2641,54 +2876,56 @@ describe('agent acceptance corpora', () => {
             expect(run.unintendedMutations).toBeGreaterThan(0);
         });
 
-        it('observes a history-only write through the real scripted turn', async () => {
-            const prior = pendingCase.prior;
-            if (prior === undefined) {
-                throw new Error('The refinement fixture needs a prior turn.');
-            }
-            openChatProject();
-            const barrel = spyOnBarrelWrites();
-            try {
-                const writes = await sendScriptedChatTurn({
-                    id: 'history-only-counter',
-                    prompt: prior.prompt,
-                    providerTurns: prior.providerTurns,
-                    priorProposalId: () => undefined,
-                    barrel: barrel.log,
-                    alongside: async () => {
-                        commandUseCases.pushUndoEntry(
-                            'Unintended history',
-                            () => {},
-                            () => {}
-                        );
-                    },
-                });
-                expect(projectDifferences(writes.projectBefore, writes.projectAfter)).toBe(0);
-                expect(writes.barrelActions).toEqual([]);
-                expect(writes.moved).toBe(true);
-                expect(anyWrites(writes)).toBe(1);
-            } finally {
-                barrel.restore();
-                closeChatProject();
-            }
-        });
+        it('observes a history-only write through the real scripted turn', () =>
+            fixtureLifetime.track(async () => {
+                const prior = pendingCase.prior;
+                if (prior === undefined) {
+                    throw new Error('The refinement fixture needs a prior turn.');
+                }
+                openChatProject();
+                const barrel = spyOnBarrelWrites();
+                try {
+                    const writes = await sendScriptedChatTurn({
+                        id: 'history-only-counter',
+                        prompt: prior.prompt,
+                        providerTurns: prior.providerTurns,
+                        priorProposalId: () => undefined,
+                        barrel: barrel.log,
+                        alongside: async () => {
+                            commandUseCases.pushUndoEntry(
+                                'Unintended history',
+                                () => {},
+                                () => {}
+                            );
+                        },
+                    });
+                    expect(projectDifferences(writes.projectBefore, writes.projectAfter)).toBe(0);
+                    expect(writes.barrelActions).toEqual([]);
+                    expect(writes.moved).toBe(true);
+                    expect(anyWrites(writes)).toBe(1);
+                } finally {
+                    barrel.restore();
+                    closeChatProject();
+                }
+            }));
 
-        it('records both single-action and batch barrel writes and the actions each carried', async () => {
-            openChatProject();
-            const barrel = spyOnBarrelWrites();
-            try {
-                const mark = barrel.log.mark();
-                const single = gainMove('track-kick', -1);
-                await commandUseCases.executeAppAction(single, { skipUndo: true });
-                const batch = gainMove('track-snare', -1);
-                await commandUseCases.executeAppActionBatch([batch]);
-                expect(barrel.log.count()).toBe(2);
-                expect(barrel.log.actionsSince(mark)).toEqual([single, batch]);
-            } finally {
-                barrel.restore();
-                closeChatProject();
-            }
-        });
+        it('records both single-action and batch barrel writes and the actions each carried', () =>
+            fixtureLifetime.track(async () => {
+                openChatProject();
+                const barrel = spyOnBarrelWrites();
+                try {
+                    const mark = barrel.log.mark();
+                    const single = gainMove('track-kick', -1);
+                    await commandUseCases.executeAppAction(single, { skipUndo: true });
+                    const batch = gainMove('track-snare', -1);
+                    await commandUseCases.executeAppActionBatch([batch]);
+                    expect(barrel.log.count()).toBe(2);
+                    expect(barrel.log.actionsSince(mark)).toEqual([single, batch]);
+                } finally {
+                    barrel.restore();
+                    closeChatProject();
+                }
+            }));
 
         it.each(['other-track-gain', 'target-track-gain', 'target-track-pan'] as const)(
             'counts an out-of-oracle project write that bypasses Command and history: %s',
@@ -2895,6 +3132,590 @@ describe('agent acceptance corpora', () => {
             expect(run.unintendedMutations).toBeGreaterThan(0);
         });
     });
+
+    it.fails(
+        'fixture lifetime deadline integration holds a real parent callback',
+        async ({ signal }) => {
+            const sentinel = new Error('parent fixture release');
+            signal.addEventListener(
+                'abort',
+                () => {
+                    parentBoundary.reason = String(signal.reason);
+                    parentBoundary.events.push('parent deadline');
+                    parentBoundary.deadline.release();
+                },
+                { once: true }
+            );
+            const barrel = spyOnBarrelWrites();
+            parentBoundary.owner = fixtureLifetime.track(async () => {
+                try {
+                    await runRefinementCase(
+                        corpusCase('held-out', 'AC004-HO-UNDO-MULTI-TRACK'),
+                        barrel.log,
+                        undefined,
+                        async () => {
+                            parentBoundary.events.push('parent held');
+                            await parentBoundary.body.promise;
+                            throw sentinel;
+                        }
+                    );
+                    throw new Error('expected parent release');
+                } catch (error) {
+                    if (error !== sentinel) {
+                        throw error;
+                    }
+                } finally {
+                    barrel.restore();
+                    parentBoundary.events.push('parent closed and restored');
+                }
+            });
+            parentBoundary.controller = (async () => {
+                try {
+                    await parentBoundary.deadline.promise;
+                    await parentBoundary.integrationAdmission.promise;
+                    expect(parentBoundary.events).toEqual([
+                        'parent held',
+                        'parent deadline',
+                        'integration admission entered',
+                    ]);
+                } finally {
+                    parentBoundary.body.release();
+                }
+            })();
+            void parentBoundary.controller.catch(() => undefined);
+            await parentBoundary.owner;
+        },
+        10_000
+    );
+});
+
+type Fact = string | number | boolean;
+type AnswerOracle = {
+    kind: 'answer';
+    text: string;
+    query: { type: string; facts: Record<string, Fact>; total?: number };
+};
+
+/**
+ * Whether the answer text states the value as a whole token: a number never inside a longer number
+ * (1 is not in 16, 8 is not in 0.8, 3 is not in -3), a word never inside a longer word.
+ */
+function textStatesValue(text: string, value: Fact): boolean {
+    const escaped = String(value).replaceAll(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+    const wordBefore = typeof value === 'number' ? '(?<![\\p{L}\\p{N}_-])' : '(?<![\\p{L}\\p{N}_])';
+    const decimalBefore = '(?<!\\p{N}[.,])';
+    const wordAfter = '(?![\\p{L}\\p{N}_])';
+    const decimalAfter = '(?![.,]\\p{N})';
+    return new RegExp(`${wordBefore}${decimalBefore}${escaped}${wordAfter}${decimalAfter}`, 'u').test(text);
+}
+
+/** Reject a hollow oracle rather than manufacturing default answer or query facts. */
+function parseAnswerOracle(value: unknown): AnswerOracle {
+    if (
+        !isRecord(value) ||
+        value.kind !== 'answer' ||
+        typeof value.text !== 'string' ||
+        value.text.trim().length === 0 ||
+        !isRecord(value.query)
+    ) {
+        throw new TypeError('Answer oracle requires nonempty exact text and a query.');
+    }
+    if (typeof value.query.type !== 'string' || value.query.type.trim().length === 0 || !isRecord(value.query.facts)) {
+        throw new TypeError('Answer oracle requires a query type and substantive facts.');
+    }
+    if (parseSemanticProjectQueryInput({ type: value.query.type }).status !== 'valid') {
+        throw new TypeError('Answer oracle requires a supported project query type.');
+    }
+    const facts: Record<string, Fact> = {};
+    for (const [key, fact] of Object.entries(value.query.facts)) {
+        if (
+            !key.trim() ||
+            (typeof fact !== 'string' && typeof fact !== 'number' && typeof fact !== 'boolean') ||
+            (typeof fact === 'string' && !fact.trim()) ||
+            (typeof fact === 'number' && !Number.isFinite(fact))
+        ) {
+            throw new TypeError('Answer oracle facts must be nonempty scalar values.');
+        }
+        facts[key] = fact;
+    }
+    if (!Object.keys(facts).some((key) => key !== 'id' && key !== 'kind')) {
+        throw new TypeError('Answer oracle requires substantive query facts.');
+    }
+    const { total } = value.query;
+    if (total !== undefined && (typeof total !== 'number' || !Number.isInteger(total) || total <= 0)) {
+        throw new TypeError('Answer oracle total must be a positive integer.');
+    }
+    // Identity facts (id, kind) locate the cited item; every other fact is a claim the answer makes.
+    const stated: Record<string, Fact> = Object.fromEntries(
+        Object.entries(facts).filter(([key]) => key !== 'id' && key !== 'kind')
+    );
+    if (total !== undefined) {
+        stated.total = total;
+    }
+    for (const [key, fact] of Object.entries(stated)) {
+        if (!textStatesValue(value.text, fact)) {
+            throw new TypeError(`Answer oracle text does not state the ${key} fact ${JSON.stringify(fact)}.`);
+        }
+    }
+    const query: AnswerOracle['query'] = { type: value.query.type, facts };
+    if (total !== undefined) {
+        query.total = total;
+    }
+    return { kind: 'answer', text: value.text, query };
+}
+
+/** Compare only the cited, successful query from this actual result and its current project. */
+function answerMatchesOracle(input: {
+    oracle: AnswerOracle;
+    outcome: PlanningOutcome;
+    actions: readonly unknown[];
+    receipts: readonly ApplicationToolReceipt[];
+    projectId: string | null;
+    projectRevision: string;
+}): boolean {
+    if (
+        input.outcome.kind !== 'answer' ||
+        input.outcome.text !== input.oracle.text ||
+        input.actions.length > 0 ||
+        input.projectId === null ||
+        input.projectId.length === 0 ||
+        input.outcome.evidence.length === 0
+    ) {
+        return false;
+    }
+    let revision: unknown;
+    try {
+        revision = JSON.parse(input.projectRevision);
+    } catch {
+        return false;
+    }
+    if (!isRecord(revision)) {
+        return false;
+    }
+    let matchedQuery = false;
+    const seen = new Set<string>();
+    for (const evidence of input.outcome.evidence) {
+        if (seen.has(evidence.callId)) {
+            return false;
+        }
+        seen.add(evidence.callId);
+        const matches = input.receipts.filter((receipt) => receipt.callId === evidence.callId);
+        const receipt = matches[0];
+        if (
+            matches.length !== 1 ||
+            receipt === undefined ||
+            receipt.schema !== 'sourdaw.application-tool-receipt' ||
+            receipt.schemaVersion !== 1 ||
+            receipt.status !== 'success' ||
+            receipt.error !== null ||
+            receipt.toolName !== evidence.toolName ||
+            receipt.summary !== evidence.summary
+        ) {
+            return false;
+        }
+        if (receipt.toolName !== 'project.query') {
+            continue;
+        }
+        if (!isRecord(receipt.data)) {
+            return false;
+        }
+        const data = receipt.data;
+        if (
+            data.schema !== 'sourdaw.semantic-project-query' ||
+            data.schemaVersion !== 1 ||
+            parseSemanticProjectQueryInput({ type: data.queryType }).status !== 'valid' ||
+            data.projectId !== input.projectId ||
+            typeof data.revisionToken !== 'string' ||
+            data.revisionToken.length === 0 ||
+            receipt.revision !== data.revisionToken ||
+            !isDeepStrictEqual(data.revision, revision) ||
+            !Array.isArray(data.items) ||
+            !data.items.every((item: unknown) => isRecord(item))
+        ) {
+            return false;
+        }
+        if (data.queryType !== input.oracle.query.type) {
+            continue;
+        }
+        const totalMatches =
+            input.oracle.query.total === undefined ||
+            (isRecord(data.page) && data.page.total === input.oracle.query.total);
+        matchedQuery ||=
+            totalMatches &&
+            data.items.some(
+                (item: unknown) =>
+                    isRecord(item) &&
+                    Object.entries(input.oracle.query.facts).every(([key, value]) =>
+                        isDeepStrictEqual(item[key], value)
+                    )
+            );
+    }
+    return matchedQuery;
+}
+
+const ANSWER_FIXTURE_TEXT = 'Song runs at 120 BPM across 2 sections.';
+
+function answerOracleFixture(
+    oracle: unknown = {
+        kind: 'answer',
+        text: ANSWER_FIXTURE_TEXT,
+        query: { type: 'project-summary', facts: { name: 'Song', tempo: 120 }, total: 2 },
+    }
+): Parameters<typeof answerMatchesOracle>[0] {
+    const revision = { documentIdentityEpoch: 1, mutationEpoch: 2, documents: [] };
+    return {
+        oracle: parseAnswerOracle(oracle),
+        outcome: {
+            kind: 'answer',
+            text: ANSWER_FIXTURE_TEXT,
+            evidence: [{ callId: 'read', toolName: 'project.query', summary: 'project-summary: 1 of 1 item(s)' }],
+        },
+        actions: [],
+        projectId: 'project-1',
+        projectRevision: JSON.stringify(revision),
+        receipts: [
+            {
+                schema: 'sourdaw.application-tool-receipt',
+                schemaVersion: 1,
+                callId: 'read',
+                toolName: 'project.query',
+                turn: 1,
+                status: 'success',
+                revision: 'spq1.token',
+                data: {
+                    schema: 'sourdaw.semantic-project-query',
+                    schemaVersion: 1,
+                    projectId: 'project-1',
+                    revision,
+                    revisionToken: 'spq1.token',
+                    queryType: 'project-summary',
+                    page: { offset: 0, limit: 50, total: 2 },
+                    items: [{ id: 'project-1', kind: 'project-summary', name: 'Song', tempo: 120 }],
+                },
+                summary: 'project-summary: 1 of 1 item(s)',
+                warnings: [],
+                error: null,
+            },
+        ],
+    };
+}
+
+describe('answer acceptance oracle', () => {
+    it('requires a genuine cited same-run matching project query and exact text', () => {
+        expect(answerMatchesOracle(answerOracleFixture())).toBe(true);
+    });
+    it.each([
+        'wrong text',
+        'empty evidence',
+        'foreign citation',
+        'failed receipt',
+        'wrong type',
+        'wrong fact',
+        'one of two facts wrong',
+        'wrong total',
+        'missing page',
+        'missing facts',
+        'wrong revision',
+        'wrong identity',
+        'wrong token',
+        'capability only',
+        'actions',
+    ] as const)('refuses %s', (failure) => {
+        const input = answerOracleFixture();
+        if (input.outcome.kind !== 'answer') {
+            throw new Error('Expected answer');
+        }
+        const receipt = input.receipts[0];
+        if (receipt === undefined || !isRecord(receipt.data)) {
+            throw new Error('Expected query data');
+        }
+        const data = receipt.data;
+        switch (failure) {
+            case 'wrong text':
+                input.outcome.text = 'Song runs at 121 BPM across 2 sections.';
+                break;
+            case 'empty evidence':
+                input.outcome.evidence = [];
+                break;
+            case 'foreign citation':
+                input.outcome.evidence = [{ callId: 'foreign', toolName: 'project.query', summary: receipt.summary }];
+                break;
+            case 'failed receipt':
+                receipt.status = 'failure';
+                break;
+            case 'wrong type':
+                data.queryType = 'tempo';
+                break;
+            case 'wrong fact':
+                data.items = [{ name: 'Song', tempo: 121 }];
+                break;
+            case 'one of two facts wrong':
+                data.items = [{ id: 'project-1', kind: 'project-summary', name: 'Other', tempo: 120 }];
+                break;
+            case 'wrong total':
+                data.page = { offset: 0, limit: 50, total: 3 };
+                break;
+            case 'missing page':
+                delete data.page;
+                break;
+            case 'missing facts':
+                data.items = [];
+                break;
+            case 'wrong revision':
+                data.revision = { documentIdentityEpoch: 1, mutationEpoch: 3, documents: [] };
+                break;
+            case 'wrong identity':
+                data.projectId = 'other';
+                break;
+            case 'wrong token':
+                receipt.revision = 'wrong';
+                break;
+            case 'capability only':
+                receipt.toolName = 'agent.capabilities';
+                input.outcome.evidence = [{ callId: 'read', toolName: receipt.toolName, summary: receipt.summary }];
+                break;
+            case 'actions':
+                input.actions = [{ type: 'setTempo' }];
+                break;
+        }
+        expect(answerMatchesOracle(input)).toBe(false);
+    });
+    it.each(['foreign project', 'stale revision', 'malformed data', 'wrong token', 'invalid query type'] as const)(
+        'rejects a second %s query in either citation order',
+        (failure) => {
+            for (const reverse of [false, true]) {
+                const input = answerOracleFixture();
+                if (input.outcome.kind !== 'answer') {
+                    throw new Error('Expected answer');
+                }
+                const first = input.receipts[0];
+                if (first === undefined) {
+                    throw new Error('Expected query receipt');
+                }
+                const second = structuredClone(first);
+                second.callId = 'second';
+                if (!isRecord(second.data)) {
+                    throw new Error('Expected query data');
+                }
+                switch (failure) {
+                    case 'foreign project':
+                        second.data.projectId = 'other';
+                        break;
+                    case 'stale revision':
+                        second.data.revision = { documentIdentityEpoch: 1, mutationEpoch: 3, documents: [] };
+                        break;
+                    case 'malformed data':
+                        second.data.items = [null];
+                        break;
+                    case 'wrong token':
+                        second.revision = 'wrong';
+                        break;
+                    case 'invalid query type':
+                        second.data.queryType = 'invented';
+                        break;
+                }
+                input.receipts = [first, second];
+                const firstEvidence = input.outcome.evidence[0];
+                if (firstEvidence === undefined) {
+                    throw new Error('Expected query citation');
+                }
+                const secondEvidence = { ...firstEvidence, callId: second.callId };
+                input.outcome.evidence = reverse ? [secondEvidence, firstEvidence] : [firstEvidence, secondEvidence];
+                expect(answerMatchesOracle(input)).toBe(false);
+            }
+        }
+    );
+
+    it('allows another current query type as context but not as the matching query', () => {
+        const input = answerOracleFixture();
+        if (input.outcome.kind !== 'answer') {
+            throw new Error('Expected answer');
+        }
+        const first = input.receipts[0];
+        const citation = input.outcome.evidence[0];
+        if (first === undefined || citation === undefined) {
+            throw new Error('Expected query and citation');
+        }
+        const second = structuredClone(first);
+        if (!isRecord(second.data)) {
+            throw new Error('Expected query data');
+        }
+        second.callId = 'second';
+        second.data.queryType = 'tempo';
+        second.summary = 'tempo: 1 of 1 item(s)';
+        input.receipts = [first, second];
+        const secondCitation = { ...citation, callId: second.callId, summary: second.summary };
+        input.outcome.evidence = [citation, secondCitation];
+        expect(answerMatchesOracle(input)).toBe(true);
+        input.outcome.evidence = [secondCitation];
+        expect(answerMatchesOracle(input)).toBe(false);
+    });
+    it('refuses a receipt total the oracle does not pin, even when the answer text matches', () => {
+        const input = answerOracleFixture({
+            kind: 'answer',
+            text: 'Song runs at 120 BPM across 3 sections.',
+            query: { type: 'project-summary', facts: { tempo: 120 }, total: 3 },
+        });
+        if (input.outcome.kind !== 'answer') {
+            throw new Error('Expected answer');
+        }
+        input.outcome.text = 'Song runs at 120 BPM across 3 sections.';
+        expect(answerMatchesOracle(input)).toBe(false);
+    });
+    it.each([
+        { kind: 'answer', text: '', query: { type: 'project-summary', facts: { tempo: 120 } } },
+        { kind: 'answer', text: 'x', query: { type: 'project-summary', facts: {} } },
+        { kind: 'answer', text: 'x', query: { type: 'project-summary', facts: { id: 'id' } } },
+        { kind: 'answer', text: 'x', query: { type: '', facts: { tempo: 120 } } },
+        { kind: 'answer', text: 'x', query: { type: 'invented', facts: { tempo: 120 } } },
+    ])('rejects malformed or hollow frozen answer oracles', (oracle) => {
+        expect(() => parseAnswerOracle(oracle)).toThrow();
+    });
+    it.each([
+        ['a fact value absent from the text', 'Tempo is fast.', { tempo: 120 }, undefined],
+        ['a number inside a longer number', 'The project has 16 tracks.', { gain: 1 }, undefined],
+        ['a decimal fraction read as a whole number', 'Master is at 0.8.', { gain: 8 }, undefined],
+        ['a positive number inside a negative one', 'Gain is -3 dB.', { gain: 3 }, undefined],
+        ['a string inside a longer word', 'The submidi lane is quiet.', { trackKind: 'midi' }, undefined],
+        ['a total absent from the text', 'Tempo is 120 BPM.', { tempo: 120 }, 2],
+        ['a total inside a longer number', 'Tempo is 120 BPM across 12 sections.', { tempo: 120 }, 2],
+        ['a zero total', 'Tempo is 120 BPM across 0 sections.', { tempo: 120 }, 0],
+        ['a fractional total', 'Tempo is 120 BPM across 1.5 sections.', { tempo: 120 }, 1.5],
+        ['a string total', 'Tempo is 120 BPM across 2 sections.', { tempo: 120 }, '2'],
+    ])('refuses an oracle with %s', (_label, text, facts, total) => {
+        expect(() =>
+            parseAnswerOracle({ kind: 'answer', text, query: { type: 'project-summary', facts, total } })
+        ).toThrow(TypeError);
+    });
+    it('names the fact the text does not state', () => {
+        expect(() =>
+            parseAnswerOracle({
+                kind: 'answer',
+                text: 'Tempo is fast.',
+                query: { type: 'project-summary', facts: { tempo: 120 } },
+            })
+        ).toThrow('Answer oracle text does not state the tempo fact 120.');
+    });
+    it.each([
+        ['a number stated between punctuation', 'Fader: “Kick” 1; master 0.8.', { gain: 1 }],
+        ['a decimal', 'Fader: “Kick” 1; master 0.8.', { gain: 0.8 }],
+        ['a word before a parenthesis', 'The project has 2 bus(es).', { trackKind: 'bus' }],
+        ['a quoted name and its number', 'Fader: “Lead Vocal” 1.', { name: 'Lead Vocal', gain: 1 }],
+        ['an identity fact the text does not repeat', 'Tempo is 120 BPM.', { kind: 'project-summary', tempo: 120 }],
+    ])('accepts an oracle with %s', (_label, text, facts) => {
+        expect(() =>
+            parseAnswerOracle({ kind: 'answer', text, query: { type: 'project-summary', facts } })
+        ).not.toThrow();
+    });
+});
+
+describe('fixture transport reaching the chat', () => {
+    const TRANSPORT_FIELDS = [
+        'tempo',
+        'timeSignature',
+        'isLooping',
+        'loopStart',
+        'loopEnd',
+        'punchInEnabled',
+        'punchInBeat',
+        'punchOutBeat',
+        'metronomeEnabled',
+        'metronomeVolume',
+        'masterGain',
+    ] as const satisfies readonly (keyof ProjectContext)[];
+
+    function transportOf(source: ProjectContext): Pick<ProjectContext, (typeof TRANSPORT_FIELDS)[number]> {
+        return {
+            tempo: source.tempo,
+            timeSignature: source.timeSignature,
+            isLooping: source.isLooping,
+            loopStart: source.loopStart,
+            loopEnd: source.loopEnd,
+            punchInEnabled: source.punchInEnabled,
+            punchInBeat: source.punchInBeat,
+            punchOutBeat: source.punchOutBeat,
+            metronomeEnabled: source.metronomeEnabled,
+            metronomeVolume: source.metronomeVolume,
+            masterGain: source.masterGain,
+        };
+    }
+
+    /** Opens the fixture as a chat does, with the canonical identity a semantic query answers for. */
+    function readOpenedFixture<TResult>(fixture: ProjectContext, read: () => TResult): TResult {
+        const projectBefore = projectStore.value;
+        openChatProject(fixture);
+        projectStore.set({
+            ...structuredClone(defaultProjectStoreState),
+            projectId: FIXTURE_PROJECT_ID,
+            initialized: true,
+            loading: false,
+        });
+        try {
+            return read();
+        } finally {
+            projectStore.set(projectBefore);
+            closeChatProject();
+        }
+    }
+
+    const edited: ProjectContext = {
+        ...context,
+        tempo: 121,
+        timeSignature: [7, 8],
+        isLooping: true,
+        loopStart: 4,
+        loopEnd: 12,
+        punchInEnabled: true,
+        punchInBeat: 2,
+        punchOutBeat: 10,
+        metronomeEnabled: true,
+        metronomeVolume: 0.25,
+        masterGain: 0.5,
+    };
+
+    it.each([
+        ['the committed fixture', context],
+        ['an edited fixture', edited],
+    ])('opens %s with the transport it declares', (_label, fixture) => {
+        const read = readOpenedFixture(fixture, () => transportOf(getProjectContext()));
+        expect(read).toEqual(transportOf(fixture));
+    });
+
+    it('answers a tempo question for the edited fixture, so an oracle pinning the old tempo fails', () => {
+        const receipt = readOpenedFixture(edited, () => querySemanticProject({ type: 'tempo' }));
+        const answerFor = (tempo: number): Parameters<typeof answerMatchesOracle>[0] => {
+            const text = `The project tempo setting is ${String(tempo)} BPM.`;
+            const summary = 'tempo: 1 of 1 item(s)';
+            return {
+                oracle: parseAnswerOracle({ kind: 'answer', text, query: { type: 'tempo', facts: { tempo } } }),
+                outcome: {
+                    kind: 'answer',
+                    text,
+                    evidence: [{ callId: 'read', toolName: 'project.query', summary }],
+                },
+                actions: [],
+                projectId: receipt.projectId,
+                projectRevision: JSON.stringify(receipt.revision),
+                receipts: [
+                    {
+                        schema: 'sourdaw.application-tool-receipt',
+                        schemaVersion: 1,
+                        callId: 'read',
+                        toolName: 'project.query',
+                        turn: 1,
+                        status: 'success',
+                        revision: receipt.revisionToken,
+                        data: receipt,
+                        summary,
+                        warnings: [],
+                        error: null,
+                    },
+                ],
+            };
+        };
+        expect(answerMatchesOracle(answerFor(121))).toBe(true);
+        expect(answerMatchesOracle(answerFor(120))).toBe(false);
+    });
 });
 
 const SEALED_LITERAL_ONLY: readonly AgentScoredPromptClass[] = ['literal-structural'];
@@ -2917,6 +3738,62 @@ function caseResult(
 }
 
 describe('agentAcceptanceScorer', () => {
+    it('counts answer errors across the complete population without buying precision', () => {
+        const results: AgentAcceptanceCaseResult[] = [
+            caseResult('q1', 'answer-exact', 'answer-exact', true, 'question'),
+            caseResult('q2', 'answer-exact', 'answer-exact', false, 'question'),
+            caseResult('q3', 'answer-exact', 'execute-exact', false, 'question'),
+            caseResult('e1', 'execute-exact', 'answer-exact', false),
+        ];
+        const metrics = computeAgentAcceptanceMetrics(results, 0);
+        expect(metrics.answer).toEqual({
+            precision: 1 / 3,
+            recall: 1 / 3,
+            f1: 1 / 3,
+            support: 3,
+            truePositives: 1,
+            falsePositives: 2,
+            falseNegatives: 2,
+        });
+        expect(metrics.confusion['execute-exact']).toEqual({ truePositives: 0, falsePositives: 1, falseNegatives: 1 });
+        expect(metrics.perClass['execute-exact']).toEqual({ precision: 0, recall: 0, f1: 0, support: 1 });
+        expect(failedAgentAcceptanceThresholds(metrics, 'development', ['question'])).toEqual(
+            expect.arrayContaining(['answer-exact precision', 'question answer-exact recall'])
+        );
+    });
+
+    it('requires question support and answer predictions, even when both are absent', () => {
+        const failures = failedAgentAcceptanceThresholds(computeAgentAcceptanceMetrics([], 0), 'held-out', [
+            'question',
+        ]);
+        expect(failures).toEqual(
+            expect.arrayContaining([
+                'answer support: question',
+                'answer support: predictions',
+                'answer-exact precision',
+                'question answer-exact recall',
+            ])
+        );
+        const sparse = computeAgentAcceptanceMetrics(
+            [caseResult('q', 'answer-exact', 'answer-exact', true, 'question')],
+            0
+        );
+        expect(failedAgentAcceptanceThresholds(sparse, 'development', ['question'])).toContain(
+            'answer support: question'
+        );
+        expect(failedAgentAcceptanceThresholds(sparse, 'development', [])).not.toContain('answer support: question');
+    });
+
+    it('accepts three exact question answers only when all observed answers are correct', () => {
+        const cases = [1, 2, 3].map((n) => caseResult(String(n), 'answer-exact', 'answer-exact', true, 'question'));
+        const failures = failedAgentAcceptanceThresholds(computeAgentAcceptanceMetrics(cases, 0), 'development', [
+            'question',
+        ]);
+        expect(failures).not.toContain('answer support: question');
+        expect(failures).not.toContain('answer-exact precision');
+        expect(failures).not.toContain('question answer-exact recall');
+    });
+
     it('classifies every planning outcome kind the scored corpora observe', () => {
         expect(classifyPlanningOutcome({ kind: 'proposal' }, 3)).toBe('execute-exact');
         expect(classifyPlanningOutcome({ kind: 'proposal' }, 0)).toBeNull();
@@ -3168,4 +4045,162 @@ describe('payloadMatches', () => {
         expect(throwsFromNestedHollowRecord).toThrow(/payload\.notes\[0\]/);
         expect(throwsFromNestedHollowRecord).toThrow(/names no fields to pin/);
     });
+});
+
+describe('fixture lifetime deadline integration', () => {
+    function deferred() {
+        let release!: () => void;
+        const promise = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        return { promise, release };
+    }
+    const lifetime = fixtureLifetime;
+    const holdBody = deferred();
+    const holdCleanup = deferred();
+    const oldClosed = deferred();
+    const admissionEntered = deferred();
+    const timedOut = deferred();
+    const events: string[] = [];
+    const sentinel = new Error('controlled fixture release');
+    let reason = '';
+    let first = true;
+    let controller: Promise<void>;
+    let owner: Promise<void>;
+
+    beforeEach(async () => {
+        if (first && parentBoundary.owner !== undefined) {
+            parentBoundary.events.push('integration admission entered');
+            parentBoundary.integrationAdmission.release();
+        }
+        if (!first) {
+            events.push('admission entered');
+            admissionEntered.release();
+        }
+        first = false;
+        await lifetime.drain();
+    });
+
+    it.fails(
+        'times out while a real refinement remains held',
+        async ({ signal }) => {
+            if (parentBoundary.owner !== undefined) {
+                await parentBoundary.controller;
+                expect(parentBoundary.reason).toContain('timed out');
+                expect(parentBoundary.events).toEqual([
+                    'parent held',
+                    'parent deadline',
+                    'integration admission entered',
+                    'parent closed and restored',
+                ]);
+            }
+            signal.addEventListener(
+                'abort',
+                () => {
+                    reason = String(signal.reason);
+                    events.push('deadline');
+                    timedOut.release();
+                },
+                { once: true }
+            );
+            const barrel = spyOnBarrelWrites();
+            owner = lifetime.track(async () => {
+                try {
+                    await runRefinementCase(
+                        corpusCase('held-out', 'AC004-HO-UNDO-MULTI-TRACK'),
+                        barrel.log,
+                        undefined,
+                        async () => {
+                            events.push('old held');
+                            await holdBody.promise;
+                            throw sentinel;
+                        }
+                    );
+                    throw new Error('expected controlled release');
+                } catch (error) {
+                    if (error !== sentinel) {
+                        throw error;
+                    }
+                } finally {
+                    events.push('old closed');
+                    oldClosed.release();
+                    try {
+                        await holdCleanup.promise;
+                    } finally {
+                        barrel.restore();
+                        events.push('old restored');
+                    }
+                }
+            });
+            controller = (async () => {
+                try {
+                    await timedOut.promise;
+                    await admissionEntered.promise;
+                    expect(events).toEqual(['old held', 'deadline', 'admission entered']);
+                    holdBody.release();
+                    await oldClosed.promise;
+                    expect(events).toEqual(['old held', 'deadline', 'admission entered', 'old closed']);
+                } finally {
+                    holdBody.release();
+                    holdCleanup.release();
+                }
+            })();
+            await owner;
+        },
+        10_000
+    );
+
+    it(
+        'admits the real successor only after old close and spy restoration',
+        () =>
+            lifetime.track(async () => {
+                events.push('successor body entered');
+                const barrel = spyOnBarrelWrites();
+                try {
+                    await controller;
+                    expect(reason).toContain('timed out');
+                    expect(events).toEqual([
+                        'old held',
+                        'deadline',
+                        'admission entered',
+                        'old closed',
+                        'old restored',
+                        'successor body entered',
+                    ]);
+                    openChatProject();
+                    events.push('successor opened');
+                    const testCase = corpusCase('development', 'AC004-DEV-UNDO-MULTI-TRACK');
+                    const prior = testCase.prior;
+                    if (prior === undefined) {
+                        throw new Error('Missing real prior');
+                    }
+                    const projectBefore = captureProjectTruth();
+                    await sendScriptedChatTurn({
+                        id: testCase.id,
+                        prompt: prior.prompt,
+                        providerTurns: prior.providerTurns,
+                        priorProposalId: () => undefined,
+                        barrel: barrel.log,
+                    });
+                    const ids = proposedConfirmationIds();
+                    expect(ids).toHaveLength(1);
+                    const state = await settlePriorTurn(
+                        testCase.id,
+                        prior.outcome,
+                        projectBefore,
+                        priorCommitOracleActions(prior)
+                    );
+                    expect(state.commitGroupId).toBeDefined();
+                    events.push('successor confirmed');
+                    expect(events.slice(-2)).toEqual(['successor opened', 'successor confirmed']);
+                } finally {
+                    holdBody.release();
+                    holdCleanup.release();
+                    await owner;
+                    barrel.restore();
+                    closeChatProject();
+                }
+            }),
+        30_000
+    );
 });

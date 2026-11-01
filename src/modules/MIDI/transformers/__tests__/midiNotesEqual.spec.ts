@@ -50,6 +50,7 @@ describe('midiNotesEqual', () => {
             { ...base, pitchBendRangeSemitones: (base.pitchBendRangeSemitones ?? 0) + 1 },
             { ...base, channel: (base.channel ?? 0) + 1 },
             { ...base, articulation: 'accent' },
+            { ...base, recordingPassIndex: 1 },
             { ...base, expression: { pressure: [{ offsetBeats: 0.5, value: 10 }] } },
         ];
         for (const right of mutated) {

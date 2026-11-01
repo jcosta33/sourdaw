@@ -76,6 +76,36 @@ describe('projectChannelBend', () => {
         ]);
     });
 
+    it('keeps a frozen carried move’s source order across cropped pass occurrences', () => {
+        const sourceControlChanges = declareRange(4, 12);
+        const points = projectChannelBend({
+            clips: [
+                {
+                    clip: { startBeat: 2, endBeat: 4, midiOffsetBeats: 2 },
+                    controlChanges: [],
+                    pitchBends: [{ ...bend('carried-first', 2, 8191), sourceRecordedBeat: 5.5 }],
+                    sourceControlChanges,
+                    sourceBeatOffset: -4,
+                },
+                {
+                    clip: { startBeat: 6, endBeat: 8, midiOffsetBeats: 6 },
+                    controlChanges: [],
+                    pitchBends: [{ ...bend('carried-second', 6, 8191), sourceRecordedBeat: 5.5 }],
+                    sourceControlChanges,
+                    sourceBeatOffset: 0,
+                },
+            ],
+            frameAtBeat,
+        });
+
+        expect(
+            points.map(({ beat, recordedBeat, rangeSemitones }) => ({ beat, recordedBeat, rangeSemitones }))
+        ).toEqual([
+            { beat: 2, recordedBeat: 1.5, rangeSemitones: 12 },
+            { beat: 6, recordedBeat: 5.5, rangeSemitones: 12 },
+        ]);
+    });
+
     it('orders by sample frame, then clip sequence, never by float beat', () => {
         // Rows 0.00001 of a beat apart share a frame; the instrument ends on the later clip's, whatever the beat order.
         const points = projectChannelBend({

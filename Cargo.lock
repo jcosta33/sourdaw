@@ -2363,6 +2363,7 @@ version = "0.1.0"
 dependencies = [
  "assert_no_alloc",
  "console_error_panic_hook",
+ "daw-dsp",
  "js-sys",
  "serde",
  "serde_json",

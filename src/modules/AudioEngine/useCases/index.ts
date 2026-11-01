@@ -27,6 +27,7 @@ export { requestMicPermission } from './audioRecorder/requestMicPermission';
 export { playAuditionNote } from './audition';
 export { acquireCheckpointAudioRetention } from './acquireCheckpointAudioRetention';
 export { configureDurableAudioBufferOwnership } from './configureDurableAudioBufferOwnership';
+export { configureLiveAudioBufferReferences } from './configureLiveAudioBufferReferences';
 export { cacheAudioBuffer } from './cacheAudioBuffer';
 export { cancelPendingAudioBufferImport } from './cancelPendingAudioBufferImport';
 export { clearCachedAudioBuffers } from './clearCachedAudioBuffers';
@@ -42,6 +43,8 @@ export { importCachedAudioBuffers } from './importCachedAudioBuffers';
 export { prepareCachedAudioBuffersFromIdb } from './prepareCachedAudioBuffersFromIdb';
 export { cachePreviewAudioBuffer } from './cachePreviewAudioBuffer';
 export { playCachedAudioBufferPreview } from './playCachedAudioBufferPreview';
+export { playAudioBufferPreview } from './playAudioBufferPreview';
+export { playExclusiveAudioBufferPreview } from './playExclusiveAudioBufferPreview';
 export { persistPreparedAudioBuffer } from './persistPreparedAudioBuffer';
 export { reclaimPreparedAudioBufferOrphans } from './reclaimPreparedAudioBufferOrphans';
 export { releaseCheckpointAudioRetention } from './releaseCheckpointAudioRetention';
@@ -150,6 +153,7 @@ export { nativeLiveGraphSessionSplice } from './livePlayback/nativeLiveGraphSess
 export { recordNativeChainReleases } from './livePlayback/recordNativeChainReleases';
 export { syncNativeTimelineSamples } from './livePlayback/syncNativeTimelineSamples';
 export { readNativeEnginePlayheadSeconds } from './livePlayback/readNativeEnginePlayheadSeconds';
+export { createNativeRecordingCaptureClock } from './livePlayback/nativeRecordingCaptureClock';
 export { repositionNativeLiveGraphSession } from './livePlayback/repositionNativeLiveGraphSession';
 export { sendNativeLiveMidiControl } from './livePlayback/sendNativeLiveMidiControl';
 export { sendNativeLiveMidiNote } from './livePlayback/sendNativeLiveMidiNote';
@@ -180,6 +184,8 @@ export { configureOfflineYeastMidiProcessing } from './configureOfflineYeastMidi
 export { getOfflineYeastRackReader } from './getOfflineYeastRackReader';
 export { projectOfflineYeastTrackNotes } from './offlineRender/projectOfflineYeastTrackNotes';
 export { renderTrackSubgraphOffline } from './offlineRender/renderTrackSubgraphOffline';
+export { projectOfflineAudioClipPlaybacks } from './offlineRender/projectOfflineAudioClipPlaybacks';
+export { resolveTrackClipsWithComping } from './offlineRender/resolveTrackClipsWithComping';
 // Audio encoders (audioBufferToWav/Mp3/Flac) moved to AudioRendering (ADR 0011 W4).
 
 export { scheduleAdjustmentLayers } from './adjustmentLayer/scheduleAdjustmentLayers';

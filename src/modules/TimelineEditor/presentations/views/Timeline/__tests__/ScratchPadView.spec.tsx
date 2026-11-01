@@ -37,21 +37,21 @@ describe('ScratchPadView', () => {
     });
 
     it('shows the empty-state hint and hides Apply/Clear when there are no sections', () => {
-        render(<ScratchPadView height={160} onToggle={vi.fn()} />);
+        render(<ScratchPadView height={160} collapsed={false} onCollapsedChange={vi.fn()} onToggle={vi.fn()} />);
         expect(screen.getByText(/Click "Capture" to snapshot/)).toBeInTheDocument();
         expect(screen.queryByTitle('Apply scratch pad to main arrangement')).not.toBeInTheDocument();
         expect(screen.queryByLabelText('Clear scratch pad')).not.toBeInTheDocument();
     });
 
     it('calls captureArrangementToScratchPad when Capture is clicked', () => {
-        render(<ScratchPadView height={160} onToggle={vi.fn()} />);
+        render(<ScratchPadView height={160} collapsed={false} onCollapsedChange={vi.fn()} onToggle={vi.fn()} />);
         fireEvent.click(screen.getByText('Capture'));
         expect(captureArrangementToScratchPad).toHaveBeenCalledWith();
     });
 
     it('renders sections with their name and beat duration, using fallback color for the placeholder', () => {
         mockScratchPadState = { sections: [sectionA, sectionB] };
-        render(<ScratchPadView height={160} onToggle={vi.fn()} />);
+        render(<ScratchPadView height={160} collapsed={false} onCollapsedChange={vi.fn()} onToggle={vi.fn()} />);
         expect(screen.getByText('Verse')).toBeInTheDocument();
         expect(screen.getByText('Chorus')).toBeInTheDocument();
         expect(screen.getAllByText('8 beats')).toHaveLength(2);
@@ -64,33 +64,49 @@ describe('ScratchPadView', () => {
 
     it('calls commitScratchPadToArrangement and clearScratchPad from the header buttons', () => {
         mockScratchPadState = { sections: [sectionA] };
-        render(<ScratchPadView height={160} onToggle={vi.fn()} />);
+        render(<ScratchPadView height={160} collapsed={false} onCollapsedChange={vi.fn()} onToggle={vi.fn()} />);
         fireEvent.click(screen.getByText('Apply'));
         expect(commitScratchPadToArrangement).toHaveBeenCalledWith();
         fireEvent.click(screen.getByLabelText('Clear scratch pad'));
         expect(clearScratchPad).toHaveBeenCalledWith();
     });
 
-    it('collapses and expands, hiding the sections area while collapsed', () => {
-        mockScratchPadState = { sections: [sectionA] };
-        render(<ScratchPadView height={160} onToggle={vi.fn()} />);
+    it('asks its owner to collapse and to expand instead of holding that state itself', () => {
+        const onCollapsedChange = vi.fn();
+        const { rerender } = render(
+            <ScratchPadView height={160} collapsed={false} onCollapsedChange={onCollapsedChange} onToggle={vi.fn()} />
+        );
         fireEvent.click(screen.getByLabelText('Collapse scratch pad'));
-        expect(screen.queryByText('Verse')).not.toBeInTheDocument();
+        expect(onCollapsedChange).toHaveBeenLastCalledWith(true);
 
+        rerender(<ScratchPadView height={160} collapsed onCollapsedChange={onCollapsedChange} onToggle={vi.fn()} />);
         fireEvent.click(screen.getByLabelText('Expand scratch pad'));
+        expect(onCollapsedChange).toHaveBeenLastCalledWith(false);
+    });
+
+    it('renders only its 30px header strip while collapsed, and its full height otherwise', () => {
+        mockScratchPadState = { sections: [sectionA] };
+        const { container, rerender } = render(
+            <ScratchPadView height={160} collapsed={false} onCollapsedChange={vi.fn()} onToggle={vi.fn()} />
+        );
+        expect(container.firstElementChild).toHaveStyle({ height: '160px' });
         expect(screen.getByText('Verse')).toBeInTheDocument();
+
+        rerender(<ScratchPadView height={160} collapsed onCollapsedChange={vi.fn()} onToggle={vi.fn()} />);
+        expect(container.firstElementChild).toHaveStyle({ height: '30px' });
+        expect(screen.queryByText('Verse')).not.toBeInTheDocument();
     });
 
     it('calls onToggle when the close button is clicked', () => {
         const onToggle = vi.fn();
-        render(<ScratchPadView height={160} onToggle={onToggle} />);
+        render(<ScratchPadView height={160} collapsed={false} onCollapsedChange={vi.fn()} onToggle={onToggle} />);
         fireEvent.click(screen.getByLabelText('Close scratch pad'));
         expect(onToggle).toHaveBeenCalled();
     });
 
     it('renames a section on double-click + Enter, focusing the input', () => {
         mockScratchPadState = { sections: [sectionA] };
-        render(<ScratchPadView height={160} onToggle={vi.fn()} />);
+        render(<ScratchPadView height={160} collapsed={false} onCollapsedChange={vi.fn()} onToggle={vi.fn()} />);
         fireEvent.doubleClick(screen.getByText('Verse'));
 
         const input = screen.getByRole('textbox');
@@ -105,7 +121,7 @@ describe('ScratchPadView', () => {
 
     it('cancels renaming on Escape without committing', () => {
         mockScratchPadState = { sections: [sectionA] };
-        render(<ScratchPadView height={160} onToggle={vi.fn()} />);
+        render(<ScratchPadView height={160} collapsed={false} onCollapsedChange={vi.fn()} onToggle={vi.fn()} />);
         fireEvent.doubleClick(screen.getByText('Verse'));
         fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Intro' } });
         fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' });
@@ -116,7 +132,7 @@ describe('ScratchPadView', () => {
 
     it('does not rename when the trimmed value is empty', () => {
         mockScratchPadState = { sections: [sectionA] };
-        render(<ScratchPadView height={160} onToggle={vi.fn()} />);
+        render(<ScratchPadView height={160} collapsed={false} onCollapsedChange={vi.fn()} onToggle={vi.fn()} />);
         fireEvent.doubleClick(screen.getByText('Verse'));
         fireEvent.change(screen.getByRole('textbox'), { target: { value: '   ' } });
         fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
@@ -126,7 +142,7 @@ describe('ScratchPadView', () => {
 
     it('opens a context menu with Rename, Color, Move and Delete actions', () => {
         mockScratchPadState = { sections: [sectionA, sectionB] };
-        render(<ScratchPadView height={160} onToggle={vi.fn()} />);
+        render(<ScratchPadView height={160} collapsed={false} onCollapsedChange={vi.fn()} onToggle={vi.fn()} />);
         fireEvent.contextMenu(screen.getByText('Verse'));
 
         expect(screen.getByText('Rename')).toBeInTheDocument();
@@ -138,7 +154,7 @@ describe('ScratchPadView', () => {
 
     it('sets a section color from the context menu swatches and closes the menu', () => {
         mockScratchPadState = { sections: [sectionA] };
-        render(<ScratchPadView height={160} onToggle={vi.fn()} />);
+        render(<ScratchPadView height={160} collapsed={false} onCollapsedChange={vi.fn()} onToggle={vi.fn()} />);
         fireEvent.contextMenu(screen.getByText('Verse'));
         fireEvent.click(screen.getByLabelText('Set color oklch(0.40 0.08 150)'));
 
@@ -148,7 +164,7 @@ describe('ScratchPadView', () => {
 
     it('reorders sections left/right from the context menu, respecting the disabled edges', () => {
         mockScratchPadState = { sections: [sectionA, sectionB] };
-        render(<ScratchPadView height={160} onToggle={vi.fn()} />);
+        render(<ScratchPadView height={160} collapsed={false} onCollapsedChange={vi.fn()} onToggle={vi.fn()} />);
         fireEvent.contextMenu(screen.getByText('Chorus'));
         fireEvent.click(screen.getByText('Move Left'));
         expect(reorderScratchPadSection).toHaveBeenCalledWith('s2', 'left');
@@ -160,7 +176,7 @@ describe('ScratchPadView', () => {
 
     it('opens the rename input from the context menu Rename action', () => {
         mockScratchPadState = { sections: [sectionA] };
-        render(<ScratchPadView height={160} onToggle={vi.fn()} />);
+        render(<ScratchPadView height={160} collapsed={false} onCollapsedChange={vi.fn()} onToggle={vi.fn()} />);
         fireEvent.contextMenu(screen.getByText('Verse'));
         fireEvent.click(screen.getByText('Rename'));
 
@@ -170,7 +186,7 @@ describe('ScratchPadView', () => {
 
     it('removes a section when Delete is clicked in the context menu', () => {
         mockScratchPadState = { sections: [sectionA] };
-        render(<ScratchPadView height={160} onToggle={vi.fn()} />);
+        render(<ScratchPadView height={160} collapsed={false} onCollapsedChange={vi.fn()} onToggle={vi.fn()} />);
         fireEvent.contextMenu(screen.getByText('Verse'));
         fireEvent.click(screen.getByText('Delete'));
         expect(removeScratchPadSection).toHaveBeenCalledWith('s1');
@@ -178,7 +194,7 @@ describe('ScratchPadView', () => {
 
     it('closes an open context menu on an outside click', () => {
         mockScratchPadState = { sections: [sectionA] };
-        render(<ScratchPadView height={160} onToggle={vi.fn()} />);
+        render(<ScratchPadView height={160} collapsed={false} onCollapsedChange={vi.fn()} onToggle={vi.fn()} />);
         fireEvent.contextMenu(screen.getByText('Verse'));
         expect(screen.getByText('Delete')).toBeInTheDocument();
 
@@ -192,7 +208,7 @@ describe('ScratchPadView', () => {
     // and delete the arrangement clips behind the open menu.
     it('context menu items sit inside a [role="menu"] surface', () => {
         mockScratchPadState = { sections: [sectionA] };
-        render(<ScratchPadView height={160} onToggle={vi.fn()} />);
+        render(<ScratchPadView height={160} collapsed={false} onCollapsedChange={vi.fn()} onToggle={vi.fn()} />);
         fireEvent.contextMenu(screen.getByText('Verse'));
 
         expect(screen.getByText('Delete').closest('[role="menu"]')).not.toBeNull();

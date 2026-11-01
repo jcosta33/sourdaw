@@ -39,17 +39,17 @@ test.describe('Workspace Panels', () => {
         // Click to open
         await toggleButton.click();
 
-        // The virtual keyboard container should appear with the role application
-        const keyboardContainer = page.getByRole('application', { name: /Virtual Piano Keyboard/i });
+        // The virtual keyboard container should appear as a labelled region
+        const keyboardContainer = page.getByRole('region', { name: /Virtual Piano Keyboard/i });
         await expect(keyboardContainer).toBeVisible();
-        
+
         // Wait for a specific key (C4) to be rendered
         const c4Key = keyboardContainer.getByRole('button', { name: /C4/i });
         await expect(c4Key).toBeVisible();
 
         // Close it
         await toggleButton.click();
-        
+
         // Wait for the animation to finish closing
         await expect(keyboardContainer).not.toBeVisible();
     });
@@ -71,7 +71,7 @@ test.describe('Workspace Panels', () => {
         // Depending on if the new project creates a default track, we see either the empty state or the grid
         const emptyStateText = page.getByText('No session tracks yet');
         const sceneHeader = page.getByText('Scene', { exact: true });
-        
+
         await expect(emptyStateText.or(sceneHeader)).toBeVisible();
 
         // Close the bottom dock

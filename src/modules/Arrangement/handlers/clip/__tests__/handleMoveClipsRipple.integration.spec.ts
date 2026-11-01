@@ -8,18 +8,21 @@ import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore 
 import {
     clearUndoHistory,
     executeAppActionBatch,
+    redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
     undo,
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
+import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import {
     type ConfirmPayload,
     type NotifyPayload,
@@ -146,6 +149,88 @@ describe('handleMoveClips ripple over a legacy misplaced clip', () => {
 
         expect(clipById('track-1', 'clip-1')).toMatchObject({ trackId: 'track-1', startBeat: 2, endBeat: 10 });
         expect(clipById('track-1', 'clip-2')).toMatchObject({ startBeat: 12, endBeat: 16 });
+    });
+
+    it('moves a physical loop neighbor through a typed ripple action and restores its source phase on Undo', async () => {
+        const mover = ClipDummy.create({ id: 'mover', trackId: 'track-1', startBeat: 2, endBeat: 6 });
+        const neighbor = ClipDummy.create({
+            id: 'neighbor',
+            trackId: 'track-1',
+            startBeat: 12,
+            endBeat: 20,
+            audioOffsetBeats: 99,
+            audioOffsetSeconds: -0.25,
+            audioUnwrappedOffsetSeconds: 3.5,
+            audioLoopStartSeconds: 1.5,
+            audioLoopPassEntrySeconds: 4.5,
+            audioLoopPassOriginBeat: 10,
+            loopOriginBeat: 8,
+            loopEnabled: true,
+            loopLength: 4,
+            stretchMode: 'timestretch',
+            stretchRatio: 2,
+        });
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'track-1', kind: 'audio', clips: [mover, neighbor] })],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+
+        const rawNeighbor = () =>
+            getCrdtDoc<{ tracks?: NonNullable<(typeof trackStore)['value']> }>('root')?.tracks?.tracks[0]?.clips.find(
+                (clip) => clip.id === 'neighbor'
+            );
+        const projectedNeighbor = () => clipById('track-1', 'neighbor');
+        const expectPhase = (startBeat: number, passOriginBeat: number) => {
+            for (const clip of [rawNeighbor(), projectedNeighbor()]) {
+                expect(clip).toMatchObject({
+                    startBeat,
+                    endBeat: startBeat + 8,
+                    audioOffsetSeconds: -0.25,
+                    audioUnwrappedOffsetSeconds: 3.5,
+                    audioLoopStartSeconds: 1.5,
+                    audioLoopPassEntrySeconds: 4.5,
+                    audioLoopPassOriginBeat: passOriginBeat,
+                    loopOriginBeat: startBeat - 4,
+                });
+            }
+            const clip = projectedNeighbor()!;
+            const secondsAtBeat = (beat: number) => (beat <= 12 ? beat / 2 : 6 + beat - 12);
+            const windows = [startBeat, startBeat + 4].flatMap((iterationStartBeat) =>
+                projectAudioLoopPassSegments({
+                    clip,
+                    loopLengthBeats: 4,
+                    iterationStartBeat,
+                    iterationEndBeat: iterationStartBeat + 4,
+                    stretchRatio: 2,
+                    tempoAtClipStart: startBeat < 12 ? 120 : 60,
+                    secondsAtBeat,
+                }).map((part) => [iterationStartBeat + part.startOffsetBeats, part.sourceStartSeconds])
+            );
+            expect(windows).toEqual([
+                [startBeat, -0.25],
+                [startBeat + 2, 4.5],
+                [startBeat + 4, 1.5],
+                [startBeat + 6, 4.5],
+            ]);
+        };
+
+        expect(
+            await executeAppActionBatch(
+                [
+                    {
+                        type: 'moveClips',
+                        payload: { moves: [{ clipId: 'mover', trackId: 'track-1', startBeat: 20 }], ripple: true },
+                    },
+                ],
+                { source: 'prompt' }
+            )
+        ).toMatchObject({ status: 'committed' });
+        expectPhase(8, 6);
+        await undo();
+        expectPhase(12, 10);
+        await redo();
+        expectPhase(8, 6);
     });
 
     it('claims a no-op leg origin in the inverse of a multi-clip ripple gesture', async () => {

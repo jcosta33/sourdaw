@@ -1,3 +1,4 @@
+import { getRenderedTrackTops, VARIATION_LANE_HEIGHT } from '../../../models/TimelineTrackExtent';
 import { timelineViewStore } from '../../../stores/timelineViewStore';
 import { buildTimelineRenderModel } from '../../buildTimelineRenderModel';
 import { getTrackAtY } from '../getTrackAtY';
@@ -33,12 +34,10 @@ export function hitTestClip(canvasX: number, canvasY: number): ClipHitResult | n
     const viewportStartBeat = scrollX / pixelsPerBeat;
     const beat = canvasX / pixelsPerBeat + viewportStartBeat;
 
-    let trackYOffset = 0;
-    for (let index = 0; index < hit.index; index++) {
-        trackYOffset += model.tracks[index]!.height;
-    }
+    const trackYOffset = getRenderedTrackTops(model.tracks)[hit.index]!;
+    const inVariationLanes = contentY >= trackYOffset + track.height;
 
-    for (const clip of track.clips) {
+    for (const clip of inVariationLanes ? [] : track.clips) {
         if (beat >= clip.startBeat && beat < clip.endBeat) {
             // R-A11: Hit test for individual notes if inline editing is active
             if (clip.isInlineEditing && clip.type === 'midi' && clip.midiNotes.length > 0) {
@@ -86,11 +85,10 @@ export function hitTestClip(canvasX: number, canvasY: number): ClipHitResult | n
 
     // H3: Hit testing for variation lanes
     if (track.variationLanes && track.variationLanes.length > 0) {
-        const varLaneHeight = 24;
         for (let index = 0; index < track.variationLanes.length; index++) {
             const lane = track.variationLanes[index]!;
-            const ly = trackYOffset + track.height + index * varLaneHeight;
-            if (contentY >= ly && contentY <= ly + varLaneHeight) {
+            const ly = trackYOffset + track.height + index * VARIATION_LANE_HEIGHT;
+            if (contentY >= ly && contentY < ly + VARIATION_LANE_HEIGHT) {
                 for (const clip of lane.clips) {
                     if (beat >= clip.startBeat && beat < clip.endBeat) {
                         return { clipId: clip.id, trackId: track.id };

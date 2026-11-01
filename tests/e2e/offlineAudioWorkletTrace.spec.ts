@@ -346,6 +346,7 @@ test('admits a complete native OfflineAudioWorklet callback population', async (
 
     const session = await browser.newBrowserCDPSession();
     const version = await session.send('Browser.getVersion');
+    // Category advertisement can be incomplete; admission validates the captured native events.
     const categories = await session.send('Tracing.getCategories');
     let maximumBufferUsage = 0;
     session.on('Tracing.bufferUsage', (usage) => {
@@ -424,7 +425,7 @@ test('admits a complete native OfflineAudioWorklet callback population', async (
         browser: version,
         protocolVersion: version.protocolVersion,
         traceConfiguration: TRACE_CONFIGURATION,
-        supportedTraceCategories: categories.categories.filter((category) => TRACE_CATEGORIES.includes(category)),
+        advertisedTraceCategories: categories.categories.filter((category) => TRACE_CATEGORIES.includes(category)),
         completion,
         maximumBufferUsage,
         compressedTraceBytes: captured.bytes.byteLength,
@@ -448,7 +449,6 @@ test('admits a complete native OfflineAudioWorklet callback population', async (
     expect(completion.traceFormat).toBe('json');
     expect(completion.streamCompression).toBe('gzip');
     expect(maximumBufferUsage).toBeLessThan(1);
-    expect(categories.categories).toEqual(expect.arrayContaining(TRACE_CATEGORIES));
     expect(producerResult).toMatchObject({
         isSecureContext: true,
         processorErrors: 0,

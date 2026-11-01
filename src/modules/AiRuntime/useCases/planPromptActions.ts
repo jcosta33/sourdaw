@@ -383,6 +383,16 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
         throw new AiProposalInvalidatedError();
     }
 
+    if (
+        input.signal?.aborted !== true &&
+        result.planningOutcome?.kind === 'answer' &&
+        settlePendingProjectWritesAndCaptureRevision() !== projectRevision
+    ) {
+        await settleAutoCreatedRun('failed');
+        input.signal?.removeEventListener('abort', onAbort);
+        throw new AiProposalInvalidatedError();
+    }
+
     await settleAutoCreatedRun(result.rejectionReason ? 'failed' : 'completed');
     input.signal?.removeEventListener('abort', onAbort);
 

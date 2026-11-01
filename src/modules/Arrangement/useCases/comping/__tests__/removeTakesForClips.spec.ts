@@ -25,6 +25,45 @@ function laneWithTakes(trackId: string, takes: TakeLane['takes']): TakeLane {
 }
 
 describe('removeTakesForClips', () => {
+    const source = {
+        startBeat: 0,
+        audioOffsetSeconds: 0,
+        audioLoopStartSeconds: 0,
+        audioLoopPassEntrySeconds: 0,
+        audioLoopPassOriginBeat: 0,
+        loopOriginBeat: 0,
+        loopLength: 4,
+    };
+
+    it('keeps a lane with audible base tiles when its last take is retired', () => {
+        const lane = {
+            ...laneWithTakes('t1', [createTake('c1', 'Take', 0, 4)]),
+            baseGapAudioSources: [{ clipId: 'c2', startBeat: 0, endBeat: 4, audioSource: source }],
+        };
+        mocks.takeLaneStoreValue.value = { lanes: [lane] };
+        removeTakesForClips(['c1']);
+        expect(mocks.takeLaneStoreValue.value?.lanes).toEqual([{ ...lane, takes: [] }]);
+    });
+
+    it('retires and captures source-bound tiles even when the lane has no takes', () => {
+        const tile = { clipId: 'c1', startBeat: 0, endBeat: 4, audioSource: source };
+        const lane = { ...createTakeLane('t1'), baseGapAudioSources: [tile] };
+        mocks.takeLaneStoreValue.value = { lanes: [lane] };
+        const captures = removeTakesForClips(['c1']);
+        expect(mocks.takeLaneStoreValue.value?.lanes).toEqual([]);
+        expect(captures).toHaveLength(1);
+        expect(captures[0]?.lane).toEqual(lane);
+    });
+
+    it('retires only the removed source tiles from a shared lane', () => {
+        const left = { clipId: 'c1', startBeat: 0, endBeat: 4, audioSource: source };
+        const right = { clipId: 'c2', startBeat: 4, endBeat: 8, audioSource: source };
+        const lane = { ...createTakeLane('t1'), baseGapAudioSources: [left, right] };
+        mocks.takeLaneStoreValue.value = { lanes: [lane] };
+        removeTakesForClips(['c1']);
+        expect(mocks.takeLaneStoreValue.value?.lanes).toEqual([{ ...lane, baseGapAudioSources: [right] }]);
+    });
+
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.takeLaneStoreValue.value = null;

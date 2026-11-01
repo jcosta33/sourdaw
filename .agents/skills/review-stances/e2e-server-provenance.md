@@ -18,3 +18,15 @@ across every companion route. Keep the build and dev origins in that case equal 
 IPv4 origins, then temporarily make the origin factory return `localhost` and run the named Grinder
 case: it must fail. Preserve project selection, ports, child command, output capture, and shutdown
 assertions while correcting fixture expectations.
+
+### 2026-10-30 — compiled persistence inspection must share the actual App build
+
+The persisted acceptance added by #5812 used development-only module URLs even though its
+contract is same-tab project hydration and replay. A compiled inspection entry must be an
+e2e-only second input of the SAME index.html build, with live exports of all eight owning
+namespaces. Preserve checkout identity and COOP/COEP on preview, and reject a split project
+store through the unchanged acceptance oracle. Reuse the existing built shard; only a
+selected local/nightly persistence fixture may build and own its temporary preview. Verify
+its listener and output cleanup, and keep shipping builds free of the inspection entry.
+Removing a source dependency changes the tested serving route; it does not identify the
+physical actor behind prior source-graph cancellations.

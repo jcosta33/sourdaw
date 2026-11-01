@@ -50,8 +50,7 @@ function createTrackState(track: Track): TrackState {
 const FIXTURE_TEMPO = 600;
 const SAMPLES_PER_BEAT = 10;
 
-function createTestAudioBuffer(channelData: Float32Array<ArrayBuffer>): AudioBuffer {
-    const sampleRate = 100;
+function createTestAudioBuffer(channelData: Float32Array<ArrayBuffer>, sampleRate = 100): AudioBuffer {
     return {
         copyFromChannel: (destination, _channelNumber, startInChannel = 0) => {
             destination.set(channelData.subarray(startInChannel, startInChannel + destination.length));
@@ -198,6 +197,233 @@ describe('prepareStripSilence', () => {
         expect(plan).not.toBeNull();
         // 3 detected regions, but the first two (gap 0.2 beats) merged -> 2 clips.
         expect(plan!.next.clips).toHaveLength(2);
+    });
+
+    describe('physical source seconds across the tempo map', () => {
+        function preparePhysicalClip(
+            clipFields: Partial<Clip>,
+            samples: Float32Array<ArrayBuffer>,
+            sampleRate = 48_000
+        ) {
+            const clip = ClipDummy.create({
+                id: 'clip-1',
+                audioBufferId: 'buf-1',
+                startBeat: 0,
+                endBeat: 3,
+                audioOffsetSeconds: 0.25,
+                audioOffsetBeats: 99,
+                stretchMode: 'repitch',
+                stretchRatio: 2,
+                ...clipFields,
+            });
+            mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([clip])));
+            mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(samples, sampleRate));
+            return prepareStripSilence({ clipId: 'clip-1', minDuration: 0.1 });
+        }
+
+        function steppedTempo(): void {
+            transportStore.set({ ...defaultTransportState, tempo: 120 });
+            tempoMapStore.set({
+                changes: [
+                    { id: 'initial', beat: 0, tempo: 120, curve: 'instant' },
+                    { id: 'fast', beat: 1, tempo: 240, curve: 'instant' },
+                    { id: 'normal', beat: 2, tempo: 120, curve: 'instant' },
+                ],
+            });
+        }
+
+        it('places literal 48 kHz islands through interior tempo changes and mints each child source entry', () => {
+            steppedTempo();
+            const samples = new Float32Array(144_000);
+            // Independent PCM oracle: source [.75,.85), [1.5,1.6), [2.25,2.35).
+            // Every island and the .25s scan entry lies on a 480-frame detector boundary.
+            samples.fill(0.5, 36_000, 40_800);
+            samples.fill(0.5, 72_000, 76_800);
+            samples.fill(0.5, 108_000, 112_800);
+            const plan = preparePhysicalClip({}, samples);
+            expect(plan).not.toBeNull();
+            expect(plan!.next.clips).toHaveLength(3);
+            // Waveforms floor the source entry to a frame: an inverse-clock
+            // residue below 1.5s incorrectly exposes frame 71999 instead of 72000.
+            expect(plan!.next.clips.map((clip) => Math.floor(clip.audioOffsetSeconds! * 48_000))).toEqual([
+                36_000, 72_000, 108_000,
+            ]);
+            const expected = [
+                [0.5, 0.6, 0.75],
+                [1.5, 1.7, 1.5],
+                [2.5, 2.6, 2.25],
+            ];
+            for (const [index, clip] of plan!.next.clips.entries()) {
+                expect(clip.startBeat).toBeCloseTo(expected[index]![0]!, 10);
+                expect(clip.endBeat).toBeCloseTo(expected[index]![1]!, 10);
+                expect(clip.audioOffsetSeconds).toBe(expected[index]![2]!);
+                expect(clip.audioUnwrappedOffsetSeconds).toBeCloseTo((expected[index]![2]! - 0.25) / 2 + 0.25, 10);
+            }
+            expect(plan!.previous.clips[0]).toMatchObject({ audioOffsetSeconds: 0.25, audioOffsetBeats: 99 });
+        });
+
+        it('uses the integrated beat length of each silence gap when deciding whether to merge', () => {
+            steppedTempo();
+            const samples = new Float32Array(96_000);
+            samples.fill(0.5, 36_000, 40_800);
+            samples.fill(0.5, 60_000, 64_800);
+            samples.fill(0.5, 84_000, 88_800);
+            preparePhysicalClip({}, samples);
+            // Timeline gaps [.6,1) = .4 and [1.2,2) = .8 beats. A flat 120 BPM
+            // inverse calls both .4 beats and incorrectly merges the third island.
+            const plan = prepareStripSilence({ clipId: 'clip-1', minDuration: 0.5 });
+            expect(plan!.next.clips).toHaveLength(2);
+            expect(plan!.next.clips[0]!.startBeat).toBeCloseTo(0.5, 10);
+            expect(plan!.next.clips[0]!.endBeat).toBeCloseTo(1.2, 10);
+            expect(plan!.next.clips[1]!.startBeat).toBeCloseTo(2, 10);
+        });
+
+        it('integrates interior tempo changes even when their total duration matches a flat map', () => {
+            transportStore.set({ ...defaultTransportState, tempo: 120 });
+            tempoMapStore.set({
+                changes: [
+                    { id: 'initial', beat: 0, tempo: 120, curve: 'instant' },
+                    { id: 'fast', beat: 1, tempo: 240, curve: 'instant' },
+                    { id: 'slow', beat: 2, tempo: 80, curve: 'instant' },
+                    { id: 'normal', beat: 3, tempo: 120, curve: 'instant' },
+                ],
+            });
+            const samples = new Float32Array(144_000);
+            samples.fill(0.5, 36_000, 40_800);
+            samples.fill(0.5, 72_000, 76_800);
+            samples.fill(0.5, 108_000, 112_800);
+            const plan = preparePhysicalClip({ endBeat: 4 }, samples);
+            expect(plan!.next.clips).toHaveLength(3);
+            expect(plan!.next.clips[1]!.startBeat).toBeCloseTo(1.5, 10);
+            expect(plan!.next.clips[1]!.endBeat).toBeCloseTo(1.7, 10);
+            expect(plan!.next.clips[2]!.startBeat).toBeCloseTo(2 + 1 / 3, 10);
+            expect(plan!.next.clips[2]!.endBeat).toBeCloseTo(2.4, 10);
+        });
+
+        it('treats explicit source zero as authoritative over a stale legacy offset', () => {
+            transportStore.set({ ...defaultTransportState, tempo: 120 });
+            const samples = new Float32Array(48_000);
+            samples.fill(0.5, 0, 4_800);
+            samples.fill(0.5, 24_000, 28_800);
+            const plan = preparePhysicalClip({ audioOffsetSeconds: 0, stretchMode: 'off', endBeat: 2 }, samples);
+            expect(plan!.next.clips).toHaveLength(2);
+            expect(plan!.next.clips[0]).toMatchObject({ startBeat: 0, audioOffsetSeconds: 0 });
+            expect(plan!.next.clips[1]!.startBeat).toBeCloseTo(1, 10);
+            expect(plan!.next.clips[1]!.audioOffsetSeconds).toBeCloseTo(0.5, 10);
+        });
+
+        it('retains signed pre-roll until source zero and ignores sound past the audible end', () => {
+            steppedTempo();
+            const samples = new Float32Array(96_000);
+            samples.fill(0.5, 0, 4_800);
+            samples.fill(0.5, 24_000, 28_800);
+            samples.fill(0.5, 72_000, 76_800);
+            const plan = preparePhysicalClip({ audioOffsetSeconds: -0.5, endBeat: 2 }, samples);
+            expect(plan!.next.clips).toHaveLength(2);
+            expect(plan!.next.clips[0]!.startBeat).toBeCloseTo(0.5, 10);
+            expect(plan!.next.clips[0]!.audioOffsetSeconds).toBeCloseTo(0, 10);
+            expect(plan!.next.clips[1]!.startBeat).toBeCloseTo(1, 10);
+            expect(plan!.next.clips[1]!.audioOffsetSeconds).toBeCloseTo(0.5, 10);
+            expect(plan!.next.clips.every((clip) => clip.endBeat <= 2)).toBe(true);
+        });
+
+        it('never detects sound beginning at the exclusive source end of the clip', () => {
+            transportStore.set({ ...defaultTransportState, tempo: 120 });
+            const samples = new Float32Array(96_000);
+            samples.fill(0.5, 0, 4_800);
+            samples.fill(0.5, 24_000, 28_800);
+            expect(preparePhysicalClip({ audioOffsetSeconds: 0, stretchMode: 'off', endBeat: 1 }, samples)).toBeNull();
+        });
+
+        it('caps the last detected region at the finite buffer end', () => {
+            transportStore.set({ ...defaultTransportState, tempo: 120 });
+            const samples = new Float32Array(48_000);
+            samples.fill(0.5, 0, 4_800);
+            samples.fill(0.5, 43_200);
+            const plan = preparePhysicalClip({ audioOffsetSeconds: 0, stretchMode: 'off', endBeat: 6 }, samples);
+            expect(plan!.next.clips).toHaveLength(2);
+            expect(plan!.next.clips[1]!.endBeat).toBeCloseTo(2, 10);
+        });
+
+        it('clips partial edge samples to the exact audible interval', () => {
+            transportStore.set({ ...defaultTransportState, tempo: 120 });
+            const samples = new Float32Array(100);
+            samples.fill(0.5, 0, 1);
+            samples.fill(0.5, 50, 60);
+            const plan = preparePhysicalClip(
+                { audioOffsetSeconds: 0.005, stretchMode: 'off', endBeat: 1.18 },
+                samples,
+                100
+            );
+            expect(plan!.next.clips).toHaveLength(2);
+            expect(plan!.next.clips[0]).toMatchObject({ startBeat: 0, audioOffsetSeconds: 0.005 });
+            expect(plan!.next.clips[0]!.endBeat).toBeCloseTo(0.01, 10);
+            expect(plan!.next.clips[1]!.startBeat).toBeCloseTo(0.99, 10);
+            expect(plan!.next.clips[1]!.endBeat).toBeCloseTo(1.18, 10);
+        });
+
+        it('scans the selected canonical head and reset occurrences rather than unwrapped later media', () => {
+            transportStore.set({ ...defaultTransportState, tempo: 120 });
+            const samples = new Float32Array(48_000);
+            samples.fill(0.5, 4_800, 7_200);
+            samples.fill(0.5, 28_800, 31_200);
+            const plan = preparePhysicalClip(
+                {
+                    audioOffsetSeconds: 0.25,
+                    audioLoopStartSeconds: 0,
+                    audioLoopPassEntrySeconds: 0.5,
+                    audioLoopPassOriginBeat: 0,
+                    loopEnabled: true,
+                    loopLength: 1,
+                    loopOriginBeat: -0.5,
+                    stretchMode: 'off',
+                },
+                samples
+            );
+            expect(plan!.next.clips).toHaveLength(5);
+            const expected = [
+                [0.7, 0.8, 0.1],
+                [1.2, 1.3, 0.6],
+                [1.7, 1.8, 0.1],
+                [2.2, 2.3, 0.6],
+                [2.7, 2.8, 0.1],
+            ];
+            for (const [index, child] of plan!.next.clips.entries()) {
+                expect(child.startBeat).toBeCloseTo(expected[index]![0]!, 10);
+                expect(child.endBeat).toBeCloseTo(expected[index]![1]!, 10);
+                expect(child.audioOffsetSeconds).toBeCloseTo(expected[index]![2]!, 10);
+                expect(child).toMatchObject({
+                    loopLength: 1,
+                    loopOriginBeat: -0.5,
+                    audioLoopStartSeconds: 0,
+                    audioLoopPassEntrySeconds: 0.5,
+                    audioLoopPassOriginBeat: 0,
+                });
+            }
+        });
+
+        it('uses the runtime bound for an out-of-range enabled stretch ratio', () => {
+            transportStore.set({ ...defaultTransportState, tempo: 120 });
+            const samples = new Float32Array(96_000);
+            samples.fill(0.5, 24_000, 28_800);
+            samples.fill(0.5, 72_000, 76_800);
+            preparePhysicalClip({ audioOffsetSeconds: 0, stretchRatio: 1_000, endBeat: 1 }, samples);
+            const plan = prepareStripSilence({ clipId: 'clip-1', minDuration: 0 });
+            expect(plan!.next.clips).toHaveLength(2);
+            expect(plan!.next.clips[0]!.startBeat).toBeCloseTo(0.01, 10);
+            expect(plan!.next.clips[1]!.startBeat).toBeCloseTo(0.03, 10);
+        });
+
+        it('refuses invalid present canonical fields before drawing segment identities', () => {
+            transportStore.set({ ...defaultTransportState, tempo: 120 });
+            const samples = new Float32Array(48_000);
+            samples.fill(0.5, 0, 4_800);
+            samples.fill(0.5, 24_000, 28_800);
+            const uuid = vi.spyOn(crypto, 'randomUUID');
+            expect(preparePhysicalClip({ audioOffsetSeconds: undefined }, samples)).toBeNull();
+            expect(uuid).not.toHaveBeenCalled();
+            uuid.mockRestore();
+        });
     });
 
     it('returns null when every silence gap is below minSilenceBeats (all regions merge into one)', () => {
@@ -460,14 +686,9 @@ describe('prepareStripSilence', () => {
     });
 
     describe('a looped stretched clip', () => {
-        // A looped clip (anchor 0, loop 4) stretched at ratio 2 consumes 20
-        // buffer beats over its 10 timeline beats. Sound at buffer beat 10
-        // sounded at timeline 5, so its segment advances the offset to 10
-        // while advancing the start by only 5 — the carried anchor must
-        // shift by `timelineDelta - contentDelta` = -5 for the derived
-        // region `offset - advance` to stay the source's own [0, 4). Carried
-        // verbatim through the spread, anchor 0 derives advance 5 and the
-        // segment reads region 5 — material the loop never covered.
+        // Four timeline beats at rate 2 consume source beats [0,8), then
+        // playback resets at timeline beats 4 and 8. The old linear scan
+        // incorrectly detected the following inaudible source islands.
         function loopedStretchedChannelData(): Float32Array<ArrayBuffer> {
             const channelData = new Float32Array(20 * SAMPLES_PER_BEAT);
             channelData.fill(0.5, 10 * SAMPLES_PER_BEAT, 11 * SAMPLES_PER_BEAT);
@@ -489,36 +710,62 @@ describe('prepareStripSilence', () => {
             });
         }
 
-        it('shifts each segment anchor by the timeline minus content delta so the region stays the source loop', () => {
+        it('ignores the exact formerly accepted islands outside every played source pass', () => {
             mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([createLoopedStretchedClip()])));
             mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(loopedStretchedChannelData()));
 
-            const plan = prepareStripSilence({ clipId: 'clip-1' });
+            expect(prepareStripSilence({ clipId: 'clip-1' })).toBeNull();
+        });
 
-            expect(plan).not.toBeNull();
-            const [first, second] = plan!.next.clips;
-            // Segment 1: region buffer [10,11) at timeline [5,5.5), offset 10,
-            // anchor -5 -> advance 10 -> derived region 10 - 10 = 0. Segment
-            // 2: region buffer [14,16) at timeline [7,8), offset 14, anchor
-            // -7 -> advance 14 -> derived region 0. Both cycle the source's
-            // loop region [0, 4).
-            expect(first).toMatchObject({ startBeat: 5, endBeat: 5.5, audioOffsetBeats: 10, loopOriginBeat: -5 });
-            expect(second).toMatchObject({ startBeat: 7, endBeat: 8, audioOffsetBeats: 14, loopOriginBeat: -7 });
-            for (const segment of [first, second]) {
-                const advance = segment!.startBeat - (segment!.loopOriginBeat ?? segment!.startBeat);
-                expect((segment!.audioOffsetBeats ?? 0) - advance).toBe(0);
+        function audibleLoopChannelData(): Float32Array<ArrayBuffer> {
+            const samples = new Float32Array(20 * SAMPLES_PER_BEAT);
+            samples.fill(0.5, 10, 20);
+            samples.fill(0.5, 50, 60);
+            return samples;
+        }
+
+        it('detects every audible repeat and captures child entries on the original reset grid', () => {
+            mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([createLoopedStretchedClip()])));
+            mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(audibleLoopChannelData()));
+            const plan = prepareStripSilence({ clipId: 'clip-1' });
+            expect(plan!.next.clips).toHaveLength(5);
+            const expected = [
+                [0.5, 1, 0.1],
+                [2.5, 3, 0.5],
+                [4.5, 5, 0.1],
+                [6.5, 7, 0.5],
+                [8.5, 9, 0.1],
+            ];
+            for (const [index, child] of plan!.next.clips.entries()) {
+                expect(child.startBeat).toBeCloseTo(expected[index]![0]!, 10);
+                expect(child.endBeat).toBeCloseTo(expected[index]![1]!, 10);
+                expect(child.audioOffsetSeconds).toBeCloseTo(expected[index]![2]!, 10);
+                expect(child).toMatchObject({
+                    loopLength: 4,
+                    loopOriginBeat: 0,
+                    audioLoopStartSeconds: 0,
+                    audioLoopPassEntrySeconds: 0,
+                    audioLoopPassOriginBeat: 0,
+                });
             }
+        });
+
+        it('keeps continuously sounding loop seams together even when the minimum silence is zero', () => {
+            mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([createLoopedStretchedClip()])));
+            mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(new Float32Array(200).fill(0.5)));
+            expect(prepareStripSilence({ clipId: 'clip-1', minDuration: 0 })).toBeNull();
         });
 
         it('keeps the anchor key absent for an unanchored source', () => {
             const clip = createLoopedStretchedClip();
             delete (clip as { loopOriginBeat?: number }).loopOriginBeat;
             mocks.getTrackState.mockReturnValue(createTrackState(createTrackWithClips([clip])));
-            mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(loopedStretchedChannelData()));
+            mocks.getCachedAudioBuffer.mockReturnValue(createTestAudioBuffer(audibleLoopChannelData()));
 
             const plan = prepareStripSilence({ clipId: 'clip-1' });
 
             expect(plan).not.toBeNull();
+            expect(plan!.next.clips).toHaveLength(5);
             for (const segment of plan!.next.clips) {
                 expect(Object.hasOwn(segment, 'loopOriginBeat')).toBe(false);
             }

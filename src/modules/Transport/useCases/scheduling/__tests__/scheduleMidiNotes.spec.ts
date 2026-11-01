@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type Clip, trackStore } from '#/modules/Arrangement/stores';
+import { type Clip, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
 import {
     applyNoteExpression,
@@ -38,6 +38,7 @@ import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
 import { disposePlayheadScheduler } from '../../playheadScheduler/disposePlayheadScheduler';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { forgetHeldNoteExpression } from '../forgetHeldNoteExpression';
+import { prepareInitialMidiWindow } from '../prepareInitialMidiWindow';
 import { releaseStoredControllers } from '../releaseStoredControllers';
 import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
 import { scheduleMidiNotes } from '../scheduleMidiNotes';
@@ -84,20 +85,24 @@ const engineStub = vi.hoisted(() => ({
     nodesFor: (_trackId: string): unknown[] => [],
 }));
 
-vi.mock('#/modules/Arrangement/stores', () => ({
-    trackStore: { value: { tracks: [] } },
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    trackStore: { value: { tracks: [] }, subscribe: () => () => undefined },
     // Read at module scope by the MIDI barrel's device-write wiring, which the
     // tests that load the real projections past the barrel double evaluate.
     persistDeviceParam: vi.fn(),
     resolveEligibleDeviceWriteTarget: vi.fn(),
 }));
-vi.mock('#/modules/MIDI/stores', () => ({
-    midiStore: { value: null },
+vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
+    midiStore: { value: null, subscribe: () => () => undefined },
 }));
-vi.mock('#/modules/Automation/stores', () => ({
-    automationStore: { value: null },
+vi.mock('#/modules/Automation/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Automation/stores')>()),
+    automationStore: { value: null, subscribe: () => () => undefined },
 }));
-vi.mock('#/modules/Automation/useCases', () => ({
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Automation/useCases')>()),
     getAutomationValueAtBeat: vi.fn(() => null),
     isRecordingAutomation: vi.fn(() => false),
 }));
@@ -108,7 +113,8 @@ vi.mock('../../../stores/tempoMapStore', () => ({
 vi.mock('../../../stores/timeSignatureMapStore', () => ({
     timeSignatureMapStore: { value: { changes: [] } },
 }));
-vi.mock('#/modules/Arrangement/useCases', () => ({
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     resolveClipsWithComping: vi.fn((_trackId: string, clips: Clip[]) =>
         clips.map((clip) => ({
             ...clip,
@@ -119,7 +125,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     ),
     getSynthParamsForTrack: vi.fn(() => ({})),
 }));
-vi.mock('#/modules/AudioEngine/useCases', async () => ({
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     applyNoteExpression: vi.fn(),
     // The real projection: what a curve becomes is the contract under test here,
     // with only the engine surface around it doubled.
@@ -150,17 +157,20 @@ vi.mock('#/modules/AudioEngine/useCases', async () => ({
     })),
     scheduleFaustNote: vi.fn(),
 }));
-vi.mock('#/modules/Synth/useCases', () => ({
+vi.mock('#/modules/Synth/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Synth/useCases')>()),
     getDrumKitDefByIndex: vi.fn(() => null),
     scheduleDrumKitNote: vi.fn(),
     scheduleKitNote: vi.fn(),
     scheduleNote: vi.fn(),
 }));
-vi.mock('#/modules/Yeast/useCases', () => ({
+vi.mock('#/modules/Yeast/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Yeast/useCases')>()),
     processYeastMidi: vi.fn(),
     getYeastSchedulingLookahead: vi.fn(() => ({ earlyBeats: 0, lateBeats: 0 })),
 }));
-vi.mock('#/modules/MIDI/useCases', () => ({
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
     getChordAtBeat: vi.fn(),
     projectChannelBend: () => [],
     projectClipControllerEvents: vi.fn(),
@@ -379,7 +389,12 @@ describe('scheduleMidiNotes', () => {
         (midiStore as { value: unknown }).value = { notesByClipId: {} };
 
         const previousPendingSeam = schedulerSession.pendingSeam;
-        schedulerSession.pendingSeam = { seamAudioTime: 10.1, anchorAudioTime: 10, anchorPosition: 11.9 };
+        schedulerSession.pendingSeam = {
+            seamAudioTime: 10.1,
+            destinationBeat: 4,
+            anchorAudioTime: 10,
+            anchorPosition: 11.9,
+        };
         try {
             await scheduleMidiNotes(
                 4.05,
@@ -992,6 +1007,220 @@ describe('scheduleMidiNotes', () => {
             absoluteOccurrenceIndex: 2,
             probabilityPercent: 50,
         });
+    });
+
+    it.each([
+        { recordingPassIndex: 1, heard: [67] },
+        { recordingPassIndex: undefined, heard: [72, 67] },
+    ])(
+        'plays only the selected pass of a raw recording clip (pass $recordingPassIndex)',
+        async ({ recordingPassIndex, heard }) => {
+            const sourceClip = midiClip({ startBeat: 0, endBeat: 4, midiOffsetBeats: 3.5 });
+            const track = midiTrack({ clips: [sourceClip] });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                probabilitySeed: 0xdecafbad,
+                notesByClipId: {
+                    'clip-1': [
+                        // The earlier pass's last row, inside the window the selected pass reads.
+                        {
+                            id: 'held-previous',
+                            pitch: 72,
+                            startBeat: 3.75,
+                            duration: 1,
+                            velocity: 100,
+                            recordingPassIndex: 0,
+                        },
+                        {
+                            id: 'selected-row',
+                            pitch: 67,
+                            startBeat: 4.5,
+                            duration: 1,
+                            velocity: 100,
+                            recordingPassIndex: 1,
+                        },
+                    ],
+                },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            };
+            vi.mocked(resolveClipsWithComping).mockReturnValue([
+                {
+                    ...sourceClip,
+                    regionStartBeat: 0,
+                    regionEndBeat: 4,
+                    sourceStartBeat: 0,
+                    midiTakeId: 'selected',
+                    midiTakeRecordingPassIndex: recordingPassIndex,
+                },
+            ]);
+
+            await scheduleMidiNotes(0, 2, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(vi.mocked(scheduleNote).mock.calls.map(([, , pitch]) => pitch)).toEqual(heard);
+        }
+    );
+
+    it('schedules selected frozen source in both first and rolling WebAudio windows', async () => {
+        const sourceClip = midiClip({ startBeat: 0, endBeat: 8 });
+        const track = midiTrack({ clips: [sourceClip] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            probabilitySeed: 0xdecafbad,
+            notesByClipId: {
+                'clip-1': [{ id: 'ordinary-row', pitch: 60, startBeat: 1, duration: 1, velocity: 100 }],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        vi.mocked(resolveClipsWithComping).mockReturnValue([
+            {
+                ...sourceClip,
+                regionStartBeat: 0,
+                regionEndBeat: 8,
+                sourceStartBeat: 0,
+                midiTakeId: 'selected',
+                midiTakeRecordingPassIndex: 1,
+                midiTakeSource: {
+                    sourceClipId: 'clip-1',
+                    sourceEntryBeat: 5,
+                    sourceEndBeat: 9,
+                    phaseHeadBeat: 0,
+                    passLengthBeats: 4,
+                    rows: {
+                        notes: {
+                            present: true,
+                            value: [
+                                {
+                                    id: 'held-previous',
+                                    pitch: 72,
+                                    startBeat: 4.75,
+                                    duration: 1,
+                                    velocity: 100,
+                                    recordingPassIndex: 0,
+                                },
+                                {
+                                    id: 'selected-row',
+                                    pitch: 67,
+                                    startBeat: 5.5,
+                                    duration: 1,
+                                    velocity: 100,
+                                    recordingPassIndex: 1,
+                                },
+                            ],
+                        },
+                        controlChanges: { present: false, value: [] },
+                        pitchBends: { present: false, value: [] },
+                    },
+                },
+            },
+        ]);
+
+        await scheduleMidiNotes(0, 1, 0, new Set<string>(), [], defaultTransportState, 120);
+        await scheduleMidiNotes(4, 5, 4, new Set<string>(), [], defaultTransportState, 120);
+
+        expect(vi.mocked(scheduleNote).mock.calls.map(([, , pitch]) => pitch)).toEqual([67, 67]);
+        expect(shouldPlayMidiEvent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                clipId: 'clip-1',
+                eventId: 'selected-row',
+                absoluteOccurrenceIndex: 1,
+            })
+        );
+    });
+
+    it('prepares selected source for the first Yeast window and reads it again while rolling', async () => {
+        const sourceClip = midiClip({ startBeat: 0, endBeat: 8 });
+        const track = midiTrack({ clips: [sourceClip], devices: [{ id: 'y', type: 'yeast' }] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            probabilitySeed: 0xdecafbad,
+            notesByClipId: { 'clip-1': [{ id: 'ordinary-row', pitch: 60, startBeat: 1, duration: 1, velocity: 100 }] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        vi.mocked(resolveClipsWithComping).mockReturnValue([
+            {
+                ...sourceClip,
+                regionStartBeat: 0,
+                regionEndBeat: 8,
+                sourceStartBeat: 0,
+                midiTakeId: 'selected',
+                midiTakeRecordingPassIndex: 1,
+                midiTakeSource: {
+                    sourceClipId: 'clip-1',
+                    sourceEntryBeat: 5,
+                    sourceEndBeat: 9,
+                    phaseHeadBeat: 0,
+                    passLengthBeats: 4,
+                    rows: {
+                        notes: {
+                            present: true,
+                            value: [
+                                {
+                                    id: 'held-previous',
+                                    pitch: 72,
+                                    startBeat: 4.75,
+                                    duration: 1,
+                                    velocity: 100,
+                                    recordingPassIndex: 0,
+                                },
+                                {
+                                    id: 'selected-row',
+                                    pitch: 67,
+                                    startBeat: 5.5,
+                                    duration: 1,
+                                    velocity: 100,
+                                    recordingPassIndex: 1,
+                                },
+                            ],
+                        },
+                        controlChanges: { present: false, value: [] },
+                        pitchBends: { present: false, value: [] },
+                    },
+                },
+            },
+        ]);
+        const cancellation: SchedulerCancellation = {
+            generation: 1,
+            discontinuityEpoch: 1,
+            isCurrent: () => true,
+            yeastRouteLineage: new Map(),
+        };
+        const prepared = await prepareInitialMidiWindow(0, 1, defaultTransportState, cancellation, {
+            trackState: trackStore.value,
+            midiState: midiStore.value,
+            tempoState: tempoMapStore.value,
+            isCurrent: () => true,
+        });
+        if (!prepared) {
+            throw new Error('expected selected Yeast preparation');
+        }
+        expect(scheduleNote).not.toHaveBeenCalled();
+
+        await scheduleMidiNotes(
+            0,
+            1,
+            0,
+            new Set<string>(),
+            [],
+            defaultTransportState,
+            120,
+            cancellation,
+            false,
+            prepared,
+            0
+        );
+        await scheduleMidiNotes(4, 5, 4, new Set<string>(), [], defaultTransportState, 120, cancellation);
+
+        expect(vi.mocked(scheduleNote).mock.calls.map(([, , pitch]) => pitch)).toEqual([67, 67]);
+        expect(shouldPlayMidiEvent).toHaveBeenCalledWith(
+            expect.objectContaining({
+                clipId: 'clip-1',
+                eventId: 'selected-row',
+                absoluteOccurrenceIndex: 1,
+            })
+        );
     });
 
     it('counts a non-dyadic exact-multiple advance tolerantly through the live occurrence floor', async () => {
@@ -3959,6 +4188,81 @@ describe('scheduleMidiNotes', () => {
             (midiStore as { value: unknown }).value = midi;
         }
 
+        it('keeps a selected completed pass pedal held across its inner repeat and lifts at the true end', async () => {
+            useRealProjections();
+            const setSustain = vi.fn();
+            stripWith({
+                type: 'grand-boule',
+                deviceId: 'gb-1',
+                grandBouleControls: {
+                    noteOn: vi.fn(),
+                    noteOff: vi.fn(),
+                    noteExpression: vi.fn(),
+                    setSustain,
+                    setSostenuto: vi.fn(),
+                    setUnaCorda: vi.fn(),
+                },
+            });
+            const clip = midiClip({ endBeat: 8, loopEnabled: true, loopLength: 4 });
+            const rows = {
+                notes: { present: true as const, value: [] },
+                controlChanges: {
+                    present: true as const,
+                    value: [storedController('press', 64, 127, 4), storedController('next-pass-lift', 64, 0, 8)],
+                },
+                pitchBends: { present: true as const, value: [] },
+            };
+            const source = {
+                sourceClipId: 'clip-1',
+                rows,
+                sourceEntryBeat: 4,
+                sourceEndBeat: 8,
+                phaseHeadBeat: 0,
+                passLengthBeats: 4,
+            };
+            const take = {
+                id: 'take-1',
+                clipId: 'clip-1',
+                name: 'Second pass',
+                startBeat: 0,
+                endBeat: 4,
+                selected: false,
+                sourceOffsetBeats: 4,
+                recordingPassIndex: 1,
+                midiSource: source,
+            };
+            const previousLanes = takeLaneStore.value;
+            takeLaneStore.set({
+                lanes: [
+                    {
+                        id: 'lane',
+                        trackId: 'track-1',
+                        takes: [take],
+                        activeCompRegions: [{ startBeat: 0, endBeat: 8, takeId: take.id }],
+                    },
+                ],
+            });
+            const actualArrangement = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
+                '#/modules/Arrangement/useCases'
+            );
+            const resolved = actualArrangement.resolveClipsWithComping('track-1', [clip]);
+            takeLaneStore.set(previousLanes);
+            expect(resolved[0]).toMatchObject({ startBeat: 0, endBeat: 8, midiTakeSource: source });
+            vi.mocked(resolveClipsWithComping).mockReturnValue(resolved);
+            (trackStore as { value: unknown }).value = {
+                tracks: [midiTrack({ clips: [clip], devices: [{ id: 'gb-1', type: 'grand-boule' }] })],
+            };
+            (midiStore as { value: unknown }).value = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
+
+            await scheduleMidiNotes(0, 8, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(setSustain.mock.calls).toEqual([
+                [1, 0, true],
+                [1, 4 * BEAT_FRAMES, true],
+                [0, 8 * BEAT_FRAMES, true],
+            ]);
+        });
+
         it('posts a Grand Boule sustain press and lift at their own frames, ahead of a note on the same frame', async () => {
             const posted: string[] = [];
             const setSustain = vi.fn((position: number, frame?: number) =>
@@ -4598,6 +4902,55 @@ describe('scheduleMidiNotes', () => {
         });
 
         describe('stored controllers through the real projection and release', () => {
+            it('posts selected frozen pedal rows on first and rolling pass windows instead of ordinary rows', async () => {
+                useRealProjections();
+                const handleCc = vi.fn();
+                stripWith({
+                    type: 'levain',
+                    deviceId: 'lv-1',
+                    levainControls: { noteOn: vi.fn(), noteOff: vi.fn(), noteExpression: vi.fn(), handleCc },
+                });
+                const sourceClip = midiClip({ startBeat: 0, endBeat: 8 });
+                const track = midiTrack({ clips: [sourceClip], devices: [{ id: 'lv-1', type: 'levain' }] });
+                (trackStore as { value: unknown }).value = { tracks: [track] };
+                (midiStore as { value: unknown }).value = {
+                    notesByClipId: { 'clip-1': [] },
+                    ccByClipId: { 'clip-1': [storedController('ordinary', 64, 0, 1)] },
+                    pitchBendByClipId: {},
+                };
+                vi.mocked(resolveClipsWithComping).mockReturnValue([
+                    {
+                        ...sourceClip,
+                        regionStartBeat: 0,
+                        regionEndBeat: 8,
+                        sourceStartBeat: 0,
+                        midiTakeId: 'selected',
+                        midiTakeSource: {
+                            sourceClipId: 'clip-1',
+                            sourceEntryBeat: 5,
+                            sourceEndBeat: 9,
+                            phaseHeadBeat: 0,
+                            passLengthBeats: 4,
+                            rows: {
+                                notes: { present: true, value: [] },
+                                controlChanges: {
+                                    present: true,
+                                    value: [storedController('selected', 64, 127, 5.25)],
+                                },
+                                pitchBends: { present: true, value: [] },
+                            },
+                        },
+                    },
+                ]);
+
+                await scheduleMidiNotes(0, 1, 0, new Set<string>(), [], defaultTransportState, 120);
+                await scheduleMidiNotes(4, 5, 4, new Set<string>(), [], defaultTransportState, 120);
+
+                expect(handleCc.mock.calls).toEqual([
+                    [64, 127, BEAT_FRAMES / 4, true],
+                    [64, 127, BEAT_FRAMES / 4, true],
+                ]);
+            });
             it('releases every pedal and controller a real schedule left engaged, on stop', async () => {
                 const levain = { noteOn: vi.fn(), noteOff: vi.fn(), noteExpression: vi.fn(), handleCc: vi.fn() };
                 const grandBoule = {

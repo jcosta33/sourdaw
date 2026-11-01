@@ -1,13 +1,22 @@
 import { logger } from '#/infra/logger/appLogger';
 import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
-import { settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
+import {
+    captureProjectIdentity,
+    captureProjectMutationAuthorization,
+    captureProjectRootIdentity,
+    settlePendingProjectWritesAndCaptureRevision,
+} from '#/modules/CrdtDocument/useCases';
+import { canonicalJson } from '#/utils/canonicalDigest';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 import { type AgentExecutionMode } from '../models/AgentExecutionMode';
 import { describeAgentRunCreationRefusal } from '../models/AgentResourceLimits';
+import { getCreativeSelectionSnapshot } from '../models/CreativeInterpretation';
 import { type ModelProviderResult } from '../models/ModelProviderProtocol';
 import { appendChatMessage } from '../stores/chatStore';
 import { describePlanningOutcome } from '../transformers/describePlanningOutcome';
+import { buildPresetContext } from '../transformers/promptParser/parsing';
 
 import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
 import { persistPromptActionConfirmation } from './agentRequestOrchestration/persistPromptActionConfirmation';
@@ -18,6 +27,7 @@ import {
 } from './agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
+import { agentWorkBudget } from './agentWorkBudget';
 import { agentRunCancellation } from './cancelAgentRun';
 import { compileAgentActionExecution } from './compileAgentActionExecution';
 import { describePlannedAction } from './describePlannedAction';
@@ -25,8 +35,10 @@ import { executePromptActionGroup } from './executePromptActionGroup';
 import { getProjectContext } from './getProjectContext';
 import { notifyAiAnswer } from './notifyAiAnswer';
 import { notifyAiChange } from './notifyAiChange';
+import { parsePromptToActions } from './parsePromptToActions';
 import { type PlannedPromptActions, planPromptActions } from './planPromptActions';
 import { recordAgentProviderUsage } from './recordAgentProviderUsage';
+import { stopMeasuredPreviewAudition } from './stopMeasuredPreviewAudition';
 
 export type PromptRequestSource = 'prompt-bar' | 'preset';
 
@@ -35,10 +47,12 @@ const NO_PROMPT_ACTIONS_NOTICE = 'No actions matched. Try rephrasing, or use the
 type SubmitAdmittedPromptRequestInput = {
     prompt: string;
     source: PromptRequestSource;
-    actions?: readonly AppAction[];
     requiresConfirmation?: boolean;
     signal?: AbortSignal;
-};
+} & (
+    | { preset: NonNullable<Parameters<typeof parsePromptToActions>[0]['preset']>; actions?: never }
+    | { preset?: never; actions?: readonly AppAction[] }
+);
 
 export type SubmitAdmittedPromptRequestResult =
     | {
@@ -56,6 +70,43 @@ function transitionTerminalRun(runId: string, phase: 'completed' | 'failed' | 'c
     if (run && !['completed', 'failed', 'cancelled', 'partially-completed'].includes(run.phase)) {
         agentRunLifecycle.transitionPhase({ runId, phase });
     }
+}
+
+async function planSelectedPresetRequest(
+    input: Pick<SubmitAdmittedPromptRequestInput, 'prompt' | 'preset' | 'signal'> & {
+        preset: NonNullable<SubmitAdmittedPromptRequestInput['preset']>;
+    },
+    projectRevision: string
+): Promise<PlannedPromptActions> {
+    const projectRoot = captureProjectRootIdentity();
+    const mutationIsCurrent = captureProjectMutationAuthorization();
+    const context = getProjectContext();
+    const selection = canonicalJson(getCreativeSelectionSnapshot(context));
+    const presetContext = canonicalJson(buildPresetContext(context));
+    if (!mutationIsCurrent() || settlePendingProjectWritesAndCaptureRevision() !== projectRevision) {
+        throw new AiProposalInvalidatedError();
+    }
+    const result = await parsePromptToActions({
+        prompt: input.prompt,
+        context,
+        projectRevision,
+        preset: input.preset,
+        signal: input.signal,
+        providerPlanning: 'disabled',
+    });
+    if (!input.signal?.aborted) {
+        const currentContext = getProjectContext();
+        if (
+            !mutationIsCurrent() ||
+            captureProjectRootIdentity() !== projectRoot ||
+            settlePendingProjectWritesAndCaptureRevision() !== projectRevision ||
+            canonicalJson(getCreativeSelectionSnapshot(currentContext)) !== selection ||
+            canonicalJson(buildPresetContext(currentContext)) !== presetContext
+        ) {
+            throw new AiProposalInvalidatedError();
+        }
+    }
+    return { context, result, projectRevision };
 }
 
 /**
@@ -80,6 +131,7 @@ export async function submitAdmittedPromptRequest(
         return { status: 'rejected', runId };
     }
     agentRunLifecycle.transitionPhase({ runId, phase: 'planning', revision: createdRevision });
+    void stopMeasuredPreviewAudition();
 
     let cancellationAttempt: Promise<void> | null = null;
     let cancellationWarningReported = false;
@@ -160,7 +212,12 @@ export async function submitAdmittedPromptRequest(
     };
 
     try {
-        if (input.actions === undefined) {
+        if (input.preset !== undefined && input.actions !== undefined) {
+            transitionTerminalRun(runId, 'failed');
+            notifyAiChange('Command not executed: a selected preset cannot include caller actions.', []);
+            return { status: 'rejected', runId };
+        }
+        if (input.actions === undefined && input.preset === undefined) {
             const claim = agentRunWorkLease.claim({
                 runId,
                 workId: 'provider-planning',
@@ -188,44 +245,49 @@ export async function submitAdmittedPromptRequest(
             return { status: 'rejected', runId };
         }
 
-        const planned: PlannedPromptActions =
-            input.actions === undefined
-                ? await planPromptActions({
-                      prompt,
-                      signal: input.signal,
-                      streamIdentity: { runId, requestId: `prompt-planning:${runId}`, cancellationGeneration: 0 },
-                      onProviderAttempt: ({ backend, correlationId, estimatedTotalTokens, estimate }) => {
-                          const category = backend === 'cloud' ? 'remoteTokens' : 'localAnalysis';
-                          const reservation = agentRunLifecycle.reserveBudget({
-                              runId,
-                              attemptId: correlationId,
-                              category,
-                              estimate: estimatedTotalTokens,
-                              provenance: 'versioned-estimate',
-                              estimateMethod: estimate.method,
-                          });
-                          return reservation.status === 'reserved'
-                              ? { status: 'admitted' as const }
-                              : {
-                                    status: 'rejected' as const,
-                                    reason: reservation.reason ?? 'agent budget limit',
-                                };
-                      },
-                      onProviderResult: (result) => {
-                          recordPendingProviderResult(false);
-                          pendingProviderResult = result;
-                      },
-                  })
-                : {
-                      context: getProjectContext(),
-                      result: {
-                          actions: [...input.actions],
-                          rawText: prompt,
-                          requiresConfirmation: false,
-                          planningOutcome: { kind: 'proposal' as const },
-                      },
-                      projectRevision: createdRevision,
-                  };
+        let planned: PlannedPromptActions;
+        if (input.preset !== undefined) {
+            planned = await planSelectedPresetRequest(
+                { prompt, preset: input.preset, signal: input.signal },
+                createdRevision
+            );
+        } else if (input.actions === undefined) {
+            planned = await planPromptActions({
+                prompt,
+                signal: input.signal,
+                streamIdentity: { runId, requestId: `prompt-planning:${runId}`, cancellationGeneration: 0 },
+                onProviderAttempt: ({ backend, correlationId, estimatedTotalTokens, estimate }) => {
+                    const category = backend === 'cloud' ? 'remoteTokens' : 'localAnalysis';
+                    const reservation = agentRunLifecycle.reserveBudget({
+                        runId,
+                        attemptId: correlationId,
+                        category,
+                        estimate: estimatedTotalTokens,
+                        provenance: 'versioned-estimate',
+                        estimateMethod: estimate.method,
+                    });
+                    return reservation.status === 'reserved'
+                        ? { status: 'admitted' as const }
+                        : { status: 'rejected' as const, reason: reservation.reason ?? 'agent budget limit' };
+                },
+                onLocalWorkAttempt: agentWorkBudget.admitStemPreparation(runId),
+                onProviderResult: (result) => {
+                    recordPendingProviderResult(false);
+                    pendingProviderResult = result;
+                },
+            });
+        } else {
+            planned = {
+                context: getProjectContext(),
+                result: {
+                    actions: [...input.actions],
+                    rawText: prompt,
+                    requiresConfirmation: false,
+                    planningOutcome: { kind: 'proposal' as const },
+                },
+                projectRevision: createdRevision,
+            };
+        }
 
         planOwnedActions = planned.result.actions;
         recordPendingProviderResult(true);
@@ -253,13 +315,35 @@ export async function submitAdmittedPromptRequest(
         // batch that arrived beside it may run.
         const planningOutcome = planned.result.planningOutcome;
         if (planningOutcome?.kind === 'answer') {
-            transitionTerminalRun(runId, 'completed');
             await releasePlanOwnedStemResources();
+            if (input.signal?.aborted) {
+                await cancelAfterAbort();
+                return { status: 'rejected', runId };
+            }
+            const run = agentRunLifecycle.get(runId);
+            if (
+                !run ||
+                ['completed', 'failed', 'cancelled', 'partially-completed'].includes(run.phase) ||
+                (providerLease !== null && run.cancellation.generation !== providerLease.cancellationGeneration)
+            ) {
+                return { status: 'rejected', runId };
+            }
+            if (settlePendingProjectWritesAndCaptureRevision() !== planned.projectRevision) {
+                throw new AiProposalInvalidatedError();
+            }
+            const answeredProjectIdentity = captureProjectIdentity();
+            transitionTerminalRun(runId, 'completed');
             const answerText = describePlanningOutcome(planningOutcome);
             if (answerText === null) {
                 notifyAiChange(NO_PROMPT_ACTIONS_NOTICE, []);
             } else {
-                notifyAiAnswer({ prompt, text: answerText, evidence: planningOutcome.evidence });
+                notifyAiAnswer({
+                    prompt,
+                    text: answerText,
+                    evidence: planningOutcome.evidence,
+                    projectIdentity: answeredProjectIdentity,
+                    projectRevision: planned.projectRevision,
+                });
             }
             return { status: 'no-op', runId };
         }
@@ -301,6 +385,7 @@ export async function submitAdmittedPromptRequest(
         );
         const compiled = compileAgentActionExecution({
             actions: planned.result.actions,
+            metricGoalState: planned.result.metricGoalState,
             actionCommandGraph: planned.result.actionCommandGraph,
             actionLabels,
             context: planned.context,
@@ -326,6 +411,8 @@ export async function submitAdmittedPromptRequest(
         agentRunLifecycle.recordPlan({
             runId,
             summary: actionLabels.join('\n'),
+            metricGoalState: compiled.metricGoalState,
+            applicationToolReceipts: planned.result.applicationToolReceipts ?? [],
             commandIds: parsed.envelope.commands.map((command) => command.commandId),
             serializedBatchIdentity: parsed.envelope.idempotencyKey,
             revision: planned.projectRevision,
@@ -395,6 +482,7 @@ export async function submitAdmittedPromptRequest(
                 matchSelectorPredicates: planned.result.matchSelectorPredicates,
                 adoptedRecipes: planned.result.adoptedRecipes,
                 measuredPreview: planned.result.measuredPreview,
+                metricGoalState: compiled.metricGoalState,
                 executionMode: planned.result.executionMode,
                 group: { groupId: `prompt-${runId}`, groupLabel: 'Prompt action' },
                 projectRevision: planned.projectRevision,

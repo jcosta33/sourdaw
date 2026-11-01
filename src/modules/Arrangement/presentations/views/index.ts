@@ -10,5 +10,6 @@ export { TimelineChromeSurface } from './TimelineChromeSurface';
 export { TimelineClipNavigator } from './TimelineClipNavigator';
 export { TimelineMinimap } from './TimelineMinimap';
 export { TakeLanesView } from './TakeLanesView';
+export { TIMELINE_HORIZONTAL_SCROLLBAR_HEIGHT } from './timelineHorizontalScrollbar';
 export { TimelineSurface } from './TimelineSurface';
 export { TrackListView } from './TrackListView';

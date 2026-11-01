@@ -21,6 +21,11 @@ import type { AudioEngine } from '../../models/AudioEngineState';
  * back onto both output channels. `channelCountMode: 'max'` is pass-through.
  * `setTargetAtTime` applies its target directly: the smoothing law is the
  * platform's; what this spec observes is which value the insert was given.
+ * `setValueAtTime` follows Chromium's step rule: a time below `currentTime` is
+ * clamped up to it, and the value takes effect on the first frame at or after
+ * the time, so a `currentTime` whose frame product sits above its integer frame
+ * lands one sample late. `disconnect(target)` removes that edge, which a render
+ * quantum observes from its first frame, as the control message queue does.
  * The graph itself is the engine's own wiring — the fixture only supplies the
  * nodes the engine asks the context for.
  */
@@ -31,16 +36,34 @@ const SAMPLE_RATE = 48_000;
 
 type StereoBlock = { left: Float32Array; right: Float32Array };
 
+type FixtureClock = { readonly currentTime: number; readonly sampleRate: number };
+
 type FixtureParam = {
     value: number;
     setTargetAtTime: (target: number, startTime: number, timeConstant: number) => void;
+    setValueAtTime: (value: number, time: number) => void;
+    cancelScheduledValues: (time: number) => void;
+    valueAtFrame: (frame: number) => number;
 };
 
-function createParam(initialValue: number): FixtureParam {
+function createParam(initialValue: number, clock: FixtureClock): FixtureParam {
+    let steps: { frame: number; value: number }[] = [];
+    const frameAt = (time: number): number => Math.ceil(time * clock.sampleRate);
     return {
         value: initialValue,
         setTargetAtTime(target: number): void {
             this.value = target;
+        },
+        setValueAtTime(value: number, time: number): void {
+            const frame = frameAt(Math.max(time, clock.currentTime));
+            steps = [...steps, { frame, value }].sort((left, right) => left.frame - right.frame);
+        },
+        cancelScheduledValues(time: number): void {
+            const from = frameAt(time);
+            steps = steps.filter((step) => step.frame < from);
+        },
+        valueAtFrame(frame: number): number {
+            return steps.findLast((step) => step.frame <= frame)?.value ?? this.value;
         },
     };
 }
@@ -61,7 +84,17 @@ abstract class FixtureNode {
         return target;
     }
 
-    disconnect(): void {}
+    disconnect(target?: FixtureNode): void {
+        const targets = target === undefined ? [...this.connectedTo] : [target];
+        for (const destination of targets) {
+            const edge = this.connectedTo.indexOf(destination);
+            if (edge < 0) {
+                throw new DOMException('Not connected to the given destination.', 'InvalidAccessError');
+            }
+            this.connectedTo.splice(edge, 1);
+            destination.sources.splice(destination.sources.indexOf(this), 1);
+        }
+    }
 
     render(quantum: number): StereoBlock {
         if (this.renderedQuantum === quantum) {
@@ -78,20 +111,25 @@ abstract class FixtureNode {
                 this.out.right[index] = (this.out.right[index] ?? 0) + (input.right[index] ?? 0);
             }
         }
-        this.transform();
+        this.transform(quantum * QUANTUM_FRAMES);
         return this.out;
     }
 
-    protected abstract transform(): void;
+    protected abstract transform(firstFrame: number): void;
 }
 
 class FixtureGainNode extends FixtureNode {
-    readonly gain = createParam(1);
+    readonly gain: FixtureParam;
     channelCount = 2;
     channelCountMode: ChannelCountMode = 'max';
     channelInterpretation: ChannelInterpretation = 'speakers';
 
-    protected override transform(): void {
+    constructor(clock: FixtureClock) {
+        super();
+        this.gain = createParam(1, clock);
+    }
+
+    protected override transform(firstFrame: number): void {
         // The speakers-interpretation fold the monitoring insert relies on:
         // an explicit single-channel count downmixes (L+R)/2 and the mono
         // result upmixes back onto both output channels.
@@ -102,11 +140,8 @@ class FixtureGainNode extends FixtureNode {
                 this.out.right[index] = mono;
             }
         }
-        const level = this.gain.value;
-        if (level === 1) {
-            return;
-        }
         for (let index = 0; index < QUANTUM_FRAMES; index++) {
+            const level = this.gain.valueAtFrame(firstFrame + index);
             this.out.left[index] = (this.out.left[index] ?? 0) * level;
             this.out.right[index] = (this.out.right[index] ?? 0) * level;
         }
@@ -173,13 +208,13 @@ class FixtureChannelSplitterNode extends FixtureNode {
 }
 
 class ListeningFixtureContext {
-    readonly destination = new FixtureGainNode();
     readonly sampleRate = SAMPLE_RATE;
     currentTime = 0;
     state = 'running';
+    readonly destination = new FixtureGainNode(this);
 
     createGain(): FixtureGainNode {
-        return new FixtureGainNode();
+        return new FixtureGainNode(this);
     }
 
     createAnalyser(): FixtureAnalyserNode {
@@ -194,14 +229,16 @@ class ListeningFixtureContext {
         return new FixtureBufferSourceNode();
     }
 
-    async startRendering(): Promise<StereoBlock> {
+    /** Renders {@link RENDER_FRAMES} from `firstFrame`, a quantum boundary. */
+    async startRendering(firstFrame = 0): Promise<StereoBlock> {
         const left = new Float32Array(RENDER_FRAMES);
         const right = new Float32Array(RENDER_FRAMES);
-        for (let frame = 0; frame < RENDER_FRAMES; frame += QUANTUM_FRAMES) {
+        for (let offset = 0; offset < RENDER_FRAMES; offset += QUANTUM_FRAMES) {
+            const frame = firstFrame + offset;
             this.currentTime = frame / this.sampleRate;
             const block = this.destination.render(frame / QUANTUM_FRAMES);
-            left.set(block.left, frame);
-            right.set(block.right, frame);
+            left.set(block.left, offset);
+            right.set(block.right, offset);
         }
         return { left, right };
     }
@@ -369,17 +406,94 @@ describe('control room monitoring on the listening path', () => {
 
     it('inserts strictly between the master analyser and the destination', () => {
         // Walk the live graph upward from the destination: the single audible
-        // feeder chain must be destination <- dim <- mono <- masterAnalyser,
+        // feeder chain must be destination <- dim <- mono <- programme gate <- analyser,
         // and the analyser must hold no direct edge to the destination.
         const audibleFeeder = driven.context.destination.sources.find(
             (node): node is FixtureGainNode => node instanceof FixtureGainNode && node.gain.value === 1
         );
         const monoInsert = audibleFeeder?.sources[0];
+        const programmeGate = monoInsert?.sources[0];
         expect(audibleFeeder).toBeInstanceOf(FixtureGainNode);
         expect(monoInsert).toBeInstanceOf(FixtureGainNode);
-        expect(monoInsert?.sources).toContain(driven.engine.masterAnalyser);
+        expect(programmeGate).toBeInstanceOf(FixtureGainNode);
+        expect(programmeGate?.sources).toContain(driven.engine.masterAnalyser);
+        expect(driven.engine.audioPreviewOutput).toBe(monoInsert);
 
         const analyserEdges = (driven.engine.masterAnalyser as unknown as FixtureNode).connectedTo;
         expect(analyserEdges).not.toContain(driven.context.destination);
+    });
+
+    it('isolates retained listening from programme, click and input-monitor legs while the upstream tap stays intact', async () => {
+        connectProgrammeBuffer(driven, 0.5, 0.25);
+        // scheduleClick feeds masterGainNode. inputMonitoring.connectMonitorEdge
+        // feeds strip.gainNode, whose ordinary TrackNode output feeds this same
+        // master leg. Drive those legs with exact prerecorded samples: no mic
+        // permission, capture acquisition or physical-input claim is involved.
+        connectProgrammeBuffer(driven, 0.125, 0.125);
+        const monitorStrip = driven.context.createGain();
+        monitorStrip.connect(driven.engine.masterGainNode as unknown as FixtureNode);
+        const input = driven.context.createBufferSource();
+        input.buffer = createProgrammeBuffer(0.25, -0.125);
+        input.connect(monitorStrip);
+        input.start();
+        const intent = driven.engine.beginExclusiveAudioPreviewIntent();
+        const retained = driven.context.createBufferSource();
+        retained.buffer = createProgrammeBuffer(0.125, -0.0625);
+        retained.connect(driven.engine.audioPreviewOutput as unknown as FixtureNode);
+        retained.start();
+        const output = await driven.context.startRendering();
+        expect(Array.from(output.left)).toEqual(Array(RENDER_FRAMES).fill(0.125));
+        expect(Array.from(output.right)).toEqual(Array(RENDER_FRAMES).fill(-0.0625));
+        const upstream = (driven.engine.masterAnalyser as unknown as FixtureAnalyserNode).stitchedCapture();
+        expect(Array.from(upstream.left)).toEqual(Array(RENDER_FRAMES).fill(0.875));
+        expect(Array.from(upstream.right)).toEqual(Array(RENDER_FRAMES).fill(0.25));
+        retained.stop();
+        intent.release();
+    });
+
+    it('closes the programme on the first frame an exclusive audition renders when currentTime sits above its frame', async () => {
+        // The frame a suspended context resumed on in the browser case; its quotient's product is above it.
+        const frame = 198_400;
+        driven.context.currentTime = frame / SAMPLE_RATE;
+        expect(driven.context.currentTime * SAMPLE_RATE).toBeGreaterThan(frame);
+        connectProgrammeBuffer(driven, 0.5, 0.25);
+        const intent = driven.engine.beginExclusiveAudioPreviewIntent();
+        const retained = driven.context.createBufferSource();
+        retained.buffer = createProgrammeBuffer(0.125, -0.0625);
+        retained.connect(driven.engine.audioPreviewOutput as unknown as FixtureNode);
+        retained.start();
+        const output = await driven.context.startRendering(frame);
+        expect(Array.from(output.left)).toEqual(Array(RENDER_FRAMES).fill(0.125));
+        expect(Array.from(output.right)).toEqual(Array(RENDER_FRAMES).fill(-0.0625));
+        retained.stop();
+        intent.release();
+    });
+
+    it('reopens the programme on the first frame rendered after the audition ends when currentTime sits above its frame', async () => {
+        connectProgrammeBuffer(driven, 0.5, 0.25);
+        const intent = driven.engine.beginExclusiveAudioPreviewIntent();
+        const frame = 198_400;
+        driven.context.currentTime = frame / SAMPLE_RATE;
+        intent.release();
+        driven.engine.setAudioPreviewProgrammeSuppressed(false);
+        const output = await driven.context.startRendering(frame);
+        expect(Array.from(output.left)).toEqual(Array(RENDER_FRAMES).fill(0.5));
+        expect(Array.from(output.right)).toEqual(Array(RENDER_FRAMES).fill(0.25));
+    });
+
+    it('restores current mono, dim and master settings rather than an acquisition snapshot', async () => {
+        connectProgrammeBuffer(driven, 0.5, 0.25);
+        const intent = driven.engine.beginExclusiveAudioPreviewIntent();
+        executeToggle('toggleControlRoomMono');
+        executeToggle('toggleControlRoomDim');
+        driven.engine.setMasterGain(0.5);
+        intent.release();
+        driven.engine.setAudioPreviewProgrammeSuppressed(false);
+        const output = await driven.context.startRendering();
+        const expected = ((0.5 + 0.25) / 2) * 0.5 * dbToGain(-20);
+        expect(maxAbs(output.left)).toBeCloseTo(expected, 5);
+        expect(maxAbs(output.right)).toBeCloseTo(expected, 5);
+        expect(controlRoomStore.value).toMatchObject({ monoActive: true, dimActive: true });
+        expect(driven.engine.getMasterGain()).toBe(0.5);
     });
 });

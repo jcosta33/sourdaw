@@ -57,6 +57,18 @@ never combine them into wider permission. Inspect the recorded basis and actual 
 Any compatibility mask must prove full consumption of the original clause; a known control beside
 an unknown clip or unread suffix must not discharge the residual restriction.
 
+### Direct-level intent escaped the enumerated command list (#4366)
+
+PR #1046 introduced the linear-only VCA gain action without a public review; #4435 covered an
+explicit list of level command families, leaving VCA and metronome outside that inventory. The
+historical reviewer model and prompt are unknown. The missing posture was a catalog-wide direct-level
+inventory, including its owning bounds.
+
+Enumerate every planner-emittable direct-level command and trace its advertised schema, prompt
+binding, strategy, handler, stored value, undo and full/delta provider context. Test absolute and
+relative decibels, the owning ceiling, silence and legacy linear values at actual execution. A
+passing sample of the original enumerated families cannot prove the remaining catalog.
+
 ## Standing probes
 
 - Read the full unit the diff touches at head — the function, its callers, its callee contracts —
@@ -222,6 +234,18 @@ a tempo ramp. Add a layer whose beat-zero value differs from its requested-start
 and prove positive compensation changes only write times while its zero-time seed uses the
 actual render origin. Keep crop selection distinct from the scheduling clock.
 
+### A capped render must end at its returned audio
+
+The Render to Clip endpoint used the requested musical end before PR #4986, where the cap
+shortfall was discovered in review; its earliest introduction is unestablished. PR #5371 repaired
+the consumer endpoint. Historical private review prompts and tiers are unknown.
+
+When an offline producer returns fewer frames than requested, map the actual returned endpoint
+through the tempo map and place the clip there, including a nonzero start and a tail request. A
+complete no-tail render must retain its exact musical end; a complete tail render keeps the
+returned decay. One Undo removes the clip and Redo restores its resolved endpoint and identity.
+Removing the shortfall branch must fail the unchanged cap-boundary case with and without tail.
+
 ### 2026-10-11 — offline modulation retained a second tempo inverse (#5209, exposed by #5243)
 
 PR #5209 (`54ff77cd1`) sampled modulation and moving adjustment layers through a private,
@@ -278,6 +302,19 @@ PR #4491 shipped the advisory scan with its planner reserving a hand-rolled wrap
 Blind spot: review checked the reservation's arithmetic and each refusal's code in isolation. Nothing measured a planned unit with the sender's own expression, and nothing asked which units a refusal stops or whether the reason it records names what happened — so two self-consistent expressions, and a per-unit failure reported as run-wide exhaustion, survived every round until someone ran the command against a real pull request and read the report's own arithmetic.
 
 Probe that would have caught it: plan the change under review, then measure the deepest unit the planner admits with the provider's own expression (`JSON.stringify({state, questions})`) against the profile's own ceiling — a positive overage is the finding, and the fitted-region count that produces it is the reproduction to keep. Then drive a plan whose middle unit trips each refusal and assert which units are never attempted and what reason each records.
+
+### 2026-10-29 — failed Freeze lost its persisted reason (introduced by PR #2597)
+
+PR #2597 added a failure notice and returned `false` after writing the error inside Freeze's
+captured transaction. The registered handler mapped that return to no-write, so Command aborted
+the diagnostic along with the render. Its unit oracle applied mocked `updateTrack` callbacks;
+it observed an error-shaped value without proving that the project retained it.
+
+The missed stance is the real Command outcome: reject the offline render through registered
+Freeze, then require the notice, raw document and projected failure reason, unchanged prior take
+and material, and no successful Freeze history. Retry successfully, Undo and Redo, and require
+both the prior diagnostic and exact rendered take to restore. Callback execution alone cannot
+prove this durable postcondition.
 
 ### 2026-09-27 — member expression overtook its own release (escaped via PR #805)
 
@@ -853,6 +890,18 @@ PR #2083 made device edits require an exact live before-chain. MIDI import publi
 
 Probe the real import, Command/CRDT/history and engine boundary with a completed import, an actually absent strip and no Play gesture. Require clean removal, exact authoritative final topology, and identity-preserving Undo/Redo. Exercise cold add/remove/reorder and grouped final-chain composition; refuse an existing mismatched strip, stale or unrelated project divergence and duplicate ownership. Inject initialization rejection and require committed failure with no later parameter writes. Revert the missing-strip admission and require the cold Command regression to fail. UI admission must require the Remove Synth control unconditionally and click it before first Play.
 
+### Catalog mutation candidates must respect resolved protection polarity (introduced by PR #4128)
+
+PR #4128 (`1d1471216e`) collected positive mutation targets from the entire request and fell back to contextual selection without excluding resolved protection spans; PRs #4132 and #4298 retained that behavior. The observed defect was incorrect published candidates and refusal scope, not a proven unauthorized persisted write. The missed baseline was catalog candidate semantics and source binding; historical private review prompts and tiers are unknown.
+
+Probe the actual catalog through admission and the bridge: request an edit to Drums while leaving Bass alone, protect a selected object's descendants, and combine a Vocal fader-only protection with permitted Vocal processing. Derive positive mutation candidates from completely consumed resolved spans and exact whole-object, control and clip restrictions. Unknown or ambiguous protected objects must clarify without selection fallback. Independently retain protected objects in read and measurement scopes. Reverting the polarity filtering must fail these producer-to-consumer checks.
+
+### Required per-request insertion anchors precede optional-field omission (introduced by PR #1650)
+
+PR #1650 (`a295c8b501e0834f4031934935be26161ad0b132`) admitted omitted optional target fields before checking request-bound device insertion order; PR #2811 retained the skip above its anchor comparison. A compressor requested after EQ could therefore append after a following device when `afterDeviceId` was omitted. The older PR #2712 unanchored negative refused earlier in its historical intake route and did not prove the anchor comparison. Historical private review prompts, models and tiers are unknown.
+
+Probe genuine whole-request intake through local and hosted planning, both eligible target chains, the exact resolved EQ identity and a later non-EQ device. Require missing and wrong anchors to refuse with no confirmation, document/runtime/revision or Undo writes; require the correct EQ to insert immediately after it. Keep the anchorless append control and existing supplied-unrequested-anchor refusal. In an isolated committed probe, restore only the optional-field skip before the mandatory comparison and require the original unanchored integration negative to fail at the anchor obligation, rather than at an earlier intake or schema failure.
+
 ### 2026-10-29 — resolved group replay was mistaken for a completed revert (#5565)
 
 The AI history caller from `22a84b216658f593391e7e141d90f7c84d13648b` marked its row
@@ -910,6 +959,13 @@ after the physical duration, and preserved lower-rate decay, energy and spectral
 Reverting only the cap must fail the late-tail oracle. Follow source through regenerated
 served WASM; allocation freedom and a bounded direct loop do not prove callback deadlines.
 
+Trace the actual rate producers and admission before calling a tested rate the maximum.
+PR #5858 repaired the named 192 kHz case with a 4458-frame cap and left #5182's broader
+rate obligation open. The public Bacteria constructor also admits 384 kHz, where that
+cap halves the physical response. Preserve duration at that admitted input too, through
+the actual served carrier, without inferring a product limit from a comment or another
+device's clamp. Keep lower-rate PCM and allocation-free body selection unchanged.
+
 ### 2026-10-29 — capped render placement trusted the requested end (#5013)
 
 The offline producer capped frames in `bf14e0d6c1`, while the consumer introduced in
@@ -940,6 +996,46 @@ schema. Require the exact engine parameter and value. Removing only `convolution
 that schema must fail the real-factory case. Preserve finite keys, band bounds, immutable
 identity/correlation, scheduling, nonfinite rejection and replay/generation guards; action or
 document spies alone cannot prove carrier admission or audible output.
+
+### 2026-10-30 — a carried meter reached the document but not the mounted ruler (#5247)
+
+Insert Time can preserve the canonical meter while a reader paints a different grid.
+In 4/4, Insert 2 at 4 carries the meter origin to 6 and moves the clip at 8 to 10;
+the top ruler's independent `bar * numerator` grid still put bar 3 at 8. The earliest
+tracked ruler addition, `e415a55cc406ba264dffbc229f4ac86f3e5caaab`, already mounted this
+flat reader alongside the meter model. Its commit has no verified introducing PR
+association; the historical review prompts and model tiers are unknown. The original
+missing-carry lineage is known before #5440, but its earliest musician-facing introducer
+is unestablished. #5440's intermediate next-downbeat mistake was repaired before merge.
+
+Trace a timeline operation from its committed map and clip positions to the actual
+mounted ruler's drawn labels and bar lines. Exercise partial bars, denominators other
+than 4, and a later meter change. The mounted Insert regression reached the real Command
+and raw/projected carry, then observed no new stopped paint. The model's physical bar
+origins, rather than an inverse over distinct bar names, must drive the reader: two
+partial pieces can carry the same number. A probe that passes empty changes only at the
+real ruler query call must fail the mapped paint cases. That probe is required, not a
+claim of completed execution.
+
+### 2026-10-30 — a visible fractional meter seam fell beyond the outgoing next tick
+
+The canonical metrical-beat walk entered main in `f626b84b9aed3b715780e20d3b9976c3f88fedd1`
+through PR #2078. Its termination gate remained unchanged: it stopped when the outgoing
+next tick exceeded the requested right edge, before considering an earlier meter change.
+With 4/4 from 0, 3/4 at 5.5, and a window of 5.4..5.6, it returned no beat. The actual
+metronome therefore scheduled no click, and the later ruler consumer omitted the same
+physical seam. The new ruler exposed this existing primitive defect; it did not introduce
+it. Historical private review prompts and model tiers are unestablished. The evidenced
+missed stance is finite-window coverage with a fractional change origin.
+
+A meter walk must consider both its next tick and the next canonical segment boundary.
+Adopt the boundary's exact origin once, even when another distinct origin is within grid
+rounding tolerance. Keep equal-point queries, negative starts, inclusive right tolerance,
+and last-change governance at duplicate beats. Validate the entered unit and segment as
+well as the initial one, and stop with the valid prefix if finite arithmetic cannot
+advance. Prove the list, the engine's click time/accent/volume under both clock anchors,
+and the mounted ruler's fresh seam stroke. Restoring only the old outer termination
+gate must fail those connected finite-window cases.
 
 ### 2026-10-30 — a guarded solo no-op blocked older history (#5643)
 

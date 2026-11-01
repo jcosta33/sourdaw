@@ -4,12 +4,13 @@
 import { type ReactElement } from 'react';
 
 import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
-import { Grid, Row, Stack } from '#/components/layout';
+import { Row, Stack } from '#/components/layout';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
 import { useDeviceParameterGesture } from '../../../hooks/useDeviceParameterGesture';
 import { type DeviceLayoutProps, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
+import { ParamCardGrid } from '../ParamCardGrid';
 import { SectionHeader } from '../SectionHeader';
 
 type P = DeviceLayoutProps['parameters'][number];
@@ -78,21 +79,21 @@ const CompressorLayout = ({ device, trackId, parameters }: DeviceLayoutProps): R
                 )}
             </Row>
             <SectionHeader title="Controls" />
-            <Grid cols={2} gap={2}>
+            <ParamCardGrid>
                 {filterParams(parameters, [thresholdId, `${prefix}-ratio`]).map((param) => (
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
-            </Grid>
-            <Grid cols={2} gap={2}>
+            </ParamCardGrid>
+            <ParamCardGrid>
                 {filterParams(parameters, [`${prefix}-attack`, `${prefix}-release`]).map((param) => (
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
-            </Grid>
-            <Grid cols={2} gap={2}>
+            </ParamCardGrid>
+            <ParamCardGrid>
                 {filterParams(parameters, [`${prefix}-knee`, `${prefix}-makeup`]).map((param) => (
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
-            </Grid>
+            </ParamCardGrid>
         </Stack>
     );
 };

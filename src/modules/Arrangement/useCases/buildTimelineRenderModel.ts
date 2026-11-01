@@ -10,19 +10,69 @@ import {
     timeSignatureMapStore,
     transportStore,
 } from '#/modules/Transport/stores';
-import { getTimeSignatureAtBeat } from '#/modules/Transport/useCases';
+import {
+    createSamplePositionProjector,
+    getTimeSignatureAtBeat,
+    resolveTempoAtBeat,
+    secondsBetweenBeats,
+} from '#/modules/Transport/useCases';
 
-import { type TimelineRenderModel, type TrackRenderModel, type ClipRenderModel } from '../models/TimelineRenderModel';
+import { type TempoTimeline } from '../models/TempoTimeline';
+import {
+    type TimelineRenderModel,
+    type TrackRenderModel,
+    type ClipRenderModel,
+    type AudioWaveformProgrammePart,
+} from '../models/TimelineRenderModel';
+import { getVariationLaneCount } from '../models/TimelineTrackExtent';
 import { activeRecordingRef } from '../stores/activeRecordingRef';
 import { clipDragPreviewRef } from '../stores/clipDragPreviewRef';
 import { clipSelectionStore } from '../stores/clipSelectionStore';
 import { inlineMidiNotePreviewRef } from '../stores/inlineMidiNotePreviewRef';
+import { takeLaneStore } from '../stores/takeLaneStore';
 import { timelineViewStore } from '../stores/timelineViewStore';
 import { trackStore } from '../stores/trackStore';
 import { getTimelineTrackHeight, getVisibleTimelineTracks } from '../transformers/getVisibleTimelineTracks';
 
+import { prepareAudioClipSlip } from './clipEditing/prepareAudioClipSlip';
+import { resolveCompingProgramme } from './comping/resolveCompingProgramme';
+
 function defaultViewportWidth(): number {
     return typeof window !== 'undefined' ? window.innerWidth : 1920;
+}
+
+function captureWaveformTimeline(tempo: number, changes: Parameters<typeof secondsBetweenBeats>[0]): TempoTimeline {
+    const capturedChanges = structuredClone(changes);
+    const projectSamples = createSamplePositionProjector({
+        transport: { tempo },
+        tempoMap: { changes: [...capturedChanges] },
+    });
+    return {
+        secondsAtBeat: (beat) => secondsBetweenBeats(capturedChanges, 0, beat, tempo),
+        beatAtSeconds: (seconds) => projectSamples({ samples: seconds, sampleRate: 1 }),
+        tempoAtBeat: (beat) => resolveTempoAtBeat({ changes: capturedChanges, beat, defaultTempo: tempo }),
+    };
+}
+
+function audioProgrammePart(
+    clip: ReturnType<typeof resolveCompingProgramme>[number],
+    timeline: TempoTimeline
+): AudioWaveformProgrammePart {
+    return {
+        startBeat: clip.startBeat,
+        endBeat: clip.endBeat,
+        audioOffsetBeats: clip.audioOffsetBeats,
+        audioOffsetSeconds: clip.audioOffsetSeconds,
+        audioLoopStartSeconds: clip.audioLoopStartSeconds,
+        audioLoopPassEntrySeconds: clip.audioLoopPassEntrySeconds,
+        audioLoopPassOriginBeat: clip.audioLoopPassOriginBeat,
+        loopOriginBeat: clip.loopOriginBeat,
+        clipStartTempo: timeline.tempoAtBeat(clip.startBeat),
+        stretchRatio: clip.stretchRatio,
+        stretchMode: clip.stretchMode,
+        loopEnabled: clip.loopEnabled,
+        loopLength: clip.loopLength,
+    };
 }
 
 // §143.1 — During recording, buildTimelineRenderModel is called on every
@@ -78,7 +128,7 @@ function applyRecordingOverlay(cachedModel: TimelineRenderModel, recClips: reado
                 if (!recIds.has(clip.id)) {
                     return clip;
                 }
-                const cloned = { ...clip, endBeat: Math.max(clip.startBeat, liveEnd) };
+                const cloned = { ...clip, endBeat: Math.max(clip.startBeat, liveEnd), audioProgramme: undefined };
                 handles.push({ clip: cloned, minEnd: clip.startBeat });
                 return cloned;
             });
@@ -113,6 +163,7 @@ const renderCache: {
     transport: number | null;
     timeSig: unknown;
     tempoMap: unknown;
+    takeLane: unknown;
 } = {
     model: null,
     track: null,
@@ -123,6 +174,7 @@ const renderCache: {
     transport: null,
     timeSig: null,
     tempoMap: null,
+    takeLane: null,
 };
 
 // The cached render model consumes one render-affecting transport field
@@ -192,6 +244,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
     const prefs = preferencesStore.value;
     const timeSigState = timeSignatureMapStore.value;
     const tempoMapState = tempoMapStore.value;
+    const takeLaneState = takeLaneStore.value;
     const transportTempo = renderAffectingTransport(transportState);
 
     const dataChanged =
@@ -203,7 +256,8 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         prefs !== renderCache.prefs ||
         transportTempo !== renderCache.transport ||
         timeSigState !== renderCache.timeSig ||
-        tempoMapState !== renderCache.tempoMap;
+        tempoMapState !== renderCache.tempoMap ||
+        takeLaneState !== renderCache.takeLane;
 
     if (dataChanged) {
         renderCache.track = trackState;
@@ -214,6 +268,12 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
         renderCache.transport = transportTempo;
         renderCache.timeSig = timeSigState;
         renderCache.tempoMap = tempoMapState;
+        renderCache.takeLane = takeLaneState;
+
+        const timeline = captureWaveformTimeline(
+            transportState?.tempo ?? DEFAULT_TEMPO_BPM,
+            tempoMapState?.changes ?? []
+        );
 
         const pixelsPerBeat = viewState?.pixelsPerBeat ?? 12;
         const scrollX = viewState?.scrollX ?? 0;
@@ -223,6 +283,21 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
 
         const mappedTracks: TrackRenderModel[] = visibleTracks.map((track, index) => {
             const baseHeight = getTimelineTrackHeight(track);
+            const compLane = takeLaneState?.lanes.find((lane) => lane.trackId === track.id);
+            const hasAudibleProgramme =
+                compLane !== undefined &&
+                (compLane.activeCompRegions.length > 0 || (compLane.baseGapAudioSources?.length ?? 0) > 0);
+            const programmeByClip = new Map<string, AudioWaveformProgrammePart[]>();
+            if (hasAudibleProgramme) {
+                for (const resolved of resolveCompingProgramme(track.id, track.clips, takeLaneState, timeline)) {
+                    if (resolved.type !== 'audio') {
+                        continue;
+                    }
+                    const parts = programmeByClip.get(resolved.id) ?? [];
+                    parts.push(audioProgrammePart(resolved, timeline));
+                    programmeByClip.set(resolved.id, parts);
+                }
+            }
 
             const mappedClips: ClipRenderModel[] = track.clips.map((clip) => {
                 const notes = midiState?.notesByClipId[clip.id] ?? [];
@@ -241,12 +316,20 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                         duration: node.duration,
                     })),
                     audioBufferId: clip.audioBufferId,
+                    audioProgramme:
+                        clip.type === 'audio' && hasAudibleProgramme ? (programmeByClip.get(clip.id) ?? []) : undefined,
                     loopEnabled: clip.loopEnabled,
                     loopLength: clip.loopLength,
                     audioOffsetBeats: clip.audioOffsetBeats,
-                    clipStartTempo: readTempoAtBeat({ beat: clip.startBeat }),
+                    audioOffsetSeconds: clip.audioOffsetSeconds,
+                    audioLoopStartSeconds: clip.audioLoopStartSeconds,
+                    audioLoopPassEntrySeconds: clip.audioLoopPassEntrySeconds,
+                    audioLoopPassOriginBeat: clip.audioLoopPassOriginBeat,
+                    loopOriginBeat: clip.loopOriginBeat,
+                    clipStartTempo: timeline.tempoAtBeat(clip.startBeat),
                     midiOffsetBeats: clip.midiOffsetBeats,
                     stretchRatio: clip.stretchRatio,
+                    stretchMode: clip.stretchMode,
                     fadeInBeats: clip.fadeInBeats,
                     fadeOutBeats: clip.fadeOutBeats,
                     generating: clip.generating,
@@ -277,9 +360,15 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                     loopEnabled: ghost.loopEnabled,
                     loopLength: ghost.loopLength,
                     audioOffsetBeats: ghost.audioOffsetBeats,
-                    clipStartTempo: readTempoAtBeat({ beat: ghost.startBeat }),
+                    audioOffsetSeconds: ghost.audioOffsetSeconds,
+                    audioLoopStartSeconds: ghost.audioLoopStartSeconds,
+                    audioLoopPassEntrySeconds: ghost.audioLoopPassEntrySeconds,
+                    audioLoopPassOriginBeat: ghost.audioLoopPassOriginBeat,
+                    loopOriginBeat: ghost.loopOriginBeat,
+                    clipStartTempo: timeline.tempoAtBeat(ghost.startBeat),
                     midiOffsetBeats: ghost.midiOffsetBeats,
                     stretchRatio: ghost.stretchRatio,
+                    stretchMode: ghost.stretchMode,
                     fadeInBeats: ghost.fadeInBeats,
                     fadeOutBeats: ghost.fadeOutBeats,
                     isGhost: true,
@@ -297,43 +386,50 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                 height: baseHeight,
                 automationMode: track.automationMode,
                 clips: mappedClips,
-                variationLanes: track.showVariationLanes
-                    ? track.alternatives.map((alt) => ({
-                          id: alt.id,
-                          name: alt.name,
-                          clips: alt.clips.map((clip) => {
-                              const notes = midiState?.notesByClipId[clip.id] ?? [];
-                              return {
-                                  id: clip.id,
-                                  startBeat: clip.startBeat,
-                                  endBeat: clip.endBeat,
-                                  name: clip.name,
-                                  color: clip.color || track.color,
-                                  type: clip.type,
-                                  muted: clip.muted,
-                                  midiNotes: notes.map((node) => ({
-                                      id: node.id,
-                                      pitch: node.pitch,
-                                      startBeat: node.startBeat,
-                                      duration: node.duration,
-                                  })),
-                                  audioBufferId: clip.audioBufferId,
-                                  loopEnabled: clip.loopEnabled,
-                                  loopLength: clip.loopLength,
-                                  audioOffsetBeats: clip.audioOffsetBeats,
-                                  clipStartTempo: readTempoAtBeat({ beat: clip.startBeat }),
-                                  midiOffsetBeats: clip.midiOffsetBeats,
-                                  stretchRatio: clip.stretchRatio,
-                                  fadeInBeats: clip.fadeInBeats,
-                                  fadeOutBeats: clip.fadeOutBeats,
-                                  generating: clip.generating,
-                                  isGhost: clip.isGhost,
-                                  isLinkedInstance: clip.isLinkedInstance || !!clip.parentClipId,
-                                  isInlineEditing: clip.isInlineEditing,
-                              };
-                          }),
-                      }))
-                    : undefined,
+                variationLanes:
+                    getVariationLaneCount(track) > 0
+                        ? track.alternatives.map((alt) => ({
+                              id: alt.id,
+                              name: alt.name,
+                              clips: alt.clips.map((clip) => {
+                                  const notes = midiState?.notesByClipId[clip.id] ?? [];
+                                  return {
+                                      id: clip.id,
+                                      startBeat: clip.startBeat,
+                                      endBeat: clip.endBeat,
+                                      name: clip.name,
+                                      color: clip.color || track.color,
+                                      type: clip.type,
+                                      muted: clip.muted,
+                                      midiNotes: notes.map((node) => ({
+                                          id: node.id,
+                                          pitch: node.pitch,
+                                          startBeat: node.startBeat,
+                                          duration: node.duration,
+                                      })),
+                                      audioBufferId: clip.audioBufferId,
+                                      loopEnabled: clip.loopEnabled,
+                                      loopLength: clip.loopLength,
+                                      audioOffsetBeats: clip.audioOffsetBeats,
+                                      audioOffsetSeconds: clip.audioOffsetSeconds,
+                                      audioLoopStartSeconds: clip.audioLoopStartSeconds,
+                                      audioLoopPassEntrySeconds: clip.audioLoopPassEntrySeconds,
+                                      audioLoopPassOriginBeat: clip.audioLoopPassOriginBeat,
+                                      loopOriginBeat: clip.loopOriginBeat,
+                                      clipStartTempo: timeline.tempoAtBeat(clip.startBeat),
+                                      midiOffsetBeats: clip.midiOffsetBeats,
+                                      stretchRatio: clip.stretchRatio,
+                                      stretchMode: clip.stretchMode,
+                                      fadeInBeats: clip.fadeInBeats,
+                                      fadeOutBeats: clip.fadeOutBeats,
+                                      generating: clip.generating,
+                                      isGhost: clip.isGhost,
+                                      isLinkedInstance: clip.isLinkedInstance || !!clip.parentClipId,
+                                      isInlineEditing: clip.isInlineEditing,
+                                  };
+                              }),
+                          }))
+                        : undefined,
             };
         });
 
@@ -355,6 +451,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
             trackHeight,
             scrollY: viewState?.scrollY ?? 0,
             tempo: transportState?.tempo ?? DEFAULT_TEMPO_BPM,
+            sourceTimeline: timeline,
             timeSignatureNumerator: numerator,
             timeSignatureDenominator: denominator,
         };
@@ -411,11 +508,73 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
             if (pos.trackId === track.id) {
                 const base = clipById.get(clipId);
                 if (base) {
+                    if (pos.audioSlipOffsetBeats !== undefined) {
+                        const raw = trackState?.tracks
+                            .find((row) => row.id === track.id)
+                            ?.clips.find((row) => row.id === clipId);
+                        const timeline = captureWaveformTimeline(
+                            transportState?.tempo ?? DEFAULT_TEMPO_BPM,
+                            tempoMapState?.changes ?? []
+                        );
+                        const projected =
+                            raw &&
+                            prepareAudioClipSlip(
+                                {
+                                    clip: raw,
+                                    lanes: takeLaneState?.lanes.filter((lane) => lane.trackId === track.id) ?? [],
+                                },
+                                pos.audioSlipOffsetBeats,
+                                timeline
+                            );
+                        if (projected) {
+                            const source = projected.clip;
+                            const programme = resolveCompingProgramme(
+                                track.id,
+                                [source],
+                                { lanes: projected.lanes },
+                                timeline
+                            );
+                            clips.push({
+                                ...base,
+                                audioOffsetBeats: source.audioOffsetBeats,
+                                audioOffsetSeconds: source.audioOffsetSeconds,
+                                audioLoopStartSeconds: source.audioLoopStartSeconds,
+                                audioLoopPassEntrySeconds: source.audioLoopPassEntrySeconds,
+                                audioLoopPassOriginBeat: source.audioLoopPassOriginBeat,
+                                audioProgramme: programme.map((part) => audioProgrammePart(part, timeline)),
+                            });
+                            continue;
+                        }
+                    }
+                    const sameDuration = Math.abs(pos.endBeat - pos.startBeat - (base.endBeat - base.startBeat)) < 1e-9;
+                    const shift = sameDuration ? pos.startBeat - base.startBeat : 0;
+                    const audioProgramme =
+                        shift === 0
+                            ? base.audioProgramme
+                            : base.audioProgramme?.map((part) => ({
+                                  ...part,
+                                  startBeat: part.startBeat + shift,
+                                  endBeat: part.endBeat + shift,
+                                  audioLoopPassOriginBeat:
+                                      part.audioLoopPassOriginBeat === undefined
+                                          ? undefined
+                                          : part.audioLoopPassOriginBeat + shift,
+                                  loopOriginBeat:
+                                      part.loopOriginBeat === undefined ? undefined : part.loopOriginBeat + shift,
+                                  clipStartTempo: readTempoAtBeat({ beat: part.startBeat + shift }),
+                              }));
                     clips.push({
                         ...base,
                         startBeat: pos.startBeat,
                         endBeat: pos.endBeat,
+                        audioProgramme,
                         audioOffsetBeats: pos.audioOffsetBeats ?? base.audioOffsetBeats,
+                        audioOffsetSeconds: pos.audioOffsetSeconds ?? base.audioOffsetSeconds,
+                        audioLoopStartSeconds: pos.audioLoopStartSeconds ?? base.audioLoopStartSeconds,
+                        audioLoopPassEntrySeconds: pos.audioLoopPassEntrySeconds ?? base.audioLoopPassEntrySeconds,
+                        audioLoopPassOriginBeat: pos.audioLoopPassOriginBeat ?? base.audioLoopPassOriginBeat,
+                        loopOriginBeat: pos.loopOriginBeat ?? base.loopOriginBeat,
+                        loopLength: pos.loopLength ?? base.loopLength,
                         clipStartTempo: readTempoAtBeat({ beat: pos.startBeat }),
                         midiOffsetBeats: pos.midiOffsetBeats ?? base.midiOffsetBeats,
                     });

@@ -4,7 +4,14 @@ Reference-grade chromatic tuner and pitch detection DSP engine compiling to WebA
 
 ## Domain Ownership
 
-- Owns high-precision pitch detection algorithms (autocorrelation, harmonic peak interpolation, cents offset calculation, concert-A frequency reference calibration).
+- Owns tuner preprocessing, candidate/fallback integration, cents offset calculation, concert-A
+  calibration, stabilization and polyphonic scheduling.
+- Reuses `daw_dsp::primitives::pitch` for YIN/MPM detection. The shared primitive owns difference
+  producers, CMND, candidate policies, interpolation and detector scratch; `scoring::yin` and
+  `scoring::mpm` retain compatibility exports. Mono analysis uses `YinDetector::detect_with_mpm` to
+  share exactly one autocorrelation without exposing mutable scratch.
+- WASM builds disable `daw-dsp`'s default `wasm-runtime` feature so shared primitives do not add
+  device bindings or a second startup hook to Scoring. Native runtime APIs remain available.
 - Compiles via `wasm-pack` (`pnpm wasm:scoring`) and generates worklet glue via `scripts/gen-scoring-worklet.ts`.
 - Does not own tuner UI presentation (`src/modules/Tuner`) or WebAudio node graph lifecycle (`AudioEngine`).
 

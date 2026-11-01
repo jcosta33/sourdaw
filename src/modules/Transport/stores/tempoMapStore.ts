@@ -1,7 +1,12 @@
 import { createStore } from '#/infra/store/createStore';
-import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    AutomergeStorageWriteConflictError,
+    createAutomergeStorage,
+} from '#/infra/store/storage/createAutomergeStorage';
 
 import { MAX_TEMPO_MAP_TEMPO, MIN_TEMPO_MAP_TEMPO } from '../models/TempoMap';
+
+import { captureTempoWriteMetadata, tempoWriteIntentsMatch, type TempoClockWriteIntent } from './tempoWriteIntent';
 
 // The tempo-map bounds live in `models/TempoMap.ts` — a model file cannot import
 // from a store, so a bound both layers need sits a layer down. They are
@@ -111,10 +116,33 @@ export function sanitize_tempo_map_state(value: unknown): TempoMapStoreState {
 }
 
 export const tempoMapStore = createStore<TempoMapStoreState>({
-    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'tempoMap', {
+    storage: createAutomergeStorage<TempoMapStoreState, readonly TempoClockWriteIntent[]>(DOC_PREFIX_ROOT, 'tempoMap', {
         // Audit CC-2 — projection default for a document without this slot, so
         // hydrate never writes the previous project's cache back into truth.
         hydrateMissing: () => create_empty_tempo_map_state(),
+        writeMetadata: {
+            captureMode: 'operation',
+            capture: () => captureTempoWriteMetadata('tempoMap'),
+            reduce: ({ current, captured }) => {
+                const pending = current ? current.slice() : [];
+                pending.push(...captured);
+                return pending;
+            },
+        },
+        validateBeforeMutation: ({ metadata, doc }) => {
+            if (
+                metadata?.some((intent) => 'rowClock' in intent) &&
+                doc.tempoMap !== undefined &&
+                !is_exact_tempo_map_state(doc.tempoMap)
+            ) {
+                throw new AutomergeStorageWriteConflictError('Tempo-map rows are not exact before the row write');
+            }
+            if (metadata && !tempoWriteIntentsMatch(doc, metadata, 'tempoMap')) {
+                throw new AutomergeStorageWriteConflictError(
+                    'Tempo edit conflicts with current source or tempo-map state'
+                );
+            }
+        },
     }),
     initialData: create_empty_tempo_map_state(),
     sanitize: sanitize_tempo_map_state,

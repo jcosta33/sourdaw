@@ -65,7 +65,12 @@ describe('panelToggles', () => {
             ['openMixer', openMixer, () => openMixer(), { mixerOpen: true }],
             ['openInspector', openInspector, () => openInspector(), { inspectorOpen: true }],
             ['setTrackListWidth', setTrackListWidth, () => setTrackListWidth(300), { trackListWidth: 300 }],
-            ['closeScratchPad', closeScratchPad, () => closeScratchPad(), { scratchPadOpen: false }],
+            [
+                'closeScratchPad',
+                closeScratchPad,
+                () => closeScratchPad(),
+                { scratchPadOpen: false, scratchPadCollapsed: false },
+            ],
             ['closeBranchManager', closeBranchManager, () => closeBranchManager(), { branchManagerOpen: false }],
         ])('should call updateWorkspaceState for %s', (_label, _subject, invoke, expected) => {
             vi.mocked(updateWorkspaceState).mockClear();

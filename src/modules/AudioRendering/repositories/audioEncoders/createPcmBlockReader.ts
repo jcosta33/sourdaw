@@ -1,6 +1,8 @@
 import { type ExportAudioSource } from '../../models/ExportAudioSource';
 import { type PcmDitherOptions } from '../../models/PcmDitherOptions';
 
+import { readExportPcmBlock } from './readExportPcmBlock';
+
 const STEP = 0x6d2b79f5;
 
 function uniform(state: { value: number }): number {
@@ -24,6 +26,22 @@ function sanitize(value: number): number {
     return 0;
 }
 
+function measurePeak(source: ExportAudioSource, channelCount: number, sourceGain: number): number {
+    let peak = 0;
+    for (let start = 0; start < source.length; start += 4096) {
+        const channels = readExportPcmBlock({ source, start, length: Math.min(4096, source.length - start) });
+        for (const channel of channels.slice(0, channelCount)) {
+            for (const sample of channel) {
+                const value = Math.abs(sample * sourceGain);
+                if (Number.isFinite(value)) {
+                    peak = Math.max(peak, value);
+                }
+            }
+        }
+    }
+    return peak;
+}
+
 /** Whole-window gain, then bounded channel-major TPDF. Recreating a reader replays a supplied seed. */
 export function createPcmBlockReader(input: {
     source: ExportAudioSource;
@@ -33,12 +51,11 @@ export function createPcmBlockReader(input: {
 }) {
     const { source, bitDepth, channelLimit = source.numberOfChannels } = input;
     const channelCount = Math.min(channelLimit, source.numberOfChannels);
-    const channels = Array.from({ length: channelCount }, (_, channel) => source.getChannelData(channel));
     if (
         !Number.isSafeInteger(source.length) ||
         source.length < 0 ||
         channelCount < 1 ||
-        channels.some((channel) => channel.length < source.length)
+        !Number.isSafeInteger(channelCount)
     ) {
         throw new Error('Invalid export PCM window.');
     }
@@ -46,20 +63,20 @@ export function createPcmBlockReader(input: {
     if (!Number.isFinite(sourceGain) || sourceGain < 0) {
         throw new Error('Invalid export PCM gain.');
     }
-    let peak = 0;
-    for (const channel of channels) {
-        for (let frame = 0; frame < source.length; frame++) {
-            const value = Math.abs(channel[frame]! * sourceGain);
-            if (Number.isFinite(value)) {
-                peak = Math.max(peak, value);
-            }
+    let peak: number;
+    if (source.samplePeak !== undefined) {
+        if (!Number.isFinite(source.samplePeak) || source.samplePeak < 0) {
+            throw new Error('Invalid export PCM peak.');
         }
+        peak = source.samplePeak * sourceGain;
+    } else {
+        peak = measurePeak(source, channelCount, sourceGain);
     }
     const gain = peak > 1 ? 1 / peak : 1;
     const dither = input.dither ?? { mode: 'tpdf' };
     const seed = dither.seed ?? Math.floor(Math.random() * 0x100000000);
     // Multiplication is modulo 2^32; imul avoids losing low bits on long windows.
-    const states = channels.map((_, channel) => ({
+    const states = Array.from({ length: channelCount }, (_, channel) => ({
         value: (seed + Math.imul(Math.imul(2, source.length), Math.imul(channel, STEP))) >>> 0,
     }));
     let nextFrame = 0;
@@ -74,12 +91,13 @@ export function createPcmBlockReader(input: {
             }
             const start = nextFrame;
             nextFrame += length;
+            const channels = readExportPcmBlock({ source, start, length }).slice(0, channelCount);
             const output = channels.map((channel, index) => {
                 const values = bitDepth === 32 ? new Float32Array(length) : new Int32Array(length);
                 const negativeScale = 2 ** (bitDepth - 1);
                 const positiveScale = negativeScale - 1;
                 for (let frame = 0; frame < length; frame++) {
-                    const sample = sanitize(channel[start + frame]! * sourceGain * gain);
+                    const sample = sanitize(channel[frame]! * sourceGain * gain);
                     if (bitDepth === 32) {
                         values[frame] = sample;
                     } else {

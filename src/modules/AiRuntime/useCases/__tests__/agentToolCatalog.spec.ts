@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
+import { getAgentMeasurementMetricIds } from '#/modules/AudioAnalysis/useCases';
 import { defaultPluginScanState, pluginScanStore } from '#/modules/PluginHost/stores';
 
 import { DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT } from '../../models/DeviceManifestPageLimits';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA } from '../../models/SemanticCommandList';
 import { type ToolSchema } from '../../models/ToolDefinitions';
+import { matchesJsonSchema } from '../../validators/matchesJsonSchema';
 import {
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
@@ -20,6 +22,8 @@ import {
 import { APPLICATION_OWNED_TOOL_SCHEMAS, runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
+
+import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 
 const { mockBridgeGroundedLlmToolCalls } = vi.hoisted(() => ({
     mockBridgeGroundedLlmToolCalls: vi.fn(),
@@ -173,26 +177,101 @@ describe('agent tool catalog', () => {
         expect(declineSchema?.function.parameters.properties).not.toHaveProperty('list');
     });
 
-    it('publishes a bounded answer contract that carries text and cited call ids and no batch', () => {
+    it('publishes only read-only entry and closed factual completion, without provider prose or batch', () => {
         const answerSchema = getAgentToolCatalogSchemas().find(
             (schema) => schema.function.name === ANSWER_RESPOND_TOOL_NAME
         );
-
+        const identifier = { type: 'string', minLength: 1, maxLength: 256 };
+        const reference = {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+                callId: identifier,
+                targetId: identifier,
+                metricId: { enum: getAgentMeasurementMetricIds() },
+                band: identifier,
+            },
+            required: ['callId', 'targetId', 'metricId'],
+        };
+        const statement = (kind: string, properties: Record<string, unknown>) => ({
+            type: 'object',
+            additionalProperties: false,
+            properties: { kind: { const: kind }, ...properties },
+            required: ['kind', ...Object.keys(properties)],
+        });
         expect(answerSchema?.function.parameters).toEqual({
             type: 'object',
+            additionalProperties: false,
             properties: {
-                text: { type: 'string', minLength: 1, maxLength: 4096 },
-                evidenceCallIds: {
+                intakeCallId: identifier,
+                statements: {
                     type: 'array',
-                    maxItems: 32,
-                    items: { type: 'string', minLength: 1, maxLength: 256 },
+                    minItems: 1,
+                    maxItems: 16,
+                    items: {
+                        oneOf: [
+                            statement('metric', { reference }),
+                            statement('difference', { left: reference, right: reference }),
+                            statement('ranking', {
+                                references: { type: 'array', minItems: 1, maxItems: 32, items: reference },
+                                operation: { enum: ['ascending', 'descending', 'minimum', 'maximum'] },
+                            }),
+                            statement('project-fact', {
+                                fact: { enum: ['summary', 'tempo', 'tracks', 'sections', 'transport', 'settings'] },
+                            }),
+                            statement('query-page', { callId: identifier }),
+                            statement('source-onsets', { callId: identifier }),
+                            statement('recipe', { callId: identifier, recipeId: identifier }),
+                            statement('limitation', {
+                                code: {
+                                    enum: [
+                                        'measurement-unavailable',
+                                        'timing-unavailable',
+                                        'bounded-evidence',
+                                        'perception-not-inferred',
+                                    ],
+                                },
+                            }),
+                        ],
+                    },
                 },
             },
-            required: ['text', 'evidenceCallIds'],
-            additionalProperties: false,
+            required: [],
+            anyOf: [
+                { type: 'object', properties: {}, required: [], additionalProperties: false },
+                { required: ['intakeCallId', 'statements'] },
+            ],
         });
         expect(answerSchema?.function.description).toContain('analysis.measure');
-        expect(answerSchema?.function.description).toContain('return this call alone in its turn');
+        expect(answerSchema?.function.description).toContain('Alone');
+        expect(answerSchema?.function.description).toContain('callId');
+        if (answerSchema === undefined) {
+            throw new Error('Expected the answer schema');
+        }
+        const parameters = answerSchema.function.parameters;
+        const completion = {
+            intakeCallId: 'intake',
+            statements: [{ kind: 'metric', reference: { callId: 'read', targetId: 'master', metricId: 'rms' } }],
+        };
+        expect(matchesJsonSchema({}, parameters)).toBe(true);
+        expect(matchesJsonSchema(completion, parameters)).toBe(true);
+        expect(matchesJsonSchema({ text: 'Invented', evidenceCallIds: [] }, parameters)).toBe(false);
+        expect(matchesJsonSchema({ ...completion, commands: [] }, parameters)).toBe(false);
+        expect(matchesJsonSchema({ ...completion, statements: [] }, parameters)).toBe(false);
+        expect(
+            matchesJsonSchema({ ...completion, statements: Array(17).fill(completion.statements[0]) }, parameters)
+        ).toBe(false);
+        expect(
+            matchesJsonSchema(
+                {
+                    intakeCallId: 'intake',
+                    statements: [
+                        { kind: 'metric', reference: { callId: 'read', targetId: 'master', metricId: 'not-a-metric' } },
+                    ],
+                },
+                parameters
+            )
+        ).toBe(false);
     });
 
     it('publishes a recipe-discovery contract whose role enum matches the mixing recipe catalog', () => {
@@ -347,6 +426,10 @@ describe('agent tool catalog', () => {
         ]);
 
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(async (_system, userMessage, schemas) => ({
+                status: 'complete',
+                toolCalls: literalMetricIntakeTurn(userMessage, schemas),
+            }))
             .mockResolvedValueOnce({
                 status: 'complete',
                 toolCalls: [
@@ -390,7 +473,7 @@ describe('agent tool catalog', () => {
         expect(
             firstTurnSchemas.some((schema: ToolSchema) => schema.function.name === 'analysis.compareReference')
         ).toBe(false);
-        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[1]?.[1]).toContain('catalog-1');
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[2]?.[1]).toContain('catalog-1');
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 128 } }]);
     });
 
@@ -513,10 +596,15 @@ describe('agent tool catalog', () => {
     });
 
     it('rejects a direct primitive provider call before grounding when it did not enter through a catalog proposal', async () => {
-        vi.mocked(generateToolPlanningOutcome).mockResolvedValue({
-            status: 'complete',
-            toolCalls: [{ id: 'direct-set-tempo', name: 'setTempo', arguments: { bpm: 128 } }],
-        });
+        vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(async (_system, userMessage, schemas) => ({
+                status: 'complete',
+                toolCalls: literalMetricIntakeTurn(userMessage, schemas),
+            }))
+            .mockResolvedValue({
+                status: 'complete',
+                toolCalls: [{ id: 'direct-set-tempo', name: 'setTempo', arguments: { bpm: 128 } }],
+            });
         mockBridgeGroundedLlmToolCalls.mockReturnValue({
             actions: [{ type: 'setTempo', payload: { bpm: 128 } }],
             rejections: [],
@@ -536,18 +624,23 @@ describe('agent tool catalog', () => {
     });
 
     it('rejects a forged command batch proposal before grounding when this loop never disclosed its primitive', async () => {
-        vi.mocked(generateToolPlanningOutcome).mockResolvedValue({
-            status: 'complete',
-            toolCalls: [
-                {
-                    id: 'forged-proposal',
-                    name: 'command.batch.propose',
-                    arguments: {
-                        commands: [{ name: 'setTempo', arguments: { bpm: 128 } }],
+        vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(async (_system, userMessage, schemas) => ({
+                status: 'complete',
+                toolCalls: literalMetricIntakeTurn(userMessage, schemas),
+            }))
+            .mockResolvedValue({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'forged-proposal',
+                        name: 'command.batch.propose',
+                        arguments: {
+                            commands: [{ name: 'setTempo', arguments: { bpm: 128 } }],
+                        },
                     },
-                },
-            ],
-        });
+                ],
+            });
         mockBridgeGroundedLlmToolCalls.mockReturnValue({
             actions: [{ type: 'setTempo', payload: { bpm: 128 } }],
             rejections: [],

@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
 
 import { startAudioRecording as startAudioRecordingRepo } from '../../repositories/audioRecorder/recording';
@@ -8,14 +9,26 @@ import { stopTrackInputMonitoring } from '../audioRecorder/stopTrackInputMonitor
 export async function startAudioRecording(
     trackId: string,
     onTerminal: Parameters<typeof startAudioRecordingRepo>[1],
-    inputId?: string | null
+    inputId?: string | null,
+    onCaptureClock?: Parameters<typeof startAudioRecordingRepo>[3]
 ): Promise<boolean> {
     const selectedInputId = inputId === undefined ? getSelectedInputId() : inputId;
-    const admitted = await startAudioRecordingRepo(trackId, onTerminal, selectedInputId);
+    let admitted: boolean;
+    if (onCaptureClock === undefined) {
+        admitted = await startAudioRecordingRepo(trackId, onTerminal, selectedInputId);
+    } else {
+        admitted = await startAudioRecordingRepo(trackId, onTerminal, selectedInputId, onCaptureClock);
+    }
     if (!admitted) {
         return false;
     }
-    engageModeListeningPath(trackId, selectedInputId);
+    // The session is already recording; a caller told it failed would retire
+    // a take whose capture is still running and lose its audio.
+    try {
+        engageModeListeningPath(trackId, selectedInputId);
+    } catch (error) {
+        logger.error(new Error(`Failed to engage the recording listening path on track ${trackId}`, { cause: error }));
+    }
     return true;
 }
 

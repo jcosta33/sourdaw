@@ -5,7 +5,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 import { admitLoopbackProvider } from './admitLoopbackProvider';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
-import { startScriptedToolProvider, type ScriptedToolRequest } from './scriptedToolProvider';
+import { literalWholeRequestIntake, startScriptedToolProvider, type ScriptedToolRequest } from './scriptedToolProvider';
 
 function record(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -124,8 +124,12 @@ for (const recipe of [
         expect(dry.energy).toBeGreaterThan(0);
         expect(dry.warnings).toEqual([]);
         const provider = await startScriptedToolProvider((request, turn) => {
-            expect(turn).toBeLessThan(4);
-            if (turn === 0)
+            expect(turn).toBeLessThan(5);
+            if (turn === 0) {
+                return [literalWholeRequestIntake(request)];
+            }
+            const step = turn - 1;
+            if (step === 0)
                 return [
                     {
                         id: 'project',
@@ -133,7 +137,7 @@ for (const recipe of [
                         arguments: { type: 'object', page: { limit: 50 } },
                     },
                 ];
-            if (turn === 1) {
+            if (step === 1) {
                 receipt(request, 'project');
                 return [
                     {
@@ -143,7 +147,7 @@ for (const recipe of [
                     },
                 ];
             }
-            if (turn === 2) {
+            if (step === 2) {
                 const discovered = receipt(request, 'discover');
                 expect(discovered.candidates).toEqual(
                     expect.arrayContaining([
@@ -211,7 +215,7 @@ for (const recipe of [
             const confirm = page.getByRole('button', { name: 'Confirm pending actions', exact: true });
             await expect(confirm).toBeVisible({ timeout: 45000 });
             expect(provider.failures).toEqual([]);
-            expect(provider.requests).toHaveLength(4);
+            expect(provider.requests).toHaveLength(5);
             const proposed = await sourceState(page);
             expect(proposed.document).toBe(before.document);
             expect(proposed.revision).toBe(before.revision);
@@ -568,7 +572,30 @@ test('actual TrackNode factory and shipping offline strategy render the same gai
         device.outputNode.connect(analyser);
         const warmUntil = context.currentTime + 1;
         while (context.currentTime < warmUntil) await new Promise(requestAnimationFrame);
+        // Chromium lands every AudioParam write made at a currentTime that sits
+        // above its integer frame on the next sample (a k-rate one a quantum
+        // late). Re-enter on such a frame, so the case proves the hard re-entry
+        // every run instead of on the few pause frames that happen to hit it.
+        // Such frames cluster with long gaps between, so each attempt lets the
+        // clock run to just before the next one and suspends there.
+        const sitsAbove = (frame: number) => (frame / rate) * rate > frame;
+        const nextFrameAbove = (from: number) => {
+            let frame = Math.ceil(from / 128) * 128;
+            while (!sitsAbove(frame)) frame += 128;
+            return frame;
+        };
+        const contextFrame = () => Math.round(context.currentTime * rate);
         await context.suspend();
+        let reentryAttempts = 0;
+        while (!sitsAbove(contextFrame())) {
+            reentryAttempts++;
+            if (reentryAttempts > 400) throw new Error('No suspended frame sat above its integer frame');
+            const target = nextFrameAbove(contextFrame());
+            await context.resume();
+            while (contextFrame() < target - 512) await new Promise(requestAnimationFrame);
+            await context.suspend();
+        }
+        const resumeFrame = contextFrame();
         const reentryCapture = new AudioWorkletNode(context, 'shaper-capture', {
             numberOfInputs: 1,
             numberOfOutputs: 1,
@@ -602,6 +629,9 @@ test('actual TrackNode factory and shipping offline strategy render the same gai
             captureStart: start,
             firstCapturedFrame: live.firstFrame,
             reentry: [fresh.left[0] / strip.faderNode.gain.value, fresh.right[0] / strip.faderNode.gain.value],
+            resumeFrame,
+            reentryAttempts,
+            reentryFirstFrame: fresh.firstFrame,
             actualReady: device.controller.ready,
             pendingFinalBypassed,
         };
@@ -613,6 +643,7 @@ test('actual TrackNode factory and shipping offline strategy render the same gai
     expect(result.firstCapturedFrame).toBe(result.captureStart);
     expect(result.parityError).toBeLessThan(1e-7);
     expect(result.oracleError).toBeLessThan(1e-7);
+    expect(result.reentryFirstFrame).toBe(result.resumeFrame);
     expect(result.reentry).toEqual([1, 1]);
     expect(result.actualReady).toBe(true);
     expect(result.pendingFinalBypassed).toBe(true);

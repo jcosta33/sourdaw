@@ -5,6 +5,8 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
+import { normalizeTrack } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -68,6 +70,8 @@ describe('setTempo project dirty integration', () => {
         });
         transportStore.set({ ...defaultTransportState, tempo: 120, playheadPosition: 0 });
         tempoMapStore.set({ changes: [] });
+        takeLaneStore.set({ lanes: [] });
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         flushAutomergeStorageWrites();
         initialTempoRevision = tempoProjectRevisionStore.value;
         disposeDirtyTracking = initProjectDirtyTracking();
@@ -204,6 +208,129 @@ describe('setTempo project dirty integration', () => {
         expect(projectStore.value?.dirty).toBe(false);
         projectStore.set({ ...projectStore.value!, loading: false });
         expect(projectStore.value?.dirty).toBe(false);
+    });
+
+    it('previews legacy audio source seconds without publishing them and still commits after release', async () => {
+        takeLaneStore.set({ lanes: [] });
+        trackStore.set({
+            tracks: [
+                normalizeTrack({
+                    id: 'preview-audio',
+                    name: 'Legacy audio',
+                    kind: 'audio',
+                    clips: [
+                        {
+                            id: 'preview-source',
+                            trackId: 'preview-audio',
+                            name: 'Offset source',
+                            type: 'audio',
+                            startBeat: 0,
+                            endBeat: 8,
+                            audioBufferId: 'preview-buffer',
+                            audioOffsetBeats: 6,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                            gain: 1,
+                            color: '',
+                            locked: false,
+                            muted: false,
+                        },
+                    ],
+                }),
+            ],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        flushAutomergeStorageWrites();
+        const liveSources = structuredClone(trackStore.value);
+        const liveProject = structuredClone(projectStore.value);
+        const liveDocument = getCrdtDoc('root');
+        const liveHistory = structuredClone(undoStore.value);
+        commandProjectRevisionPort.setProvider(captureProjectRevision);
+        commandBatchPreviewPort.setProvider(createCommandPreviewWorkspace);
+        commandBatchPreflightPort.setProvider(() => ({
+            audioGraphValid: true,
+            availableAssetHashes: [],
+            availableAudioBufferIds: ['preview-buffer'],
+            lockedRanges: [],
+            projectId: 'tempo-preview',
+            projectInvariantsValid: true,
+            targetFingerprints: {},
+        }));
+        const revision = captureProjectRevision();
+        const command = createVersionedCommandEnvelope({
+            action: { type: 'setTempo', payload: { bpm: 60 } },
+            availableDeviceVersions: {},
+            expectedEffect: 'Tempo becomes 60 BPM while the source offset stays three seconds.',
+            normalizedProjectRevision: revision,
+            objectReferences: [],
+            parameterUnits: [{ argument: 'bpm', unit: 'beats-per-minute' }],
+            reason: 'Preview a tempo edit with a legacy audio source.',
+            time: [],
+        });
+        const batch = compileVersionedCommandBatchEnvelope({
+            baseRevision: revision,
+            batchId: 'tempo-source-preview-batch',
+            commands: [serializeVersionedCommandEnvelope(command)],
+            intent: 'Preview tempo and stable audio source time',
+            mode: 'preview',
+            projectId: 'tempo-preview',
+            runId: 'tempo-source-preview-run',
+        });
+        const preview = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            serialized: batch.serialized,
+        });
+        expect(preview).toMatchObject({
+            status: 'previewed',
+            projectDocument: {
+                transport: { tempo: 60 },
+                tracks: {
+                    tracks: [
+                        {
+                            id: 'preview-audio',
+                            clips: [
+                                {
+                                    id: 'preview-source',
+                                    audioOffsetSeconds: 3,
+                                    audioUnwrappedOffsetSeconds: 3,
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+        });
+        if (preview.status !== 'previewed') {
+            throw new Error('Expected an isolated audio-source tempo preview');
+        }
+        try {
+            expect(trackStore.value).toEqual(liveSources);
+            expect(trackStore.value?.tracks[0]?.clips[0]).not.toHaveProperty('audioOffsetSeconds');
+            expect(transportStore.value?.tempo).toBe(120);
+            expect(getCrdtDoc('root')).toBe(liveDocument);
+            expect(captureProjectRevision()).toBe(revision);
+            expect(projectStore.value).toEqual(liveProject);
+            expect(tempoProjectRevisionStore.value).toBe(initialTempoRevision);
+            expect(undoStore.value).toEqual(liveHistory);
+            expect(command.arguments).toEqual({ bpm: 60 });
+        } finally {
+            preview.resource.release();
+        }
+
+        await executeAppAction({ type: 'setTempo', payload: { bpm: 60 } });
+        expect(transportStore.value?.tempo).toBe(60);
+        expect(trackStore.value?.tracks[0]?.clips[0]).toMatchObject({
+            audioOffsetSeconds: 3,
+            audioUnwrappedOffsetSeconds: 3,
+        });
+        expect(getCrdtDoc('root')).toMatchObject({
+            transport: { tempo: 60 },
+            tracks: { tracks: [{ clips: [{ audioOffsetSeconds: 3, audioUnwrappedOffsetSeconds: 3 }] }] },
+        });
+        expect(projectStore.value?.dirty).toBe(true);
+        expect(tempoProjectRevisionStore.value).toBe((initialTempoRevision ?? 0) + 1);
+        expect(undoStore.value?.past).toHaveLength(1);
     });
 
     it('previews the real tempo command without a live dirty or commit notification', async () => {

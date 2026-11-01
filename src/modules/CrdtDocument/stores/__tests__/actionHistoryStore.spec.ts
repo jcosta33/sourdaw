@@ -1,12 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    runWithAutomergeStorageTransaction,
+} from '#/infra/store/storage/createAutomergeStorage';
 
 import {
     actionHistoryStore,
+    clearActionHistoryStore,
     defaultActionHistoryState,
     markEntryReverted,
     pushActionHistoryEntry,
+    pushActionHistoryEntries,
     sanitize_action_history_state,
     type ActionHistoryState,
 } from '../actionHistoryStore';
@@ -223,6 +228,59 @@ describe('actionHistoryStore', () => {
         expect(evicted_entry_ids).toEqual(['entry-0']);
         expect(actionHistoryStore.value?.entries[0]?.id).toBe('entry-1');
         expect(actionHistoryStore.value?.entries.at(-1)?.id).toBe('entry-200');
+        expect(fake_doc.actionHistory).toEqual(actionHistoryStore.value);
+    });
+
+    it('settles every batch metadata row before returning', () => {
+        const entries = ['first', 'second'].map((id) => ({
+            id,
+            label: id,
+            actionKind: 'addTrack',
+            source: 'manual' as const,
+            timestamp: 10,
+            reverted: false,
+        }));
+
+        expect(pushActionHistoryEntries(entries)).toEqual([]);
+
+        expect(fake_doc.actionHistory).toEqual({ entries });
+        expect(mutation_count).toBe(1);
+    });
+
+    it('settles a cleared metadata projection before returning', () => {
+        pushActionHistoryEntry({
+            id: 'entry-1',
+            label: 'Add track',
+            actionKind: 'addTrack',
+            source: 'manual',
+            timestamp: 10,
+            reverted: false,
+        });
+
+        clearActionHistoryStore();
+
+        expect(actionHistoryStore.value).toEqual(defaultActionHistoryState);
+        expect(fake_doc.actionHistory).toEqual(defaultActionHistoryState);
+    });
+
+    it('leaves metadata written inside an open transaction under that transaction', () => {
+        const transaction = runWithAutomergeStorageTransaction(undefined, () =>
+            pushActionHistoryEntry({
+                id: 'scoped-entry',
+                label: 'Add track',
+                actionKind: 'addTrack',
+                source: 'manual',
+                timestamp: 10,
+                reverted: false,
+            })
+        );
+
+        expect(transaction.status).toBe('returned');
+        expect(fake_doc.actionHistory).toBeUndefined();
+        expect(mutation_count).toBe(0);
+        transaction.abort();
+        expect(fake_doc.actionHistory).toBeUndefined();
+        expect(actionHistoryStore.value).toEqual(defaultActionHistoryState);
     });
 
     it('should mark only the row whose ID and immutable fingerprint both match', () => {
@@ -257,5 +315,6 @@ describe('actionHistoryStore', () => {
             expect.objectContaining({ label: 'Local action', reverted: true }),
             expect.objectContaining({ label: 'Peer replacement', reverted: false }),
         ]);
+        expect(fake_doc.actionHistory).toEqual(actionHistoryStore.value);
     });
 });

@@ -23,7 +23,7 @@ test.describe('Virtual keyboard — mouse glide', () => {
         await addMidiTrack(page);
 
         await page.getByTestId('toggle-virtual-keyboard').click();
-        const keyboard = page.getByRole('application', { name: 'Virtual Piano Keyboard' });
+        const keyboard = page.getByRole('region', { name: 'Virtual Piano Keyboard' });
         await expect(keyboard).toBeVisible({ timeout: 10_000 });
 
         // Scroll the keyboard to its middle so the picked keys sit inside the

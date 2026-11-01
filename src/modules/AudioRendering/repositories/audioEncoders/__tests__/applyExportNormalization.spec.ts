@@ -167,3 +167,38 @@ describe('applyExportNormalization — delegate wiring', () => {
         expect(result.measuredLufs).toBeNull();
     });
 });
+
+describe('normalization of measured replayable delivery PCM', () => {
+    it('uses the existing ceiling-first law on actual supplied measurements without reading/mutating source', async () => {
+        const actual =
+            await vi.importActual<typeof import('../resolveNormalizationGain')>('../resolveNormalizationGain');
+        mocks.resolveNormalizationGain.mockImplementationOnce(actual.resolveNormalizationGain);
+        const source = {
+            length: 96000,
+            numberOfChannels: 1,
+            sampleRate: 48000,
+            readChannels: () => {
+                throw new Error('unexpected rescan');
+            },
+        };
+        const result = applyExportNormalization({
+            buffer: source,
+            apply: false,
+            targetLufs: -14,
+            ceilingDbTp: -1,
+            measurements: { integratedLufs: -20, truePeak: 0.9 },
+        });
+        expect(result.measuredLufs).toBe(-20);
+        expect(result.appliedGain).toBeCloseTo(10 ** (-1 / 20) / 0.9, 12);
+        expect(result.limitedByCeiling).toBe(true);
+        expect(() =>
+            applyExportNormalization({
+                buffer: source,
+                apply: true,
+                targetLufs: -14,
+                ceilingDbTp: -1,
+                measurements: { integratedLufs: -20, truePeak: 0.9 },
+            })
+        ).toThrow(/borrowed|replayable/i);
+    });
+});

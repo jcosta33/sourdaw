@@ -15,11 +15,11 @@ vi.mock('#/modules/AiRuntime/useCases/aiPanelActions/undoLastAction', () => ({
     },
 }));
 
-const mockOpenAnswerInChat = vi.fn();
+const mockOpenAnswerInChat = vi.fn<(answer: unknown) => 'opened' | 'project-switched' | 'project-changed'>(
+    () => 'opened'
+);
 vi.mock('#/modules/AiRuntime/useCases/aiPanelActions/openAnswerInChat', () => ({
-    openAnswerInChat: (...args: unknown[]) => {
-        mockOpenAnswerInChat(...args);
-    },
+    openAnswerInChat: (answer: unknown) => mockOpenAnswerInChat(answer),
 }));
 
 const mockSubscribeAiChangeNotification = vi.fn<(handler: AiChangeNotificationHandler) => () => void>(() => vi.fn());
@@ -61,6 +61,7 @@ describe('AiChangeToast', () => {
         vi.useFakeTimers();
         vi.clearAllMocks();
         mockSubscribeAiChangeNotification.mockReturnValue(vi.fn());
+        mockOpenAnswerInChat.mockReturnValue('opened');
     });
 
     afterEach(() => {
@@ -267,6 +268,8 @@ describe('AiChangeToast', () => {
             prompt: 'How loud is the master?',
             text: 'The master integrates at -14.2 LUFS.',
             evidence: [{ callId: 'call-1', toolName: 'analysis.measure', summary: 'Measured the master.' }],
+            projectIdentity: 'project-a',
+            projectRevision: 'revision-1',
         };
         const answerNotification: AiChangeNotification = {
             id: 'test-answer',
@@ -304,6 +307,36 @@ describe('AiChangeToast', () => {
             fireEvent.click(screen.getByRole('button', { name: /Open in chat/i }));
 
             expect(mockOpenAnswerInChat).toHaveBeenCalledExactlyOnceWith(answer);
+            expect(screen.queryByRole('status')).toBeNull();
+        });
+
+        it.each([
+            [
+                'project-switched',
+                'This answer was about another project, so it was not added to this chat. Ask again here.',
+            ],
+            [
+                'project-changed',
+                'The project changed after this answer, so it was not added to the chat. Ask again for an answer about the project as it is now.',
+            ],
+        ] as const)('replaces a %s answer with a notice saying why it was not opened', (refusal, explanation) => {
+            mockOpenAnswerInChat.mockReturnValue(refusal);
+            const { emit } = captureNotificationHandler();
+            render(<AiChangeToast />);
+
+            act(() => {
+                emit(answerNotification);
+            });
+            fireEvent.click(screen.getByRole('button', { name: /Open in chat/i }));
+
+            expect(mockOpenAnswerInChat).toHaveBeenCalledExactlyOnceWith(answer);
+            expect(screen.getByRole('status')).toHaveTextContent(explanation);
+            expect(screen.queryByText(answer.text)).toBeNull();
+            expect(screen.queryByRole('button', { name: /Open in chat/i })).not.toBeInTheDocument();
+
+            act(() => {
+                vi.advanceTimersByTime(5000);
+            });
             expect(screen.queryByRole('status')).toBeNull();
         });
 

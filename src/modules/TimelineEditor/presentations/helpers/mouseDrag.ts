@@ -1,3 +1,5 @@
+import { beginDragGesture } from '#/utils/UI/activeDragGesture';
+
 /**
  * Attaches global mousemove + mouseup listeners and tears them down on the
  * first mouseup. Eliminates the repeated add/remove boilerplate across every
@@ -21,8 +23,10 @@ export const startMouseDrag = (
     onCancel?: () => void
 ): (() => void) => {
     let tornDown = false;
+    const endDragGesture = beginDragGesture();
 
     const removeListeners = (): void => {
+        endDragGesture();
         window.removeEventListener('mousemove', onMove);
         window.removeEventListener('mouseup', handleUp);
         window.removeEventListener('keydown', handleKeyDown);

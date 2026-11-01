@@ -1,4 +1,9 @@
+import { type AudioSourceSnapshot, type AudioSourceTile } from '#/utils/audioSourceTime';
+import { type MidiTakeSourceSnapshot } from '#/utils/handlerContract';
+
 import { type TempoTimeline } from './TempoTimeline';
+
+export type MidiTakeSource = MidiTakeSourceSnapshot;
 
 export type Take = {
     id: string;
@@ -20,6 +25,8 @@ export type Take = {
      * fields instead.
      */
     sourceOffsetBeats?: number;
+    /** Canonical legacy audio depth; placed passes retain their anchor/depth/end clock. */
+    sourceOffsetSeconds?: number;
     /**
      * Where a placed audio pass starts sounding, as a second of its clip's own
      * media: the beat it starts on is the beat the clip's media reaches this
@@ -41,6 +48,15 @@ export type Take = {
      * material sounds from its clip's start, bounded by its clip alone.
      */
     passDepthSeconds?: number;
+    /** Exclusive ending in the recorded PCM, frozen per captured audio pass. */
+    passSourceEndSeconds?: number;
+    /** Original clip-media basis; rebasing a stretched clip head must not move pass eligibility. */
+    passOriginBeat?: number;
+    passOriginSourceSeconds?: number;
+    /** Exact original MIDI rows and pass phase captured before clip re-keying. */
+    midiSource?: MidiTakeSource;
+    /** Original recording pass; absent for legacy and manually made takes. */
+    recordingPassIndex?: number;
 };
 
 export type TakeLane = {
@@ -49,12 +65,14 @@ export type TakeLane = {
     automationLaneId?: string; // F3.1: If set, this lane is for automation comping
     takes: Take[];
     activeCompRegions: CompRegion[];
+    baseGapAudioSources?: AudioSourceTile[];
 };
 
 export type CompRegion = {
     startBeat: number;
     endBeat: number;
     takeId: string;
+    audioSource?: AudioSourceSnapshot;
 };
 
 export function createTake(

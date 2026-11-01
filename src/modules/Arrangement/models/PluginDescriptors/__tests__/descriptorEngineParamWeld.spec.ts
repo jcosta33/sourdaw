@@ -723,10 +723,18 @@ function numericArgumentAnswersTo(deviceType: NativeDspDeviceType, paramId: stri
         return false;
     }
     const gainReader = readBalancedBlock(processor, processor.indexOf('{', gainReaderStart));
+    // A posted immediate write takes its one frame; every other frame reads the AudioParam.
+    const frameGainStart = processor.indexOf('function gainForFrame(');
+    if (frameGainStart < 0) {
+        return false;
+    }
+    const frameGain = readBalancedBlock(processor, processor.indexOf('{', processor.indexOf(')', frameGainStart)));
+    const immediate = `immediate${local[0]!.toUpperCase()}${local.slice(1)}`;
     if (
         !gainReader.includes('return values?.[values.length === 1 ? 0 : frame] ?? Number.NaN;') ||
+        !frameGain.includes('return frame === immediateIndex ? immediate.value : gainAtFrame(values, frame);') ||
         !processor.includes(`const ${paramId} = parameters.${paramId};`) ||
-        !processor.includes(`const ${local} = gainAtFrame(${paramId}, frame);`)
+        !processor.includes(`const ${local} = gainForFrame(${immediate}, ${local}Index, ${paramId}, frame);`)
     ) {
         return false;
     }

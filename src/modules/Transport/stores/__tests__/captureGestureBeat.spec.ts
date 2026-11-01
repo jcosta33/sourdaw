@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { captureGestureBeat } from '../captureGestureBeat';
+import { captureGestureBeat, captureGestureClock } from '../captureGestureBeat';
 import { type GestureClockSource } from '../gestureClockSource';
 import { holdPlayheadClock, playheadClockRef, releasePlayheadClockHold } from '../playheadClockRef';
 import { playheadPositionRef } from '../playheadPositionRef';
@@ -38,11 +38,78 @@ describe('captureGestureBeat', () => {
         playheadClockRef.beat = 2;
         playheadClockRef.audioTimeSeconds = 10;
         playheadClockRef.hold = null;
+        playheadClockRef.pendingLoopSeam = null;
         playheadPositionRef.current = 2;
         mocks.source = {
             getAudioTimeSeconds: () => 10,
             readNativeCursorBeats: () => null,
         };
+    });
+
+    it.each([
+        'current',
+        'equivalent map',
+        'generation',
+        'anchor',
+        'time',
+        'tempo',
+        'map',
+        'region',
+        'hold',
+        'native',
+        'no source',
+    ] as const)('pairs one carrier read with only its current scheduled seam: %s', (change) => {
+        transportStore.set({ ...transportStore.value!, isLooping: true, loopStart: 0, loopEnd: 4 });
+        const readNativeCursorBeats = vi.fn(() => (change === 'native' ? 0.5 : null));
+        mocks.source = { getAudioTimeSeconds: () => 10.06, readNativeCursorBeats };
+        playheadClockRef.pendingLoopSeam = {
+            generation: playheadClockRef.generation,
+            anchorBeat: 2,
+            anchorAudioTimeSeconds: 10,
+            tempo: 120,
+            tempoMapChanges: tempoMapStore.value?.changes ?? null,
+            audioTimeSeconds: 11,
+            loopStart: 0,
+            loopEnd: 4,
+            passIndex: 1,
+        };
+        const expected = playheadClockRef.pendingLoopSeam;
+        if (change === 'generation') {
+            playheadClockRef.generation += 1;
+        }
+        if (change === 'anchor') {
+            playheadClockRef.beat = 2.01;
+        }
+        if (change === 'time') {
+            playheadClockRef.audioTimeSeconds = 10.01;
+        }
+        if (change === 'tempo') {
+            transportStore.set({ ...transportStore.value!, tempo: 121 });
+        }
+        if (change === 'map') {
+            tempoMapStore.set({ changes: [{ id: 'edited', beat: 0, tempo: 140, curve: 'instant' }] });
+        }
+        if (change === 'equivalent map') {
+            tempoMapStore.set({ changes: [] });
+        }
+        if (change === 'region') {
+            transportStore.set({ ...transportStore.value!, loopEnd: 3 });
+        }
+        if (change === 'hold') {
+            holdPlayheadClock(12, 7.5);
+        }
+        if (change === 'no source') {
+            mocks.source = null;
+        }
+        const capture = captureGestureClock();
+        expect(capture.pendingLoopSeam).toBe(change === 'current' || change === 'equivalent map' ? expected : null);
+        expect(readNativeCursorBeats).toHaveBeenCalledTimes(change === 'hold' || change === 'no source' ? 0 : 1);
+        if (change === 'hold') {
+            expect(playheadClockRef.pendingLoopSeam).toBeNull();
+        }
+        if (change === 'native') {
+            expect(capture.beat).toBe(0.5);
+        }
     });
 
     it('answers from the discrete store while the transport is parked', () => {
@@ -99,15 +166,50 @@ describe('captureGestureBeat', () => {
         expect(captureGestureBeat()).toBe(2);
     });
 
-    it('caps the projection at one scheduler grain when the audio clock leaps', () => {
-        // A suspended/resumed context leaps `currentTime` by the whole gap; the
-        // scheduler refuses to advance through it, and so must the capture.
+    it('projects over the whole audio time a main-thread stall left since the anchor', () => {
+        // No tick ran for 0.5 s while the audio kept playing: the gesture
+        // happened 1 beat past the anchor at 120 BPM, where the next tick will
+        // put the playhead, not one grain past it.
         mocks.source = {
-            getAudioTimeSeconds: () => 1000,
+            getAudioTimeSeconds: () => 10.5,
             readNativeCursorBeats: () => null,
         };
 
-        expect(captureGestureBeat()).toBeCloseTo(2.2, 9);
+        expect(captureGestureBeat()).toBeCloseTo(3, 9);
+    });
+
+    it('folds a stall that crossed an unwitnessed loop seam onto the pass the audio is in', () => {
+        // Loop [0, 4) at 120 BPM, anchor beat 3 at 10 s and no seam emitted.
+        // 0.8 s later the transport crossed loopEnd at 10.5 s and stands 0.3 s
+        // into the next pass; 2.8 s later it crossed a second seam at 12.5 s.
+        transportStore.set({ ...transportStore.value!, isLooping: true, loopStart: 0, loopEnd: 4 });
+        playheadClockRef.beat = 3;
+        mocks.source = { getAudioTimeSeconds: () => 10.8, readNativeCursorBeats: () => null };
+        expect(captureGestureClock()).toMatchObject({ beat: expect.closeTo(0.6, 9), seamsCrossed: 1 });
+
+        mocks.source = { getAudioTimeSeconds: () => 12.8, readNativeCursorBeats: () => null };
+        expect(captureGestureClock()).toMatchObject({ beat: expect.closeTo(0.6, 9), seamsCrossed: 2 });
+    });
+
+    it('does not fold a roll that started past the loop end', () => {
+        transportStore.set({ ...transportStore.value!, isLooping: true, loopStart: 0, loopEnd: 2 });
+        mocks.source = { getAudioTimeSeconds: () => 10.5, readNativeCursorBeats: () => null };
+        expect(captureGestureClock()).toMatchObject({ beat: expect.closeTo(3, 9), seamsCrossed: 0 });
+    });
+
+    it('projects a stall across a tempo change at the tempo the map gives past it', () => {
+        // 120 BPM to beat 4, 60 BPM after: from 3.9, 0.05 s reaches beat 4 and
+        // the remaining 1.95 s travel 1.95 beats, as the next tick integrates.
+        tempoMapStore.set({
+            changes: [
+                { id: 'tempo-0', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'tempo-1', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        playheadClockRef.beat = 3.9;
+        mocks.source = { getAudioTimeSeconds: () => 12, readNativeCursorBeats: () => null };
+
+        expect(captureGestureBeat()).toBeCloseTo(5.95, 9);
     });
 
     it('prefers the native engine cursor while that engine is the audible transport', () => {

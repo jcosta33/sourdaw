@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { playheadPositionRef, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { secondsBetweenBeats, stopPlayback } from '#/modules/Transport/useCases';
 
@@ -87,7 +88,9 @@ function scheduleAdvanceAfterGap(gap: PendingGap): void {
             reArmCurrentItem(playheadPositionRef.current);
             return;
         }
-        nextItem();
+        void nextItem().catch((error: unknown) => {
+            logger.error(new Error('Automatic Setlist advance failed', { cause: error }));
+        });
     }, gap.delayMs);
 }
 

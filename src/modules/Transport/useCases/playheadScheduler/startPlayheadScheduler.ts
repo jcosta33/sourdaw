@@ -6,12 +6,14 @@ import {
     discardRecording,
     commitRecording,
     stageRecordingTake,
+    observeRecordingPassEntry,
 } from '#/modules/Arrangement/useCases';
 import {
     stopAllScheduled,
     startAudioRecording,
     stopAudioRecording,
     getAudioContext,
+    createNativeRecordingCaptureClock,
     getCompensationDelay,
     audioEngine,
     scheduleAdjustmentLayers,
@@ -28,7 +30,7 @@ import { updateTransportState } from '../../repositories/transport/updateTranspo
 import { playheadClockRef, releasePlayheadClockHold } from '../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { playheadWrapCountRef } from '../../stores/playheadWrapCountRef';
-import { tempoMapStore } from '../../stores/tempoMapStore';
+import { tempoMapStore, type TempoChange } from '../../stores/tempoMapStore';
 import { transportStore } from '../../stores/transportStore';
 import { evaluateFollowActions } from '../evaluateFollowActions';
 import { appliedAutomationBases } from '../scheduling/applyAutomation/appliedAutomationBases';
@@ -41,13 +43,19 @@ import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 import { scheduleAudioClips } from '../scheduling/scheduleAudioClips';
 import { scheduleMetronome } from '../scheduling/scheduleMetronome';
 import { scheduleMidiNotes } from '../scheduling/scheduleMidiNotes';
+import { commitRecoveredAudioRecording } from '../transportControls/commitRecoveredAudioRecording';
+import { createRecordingCaptureClocks } from '../transportControls/createRecordingCaptureClocks';
 import { finalizeAutomaticRecording } from '../transportControls/finalizeAutomaticRecording';
 import { panicYeastRuntime } from '../transportControls/panicYeastRuntime';
 import { recordingLifecycle } from '../transportControls/recordingLifecycle';
 
 import { advanceSchedulerDiscontinuityEpoch } from './advanceSchedulerDiscontinuityEpoch';
 import { beatAtSecondsFromAnchor } from './beatAtSecondsFromAnchor';
+import { createNativeRecordingPassClock } from './createNativeRecordingPassClock';
 import { disposePlayheadScheduler } from './disposePlayheadScheduler';
+import { initialEmissionRetirements } from './initialEmissionRetirements';
+import { nativeRecordingEntry } from './nativeRecordingEntry';
+import { opensPunchIn } from './opensPunchIn';
 import { type PreparedInitialBrowserPlayback } from './prepareInitialBrowserPlayback';
 import {
     INITIAL_HIGH_WATER_OFFSET_BEATS,
@@ -68,6 +76,27 @@ function loopSignatureOf(state: { isLooping: boolean; loopStart: number; loopEnd
 
 function positiveModulo(value: number, divisor: number): number {
     return ((value % divisor) + divisor) % divisor;
+}
+
+function haveSameTempoChanges(left: readonly TempoChange[], right: readonly TempoChange[]): boolean {
+    if (left.length !== right.length) {
+        return false;
+    }
+    for (let index = 0; index < left.length; index++) {
+        const previous = left[index];
+        const current = right[index];
+        if (
+            !previous ||
+            !current ||
+            previous.id !== current.id ||
+            previous.beat !== current.beat ||
+            previous.tempo !== current.tempo ||
+            previous.curve !== current.curve
+        ) {
+            return false;
+        }
+    }
+    return true;
 }
 
 /**
@@ -150,19 +179,6 @@ function isSchedulerWorkerTick(value: unknown, receivedAtMs: number): value is S
 const REEMIT_EPSILON_BEATS = 0.0001;
 
 /**
- * Upper bound on a single tick's elapsed real time before we advance the
- * playhead. If the AudioContext is suspended and later resumed (tab
- * backgrounded, OS sleep, device unplugged) `ctx.currentTime` leaps forward by
- * the whole gap; an unclamped `deltaSec` would jump `accumulatedPosition` past
- * an entire span of beats the look-ahead never scheduled, dropping every
- * metronome click, MIDI note, and audio clip in between. Clamping to one grain
- * window keeps advancement bounded so the next ticks re-schedule normally
- * instead of skipping. The clock leap itself is absorbed (the playhead simply
- * does not race ahead), which is the correct behaviour for a paused context.
- */
-const MAX_DELTA_SECONDS = SCHEDULE_AHEAD_SECONDS;
-
-/**
  * Stage the wrap take for every armed track with a clip that is actively
  * recording. Both loop-wrap paths share it — the late wrap (playhead crossed
  * loopEnd this tick) and the scheduled seam (#4656, one look-ahead earlier) —
@@ -171,13 +187,30 @@ const MAX_DELTA_SECONDS = SCHEDULE_AHEAD_SECONDS;
  * horizon instead of the crossing changes when they appear, not what they
  * contain.
  */
-function stageLoopWrapTakes(current: TransportState): void {
-    if (!current.isRecording) {
-        return;
-    }
+function stageLoopWrapTakes(
+    current: TransportState,
+    passEndContextSeconds: number,
+    boundary: {
+        planned?: boolean;
+        endBeat?: number;
+        nextPassStartBeat?: number;
+        deferredClock?: boolean;
+        laterClosedPasses?: number;
+    } = {},
+    kinds: 'all' | 'audio' | 'midi' = 'all'
+): Array<NonNullable<ReturnType<typeof stageRecordingTake>>> {
+    const finalizeClocks: Array<NonNullable<ReturnType<typeof stageRecordingTake>>> = [];
+    // A punch can open or close inside this tick; its entry snapshot is stale.
+    // The owner ref records exactly which clips still cross this boundary.
     const recordingClipIds = new Set(activeRecordingRef.current);
+    if (recordingClipIds.size === 0) {
+        return finalizeClocks;
+    }
     const armedTracks = trackStore.value?.tracks.filter((time) => time.armed) ?? [];
     for (const track of armedTracks) {
+        if ((kinds === 'audio' && track.kind !== 'audio') || (kinds === 'midi' && track.kind === 'audio')) {
+            continue;
+        }
         // The take must reference the clip that is actually recording
         // this pass. A synthesized clipId matches no clip in the
         // store, and comp resolution silently skips a take whose
@@ -222,15 +255,50 @@ function stageLoopWrapTakes(current: TransportState): void {
         // Every wrap take is provisional: the whole recording — audio
         // or MIDI — commits as the one entry its terminal callback (or
         // `stopRecording`) opens rather than one entry per pass.
-        stageRecordingTake({
+        const stagedTake: Parameters<typeof stageRecordingTake>[0] = {
             trackId: track.id,
             clipId: recordingClip.id,
             name: `Take ${takeNum}`,
             startBeat: current.loopStart,
-            endBeat: current.loopEnd,
+            endBeat: boundary.endBeat ?? current.loopEnd,
             sourceOffsetBeats,
-        });
+            plannedPassEnd: boundary.planned,
+            nextPassStartBeat: boundary.nextPassStartBeat,
+            passEndContextSeconds: boundary.deferredClock ? undefined : passEndContextSeconds,
+        };
+        if (track.kind === 'midi') {
+            stagedTake.recordingPassIndex = passIndex;
+            // A MIDI pass has no capture clock to cancel a planned end, so the
+            // wrap count names the pass each boundary closes: the one still
+            // sounding for a planned seam, which counts its wrap when its
+            // instant arrives, else the one just counted. A seam replanned by
+            // an edit, a jump or a loop edit may close a pass whose take the
+            // look-ahead already staged; that take is retimed, never doubled.
+            const countedPasses = playheadWrapCountRef.current - activeRecordingRef.startWrapCount;
+            // A late wrap that crossed several seams counted them all before
+            // staging its passes in order, so the earlier ones close the
+            // passes before the last counted.
+            let closedPassIndex = countedPasses;
+            if (!boundary.planned) {
+                closedPassIndex = countedPasses - 1 - (boundary.laterClosedPasses ?? 0);
+            }
+            const stagedPassTake = lane?.takes.find(
+                (take) =>
+                    take.clipId === recordingClip.id &&
+                    take.sourceOffsetBeats !== undefined &&
+                    take.recordingPassIndex === closedPassIndex
+            );
+            if (stagedPassTake) {
+                stagedTake.replacedTakeId = stagedPassTake.id;
+                stagedTake.recordingPassIndex = closedPassIndex;
+            }
+        }
+        const finalizeClock = stageRecordingTake(stagedTake);
+        if (boundary.deferredClock && finalizeClock) {
+            finalizeClocks.push(finalizeClock);
+        }
     }
+    return finalizeClocks;
 }
 
 export function startPlayheadScheduler(): void;
@@ -281,6 +349,17 @@ export function startPlayheadScheduler(
     startAutomationRecording();
 
     const ctx = getAudioContext();
+    const captureClock = createNativeRecordingPassClock();
+    const rootIdentity = captureProjectRootIdentity();
+    const idleNativeClock = createNativeRecordingCaptureClock({
+        identity: rootIdentity,
+        isCurrent: () => captureProjectRootIdentity() === rootIdentity,
+    });
+    const readCapture = () => recordingLifecycle.readNativeCaptureClock() ?? idleNativeClock.read(ctx);
+    schedulerSession.observeNativeRecordingClock = () => {
+        const current = transportStore.value;
+        return current ? captureClock.observe(current, readCapture(), true) : false;
+    };
 
     // Drop any scheduler state inherited from a previous session before this
     // one starts ticking. A play pressed during pausePlayback's recording-flush
@@ -308,16 +387,25 @@ export function startPlayheadScheduler(
         playheadClockRef.audioTimeSeconds = ctx.currentTime;
     }
     playheadPositionRef.current = state.playheadPosition;
+    const initialCapture = readCapture();
+    captureClock.observe(state, initialCapture);
+    if (initialCapture.carrier === 'browser' && activeRecordingRef.current.length > 0) {
+        observeRecordingPassEntry(state.playheadPosition, ctx.currentTime, true);
+    }
     // A new roll begins at this store position, so its wrap history starts
     // here too: the count must describe the same epoch the store position
     // does, or a backwards capture bounds at the wrong traversal.
+    playheadClockRef.generation = schedulerGeneration;
     playheadWrapCountRef.current = 0;
+    playheadClockRef.pendingLoopSeam = null;
     schedulerSession.lastScheduledBeat = state.playheadPosition - INITIAL_HIGH_WATER_OFFSET_BEATS;
     schedulerSession.lastTempoMapChanges = tempoMapStore.value?.changes ?? null;
     schedulerSession.lastLoopSignature = loopSignatureOf(state);
     schedulerSession.pendingSeam = null;
+    playheadClockRef.pendingLoopSeam = null;
     resetMetronomeBeat(state.playheadPosition);
 
+    let previousTempo = state.tempo;
     const grainMs = state.scheduleGrainMs;
     schedulerTimingDiagnostics.reset(grainMs);
 
@@ -370,6 +458,22 @@ export function startPlayheadScheduler(
         if (!initial && initialSchedulingAnchor !== undefined && now < initialSchedulingAnchor) {
             return;
         }
+        const nativeCaptureBeat = readNativeEngineCursorBeats();
+        const captureRead = readCapture();
+        const browserCapture = captureRead.carrier === 'browser';
+        const soundedSeam = schedulerSession.pendingSeam;
+        if (browserCapture && soundedSeam && now >= soundedSeam.seamAudioTime) {
+            recordingLifecycle.observeCaptureClock(
+                soundedSeam.destinationBeat,
+                soundedSeam.seamAudioTime,
+                true,
+                undefined,
+                soundedSeam.destinationSongSeconds
+            );
+        }
+        const priorTempo = previousTempo;
+        previousTempo = current.tempo;
+        const priorChanges = schedulerSession.lastTempoMapChanges ?? [];
         // The previous tick's clock instant, before the overwrite below. A
         // pending seam re-anchors on it (below): the main integration then
         // carries the re-anchored position across this tick's own `deltaSec`,
@@ -378,10 +482,15 @@ export function startPlayheadScheduler(
         // after the edit fired one grain early and the loop wrapped one grain
         // early.
         const previousTickTime = schedulerSession.lastTickTime;
-        // Clamp the per-tick advance: a suspended/resumed context leaps `now`
-        // forward by the whole gap, which would skip every event in between.
-        const rawDeltaSec = initial ? 0 : now - schedulerSession.lastTickTime;
-        const deltaSec = Math.max(0, Math.min(rawDeltaSec, MAX_DELTA_SECONDS));
+        // The song position is a function of the audio clock, so the tick
+        // advances by all of the audio time since the last one. A suspended
+        // context does not leap: `suspend()` stops `currentTime`, which only
+        // ever reads the frame after the last rendered block. A gap wider than
+        // the look-ahead is a running context whose main thread was late (GC,
+        // a long task, throttled worker messages) while the audio already
+        // scheduled kept playing, and every emission after it must stay on the
+        // clock those sources follow.
+        const deltaSec = initial ? 0 : Math.max(0, now - schedulerSession.lastTickTime);
         schedulerSession.lastTickTime = now;
 
         // Read the live tempo-map reference (stable across ticks unless the store
@@ -398,7 +507,9 @@ export function startPlayheadScheduler(
         // the wrap path does. A pending seam is re-anchored on the dying pass
         // (below); otherwise the playhead and the metronome stay where they are.
         const loopSignature = loopSignatureOf(current);
-        const tempoMapChanged = schedulerSession.lastTempoMapChanges !== liveChanges;
+        const tempoMapChanged =
+            schedulerSession.lastTempoMapChanges !== liveChanges && !haveSameTempoChanges(priorChanges, changes);
+        schedulerSession.lastTempoMapChanges = liveChanges;
         const loopChanged = schedulerSession.lastLoopSignature !== loopSignature;
         let rackDiscontinuity = false;
         // #4905 — set when a wrap arm runs this tick (the seam-edit re-anchor
@@ -406,12 +517,57 @@ export function startPlayheadScheduler(
         // and the wrap replaced the scanned position before the punch checks
         // below.
         let lateWrap = false;
+        let lateWrapSeamAudioTime: number | null = null;
+        // The seams the late wrap crossed, one pass apart from the first: more
+        // than one after a stall longer than a pass, or a region shorter than
+        // a tick. Each is a wrap the audio played and a pass the recorder took.
+        let lateWrapSeams = 1;
+        let lateWrapPassSeconds = 0;
+        // A scheduled seam whose instant passed before this tick's late wrap or
+        // newly scheduled seam replaced it: the audio wrapped there, and its pass
+        // take was staged at detection, so the replacement only counts it. The
+        // follow-action jump counts the seam it supersedes itself.
+        let supersededSoundedSeams = 0;
+        function supersedePendingSeam(): void {
+            const pending = schedulerSession.pendingSeam;
+            if (pending !== null && now >= pending.seamAudioTime) {
+                supersededSoundedSeams = 1;
+            }
+        }
+        let editPassEndBeat: number | undefined;
+        let capturedEditBoundary: { endBeat: number; nextPassStartBeat: number } | null = null;
         // Set when an edit's teardown cuts the look-ahead: the window that
         // re-emits it opens where playback stands (or at the loop start), and
         // like a jump's it must restore the stored controllers in force there.
         let reemitAfterEdit = false;
-        if (tempoMapChanged || loopChanged) {
-            schedulerSession.lastTempoMapChanges = liveChanges;
+        const baseTempoChanged = current.tempo !== priorTempo && changes.length === 0;
+        let soundedTempoAdoptionBeat: number | null = null;
+        if (tempoMapChanged || baseTempoChanged || loopChanged) {
+            if (tempoMapChanged || baseTempoChanged) {
+                // Pending input follows the effective beat/time epoch. Owners
+                // whose first frame already sounded keep their frozen epoch.
+                // After a sounded seam, the old map carries its incoming pass
+                // up to this tick's teardown. The new browser tempo is adopted
+                // here, not when its optimistic store publication first appears.
+                if (soundedSeam && now >= soundedSeam.seamAudioTime) {
+                    soundedTempoAdoptionBeat = beatAtSecondsFromAnchor(
+                        priorChanges,
+                        soundedSeam.destinationBeat,
+                        now - soundedSeam.seamAudioTime,
+                        priorTempo
+                    );
+                }
+                const epochBeat = soundedTempoAdoptionBeat ?? playheadClockRef.beat;
+                if (browserCapture) {
+                    recordingLifecycle.observeCaptureClock(
+                        epochBeat,
+                        soundedTempoAdoptionBeat === null ? playheadClockRef.audioTimeSeconds : now,
+                        true,
+                        now,
+                        secondsBetweenBeats(changes, 0, epochBeat, current.tempo)
+                    );
+                }
+            }
             schedulerSession.lastLoopSignature = loopSignature;
             // A wrap tail the fence was sparing is gone with the teardown, and
             // the region the seam pivoted on may be the one this edit replaced:
@@ -463,9 +619,39 @@ export function startPlayheadScheduler(
             // [loopStart, loopEnd]. An edit that lands after the stale seam
             // instant has already carried the pass boundary — fall through to
             // an ordinary wrap.
-            if (schedulerSession.pendingSeam !== null) {
-                const { anchorAudioTime, anchorPosition } = schedulerSession.pendingSeam;
+            if (schedulerSession.pendingSeam !== null && soundedTempoAdoptionBeat !== null) {
+                // A completed seam cannot be cancelled into the dying pass.
+                // Re-anchor backwards by the span the main integration below
+                // will advance, so the adopted epoch lands exactly on `now`.
                 schedulerSession.pendingSeam = null;
+                playheadClockRef.pendingLoopSeam = null;
+                playheadWrapCountRef.current += 1;
+                schedulerSession.accumulatedPosition = beatAtSecondsFromAnchor(
+                    changes,
+                    soundedTempoAdoptionBeat,
+                    -deltaSec,
+                    current.tempo
+                );
+                schedulerSession.lastScheduledBeat = soundedTempoAdoptionBeat - REEMIT_EPSILON_BEATS;
+            } else if (schedulerSession.pendingSeam !== null) {
+                const { anchorAudioTime, anchorPosition } = schedulerSession.pendingSeam;
+                const audiblePositionAtEdit = beatAtSecondsFromAnchor(
+                    priorChanges,
+                    playheadClockRef.beat,
+                    now - playheadClockRef.audioTimeSeconds,
+                    priorTempo
+                );
+                if (browserCapture && activeRecordingRef.current.length > 0) {
+                    observeRecordingPassEntry(audiblePositionAtEdit, now, false, true);
+                    if (loopChanged && current.isLooping && current.loopEnd > current.loopStart) {
+                        capturedEditBoundary = {
+                            endBeat: audiblePositionAtEdit,
+                            nextPassStartBeat: current.loopStart,
+                        };
+                    }
+                }
+                schedulerSession.pendingSeam = null;
+                playheadClockRef.pendingLoopSeam = null;
                 const dyingPositionAtPreviousTick = beatAtSecondsFromAnchor(
                     changes,
                     anchorPosition,
@@ -486,6 +672,8 @@ export function startPlayheadScheduler(
                     // Its pass-span takes stage with the late wrap's, after the
                     // punch checks below, not here.
                     lateWrap = true;
+                    lateWrapSeamAudioTime = now;
+                    editPassEndBeat = audiblePositionAtEdit;
                     const loopLength = current.loopEnd - current.loopStart;
                     schedulerSession.accumulatedPosition =
                         current.loopStart + positiveModulo(dyingPositionAtPreviousTick - current.loopStart, loopLength);
@@ -504,6 +692,9 @@ export function startPlayheadScheduler(
             }
         }
 
+        if (browserCapture && loopChanged && activeRecordingRef.current.length > 0) {
+            observeRecordingPassEntry(schedulerSession.accumulatedPosition, now, true);
+        }
         const currentTempo = getTempoAtBeat(changes, schedulerSession.accumulatedPosition, current.tempo);
         // Advance through the tempo map, not at the tick-start tempo (#4658).
         // `beatAtSecondsFromAnchor` inverts `secondsBetweenBeats` over this
@@ -519,6 +710,9 @@ export function startPlayheadScheduler(
             deltaSec,
             current.tempo
         );
+        if (browserCapture && activeRecordingRef.current.length > 0) {
+            observeRecordingPassEntry(newPosition, now);
+        }
         // Where this tick's window opens, before the advance below commits
         // `newPosition`. Punch-in needs it to tell "rolled across the punch
         // point during this tick" from "was already inside the region when the
@@ -568,27 +762,41 @@ export function startPlayheadScheduler(
 
         if (insideLoopRegion && newPosition >= current.loopEnd) {
             // Late wrap: the playhead itself crossed loopEnd this tick. Only
-            // reachable when a clock leap or stall outran the look-ahead (or
-            // an edit moved the region onto the playhead) — the scheduled
-            // seam below otherwise wraps one look-ahead before this can
-            // happen. Behaviour is the old post-crossing wrap: stop the stale
-            // look-ahead, wrap, re-emit from the seam. The overshoot is
-            // measured through the map — the beats travelled past the seam,
-            // re-entered at loopStart — which with a flat map is the same
-            // modulo as before, and with a tempo change at the seam no longer
-            // carries the overshoot at the loop-end tempo.
+            // reachable when a main-thread stall outran the look-ahead, a
+            // region is no longer than the look-ahead (or an edit moved the
+            // region onto the playhead) — the scheduled seam below otherwise
+            // wraps one look-ahead before this can happen. Behaviour is the
+            // old post-crossing wrap: stop the stale look-ahead, wrap, re-emit
+            // from the seam. The overshoot is measured in audio time from the
+            // seam, folded into one pass and re-entered at loopStart through
+            // the map, so a tempo change past the seam is never charged to it.
             lateWrap = true;
 
             const loopLength = current.loopEnd - current.loopStart;
-            const seamAudioTime = now + secondsBetweenBeats(changes, newPosition, current.loopEnd, current.tempo);
+            // A loop edit that retired an unsounded seam starts its new region
+            // at the edit instant. Its reprojected position cannot make a
+            // boundary sound before the edit that created that region.
+            let seamAudioTime = now;
+            if (capturedEditBoundary === null) {
+                seamAudioTime += secondsBetweenBeats(changes, newPosition, current.loopEnd, current.tempo);
+            }
+            lateWrapSeamAudioTime = seamAudioTime;
+            // Every pass after the first seam costs the loop's own integrated
+            // span, never the map past loopEnd, so the playhead lands where the
+            // audio clock is in the current pass and each seam on the way
+            // counts.
+            lateWrapPassSeconds = secondsBetweenBeats(changes, current.loopStart, current.loopEnd, current.tempo);
+            const secondsPastFirstSeam = now - seamAudioTime;
+            lateWrapSeams = 1 + Math.max(0, Math.floor(secondsPastFirstSeam / lateWrapPassSeconds));
+            const lastSeamAudioTime = seamAudioTime + (lateWrapSeams - 1) * lateWrapPassSeconds;
             // #4784 — the wrap the device read maps back across for one
             // compensation window: for that long the audio a compensated track
-            // is fed is still this dying pass's tail.
-            schedulerSession.lastLoopSeamAudioTime = seamAudioTime;
+            // is fed is still the dying pass's tail.
+            schedulerSession.lastLoopSeamAudioTime = lastSeamAudioTime;
             const wrappedPastSeam = beatAtSecondsFromAnchor(
                 changes,
                 current.loopStart,
-                now - seamAudioTime,
+                Math.max(0, now - lastSeamAudioTime),
                 current.tempo
             );
             newPosition = current.loopStart + positiveModulo(wrappedPastSeam - current.loopStart, loopLength);
@@ -615,7 +823,9 @@ export function startPlayheadScheduler(
             stopActiveSources(schedulerSession.activeAudioSources, ctx, seamAudioTime);
             schedulerSession.scheduledAudioClips.clear();
             schedulerSession.scheduledFrozenTracks.clear();
+            supersedePendingSeam();
             schedulerSession.pendingSeam = null;
+            playheadClockRef.pendingLoopSeam = null;
         } else if (projectedSeam) {
             // #4656 — scheduled seam: the look-ahead horizon reaches the seam
             // while the playhead is still short of it. Wrap the scheduling
@@ -652,8 +862,11 @@ export function startPlayheadScheduler(
             // its own dedup keys first. Only then are the sources fenced at
             // the seam instant, the dedup keys cleared for the incoming pass,
             // and the metronome re-anchored at loopStart.
+            supersedePendingSeam();
             schedulerSession.pendingSeam = {
                 seamAudioTime,
+                destinationBeat: current.loopStart,
+                destinationSongSeconds: secondsBetweenBeats(changes, 0, current.loopStart, current.tempo),
                 anchorAudioTime: now,
                 anchorPosition: newPosition,
             };
@@ -689,15 +902,43 @@ export function startPlayheadScheduler(
             return;
         }
 
+        let capturedJumpBoundary: { endBeat: number; nextPassStartBeat: number } | null = null;
+        let jumpClosedRecordingPasses = 0;
         if (jumpToPosition !== null) {
+            const pending = schedulerSession.pendingSeam;
+            if (pending !== null && activeRecordingRef.current.length > 0) {
+                let endingBeat = newPosition;
+                if (seam) {
+                    endingBeat = seam.passPosition;
+                } else if (now < pending.seamAudioTime) {
+                    endingBeat = beatAtSecondsFromAnchor(
+                        changes,
+                        pending.anchorPosition,
+                        now - pending.anchorAudioTime,
+                        current.tempo
+                    );
+                }
+                if (browserCapture) {
+                    observeRecordingPassEntry(endingBeat, now, false, true);
+                }
+                capturedJumpBoundary = { endBeat: endingBeat, nextPassStartBeat: jumpToPosition };
+                // The relocation ends the pass it interrupts, after the pass the
+                // superseded seam already closed when its instant has passed
+                // uncounted.
+                jumpClosedRecordingPasses = now >= pending.seamAudioTime ? 2 : 1;
+            }
             // The relocation supersedes the seam this tick may have scheduled.
             seam = null;
             schedulerSession.pendingSeam = null;
+            playheadClockRef.pendingLoopSeam = null;
             // And the wrap it was to pivot on never happened — the fence below
             // is the teardown semantic, so the device read must not map back
             // across a region on the strength of this record (#4784).
             schedulerSession.lastLoopSeamAudioTime = null;
             newPosition = jumpToPosition;
+            if (browserCapture && activeRecordingRef.current.length > 0) {
+                observeRecordingPassEntry(newPosition, now, true);
+            }
             advanceSchedulerDiscontinuityEpoch();
             rackDiscontinuity = true;
             schedulerSession.lastScheduledBeat = newPosition;
@@ -714,6 +955,43 @@ export function startPlayheadScheduler(
             stopActiveSources(schedulerSession.activeAudioSources, ctx);
             schedulerSession.scheduledAudioClips.clear();
             schedulerSession.scheduledFrozenTracks.clear();
+        }
+
+        // Late policy. After a main-thread stall the window's start can be
+        // behind the clock: the events between it and the playhead fell due
+        // while no tick ran. How far behind is measured in the audio time from
+        // the window start to the playhead, in the pass the playhead is in.
+        // Up to one look-ahead overdue, the window keeps its start and those
+        // events are emitted at once, at most a look-ahead late, which is the
+        // lateness any tick already tolerates. Further behind, a burst of stale
+        // events is not replayed and the grid stays on the audio clock, so the
+        // window opens at the playhead: a click, a note-on or a stored
+        // controller move whose time passed is dropped, while an audio clip or
+        // frozen track sounding there joins mid-buffer at its due content. That
+        // skipping window is a relocation of the scheduling window: the stored
+        // controllers, and the channel bend the sounding notes follow, are
+        // chased to their value at the playhead, and the Yeast runtime, whose
+        // input lost the skipped span's releases, is panicked.
+        // A tick no longer than the look-ahead never skips: its window starts no
+        // earlier than the last tick's position (less a re-emit epsilon), so
+        // it is at most that tick's span overdue. A window still ahead of the
+        // playhead is not overdue at all; only one behind it pays for the
+        // integration.
+        const windowPosition = seam ? seam.passPosition : newPosition;
+        const skipsStalledSpan =
+            deltaSec > SCHEDULE_AHEAD_SECONDS &&
+            schedulerSession.lastScheduledBeat < windowPosition &&
+            secondsBetweenBeats(changes, schedulerSession.lastScheduledBeat, windowPosition, current.tempo) >
+                SCHEDULE_AHEAD_SECONDS;
+        if (skipsStalledSpan) {
+            schedulerSession.lastScheduledBeat = windowPosition;
+            if (seam) {
+                seam.passHighWater = windowPosition;
+            }
+            if (!rackDiscontinuity) {
+                advanceSchedulerDiscontinuityEpoch();
+                rackDiscontinuity = true;
+            }
         }
 
         if (rackDiscontinuity) {
@@ -741,8 +1019,17 @@ export function startPlayheadScheduler(
         // position at the seam. Scheduling decisions — punch, follow actions,
         // the windows themselves — stay on `newPosition` above: they are about
         // material *this* scheduler emitted, against its own clock (ADR 0039).
+        // Counted beside the seam's own wrap, for the same reason: the
+        // destination is the first position of the pass the count now names.
+        // A loop edit that cancelled the seam ends one pass too, which a late
+        // wrap at the edit has already counted.
+        playheadWrapCountRef.current += supersededSoundedSeams + jumpClosedRecordingPasses;
+        if (capturedEditBoundary !== null && !lateWrap) {
+            playheadWrapCountRef.current += 1;
+        }
         if (schedulerSession.pendingSeam !== null && now >= schedulerSession.pendingSeam.seamAudioTime) {
             schedulerSession.pendingSeam = null;
+            playheadClockRef.pendingLoopSeam = null;
             // The seam instant has passed: the pass the published clock has
             // shown until now ended, and `publishedBeat` below is the first
             // wrapped one. Counting here — not at the look-ahead seam
@@ -773,19 +1060,60 @@ export function startPlayheadScheduler(
             }
             playheadClockRef.beat = publishedBeat;
             playheadClockRef.audioTimeSeconds = now;
+            const pending = schedulerSession.pendingSeam;
+            playheadClockRef.pendingLoopSeam = null;
+            if (pending) {
+                playheadClockRef.pendingLoopSeam = {
+                    generation: schedulerGeneration,
+                    anchorBeat: publishedBeat,
+                    anchorAudioTimeSeconds: now,
+                    tempo: current.tempo,
+                    tempoMapChanges: changes,
+                    audioTimeSeconds: pending.seamAudioTime,
+                    loopStart: current.loopStart,
+                    loopEnd: current.loopEnd,
+                    passIndex: playheadWrapCountRef.current + 1,
+                };
+            }
             releasePlayheadClockHold(schedulerGeneration);
+            if (browserCapture && jumpToPosition !== null) {
+                recordingLifecycle.observeCaptureClock(
+                    publishedBeat,
+                    now,
+                    true,
+                    undefined,
+                    secondsBetweenBeats(changes, 0, publishedBeat, current.tempo)
+                );
+            } else if (browserCapture && lateWrap && lateWrapSeamAudioTime !== null) {
+                recordingLifecycle.observeCaptureClock(
+                    editPassEndBeat === undefined ? current.loopStart : publishedBeat,
+                    lateWrapSeamAudioTime,
+                    true,
+                    undefined,
+                    secondsBetweenBeats(
+                        changes,
+                        0,
+                        editPassEndBeat === undefined ? current.loopStart : publishedBeat,
+                        current.tempo
+                    )
+                );
+            }
+            if (browserCapture) {
+                recordingLifecycle.observeCaptureClock(publishedBeat, now, false);
+            }
             // The cursor follows the transport that is producing the sound. While
             // the native engine is that transport it reports where it actually
             // rendered to — loop wraps included — and this integration is only the
             // scheduling clock; the rest of the time there is no engine reading and
             // the two are the same number.
-            playheadPositionRef.current = readNativeEngineCursorBeats() ?? publishedBeat;
+            playheadPositionRef.current = nativeCaptureBeat ?? publishedBeat;
             // A late wrap (or the seam-edit re-anchor) commits its wrapped position
             // this tick, so the published beat above is the first wrapped one and
-            // the wrap count moves with it. The scheduled seam counts where its
-            // instant arrives instead — see the pendingSeam clear above.
+            // the wrap count moves with it. A scheduled seam counts where its
+            // instant arrives, or where a later branch supersedes it — see the
+            // pendingSeam clear above.
             if (lateWrap) {
-                playheadWrapCountRef.current += 1;
+                playheadWrapCountRef.current += lateWrapSeams;
             }
 
             // Sync to AudioEngine for real-time DSP (SAB-backed).
@@ -811,8 +1139,8 @@ export function startPlayheadScheduler(
         }
 
         const recordingAdmissions: Promise<unknown>[] = [];
+        const initialRecordingAnchors: Array<{ contextSeconds: number; songSeconds: number }> = [];
         let openedRecording = false;
-        const hasArmedTracks = trackStore.value?.tracks.some((time) => time.armed) ?? false;
         // On a scheduled-seam tick the audible transport is still finishing the
         // dying pass, so the punch checks scan its position — the same window a
         // non-seam tick would scan — rather than the incoming pass's
@@ -839,20 +1167,7 @@ export function startPlayheadScheduler(
         // when the tick began, so a punch-in opened this tick is never
         // finalized empty.
         const punchOutDueAtWrap = lateWrap && recordingOpenAtTickStart && current.punchOutBeat <= current.loopEnd;
-        if (
-            current.punchInEnabled &&
-            !current.isRecording &&
-            !schedulerSession.punchRecordingActive &&
-            hasArmedTracks &&
-            current.punchInBeat < current.punchOutBeat &&
-            punchScanBeat >= current.punchInBeat &&
-            // Upper bound. Without it, starting playback past the region fires
-            // punch-in and punch-out on the same tick: a full-width clip and
-            // take are stamped across [punchInBeat, punchOutBeat) and captured
-            // nothing. Punching in only makes sense while the region is still
-            // ahead of the tick's end.
-            punchScanBeat < current.punchOutBeat
-        ) {
+        if (opensPunchIn(current, punchScanBeat)) {
             openedRecording = true;
             schedulerSession.punchRecordingActive = true;
             // Anchor the punched clip where capture actually begins. The tick is
@@ -868,13 +1183,35 @@ export function startPlayheadScheduler(
             // playhead) is wrong on both paths — nothing writes it during
             // playback.
             const punchAnchorBeat = Math.max(current.punchInBeat, punchScanWindowStart);
-            // Each opening owns its own root, including later loop/punch passes.
-            // A terminal may outlive both its scheduler and the installed root.
-            const captureRootIdentity = captureProjectRootIdentity();
-            const stillOwnsCaptureRoot = (): boolean => captureProjectRootIdentity() === captureRootIdentity;
-            const clips = startRecording(punchAnchorBeat);
+            let clips: ReturnType<typeof startRecording>;
+            let nativeEntry: ReturnType<typeof nativeRecordingEntry> | null = null;
+            if (
+                captureRead.carrier === 'native' &&
+                captureRead.status === 'available' &&
+                captureRead.snapshot.forwardAuthorized !== false
+            ) {
+                nativeEntry = nativeRecordingEntry(captureRead.snapshot);
+            }
+            if (browserCapture) {
+                if (initial) {
+                    clips = startRecording(punchAnchorBeat, () => initialSchedulingAnchor ?? null);
+                } else {
+                    clips = startRecording(punchAnchorBeat);
+                }
+            } else {
+                clips = startRecording(punchAnchorBeat, undefined, nativeEntry);
+            }
             updateTransportState({ isRecording: true });
 
+            const captureClocks = createRecordingCaptureClocks(ctx, (beat) =>
+                secondsBetweenBeats(
+                    tempoMapStore.value?.changes ?? [],
+                    0,
+                    beat,
+                    transportStore.value?.tempo ?? current.tempo
+                )
+            );
+            captureClocks.register();
             const armedTracks = trackStore.value?.tracks.filter((time) => time.armed) ?? [];
             for (const track of armedTracks) {
                 if (track.kind === 'midi') {
@@ -902,13 +1239,58 @@ export function startPlayheadScheduler(
                 }
                 if (track.kind === 'audio') {
                     const recClip = clips.find((context) => context.trackId === track.id);
+                    const latencySeconds =
+                        (ctx.baseLatency || 0) + (ctx.outputLatency || 0) + getCompensationDelay(track.id);
+                    const captureClock = captureClocks.create(track.id, latencySeconds);
+                    if (recClip) {
+                        captureClock.bind(recClip.id);
+                    }
+                    const ownsCapture = (): boolean =>
+                        captureClocks.isOwnerCurrent() && captureClock.nativeHistory.isOwnerCurrent();
+                    const captureAnchor = recClip &&
+                        (browserCapture || nativeEntry) && {
+                            provisionalStartBeat: recClip.startBeat,
+                            songSeconds: secondsBetweenBeats(
+                                changes,
+                                0,
+                                nativeEntry?.beat ?? playheadClockRef.beat,
+                                current.tempo
+                            ),
+                            contextSeconds: nativeEntry?.contextSeconds ?? playheadClockRef.audioTimeSeconds,
+                            latencySeconds:
+                                (ctx.baseLatency || 0) + (ctx.outputLatency || 0) + getCompensationDelay(track.id),
+                        };
+                    if (initial && browserCapture && captureAnchor) {
+                        initialRecordingAnchors.push(captureAnchor);
+                    }
+                    // A start that never opened retires its provisional clip.
+                    // When that leaves this punch pass with no live capture,
+                    // REC goes dark so Record arms again instead of stopping.
+                    // `punchRecordingActive` stays set, so later ticks inside
+                    // the region do not reopen the punch (and ask for the
+                    // input again); the punch-out retires it as before. A
+                    // pass a stop, seek or punch-out already closed has no
+                    // active clips left, and its REC is not this start's to
+                    // touch.
+                    const retireUnstartedCapture = (): void => {
+                        if (!recClip) {
+                            return;
+                        }
+                        const passStillOpen = activeRecordingRef.current.includes(recClip.id);
+                        discardRecording(recClip.id);
+                        if (passStillOpen && activeRecordingRef.current.length === 0) {
+                            updateTransportState({ isRecording: false });
+                        }
+                    };
+                    const recordingStopsAtAdmission = recordingLifecycle.recordingStopCount;
                     const admission = Promise.resolve(
                         startAudioRecording(
                             track.id,
                             (result) => {
-                                if (!stillOwnsCaptureRoot()) {
+                                captureClocks.remove(track.id);
+                                if (!ownsCapture()) {
                                     notifyUser(
-                                        'Punch-in recording stopped — the project switched branches while the take was finishing, so it was not kept.',
+                                        'Punch-in recording stopped — the take was not kept on this branch.',
                                         'warning'
                                     );
                                     return;
@@ -927,6 +1309,22 @@ export function startPlayheadScheduler(
                                 const { buffer } = result;
                                 const bufferId = `rec-${crypto.randomUUID()}`;
                                 cacheAudioBuffer({ buffer, bufferId });
+                                const sampleZeroContextSeconds = result.sampleZeroContextFrame / result.sampleRate;
+                                if (captureClock.nativeOwned || !captureClock.frozen) {
+                                    captureClock.freeze(sampleZeroContextSeconds, buffer.duration);
+                                }
+                                if (
+                                    recClip &&
+                                    captureClock.nativeOwned &&
+                                    (!captureClock.nativeHistory.isProjectionKnown() || !captureClock.relocation)
+                                ) {
+                                    void commitRecoveredAudioRecording(
+                                        { ...recClip, audioBufferId: bufferId },
+                                        beatAtSecondsFromAnchor(changes, 0, buffer.duration, current.tempo),
+                                        ownsCapture
+                                    );
+                                    return;
+                                }
                                 if (recClip) {
                                     // The punched clip is finalized by the punch-out
                                     // `stopRecording`, so the commit carries the live
@@ -937,6 +1335,25 @@ export function startPlayheadScheduler(
                                         .find((clip) => clip.id === recClip.id);
                                     const finalizedClip = liveClip ?? recClip;
                                     const recordedClip = { ...finalizedClip, audioBufferId: bufferId };
+                                    // Sample zero belongs to the producer's clock.
+                                    // The callback can arrive after a wrap, tempo
+                                    // edit, or stop has replaced the published pair.
+                                    const occurrence = captureClock.relocation ?? captureAnchor;
+                                    if (!occurrence) {
+                                        return;
+                                    }
+                                    const capture = {
+                                        provisionalStartBeat: captureAnchor
+                                            ? captureAnchor.provisionalStartBeat
+                                            : finalizedClip.startBeat,
+                                        sourceContextOriginSeconds:
+                                            result.sampleZeroContextFrame / result.sampleRate - latencySeconds,
+                                        mediaOriginSeconds:
+                                            occurrence.songSeconds +
+                                            sampleZeroContextSeconds -
+                                            occurrence.contextSeconds -
+                                            latencySeconds,
+                                    };
                                     // The user-facing stop awaits this through the
                                     // lifecycle; the scheduler itself never blocks on
                                     // it. A failed commit retires the provisional
@@ -944,12 +1361,14 @@ export function startPlayheadScheduler(
                                     // and says so the way the punch capture-failure
                                     // sibling does.
                                     recordingLifecycle.trackCommit(
-                                        commitRecording(recordedClip, undefined, {
-                                            shouldExecute: stillOwnsCaptureRoot,
-                                        }).catch((error: unknown) => {
-                                            if (!stillOwnsCaptureRoot()) {
+                                        commitRecording(
+                                            recordedClip,
+                                            { ...capture, sourceDurationSeconds: buffer.duration },
+                                            { shouldExecute: ownsCapture }
+                                        ).catch((error: unknown) => {
+                                            if (error instanceof Error && error.name === 'RecordingRootMovedRefusal') {
                                                 notifyUser(
-                                                    'Punch-in recording stopped — the project switched branches while the take was finishing, so it was not kept.',
+                                                    'Punch-in recording stopped — the take was not kept on this branch.',
                                                     'warning'
                                                 );
                                                 return;
@@ -957,20 +1376,68 @@ export function startPlayheadScheduler(
                                             logger.error(
                                                 new Error('Punch-in recording commit failed', { cause: error })
                                             );
-                                            notifyUser(
-                                                'Punch-in recording failed — the take was discarded. Try recording again.',
-                                                'error'
-                                            );
-                                            discardRecording(recordedClip.id);
+                                            if (ownsCapture()) {
+                                                notifyUser(
+                                                    'Punch-in recording failed — the take was discarded. Try recording again.',
+                                                    'error'
+                                                );
+                                                discardRecording(recordedClip.id);
+                                            } else {
+                                                notifyUser(
+                                                    'Punch-in recording failed — the take was not kept on this branch.',
+                                                    'error'
+                                                );
+                                            }
                                         })
                                     );
                                 }
                             },
-                            track.inputId
+                            track.inputId,
+                            captureClock.setReader
                         )
-                    ).catch((error: unknown) => {
-                        logger.error(new Error('Punch-in audio recording failed to start', { cause: error }));
-                    });
+                    )
+                        .then((started) => {
+                            if (started) {
+                                return;
+                            }
+                            // A refused start never runs the terminal, so its
+                            // provisional clip and take would be left with no
+                            // buffer and no history entry (#4265). The recorder
+                            // resolves `false` only when a stop moved its start
+                            // generation or the track is already recording; an
+                            // input that failed to open rejects into the `.catch`
+                            // below (#6009).
+                            captureClocks.remove(track.id);
+                            initialEmissionRetirements.defer(() => {
+                                if (ownsCapture()) {
+                                    retireUnstartedCapture();
+                                }
+                            });
+                        })
+                        .catch((error: unknown) => {
+                            captureClocks.remove(track.id);
+                            logger.error(new Error('Punch-in audio recording failed to start', { cause: error }));
+                            // Decided when the failure arrives: a start whose
+                            // recording a stop gesture closed after it was
+                            // admitted (Pause, Stop, Record off, or a seek while
+                            // recording) stays quiet, even once the musician is
+                            // rolling again. A punch-out, a loop wrap or a
+                            // runtime repair closes nothing through that route,
+                            // so the musician is told. After a seek, only a
+                            // pass the seek lands inside opens a start that can
+                            // report.
+                            const stoppedByMusician =
+                                recordingLifecycle.recordingStopCount !== recordingStopsAtAdmission;
+                            initialEmissionRetirements.defer(() => {
+                                if (!ownsCapture()) {
+                                    return;
+                                }
+                                if (!stoppedByMusician) {
+                                    notifyUser('Punch-in recording failed to start — the take was discarded.', 'error');
+                                }
+                                retireUnstartedCapture();
+                            });
+                        });
                     if (initial) {
                         recordingAdmissions.push(admission);
                     }
@@ -1007,6 +1474,7 @@ export function startPlayheadScheduler(
             updateTransportState({ isRecording: false });
         }
 
+        const browserCaptureKinds = browserCapture ? 'all' : 'midi';
         if (initial && preparedInitial) {
             // Recording creates provisional clips and takes synchronously. Take
             // the emission witness immediately after those owned writes, before
@@ -1014,8 +1482,14 @@ export function startPlayheadScheduler(
             if (!openedRecording && !cancellation.isCurrent()) {
                 return;
             }
+            let finalizePassClocks: Array<NonNullable<ReturnType<typeof stageRecordingTake>>> = [];
             if (seam) {
-                stageLoopWrapTakes(current);
+                finalizePassClocks = stageLoopWrapTakes(
+                    current,
+                    seam.seamAudioTime,
+                    { planned: true, deferredClock: true },
+                    browserCaptureKinds
+                );
             }
             const midiPreparation = preparedInitial.prepareMidiWindows();
             const [midi] = await Promise.all([midiPreparation, ...recordingAdmissions]);
@@ -1026,12 +1500,18 @@ export function startPlayheadScheduler(
             now = ctx.currentTime + SCHEDULE_AHEAD_SECONDS;
             initialSchedulingAnchor = now;
             schedulerSession.lastTickTime = now;
+            for (const anchor of initialRecordingAnchors) {
+                anchor.contextSeconds = now;
+                anchor.songSeconds = secondsBetweenBeats(changes, 0, publishedBeat, current.tempo);
+            }
             if (seam && preparedInitial.seam) {
                 seam.seamAudioTime = now + preparedInitial.seam.secondsToSeam;
                 schedulerSession.pendingSeam = {
                     seamAudioTime: seam.seamAudioTime,
                     anchorAudioTime: now,
                     anchorPosition: seam.passPosition,
+                    destinationBeat: current.loopStart,
+                    destinationSongSeconds: secondsBetweenBeats(changes, 0, current.loopStart, current.tempo),
                 };
                 schedulerSession.lastLoopSeamAudioTime = seam.seamAudioTime;
             }
@@ -1041,6 +1521,9 @@ export function startPlayheadScheduler(
             onRoll?.(now, publishedBeat);
             if (!cancellation.isCurrent()) {
                 return;
+            }
+            if (seam && finalizePassClocks.some((finalize) => !finalize(seam.seamAudioTime))) {
+                throw new Error('Initial recording pass no longer owns its capture clock');
             }
         }
 
@@ -1053,6 +1536,19 @@ export function startPlayheadScheduler(
                 })
             );
         }
+        const previouslyNative = captureClock.isNative;
+        captureClock.observe(current, readCapture());
+        // A cutover can leave an already scheduled browser seam with no new
+        // emission this tick. Give its audio pass the browser owner exactly once.
+        if (previouslyNative && browserCapture && !seam && schedulerSession.pendingSeam) {
+            stageLoopWrapTakes(current, schedulerSession.pendingSeam.seamAudioTime, { planned: true }, 'audio');
+        }
+        if (capturedJumpBoundary !== null) {
+            stageLoopWrapTakes(current, now, capturedJumpBoundary, browserCaptureKinds);
+        }
+        if (capturedEditBoundary !== null) {
+            stageLoopWrapTakes(current, now, capturedEditBoundary, browserCaptureKinds);
+        }
         if (seam) {
             // Staged here rather than in the detection branch, after the punch
             // checks above: a punch-out due at the seam instant finalizes its
@@ -1063,7 +1559,7 @@ export function startPlayheadScheduler(
             // take here, so the staging moment moves but the staged takes do
             // not.
             if (!initial) {
-                stageLoopWrapTakes(current);
+                stageLoopWrapTakes(current, seam.seamAudioTime, { planned: true }, browserCaptureKinds);
             }
             // Dying pass: the window remainder up to the seam, emitted against
             // the position the dying pass holds at `now`, so its last events
@@ -1084,9 +1580,10 @@ export function startPlayheadScheduler(
                 current,
                 currentTempo,
                 cancellation,
-                // Only an edit's re-emit makes this window a relocation (it opens
-                // where the cut look-ahead began); an ordinary seam tick continues.
-                reemitAfterEdit,
+                // Only an edit's re-emit (it opens where the cut look-ahead
+                // began) or a stall's skip makes this window a relocation; an
+                // ordinary seam tick continues.
+                reemitAfterEdit || skipsStalledSpan,
                 initial ? preparedMidi?.midiWindow(seam.passHighWater, seam.passUpTo) : undefined,
                 initial ? initialSchedulingAnchor : undefined
             );
@@ -1137,14 +1634,13 @@ export function startPlayheadScheduler(
             schedulerSession.scheduledAudioClips.clear();
             schedulerSession.scheduledFrozenTracks.clear();
             // The dying window's emission walked the metronome's beat up to
-            // loopEnd, and `scheduleMetronome` gates on `lastBeat` before its
-            // time-keyed dedup — left standing, that gate would swallow every
-            // incoming-pass click, because the loopEnd beat outranks every
-            // beat the new pass offers. Re-open the window at loopStart; the
-            // `firedClickTimes` dedup (deliberately kept alive by
-            // `resetMetronomeBeat`) then merges the seam pair — the dying
-            // loopEnd click and the incoming loopStart click are the same
-            // physical instant.
+            // its last beat before loopEnd, and `scheduleMetronome` gates on
+            // `lastBeat` — left standing, that gate would swallow every
+            // incoming-pass click the dying pass's beats outrank. Re-open the
+            // window at loopStart. The dying window never clicks at loopEnd,
+            // so the seam instant is the incoming pass's: its loopStart beat
+            // clicks there with its own accent, or nothing does when
+            // loopStart is not a beat.
             resetMetronomeBeat(current.loopStart);
             scheduleMetronome(
                 current.loopStart,
@@ -1196,8 +1692,26 @@ export function startPlayheadScheduler(
             // finalizes its recording this tick, and a take staged before that
             // finalization would name the punch clip with a full pass span it
             // never recorded.
-            if (lateWrap) {
-                stageLoopWrapTakes(current);
+            if (
+                lateWrap &&
+                lateWrapSeamAudioTime !== null &&
+                capturedJumpBoundary === null &&
+                capturedEditBoundary === null
+            ) {
+                // One take per seam crossed: the recorder kept capturing through
+                // every pass the audio played, and each closes at its own seam.
+                for (let seamIndex = 0; seamIndex < lateWrapSeams; seamIndex++) {
+                    stageLoopWrapTakes(
+                        current,
+                        lateWrapSeamAudioTime + seamIndex * lateWrapPassSeconds,
+                        {
+                            endBeat: editPassEndBeat,
+                            nextPassStartBeat: editPassEndBeat === undefined ? undefined : newPosition,
+                            laterClosedPasses: lateWrapSeams - 1 - seamIndex,
+                        },
+                        browserCaptureKinds
+                    );
+                }
             }
             // The window opens at the committed position — after any follow
             // action relocation — exactly as the pre-seam code emitted it.
@@ -1209,9 +1723,9 @@ export function startPlayheadScheduler(
                 current,
                 initial ? initialSchedulingAnchor : undefined
             );
-            // A late wrap, a follow-action jump and an edit's re-emit open this
-            // window at their destination, so it restores the stored controllers
-            // there too.
+            // A late wrap, a follow-action jump, an edit's re-emit and a stall's
+            // skip open this window at their destination, so it restores the
+            // stored controllers there too.
             const windowMidi = scheduleMidiNotes(
                 schedulerSession.lastScheduledBeat,
                 scheduleUpTo,
@@ -1221,7 +1735,7 @@ export function startPlayheadScheduler(
                 current,
                 currentTempo,
                 cancellation,
-                lateWrap || jumpToPosition !== null || reemitAfterEdit,
+                lateWrap || jumpToPosition !== null || reemitAfterEdit || skipsStalledSpan,
                 initial ? preparedMidi?.midiWindow(schedulerSession.lastScheduledBeat, scheduleUpTo) : undefined,
                 initial ? initialSchedulingAnchor : undefined
             );
@@ -1328,20 +1842,26 @@ export function startPlayheadScheduler(
             stopAllScheduled();
         }
     };
+    // Opened just before the emission so nothing between can strand it open.
+    const closeInitialEmission = initialEmissionRetirements.open();
+    const settleInitialEmission = () => {
+        initialEmissionPending = false;
+        closeInitialEmission();
+    };
     return tick(true).then(
         () => {
             if (!preparedMidi?.isCurrent() || !cancellation.isCurrent()) {
                 cancelInitialEmission();
-                initialEmissionPending = false;
+                settleInitialEmission();
                 return false;
             }
-            initialEmissionPending = false;
+            settleInitialEmission();
             startWorker();
             return true;
         },
         (error: unknown) => {
             cancelInitialEmission();
-            initialEmissionPending = false;
+            settleInitialEmission();
             logger.error(new Error('Initial playback emission failed', { cause: error }));
             return false;
         }

@@ -49,6 +49,7 @@ const mocks = vi.hoisted(() => ({
     logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }));
 
+vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRootIdentity: () => 'rearm-fixture-root' }));
 vi.mock('#/modules/AudioEngine/stores', async () => {
     const { createStore } = await import('#/infra/store/createStore');
     return { nativeEngineRearmStore: createStore<{ offers: number }>({ initialData: { offers: 0 } }) };

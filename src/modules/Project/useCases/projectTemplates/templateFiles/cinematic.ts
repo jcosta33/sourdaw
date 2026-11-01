@@ -1,4 +1,4 @@
-import { replaceTempoMap, replaceTimeSignatureMap } from '#/modules/Transport/useCases';
+import { restoreTimelineMapSnapshot } from '#/modules/Transport/useCases';
 
 import { addDeviceChain } from '../templateHelpers/addDeviceChain';
 import { addMarkers } from '../templateHelpers/addMarkers';
@@ -24,18 +24,20 @@ export async function createCinematicTemplate(): Promise<void> {
         loopEnd: totalBeats,
     });
 
-    replaceTimeSignatureMap({
-        changes: [
-            { beat: 0, numerator: 4, denominator: 4 },
-            { beat: 48, numerator: 6, denominator: 8 },
-            { beat: 72, numerator: 4, denominator: 4 },
-        ],
-    });
-    replaceTempoMap({
-        changes: [
-            { beat: 0, tempo: 90, curve: 'instant' },
-            { beat: 88, tempo: 72, curve: 'linear' },
-        ],
+    restoreTimelineMapSnapshot({
+        timeSignatureMap: {
+            changes: [
+                { id: crypto.randomUUID(), beat: 0, numerator: 4, denominator: 4 },
+                { id: crypto.randomUUID(), beat: 48, numerator: 6, denominator: 8 },
+                { id: crypto.randomUUID(), beat: 72, numerator: 4, denominator: 4 },
+            ],
+        },
+        tempoMap: {
+            changes: [
+                { id: crypto.randomUUID(), beat: 0, tempo: 90, curve: 'instant' },
+                { id: crypto.randomUUID(), beat: 88, tempo: 72, curve: 'linear' },
+            ],
+        },
     });
 
     const hallReverb = createBus({

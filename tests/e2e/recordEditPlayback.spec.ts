@@ -48,6 +48,41 @@ async function expectUsableTimelineRow(canvas: Locator): Promise<void> {
     expect(await getVisibleHeight(canvas)).toBeGreaterThanOrEqual(80);
 }
 
+type CenterColumnMetrics = {
+    clientHeight: number;
+    scrollHeight: number;
+    scrollTop: number;
+    /** Window height not available to the center column: transport, status bar and the like. */
+    chromeHeight: number;
+    /** Sum of the minimum heights its children keep: the arrangement floor, the docks and their handles. */
+    minimumContentHeight: number;
+};
+
+// The center column is the nearest overflow-y:auto ancestor of the keyboard dock.
+async function readCenterColumn(keyboard: Locator): Promise<CenterColumnMetrics> {
+    return keyboard.evaluate((element) => {
+        let center = element.parentElement;
+        while (center && getComputedStyle(center).overflowY !== 'auto') {
+            center = center.parentElement;
+        }
+        if (!center) {
+            throw new Error('Expected the keyboard dock to sit inside an overflow-y:auto center column');
+        }
+        let minimumContentHeight = 0;
+        for (const child of Array.from(center.children)) {
+            const minHeight = Number.parseFloat(getComputedStyle(child).minHeight);
+            minimumContentHeight += minHeight > 0 ? minHeight : child.getBoundingClientRect().height;
+        }
+        return {
+            clientHeight: center.clientHeight,
+            scrollHeight: center.scrollHeight,
+            scrollTop: center.scrollTop,
+            chromeHeight: window.innerHeight - center.clientHeight,
+            minimumContentHeight,
+        };
+    });
+}
+
 // The record→edit→playback chain, with the virtual keyboard as the MIDI
 // source. Recording alone is covered (arm/record toggles); no spec records,
 // edits the resulting clip, and plays back. Note capture is asserted through
@@ -63,7 +98,7 @@ test.describe('Record, edit, playback — MIDI clip lifecycle', () => {
 
         // Open the on-screen keyboard — the E2E stand-in for a MIDI input.
         await page.getByTestId('toggle-virtual-keyboard').click();
-        const keyboard = page.getByRole('application', { name: 'Virtual Piano Keyboard' });
+        const keyboard = page.getByRole('region', { name: 'Virtual Piano Keyboard' });
         await expect(keyboard).toBeVisible({ timeout: 10_000 });
 
         // Arm + record: recording auto-starts the transport — an explicit
@@ -108,21 +143,41 @@ test.describe('Record, edit, playback — MIDI clip lifecycle', () => {
         expect(timelineBox.height).toBeGreaterThanOrEqual(80);
         expect(editorBox.height).toBeGreaterThanOrEqual(280);
 
-        // The center split owns the overflow. Reaching the keyboard must scroll
-        // that split instead of clipping either dock out of the document.
+        // Both docks must stay reachable without the document scrolling. The
+        // center split shrinks the arrangement and docks to their minimums and
+        // only scrolls itself when even those minimums overflow the window.
         await keyboard.scrollIntoViewIfNeeded();
         await expect(keyboard).toBeInViewport();
-        const centerScrollTop = await keyboard.evaluate((element) => {
-            let parent = element.parentElement;
-            while (parent) {
-                if (getComputedStyle(parent).overflowY === 'auto') {
-                    return parent.scrollTop;
-                }
-                parent = parent.parentElement;
-            }
-            return null;
-        });
-        expect(centerScrollTop).toBeGreaterThan(0);
+        const documentScrollTop = await page.evaluate(() => document.scrollingElement?.scrollTop ?? 0);
+        expect(documentScrollTop).toBe(0);
+        await expectUsableTimelineRow(canvas);
+
+        // On a window too short for every minimum, the center column owns the
+        // overflow: the docks keep their minimums and the column scrolls rather
+        // than the document. The height is derived from the layout: the window
+        // chrome plus the sum of the minimums the column's children keep, less
+        // a margin so the column overflows.
+        const roomy = await readCenterColumn(keyboard);
+        const overflowingHeight = Math.floor(roomy.chromeHeight + roomy.minimumContentHeight) - 20;
+        await page.setViewportSize({ width: 1280, height: overflowingHeight });
+        await expect
+            .poll(async () => {
+                const column = await readCenterColumn(keyboard);
+                return column.scrollHeight - column.clientHeight;
+            })
+            .toBeGreaterThan(0);
+        await keyboard.scrollIntoViewIfNeeded();
+        await expect(keyboard).toBeInViewport();
+        expect((await readCenterColumn(keyboard)).scrollTop).toBeGreaterThan(0);
+        expect(await page.evaluate(() => document.scrollingElement?.scrollTop ?? 0)).toBe(0);
+
+        await page.setViewportSize({ width: 1280, height: 720 });
+        await expect
+            .poll(async () => {
+                const column = await readCenterColumn(keyboard);
+                return column.scrollHeight - column.clientHeight;
+            })
+            .toBeLessThanOrEqual(0);
         await expectUsableTimelineRow(canvas);
 
         // Edit: open the piano roll and stamp one more note into the clip —

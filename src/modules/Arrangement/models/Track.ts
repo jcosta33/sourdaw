@@ -113,6 +113,16 @@ export type Clip = {
      *  Set on import; used to request the file from peers in a collab session. */
     assetHash?: string;
     audioOffsetBeats?: number;
+    /** Signed source position at the clip head. Authoritative when present, including zero. */
+    audioOffsetSeconds?: number;
+    /** Unwrapped clip-media entry for take provenance, distinct from the audible loop entry. */
+    audioUnwrappedOffsetSeconds?: number;
+    /** Source loop boundary, independent of placement and the entry at the trimmed head. */
+    audioLoopStartSeconds?: number;
+    /** Source second repeated at each original pass seam, independent of the first visible entry. */
+    audioLoopPassEntrySeconds?: number;
+    /** Original pass grid. Cuts retain it; whole moves shift it with the clip. */
+    audioLoopPassOriginBeat?: number;
     midiOffsetBeats?: number;
     fadeInBeats: number;
     fadeOutBeats: number;

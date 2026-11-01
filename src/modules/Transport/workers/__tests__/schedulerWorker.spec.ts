@@ -84,6 +84,51 @@ describe('schedulerWorker', () => {
         now.mockRestore();
     });
 
+    it.each([
+        {
+            phase: 'before the first deadline',
+            callbackTimes: [9.75, 19.75, 29.75, 39.75],
+            expectedTicks: [
+                { sequence: 1, scheduled: 10, sent: 19.75 },
+                { sequence: 2, scheduled: 20, sent: 29.75 },
+                { sequence: 3, scheduled: 30, sent: 39.75 },
+            ],
+        },
+        {
+            phase: 'after missed slots',
+            callbackTimes: [35, 39.75, 49.75, 59.75],
+            expectedTicks: [
+                { sequence: 3, scheduled: 30, sent: 35 },
+                { sequence: 4, scheduled: 40, sent: 49.75 },
+                { sequence: 5, scheduled: 50, sent: 59.75 },
+            ],
+        },
+    ])('keeps early callbacks $phase from publishing future deadlines', async ({ callbackTimes, expectedTicks }) => {
+        const now = vi.spyOn(performance, 'now').mockReturnValueOnce(0);
+        for (const callbackTime of callbackTimes) {
+            now.mockReturnValueOnce(callbackTime);
+        }
+        await loadWorker();
+        self.onmessage?.({ data: { type: 'start', interval: 10, generation: 1 } } as MessageEvent);
+
+        for (let callbackIndex = 0; callbackIndex < callbackTimes.length; callbackIndex++) {
+            vi.advanceTimersByTime(10);
+        }
+
+        expect(postedMessages).toEqual(
+            expectedTicks.map(({ sequence, scheduled, sent }) => ({
+                type: 'tick',
+                generation: 1,
+                sequence,
+                scheduledAtMs: performance.timeOrigin + scheduled,
+                sentAtMs: performance.timeOrigin + sent,
+            }))
+        );
+        for (const message of postedMessages) {
+            expect(message.sentAtMs).toBeGreaterThanOrEqual(message.scheduledAtMs);
+        }
+    });
+
     it('defaults to a 10 ms interval when interval is not positive', async () => {
         await loadWorker();
         // interval <= 0 falls back to the 10 ms floor.

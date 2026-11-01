@@ -56,7 +56,7 @@ let MOCKED_INSTANCES: Record<string, GlutenState> = {};
 
 function renderPanel(patch: Partial<GlutenPatch>): void {
     MOCKED_INSTANCES = {
-        [DEVICE_ID]: { patch: { ...DEFAULT_PATCH, ...patch }, uiLevel: 2 },
+        [DEVICE_ID]: { patch: { ...DEFAULT_PATCH, ...patch }, uiLevel: 5 },
     };
     render(<GlutenPanel deviceId={DEVICE_ID} />);
 }

@@ -31,8 +31,10 @@ import {
     CLIP_GAIN_LAW,
     CLIP_MAX_GAIN,
     FADER_MAX_GAIN,
+    METRONOME_LEVEL_LAW,
     SEND_LEVEL_LAW,
     TRACK_FADER_LAW,
+    VCA_LEVEL_LAW,
     VCA_MAX_GAIN,
 } from '#/utils/audioLevelLaw';
 import { MIN_CLIP_LOOP_LENGTH_BEATS } from '#/utils/clipLoopProjection';
@@ -509,7 +511,14 @@ const validators = {
         ) &&
         isOptionalOwn(param, 'deltaDb', isLevelDelta),
     setMetronomeVolume: (param): param is PayloadOf<'setMetronomeVolume'> =>
-        isObj(param) && hasExactKeys(param, ['volume']) && isInRange(param.volume, 0, 1),
+        isObj(param) &&
+        hasOnlyKeys(param, ['volume', 'volumeDb', 'deltaDb']) &&
+        statesLevelOnce(param, 'volume', 'volumeDb') &&
+        isOptionalOwn(param, 'volume', (value): value is number => isInRange(value, 0, 1)) &&
+        isOptionalOwn(param, 'volumeDb', (value): value is number =>
+            isInRange(value, METRONOME_LEVEL_LAW.floorDb, METRONOME_LEVEL_LAW.ceilingDb)
+        ) &&
+        isOptionalOwn(param, 'deltaDb', isLevelDelta),
     setLoopEnabled: (param): param is PayloadOf<'setLoopEnabled'> =>
         isObj(param) && hasExactKeys(param, ['enabled']) && typeof param.enabled === 'boolean',
     setMetronomeEnabled: (param): param is PayloadOf<'setMetronomeEnabled'> =>
@@ -1244,9 +1253,14 @@ const validators = {
     // different things.
     setVcaGain: (param): param is PayloadOf<'setVcaGain'> =>
         isObj(param) &&
-        hasExactKeys(param, ['vcaGroupId', 'gain']) &&
+        hasOnlyKeys(param, ['vcaGroupId', 'gain', 'gainDb', 'deltaDb']) &&
         isNonEmptyString(param.vcaGroupId) &&
-        isInRange(param.gain, 0, VCA_MAX_GAIN),
+        statesLevelOnce(param, 'gain', 'gainDb') &&
+        isOptionalOwn(param, 'gain', (value): value is number => isInRange(value, 0, VCA_MAX_GAIN)) &&
+        isOptionalOwn(param, 'gainDb', (value): value is number =>
+            isInRange(value, VCA_LEVEL_LAW.floorDb, VCA_LEVEL_LAW.ceilingDb)
+        ) &&
+        isOptionalOwn(param, 'deltaDb', isLevelDelta),
 
     // Groove
     extractGroove: 'unchecked',

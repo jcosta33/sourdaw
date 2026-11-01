@@ -1,3 +1,5 @@
+import { type TempoChange } from '../models/TempoMap';
+
 /**
  * The scheduler's committed clock anchor: the playback position together with
  * the AudioContext instant that position was projected to.
@@ -18,11 +20,25 @@ export const playheadClockRef = {
     beat: 0,
     /** The AudioContext.currentTime that `beat` is the position for. */
     audioTimeSeconds: 0,
+    generation: 0,
+    /** Next browser loop boundary already emitted by the scheduler. */
+    pendingLoopSeam: null as {
+        generation: number;
+        anchorBeat: number;
+        anchorAudioTimeSeconds: number;
+        tempo: number;
+        tempoMapChanges: readonly TempoChange[] | null;
+        audioTimeSeconds: number;
+        loopStart: number;
+        loopEnd: number;
+        passIndex: number;
+    } | null,
     /** Requested beat while this browser roll's programme is not admitted yet. */
     hold: null as { generation: number; beat: number } | null,
 };
 
 export function holdPlayheadClock(generation: number, beat: number): void {
+    playheadClockRef.pendingLoopSeam = null;
     playheadClockRef.hold = { generation, beat };
 }
 

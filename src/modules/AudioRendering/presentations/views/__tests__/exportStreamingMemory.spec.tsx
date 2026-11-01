@@ -21,11 +21,56 @@ import { ExportDialog } from '../ExportDialog';
 import { loadExportSettings } from '../exportSettings';
 
 const GC_CASE_NAME = 'observes sampled output ownership below 2B across 64 WAV/MP3/FLAC stems';
+
+// A slow runner stretches the export without breaking it, so the case fails when the export stops
+// making progress, not when a fixed wall-clock budget runs out. Hang protection stays with the
+// case's own 300 s timeout.
+const STEM_OWNERSHIP_STALL_WINDOW_MS = 30_000;
+const STEM_OWNERSHIP_CLEANUP_STALL_WINDOW_MS = 10_000;
+const STALL_POLL_INTERVAL_MS = 250;
+
+async function awaitUnlessStalled<T>(
+    operation: Promise<T>,
+    readProgress: () => string,
+    stallWindowMs: number,
+    stallError: (stalledMs: number) => Error
+): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const stalled = new Promise<never>((_resolve, reject) => {
+        let lastProgress = readProgress();
+        let lastProgressAt = Date.now();
+        const poll = () => {
+            const progress = readProgress();
+            const now = Date.now();
+            if (progress !== lastProgress) {
+                lastProgress = progress;
+                lastProgressAt = now;
+            } else if (now - lastProgressAt >= stallWindowMs) {
+                reject(stallError(now - lastProgressAt));
+                return;
+            }
+            timer = setTimeout(poll, STALL_POLL_INTERVAL_MS);
+        };
+        timer = setTimeout(poll, STALL_POLL_INTERVAL_MS);
+    });
+    try {
+        return await Promise.race([operation, stalled]);
+    } finally {
+        clearTimeout(timer);
+    }
+}
 const GC_FULL_NAME = `connected stem export output ownership ${GC_CASE_NAME}`;
 const GC_FILTER_NAME = `connected stem export output ownership > ${GC_CASE_NAME}`;
 const GC_SPEC = 'src/modules/AudioRendering/presentations/views/__tests__/exportStreamingMemory.spec.tsx';
 const GC_CHILD_MARKER = 'SOURDAW_EXPORT_STREAMING_GC_CHILD';
-const GC_BODY_DEADLINE_MS = 180_000;
+// An in-flight background Maglev/Turbofan job holds its closure, and so that closure's context, as a
+// strong root that gc() does not drain. On a starved runner a job compiling a finished stem's encoder
+// or PCM-reader closure keeps that stem's PCM live into the next render's checkpoint (#5924).
+// Synchronous tiering removes those background-compile roots from the measurement.
+const GC_SYNCHRONOUS_TIERING_FLAG = '--no-concurrent-recompilation';
+// Synchronous tiering moves compile work onto the measuring thread: the admitted runner projects about
+// 182 s for 64 stems with it, so 300 s keeps a 1.6x margin.
+const GC_BODY_DEADLINE_MS = 300_000;
 // Nested Vitest startup and child exit need time outside the measured GC body.
 const GC_CHILD_BOOTSTRAP_AND_EXIT_ALLOWANCE_MS = 120_000;
 const GC_CHILD_DEADLINE_MS = GC_BODY_DEADLINE_MS + GC_CHILD_BOOTSTRAP_AND_EXIT_ALLOWANCE_MS;
@@ -137,6 +182,7 @@ async function runGcChild(cwd: string, reportPath: string): Promise<string> {
             GC_SPEC,
             '--pool=forks',
             '--execArgv=--expose-gc',
+            `--execArgv=${GC_SYNCHRONOUS_TIERING_FLAG}`,
             '--maxWorkers=1',
             `--testNamePattern=^${GC_FILTER_NAME}$`,
             '--reporter=default',
@@ -482,11 +528,9 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
 }));
 
 vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
-    const { isValidMidiNoteExpression, sanitizeMidiStoreState } =
-        await importOriginal<typeof import('#/modules/MIDI/stores')>();
+    const actual = await importOriginal<typeof import('#/modules/MIDI/stores')>();
     return {
-        isValidMidiNoteExpression,
-        sanitizeMidiStoreState,
+        ...actual,
         defaultMidiStoreState: { notesByClipId: {} },
         midiStore: mocks.midiStore,
         // Not exercised by this spec — stubbed only because this spec's module graph
@@ -751,7 +795,9 @@ describe('connected stem export output ownership', () => {
         stemRender.frames = 44100;
         mocks.trackStore.value = { tracks: stemRender.tracks, selectedTrackId: null, ghostClips: [] };
         vi.clearAllMocks();
-        mocks.audioContext = asBaseAudioContext(createMockAudioContext());
+        const audioContext = createMockAudioContext();
+        audioContext.sampleRate = 44100;
+        mocks.audioContext = asBaseAudioContext(audioContext);
         mocks.getAudioContext.mockImplementation(() => mocks.audioContext);
         mocks.restoreCachedAudioBuffersFromIdb.mockResolvedValue(0);
         mocks.automationStore.value = { lanes: [] };
@@ -867,6 +913,261 @@ describe('connected stem export output ownership', () => {
         }
         vi.unstubAllGlobals();
     }, 20000);
+    it('consumes two independently converted WAV targets before releasing each of64 rendered stems', async () => {
+        const actualEngine = await vi.importActual<typeof import('#/modules/AudioEngine/useCases')>(
+            '#/modules/AudioEngine/useCases'
+        );
+        const chunks: Uint8Array[] = [];
+        const gameFinalWrite = Promise.withResolvers<void>();
+        const releaseGameWrite = Promise.withResolvers<void>();
+        const writerTerminal = Promise.withResolvers<'closed' | 'aborted'>();
+        type WavHeader = { rate: number; channels: number; bitDepth: number; dataLength: number };
+        let lastHeader: WavHeader | undefined;
+        let wavHeaders = 0;
+        let physicalWrites = 0;
+        let physicalBytes = 0;
+        let gamePcmRemaining: number | undefined;
+        let gameWriteHeld = false;
+        let gameWriteReleased = false;
+        let writerAcquired = false;
+        let exportStarted = false;
+        let closed = false;
+        let closeCalls = 0;
+        let abortCalls = 0;
+        let failure: Error | undefined;
+        const phase = () => {
+            const loggedError: unknown = mocks.loggerError.mock.lastCall?.[0];
+            return {
+                ...ownership,
+                physicalWrites,
+                physicalBytes,
+                wavHeaders,
+                lastHeader,
+                gamePcmRemaining,
+                gameWriteHeld,
+                gameWriteReleased,
+                writerAcquired,
+                closed,
+                closeCalls,
+                abortCalls,
+                error: loggedError instanceof Error ? loggedError.message.slice(0, 500) : undefined,
+                cause: loggedError instanceof Error ? String(loggedError.cause).slice(0, 500) : undefined,
+            };
+        };
+        const readProgress = () =>
+            JSON.stringify([
+                ownership.rendered,
+                ownership.consumed,
+                physicalWrites,
+                physicalBytes,
+                closeCalls,
+                abortCalls,
+            ]);
+        const withPhase = (error: unknown): Error => {
+            const result = error instanceof Error ? error : new Error(String(error));
+            if (!result.message.includes('\nStem output phase:')) {
+                result.message += `\nStem output phase: ${JSON.stringify(phase())}`;
+            }
+            return result;
+        };
+        const readWavHeader = (bytes: Uint8Array): WavHeader | undefined => {
+            if (bytes.byteLength !== 44) {
+                return undefined;
+            }
+            const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+            if (view.getUint32(0) !== 0x52494646 || view.getUint32(8) !== 0x57415645) {
+                return undefined;
+            }
+            const header = {
+                rate: view.getUint32(24, true),
+                channels: view.getUint16(22, true),
+                bitDepth: view.getUint16(34, true),
+                dataLength: view.getUint32(40, true),
+            };
+            wavHeaders++;
+            lastHeader = header;
+            expect(view.getUint32(12)).toBe(0x666d7420);
+            expect(view.getUint32(16, true)).toBe(16);
+            expect(view.getUint16(20, true)).toBe(1);
+            expect(view.getUint32(36)).toBe(0x64617461);
+            expect(header.bitDepth).toBe(24);
+            expect(view.getUint16(32, true)).toBe(header.channels * 3);
+            expect(view.getUint32(28, true)).toBe(header.rate * header.channels * 3);
+            expect(view.getUint32(4, true)).toBe(header.dataLength + 36);
+            const apple = header.rate === 44100 && header.channels === 2 && header.dataLength === 44100 * 6;
+            const game = header.rate === 48000 && header.channels === 1 && header.dataLength === 48000 * 3;
+            expect(apple || game).toBe(true);
+            return header;
+        };
+        const write = async (bytes: Uint8Array) => {
+            physicalWrites++;
+            physicalBytes += bytes.byteLength;
+            chunks.push(bytes.slice());
+            expect(gameWriteHeld).toBe(false);
+            if (gamePcmRemaining !== undefined && gamePcmRemaining > 0) {
+                expect(bytes.byteLength).toBe(Math.min(gamePcmRemaining, 4096 * 3));
+                gamePcmRemaining -= bytes.byteLength;
+                if (gamePcmRemaining === 0) {
+                    expect(bytes.byteLength).toBe(8832);
+                    gameWriteHeld = true;
+                    gameFinalWrite.resolve();
+                    await releaseGameWrite.promise;
+                    gameWriteHeld = false;
+                }
+                return;
+            }
+            const header = readWavHeader(bytes);
+            if (gamePcmRemaining === undefined && header?.rate === 48000) {
+                gamePcmRemaining = header.dataLength;
+            }
+        };
+        vi.stubGlobal('showSaveFilePicker', async () => ({
+            createWritable: async () => {
+                writerAcquired = true;
+                return {
+                    write,
+                    close: async () => {
+                        closeCalls++;
+                        closed = true;
+                        writerTerminal.resolve('closed');
+                    },
+                    abort: async () => {
+                        abortCalls++;
+                        writerTerminal.resolve('aborted');
+                    },
+                };
+            },
+        }));
+        try {
+            render(<ExportDialog open onClose={() => {}} />);
+            fireEvent.click(screen.getByTestId('export-mode-stems'));
+            fireEvent.click(screen.getByRole('checkbox', { name: 'Export Apple Music stereo master' }));
+            fireEvent.click(screen.getByRole('checkbox', { name: 'Export Game Audio PCM' }));
+            fireEvent.change(screen.getByRole('combobox', { name: 'Output channels' }), { target: { value: '1' } });
+            fireEvent.click(screen.getByRole('button', { name: /^Off$/ }));
+            const start = screen.getByTestId('export-start');
+            exportStarted = true;
+            fireEvent.click(start);
+            const firstWriterEvent = await awaitUnlessStalled(
+                Promise.race([
+                    gameFinalWrite.promise.then(() => 'held-final-write' as const),
+                    writerTerminal.promise.then(() => 'terminal' as const),
+                ]),
+                readProgress,
+                STEM_OWNERSHIP_STALL_WINDOW_MS,
+                (stalledMs) =>
+                    withPhase(new Error(`Stalled for ${stalledMs} ms waiting for the held Game WAV final PCM write.`))
+            );
+            expect(firstWriterEvent).toBe('held-final-write');
+            expect(gameWriteHeld).toBe(true);
+            expect(gamePcmRemaining).toBe(0);
+            expect(ownership.rendered).toBe(1);
+            expect(ownership.consumed).toBe(0);
+            expect(closed).toBe(false);
+            expect(closeCalls).toBe(0);
+            expect(abortCalls).toBe(0);
+            gameWriteReleased = true;
+            releaseGameWrite.resolve();
+            const finalWriterEvent = await awaitUnlessStalled(
+                writerTerminal.promise,
+                readProgress,
+                STEM_OWNERSHIP_STALL_WINDOW_MS,
+                (stalledMs) =>
+                    withPhase(
+                        new Error(`Stalled for ${stalledMs} ms waiting for all stem targets to reach writer close.`)
+                    )
+            );
+            expect(finalWriterEvent).toBe('closed');
+            expect(ownership.rendered).toBe(64);
+            expect(ownership.consumed).toBe(64);
+            expect(ownership.peakRetained).toBe(1);
+            expect(closeCalls).toBe(1);
+            expect(abortCalls).toBe(0);
+            const archive = new Uint8Array(chunks.reduce((sum, b) => sum + b.length, 0));
+            let offset = 0;
+            for (const b of chunks) {
+                archive.set(b, offset);
+                offset += b.length;
+            }
+            const entries = unzipSync(archive);
+            expect(Object.keys(entries)).toHaveLength(128);
+            for (const [name, bytes] of Object.entries(entries)) {
+                const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+                if (name.endsWith('__game-audio-pcm.wav')) {
+                    expect(view.getUint32(24, true)).toBe(48000);
+                    expect(view.getUint16(22, true)).toBe(1);
+                    expect(bytes.length).toBe(44 + 48000 * 3);
+                    expect(bytes.subarray(44).every((b) => b === 0)).toBe(true);
+                } else {
+                    expect(name).toMatch(/__apple-music-stereo-master\.wav$/);
+                    expect(view.getUint32(24, true)).toBe(44100);
+                    expect(view.getUint16(22, true)).toBe(2);
+                }
+            }
+        } catch (error) {
+            failure = withPhase(error);
+        }
+        const cleanupFailures: Error[] = [];
+        const cleanupError = (message: string) => {
+            const errors: Error[] = [];
+            if (failure) {
+                errors.push(failure);
+            }
+            errors.push(...cleanupFailures);
+            return new AggregateError(errors, message);
+        };
+        try {
+            if (exportStarted && !closed) {
+                const cancel = screen.queryByRole('button', { name: 'Turn off Oven' });
+                if (cancel) {
+                    fireEvent.click(cancel);
+                }
+                actualEngine.cancelExport();
+            }
+        } catch (error) {
+            cleanupFailures.push(withPhase(error));
+        }
+        gameWriteReleased = true;
+        releaseGameWrite.resolve();
+        try {
+            if (exportStarted) {
+                if (writerAcquired && closeCalls + abortCalls === 0) {
+                    await awaitUnlessStalled(
+                        writerTerminal.promise,
+                        readProgress,
+                        STEM_OWNERSHIP_CLEANUP_STALL_WINDOW_MS,
+                        (stalledMs) =>
+                            withPhase(
+                                new Error(
+                                    `Stalled for ${stalledMs} ms waiting for writer close or abort during export cleanup.`
+                                )
+                            )
+                    );
+                }
+                await waitFor(
+                    () => {
+                        if (writerAcquired) {
+                            expect(closeCalls + abortCalls).toBe(1);
+                        }
+                        expect(screen.getByTestId('export-mode-stems')).toBeEnabled();
+                    },
+                    { timeout: STEM_OWNERSHIP_CLEANUP_STALL_WINDOW_MS, onTimeout: withPhase }
+                );
+            }
+        } catch (error) {
+            cleanupFailures.push(withPhase(error));
+            throw cleanupError(
+                'The original stem export did not reach terminal cleanup; platform globals remain installed.'
+            );
+        }
+        vi.unstubAllGlobals();
+        if (cleanupFailures.length > 0) {
+            throw cleanupError('Stem cleanup failed.');
+        }
+        if (failure) {
+            throw failure;
+        }
+    }, 300_000);
     it(
         GC_CASE_NAME,
         async () => {
@@ -882,6 +1183,9 @@ describe('connected stem export output ownership', () => {
                 }
                 await runGcMeasurementInChild();
                 return;
+            }
+            if (!process.execArgv.includes(GC_SYNCHRONOUS_TIERING_FLAG)) {
+                throw new TypeError(`Run this ownership probe with node ${GC_SYNCHRONOUS_TIERING_FLAG}.`);
             }
             stemRender.frames = 44100 * 3;
             const b = stemRender.frames * 2 * Float32Array.BYTES_PER_ELEMENT;

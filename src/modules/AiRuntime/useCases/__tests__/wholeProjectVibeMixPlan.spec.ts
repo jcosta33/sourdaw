@@ -31,16 +31,25 @@ import { defaultTransportState, transportStore } from '#/modules/Transport/store
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { type TerminalMeasurementSettlement } from '../../models/ApplicationOwnedTool';
+import { type ToolSchema } from '../../models/ToolDefinitions';
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
+import { readAgentRunState, sanitizeAgentRunState, persistAgentRunState } from '../../stores/agentRunStore';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
 import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
+import { matchesJsonSchema } from '../../validators/matchesJsonSchema';
+import { agentRunLifecycle } from '../agentRunLifecycle';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { getAgentApprovalView } from '../getAgentApprovalView';
+import { metricGoalStateCodec } from '../metricGoalStateCodec';
+import { planAgentRun } from '../planAgentRun';
 import { planPromptActions } from '../planPromptActions';
+import { reproposePendingChatActions } from '../reproposePendingChatActions';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 
 import {
@@ -50,10 +59,89 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { advertisedAnswerSchema } from './answerWireFixture';
+import { type ScriptedTurn } from './highLevelIntentWorkflowFixture';
 import { landProjectEdit } from './landProjectEdit';
+import { literalMetricIntakeTurn, readMetricPublication } from './metricGoalWorkflowFixture';
 
 const PROMPT =
     'Make the second chorus hit harder without changing any lead-vocal state, the tempo map, or the master chain.';
+// A literal gain trajectory proves execution and Undo, never perceived impact.
+const PARAPHRASE =
+    'Lift the rhythm section in the second chorus a touch — vocals, tempo map, and the master chain must stay untouched.';
+const GAIN_CONTROL_PARAPHRASE =
+    'Automate a 1.5 dB lift on Drum Bus and Bass Bus during Chorus Two, leaving the lead vocal, tempo map, and master chain unchanged.';
+const GAIN_CONTROL_PROMPT =
+    'Raise Drum Bus and Bass Bus by 1.5 dB only in Chorus Two without changing any lead-vocal state, the tempo map, or the master chain.';
+
+function readWorkflowParameters(providerView: Parameters<ScriptedTurn>[1]): Record<string, unknown> {
+    let workflowParameters: unknown;
+    if (typeof providerView === 'string') {
+        const line = providerView.split('\n').find((entry) => entry.startsWith('- selectWorkflowCapability:'));
+        const offset = line?.lastIndexOf(' {"type":"object"') ?? -1;
+        if (line !== undefined && offset >= 0) {
+            workflowParameters = JSON.parse(line.slice(offset + 1));
+        }
+    } else {
+        workflowParameters = providerView?.find((tool) => tool.function.name === 'selectWorkflowCapability')?.function
+            .parameters;
+    }
+    if (!isRecord(workflowParameters)) {
+        throw new TypeError('Expected an actual outgoing workflow selector schema.');
+    }
+    return workflowParameters;
+}
+
+const impactMetricIntake: ScriptedTurn = (userMessage, providerView) => {
+    const capability = getProviderContext(userMessage).wholeProjectVibeMixCapability;
+    if (
+        !isRecord(capability) ||
+        !Array.isArray(capability.exactTargetIds) ||
+        !capability.exactTargetIds.every((id) => typeof id === 'string')
+    ) {
+        throw new TypeError('Expected app-published impact-bus identities.');
+    }
+    const workflowParameters = readWorkflowParameters(providerView);
+    if (
+        !isRecord(workflowParameters) ||
+        !isRecord(workflowParameters.properties) ||
+        !isRecord(workflowParameters.properties.catalogId)
+    ) {
+        throw new TypeError('Expected the actual workflow metric-intake schema.');
+    }
+    const catalogId = workflowParameters.properties.catalogId.const;
+    if (typeof catalogId !== 'string') {
+        throw new TypeError('Expected a published workflow metric catalog identity.');
+    }
+
+    const objective = readMetricPublication({ function: advertisedAnswerSchema(providerView) }).find(
+        (candidate) => candidate.kind === 'unsupported'
+    );
+    if (objective === undefined) {
+        throw new TypeError('Expected the published unsupported impact objective.');
+    }
+    return [
+        {
+            name: 'selectWorkflowCapability',
+            arguments: {
+                capabilityId: 'whole-project-vibe-mix',
+                catalogId,
+                metricIntent: {
+                    kind: 'perceptual',
+                    uncertainty: 'none',
+                    objectives: [
+                        {
+                            objectiveId: objective.id,
+                            scopeCandidateId: null,
+                            referenceScopeCandidateId: null,
+                            rangeCandidateId: null,
+                        },
+                    ],
+                },
+            },
+        },
+    ];
+};
 
 const providerPlan = [
     {
@@ -206,7 +294,7 @@ function assertDiscoveredCommandSchema(receipts: readonly unknown[]): void {
     if (
         !isRecord(discovery) ||
         discovery.status !== 'success' ||
-        discovery.turn !== 1 ||
+        discovery.turn !== 2 ||
         !isRecord(discovery.data) ||
         discovery.data.schema !== 'sourdaw.agent-tool-catalog' ||
         discovery.data.schemaVersion !== 1 ||
@@ -291,11 +379,44 @@ function toolCallsResponse(calls: readonly ProviderCall[]): Response {
     );
 }
 
-function installProviderFixtures(transformPlan: (plan: ProviderCall[]) => ProviderCall[] = (plan) => plan): void {
-    let webLlmAwaitingReceipt = false;
-    runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt: string, userMessage: string) => {
-        if (!webLlmAwaitingReceipt) {
-            webLlmAwaitingReceipt = true;
+function installProviderFixtures(
+    transformPlan: (plan: ProviderCall[]) => ProviderCall[] = (plan) => plan,
+    intake: ScriptedTurn = literalMetricIntakeTurn,
+    executionSelection?: string,
+    measureHeldProposal = false
+): void {
+    const proposal = (userMessage: string): ProviderCall[] => {
+        const plan = transformPlan(createProviderPlanFromUserMessage(userMessage));
+        const calls = asCommandBatchProposal(userMessage, plan);
+        if (executionSelection !== undefined) {
+            calls.unshift({ name: 'selectWorkflowCapability', arguments: { capabilityId: executionSelection } });
+        }
+        return calls;
+    };
+    const measurement = (userMessage: string): ProviderCall[] => {
+        const capability = getProviderContext(userMessage).wholeProjectVibeMixCapability;
+        if (!isRecord(capability) || !Array.isArray(capability.exactTargetIds) || !isRecord(capability.targetSection)) {
+            throw new TypeError('Expected the published workflow measurement scope.');
+        }
+        const { startBeat, endBeat } = capability.targetSection;
+        if (typeof startBeat !== 'number' || typeof endBeat !== 'number') {
+            throw new TypeError('Expected the published workflow measurement range.');
+        }
+        return [
+            {
+                name: 'analysis.measure',
+                arguments: { scope: { kind: 'buses', ids: capability.exactTargetIds }, range: { startBeat, endBeat } },
+            },
+        ];
+    };
+    const turnCount = measureHeldProposal ? 4 : 3;
+    let webLlmTurn = 0;
+    runtimeMocks.generateWebLlmCompletion.mockImplementation((systemPrompt: string, userMessage: string) => {
+        const phase = webLlmTurn++ % turnCount;
+        if (phase === 0) {
+            return Promise.resolve(JSON.stringify(intake(userMessage, systemPrompt)));
+        }
+        if (phase === 1) {
             return Promise.resolve(
                 JSON.stringify([
                     {
@@ -305,18 +426,24 @@ function installProviderFixtures(transformPlan: (plan: ProviderCall[]) => Provid
                 ])
             );
         }
-        webLlmAwaitingReceipt = false;
+        if (phase === 3) {
+            return Promise.resolve(JSON.stringify(measurement(userMessage)));
+        }
         assertDiscoveredCommandSchema(getApplicationToolReceipts(userMessage));
-        const plan = transformPlan(createProviderPlanFromUserMessage(userMessage));
-        return Promise.resolve(JSON.stringify(asCommandBatchProposal(userMessage, plan)));
+        return Promise.resolve(JSON.stringify(proposal(userMessage)));
     });
-    let hostedAwaitingReceipt = false;
+    let hostedTurn = 0;
     runtimeMocks.fetch.mockImplementation((_input, init) => {
         if (typeof init?.body !== 'string') {
             throw new TypeError('Expected hosted provider request body');
         }
-        if (!hostedAwaitingReceipt) {
-            hostedAwaitingReceipt = true;
+        const userMessage = getHostedUserMessage(init.body);
+        const phase = hostedTurn++ % turnCount;
+        if (phase === 0) {
+            const request = JSON.parse(init.body) as { tools: ToolSchema[] };
+            return Promise.resolve(toolCallsResponse(intake(userMessage, request.tools)));
+        }
+        if (phase === 1) {
             return Promise.resolve(
                 toolCallsResponse([
                     {
@@ -326,11 +453,23 @@ function installProviderFixtures(transformPlan: (plan: ProviderCall[]) => Provid
                 ])
             );
         }
-        hostedAwaitingReceipt = false;
-        const userMessage = getHostedUserMessage(init.body);
+        if (phase === 3) {
+            const receipts = getReplayedToolReceipts(init.body);
+            expect(receipts).toContainEqual(
+                expect.objectContaining({
+                    toolName: 'command.batch.propose',
+                    status: 'failure',
+                    error: expect.objectContaining({ code: 'measurement-required' }),
+                })
+            );
+            const body = JSON.parse(init.body) as { tools: ToolSchema[]; tool_choice: string };
+            expect(body.tools.map((tool) => tool.function.name)).toEqual(['analysis_measure']);
+            expect(body.tool_choice).toBe('required');
+            expect(body).not.toHaveProperty('parallel_tool_calls');
+            return Promise.resolve(toolCallsResponse(measurement(userMessage)));
+        }
         assertDiscoveredCommandSchema(getReplayedToolReceipts(init.body));
-        const plan = transformPlan(createProviderPlanFromUserMessage(userMessage));
-        return Promise.resolve(toolCallsResponse(asCommandBatchProposal(userMessage, plan)));
+        return Promise.resolve(toolCallsResponse(proposal(userMessage)));
     });
 }
 
@@ -573,9 +712,258 @@ describe('whole-project vibe-mix planning', () => {
         vi.unstubAllGlobals();
     });
 
-    it('decomposes EX-02 into a revision-bearing bounded plan with neighbors, roles, strategy, and accepted decisions', async () => {
+    it.each([
+        { prompt: PROMPT, backend: 'webllm' as const },
+        { prompt: PARAPHRASE, backend: 'webllm' as const },
+        { prompt: PROMPT, backend: 'cloud' as const },
+        { prompt: PARAPHRASE, backend: 'cloud' as const },
+    ])(
+        'keeps the original impact request visible and blocks approval without actual metric proof: $backend $prompt',
+        async ({ prompt, backend }) => {
+            runtimeMocks.backend.value = backend;
+            installProviderFixtures((plan) => plan, impactMetricIntake, undefined, true);
+            flushAutomergeStorageWrites();
+            const before = {
+                tracks: structuredClone(trackStore.value),
+                automation: structuredClone(automationStore.value),
+                undo: structuredClone(undoStore.value),
+                revision: captureProjectRevision(),
+            };
+
+            await sendChatMessage(prompt);
+
+            const confirmationId = getConfirmationId();
+            const confirmation = getPendingActionConfirmation(confirmationId);
+            if (!confirmation) {
+                const message = chatStore.value?.messages.at(-1);
+                throw new TypeError(
+                    `Expected the complete original perceptual proposal to remain visible: ${message?.error ?? message?.content}`
+                );
+            }
+            const metricState = confirmation.approvalSnapshot.metricGoalState;
+            expect(metricGoalStateCodec(metricState)?.authorities).toMatchObject([
+                { origin: 'admitted-workflow', kind: 'perceptual', goals: [{ relation: 'unsupported' }] },
+            ]);
+            expect(confirmation.approvalSnapshot.agentApproval?.metricGoalState).toBe(metricState);
+            expect(agentRunLifecycle.get(confirmation.runId ?? '')?.plan?.metricGoalState).toBe(metricState);
+            const sequenceReceipts = agentRunLifecycle.get(confirmation.runId ?? '')?.plan?.applicationToolReceipts;
+            expect(sequenceReceipts).toContainEqual(
+                expect.objectContaining({
+                    toolName: 'command.batch.propose',
+                    turn: 3,
+                    status: 'failure',
+                    error: expect.objectContaining({ code: 'measurement-required' }),
+                })
+            );
+            expect(sequenceReceipts).toContainEqual(expect.objectContaining({ toolName: 'analysis.measure', turn: 4 }));
+            expect(metricGoalStateCodec(metricState)?.proofs).toEqual([]);
+            const run = agentRunLifecycle.get(confirmation.runId ?? '');
+            const plan = run?.plan;
+            if (
+                run === null ||
+                run === undefined ||
+                plan === null ||
+                plan === undefined ||
+                plan.terminalMeasurementSettlement === undefined
+            ) {
+                throw new TypeError('Expected the actual held-terminal settlement in the persisted run plan.');
+            }
+            const replanInput = {
+                request: prompt,
+                revision: before.revision,
+                actions: confirmation.actions,
+                actionLabels: confirmation.actionLabels,
+                scope: plan.scope,
+                grants: run.grants,
+                budgets: run.budgets,
+                requiresConfirmation: true,
+                metricGoalState: plan.metricGoalState,
+                applicationToolReceipts: plan.applicationToolReceipts,
+                terminalMeasurementSettlement: plan.terminalMeasurementSettlement,
+            };
+            expect(planAgentRun(structuredClone(replanInput))).toMatchObject({ status: 'planned' });
+            expect(planAgentRun({ ...replanInput, terminalMeasurementSettlement: undefined })).toMatchObject({
+                status: 'rejected',
+            });
+            const settlement: TerminalMeasurementSettlement = JSON.parse(plan.terminalMeasurementSettlement);
+            const corruptions: Array<(value: TerminalMeasurementSettlement) => void> = [
+                (value) => {
+                    value.authorityId = 'foreign-authority';
+                },
+                (value) => {
+                    value.revision = 'foreign-snapshot';
+                },
+                (value) => {
+                    value.intake.callId = 'foreign-intake';
+                },
+                (value) => {
+                    value.intake.turn += 1;
+                },
+                (value) => {
+                    value.deferredCalls[0]!.callId = 'foreign-terminal';
+                },
+                (value) => {
+                    value.deferredCalls[0]!.turn += 1;
+                },
+                (value) => {
+                    value.measurement.callId = 'unexecuted-primary';
+                },
+                (value) => {
+                    value.measurement.toolName = 'analysis.compareReference';
+                },
+                (value) => {
+                    value.measurement.turn -= 1;
+                },
+                (value) => {
+                    value.measurement.receiptDigest = 'foreign-receipt';
+                },
+            ];
+            for (const corrupt of corruptions) {
+                const changed = structuredClone(settlement);
+                corrupt(changed);
+                expect(
+                    planAgentRun({ ...replanInput, terminalMeasurementSettlement: JSON.stringify(changed) })
+                ).toMatchObject({ status: 'rejected' });
+            }
+            const control = plan.applicationToolReceipts?.find(
+                (receipt) => receipt.error?.code === 'measurement-required'
+            );
+            if (control === undefined) {
+                throw new TypeError('Expected the real deferred control receipt.');
+            }
+            const existingReceipts = plan.applicationToolReceipts ?? [];
+            expect(
+                planAgentRun({
+                    ...replanInput,
+                    applicationToolReceipts: [
+                        ...existingReceipts,
+                        { ...control, callId: 'failed-catalog', toolName: 'agent.catalog.discover' },
+                    ],
+                })
+            ).toMatchObject({ status: 'rejected' });
+            const hydrated = sanitizeAgentRunState(structuredClone(readAgentRunState()));
+            expect(hydrated.runs.find((entry) => entry.runId === run.runId)?.plan?.terminalMeasurementSettlement).toBe(
+                plan.terminalMeasurementSettlement
+            );
+            persistAgentRunState(hydrated);
+            expect(
+                backend === 'cloud'
+                    ? runtimeMocks.fetch.mock.calls.length
+                    : runtimeMocks.generateWebLlmCompletion.mock.calls.length
+            ).toBe(4);
+            expect(confirmation?.actions).toEqual([expect.objectContaining({ type: 'automateTrackGainRange' })]);
+            expect(getAgentApprovalView({ confirmationId })).toMatchObject({
+                canConfirm: false,
+                metricGoals: { status: 'blocked' },
+            });
+            await expect(confirmPendingChatActions({ confirmationId })).resolves.toMatchObject({
+                status: 'failed',
+                reason: expect.stringMatching(/metric|objective|measur/u),
+            });
+            expect(trackStore.value).toEqual(before.tracks);
+            expect(automationStore.value).toEqual(before.automation);
+            expect(undoStore.value).toEqual(before.undo);
+            expect(captureProjectRevision()).toBe(before.revision);
+        }
+    );
+
+    it('retains historical control settlement through hydration and a real re-preview at a moved revision', async () => {
+        installProviderFixtures((plan) => plan, impactMetricIntake, undefined, true);
+        flushAutomergeStorageWrites();
+        const originalRevision = captureProjectRevision();
+        await sendChatMessage(PROMPT);
+        const confirmationId = getConfirmationId();
+        const confirmation = getPendingActionConfirmation(confirmationId);
+        let originalRun: ReturnType<typeof agentRunLifecycle.get> | null = null;
+        if (confirmation !== null && confirmation !== undefined) {
+            originalRun = agentRunLifecycle.get(confirmation.runId ?? '');
+        }
+        const originalSettlement = originalRun?.plan?.terminalMeasurementSettlement;
+        if (confirmation === null || confirmation === undefined || originalSettlement === undefined) {
+            throw new TypeError('Expected the genuine workflow proposal and settlement.');
+        }
+        persistAgentRunState(sanitizeAgentRunState(structuredClone(readAgentRunState())));
+        landProjectEdit(() => {
+            const state = trackStore.value;
+            if (state === null) {
+                throw new TypeError('Expected the current project.');
+            }
+            trackStore.set({
+                ...state,
+                tracks: state.tracks.map((track) =>
+                    track.id === 'track-backing-vocal' ? { ...track, notes: 'Unrelated collaborator note.' } : track
+                ),
+            });
+        });
+        const currentRevision = captureProjectRevision();
+        expect(currentRevision).not.toBe(originalRevision);
+        const reproposed = await reproposePendingChatActions({ confirmationId });
+        expect(reproposed.status).toBe('reproposed');
+        if (reproposed.status !== 'reproposed') {
+            throw new TypeError('Expected the actual re-preview result.');
+        }
+        const rebound = getPendingActionConfirmation(reproposed.confirmationId);
+        const run = agentRunLifecycle.get(confirmation.runId ?? '');
+        const plan = run?.plan;
+        if (rebound === null || rebound === undefined || run === null || plan === null || plan === undefined) {
+            throw new TypeError('Expected the rebound persisted proposal.');
+        }
+        expect(plan.terminalMeasurementSettlement).toBe(originalSettlement);
+        expect(rebound.projectRevision).toBe(currentRevision);
+        expect(metricGoalStateCodec(plan.metricGoalState)?.authorities[0]?.revision).toBe(originalRevision);
+        expect(
+            planAgentRun({
+                request: PROMPT,
+                revision: currentRevision,
+                actions: rebound.actions,
+                actionLabels: rebound.actionLabels,
+                scope: plan.scope,
+                grants: run.grants,
+                budgets: run.budgets,
+                requiresConfirmation: true,
+                metricGoalState: plan.metricGoalState,
+                applicationToolReceipts: plan.applicationToolReceipts,
+                terminalMeasurementSettlement: plan.terminalMeasurementSettlement,
+            })
+        ).toMatchObject({ status: 'planned' });
+        expect(getAgentApprovalView({ confirmationId: reproposed.confirmationId })).toMatchObject({
+            status: 'proposed',
+            canConfirm: false,
+            metricGoals: { status: 'blocked' },
+        });
+        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(4);
+        expect(run.grants).toEqual(originalRun?.grants);
+    });
+
+    it('refuses selecting finite metric workflows after a literal relabeling of the original request', async () => {
+        installProviderFixtures((plan) => plan, literalMetricIntakeTurn, 'whole-project-vibe-mix');
+        const before = {
+            tracks: structuredClone(trackStore.value),
+            automation: structuredClone(automationStore.value),
+            undo: structuredClone(undoStore.value),
+            revision: captureProjectRevision(),
+        };
+
+        const { result } = await planPromptActions({ prompt: PROMPT, onProviderAttempt: admitProviderAttempt });
+
+        const lastProviderView: unknown = runtimeMocks.generateWebLlmCompletion.mock.calls.at(-1)?.[0];
+        if (typeof lastProviderView !== 'string') {
+            throw new TypeError('Expected the actual final WebLLM schema projection.');
+        }
+        const executionSchema = readWorkflowParameters(lastProviderView);
+        expect(matchesJsonSchema({ capabilityId: 'whole-project-vibe-mix' }, executionSchema)).toBe(false);
+        expect(matchesJsonSchema({ capabilityId: 'shared-vocal-fx-buses' }, executionSchema)).toBe(true);
+        expect(result.actions).toEqual([]);
+        expect(result.rejectionReason).toBe('Provider planning failed: The model provider request failed.');
+        expect(trackStore.value).toEqual(before.tracks);
+        expect(automationStore.value).toEqual(before.automation);
+        expect(undoStore.value).toEqual(before.undo);
+        expect(captureProjectRevision()).toBe(before.revision);
+    });
+
+    it('decomposes the separate literal gain control into a bounded revision-bearing plan with preserved constraints', async () => {
         const { result, projectRevision } = await planPromptActions({
-            prompt: PROMPT,
+            prompt: GAIN_CONTROL_PROMPT,
             onProviderAttempt: admitProviderAttempt,
         });
         const plan = result.wholeProjectVibeMixPlan;
@@ -627,12 +1015,10 @@ describe('whole-project vibe-mix planning', () => {
     // the provider's typed selection of the app-owned capability, and the
     // application derives every target, protection, and bound from project
     // truth alone. A paraphrase must therefore reach the identical scope.
-    const PARAPHRASE =
-        'Lift the rhythm section in the second chorus a touch — vocals, tempo map, and the master chain must stay untouched.';
 
-    it('reaches the same semantic workflow from a paraphrase (#2002)', async () => {
+    it('reaches the same bounded gain plan from a separate literal control paraphrase (#2002)', async () => {
         const { result, projectRevision } = await planPromptActions({
-            prompt: PARAPHRASE,
+            prompt: GAIN_CONTROL_PARAPHRASE,
             onProviderAttempt: admitProviderAttempt,
         });
         const plan = result.wholeProjectVibeMixPlan;
@@ -665,6 +1051,7 @@ describe('whole-project vibe-mix planning', () => {
     it('lets unrelated text enlarge nothing — the derived scope stays the project-derived bound (#2002)', async () => {
         const unrelated =
             'totally unrelated rambling about mastering, the second chorus, and hitting harder drums, please ignore';
+        installProviderFixtures((plan) => plan, impactMetricIntake, undefined, true);
         const { result } = await planPromptActions({ prompt: unrelated, onProviderAttempt: admitProviderAttempt });
         const plan = result.wholeProjectVibeMixPlan;
         if (!plan) {
@@ -711,7 +1098,10 @@ describe('whole-project vibe-mix planning', () => {
             });
         });
 
-        const { result } = await planPromptActions({ prompt: PROMPT, onProviderAttempt: admitProviderAttempt });
+        const { result } = await planPromptActions({
+            prompt: GAIN_CONTROL_PROMPT,
+            onProviderAttempt: admitProviderAttempt,
+        });
 
         expect(result.wholeProjectVibeMixPlan?.sectionMap).toEqual({
             target: { id: 'section-chorus-two', name: 'Chorus Two', startBeat: 56, endBeat: 72 },
@@ -722,7 +1112,7 @@ describe('whole-project vibe-mix planning', () => {
 
     it('sends the provider the revision-bound app-owned candidate scope and bounded relative-gain capability', async () => {
         const { projectRevision } = await planPromptActions({
-            prompt: PROMPT,
+            prompt: GAIN_CONTROL_PROMPT,
             onProviderAttempt: admitProviderAttempt,
         });
         const userMessage = getWebLlmUserMessage();
@@ -760,7 +1150,7 @@ describe('whole-project vibe-mix planning', () => {
         const sectionsBefore = structuredClone(markerStore.value?.sections);
         const transportBefore = structuredClone(transportStore.value);
 
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(GAIN_CONTROL_PROMPT);
 
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         if (!confirmation) {
@@ -852,10 +1242,10 @@ describe('whole-project vibe-mix planning', () => {
     it('normalizes hosted OpenAI-compatible planning to the same action and terminal state', async () => {
         runtimeMocks.backend.value = 'cloud';
 
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(GAIN_CONTROL_PROMPT);
 
         const providerRequest = getHostedRequestBody();
-        expect(providerRequest).toContain(PROMPT);
+        expect(providerRequest).toContain(GAIN_CONTROL_PROMPT);
         expect(providerRequest).toContain('bus-drums');
         expect(providerRequest).toContain('section-chorus-two');
         expect(providerRequest).toContain('baseRevision');
@@ -906,7 +1296,7 @@ describe('whole-project vibe-mix planning', () => {
                     arguments: { ...call.arguments },
                 }))
             );
-            await sendChatMessage(PROMPT);
+            await sendChatMessage(GAIN_CONTROL_PROMPT);
             expect(chatStore.value?.messages.every((message) => !message.pendingActionConfirmationId)).toBe(true);
             expect(getGainLanes()).toEqual([]);
             expect(undoStore.value?.past).toEqual([]);
@@ -919,7 +1309,7 @@ describe('whole-project vibe-mix planning', () => {
             ...markerStore.value!,
             sections: markerStore.value!.sections.filter((section) => section.id !== 'section-chorus-one'),
         });
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(GAIN_CONTROL_PROMPT);
         expect(getConfirmationId()).toBe('');
 
         markerStore.set({
@@ -936,7 +1326,7 @@ describe('whole-project vibe-mix planning', () => {
             ),
         });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(GAIN_CONTROL_PROMPT);
         expect(getConfirmationId()).toBe('');
 
         trackStore.set({
@@ -963,7 +1353,7 @@ describe('whole-project vibe-mix planning', () => {
             ],
         });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(GAIN_CONTROL_PROMPT);
         expect(getConfirmationId()).toBe('');
 
         automationStore.set({ lanes: [] });
@@ -972,7 +1362,7 @@ describe('whole-project vibe-mix planning', () => {
             tracks: [...trackStore.value!.tracks, createTrack('bus-drums-parallel', 'Drum Bus', 'bus')],
         });
         chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(GAIN_CONTROL_PROMPT);
         expect(getConfirmationId()).toBe('');
     });
 
@@ -980,7 +1370,7 @@ describe('whole-project vibe-mix planning', () => {
         const aborter = new AbortController();
         aborter.abort();
 
-        const { result } = await planPromptActions({ prompt: PROMPT, signal: aborter.signal });
+        const { result } = await planPromptActions({ prompt: GAIN_CONTROL_PROMPT, signal: aborter.signal });
 
         expect(result.actions).toEqual([]);
         expect(result.wholeProjectVibeMixPlan).toBeUndefined();
@@ -991,7 +1381,7 @@ describe('whole-project vibe-mix planning', () => {
     // The edit below changes automation mode for a target this plan names, and the refusal names
     // that target: the divergence port classifies the conflict rather than reporting a bare move.
     it('leaves no partial lanes or receipt when the project changes before confirmation', async () => {
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(GAIN_CONTROL_PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         landProjectEdit(() => {
             trackStore.set({
@@ -1022,7 +1412,7 @@ describe('whole-project vibe-mix planning', () => {
     });
 
     it('aborts a failed atomic store write without lane, receipt, or undo residue', async () => {
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(GAIN_CONTROL_PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         const originalSet = automationStore.set.bind(automationStore);
         vi.spyOn(automationStore, 'set').mockImplementationOnce((state) => {
@@ -1043,7 +1433,7 @@ describe('whole-project vibe-mix planning', () => {
     });
 
     it('preserves collaborator lane edits and keeps the whole undo group retryable', async () => {
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(GAIN_CONTROL_PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
         const committed = structuredClone(automationStore.value);

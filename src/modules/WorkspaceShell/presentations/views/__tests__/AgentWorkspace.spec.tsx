@@ -30,6 +30,7 @@ const getAgentApprovalViewMock = vi.hoisted(() => vi.fn());
 const confirmPendingChatActionsMock = vi.hoisted(() => vi.fn());
 const cancelPendingChatActionsMock = vi.hoisted(() => vi.fn().mockResolvedValue({ status: 'cancelled' }));
 const reproposePendingChatActionsMock = vi.hoisted(() => vi.fn());
+const stopMeasuredPreviewAuditionMock = vi.hoisted(() => vi.fn());
 const agentRunCancellationMock = vi.hoisted(() => ({ cancel: vi.fn() }));
 const revertAiActionGroupMock = vi.hoisted(() => vi.fn());
 const agentChangeComparisonMock = vi.hoisted(() => ({
@@ -49,6 +50,7 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
     confirmPendingChatActions: confirmPendingChatActionsMock,
     cancelPendingChatActions: cancelPendingChatActionsMock,
     reproposePendingChatActions: reproposePendingChatActionsMock,
+    stopMeasuredPreviewAudition: stopMeasuredPreviewAuditionMock,
     revertAiActionGroup: revertAiActionGroupMock,
     agentChangeComparison: agentChangeComparisonMock,
     getAgentChangeComparisonView: getAgentChangeComparisonViewMock,
@@ -73,6 +75,11 @@ vi.mock('#/modules/AiRuntime/stores', async () => {
 
 vi.mock('#/modules/AiRuntime/presentations/views', () => ({
     AgentRunDecisionPanel: () => <div data-testid="agent-decision-panel" />,
+    MeasuredPreviewAudition: (input: { confirmationId: string; selectedIntentGroupIds: readonly string[] }) => (
+        <section aria-label="Measured audio comparison" data-confirmation-id={input.confirmationId}>
+            {input.selectedIntentGroupIds.join(',')}
+        </section>
+    ),
 }));
 
 type ProjectionOverrides = {
@@ -226,6 +233,8 @@ const intentGroup = (overrides: Partial<ApprovalIntentGroup> = {}): ApprovalInte
 });
 
 const approvalView = (overrides: Partial<ApprovalView> = {}): ApprovalView => ({
+    canConfirm: overrides.status === undefined || overrides.status === 'proposed',
+    metricGoals: { status: 'not-required', reason: null, criteria: [] },
     confirmationId: 'confirmation-1',
     status: 'proposed',
     error: null,
@@ -332,6 +341,34 @@ beforeEach(() => {
 });
 
 describe('AgentWorkspace', () => {
+    it('connects one proposed audition and retires its sound before changing the selected groups', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        getAgentApprovalViewMock.mockReturnValue(
+            approvalView({
+                canConfirm: false,
+                intentGroups: [
+                    intentGroup({ id: 'group-a', summary: 'First edit' }),
+                    intentGroup({ id: 'group-b', summary: 'Second edit' }),
+                ],
+            })
+        );
+        render(<AgentWorkspace />);
+        const comparison = screen.getByRole('region', { name: 'Measured audio comparison' });
+        expect(screen.getAllByRole('region', { name: 'Measured audio comparison' })).toHaveLength(1);
+        expect(comparison).toHaveAttribute('data-confirmation-id', 'confirmation-1');
+        expect(comparison).toHaveTextContent('group-a,group-b');
+        stopMeasuredPreviewAuditionMock.mockImplementationOnce((input: { confirmationId: string }) => {
+            expect(input).toEqual({ confirmationId: 'confirmation-1' });
+            expect(comparison).toHaveTextContent('group-a,group-b');
+        });
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Include group 2: Second edit' }));
+        expect(stopMeasuredPreviewAuditionMock).toHaveBeenCalledTimes(1);
+        expect(comparison).toHaveTextContent('group-a');
+        expect(screen.getByRole('button', { name: 'Confirm agent actions' })).toBeDisabled();
+    });
     it('renders an empty state when no agent runs exist', () => {
         render(<AgentWorkspace />);
 
@@ -670,6 +707,50 @@ describe('AgentWorkspace', () => {
         rerender(<AgentWorkspace />);
 
         expect(screen.getByText('local only, never widens to a hosted provider')).toBeInTheDocument();
+    });
+
+    it('keeps an unverified metric proposal visible and subscribes to its approval transition', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        const criterion = 'Lead Vocal: spectral centroid must decrease over Chorus. Objective proxy only.';
+        getAgentApprovalViewMock.mockReturnValue(
+            approvalView({
+                canConfirm: false,
+                intentGroups: [intentGroup()],
+                metricGoals: {
+                    status: 'blocked',
+                    reason: 'Actual compatible preview measurements are missing.',
+                    criteria: [{ goalId: 'warm-centroid', stepId: 'warm-vocal', criterionText: criterion }],
+                },
+                rePreview: { available: true, reason: null },
+            })
+        );
+        render(<AgentWorkspace />);
+        expect(screen.getByRole('button', { name: 'Confirm agent actions' })).toBeDisabled();
+        expect(screen.getByText('Actual compatible preview measurements are missing.')).toBeInTheDocument();
+        expect(screen.getByText(criterion)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Re-preview agent actions' })).toBeEnabled();
+        fireEvent.click(screen.getByRole('button', { name: 'Confirm agent actions' }));
+        expect(confirmPendingChatActionsMock).not.toHaveBeenCalled();
+        getAgentApprovalViewMock.mockReturnValue(
+            approvalView({
+                intentGroups: [intentGroup()],
+                metricGoals: {
+                    status: 'verified',
+                    reason: null,
+                    criteria: [{ goalId: 'warm-centroid', stepId: 'warm-vocal', criterionText: criterion }],
+                },
+            })
+        );
+        act(() => {
+            pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        });
+        expect(screen.getByText('Objective verification: verified')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Confirm agent actions' })).toBeEnabled();
+        fireEvent.click(screen.getByRole('button', { name: 'Confirm agent actions' }));
+        expect(confirmPendingChatActionsMock).toHaveBeenCalledExactlyOnceWith({ confirmationId: 'confirmation-1' });
     });
 
     it('renders the semantic approval view for a pending proposal', () => {

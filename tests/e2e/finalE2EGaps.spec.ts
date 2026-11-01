@@ -72,14 +72,20 @@ test.describe('Project menu navigation', () => {
 
     test('New from Template opens the template chooser', async ({ page }) => {
         await page.getByRole('button', { name: 'Project menu' }).click();
-        await page.getByRole('menu', { name: 'Project menu' }).getByRole('menuitem', { name: 'New from Template…' }).click();
+        await page
+            .getByRole('menu', { name: 'Project menu' })
+            .getByRole('menuitem', { name: 'New from Template…' })
+            .click();
         await expect(page.getByText('Start a new project')).toBeVisible({ timeout: 5000 });
         await expect(page.getByRole('button', { name: 'EDM' })).toBeVisible();
     });
 
     test('Load Demo Project opens the demo chooser', async ({ page }) => {
         await page.getByRole('button', { name: 'Project menu' }).click();
-        await page.getByRole('menu', { name: 'Project menu' }).getByRole('menuitem', { name: 'Load Demo Project…' }).click();
+        await page
+            .getByRole('menu', { name: 'Project menu' })
+            .getByRole('menuitem', { name: 'Load Demo Project…' })
+            .click();
         await expect(page.getByText('Start a new project')).toBeVisible({ timeout: 5000 });
     });
 });
@@ -96,7 +102,7 @@ test.describe('Virtual keyboard deep', () => {
     });
 
     test('Keyboard exposes named keys and a velocity slider with a value', async ({ page }) => {
-        const keyboard = page.getByRole('application', { name: /Virtual Piano Keyboard/i });
+        const keyboard = page.getByRole('region', { name: /Virtual Piano Keyboard/i });
         await expect(keyboard).toBeVisible();
         await expect(keyboard.getByRole('button', { name: /C4/i })).toBeVisible();
 

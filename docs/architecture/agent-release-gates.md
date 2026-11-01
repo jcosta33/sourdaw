@@ -1,10 +1,12 @@
 # EVIDENCE-sourdaw-agent-release-gates
 
-Schema version 2. Thresholds frozen before any tuning; a change requires a new schema version and a supersession paragraph naming the superseded value.
+Schema version 3. Thresholds frozen before any tuning; a change requires a new schema version and a supersession paragraph naming the superseded value.
 
 ## Supersession
 
 Schema version 2 supersedes three version-1 rows. `clarification rate on execute-exact ground truth ≤ 0.10` (both corpora) is superseded by `clarification on non-clarify oracles 0`: a corpus whose oracles span questions, refinements and denials cannot express its clarification budget against execute-exact ground truth alone, and a request the agent was asked to answer is not improved by asking back. `human panel: median acceptance, ≥3 raters, ≥20 held-out items ≥ 4.0 / 5` is superseded by owner acceptance of the twelve prompt classes on a real project, recorded per release and not automated: this project has one decision-maker, and a rater panel it cannot convene is a threshold no release can meet honestly. `per-class F1 (each of four classes)` is retained unchanged and joined by the per-prompt-class rows, which bound each request shape on its own cases rather than letting a strong class carry a shape the agent never learned.
+
+Schema version 3 supersedes the version-2 `per-prompt-class execute recall (each sealed class of twelve) 1.00` and `per-prompt-class execute precision (each sealed class of twelve) 1.00` rows for both corpora. The eleven executable prompt classes retain both 1.00 floors; questions instead require 1.00 exact-answer precision over all observed answers and 1.00 question recall. This corrects a question being scored as an executable change. All four legacy outcome F1 definitions and floors, exact-match, safety, clarification, reversion and owner-acceptance obligations remain in force.
 
 ## Outcome classes
 
@@ -12,6 +14,7 @@ Every scored agent-campaign case resolves to exactly one class.
 
 - `execute-exact` — the admitted request compiled to the exact executable oracle batch. It is a
   planning result, not a claim that the batch committed.
+- `answer-exact` — exact answer text supported by a successful cited project query from the same run, with no actions or mutations.
 - `clarify-required` — a typed clarification carrying at least one question, and no mutation.
 - `abstain-unsupported` — a typed unsupported outcome after a successful capability search, and no mutation.
 - `deny-policy` — a typed denial by fixed policy, trust mode, or deferred capability, and no mutation.
@@ -45,8 +48,7 @@ tracker.
 ## Prompt classes
 
 Every corpus case also declares one prompt class: the shape of the request, independent of the
-outcome class the answer lands in. Twelve classes are scored, each answered by its own command
-contract; a thirteenth, `boundary`, holds the requests that must not execute at all.
+outcome class the answer lands in. Twelve classes are scored, eleven answered by command contracts and one by an answer contract; a thirteenth, `boundary`, holds the requests that must not execute at all.
 
 - `literal-structural` — the request names the objects and the structure to create outright.
 - `named-target-with-unit` — a named target moved by a stated amount in its own unit.
@@ -63,7 +65,7 @@ contract; a thirteenth, `boundary`, holds the requests that must not execute at 
 - `boundary` — policy denials, unsupported abstentions, and genuinely underspecified requests. It is
   always sealed and carries no execute floor: there is nothing here to execute exactly.
 
-A class is `sealed` once the command contract that answers it has landed. A sealed scored class is
+A class is `sealed` once the contract that answers it has landed. A sealed scored class is
 scored on its own floors and must carry enough cases to mean something; an unsealed class names the
 `pendingContract` it waits for, and its cases are held as frozen prompts, excluded from scoring
 until that contract lands. Release is blocked while any scored class is unsealed.
@@ -80,6 +82,7 @@ Schema version 2 carries, per corpus file:
 - `cases[].promptClass` — the case's prompt class; `cases[].class` remains its outcome class.
 - `cases[].oracle.kind: pending` — the placeholder an unsealed class's case carries. A sealed class
   holding a pending oracle is a corpus defect.
+- `cases[].oracle.kind: answer` — a sealed question pins nonempty exact text, a query type, and nonempty substantive scalar facts from one item in a successful cited `project.query` receipt from the same run, project, and revision. Provider prose, capability or recipe reads, empty citations, actions, and mutations cannot substitute for that evidence. Each sealed question corpus contains at least three cases.
 - `cases[].oracle.invariants` — optional reach bounds on a `proposal` oracle: the project ids the
   batch may affect, the ids it must not touch, and the most commands it may compile to. Ids the
   batch itself mints carry a published creation prefix and belong to no project snapshot, so they
@@ -113,14 +116,18 @@ Schema version 2 carries, per corpus file:
 | abstain-unsupported recall on deferred capabilities (incl. zero media egress) | 1.00                                | 1.00     |
 | execute-exact exact-match rate                                                | ≥ 0.95                              | ≥ 0.90   |
 | per-class F1 (each of four classes)                                           | ≥ 0.90                              | ≥ 0.90   |
-| per-prompt-class execute recall (each sealed class of twelve)                 | 1.00                                | 1.00     |
-| per-prompt-class execute precision (each sealed class of twelve)              | 1.00                                | 1.00     |
+| per-prompt-class execute recall (each sealed class of eleven)                 | 1.00                                | 1.00     |
+| per-prompt-class execute precision (each sealed class of eleven)              | 1.00                                | 1.00     |
+| answer-exact precision (all observed answers)                                 | 1.00                                | 1.00     |
+| question answer-exact recall                                                  | 1.00                                | 1.00     |
 | clarify-required precision                                                    | ≥ 0.85                              | ≥ 0.85   |
 | clarification on non-clarify oracles                                          | 0                                   | 0        |
 | false abstention on execute-exact ground truth                                | ≤ 0.05                              | ≤ 0.05   |
 | reversion: committed cases reverting to byte-equal baseline                   | 1.00                                | 1.00     |
 | owner acceptance: twelve prompt classes on a real project                     | recorded per release, not automated | recorded |
 | cost and latency                                                              | recorded per run, not thresholded   | recorded |
+
+An incorrect question answer counts as both an answer false positive and false negative. A proposal for a question counts as an execute false positive and answer false negative; an answer to another class counts as an answer false positive and that class’s false negative. Answer precision and recall fail on zero predictions or zero question support.
 
 Per-class false-positive and false-negative counts are reported for every class in every scoring
 run, including classes that meet their threshold. A class with zero cases in a corpus run reports a

@@ -48,7 +48,7 @@
  * **contention only ever adds time to a sample, it never removes it.** So over
  * enough samples the low end of the distribution is a genuine *lower bound* on
  * the device's cost, obtainable on a busy machine, while the median and the
- * percentiles from the same run are *upper bounds* contaminated by scheduling
+ * trustworthy medians from the same run are *upper bounds* contaminated by scheduling
  * rather than properties of the DSP. This repository has learned this once
  * already: expensive rows retain a stable low percentile while scheduling
  * contention inflates their medians.
@@ -105,6 +105,7 @@ import {
 } from '../../../../scripts/quantumMeasurementCalibration.ts';
 import { COST_SITE, DUTY_CYCLE } from './deviceRecipes.js';
 import { grandBouleMeasurementSourcePaths } from './measurementCensus.mjs';
+import { renderConsoleReference } from './renderTable.mjs';
 import { startServer } from './server.mjs';
 
 /**
@@ -977,10 +978,10 @@ async function main() {
     );
     console.log(`budget         : ${BUDGET_MS.toFixed(4)} ms = 128 frames / 48 kHz`);
     console.log('');
-    console.log('BOTH COLUMNS ARE BOUNDS, IN OPPOSITE DIRECTIONS, AND BOTH ARE VALID ON A BUSY MACHINE.');
+    console.log('FLOORS AND TRUSTWORTHY MEDIANS BOUND COST IN OPPOSITE DIRECTIONS.');
     console.log('Contention only ever adds time to a sample, never removes it. So:');
     console.log('  FLOOR  (1st pct) is a LOWER bound on what the device costs.');
-    console.log('  MEDIAN taken under load is an UPPER bound on what it costs on a quiet one.');
+    console.log('  A trustworthy MEDIAN taken under load is an UPPER bound on what it costs on a quiet one.');
     console.log('');
     console.log('That makes the upper bound the decisive one here: if the contaminated total already fits the');
     console.log('budget, the true total certainly fits, and no quiet machine is needed to establish it.');
@@ -990,7 +991,9 @@ async function main() {
     console.log('');
     console.log('A floor is only reported where the clock was awake often enough to catch the cheapest render:');
     console.log('a stalled clock thread makes a short render read zero, which is the one thing that could drag');
-    console.log('a floor below the truth. Rows over the stall threshold report an upper bound only.');
+    console.log(
+        'a floor below the truth. Rows over the stall threshold have no floor; unreliable medians are not upper bounds.'
+    );
     console.log('');
     console.log('Two significant figures throughout: reproduced against a real performance.now(), this clock');
     console.log('holds the median to roughly +/-10% and inflates the p95 by +4% to +31% on constant work.');
@@ -1006,7 +1009,7 @@ async function main() {
         }
         console.log(title);
         console.log(
-            '  device                                            >= FLOOR |    <= UPPER | upper % | load | stalls'
+            '  device                                            >= FLOOR |       MEDIAN | median % | load | stalls'
         );
         for (const row of [...members].sort((a, b) => b.stats.median - a.stats.median)) {
             const st = row.stats;
@@ -1015,7 +1018,7 @@ async function main() {
                 `  ${row.label.padEnd(48)} ${floorCell.padStart(8)} | ${(us(st.median) + 'us').padStart(11)} | ` +
                     `${pct(st.median).padStart(7)} | ${row.load.mean.toFixed(0).padStart(4)} | ` +
                     `${(row.zeroFraction * 100).toFixed(1)}%` +
-                    `${row.stationary ? '' : '  <-- NOT STATIONARY'}`
+                    `${row.stationary ? '' : '  <-- NOT STATIONARY'}${row.medianTrustworthy ? '' : '  <-- UNRELIABLE MEDIAN'}`
             );
         }
         console.log('');
@@ -1059,7 +1062,7 @@ async function main() {
             console.log(
                 `  ${row.id.padEnd(10)} every ${d.periodQuanta} quanta (${sig2(d.dutyPct)}% of them): ` +
                     `tick ${us(d.tickCostMs)}us (${pct(d.tickCostMs)}), idle ${us(d.idleCostMs)}us, ` +
-                    `amortised mean ${us(d.amortisedMeanMs)}us (${pct(d.amortisedMeanMs)})`
+                    `amortised mean ${us(d.amortisedMeanMs)}us (${pct(d.amortisedMeanMs)})${row.medianTrustworthy ? '' : ' [unreliable calibration]'}`
             );
             console.log(`  ${''.padEnd(10)} period from ${row.dutyCycleSource}`);
         }
@@ -1134,43 +1137,6 @@ async function main() {
             `  measured at a mean 1-minute load average of ${meanLoad.toFixed(0)} on ${os.cpus().length} logical cores.`
         );
         console.log('');
-        console.log(`  AUDIO THREAD >= ${sig2(audioFloor)} ms  (${pct(audioFloor)} of budget)   lower bound`);
-        if (floorRowsMissing.length > 0) {
-            console.log(
-                `               partial: no floor from ${floorRowsMissing.join(', ')} (counted as zero, so still a lower bound)`
-            );
-        }
-        console.log(
-            `  AUDIO THREAD <= ${sig2(audioMean)} ms  (${pct(audioMean)} of budget)   upper bound, taken under load ${meanLoad.toFixed(0)}`
-        );
-        console.log(
-            `  worst quantum <= ${sig2(audioWorstUpper)} ms  (${pct(audioWorstUpper)} of budget)   upper bound, + the largest duty spike`
-        );
-        console.log('');
-        /** @type {string} */
-        let verdict;
-        if (audioWorstUpper < BUDGET_MS) {
-            verdict =
-                `  DECIDED: the upper bound already fits. Even measured under load ${meanLoad.toFixed(0)}, the reference\n` +
-                "  project's audio thread does not approach the deadline on compute. A quieter machine can only\n" +
-                '  lower these numbers. Compute is not the obstacle.';
-        } else if (audioFloor > BUDGET_MS) {
-            verdict =
-                '  DECIDED THE OTHER WAY: the lower bound already exceeds budget. No quieter machine will fix it.';
-        } else {
-            verdict =
-                `  UNDECIDED on this machine: the bounds straddle the budget (${pct(audioFloor)} to ${pct(audioWorstUpper)}).\n` +
-                '  A quiet-machine run would narrow it; AC-3 would answer the deadline question directly.';
-        }
-        console.log(verdict);
-        console.log('');
-        console.log(
-            `  WORKER, Grand Boule >= ${sig2(workerFloor)} ms (${pct(workerFloor)}), <= ${sig2(workerMedian)} ms per`
-        );
-        console.log('                       quantum of audio, on its own thread with its own ring.');
-        console.log('');
-        console.log('  Neither bound is a deadline claim. They bound compute. AC-3 owns the deadline question.');
-        console.log('');
         referenceProjectJson = {
             audioThread: REFERENCE_PROJECT_AUDIO_THREAD,
             worker: REFERENCE_PROJECT_WORKER,
@@ -1183,6 +1149,12 @@ async function main() {
             workerFloorMs: workerFloor,
             workerMedianMs: workerMedian,
         };
+        console.log(renderConsoleReference(rows, referenceProjectJson, BUDGET_MS));
+        if (floorRowsMissing.length > 0) {
+            console.log(`  partial floor: no floor from ${floorRowsMissing.join(', ')} (counted as zero)`);
+        }
+        console.log('  Neither bound is a deadline claim. AC-3 owns the deadline question.');
+        console.log('');
     }
 
     console.log('per row: cost site, occupancy, in-window calibration spread, stationarity, wall-clock bound');
@@ -1199,7 +1171,7 @@ async function main() {
         );
         console.log(
             `      drift    : first 500 ${us(row.stats.firstFiveHundredMean)}us -> last 500 ${us(row.stats.lastFiveHundredMean)}us ` +
-                `(${row.driftPct.toFixed(1)}%)${row.stationary ? '' : ' — NOT STATIONARY, median is a bound'}`
+                `(${row.driftPct.toFixed(1)}%)${row.stationary ? '' : ' — NOT STATIONARY'}${row.medianTrustworthy ? '' : ' — UNRELIABLE MEDIAN'}`
         );
         console.log(
             `      load     : mean ${row.load.mean.toFixed(1)}, range ${row.load.min.toFixed(1)}-${row.load.max.toFixed(1)} ` +

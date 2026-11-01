@@ -429,4 +429,32 @@ export const vocalMixRecipes: readonly MixRecipe[] = [
         ],
         source: 'Older recording chains read as vintage mostly through added low-order harmonics and reduced bandwidth, so a small amount of drive is paired with a gentle top-end roll rather than with heavy distortion. Negative output trim keeps the added harmonics from raising the level and flattering the comparison.',
     },
+    {
+        id: 'vocal-controlled',
+        descriptor: 'controlled',
+        roles: ['vocal'],
+        title: 'Even unwanted phrase and syllable level swings',
+        steps: [
+            {
+                kind: 'insert',
+                deviceType: 'builtin-compressor',
+                parameters: [
+                    { paramId: 'comp-threshold', minimum: -24, maximum: -16 },
+                    { paramId: 'comp-ratio', minimum: 3, maximum: 5 },
+                    { paramId: 'comp-attack', minimum: 5, maximum: 12 },
+                    { paramId: 'comp-release', minimum: 60, maximum: 120 },
+                ],
+            },
+        ],
+        prerequisites: [
+            'Every wanted phrase is already audible; upper levels cross the chosen threshold.',
+            'Low rumble does not dominate the compressor detector.',
+        ],
+        contraindications: [
+            'Skip an already level-ridden or heavily compressed take.',
+            'Skip when verse-to-chorus contrast is intentional; compression cannot rescue an inaudible phrase.',
+        ],
+        metrics: [{ metric: 'dynamicRangeEstimate', direction: 'decrease' }],
+        source: 'The existing vocal level-control window uses 3:1 to 5:1 compression with a syllable-length release. This move isolates that level control without proximity EQ or makeup gain; it only reduces swings when upper levels actually trigger reduction.',
+    },
 ];

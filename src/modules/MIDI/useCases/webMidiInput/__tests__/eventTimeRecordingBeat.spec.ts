@@ -32,6 +32,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     sendNativeLiveMidiNote: async () => true,
     soundsNativeNotes: () => false,
     startFaustNote: vi.fn(),
+    writeNativeBuiltinParameters: vi.fn(),
 }));
 
 vi.mock('#/modules/PluginHost/useCases', () => ({
@@ -118,6 +119,7 @@ describe('event-time recording beat (#4875)', () => {
         tempoMapStore.set({ changes: [] });
         playheadWrapCountRef.current = 0;
         playheadClockRef.hold = null;
+        playheadClockRef.pendingLoopSeam = null;
         ensure_track_strip.mockReset();
         ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
         performance_now = vi.spyOn(performance, 'now').mockReturnValue(NOW_MS);
@@ -128,7 +130,123 @@ describe('event-time recording beat (#4875)', () => {
         restoreTransport = null;
         playheadWrapCountRef.current = 0;
         playheadClockRef.hold = null;
+        playheadClockRef.pendingLoopSeam = null;
         performance_now.mockRestore();
+    });
+
+    it.each([0, 2])('keeps current and delayed incoming events exact before arrival on wrap %i', async (wraps) => {
+        const shift = wraps * 4;
+        audio_clock.currentTime = NOW_SECONDS + shift;
+        performance_now.mockReturnValue(NOW_MS + shift * 1000);
+        playTransport({ isLooping: true, loopStart: 0, loopEnd: 8, playheadPosition: 6 });
+        setGestureClockSource({
+            getAudioTimeSeconds: () => audio_clock.currentTime,
+            readNativeCursorBeats: () => null,
+        });
+        playheadClockRef.beat = 7.99;
+        playheadClockRef.audioTimeSeconds = NOW_SECONDS + shift - 0.02;
+        playheadClockRef.pendingLoopSeam = {
+            generation: playheadClockRef.generation,
+            anchorBeat: playheadClockRef.beat,
+            anchorAudioTimeSeconds: playheadClockRef.audioTimeSeconds,
+            tempo: transportStore.value!.tempo,
+            tempoMapChanges: tempoMapStore.value?.changes ?? null,
+            audioTimeSeconds: 1.085 + shift,
+            loopStart: 0,
+            loopEnd: 8,
+            passIndex: wraps + 1,
+        };
+        wrapsSinceEpochStart(wraps);
+        await dispatch([0x91, 60, 100], 1100 + shift * 1000);
+        await dispatch([0x91, 62, 100], 1095 + shift * 1000);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))).toMatchObject({ recordingPassIndex: wraps + 1 });
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(0.03, 9);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 62))?.recordingPassIndex).toBe(wraps + 1);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 62))?.startBeat).toBeCloseTo(0.02, 9);
+        playheadClockRef.pendingLoopSeam = null;
+        playheadClockRef.beat = 0.04;
+        playheadClockRef.audioTimeSeconds = 1.105 + shift;
+        audio_clock.currentTime = 1.105 + shift;
+        performance_now.mockReturnValue(1105 + shift * 1000);
+        wrapsSinceEpochStart(wraps + 1);
+        await dispatch([0x91, 64, 100], 1100 + shift * 1000);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 64))?.recordingPassIndex).toBe(wraps + 1);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 64))?.startBeat).toBeCloseTo(0.03, 9);
+    });
+
+    it('integrates the incoming tempo map from the emitted seam without quantizing its offset', async () => {
+        playTransport({ isLooping: true, loopStart: 0, loopEnd: 8, playheadPosition: 6 });
+        tempoMapStore.set({
+            changes: [
+                { id: 'head', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'tail', beat: 0.01, tempo: 60, curve: 'instant' },
+            ],
+        });
+        audio_clock.currentTime = 5.1;
+        performance_now.mockReturnValue(5100);
+        setGestureClockSource({
+            getAudioTimeSeconds: () => audio_clock.currentTime,
+            readNativeCursorBeats: () => null,
+        });
+        playheadClockRef.beat = 7.99;
+        playheadClockRef.audioTimeSeconds = 5.08;
+        playheadClockRef.pendingLoopSeam = {
+            generation: playheadClockRef.generation,
+            anchorBeat: 7.99,
+            anchorAudioTimeSeconds: 5.08,
+            tempo: 120,
+            tempoMapChanges: tempoMapStore.value?.changes ?? null,
+            audioTimeSeconds: 5.09,
+            loopStart: 0,
+            loopEnd: 8,
+            passIndex: 1,
+        };
+        await dispatch([0x91, 60, 100], 5100);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(0.015, 9);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.recordingPassIndex).toBe(1);
+    });
+
+    it('keeps the epoch floor on the first witnessed seam', async () => {
+        playTransport({ isLooping: true, loopStart: 0, loopEnd: 8, playheadPosition: 7 });
+        setGestureClockSource({
+            getAudioTimeSeconds: () => audio_clock.currentTime,
+            readNativeCursorBeats: () => null,
+        });
+        playheadClockRef.beat = 7.99;
+        playheadClockRef.audioTimeSeconds = 1.08;
+        playheadClockRef.pendingLoopSeam = {
+            generation: playheadClockRef.generation,
+            anchorBeat: 7.99,
+            anchorAudioTimeSeconds: 1.08,
+            tempo: 120,
+            tempoMapChanges: tempoMapStore.value?.changes ?? null,
+            audioTimeSeconds: 1.085,
+            loopStart: 0,
+            loopEnd: 8,
+            passIndex: 1,
+        };
+        await dispatch([0x91, 60, 100], 500);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBe(7);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.recordingPassIndex).toBe(0);
+    });
+
+    it('does not consume an obsolete pending boundary after the loop region changes', async () => {
+        playTransport({ isLooping: true, loopStart: 0, loopEnd: 4, playheadPosition: 6 });
+        cursorAt(8.03);
+        playheadClockRef.pendingLoopSeam = {
+            generation: playheadClockRef.generation,
+            anchorBeat: playheadClockRef.beat,
+            anchorAudioTimeSeconds: playheadClockRef.audioTimeSeconds,
+            tempo: transportStore.value!.tempo,
+            tempoMapChanges: tempoMapStore.value?.changes ?? null,
+            audioTimeSeconds: 1.085,
+            loopStart: 0,
+            loopEnd: 8,
+            passIndex: 1,
+        };
+        await dispatch([0x91, 60, 100], 1100);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.recordingPassIndex).toBe(0);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBe(8.03);
     });
 
     it('records a delayed note-on at the beat of its event time, not of the callback run', async () => {
@@ -259,21 +377,22 @@ describe('event-time recording beat (#4875)', () => {
 
         // The one-wrap bound answered 7, the epoch start.
         expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(6.2, 9);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.recordingPassIndex).toBe(2);
     });
 
     // #4935 review — the seam window: between the seam instant and the arrival
     // tick that increments the count, the publisher clamps the dying-pass pair
-    // at loopEnd but the capture's projection integrates past it, and the raw
-    // cursor routed a dying-pass event to the direct-epoch bound — charging a
-    // multi-wrap roll zero of its completed passes. A counted wrap beside a
-    // cursor at or past loopEnd routes through the seam-aware bound instead.
+    // at loopEnd. A raw projection past it routed a dying-pass event to the
+    // direct-epoch bound — charging a multi-wrap roll zero of its completed
+    // passes. The capture folds the projection at the seam and counts that
+    // seam beside the published wraps, so the event inverts around the loop.
     it('routes a seam-window projection past loopEnd through the wrap-aware seam bound', async () => {
         playTransport({ isLooping: true, loopStart: 0, loopEnd: 8, playheadPosition: 7 });
         // The projector, not the engine, is the cursor: a browser build reads
         // the dying-pass pair the publisher clamped at 7.99 as of 20 ms ago.
         // The seam instant passed 15 ms ago and the arrival tick has not run,
-        // so the count still reads one wrap and the projection (7.99 + 0.04
-        // beats) runs past the loop end.
+        // so the count still reads one wrap; the capture folds the projection
+        // (7.99 + 0.04 beats) to 0.03 on the next pass.
         setGestureClockSource({
             getAudioTimeSeconds: () => audio_clock.currentTime,
             readNativeCursorBeats: () => null,
@@ -328,13 +447,12 @@ describe('event-time recording beat (#4875)', () => {
         expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(8.8, 9);
     });
 
-    // #4935 review — the seam window is dated by the projector's own overshoot,
-    // converted back to wall clock at the anchor's tempo, never by a
-    // re-integration through the post-seam map: a change just past loopEnd sits
-    // in a zone a looping roll never travels, and charging the overshoot to it
-    // turned 0.095 s of projection into 0.445 s of "travel" — enough to close
-    // the window on the whole genuine seam band and route its events to the
-    // direct bound's never-played beats.
+    // #4935 review — the seam is dated by the projection's own travel to
+    // loopEnd, never by a re-integration through the post-seam map: a change
+    // just past loopEnd sits in a zone a looping roll never travels, and
+    // charging the overshoot to it turned 0.095 s of projection into 0.445 s
+    // of "travel" — enough to route the seam band's events to the direct
+    // bound's never-played beats.
     it('admits the seam window past a post-seam tempo change for a grain-young event', async () => {
         playTransport({ isLooping: true, loopStart: 0, loopEnd: 8, playheadPosition: 7 });
         // 120 BPM with an instant drop to 20 at 8.05: the overshoot zone is
@@ -359,15 +477,15 @@ describe('event-time recording beat (#4875)', () => {
         await dispatch([0x91, 60, 100], 1050);
 
         // The direct bound answered 8.17, a beat past the seam the roll never
-        // played; the overshoot's wall age (0.095 s) dates the 50 ms event
-        // inside the incoming pass's first grain — the transport wrapped
-        // 0.095 s ago and the truth (beat 0.1) sits on that pass — whose
-        // origin is the seam itself.
-        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(0, 9);
+        // played. The capture folds the projection at the seam, 0.005 s after
+        // the anchor at its own 120 BPM, so the transport wrapped 0.095 s ago
+        // and the 50 ms event sits 0.045 s into the incoming pass: beat 0.09,
+        // at its own offset rather than stacked on the pass origin.
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(0.09, 9);
     });
 
     // #4935 review — same window, older event: the 400 ms stamp predates the
-    // seam (the overshoot's wall age is 0.095 s), so it belongs on the dying
+    // seam (which the transport crossed 0.095 s ago), so it belongs on the dying
     // pass, 0.305 s before it: beat 7.39 (truth 7.4). The post-seam
     // integration charged the stamp's whole age to the 20 BPM zone and
     // answered 8.06 instead.
@@ -391,6 +509,34 @@ describe('event-time recording beat (#4875)', () => {
 
         // The direct bound answered 8.06.
         expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(7.39, 9);
+    });
+
+    // A main-thread stall delayed the tick that would count the seam: the
+    // anchor (beat 3 of a [0, 4) loop) is 0.8 s old and no seam was emitted.
+    // The transport crossed loopEnd 0.3 s ago, so an event 0.2 s old sits
+    // 0.1 s into the next pass at its own offset, and one 0.5 s old is on the
+    // dying pass, 0.2 s before the seam.
+    it.each([0, 2])('dates events around a seam a stall left uncounted (%i wraps counted)', async (wraps) => {
+        playTransport({ isLooping: true, loopStart: 0, loopEnd: 4, playheadPosition: 0 });
+        setGestureClockSource({
+            getAudioTimeSeconds: () => audio_clock.currentTime,
+            readNativeCursorBeats: () => null,
+        });
+        playheadClockRef.beat = 3;
+        playheadClockRef.audioTimeSeconds = NOW_SECONDS - 0.8;
+        wrapsSinceEpochStart(wraps);
+
+        await dispatch([0x91, 60, 100], 900);
+        await dispatch([0x91, 62, 100], 600);
+
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))).toMatchObject({
+            startBeat: expect.closeTo(0.2, 9),
+            recordingPassIndex: wraps + 1,
+        });
+        expect(activeNotes.get(createWebMidiNoteKey(1, 62))).toMatchObject({
+            startBeat: expect.closeTo(3.6, 9),
+            recordingPassIndex: wraps,
+        });
     });
 
     // Control — the same geometry without the post-seam change: the flat map

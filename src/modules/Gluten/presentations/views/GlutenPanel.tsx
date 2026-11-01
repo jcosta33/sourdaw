@@ -2,6 +2,7 @@ import { type ReactElement, type ReactNode, useEffect, useState } from 'react';
 
 import { Activity, Flame, Radio, SlidersHorizontal, Sun, Zap } from 'lucide-react';
 
+import { DawEffectDisclosure } from '#/components/daw/DawEffectDisclosure';
 import { DawPluginChip } from '#/components/daw/DawPluginChip';
 import { DawPluginChoiceRow } from '#/components/daw/DawPluginChoiceRow';
 import { DawPluginInsetCard } from '#/components/daw/DawPluginInsetCard';
@@ -19,6 +20,11 @@ import { useStore } from '#/infra/store/useStore';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { GAIN_TRIM_DB } from '#/utils/audioLevelLaw';
 import { MAX_AUDIBLE_FREQ_HZ, MIN_AUDIBLE_FREQ_HZ } from '#/utils/audioSpectrum';
+import {
+    effectDisclosureLevel,
+    effectDisclosureTierFromLevel,
+    isEffectDisclosureStageVisible,
+} from '#/utils/UI/effectDisclosureTier';
 
 import { GLUTEN_PARAM_IDS } from '../../models/GlutenParamIds';
 import {
@@ -42,6 +48,8 @@ import { hydrateGlutenPatchFromProject } from '../../useCases/glutenParamBridge/
 import { loadGlutenPatchWithAudio } from '../../useCases/glutenParamBridge/loadGlutenPatchWithAudio';
 import { setGlutenParamWithAudio } from '../../useCases/glutenParamBridge/setGlutenParamWithAudio';
 import { GLUTEN_PRESETS } from '../../useCases/glutenPresets';
+import { hydrateGlutenDisclosureFromProject } from '../../useCases/hydrateGlutenDisclosureFromProject';
+import { setGlutenPanelUiLevel } from '../../useCases/setGlutenPanelUiLevel';
 import { GlutenCurve } from '../components/GlutenCurve';
 import { GrHistory } from '../components/GrHistory';
 import { GrMeter } from '../components/GrMeter';
@@ -427,6 +435,7 @@ const defaultTrackState = { tracks: [], selectedTrackId: null, ghostClips: [] };
 export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     const allInstances = useStore(glutenStore, defaultGlutenInstances);
     const trackState = useStore(trackStore, defaultTrackState);
+    const hasSessionState = allInstances[deviceId] !== undefined;
     const state: GlutenState = allInstances[deviceId] ?? getGlutenState(deviceId);
     // Meters live in their own per-device store: a ~60 Hz tick on this device
     // re-renders this panel's meter readouts without rebuilding the patch map,
@@ -435,13 +444,23 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
     const [search, setSearch] = useState('');
     const [category, setCategory] = useState('all');
 
-    const projectParameterValues = trackState.tracks
-        .flatMap((track) => track.devices)
-        .find((device) => device.id === deviceId)?.parameterValues;
+    const projectDevice = trackState.tracks.flatMap((track) => track.devices).find((device) => device.id === deviceId);
+    const projectParameterValues = projectDevice?.parameterValues;
+    const projectDeviceState = projectDevice?.deviceState;
+    const tier = effectDisclosureTierFromLevel(state.uiLevel);
+    const showShape = isEffectDisclosureStageVisible(tier, 'shape');
+    const showBuild = isEffectDisclosureStageVisible(tier, 'build');
+    const showRoute = isEffectDisclosureStageVisible(tier, 'route');
+    const showLab = isEffectDisclosureStageVisible(tier, 'lab');
 
     useEffect(() => {
         hydrateGlutenPatchFromProject(deviceId);
     }, [deviceId, projectParameterValues]);
+
+    // A project restore can clear the session instance without changing absent metadata.
+    useEffect(() => {
+        hydrateGlutenDisclosureFromProject(deviceId);
+    }, [deviceId, projectDeviceState, hasSessionState]);
 
     const { patch } = state;
     const currentPatch = patch;
@@ -676,13 +695,20 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                 </DawPluginRail>
 
                 <Stack gap={3} className="min-h-0 min-w-0 overflow-y-auto pr-1">
-                    <Row align="start" justify="between" gap={3}>
+                    <Row align="start" justify="between" wrap gap={3}>
                         <Stack gap={2}>
                             <div className="text-micro uppercase tracking-[0.26em] text-[var(--color-accent-lavender)]/68">
                                 Dynamics cockpit
                             </div>
                             <div className="text-[16px] font-semibold text-foreground">{patch.name}</div>
                         </Stack>
+
+                        <DawEffectDisclosure
+                            tier={tier}
+                            onChange={(choice) => {
+                                void setGlutenPanelUiLevel(deviceId, effectDisclosureLevel(choice));
+                            }}
+                        />
 
                         <DawPluginMetricStrip>
                             <DawPluginMetricTile
@@ -712,46 +738,48 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                         </DawPluginMetricStrip>
                     </Row>
 
-                    <Grid cols={4} gap={2}>
-                        {TOPOLOGIES.map((topology) => {
-                            const meta = TOPOLOGY_META[topology];
-                            const Icon = meta.icon;
-                            const active = patch.topology === topology;
-                            return (
-                                <Stack
-                                    key={topology}
-                                    as="button"
-                                    align="start"
-                                    gap={2}
-                                    className={`gluten-window px-3 py-2 text-left transition-all ${
-                                        active
-                                            ? 'border-white/18 bg-white/[0.035]'
-                                            : 'hover:border-white/12 hover:bg-white/[0.02]'
-                                    }`}
-                                    style={active ? { borderColor: meta.color } : undefined}
-                                    onClick={() =>
-                                        setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.topology, topology)
-                                    }
-                                >
-                                    <Row justify="between" align="center" className="w-full">
-                                        <div
-                                            className="rounded-full border border-white/10 p-1.5"
-                                            style={{ color: meta.color }}
-                                        >
-                                            <Icon className="size-3.5" />
-                                        </div>
-                                        {active ? <DawPluginLed tone="lavender">Live</DawPluginLed> : null}
-                                    </Row>
-                                    <Stack gap={0.5}>
-                                        <div className="text-dense font-semibold text-foreground">{meta.label}</div>
-                                        <div className="text-micro uppercase tracking-[0.2em] text-muted-foreground/42">
-                                            {meta.detail}
-                                        </div>
+                    {showShape ? (
+                        <Grid cols={4} gap={2}>
+                            {TOPOLOGIES.map((topology) => {
+                                const meta = TOPOLOGY_META[topology];
+                                const Icon = meta.icon;
+                                const active = patch.topology === topology;
+                                return (
+                                    <Stack
+                                        key={topology}
+                                        as="button"
+                                        align="start"
+                                        gap={2}
+                                        className={`gluten-window px-3 py-2 text-left transition-all ${
+                                            active
+                                                ? 'border-white/18 bg-white/[0.035]'
+                                                : 'hover:border-white/12 hover:bg-white/[0.02]'
+                                        }`}
+                                        style={active ? { borderColor: meta.color } : undefined}
+                                        onClick={() =>
+                                            setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.topology, topology)
+                                        }
+                                    >
+                                        <Row justify="between" align="center" className="w-full">
+                                            <div
+                                                className="rounded-full border border-white/10 p-1.5"
+                                                style={{ color: meta.color }}
+                                            >
+                                                <Icon className="size-3.5" />
+                                            </div>
+                                            {active ? <DawPluginLed tone="lavender">Live</DawPluginLed> : null}
+                                        </Row>
+                                        <Stack gap={0.5}>
+                                            <div className="text-dense font-semibold text-foreground">{meta.label}</div>
+                                            <div className="text-micro uppercase tracking-[0.2em] text-muted-foreground/42">
+                                                {meta.detail}
+                                            </div>
+                                        </Stack>
                                     </Stack>
-                                </Stack>
-                            );
-                        })}
-                    </Grid>
+                                );
+                            })}
+                        </Grid>
+                    ) : null}
 
                     <Stack gap={3} className="gluten-window min-h-0 shrink-0 p-3">
                         <Row align="start" justify="between" gap={3}>
@@ -929,54 +957,62 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 gate={gateFor(GLUTEN_PARAM_IDS.ratio, 'Ratio')}
                                 activeRange={ratioRange}
                             />
-                            <Knob
-                                deviceId={deviceId}
-                                value={patch.knee}
-                                param={GLUTEN_PARAM_IDS.knee}
-                                label="Knee"
-                                min={0}
-                                max={30}
-                                step={0.5}
-                                defaultValue={6}
-                                unit="dB"
-                                gate={gateFor(GLUTEN_PARAM_IDS.knee, 'Knee')}
-                            />
-                            <Knob
-                                deviceId={deviceId}
-                                value={effectiveAttack}
-                                param={GLUTEN_PARAM_IDS.attack}
-                                label="Attack"
-                                min={0.02}
-                                max={250}
-                                step={0.1}
-                                defaultValue={clampToRange(10, attackRange)}
-                                unit="ms"
-                                gate={gateFor(GLUTEN_PARAM_IDS.attack, 'Attack')}
-                                activeRange={attackRange}
-                            />
-                            <Knob
-                                deviceId={deviceId}
-                                value={patch.release}
-                                param={GLUTEN_PARAM_IDS.release}
-                                label="Release"
-                                min={25}
-                                max={5000}
-                                step={1}
-                                defaultValue={300}
-                                unit="ms"
-                                gate={gateFor(GLUTEN_PARAM_IDS.release, 'Release')}
-                            />
-                            <Knob
-                                deviceId={deviceId}
-                                value={patch.amount}
-                                param={GLUTEN_PARAM_IDS.amount}
-                                label="Amount"
-                                min={0}
-                                max={100}
-                                step={1}
-                                defaultValue={50}
-                                gate={gateFor(GLUTEN_PARAM_IDS.amount, 'Amount')}
-                            />
+                            {showShape ? (
+                                <Knob
+                                    deviceId={deviceId}
+                                    value={patch.knee}
+                                    param={GLUTEN_PARAM_IDS.knee}
+                                    label="Knee"
+                                    min={0}
+                                    max={30}
+                                    step={0.5}
+                                    defaultValue={6}
+                                    unit="dB"
+                                    gate={gateFor(GLUTEN_PARAM_IDS.knee, 'Knee')}
+                                />
+                            ) : null}
+                            {showShape ? (
+                                <Knob
+                                    deviceId={deviceId}
+                                    value={effectiveAttack}
+                                    param={GLUTEN_PARAM_IDS.attack}
+                                    label="Attack"
+                                    min={0.02}
+                                    max={250}
+                                    step={0.1}
+                                    defaultValue={clampToRange(10, attackRange)}
+                                    unit="ms"
+                                    gate={gateFor(GLUTEN_PARAM_IDS.attack, 'Attack')}
+                                    activeRange={attackRange}
+                                />
+                            ) : null}
+                            {showShape ? (
+                                <Knob
+                                    deviceId={deviceId}
+                                    value={patch.release}
+                                    param={GLUTEN_PARAM_IDS.release}
+                                    label="Release"
+                                    min={25}
+                                    max={5000}
+                                    step={1}
+                                    defaultValue={300}
+                                    unit="ms"
+                                    gate={gateFor(GLUTEN_PARAM_IDS.release, 'Release')}
+                                />
+                            ) : null}
+                            {showShape ? (
+                                <Knob
+                                    deviceId={deviceId}
+                                    value={patch.amount}
+                                    param={GLUTEN_PARAM_IDS.amount}
+                                    label="Amount"
+                                    min={0}
+                                    max={100}
+                                    step={1}
+                                    defaultValue={50}
+                                    gate={gateFor(GLUTEN_PARAM_IDS.amount, 'Amount')}
+                                />
+                            ) : null}
                         </Grid>
                     </ControlCard>
 
@@ -1009,524 +1045,574 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                                 unit="mix"
                                 gate={gateFor(GLUTEN_PARAM_IDS.mix, 'Mix')}
                             />
-                            <Knob
-                                deviceId={deviceId}
-                                value={patch.range}
-                                param={GLUTEN_PARAM_IDS.range}
-                                label="Range"
-                                min={0}
-                                max={60}
-                                step={1}
-                                defaultValue={15}
-                                unit="dB"
-                                gate={gateFor(GLUTEN_PARAM_IDS.range, 'Range')}
-                            />
-                            <Knob
-                                deviceId={deviceId}
-                                value={patch.stereoLink}
-                                param={GLUTEN_PARAM_IDS.stereoLink}
-                                label="Link"
-                                min={0}
-                                max={1}
-                                step={0.01}
-                                defaultValue={1}
-                                unit="link"
-                                gate={gateFor(GLUTEN_PARAM_IDS.stereoLink, 'Link')}
-                            />
-                            <Knob
-                                deviceId={deviceId}
-                                value={patch.lookahead}
-                                param={GLUTEN_PARAM_IDS.lookahead}
-                                label="Look"
-                                min={0}
-                                max={20}
-                                step={0.5}
-                                defaultValue={0}
-                                unit="ms"
-                                gate={gateFor(GLUTEN_PARAM_IDS.lookahead, 'Look')}
-                            />
-                            <Knob
-                                deviceId={deviceId}
-                                value={patch.blendAmount}
-                                param={GLUTEN_PARAM_IDS.blendAmount}
-                                label="Stage 2"
-                                min={0}
-                                max={1}
-                                step={0.01}
-                                defaultValue={0}
-                                unit="mix"
-                                gate={gateFor(GLUTEN_PARAM_IDS.blendAmount, 'Stage 2')}
-                            />
+                            {showShape ? (
+                                <Knob
+                                    deviceId={deviceId}
+                                    value={patch.range}
+                                    param={GLUTEN_PARAM_IDS.range}
+                                    label="Range"
+                                    min={0}
+                                    max={60}
+                                    step={1}
+                                    defaultValue={15}
+                                    unit="dB"
+                                    gate={gateFor(GLUTEN_PARAM_IDS.range, 'Range')}
+                                />
+                            ) : null}
+                            {showShape ? (
+                                <Knob
+                                    deviceId={deviceId}
+                                    value={patch.stereoLink}
+                                    param={GLUTEN_PARAM_IDS.stereoLink}
+                                    label="Link"
+                                    min={0}
+                                    max={1}
+                                    step={0.01}
+                                    defaultValue={1}
+                                    unit="link"
+                                    gate={gateFor(GLUTEN_PARAM_IDS.stereoLink, 'Link')}
+                                />
+                            ) : null}
+                            {showLab ? (
+                                <Knob
+                                    deviceId={deviceId}
+                                    value={patch.lookahead}
+                                    param={GLUTEN_PARAM_IDS.lookahead}
+                                    label="Look"
+                                    min={0}
+                                    max={20}
+                                    step={0.5}
+                                    defaultValue={0}
+                                    unit="ms"
+                                    gate={gateFor(GLUTEN_PARAM_IDS.lookahead, 'Look')}
+                                />
+                            ) : null}
+                            {showBuild ? (
+                                <Knob
+                                    deviceId={deviceId}
+                                    value={patch.blendAmount}
+                                    param={GLUTEN_PARAM_IDS.blendAmount}
+                                    label="Stage 2"
+                                    min={0}
+                                    max={1}
+                                    step={0.01}
+                                    defaultValue={0}
+                                    unit="mix"
+                                    gate={gateFor(GLUTEN_PARAM_IDS.blendAmount, 'Stage 2')}
+                                />
+                            ) : null}
                         </Grid>
                         <Row wrap gap={1.5}>
-                            <ToggleChip
-                                label="Auto rel"
-                                active={patch.autoRelease}
-                                accentColor={accentColor}
-                                gate={gateFor(GLUTEN_PARAM_IDS.autoRelease, 'Auto rel')}
-                                onClick={() =>
-                                    setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.autoRelease, !patch.autoRelease)
-                                }
-                            />
-                            <ToggleChip
-                                label="Auto gain"
-                                active={patch.autoMakeup}
-                                accentColor={accentColor}
-                                gate={gateFor(GLUTEN_PARAM_IDS.autoMakeup, 'Auto gain')}
-                                onClick={() =>
-                                    setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.autoMakeup, !patch.autoMakeup)
-                                }
-                            />
-                            <ToggleChip
-                                label="Delta"
-                                active={patch.deltaListen}
-                                accentColor={accentColor}
-                                gate={gateFor(GLUTEN_PARAM_IDS.deltaListen, 'Delta')}
-                                onClick={() =>
-                                    setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.deltaListen, !patch.deltaListen)
-                                }
-                            />
-                            <ToggleChip
-                                label="Match"
-                                active={patch.gainMatchBypass}
-                                accentColor={accentColor}
-                                gate={gateFor(GLUTEN_PARAM_IDS.gainMatchBypass, 'Match')}
-                                onClick={() =>
-                                    setGlutenParamWithAudio(
-                                        deviceId,
-                                        GLUTEN_PARAM_IDS.gainMatchBypass,
-                                        !patch.gainMatchBypass
-                                    )
-                                }
-                            />
+                            {showShape ? (
+                                <ToggleChip
+                                    label="Auto rel"
+                                    active={patch.autoRelease}
+                                    accentColor={accentColor}
+                                    gate={gateFor(GLUTEN_PARAM_IDS.autoRelease, 'Auto rel')}
+                                    onClick={() =>
+                                        setGlutenParamWithAudio(
+                                            deviceId,
+                                            GLUTEN_PARAM_IDS.autoRelease,
+                                            !patch.autoRelease
+                                        )
+                                    }
+                                />
+                            ) : null}
+                            {showShape ? (
+                                <ToggleChip
+                                    label="Auto gain"
+                                    active={patch.autoMakeup}
+                                    accentColor={accentColor}
+                                    gate={gateFor(GLUTEN_PARAM_IDS.autoMakeup, 'Auto gain')}
+                                    onClick={() =>
+                                        setGlutenParamWithAudio(
+                                            deviceId,
+                                            GLUTEN_PARAM_IDS.autoMakeup,
+                                            !patch.autoMakeup
+                                        )
+                                    }
+                                />
+                            ) : null}
+                            {showLab ? (
+                                <ToggleChip
+                                    label="Delta"
+                                    active={patch.deltaListen}
+                                    accentColor={accentColor}
+                                    gate={gateFor(GLUTEN_PARAM_IDS.deltaListen, 'Delta')}
+                                    onClick={() =>
+                                        setGlutenParamWithAudio(
+                                            deviceId,
+                                            GLUTEN_PARAM_IDS.deltaListen,
+                                            !patch.deltaListen
+                                        )
+                                    }
+                                />
+                            ) : null}
+                            {showLab ? (
+                                <ToggleChip
+                                    label="Match"
+                                    active={patch.gainMatchBypass}
+                                    accentColor={accentColor}
+                                    gate={gateFor(GLUTEN_PARAM_IDS.gainMatchBypass, 'Match')}
+                                    onClick={() =>
+                                        setGlutenParamWithAudio(
+                                            deviceId,
+                                            GLUTEN_PARAM_IDS.gainMatchBypass,
+                                            !patch.gainMatchBypass
+                                        )
+                                    }
+                                />
+                            ) : null}
                         </Row>
                     </ControlCard>
 
-                    <ControlCard
-                        title="Detector"
-                        detail={
-                            detectorNotice ??
-                            'Sidechain filters and listen modes live together instead of hiding in the header.'
-                        }
-                    >
-                        <Grid cols={3} gapX={2} gapY={3}>
-                            <Knob
-                                deviceId={deviceId}
-                                value={patch.scHpfFreq}
-                                param={GLUTEN_PARAM_IDS.scHpfFreq}
-                                label="SC HPF"
-                                min={20}
-                                max={500}
-                                step={1}
-                                defaultValue={80}
-                                unit="Hz"
-                                gate={gateFor(GLUTEN_PARAM_IDS.scHpfFreq, 'SC HPF')}
-                            />
-                            <Knob
-                                deviceId={deviceId}
-                                value={patch.scLpfFreq}
-                                param={GLUTEN_PARAM_IDS.scLpfFreq}
-                                label="SC LPF"
-                                min={1000}
-                                max={MAX_AUDIBLE_FREQ_HZ}
-                                step={100}
-                                defaultValue={MAX_AUDIBLE_FREQ_HZ}
-                                unit="Hz"
-                                gate={gateFor(GLUTEN_PARAM_IDS.scLpfFreq, 'SC LPF')}
-                            />
-                            <Knob
-                                deviceId={deviceId}
-                                value={patch.scEqFreq}
-                                param={GLUTEN_PARAM_IDS.scEqFreq}
-                                label="SC EQ"
-                                min={MIN_AUDIBLE_FREQ_HZ}
-                                max={MAX_AUDIBLE_FREQ_HZ}
-                                step={10}
-                                defaultValue={1000}
-                                unit="Hz"
-                                gate={gateFor(GLUTEN_PARAM_IDS.scEqFreq, 'SC EQ')}
-                            />
-                            <Knob
-                                deviceId={deviceId}
-                                value={patch.scEqGain}
-                                param={GLUTEN_PARAM_IDS.scEqGain}
-                                label="EQ Gain"
-                                min={-18}
-                                max={18}
-                                step={0.5}
-                                defaultValue={0}
-                                unit="dB"
-                                gate={gateFor(GLUTEN_PARAM_IDS.scEqGain, 'EQ Gain')}
-                            />
-                            <Knob
-                                deviceId={deviceId}
-                                value={patch.scEqQ}
-                                param={GLUTEN_PARAM_IDS.scEqQ}
-                                label="EQ Q"
-                                min={0.1}
-                                max={10}
-                                step={0.1}
-                                defaultValue={1}
-                                gate={gateFor(GLUTEN_PARAM_IDS.scEqQ, 'EQ Q')}
-                            />
-                            <Stack gap={1} className="items-center">
-                                <Row gap={1}>
-                                    {OVERSAMPLING_FACTORS.map((factor) => {
-                                        const active = patch.oversampling === factor;
+                    {showRoute ? (
+                        <ControlCard
+                            title="Detector"
+                            detail={
+                                detectorNotice ??
+                                'Sidechain filters and listen modes live together instead of hiding in the header.'
+                            }
+                        >
+                            <Grid cols={3} gapX={2} gapY={3}>
+                                <Knob
+                                    deviceId={deviceId}
+                                    value={patch.scHpfFreq}
+                                    param={GLUTEN_PARAM_IDS.scHpfFreq}
+                                    label="SC HPF"
+                                    min={20}
+                                    max={500}
+                                    step={1}
+                                    defaultValue={80}
+                                    unit="Hz"
+                                    gate={gateFor(GLUTEN_PARAM_IDS.scHpfFreq, 'SC HPF')}
+                                />
+                                <Knob
+                                    deviceId={deviceId}
+                                    value={patch.scLpfFreq}
+                                    param={GLUTEN_PARAM_IDS.scLpfFreq}
+                                    label="SC LPF"
+                                    min={1000}
+                                    max={MAX_AUDIBLE_FREQ_HZ}
+                                    step={100}
+                                    defaultValue={MAX_AUDIBLE_FREQ_HZ}
+                                    unit="Hz"
+                                    gate={gateFor(GLUTEN_PARAM_IDS.scLpfFreq, 'SC LPF')}
+                                />
+                                <Knob
+                                    deviceId={deviceId}
+                                    value={patch.scEqFreq}
+                                    param={GLUTEN_PARAM_IDS.scEqFreq}
+                                    label="SC EQ"
+                                    min={MIN_AUDIBLE_FREQ_HZ}
+                                    max={MAX_AUDIBLE_FREQ_HZ}
+                                    step={10}
+                                    defaultValue={1000}
+                                    unit="Hz"
+                                    gate={gateFor(GLUTEN_PARAM_IDS.scEqFreq, 'SC EQ')}
+                                />
+                                <Knob
+                                    deviceId={deviceId}
+                                    value={patch.scEqGain}
+                                    param={GLUTEN_PARAM_IDS.scEqGain}
+                                    label="EQ Gain"
+                                    min={-18}
+                                    max={18}
+                                    step={0.5}
+                                    defaultValue={0}
+                                    unit="dB"
+                                    gate={gateFor(GLUTEN_PARAM_IDS.scEqGain, 'EQ Gain')}
+                                />
+                                <Knob
+                                    deviceId={deviceId}
+                                    value={patch.scEqQ}
+                                    param={GLUTEN_PARAM_IDS.scEqQ}
+                                    label="EQ Q"
+                                    min={0.1}
+                                    max={10}
+                                    step={0.1}
+                                    defaultValue={1}
+                                    gate={gateFor(GLUTEN_PARAM_IDS.scEqQ, 'EQ Q')}
+                                />
+                                {showLab ? (
+                                    <Stack gap={1} className="items-center">
+                                        <Row gap={1}>
+                                            {OVERSAMPLING_FACTORS.map((factor) => {
+                                                const active = patch.oversampling === factor;
+                                                return (
+                                                    <DawPluginChip
+                                                        key={factor}
+                                                        active={active}
+                                                        tone="lavender"
+                                                        size="sm"
+                                                        aria-disabled={oversamplingGate.isInert || undefined}
+                                                        title={oversamplingGate.explanation ?? undefined}
+                                                        onClick={() => {
+                                                            if (oversamplingGate.isInert) {
+                                                                return;
+                                                            }
+                                                            setGlutenParamWithAudio(
+                                                                deviceId,
+                                                                GLUTEN_PARAM_IDS.oversampling,
+                                                                factor
+                                                            );
+                                                        }}
+                                                    >
+                                                        {`${factor}×`}
+                                                    </DawPluginChip>
+                                                );
+                                            })}
+                                        </Row>
+                                        <div className="text-micro uppercase tracking-[0.2em] text-muted-foreground/60">
+                                            OS
+                                        </div>
+                                    </Stack>
+                                ) : null}
+                            </Grid>
+                            <Stack gap={2}>
+                                <Row wrap gap={1.5}>
+                                    <ToggleChip
+                                        label="HPF"
+                                        active={patch.scHpfEnabled}
+                                        accentColor={accentColor}
+                                        gate={gateFor(GLUTEN_PARAM_IDS.scHpfEnabled, 'HPF')}
+                                        onClick={() =>
+                                            setGlutenParamWithAudio(
+                                                deviceId,
+                                                GLUTEN_PARAM_IDS.scHpfEnabled,
+                                                !patch.scHpfEnabled
+                                            )
+                                        }
+                                    />
+                                    <ToggleChip
+                                        label="LPF"
+                                        active={patch.scLpfEnabled}
+                                        accentColor={accentColor}
+                                        gate={gateFor(GLUTEN_PARAM_IDS.scLpfEnabled, 'LPF')}
+                                        onClick={() =>
+                                            setGlutenParamWithAudio(
+                                                deviceId,
+                                                GLUTEN_PARAM_IDS.scLpfEnabled,
+                                                !patch.scLpfEnabled
+                                            )
+                                        }
+                                    />
+                                    <ToggleChip
+                                        label="SC EQ"
+                                        active={patch.scEqEnabled}
+                                        accentColor={accentColor}
+                                        gate={gateFor(GLUTEN_PARAM_IDS.scEqEnabled, 'SC EQ')}
+                                        onClick={() =>
+                                            setGlutenParamWithAudio(
+                                                deviceId,
+                                                GLUTEN_PARAM_IDS.scEqEnabled,
+                                                !patch.scEqEnabled
+                                            )
+                                        }
+                                    />
+                                    <ToggleChip
+                                        label="Ext SC"
+                                        active={patch.extSidechain}
+                                        accentColor={accentColor}
+                                        gate={gateFor(GLUTEN_PARAM_IDS.extSidechain, 'Ext SC')}
+                                        onClick={() =>
+                                            setGlutenParamWithAudio(
+                                                deviceId,
+                                                GLUTEN_PARAM_IDS.extSidechain,
+                                                !patch.extSidechain
+                                            )
+                                        }
+                                    />
+                                </Row>
+                                <Row wrap gap={1.5}>
+                                    {(['rms', 'peak'] as const).map((mode) => {
+                                        const active = patch.detection === mode;
                                         return (
                                             <DawPluginChip
-                                                key={factor}
+                                                key={mode}
                                                 active={active}
                                                 tone="lavender"
                                                 size="sm"
-                                                aria-disabled={oversamplingGate.isInert || undefined}
-                                                title={oversamplingGate.explanation ?? undefined}
-                                                onClick={() => {
-                                                    if (oversamplingGate.isInert) {
-                                                        return;
-                                                    }
-                                                    setGlutenParamWithAudio(
-                                                        deviceId,
-                                                        GLUTEN_PARAM_IDS.oversampling,
-                                                        factor
-                                                    );
-                                                }}
+                                                onClick={() =>
+                                                    setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.detection, mode)
+                                                }
                                             >
-                                                {`${factor}×`}
+                                                {mode.toUpperCase()}
+                                            </DawPluginChip>
+                                        );
+                                    })}
+                                    {(['stereo', 'mid', 'side', 'dual-mono'] as const).map((mode) => {
+                                        const active = patch.stereoMode === mode;
+                                        return (
+                                            <DawPluginChip
+                                                key={mode}
+                                                active={active}
+                                                tone="lavender"
+                                                size="sm"
+                                                onClick={() =>
+                                                    setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.stereoMode, mode)
+                                                }
+                                            >
+                                                {mode === 'dual-mono' ? 'Dual mono' : mode}
                                             </DawPluginChip>
                                         );
                                     })}
                                 </Row>
-                                <div className="text-micro uppercase tracking-[0.2em] text-muted-foreground/60">OS</div>
-                            </Stack>
-                        </Grid>
-                        <Stack gap={2}>
-                            <Row wrap gap={1.5}>
-                                <ToggleChip
-                                    label="HPF"
-                                    active={patch.scHpfEnabled}
-                                    accentColor={accentColor}
-                                    gate={gateFor(GLUTEN_PARAM_IDS.scHpfEnabled, 'HPF')}
-                                    onClick={() =>
-                                        setGlutenParamWithAudio(
-                                            deviceId,
-                                            GLUTEN_PARAM_IDS.scHpfEnabled,
-                                            !patch.scHpfEnabled
-                                        )
-                                    }
-                                />
-                                <ToggleChip
-                                    label="LPF"
-                                    active={patch.scLpfEnabled}
-                                    accentColor={accentColor}
-                                    gate={gateFor(GLUTEN_PARAM_IDS.scLpfEnabled, 'LPF')}
-                                    onClick={() =>
-                                        setGlutenParamWithAudio(
-                                            deviceId,
-                                            GLUTEN_PARAM_IDS.scLpfEnabled,
-                                            !patch.scLpfEnabled
-                                        )
-                                    }
-                                />
-                                <ToggleChip
-                                    label="SC EQ"
-                                    active={patch.scEqEnabled}
-                                    accentColor={accentColor}
-                                    gate={gateFor(GLUTEN_PARAM_IDS.scEqEnabled, 'SC EQ')}
-                                    onClick={() =>
-                                        setGlutenParamWithAudio(
-                                            deviceId,
-                                            GLUTEN_PARAM_IDS.scEqEnabled,
-                                            !patch.scEqEnabled
-                                        )
-                                    }
-                                />
-                                <ToggleChip
-                                    label="Ext SC"
-                                    active={patch.extSidechain}
-                                    accentColor={accentColor}
-                                    gate={gateFor(GLUTEN_PARAM_IDS.extSidechain, 'Ext SC')}
-                                    onClick={() =>
-                                        setGlutenParamWithAudio(
-                                            deviceId,
-                                            GLUTEN_PARAM_IDS.extSidechain,
-                                            !patch.extSidechain
-                                        )
-                                    }
-                                />
-                            </Row>
-                            <Row wrap gap={1.5}>
-                                {(['rms', 'peak'] as const).map((mode) => {
-                                    const active = patch.detection === mode;
-                                    return (
-                                        <DawPluginChip
-                                            key={mode}
-                                            active={active}
-                                            tone="lavender"
-                                            size="sm"
-                                            onClick={() =>
-                                                setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.detection, mode)
-                                            }
-                                        >
-                                            {mode.toUpperCase()}
-                                        </DawPluginChip>
-                                    );
-                                })}
-                                {(['stereo', 'mid', 'side', 'dual-mono'] as const).map((mode) => {
-                                    const active = patch.stereoMode === mode;
-                                    return (
-                                        <DawPluginChip
-                                            key={mode}
-                                            active={active}
-                                            tone="lavender"
-                                            size="sm"
-                                            onClick={() =>
-                                                setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.stereoMode, mode)
-                                            }
-                                        >
-                                            {mode === 'dual-mono' ? 'Dual mono' : mode}
-                                        </DawPluginChip>
-                                    );
-                                })}
-                            </Row>
-                            <Row wrap gap={1.5}>
-                                {[0, 1, 2].map((thrust) => {
-                                    const labels = ['Thrust off', 'Thrust med', 'Thrust loud'];
-                                    const active = patch.thrust === thrust;
-                                    return (
-                                        <DawPluginChip
-                                            key={thrust}
-                                            active={active}
-                                            tone="lavender"
-                                            size="sm"
-                                            aria-disabled={thrustGate.isInert || undefined}
-                                            title={thrustGate.explanation ?? undefined}
-                                            onClick={() => {
-                                                if (thrustGate.isInert) {
-                                                    return;
-                                                }
-                                                setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.thrust, thrust);
-                                            }}
-                                        >
-                                            {labels[thrust]}
-                                        </DawPluginChip>
-                                    );
-                                })}
-                            </Row>
-                        </Stack>
-                    </ControlCard>
-
-                    <ControlCard
-                        title="Character"
-                        detail={characterNotice ?? 'The last mile changes with the topology you picked.'}
-                    >
-                        {characterStages.includes('fet') ? (
-                            <Stack gap={3}>
-                                {characterHeading('fet')}
-                                <Grid cols={3} gapX={2} gapY={3}>
-                                    <Knob
-                                        deviceId={deviceId}
-                                        value={patch.inputGain}
-                                        param={GLUTEN_PARAM_IDS.inputGain}
-                                        label="Input"
-                                        min={-12}
-                                        max={24}
-                                        step={0.5}
-                                        defaultValue={0}
-                                        unit="dB"
-                                        gate={gateFor(GLUTEN_PARAM_IDS.inputGain, 'Input')}
-                                    />
-                                    <Knob
-                                        deviceId={deviceId}
-                                        value={patch.outputGain}
-                                        param={GLUTEN_PARAM_IDS.outputGain}
-                                        label="Output"
-                                        min={GAIN_TRIM_DB.min}
-                                        max={GAIN_TRIM_DB.max}
-                                        step={0.5}
-                                        defaultValue={0}
-                                        unit="dB"
-                                        gate={gateFor(GLUTEN_PARAM_IDS.outputGain, 'Output')}
-                                    />
-                                    <Knob
-                                        deviceId={deviceId}
-                                        value={patch.xfmrDrive}
-                                        param={GLUTEN_PARAM_IDS.xfmrDrive}
-                                        label="Xfmr"
-                                        min={0}
-                                        max={3}
-                                        step={0.01}
-                                        defaultValue={1.2}
-                                        gate={gateFor(GLUTEN_PARAM_IDS.xfmrDrive, 'Xfmr')}
-                                    />
-                                    <Knob
-                                        deviceId={deviceId}
-                                        value={patch.jfetK3}
-                                        param={GLUTEN_PARAM_IDS.jfetK3}
-                                        label="Odd"
-                                        min={0}
-                                        max={0.5}
-                                        step={0.01}
-                                        defaultValue={0.15}
-                                        gate={gateFor(GLUTEN_PARAM_IDS.jfetK3, 'Odd')}
-                                    />
-                                    <Knob
-                                        deviceId={deviceId}
-                                        value={patch.xfmrK2}
-                                        param={GLUTEN_PARAM_IDS.xfmrK2}
-                                        label="Even"
-                                        min={0}
-                                        max={0.3}
-                                        step={0.01}
-                                        defaultValue={0}
-                                        gate={gateFor(GLUTEN_PARAM_IDS.xfmrK2, 'Even')}
-                                    />
-                                </Grid>
-                                <ToggleChip
-                                    label="All buttons"
-                                    active={patch.allButtons}
-                                    accentColor={accentColor}
-                                    gate={gateFor(GLUTEN_PARAM_IDS.allButtons, 'All buttons')}
-                                    onClick={() =>
-                                        setGlutenParamWithAudio(
-                                            deviceId,
-                                            GLUTEN_PARAM_IDS.allButtons,
-                                            !patch.allButtons
-                                        )
-                                    }
-                                />
-                            </Stack>
-                        ) : null}
-
-                        {characterStages.includes('opto') ? (
-                            <Stack gap={2}>
-                                {characterHeading('opto')}
                                 <Row wrap gap={1.5}>
-                                    {[false, true].map((mode, index) => {
-                                        const labels = ['Compress', 'Limit'];
-                                        const active = patch.limitMode === mode;
+                                    {[0, 1, 2].map((thrust) => {
+                                        const labels = ['Thrust off', 'Thrust med', 'Thrust loud'];
+                                        const active = patch.thrust === thrust;
                                         return (
-                                            <ToggleChip
-                                                key={labels[index]}
-                                                label={labels[index] ?? ''}
+                                            <DawPluginChip
+                                                key={thrust}
                                                 active={active}
-                                                accentColor={accentColor}
-                                                gate={gateFor(GLUTEN_PARAM_IDS.limitMode, labels[index] ?? '')}
-                                                onClick={() =>
-                                                    setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.limitMode, mode)
-                                                }
-                                            />
-                                        );
-                                    })}
-                                </Row>
-                                <p className="text-dense leading-4 text-muted-foreground">
-                                    Limit leans harder on the cell. Compress lets it breathe.
-                                </p>
-                            </Stack>
-                        ) : null}
-
-                        {characterStages.includes('diode') ? (
-                            <Stack gap={2}>
-                                {characterHeading('diode')}
-                                <Row wrap gap={1.5}>
-                                    {[1, 2, 3, 4, 5].map((value) => {
-                                        const active = patch.recovery === value;
-                                        return (
-                                            <ToggleChip
-                                                key={value}
-                                                label={`Recovery ${value}`}
-                                                active={active}
-                                                accentColor={accentColor}
-                                                gate={gateFor(GLUTEN_PARAM_IDS.recovery, `Recovery ${value}`)}
-                                                onClick={() =>
-                                                    setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.recovery, value)
-                                                }
-                                            />
-                                        );
-                                    })}
-                                </Row>
-                                <p className="text-dense leading-4 text-muted-foreground">
-                                    Fixed release times: 50, 100, 400, 800 and 1500 ms. Low positions let the level
-                                    spring back between hits; high positions hold the reduction through the tail.
-                                </p>
-                            </Stack>
-                        ) : null}
-
-                        {characterStages.includes('vca') ? (
-                            <Stack gap={3}>
-                                {characterHeading('vca')}
-                                <Grid cols={2} gap={2}>
-                                    <Knob
-                                        deviceId={deviceId}
-                                        value={patch.vcaCharacter}
-                                        param={GLUTEN_PARAM_IDS.vcaCharacter}
-                                        label="Color"
-                                        min={0}
-                                        max={0.02}
-                                        step={0.001}
-                                        defaultValue={0.003}
-                                        gate={gateFor(GLUTEN_PARAM_IDS.vcaCharacter, 'Color')}
-                                    />
-                                    <Knob
-                                        deviceId={deviceId}
-                                        value={patch.vcaType}
-                                        param={GLUTEN_PARAM_IDS.vcaType}
-                                        label="VCA type"
-                                        min={0}
-                                        max={2}
-                                        step={1}
-                                        defaultValue={1}
-                                        gate={gateFor(GLUTEN_PARAM_IDS.vcaType, 'VCA type')}
-                                    />
-                                </Grid>
-                                <Row wrap gap={1.5}>
-                                    {[false, true].map((mode, index) => {
-                                        const labels = ['Feedback', 'Feed forward'];
-                                        const active = patch.feedForward === mode;
-                                        return (
-                                            <ToggleChip
-                                                key={labels[index]}
-                                                label={labels[index] ?? ''}
-                                                active={active}
-                                                accentColor={accentColor}
-                                                gate={gateFor(GLUTEN_PARAM_IDS.feedForward, labels[index] ?? '')}
-                                                onClick={() =>
-                                                    setGlutenParamWithAudio(
-                                                        deviceId,
-                                                        GLUTEN_PARAM_IDS.feedForward,
-                                                        mode
-                                                    )
-                                                }
-                                            />
+                                                tone="lavender"
+                                                size="sm"
+                                                aria-disabled={thrustGate.isInert || undefined}
+                                                title={thrustGate.explanation ?? undefined}
+                                                onClick={() => {
+                                                    if (thrustGate.isInert) {
+                                                        return;
+                                                    }
+                                                    setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.thrust, thrust);
+                                                }}
+                                            >
+                                                {labels[thrust]}
+                                            </DawPluginChip>
                                         );
                                     })}
                                 </Row>
                             </Stack>
-                        ) : null}
-                    </ControlCard>
+                        </ControlCard>
+                    ) : null}
 
-                    <ControlCard
-                        title="Stage two"
-                        detail={stageTwoNotice ?? 'Blend a second topology in when the first one needs backup.'}
-                    >
-                        <Row wrap gap={1.5}>
-                            {TOPOLOGIES.map((topology) => {
-                                const active = patch.blendTopology === topology;
-                                return (
+                    {showLab ? (
+                        <ControlCard
+                            title="Character"
+                            detail={characterNotice ?? 'The last mile changes with the topology you picked.'}
+                        >
+                            {characterStages.includes('fet') ? (
+                                <Stack gap={3}>
+                                    {characterHeading('fet')}
+                                    <Grid cols={3} gapX={2} gapY={3}>
+                                        <Knob
+                                            deviceId={deviceId}
+                                            value={patch.inputGain}
+                                            param={GLUTEN_PARAM_IDS.inputGain}
+                                            label="Input"
+                                            min={-12}
+                                            max={24}
+                                            step={0.5}
+                                            defaultValue={0}
+                                            unit="dB"
+                                            gate={gateFor(GLUTEN_PARAM_IDS.inputGain, 'Input')}
+                                        />
+                                        <Knob
+                                            deviceId={deviceId}
+                                            value={patch.outputGain}
+                                            param={GLUTEN_PARAM_IDS.outputGain}
+                                            label="Output"
+                                            min={GAIN_TRIM_DB.min}
+                                            max={GAIN_TRIM_DB.max}
+                                            step={0.5}
+                                            defaultValue={0}
+                                            unit="dB"
+                                            gate={gateFor(GLUTEN_PARAM_IDS.outputGain, 'Output')}
+                                        />
+                                        <Knob
+                                            deviceId={deviceId}
+                                            value={patch.xfmrDrive}
+                                            param={GLUTEN_PARAM_IDS.xfmrDrive}
+                                            label="Xfmr"
+                                            min={0}
+                                            max={3}
+                                            step={0.01}
+                                            defaultValue={1.2}
+                                            gate={gateFor(GLUTEN_PARAM_IDS.xfmrDrive, 'Xfmr')}
+                                        />
+                                        <Knob
+                                            deviceId={deviceId}
+                                            value={patch.jfetK3}
+                                            param={GLUTEN_PARAM_IDS.jfetK3}
+                                            label="Odd"
+                                            min={0}
+                                            max={0.5}
+                                            step={0.01}
+                                            defaultValue={0.15}
+                                            gate={gateFor(GLUTEN_PARAM_IDS.jfetK3, 'Odd')}
+                                        />
+                                        <Knob
+                                            deviceId={deviceId}
+                                            value={patch.xfmrK2}
+                                            param={GLUTEN_PARAM_IDS.xfmrK2}
+                                            label="Even"
+                                            min={0}
+                                            max={0.3}
+                                            step={0.01}
+                                            defaultValue={0}
+                                            gate={gateFor(GLUTEN_PARAM_IDS.xfmrK2, 'Even')}
+                                        />
+                                    </Grid>
                                     <ToggleChip
-                                        key={topology}
-                                        label={TOPOLOGY_META[topology].label}
-                                        active={active}
+                                        label="All buttons"
+                                        active={patch.allButtons}
                                         accentColor={accentColor}
-                                        gate={glutenStageTwoOptionGate({ patch: currentPatch, option: topology })}
+                                        gate={gateFor(GLUTEN_PARAM_IDS.allButtons, 'All buttons')}
                                         onClick={() =>
-                                            setGlutenParamWithAudio(deviceId, GLUTEN_PARAM_IDS.blendTopology, topology)
+                                            setGlutenParamWithAudio(
+                                                deviceId,
+                                                GLUTEN_PARAM_IDS.allButtons,
+                                                !patch.allButtons
+                                            )
                                         }
                                     />
-                                );
-                            })}
-                        </Row>
-                    </ControlCard>
+                                </Stack>
+                            ) : null}
+
+                            {characterStages.includes('opto') ? (
+                                <Stack gap={2}>
+                                    {characterHeading('opto')}
+                                    <Row wrap gap={1.5}>
+                                        {[false, true].map((mode, index) => {
+                                            const labels = ['Compress', 'Limit'];
+                                            const active = patch.limitMode === mode;
+                                            return (
+                                                <ToggleChip
+                                                    key={labels[index]}
+                                                    label={labels[index] ?? ''}
+                                                    active={active}
+                                                    accentColor={accentColor}
+                                                    gate={gateFor(GLUTEN_PARAM_IDS.limitMode, labels[index] ?? '')}
+                                                    onClick={() =>
+                                                        setGlutenParamWithAudio(
+                                                            deviceId,
+                                                            GLUTEN_PARAM_IDS.limitMode,
+                                                            mode
+                                                        )
+                                                    }
+                                                />
+                                            );
+                                        })}
+                                    </Row>
+                                    <p className="text-dense leading-4 text-muted-foreground">
+                                        Limit leans harder on the cell. Compress lets it breathe.
+                                    </p>
+                                </Stack>
+                            ) : null}
+
+                            {characterStages.includes('diode') ? (
+                                <Stack gap={2}>
+                                    {characterHeading('diode')}
+                                    <Row wrap gap={1.5}>
+                                        {[1, 2, 3, 4, 5].map((value) => {
+                                            const active = patch.recovery === value;
+                                            return (
+                                                <ToggleChip
+                                                    key={value}
+                                                    label={`Recovery ${value}`}
+                                                    active={active}
+                                                    accentColor={accentColor}
+                                                    gate={gateFor(GLUTEN_PARAM_IDS.recovery, `Recovery ${value}`)}
+                                                    onClick={() =>
+                                                        setGlutenParamWithAudio(
+                                                            deviceId,
+                                                            GLUTEN_PARAM_IDS.recovery,
+                                                            value
+                                                        )
+                                                    }
+                                                />
+                                            );
+                                        })}
+                                    </Row>
+                                    <p className="text-dense leading-4 text-muted-foreground">
+                                        Fixed release times: 50, 100, 400, 800 and 1500 ms. Low positions let the level
+                                        spring back between hits; high positions hold the reduction through the tail.
+                                    </p>
+                                </Stack>
+                            ) : null}
+
+                            {characterStages.includes('vca') ? (
+                                <Stack gap={3}>
+                                    {characterHeading('vca')}
+                                    <Grid cols={2} gap={2}>
+                                        <Knob
+                                            deviceId={deviceId}
+                                            value={patch.vcaCharacter}
+                                            param={GLUTEN_PARAM_IDS.vcaCharacter}
+                                            label="Color"
+                                            min={0}
+                                            max={0.02}
+                                            step={0.001}
+                                            defaultValue={0.003}
+                                            gate={gateFor(GLUTEN_PARAM_IDS.vcaCharacter, 'Color')}
+                                        />
+                                        <Knob
+                                            deviceId={deviceId}
+                                            value={patch.vcaType}
+                                            param={GLUTEN_PARAM_IDS.vcaType}
+                                            label="VCA type"
+                                            min={0}
+                                            max={2}
+                                            step={1}
+                                            defaultValue={1}
+                                            gate={gateFor(GLUTEN_PARAM_IDS.vcaType, 'VCA type')}
+                                        />
+                                    </Grid>
+                                    <Row wrap gap={1.5}>
+                                        {[false, true].map((mode, index) => {
+                                            const labels = ['Feedback', 'Feed forward'];
+                                            const active = patch.feedForward === mode;
+                                            return (
+                                                <ToggleChip
+                                                    key={labels[index]}
+                                                    label={labels[index] ?? ''}
+                                                    active={active}
+                                                    accentColor={accentColor}
+                                                    gate={gateFor(GLUTEN_PARAM_IDS.feedForward, labels[index] ?? '')}
+                                                    onClick={() =>
+                                                        setGlutenParamWithAudio(
+                                                            deviceId,
+                                                            GLUTEN_PARAM_IDS.feedForward,
+                                                            mode
+                                                        )
+                                                    }
+                                                />
+                                            );
+                                        })}
+                                    </Row>
+                                </Stack>
+                            ) : null}
+                        </ControlCard>
+                    ) : null}
+
+                    {showBuild ? (
+                        <ControlCard
+                            title="Stage two"
+                            detail={stageTwoNotice ?? 'Blend a second topology in when the first one needs backup.'}
+                        >
+                            <Row wrap gap={1.5}>
+                                {TOPOLOGIES.map((topology) => {
+                                    const active = patch.blendTopology === topology;
+                                    return (
+                                        <ToggleChip
+                                            key={topology}
+                                            label={TOPOLOGY_META[topology].label}
+                                            active={active}
+                                            accentColor={accentColor}
+                                            gate={glutenStageTwoOptionGate({ patch: currentPatch, option: topology })}
+                                            onClick={() =>
+                                                setGlutenParamWithAudio(
+                                                    deviceId,
+                                                    GLUTEN_PARAM_IDS.blendTopology,
+                                                    topology
+                                                )
+                                            }
+                                        />
+                                    );
+                                })}
+                            </Row>
+                        </ControlCard>
+                    ) : null}
                 </DawPluginRail>
             </div>
         </div>

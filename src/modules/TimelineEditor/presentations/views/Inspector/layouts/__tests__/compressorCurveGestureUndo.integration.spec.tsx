@@ -266,7 +266,7 @@ function expectThresholdValue(type: CompressorType, value: number): void {
     }
     expect(parameter.minValue).toBe(-60);
     expect(parameter.maxValue).toBe(0);
-    // The thumb exposes 0..100; both surrounding readouts carry native dB.
+    // The thumb exposes 0..100; the parameter header is the single readout and carries native dB.
     const position = ((value - parameter.minValue) / (parameter.maxValue - parameter.minValue)) * 100;
     const control = screen.getByRole('slider', { name: 'Threshold' });
     expect(control).toHaveAttribute('aria-valuemin', '0');
@@ -274,10 +274,8 @@ function expectThresholdValue(type: CompressorType, value: number): void {
     expect(control).toHaveAttribute('aria-valuenow');
     expect(Number(control.getAttribute('aria-valuenow'))).toBeCloseTo(position, 10);
     const readouts = screen.getAllByText(`${value.toFixed(1)} dB`);
-    expect(readouts).toHaveLength(2);
-    for (const readout of readouts) {
-        expect(readout).toBeVisible();
-    }
+    expect(readouts).toHaveLength(1);
+    expect(readouts[0]).toBeVisible();
 }
 async function committed(type: CompressorType, value: number, historyDepth = 1): Promise<void> {
     const id = `${prefix(type)}-threshold`;

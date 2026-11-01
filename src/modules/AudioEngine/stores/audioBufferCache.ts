@@ -17,6 +17,7 @@ import {
     fetchDurableOwnedAudioBufferIds,
     type DurableAudioBufferOwnershipSnapshot,
 } from './durableAudioBufferOwnership';
+import { readLiveAudioBufferReferences } from './liveAudioBufferReferences';
 import {
     createPreparedAudioBufferLifecycle,
     PreparedAudioStoragePhaseUnavailableError,
@@ -102,11 +103,22 @@ function isValidExportedAudioBuffer(data: ExportedAudioBuffer): boolean {
 }
 
 // Main AudioBuffer cache. Non-project buffers are LRU bounded; buffers needed by
-// the active arrangement stay pinned because scheduling reads are synchronous.
+// the active arrangement stay resident because scheduling reads are synchronous:
+// those a project load pinned, and those the arrangement references now.
 const MAX_AUDIO_BUFFER_ENTRIES = 64;
 const cache = new Map<string, AudioBuffer>();
 const pinnedBufferIds = new Set<string>();
 const residentFreezeProjectIdById = new Map<string, number | undefined>();
+
+function findLeastRecentEvictableId(): string | undefined {
+    const liveReferences = readLiveAudioBufferReferences();
+    for (const key of cache.keys()) {
+        if (!pinnedBufferIds.has(key) && !liveReferences.has(key)) {
+            return key;
+        }
+    }
+    return undefined;
+}
 
 function writeAudioCacheEntry(id: string, buffer: AudioBuffer, freezeProjectId?: number, ownershipKnown = false): void {
     // Promote existing entry to MRU position
@@ -114,13 +126,7 @@ function writeAudioCacheEntry(id: string, buffer: AudioBuffer, freezeProjectId?:
         cache.delete(id);
     } else {
         while (cache.size >= MAX_AUDIO_BUFFER_ENTRIES) {
-            let lruKey: string | undefined;
-            for (const key of cache.keys()) {
-                if (!pinnedBufferIds.has(key)) {
-                    lruKey = key;
-                    break;
-                }
-            }
+            const lruKey = findLeastRecentEvictableId();
             if (lruKey === undefined) {
                 break;
             }
@@ -146,13 +152,7 @@ function writePinnedBufferIds(ids: readonly string[]): void {
         pinnedBufferIds.add(id);
     }
     while (cache.size > MAX_AUDIO_BUFFER_ENTRIES) {
-        let lruKey: string | undefined;
-        for (const key of cache.keys()) {
-            if (!pinnedBufferIds.has(key)) {
-                lruKey = key;
-                break;
-            }
-        }
+        const lruKey = findLeastRecentEvictableId();
         if (lruKey === undefined) {
             break;
         }

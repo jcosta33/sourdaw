@@ -15,7 +15,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Automation/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
+import { midiStore, projectFrozenMidiTakeWindow, selectMidiNotesForRecordingPass } from '#/modules/MIDI/stores';
 import {
     getChordAtBeat,
     projectChannelBend,
@@ -69,6 +69,7 @@ import { relocateHeldNoteExpression } from './relocateHeldNoteExpression';
 import { resolveChannelBendClips } from './resolveChannelBendClips';
 import { resolveDrumKit } from './resolveDrumKit';
 import { resolveDrumKitDef } from './resolveDrumKitDef';
+import { resolveFrozenMidiControllerPasses } from './resolveFrozenMidiControllerPasses';
 import { resolveMidiWindowClips } from './resolveMidiWindowClips';
 import { resolvePlaybackNoteReceiver } from './resolvePlaybackNoteReceiver';
 import { resolveStoredControllerClips } from './resolveStoredControllerClips';
@@ -532,8 +533,15 @@ export async function scheduleMidiNotes(
     // drops the far-behind wraps. `BEAT_EPSILON` absorbs the wrap re-anchor's
     // modulo round-trip noise — ulp-scale, orders below any musical distance —
     // so a landing at the clock reads as due, not stale.
+    //
+    // A continuing window the scheduler admitted overdue — its tick late by
+    // less than one look-ahead — opens behind the clock, and plays what it owns
+    // late as every other note kind does; only content landing behind the
+    // window start is stale there. A relocation opens at its destination, so
+    // the clock alone decides.
+    const clockFloorBeat = opensAtRelocation ? accumulatedPosition : Math.min(accumulatedPosition, fromBeat);
     const admittedSegmentFloorBeat =
-        Math.max(fromBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS, accumulatedPosition) - BEAT_EPSILON;
+        Math.max(fromBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS, clockFloorBeat) - BEAT_EPSILON;
     // #4591 — the MIDI twin of scheduleAudioClips' cue-send rule: the strip's
     // mute sits downstream of the pre-fader tap, so a muted MIDI track still
     // feeds its pre-fader (cue) sends, and the offline mixdown schedules those
@@ -836,9 +844,15 @@ export async function scheduleMidiNotes(
         const readChannelBend = createChannelBendReader(track);
         for (const clip of activeMidiClips) {
             // A clip with no note list plays no notes; its stored controllers still play.
-            const notes = midiState.notesByClipId[clip.id] ?? [];
+            const frozenSource = clip.midiTakeSource;
+            const notes = frozenSource
+                ? []
+                : selectMidiNotesForRecordingPass(
+                      midiState.notesByClipId[clip.id] ?? [],
+                      clip.midiTakeRecordingPassIndex
+                  );
 
-            const clipMidiOffset = clip.midiOffsetBeats ?? 0;
+            const clipMidiOffset = frozenSource ? 0 : (clip.midiOffsetBeats ?? 0);
             const synthParams =
                 drumKit || drumKitDef || withheldNoteVoicingDevice ? null : getSynthParamsForTrack(track.id);
             const compensation = getCompensationDelay(track.id);
@@ -848,16 +862,35 @@ export async function scheduleMidiNotes(
                 configuredLoopLengthBeats: clip.loopLength,
                 loopEnabled: clip.loopEnabled ?? false,
             });
-            const loopLen = loopProjection.loopLengthBeats;
-            const maxIterations = loopProjection.iterationCount;
-            const scheduledIterationRange = getScheduledIterationRange({
-                clipStartBeat: clip.startBeat,
-                fromBeat,
-                iterationCount: maxIterations,
-                loopEnabled: clip.loopEnabled ?? false,
-                loopLengthBeats: loopLen,
-                toBeat,
-            });
+            const loopLen = frozenSource?.passLengthBeats ?? loopProjection.loopLengthBeats;
+            const maxIterations = frozenSource
+                ? Math.ceil((clip.endBeat - frozenSource.phaseHeadBeat) / loopLen)
+                : loopProjection.iterationCount;
+            const scheduledIterationRange = frozenSource
+                ? {
+                      startIndex: Math.max(
+                          0,
+                          Math.floor(
+                              (fromBeat -
+                                  frozenSource.phaseHeadBeat -
+                                  (frozenSource.sourceEndBeat - frozenSource.sourceEntryBeat) -
+                                  MIDI_NOTE_GROOVE_LOOKAROUND_BEATS) /
+                                  loopLen
+                          ) + 1
+                      ),
+                      endIndex: Math.min(
+                          maxIterations,
+                          Math.ceil((toBeat - frozenSource.phaseHeadBeat + MIDI_NOTE_GROOVE_LOOKAROUND_BEATS) / loopLen)
+                      ),
+                  }
+                : getScheduledIterationRange({
+                      clipStartBeat: clip.startBeat,
+                      fromBeat,
+                      iterationCount: maxIterations,
+                      loopEnabled: clip.loopEnabled ?? false,
+                      loopLengthBeats: loopLen,
+                      toBeat,
+                  });
             const sourceOccurrenceOffset = getSourceOccurrenceOffset({
                 sourceStartBeat: clip.sourceStartBeat,
                 segmentStartBeat: clip.startBeat,
@@ -941,7 +974,8 @@ export async function scheduleMidiNotes(
             // the instruments that honour them take any, and only through the
             // note path's own dispatch: a Yeast-routed, drum-kit or Toaster track
             // sends its notes elsewhere and its controllers nowhere.
-            const storedControllers = storedControllerTarget ? midiState.ccByClipId[clip.id] : undefined;
+            const storedControllers =
+                storedControllerTarget && !frozenSource ? midiState.ccByClipId[clip.id] : undefined;
             if (storedControllerTarget && storedControllers) {
                 scheduleStoredControllers({
                     trackId: track.id,
@@ -955,21 +989,64 @@ export async function scheduleMidiNotes(
                     queue: posts,
                 });
             }
+            if (storedControllerTarget && frozenSource) {
+                for (const pass of resolveFrozenMidiControllerPasses(clip)) {
+                    if (pass.controlChanges.length === 0) {
+                        continue;
+                    }
+                    scheduleStoredControllers({
+                        trackId: track.id,
+                        device: storedControllerTarget.device,
+                        node: storedControllerTarget.node,
+                        controlChanges: pass.controlChanges,
+                        clip: pass.clip,
+                        fromBeat,
+                        toBeat,
+                        sampleFrameAtBeat: sampleFrameAtBeatOnTrack(track.id),
+                        queue: posts,
+                    });
+                }
+            }
 
             for (let iter = scheduledIterationRange.startIndex; iter < scheduledIterationRange.endIndex; iter++) {
                 if (!isCurrent()) {
                     return;
                 }
-                const absoluteOccurrenceIndex = sourceOccurrenceOffset + iter;
-                const iterOffset = iter * loopLen;
+                const absoluteOccurrenceIndex = frozenSource ? iter : sourceOccurrenceOffset + iter;
+                const iterationStart = frozenSource
+                    ? frozenSource.phaseHeadBeat + iter * loopLen
+                    : clip.startBeat + iter * loopLen;
                 const yeastRouteId = `live-yeast:${track.id}:${clip.id}:${absoluteOccurrenceIndex}`;
-                let iterNotes: readonly (LiveYeastNote & Pick<ScheduledMidiNote, 'expression'>)[];
+                let iterNotes: readonly (LiveYeastNote &
+                    Pick<ScheduledMidiNote, 'expression'> & { recordedOwnBendBeat?: number })[];
                 if (yeastDevice) {
                     iterNotes = liveYeastNotesByRoute.get(yeastRouteId) ?? [];
+                } else if (frozenSource) {
+                    const window = projectFrozenMidiTakeWindow({
+                        source: frozenSource,
+                        recordingPassIndex: clip.midiTakeRecordingPassIndex,
+                        absoluteOccurrenceIndex,
+                        fromBeat: clip.startBeat,
+                        toBeat: clip.endBeat,
+                    });
+                    if (!window) {
+                        throw new Error('Invalid frozen MIDI take window');
+                    }
+                    iterNotes = window.notes.flatMap((note) =>
+                        projectCommittedGroove({
+                            events: [note],
+                            consumerType: 'clip',
+                            consumerId: frozenSource.sourceClipId,
+                        }).filter(
+                            (grooved) =>
+                                grooved.startBeat >= fromBeat - MIDI_NOTE_GROOVE_LOOKAROUND_BEATS &&
+                                grooved.startBeat < toBeat + MIDI_NOTE_GROOVE_LOOKAROUND_BEATS
+                        )
+                    );
                 } else if (clip.loopEnabled) {
                     iterNotes = selectMidiNotesForLoopWindow({
                         notes,
-                        iterationStartBeat: clip.startBeat + iterOffset,
+                        iterationStartBeat: iterationStart,
                         loopLengthBeats: loopLen,
                         midiOffsetBeats: clipMidiOffset,
                         fromBeat,
@@ -992,13 +1069,13 @@ export async function scheduleMidiNotes(
                 } else {
                     iterNotes = selectMidiNotesForSchedulerWindow({
                         notes,
-                        iterationStartBeat: clip.startBeat + iterOffset,
+                        iterationStartBeat: iterationStart,
                         midiOffsetBeats: clipMidiOffset,
                         fromBeat,
                         toBeat,
                     });
                 }
-                const notesAreAbsolute = yeastDevice !== undefined;
+                const notesAreAbsolute = yeastDevice !== undefined || frozenSource !== undefined;
 
                 for (const note of iterNotes) {
                     if (!isCurrent()) {
@@ -1044,25 +1121,30 @@ export async function scheduleMidiNotes(
                     // other path's selector only pre-selects groove-slack
                     // candidates; the projected-start test is their real
                     // ownership and keeps the exact window semantics.
-                    const admittedOnOwnedBeat = notesAreAbsolute && !isTrackScopedYeastNote;
+                    const admittedOnOwnedBeat =
+                        yeastDevice !== undefined && notesAreAbsolute && !isTrackScopedYeastNote;
                     if (admittedOnOwnedBeat && (note.startBeat < fromBeat || note.startBeat >= toBeat)) {
                         continue;
                     }
 
-                    const iterationStart = clip.startBeat + iterOffset;
                     let projectedNotes: readonly (LiveYeastNote & { beatsIntoNote?: number })[];
                     if (isTrackScopedYeastNote) {
                         projectedNotes = [note];
                     } else {
                         projectedNotes = projectClipMidiEvents({
                             events: [note],
-                            clipId: clip.id,
+                            clipId: frozenSource?.sourceClipId ?? clip.id,
                             clipStartBeat: clip.startBeat,
-                            clipEndBeat: clip.endBeat,
+                            clipEndBeat: frozenSource
+                                ? Math.min(
+                                      clip.endBeat,
+                                      iterationStart + frozenSource.sourceEndBeat - frozenSource.sourceEntryBeat
+                                  )
+                                : clip.endBeat,
                             iterationStartBeat: iterationStart,
                             loopLengthBeats: loopLen,
                             midiOffsetBeats: clipMidiOffset,
-                            loopEnabled: clip.loopEnabled ?? false,
+                            loopEnabled: frozenSource ? false : (clip.loopEnabled ?? false),
                             loopOriginBeat: clip.loopOriginBeat,
                             clipGrooveAlreadyApplied: notesAreAbsolute,
                             eventsAreAbsolute: notesAreAbsolute,
@@ -1096,7 +1178,7 @@ export async function scheduleMidiNotes(
                         if (!yeastDevice) {
                             const shouldPlay = shouldPlayMidiEvent({
                                 projectProbabilitySeed: midiState.probabilitySeed,
-                                clipId: clip.id,
+                                clipId: frozenSource?.sourceClipId ?? clip.id,
                                 eventId: note.id,
                                 absoluteOccurrenceIndex,
                                 probabilityPercent: note.probability ?? 100,
@@ -1115,7 +1197,11 @@ export async function scheduleMidiNotes(
                             pitch = transposeForChordTrack(pitch, refChord, targetChord);
                         }
 
-                        const iterationEndBeat = Math.min(iterationStart + loopLen, clip.endBeat);
+                        const iterationEndBeat = Math.min(
+                            iterationStart +
+                                (frozenSource ? frozenSource.sourceEndBeat - frozenSource.sourceEntryBeat : loopLen),
+                            clip.endBeat
+                        );
                         const unswungEndBeat = isTrackScopedYeastNote
                             ? Math.min(unswungStartBeat + projectedNote.duration, iterationEndBeat)
                             : unswungStartBeat + projectedNote.duration;
@@ -1262,6 +1348,7 @@ export async function scheduleMidiNotes(
                                           channelBend: trackBend,
                                           startBeat: noteStartBeat,
                                           beatsIntoNote: projectedNote.beatsIntoNote,
+                                          recordedOwnBendBeat: note.recordedOwnBendBeat,
                                           releaseFrame: endSampleFrame,
                                           frameAtBeat: (beat) =>
                                               placeSamplesOnClock({

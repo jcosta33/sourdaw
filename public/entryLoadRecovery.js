@@ -49,6 +49,8 @@
         button.hidden = false;
     }
 
+    window.addEventListener('sourdaw:initial-render-failed', showFailure, { once: true });
+
     // This independent deferred script runs before the later module entry.
     window.addEventListener(
         'error',

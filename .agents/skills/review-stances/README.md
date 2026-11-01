@@ -71,6 +71,13 @@ Each existing checkout that runs pnpm needs its own install rooted in that check
 junction, or copy another checkout's `node_modules`: pnpm can overwrite the owner's install records
 and abort its next trusted delivery script ([issue #4505](https://github.com/jcosta33/sourdaw/issues/4505)).
 
+Keep the repository's `enableGlobalVirtualStore: false` workspace policy in each checkout. pnpm records
+false by default in CI, while an unset local value fails the dependency freshness comparison against
+that record. The explicit setting lets the same private install run under both environments with
+freshness checking intact. The content-addressed download cache may remain shared; each checkout's
+installed virtual tree and ownership metadata stay private. This workspace policy governs the outer
+package runner before the trusted launcher; its pinned source snapshot remains a separate boundary.
+
 A probe can fail for environment reasons unrelated to the head. Record the limitation, the named
 spec, and the corresponding claim as unverified; the orchestrator must arrange execution where the
 environment exists. A mandatory mutation-and-named-spec baseline probe remains undischargeable until

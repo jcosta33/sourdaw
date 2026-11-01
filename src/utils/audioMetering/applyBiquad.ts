@@ -8,11 +8,15 @@ import { type LoudnessBiquad } from './createKWeightingFilters';
  * transcriptions of this loop could drift and make the two readings
  * incomparable.
  */
-export function applyBiquad(samples: Float64Array, filter: LoudnessBiquad): void {
-    let x1 = 0;
-    let x2 = 0;
-    let y1 = 0;
-    let y2 = 0;
+export function applyBiquad(
+    samples: Float64Array,
+    filter: LoudnessBiquad,
+    state?: { x1: number; x2: number; y1: number; y2: number }
+): void {
+    let x1 = state?.x1 ?? 0;
+    let x2 = state?.x2 ?? 0;
+    let y1 = state?.y1 ?? 0;
+    let y2 = state?.y2 ?? 0;
 
     for (let index = 0; index < samples.length; index++) {
         const x0 = samples[index]!;
@@ -22,5 +26,11 @@ export function applyBiquad(samples: Float64Array, filter: LoudnessBiquad): void
         x1 = x0;
         y2 = y1;
         y1 = y0;
+    }
+    if (state) {
+        state.x1 = x1;
+        state.x2 = x2;
+        state.y1 = y1;
+        state.y2 = y2;
     }
 }

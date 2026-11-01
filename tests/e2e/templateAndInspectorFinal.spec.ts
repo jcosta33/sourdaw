@@ -22,7 +22,7 @@ test.describe('Template Filtering and Loading', () => {
         await expect(page.getByRole('button', { name: 'EDM' })).toBeVisible();
         await expect(page.getByRole('button', { name: 'Cinematic' })).toBeVisible();
 
-        await page.getByRole('button', { name: 'Film', exact: true }).click();
+        await page.getByRole('radio', { name: 'Film', exact: true }).click();
 
         await expect(page.getByRole('button', { name: 'Cinematic' })).toBeVisible();
         await expect(page.getByRole('button', { name: 'EDM' })).toBeHidden();

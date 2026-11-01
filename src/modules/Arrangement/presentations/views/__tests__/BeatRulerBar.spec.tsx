@@ -17,6 +17,7 @@ const snapshots = vi.hoisted(() => ({
         loopStart: 0,
         loopEnd: 0,
         timeSignatureNumerator: 4,
+        timeSignatureDenominator: 4,
     },
 }));
 
@@ -85,6 +86,7 @@ describe('BeatRulerBar', () => {
             loopStart: 0,
             loopEnd: 0,
             timeSignatureNumerator: 4,
+            timeSignatureDenominator: 4,
         };
     });
 

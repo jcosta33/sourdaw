@@ -1,5 +1,19 @@
 # Lesson library: session lifecycle
 
+### 2026-10-29 — an editor connection owned the acceptance document lifetime
+
+Playwright's dev-server route dates to `0ef2e91d94`; #5363 kept the source-module companion
+and #5738 consolidated its child lifecycle. The Vite 8.3.5 pin in #5748 retained an
+unconditional disconnect/ping/reload branch even when updates were disabled. Historical
+private review prompts and tiers are unavailable. The missed lifecycle probe separates
+editor WebSocket loss from healthy application HTTP and pending module ownership.
+
+With an actual held App import, disconnect only the fixture's established socket while
+health remains available. Require same-document App and CSS completion with HMR off, and
+an observed CDP reload plus successful successor completion under default developer HMR.
+Keep the transport connected initially and retain CSS exports and custom/error delivery;
+disabling WebSockets altogether introduces connection errors rather than proving isolation.
+
 Lesson library for defects in a runtime session's lifecycle — anything that starts, stops, parks,
 replaces or disposes a long-lived runtime the app holds on behalf of a user-facing mode: the
 native live graph session, the playhead scheduler, the playhead feed, a recording session, a
@@ -65,6 +79,21 @@ actual child entry separately and preserve the host's time origin; share one per
 across host and child, never replenishing it on successful startup. Storage failure requires
 manual recovery. Removing the phase fence or shared budget must fail the corresponding probe.
 
+### 2026-10-27 — unsupported NAM replacement needs sounding-model preservation (introduced by PR #5209)
+
+PR #5209 (`54ff77cd1f930903d6e5a6f9024a45c87b67b063`) introduced the real NAM runtime
+with an admitted stacked-wide LSTM shape whose deeper input width contradicts its render buffer.
+The missing coverage obligation is replacement refusal while an existing capture is sounding;
+historical private reviewer prompts, assigned stances and model tiers are unknown.
+
+Activate Capture mode and advance two identical loaded engines with identical input. Attempt the
+unsupported replacement on one only, then require its subsequent PCM to equal the continuing
+reference without a reset. Require nonzero output separated from a matched unloaded/dry control.
+`has_loaded_neural_model` plus finite output can pass while Circuit mode bypasses the capture.
+Pair empty-engine refusal with both supported topology boundaries; preserve the selected library
+entry at the real import UI. This proves the exercised shared/WASM route, not native transport or
+physical playback acceptance.
+
 ### 2026-10-27 — cached preview sources outlived their engine graph (preserved by PR #187)
 
 Commit `454de02a76069e5cec5fcee104eb9a64521e2f97` introduced the UI-owned preview source:
@@ -102,6 +131,19 @@ to an unrelated slot after a local edit, and require the runtime fields to survi
 takes the remote value. A spec that sets a runtime field and expects hydrate to drop it is the escape's
 fingerprint: ask which caller it speaks for.
 
+### 2026-10-29 — failed Freeze settlement needs current attempt authority (PR #2597 escape)
+
+The #2597 diagnostic/no-history escape requires a separate failure settlement after the render
+refuses. That continuation must still belong to the exact project root, revision, task and freeze
+aggregate when admitted and immediately before commit. A track ID or reused project timestamp
+cannot establish ownership, and the old attempt must not clear a newer task in its finalizer.
+
+Hold settlement admission and separately its staged-write commit boundary. Cancel, start a newer
+task, replace the root with the same timestamp and track ID, remove/recreate the track, or replace
+its take. Require the successor to survive with no failed-Freeze history. Pair each refusal with
+a genuinely current retry that persists its reason and later freezes, undoes and redoes normally.
+The missed real Command/durable-state stance cannot be replaced by a direct use-case callback.
+
 ### 2026-10-08 — shutdown reclamation needs a release inside the poll pass (introduced by PR #2976)
 
 The native CI failure on PR #5064 occurred after the plugin's stop and destroy assertions passed;
@@ -113,6 +155,19 @@ owner through the first retirement sweep, release it inside the first 2 ms poll 
 the next sweep to destroy it before another wait. Independently hold the owner across a synthetic
 wait longer than the 500 ms budget and require a retained, named abandonment with no second poll.
 This tests the lifecycle boundary and measured-wait budget without timing unrelated shutdown steps.
+
+### Cold frozen export restoration must finish before rendering
+
+The clip-only restoration set introduced by `57b7349f7864eca0bd177333d720a50186bd33e9`
+survived the owner-use-case routing in `ab5a579209b5e02a035e123380b5ceaf9c922250`
+(associated with PR #187); no PR is associated with the narrowing commit, and historical
+review dispatch is unknown. The missed lifecycle input is a fresh runtime whose active frozen
+print is durable but absent from memory alongside an ordinary clip.
+
+Hold restoration and require no render or encode; release it through the real cache owner and
+require active frozen PCM in both mixdown and stems. Remove only its requested ID and require
+failure before encoding. Preserve stale-print exclusion, the empty-clip fallback, cancellation,
+and the current dialog session fence; a late older callback must not paint a reopened dialog.
 
 ### VCA membership must reach committed runtime gain
 
@@ -193,6 +248,24 @@ arm's stamps, and the other carrier's gate ramp and voice presence (`TrackNode.s
 `CARRIER_GATE_LANDING_SEC`; a native-hosted instrument has no Web Audio voice). Material nothing
 delivers is the finding; a claim that "the other carrier covers it" without those two traces is
 discarded.
+
+### A refused monitoring Off must retain the admitted capture
+
+The setter's eager Off release first appears in `e21d1877c780a083dc704054ba7455476cf35c92`.
+The toggle already released eagerly in `4f410257b212bbbd2210fa6553f7aaa3394f69bc`;
+`e415a55cc406ba264dffbc229f4ac86f3e5caaab` later moved it from Track to Arrangement. GitHub
+reports no associated PR for the setter commit or the earlier toggle commit. PR #4255 narrowed
+the setter's global stop to a per-track stop but retained its
+pre-commit release. Review of #5091 exposed the rollback gap; it did not introduce it. Historical
+private review prompts and tiers are unknown.
+
+Start with committed and admitted On for two tracks sharing capture. Invoke a real Off gesture
+inside the actual CRDT transaction; while projection is Off and committed state remains On, reject
+and abort the write. Both original source edges must remain connected, with no stop or reacquisition,
+and projection must return to On. A committed Off releases only its owner; final Off stops the
+shared stream once. Pair a pending grant with committed Off and a stored-but-unadmitted On control.
+Reintroduce eager release in each setter and toggle route: the unchanged refused-Off integration
+cases must fail. Controlled media and a programmatic DOM click do not establish physical audibility.
 
 ### 2026-09-09 — the correction removed for every caller (caught in review of the #4020 repair)
 
@@ -294,6 +367,23 @@ check that the MediaStreamTrack stops exactly once. Hold a permission grant thro
 resolve it and check that no deleted strip or edge is recreated. Abort and commit the single and
 bulk commands separately: the abort must retain every edge and stream, while the commit releases
 only owners whose IDs are absent from committed project truth.
+
+### Paused punch ownership must not outlive its roll (#5272)
+
+PR #305 (`b077ef6d34c`) fenced asynchronous pause teardown, but did not retire the old
+punch owner when Play arrived during recorder flush. Historical review prompts are unknown.
+Drive real Pause and Play with a held recorder terminal, a recorder fake that keeps the
+repository's same-track admission (a start behind a flushing session waits for it and is refused
+after any later stop), and production Command/CRDT. Pause, seek before the punch-in, Play, then
+either release the old flush before a later tick punches in, or punch in on that tick and release
+the flush while the successor's start waits. Require the successor flag, clip and scheduler to
+survive the late pause continuation, each completed capture to own its PCM, saved take and one
+history entry, and Undo/Redo to preserve its peer. Removing synchronous punch retirement must
+prevent the successor's punch-in; clearing the flag from, or dropping the `isPlaying` guard of, the
+late pause continuation must fail both orderings; admitting the start at once, or resolving the old
+terminal's clip from `activeRecordingRef`, must fail the waiting one. Both orderings that
+were blocked by #5998 and #5999 are now proved in `punchPausePlayCommand.integration.spec.ts`: the
+first-window punch Play that waits for the closing take, and the refused start behind a held flush.
 
 ### 2026-10-09 — admitted interests and optimistic deletion cross the monitor owner (PR #5011)
 
@@ -497,6 +587,8 @@ The scheduler callback from `4f410257b212` lacked root authority; PR #4270 (`9a0
 
 Replace the root while an audio capture is open, retaining copied provisional state. Settle both stale success and stale failure, then reject a held commit after replacement: the successor must remain exact and no notice may falsely claim it discarded the take. On the same root, real success must commit once and genuine failure must retire its own provisional state. Open a later punch on the replacement root while the prior callback remains pending; only the later terminal may attach media and history. Preserve separate armed-input callbacks. Settled capture promises, including refusals, retain Transport's existing lifecycle count semantics; that count alone is never proof of a landed take.
 
+PR #4564 (`40c5218228c5`) also introduced the manual audio terminal's missing-clip append escape (#5289). PR #5373 (`eecc1c5a8457`) fenced that opening, but immediate-flush and direct-root-replacement fixtures did not prove the real branch transition. Drive actual Stop with an explicitly held recorder terminal: a real switch must remain on the outgoing root until its take and Command entry settle, then save that branch and clear incoming Undo. A real fork can install its copied root while the old flush is held; settle both old success and old failure and preserve that successor's same-ID provisional clip, takes, media and history exactly. Pair actual same-owner completion and failure, known PCM through the real cache, and real Undo/Redo. Make the captured-root predicate always true and require both stale-terminal cases to fail. Historical reviewer prompts and tiers remain unverified; the missing stance was recording-owner lifetime across the actual branch transition.
+
 ### Deferred sensitivity must redraw the current clip's markers
 
 Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` introduced an Elastic panel snapshot that stayed stale after deferred detection updated the owner store. No associated introducing PR or private review prompt or tier is established. Change sensitivity on varied-pulse audio, await the actual detection and owner projection, and require count, drawing and marker hit-testing to update without an incidental pointer refresh. Switch clips and check the current clip's projection, retained lock, unrelated clip and PCM. A subscription rollback must fail the real-store regression; this does not establish Worker or performance acceptance.
@@ -587,3 +679,53 @@ evaluation/effect boundary. If App fulfillment owns bootstrap, require effects i
 to remain absent until release. After release, require actual App render issuance and bootstrap observation. Do not infer
 quiescence from missing UI/capability markers, fixed microtask counts, or an unrelated hung-import
 case; preserve the distinct cold-stylesheet lesson in test-validity.
+
+### 2026-10-30 — early scheduler callbacks published future deadlines (PR #955)
+
+PR #955 (`9273fb830b42e102a67802ffdb46d55cd10663d6`) introduced the worker deadline
+advance and the receiver's `sentAtMs >= scheduledAtMs` admission. PR #956
+(`74616a080d0e400b8b9ed44a5361a57b21ec933a`) retained that relation while validating
+message timing. PR #955 has no public reviews; historical private prompts and tiers are
+unknown. The missed input was a callback before the next deadline: forcing one elapsed
+slot published that future deadline and advanced it, so a sustained early phase could
+keep every subsequent payload outside the receiver's contract.
+
+Drive the actual worker module with controlled early clock reads at the initial deadline
+and after missed slots. Require no premature emission or sequence/deadline advance, then
+continued admissible ticks on the unchanged due-slot grid. Retain exact, late, missed-slot,
+restart and stop controls, and keep the receiver's timestamp and generation guards strict.
+Removing only the early-callback guard must fail the named worker spec. Controlled clock
+inputs prove this producer contract; they do not attribute the separately observed #5889
+browser stall, whose raw worker messages were not retained.
+
+### 2026-11-01 — a new refusal outcome left each caller's provisional writes behind (#5999)
+
+Commit `c8f18d184c` made the recorder's `startAudioRecording` resolve `false` when a stop moves
+`startGeneration` during a same-track wait. The automatic punch-in admission in
+`startPlayheadScheduler.ts` answered `false` by removing only its capture clock; the provisional
+clip and take stayed on the track with no audio and no history entry. #6010 repaired it.
+
+When a repository gains a refusal outcome, enumerate every caller and what each has already written
+before awaiting it. A refused or failed start must retire those writes, quietly when a stop caused
+the refusal. Drive each caller through the refusal and require the clip, take and history to match
+the state before the start.
+
+The repair review found a second class. On Play's initial window the cleanup ran while the
+initial-playback programme witness, which compares store references, was pending. Play aborted with
+"Playback changed while preparing", and on a loop seam the cleanup retired the pass timing the initial
+finalize check needed. A cleanup write belongs after the preparation that witnesses the stores it
+touches, so defer it until no initial emission is preparing.
+
+### 2026-11-01 — an await inside a preparation witness did not name the writers that land in it (#5998)
+
+PR #5729 made Play's initial window await the punch-in recorder admission while the witness was live.
+The previous take's commit, and later a previous scheduler session's deferred cleanup, could land
+inside that await and refuse the Play. #6013 fixed it: a Play whose first window punches in waits
+for the closing take first (`opensPunchIn` is shared with the scheduler), and refused-start cleanup
+is held across scheduler sessions.
+
+For every await taken while a store-identity witness is live, list which other gestures' writes can
+land in it. Each must be ordered before the witness, or shown not to reach the compared stores.
+Genuine edits during the await must still refuse the Play. Pin both sides: the earlier take and the
+earlier session's cleanup landing mid-await, and an unrelated edit landing mid-await. The
+non-punch Play with Yeast preparation is left behind in #6012.

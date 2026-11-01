@@ -51,10 +51,10 @@ test.describe('Keyboard Shortcuts', () => {
 
     test('Can toggle the virtual keyboard with Cmd+Shift+K', async ({ page }) => {
         await page.keyboard.press(`${MOD}+Shift+k`);
-        await expect(page.getByRole('application', { name: /Virtual Piano Keyboard/i })).toBeVisible({ timeout: 5000 });
+        await expect(page.getByRole('region', { name: /Virtual Piano Keyboard/i })).toBeVisible({ timeout: 5000 });
 
         await page.keyboard.press(`${MOD}+Shift+k`);
-        await expect(page.getByRole('application', { name: /Virtual Piano Keyboard/i })).toBeHidden();
+        await expect(page.getByRole('region', { name: /Virtual Piano Keyboard/i })).toBeHidden();
     });
 
     test('Can open the shortcut cheat sheet with ?', async ({ page }) => {

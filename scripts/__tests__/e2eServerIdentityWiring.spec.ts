@@ -203,6 +203,7 @@ describe('cold first-paint warmup', () => {
             goto: warmupMocks.goto,
             getByLabel: warmupMocks.getByLabel,
         });
+        warmupMocks.addInitScript.mockResolvedValue(undefined);
         // A healthy boot logs the [capabilities] marker right after the warmup
         // subscribes to the console; deliver it so the readiness gate passes.
         warmupMocks.on.mockImplementation((_event: string, handler: (message: { text: () => string }) => void) => {
@@ -224,6 +225,7 @@ describe('cold first-paint warmup', () => {
             return null;
         });
         const warmupLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+        const warmupError = vi.spyOn(console, 'error').mockImplementation(() => {});
 
         await warmFirstPaint(config);
 
@@ -247,6 +249,7 @@ describe('cold first-paint warmup', () => {
                 /\[first-paint warmup\] launch overlay after 35\.0s, boot capabilities after 35\.0s; 145\.0s of the 180s cold allowance remains/
             )
         );
+        expect(warmupError).not.toHaveBeenCalled();
     });
 
     it('marks each warmup phase before a pending await and completes it only after that await', async () => {
@@ -342,6 +345,139 @@ describe('cold first-paint warmup', () => {
 
         expect(warmupMocks.waitFor).toHaveBeenCalledWith({ state: 'visible', timeout: 145_000 });
         expect(clock.now).toBe(180_000);
+        expect(warmupMocks.close).toHaveBeenCalledOnce();
+    });
+
+    it('logs bounded boot evidence before awaited cleanup and preserves the original overlay error', async () => {
+        const overlayError = new Error('overlay timed out');
+        const close = deferred<void>();
+        const emitted: string[] = [];
+        const onClose = warmupMocks.close.mockImplementation(() => close.promise);
+        warmupMocks.on.mockImplementation((_event: string, handler: (message: { text: () => string }) => void) => {
+            handler({ text: () => '[vite] connected.' });
+            for (let index = 0; index < 9; index += 1) {
+                handler({ text: () => `unrelated browser message ${index}` });
+            }
+            handler({ text: () => 'browser emitted boot detail' });
+        });
+        warmupMocks.goto.mockImplementation(async () => {
+            clock.now += 35_000;
+            return null;
+        });
+        warmupMocks.waitFor.mockImplementation(async (options: { timeout: number }) => {
+            clock.now += options.timeout;
+            throw overlayError;
+        });
+        vi.spyOn(console, 'error').mockImplementation((message: string) => emitted.push(message));
+
+        let settled = false;
+        const failure = warmFirstPaint(config).catch((error: unknown) => error);
+        void failure.then(() => {
+            settled = true;
+        });
+
+        await vi.waitFor(() => expect(warmupMocks.close).toHaveBeenCalledOnce());
+        expect(emitted).toHaveLength(1);
+        expect(emitted[0]).toContain('First-paint warmup failed after 180000ms');
+        expect(emitted[0]).toContain('Vite client connected +0.0s');
+        expect(emitted[0]).toContain('browser emitted boot detail');
+        expect(emitted[0]).toContain('unrelated browser message 8');
+        expect(emitted[0]).not.toContain('unrelated browser message 0');
+        expect(emitted[0]).toContain('overlay timed out');
+        expect(emitted[0]).not.toContain('did not mount within');
+        expect(settled).toBe(false);
+        expect(warmupMocks.goto).toHaveBeenCalledOnce();
+        expect(warmupMocks.waitFor).toHaveBeenCalledOnce();
+        expect(warmupMocks.waitFor).toHaveBeenCalledWith({ state: 'visible', timeout: 145_000 });
+        expect(clock.now).toBe(180_000);
+        expect(onClose).toHaveBeenCalledOnce();
+
+        close.resolve(undefined);
+        expect(await failure).toBe(overlayError);
+        expect(settled).toBe(true);
+    });
+
+    it('preserves the readiness error when browser close also fails', async () => {
+        const readinessError = new Error('overlay timed out');
+        const closeError = new Error('browser close failed');
+        const emitted: string[] = [];
+        const warmupLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+        vi.spyOn(console, 'error').mockImplementation((message: string) => emitted.push(message));
+        warmupMocks.waitFor.mockRejectedValue(readinessError);
+        warmupMocks.close.mockRejectedValue(closeError);
+
+        await expect(warmFirstPaint(config)).rejects.toBe(readinessError);
+
+        expect(warmupMocks.close).toHaveBeenCalledOnce();
+        expect(emitted).toHaveLength(2);
+        expect(emitted[0]).toContain('overlay timed out');
+        expect(emitted[1]).toContain('browser close failed while preserving the original warmup failure');
+        expect(emitted[1]).toContain('browser close failed');
+        expect(warmupLog).toHaveBeenCalledWith(expect.stringMatching(/browser close: start$/));
+        expect(warmupLog).not.toHaveBeenCalledWith(expect.stringMatching(/browser close: complete$/));
+    });
+
+    it('rejects with a close-only error after readiness succeeds', async () => {
+        const closeError = new Error('browser close failed');
+        const emitted: string[] = [];
+        const warmupLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+        const warmupError = vi.spyOn(console, 'error').mockImplementation((message: string) => emitted.push(message));
+        warmupMocks.close.mockRejectedValue(closeError);
+
+        await expect(warmFirstPaint(config)).rejects.toBe(closeError);
+
+        expect(warmupMocks.goto).toHaveBeenCalledOnce();
+        expect(warmupMocks.waitFor).toHaveBeenCalledOnce();
+        expect(warmupMocks.close).toHaveBeenCalledOnce();
+        expect(emitted).toEqual([]);
+        expect(warmupError).not.toHaveBeenCalled();
+        expect(warmupLog).toHaveBeenCalledWith(expect.stringMatching(/browser close: start$/));
+        expect(warmupLog).not.toHaveBeenCalledWith(expect.stringMatching(/browser close: complete$/));
+    });
+
+    it('preserves an undefined init-script rejection when browser close also fails', async () => {
+        const closeError = new Error('browser close failed');
+        const emitted: string[] = [];
+        vi.spyOn(console, 'error').mockImplementation((message: string) => emitted.push(message));
+        warmupMocks.addInitScript.mockRejectedValue(undefined);
+        warmupMocks.close.mockRejectedValue(closeError);
+
+        const outcome = await warmFirstPaint(config).then(
+            () => ({ fulfilled: true as const }),
+            (error: unknown) => ({ fulfilled: false as const, error })
+        );
+
+        expect(outcome.fulfilled).toBe(false);
+        if (outcome.fulfilled) {
+            throw new TypeError('Expected init-script failure');
+        }
+        expect(outcome.error).toBeUndefined();
+        expect(warmupMocks.newPage).toHaveBeenCalledOnce();
+        expect(warmupMocks.addInitScript).toHaveBeenCalledOnce();
+        expect(warmupMocks.goto).not.toHaveBeenCalled();
+        expect(warmupMocks.close).toHaveBeenCalledOnce();
+        expect(emitted).toHaveLength(1);
+        expect(emitted[0]).toContain('browser close failed while preserving the original warmup failure');
+        expect(emitted[0]).toContain('browser close failed');
+    });
+
+    it('reports navigation failure evidence without labeling it a timeout', async () => {
+        const navigationError = new Error('net::ERR_FAILED');
+        const emitted: string[] = [];
+        warmupMocks.on.mockImplementation((_event: string, handler: (message: { text: () => string }) => void) => {
+            handler({ text: () => 'navigation started' });
+        });
+        warmupMocks.goto.mockRejectedValue(navigationError);
+        vi.spyOn(console, 'error').mockImplementation((message: string) => emitted.push(message));
+
+        await expect(warmFirstPaint(config)).rejects.toBe(navigationError);
+
+        expect(emitted).toHaveLength(1);
+        expect(emitted[0]).toContain('net::ERR_FAILED');
+        expect(emitted[0]).toContain('navigation started');
+        expect(emitted[0]).not.toContain('did not mount within');
+        expect(warmupMocks.goto).toHaveBeenCalledOnce();
+        expect(warmupMocks.waitFor).not.toHaveBeenCalled();
         expect(warmupMocks.close).toHaveBeenCalledOnce();
     });
 

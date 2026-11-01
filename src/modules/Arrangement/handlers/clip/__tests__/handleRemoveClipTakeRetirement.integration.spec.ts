@@ -18,10 +18,12 @@ import {
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -118,6 +120,88 @@ describe('removeClip take retirement (ripple route)', () => {
 
         expect(trackStore.value?.tracks[0]?.clips).toHaveLength(0);
         expect(takeLaneStore.value?.lanes).toEqual([]);
+    });
+
+    it('ripple deletes and restores a physical loop neighbor without moving its source phase or comp mask', async () => {
+        const removed = ClipDummy.create({ id: 'clip-1', trackId: 'track-1', startBeat: 4, endBeat: 8 });
+        const neighbor = ClipDummy.create({
+            id: 'neighbor',
+            trackId: 'track-1',
+            startBeat: 12,
+            endBeat: 20,
+            audioOffsetBeats: 99,
+            audioOffsetSeconds: -0.25,
+            audioUnwrappedOffsetSeconds: 3.5,
+            audioLoopStartSeconds: 1.5,
+            audioLoopPassEntrySeconds: 4.5,
+            audioLoopPassOriginBeat: 10,
+            loopOriginBeat: 8,
+            loopEnabled: true,
+            loopLength: 4,
+            stretchMode: 'timestretch',
+            stretchRatio: 2,
+        });
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'track-1', kind: 'audio', clips: [removed, neighbor] })],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+        const take = createTake('neighbor', 'Surviving take', 12, 16);
+        const compMask = [{ startBeat: 12, endBeat: 14, takeId: take.id }];
+        takeLaneStore.set({
+            lanes: [{ ...createTakeLane('track-1'), takes: [take], activeCompRegions: compMask }],
+        });
+        flushAutomergeStorageWrites();
+
+        const rawNeighbor = () =>
+            getCrdtDoc<{ tracks?: NonNullable<(typeof trackStore)['value']> }>('root')?.tracks?.tracks[0]?.clips.find(
+                (clip) => clip.id === 'neighbor'
+            );
+        const projectedNeighbor = () => trackStore.value?.tracks[0]?.clips.find((clip) => clip.id === 'neighbor');
+        const expectPhase = (startBeat: number, passOriginBeat: number) => {
+            for (const clip of [rawNeighbor(), projectedNeighbor()]) {
+                expect(clip).toMatchObject({
+                    startBeat,
+                    endBeat: startBeat + 8,
+                    audioOffsetSeconds: -0.25,
+                    audioUnwrappedOffsetSeconds: 3.5,
+                    audioLoopStartSeconds: 1.5,
+                    audioLoopPassEntrySeconds: 4.5,
+                    audioLoopPassOriginBeat: passOriginBeat,
+                    loopOriginBeat: startBeat - 4,
+                });
+            }
+            expect(takeLaneStore.value?.lanes[0]?.activeCompRegions).toEqual(compMask);
+            const clip = projectedNeighbor()!;
+            const secondsAtBeat = (beat: number) => (beat <= 12 ? beat / 2 : 6 + beat - 12);
+            const windows = [startBeat, startBeat + 4].flatMap((iterationStartBeat) =>
+                projectAudioLoopPassSegments({
+                    clip,
+                    loopLengthBeats: 4,
+                    iterationStartBeat,
+                    iterationEndBeat: iterationStartBeat + 4,
+                    stretchRatio: 2,
+                    tempoAtClipStart: startBeat < 12 ? 120 : 60,
+                    secondsAtBeat,
+                }).map((part) => [iterationStartBeat + part.startOffsetBeats, part.sourceStartSeconds])
+            );
+            expect(windows).toEqual([
+                [startBeat, -0.25],
+                [startBeat + 2, 4.5],
+                [startBeat + 4, 1.5],
+                [startBeat + 6, 4.5],
+            ]);
+        };
+
+        await executeAppAction(
+            { type: 'removeClip', payload: { clipId: 'clip-1', ripple: true } },
+            { source: 'prompt' }
+        );
+        expectPhase(8, 6);
+        await undo();
+        expectPhase(12, 10);
+        await redo();
+        expectPhase(8, 6);
     });
 
     it('retires only the deleted clip take and keeps an unrelated lane take', async () => {

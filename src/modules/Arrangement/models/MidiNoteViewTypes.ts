@@ -25,6 +25,8 @@ export type MidiNote = {
         slide?: { offsetBeats: number; value: number }[];
         pitchBend?: { offsetBeats: number; value: number }[];
     };
+    /** Original recording pass; absent for legacy and manually made notes. */
+    recordingPassIndex?: number;
 };
 
 /** View shape of MIDI's controller-change point; clip association is the store's clip-id key. */

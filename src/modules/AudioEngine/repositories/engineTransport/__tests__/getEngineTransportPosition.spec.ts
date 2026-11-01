@@ -15,6 +15,8 @@ vi.mock('#/utils/desktopBridge', () => ({
  * because the mirror type is hand-maintained on both sides.
  */
 const NATIVE_PAYLOAD = {
+    captureClock: null,
+    captureClockQuery: null,
     running: true,
     playing: true,
     positionSeconds: 1.5,
@@ -45,12 +47,255 @@ describe('getEngineTransportPosition', () => {
         vi.mocked(desktopInvoke).mockReset();
     });
 
+    it.each(['estimated', 'degraded'] as const)(
+        'retains a %s callback presentation date independently of a later query bracket',
+        async (quality) => {
+            const captureClock = {
+                epoch: 7,
+                streamEpoch: 2,
+                sampleRate: 48000,
+                presentationSeconds: 12.25,
+                quality,
+                uncertaintySeconds: null,
+            };
+            const captureClockQuery = { epoch: 7, enteredSeconds: 12.3, leavingSeconds: 12.35 };
+            vi.mocked(desktopInvoke).mockResolvedValue({ ...NATIVE_PAYLOAD, captureClock, captureClockQuery });
+
+            const position = await getEngineTransportPosition();
+
+            expect(position).toMatchObject({ captureClock, captureClockQuery });
+        }
+    );
+
+    it.each([
+        { label: 'null', positionSeconds: null },
+        { label: 'undefined', positionSeconds: undefined },
+        { label: 'string', positionSeconds: '1.5' },
+        { label: 'NaN', positionSeconds: Number.NaN },
+        { label: 'positive infinity', positionSeconds: Number.POSITIVE_INFINITY },
+        { label: 'negative infinity', positionSeconds: Number.NEGATIVE_INFINITY },
+    ])(
+        'drops dated capture timing for a $label position while keeping the display fallback',
+        async ({ positionSeconds }) => {
+            const captureClock = {
+                epoch: 7,
+                streamEpoch: 2,
+                sampleRate: 48000,
+                presentationSeconds: 12.25,
+                quality: 'estimated',
+                uncertaintySeconds: null,
+            };
+            const captureClockQuery = { epoch: 7, enteredSeconds: 12.3, leavingSeconds: 12.35 };
+            vi.mocked(desktopInvoke).mockResolvedValue({
+                ...NATIVE_PAYLOAD,
+                positionSeconds,
+                captureClock,
+                captureClockQuery,
+            });
+
+            const position = await getEngineTransportPosition();
+
+            expect(position.positionSeconds).toBe(0);
+            expect(position.captureClock).toBeNull();
+            expect(position.captureClockQuery).toEqual(captureClockQuery);
+        }
+    );
+
+    it.each([0, 1.5, -1.5])('retains dated capture timing for the finite position %s', async (positionSeconds) => {
+        const captureClock = {
+            epoch: 7,
+            streamEpoch: 2,
+            sampleRate: 48000,
+            presentationSeconds: 12.25,
+            quality: 'estimated',
+            uncertaintySeconds: null,
+        };
+        const captureClockQuery = { epoch: 7, enteredSeconds: 12.3, leavingSeconds: 12.35 };
+        vi.mocked(desktopInvoke).mockResolvedValue({
+            ...NATIVE_PAYLOAD,
+            positionSeconds,
+            captureClock,
+            captureClockQuery,
+        });
+
+        const position = await getEngineTransportPosition();
+
+        expect(position.positionSeconds).toBe(positionSeconds);
+        expect(position.captureClock).toEqual(captureClock);
+        expect(position.captureClockQuery).toEqual(captureClockQuery);
+    });
+
+    it.each([
+        { captureClock: undefined, captureClockQuery: undefined },
+        {
+            captureClock: {
+                epoch: 1,
+                streamEpoch: 1,
+                sampleRate: 0,
+                presentationSeconds: 1,
+                quality: 'estimated',
+                uncertaintySeconds: null,
+            },
+            captureClockQuery: { epoch: 1, enteredSeconds: 2, leavingSeconds: 3 },
+        },
+        {
+            captureClock: {
+                epoch: 1,
+                streamEpoch: 1,
+                sampleRate: 48000,
+                presentationSeconds: Number.NaN,
+                quality: 'estimated',
+                uncertaintySeconds: null,
+            },
+            captureClockQuery: { epoch: 1, enteredSeconds: 2, leavingSeconds: 3 },
+        },
+        {
+            captureClock: {
+                epoch: 1,
+                streamEpoch: 1,
+                sampleRate: 48000,
+                presentationSeconds: 1,
+                quality: 'exact',
+                uncertaintySeconds: null,
+            },
+            captureClockQuery: { epoch: 1, enteredSeconds: 2, leavingSeconds: 3 },
+        },
+        {
+            captureClock: {
+                epoch: 1,
+                streamEpoch: 1,
+                sampleRate: 48000,
+                presentationSeconds: 1,
+                quality: 'estimated',
+                uncertaintySeconds: -1,
+            },
+            captureClockQuery: { epoch: 1, enteredSeconds: 2, leavingSeconds: 3 },
+        },
+        {
+            captureClock: {
+                epoch: 1,
+                streamEpoch: 1,
+                sampleRate: 48000,
+                presentationSeconds: 1,
+                quality: 'estimated',
+                uncertaintySeconds: null,
+            },
+            captureClockQuery: { epoch: 2, enteredSeconds: 2, leavingSeconds: 3 },
+        },
+        {
+            captureClock: {
+                epoch: 1,
+                streamEpoch: 1,
+                sampleRate: 48000,
+                presentationSeconds: 1,
+                quality: 'estimated',
+                uncertaintySeconds: null,
+            },
+            captureClockQuery: { epoch: 1, enteredSeconds: 3, leavingSeconds: 2 },
+        },
+    ])('keeps unusable capture timing unavailable without changing cursor fields (%#)', async (timing) => {
+        vi.mocked(desktopInvoke).mockResolvedValue({ ...NATIVE_PAYLOAD, ...timing });
+        const position = await getEngineTransportPosition();
+        expect(position.captureClock).toBeNull();
+        expect(position.positionSeconds).toBe(NATIVE_PAYLOAD.positionSeconds);
+        expect(position.batchesApplied).toBe(NATIVE_PAYLOAD.batchesApplied);
+    });
+
+    it.each(['playheadFrame', 'loopWraps', 'batchesApplied'] as const)(
+        'rejects malformed paired %s without replacing its display fallback',
+        async (field) => {
+            for (const invalid of [null, Number.NaN, -1, 0.5]) {
+                vi.mocked(desktopInvoke).mockResolvedValue({
+                    ...NATIVE_PAYLOAD,
+                    [field]: invalid,
+                    captureClock: {
+                        epoch: 7,
+                        streamEpoch: 2,
+                        sampleRate: 48000,
+                        presentationSeconds: 12.25,
+                        quality: 'estimated',
+                        uncertaintySeconds: null,
+                    },
+                    captureClockQuery: { epoch: 7, enteredSeconds: 12.3, leavingSeconds: 12.35 },
+                });
+                const position = await getEngineTransportPosition();
+                expect(position.captureClock).toBeNull();
+                expect(position.positionSeconds).toBe(1.5);
+            }
+        }
+    );
+
     it('reads the native payload onto its own fields', async () => {
         vi.mocked(desktopInvoke).mockResolvedValue(NATIVE_PAYLOAD);
 
         await expect(getEngineTransportPosition()).resolves.toEqual(NATIVE_PAYLOAD);
         expect(desktopInvoke).toHaveBeenCalledWith('engine_transport_position');
     });
+
+    it('keeps an exact live identity and distinguishes an empty slot from a legacy reply', async () => {
+        const identity = 'dc0f62d1-dc26-4c5c-81db-36130c1466e4:9007199254740993';
+        vi.mocked(desktopInvoke).mockResolvedValue({ ...NATIVE_PAYLOAD, engineIncarnation: identity });
+        expect((await getEngineTransportPosition()).engineIncarnation).toBe(identity);
+        vi.mocked(desktopInvoke).mockResolvedValue({
+            ...NATIVE_PAYLOAD,
+            running: false,
+            playing: false,
+            batchesApplied: 0,
+            engineIncarnation: null,
+        });
+        expect((await getEngineTransportPosition()).engineIncarnation).toBeNull();
+        vi.mocked(desktopInvoke).mockResolvedValue(NATIVE_PAYLOAD);
+        expect(await getEngineTransportPosition()).not.toHaveProperty('engineIncarnation');
+    });
+
+    it('drops an unusable witness without breaking ordinary legacy position fields', async () => {
+        vi.mocked(desktopInvoke).mockResolvedValue({ ...NATIVE_PAYLOAD, engineIncarnation: 'engine:42' });
+        const position = await getEngineTransportPosition();
+        expect(position).toEqual(NATIVE_PAYLOAD);
+        expect(position).not.toHaveProperty('engineIncarnation');
+    });
+
+    it.each([
+        { running: 'stopped', playing: false, batchesApplied: 0 },
+        { running: false, playing: 'stopped', batchesApplied: 0 },
+        { running: false, playing: false, batchesApplied: 'zero' },
+        { running: false, playing: false, batchesApplied: Number.POSITIVE_INFINITY },
+        { running: false, playing: false, batchesApplied: Number.MAX_SAFE_INTEGER + 1 },
+        { running: false, playing: false, batchesApplied: 42 },
+        { running: true, playing: false, batchesApplied: 0 },
+        { running: false, playing: true, batchesApplied: 0 },
+        {},
+    ])('withholds a readiness witness over malformed raw facts while retaining ordinary fallback: %o', async (raw) => {
+        vi.mocked(desktopInvoke).mockResolvedValue({ engineIncarnation: null, ...raw });
+        const reading = await getEngineTransportPosition();
+        expect(reading).not.toHaveProperty('engineIncarnation');
+        expect(typeof reading.running).toBe('boolean');
+        expect(typeof reading.playing).toBe('boolean');
+        expect(Number.isFinite(reading.batchesApplied)).toBe(true);
+    });
+
+    it.each([
+        { running: 'running' },
+        { playing: 1 },
+        { batchesApplied: 'eleven' },
+        { batchesApplied: Number.POSITIVE_INFINITY },
+        { batchesApplied: Number.MAX_SAFE_INTEGER + 1 },
+        { batchesApplied: -1 },
+    ])(
+        'withholds a live identity over malformed readiness facts without dropping ordinary telemetry: %o',
+        async (raw) => {
+            vi.mocked(desktopInvoke).mockResolvedValue({
+                ...NATIVE_PAYLOAD,
+                engineIncarnation: 'dc0f62d1-dc26-4c5c-81db-36130c1466e4:42',
+                ...raw,
+            });
+            const reading = await getEngineTransportPosition();
+            expect(reading).not.toHaveProperty('engineIncarnation');
+            expect(reading.positionSeconds).toBe(1.5);
+            expect(reading.stripPeaks).toEqual(NATIVE_PAYLOAD.stripPeaks);
+            expect(reading.tunerTelemetry).toEqual(NATIVE_PAYLOAD.tunerTelemetry);
+        }
+    );
 
     it('reports the stopped shape in a browser build without reaching the bridge', async () => {
         vi.mocked(isDesktopRuntime).mockReturnValue(false);
@@ -207,5 +452,36 @@ describe('getEngineTransportPosition', () => {
         const position = await getEngineTransportPosition();
 
         expect(position.tunerTelemetry).toEqual({});
+    });
+});
+
+describe('native Grinder callback identity', () => {
+    it('reads exact engine/model identity and never launders malformed model readback', async () => {
+        const receipt = {
+            trackId: 't',
+            deviceId: 'd',
+            engineId: '9007199254740993',
+            targetGeneration: '42',
+            requestId: 'r',
+            contentHash: 'a'.repeat(64),
+        };
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockResolvedValue({
+            ...NATIVE_PAYLOAD,
+            engineId: receipt.engineId,
+            grinderModels: [receipt],
+        });
+        expect(await getEngineTransportPosition()).toMatchObject({
+            engineId: receipt.engineId,
+            grinderModels: [receipt],
+        });
+        vi.mocked(desktopInvoke).mockResolvedValue({
+            ...NATIVE_PAYLOAD,
+            engineId: 9007199254740992,
+            grinderModels: [{ ...receipt, targetGeneration: '01' }],
+        });
+        const malformed = await getEngineTransportPosition();
+        expect(malformed.engineId).toBeUndefined();
+        expect(malformed.grinderModels).toBeUndefined();
     });
 });

@@ -1,12 +1,13 @@
 import { type ReactElement } from 'react';
 
-import { Grid, Row, Stack } from '#/components/layout';
+import { Row, Stack } from '#/components/layout';
 import { Slider } from '#/components/ui/slider';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
 import { type DeviceLayoutProps, registerDeviceLayout } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
+import { ParamCardGrid } from '../ParamCardGrid';
 
 export const HammondB3Layout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElement | null => {
     if (!device) {
@@ -76,13 +77,13 @@ export const HammondB3Layout = ({ device, trackId, parameters }: DeviceLayoutPro
             {otherParams.length > 0 ? (
                 <Stack gap={2} className="border-t border-border/40 pt-4">
                     <h3 className="text-xs font-semibold text-foreground/80 uppercase px-1">Controls</h3>
-                    <Grid cols={2} gap={4}>
+                    <ParamCardGrid gap={4}>
                         {otherParams.map((param) => (
                             <SurfaceCard key={param.id} className="p-2">
                                 <DeviceParameterControl param={param} device={device} trackId={trackId} />
                             </SurfaceCard>
                         ))}
-                    </Grid>
+                    </ParamCardGrid>
                 </Stack>
             ) : null}
         </Stack>

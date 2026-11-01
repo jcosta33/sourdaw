@@ -8,3 +8,4 @@ export { ChatPanel } from './ChatPanel';
 export { GenerativeAiPanel } from './GenerativeAiPanel';
 export { MixAnalysisPanel } from './MixAnalysisPanel';
 export { VoiceCommandOverlay } from './VoiceCommandOverlay';
+export { MeasuredPreviewAudition } from './MeasuredPreviewAudition';
