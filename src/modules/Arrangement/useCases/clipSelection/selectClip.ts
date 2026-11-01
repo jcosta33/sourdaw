@@ -2,5 +2,9 @@ import { clipSelectionStore, defaultClipSelectionState } from '../../stores/clip
 
 export function selectClip(clipId: string): void {
     const current = clipSelectionStore.value ?? defaultClipSelectionState;
-    clipSelectionStore.set({ ...current, selectedClipId: clipId });
+    if (current.selectedClipIds.includes(clipId)) {
+        clipSelectionStore.set({ ...current, selectedClipId: clipId });
+        return;
+    }
+    clipSelectionStore.set({ ...current, selectedClipId: clipId, selectedClipIds: [clipId] });
 }
