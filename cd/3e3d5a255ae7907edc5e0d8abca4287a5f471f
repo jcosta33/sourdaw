@@ -1,0 +1,19 @@
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_dde1671ba022b8::t_b795049631af03 16,69-92,9679,9986-9987
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cd3e3d5a255ae7907edc5e0d8abca4287a5f471f",
+  "prompts": {},
+  "sessions": {
+    "s_dde1671ba022b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e4c42ac-51ff-45eb-b81f-f43601ed01dc",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
