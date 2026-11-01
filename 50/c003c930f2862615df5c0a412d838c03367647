@@ -1,0 +1,41 @@
+crates/daw-dsp/src/grinder/nam/wavenet.rs
+  s_ba80576e6f5cb5::t_96f1f5636034b3 54-68
+  s_ba80576e6f5cb5::t_71da76c8642588 690
+crates/daw-dsp/tests/grinder_wavenet_scratch_width_rejection.rs
+  s_ba80576e6f5cb5::t_7bc3c825eeda8f 144-196
+src/modules/AudioEngine/wasm/scoring.d.ts
+  s_ba80576e6f5cb5::t_488a4403dd7929 1
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_ba80576e6f5cb5::t_488a4403dd7929 1,1202-1217,1301-1394
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  s_ba80576e6f5cb5::t_488a4403dd7929 1
+src/modules/Grinder/services/__tests__/validateGrinderNamModel.spec.ts
+  s_ba80576e6f5cb5::t_bfebe8026c9adc 270,278-280
+  s_ba80576e6f5cb5::t_4e67cb4c56f12d 58-62,68-69,74,271-277
+public/wasm/scoring/scoring.d.ts
+  s_ba80576e6f5cb5::t_488a4403dd7929 1
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_ba80576e6f5cb5::t_488a4403dd7929 1,1202-1217,1301-1394
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_ba80576e6f5cb5::t_488a4403dd7929 1,54-69,153-246
+public/wasm/manifest.json
+  s_ba80576e6f5cb5::t_488a4403dd7929 12,16-18,21,40,45-46,49
+release/open-source-inventory.json
+  s_ba80576e6f5cb5::t_152969e297f108 1347,1350,1353,1850
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "50c003c930f2862615df5c0a412d838c03367647",
+  "prompts": {},
+  "sessions": {
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
