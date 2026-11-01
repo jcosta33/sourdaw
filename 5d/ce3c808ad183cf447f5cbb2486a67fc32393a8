@@ -1,0 +1,32 @@
+src/modules/AiRuntime/useCases/__tests__/previewMeasurement.spec.ts
+  s_55244eb93b97d1::t_a14903131872af 1580-1581,1583-1585,1600-1608
+  s_55244eb93b97d1::t_09cc5f8b030bd2 1579,1582,1597,1609-1626
+  s_55244eb93b97d1::t_25802e03b7f98c 1586-1596,1598-1599
+  s_55244eb93b97d1::t_f860e5f574d2b0 1627-1629
+src/modules/AiRuntime/useCases/__tests__/toolChoiceDirectives.spec.ts
+  s_55244eb93b97d1::t_6a10e3093595d5 474-509,525,527,535,538
+src/modules/AiRuntime/AGENTS.md
+  s_55244eb93b97d1::t_2df91a5db78cda 58
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_55244eb93b97d1::t_31fb47edf4fb54 2235-2238,2243,2254-2260,2263,2489
+  s_55244eb93b97d1::t_e7579dc2ff9946 2204-2216,2479,2485-2488,2496-2497,2871,2873-2876,2890-2891
+  s_55244eb93b97d1::t_25802e03b7f98c 2490
+  s_55244eb93b97d1::t_6f3c5917202882 2483-2484
+  s_55244eb93b97d1::t_88b0c87a1e5ff0 1845-1849,2311-2313,2319-2320,2329-2342
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5dce3c808ad183cf447f5cbb2486a67fc32393a8",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
