@@ -1,0 +1,24 @@
+src/modules/ContentBrowser/useCases/__tests__/executePresetLoad.undo.integration.spec.ts
+  s_fec7059b7a251c::t_544d1e61af1bec 73
+  s_fec7059b7a251c::t_2844df9f7215d4 9
+  s_fec7059b7a251c::t_0cea1e0362af0d 69
+  s_fec7059b7a251c::t_be126611b6c37d 61
+src/modules/Arrangement/handlers/preset/toPresetProjectDevices.ts
+  s_fec7059b7a251c::t_b29fe080141bef 5-32,35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "155bc351c51661cbba7f07fd6c36e4801cdea626",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
