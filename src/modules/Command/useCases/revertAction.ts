@@ -1,7 +1,6 @@
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 
 import { AppActionCommittedError, AppActionConflictError } from '../errors/AppActionExecutionError';
-import { type UndoEntry } from '../models/UndoEntry';
 import {
     claimActionReplayCapability,
     completeActionReplayMarkReconciliation,
@@ -11,7 +10,6 @@ import {
     restoreActionReplayCapability,
     retainActionReplayMarkReconciliation,
 } from '../stores/actionReplayCapabilities';
-import { undoStore } from '../stores/undoStore';
 
 import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
 import { executeAppAction } from './executeAppAction';
@@ -61,16 +59,6 @@ function retryActionReplayMark({ entryId, claim }: RetryActionReplayMarkInput): 
     return outcome.status === 'marked';
 }
 
-/** The undo entry this action's replay comes from, while the history still holds
- * it: the buffers it names may only be resident again once the replay prepares. */
-function readUndoHistoryEntries(entryId: string): UndoEntry[] {
-    const state = undoStore.value;
-    if (!state) {
-        return [];
-    }
-    return [...state.past, ...state.future].filter((candidate) => candidate.id === entryId);
-}
-
 type RevertActionOutput = Promise<
     | { status: 'executed' }
     | { status: 'executed-unmarked' }
@@ -103,7 +91,7 @@ export async function revertAction(entryId: string): RevertActionOutput {
     }
 
     try {
-        await runPreparedUndoReplay(readUndoHistoryEntries(entryId), () =>
+        await runPreparedUndoReplay({ actions: [claim.inverseAction] }, () =>
             executeAppAction(claim.inverseAction, {
                 undoEntryId: entryId,
                 source: entry.source,

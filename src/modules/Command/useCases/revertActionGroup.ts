@@ -23,7 +23,7 @@ import { runPreparedUndoReplay } from './undoReplayPreparationPort';
  * replay the fresh-action mint or wrap laws.
  */
 function revertEntry(entry: UndoEntry, authorizeFirstHandler?: () => string | null): Promise<boolean> {
-    return runPreparedUndoReplay([entry], () => replayEntryInverse(entry, authorizeFirstHandler));
+    return runPreparedUndoReplay({ entries: [entry] }, () => replayEntryInverse(entry, authorizeFirstHandler));
 }
 
 async function replayEntryInverse(entry: UndoEntry, authorizeFirstHandler?: () => string | null): Promise<boolean> {

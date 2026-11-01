@@ -110,7 +110,7 @@ function recordCommittedGroupActions(entries: readonly UndoEntry[], committedAct
 }
 
 function executeActionGroupRedo(entries: readonly UndoEntry[]): Promise<RedoOutcome> {
-    return runPreparedUndoReplay(entries, () => replayActionGroupRedo(entries));
+    return runPreparedUndoReplay({ entries }, () => replayActionGroupRedo(entries));
 }
 
 async function replayActionGroupRedo(entries: readonly UndoEntry[]): Promise<RedoOutcome> {
@@ -160,7 +160,7 @@ async function replayActionGroupRedo(entries: readonly UndoEntry[]): Promise<Red
 }
 
 function executeRedo(entry: UndoEntry): Promise<RedoOutcome> {
-    return runPreparedUndoReplay([entry], () => replayRedo(entry));
+    return runPreparedUndoReplay({ entries: [entry] }, () => replayRedo(entry));
 }
 
 async function replayRedo(entry: UndoEntry): Promise<RedoOutcome> {

@@ -1,6 +1,10 @@
 import { agentRunStore } from '#/modules/AiRuntime/stores';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { readUndoEntriesAudioBufferIds, readUndoHistoryAudioBufferIds } from '#/modules/Arrangement/useCases';
+import {
+    collectAudioBufferIdFields,
+    readUndoEntriesAudioBufferIds,
+    readUndoHistoryAudioBufferIds,
+} from '#/modules/Arrangement/useCases';
 import {
     configureDurableAudioBufferOwnership,
     configureHistoryAudioBufferReferences,
@@ -49,7 +53,10 @@ export function initAudioBufferCacheAccess(): void {
     // buffers stay only until their PCM is durable, and each replay rehydrates and
     // holds what its entries name before it applies.
     configureHistoryAudioBufferReferences(readUndoHistoryAudioBufferIds);
-    undoReplayPreparationPort.setProvider((entries) =>
-        prepareCachedAudioBuffersForReplay([...readUndoEntriesAudioBufferIds(entries)])
+    undoReplayPreparationPort.setProvider((entries, actions) =>
+        prepareCachedAudioBuffersForReplay([
+            ...readUndoEntriesAudioBufferIds(entries),
+            ...collectAudioBufferIdFields(actions),
+        ])
     );
 }

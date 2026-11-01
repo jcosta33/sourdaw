@@ -77,7 +77,7 @@ type ExecuteUndoInput = {
  * was undone, so redo must not re-apply their action.
  */
 function executeUndo(input: ExecuteUndoInput): Promise<UndoOutcome> {
-    return runPreparedUndoReplay([input.entry], () => applyUndo(input));
+    return runPreparedUndoReplay({ entries: [input.entry] }, () => applyUndo(input));
 }
 
 async function applyUndo({ entry, runExecuteAppAction }: ExecuteUndoInput): Promise<UndoOutcome> {

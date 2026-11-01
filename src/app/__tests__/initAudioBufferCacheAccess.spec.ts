@@ -4,7 +4,7 @@ import { initAudioBufferCacheAccess } from '../initAudioBufferCacheAccess';
 
 type TemporaryAsset = { assetId: string; status: 'live' | 'cleanup-pending' | 'released' };
 type OwnershipCensus = { ids: readonly string[]; isCurrent: () => boolean };
-type ReplayProvider = (entries: readonly unknown[]) => Promise<() => void>;
+type ReplayProvider = (entries: readonly unknown[], actions: readonly unknown[]) => Promise<() => void>;
 
 const registration = vi.hoisted(() => {
     const trackStore: { value: unknown } = { value: undefined };
@@ -25,6 +25,7 @@ const registration = vi.hoisted(() => {
         collectTrackStateIds: vi.fn<(value: unknown) => string[]>(() => ['referenced-take']),
         readUndoHistoryIds: vi.fn<() => ReadonlySet<string>>(() => new Set()),
         readUndoEntriesIds: vi.fn<(entries: readonly unknown[]) => ReadonlySet<string>>(() => new Set()),
+        collectActionIds: vi.fn<(actions: unknown) => string[]>(() => []),
         trackStore,
         agentRunStore,
     };
@@ -33,6 +34,7 @@ const registration = vi.hoisted(() => {
 vi.mock('#/modules/AiRuntime/stores', () => ({ agentRunStore: registration.agentRunStore }));
 vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: registration.trackStore }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    collectAudioBufferIdFields: registration.collectActionIds,
     readUndoEntriesAudioBufferIds: registration.readUndoEntriesIds,
     readUndoHistoryAudioBufferIds: registration.readUndoHistoryIds,
 }));
@@ -107,20 +109,24 @@ describe('initAudioBufferCacheAccess', () => {
     });
 
     /**
-     * Before an undo or redo applies, the buffers its entries name are put back
-     * from storage and held until the replay settles; the provider must read the
-     * ids of exactly the entries the replay runs and return the cache's release.
+     * Before an undo, redo or revert applies, the buffers it restores are put
+     * back from storage and held until the replay settles; the provider must read
+     * the ids of exactly the entries and actions the replay runs (a revert's
+     * retained inverse outlives its undo entry) and return the cache's release.
      */
-    it('prepares the buffers of the entries an undo or redo replays', async () => {
+    it('prepares the buffers of the entries and actions a replay runs', async () => {
         const provider = readRegistered(registration.setReplayProvider);
         const entries = [{ id: 'entry-1' }];
         const release = vi.fn();
+        const actions = [{ type: 'addClip' }];
         registration.readUndoEntriesIds.mockReturnValueOnce(new Set(['deleted-take']));
+        registration.collectActionIds.mockReturnValueOnce(['reverted-take']);
         registration.prepareForReplay.mockResolvedValueOnce(release);
 
-        await expect(provider(entries)).resolves.toBe(release);
+        await expect(provider(entries, actions)).resolves.toBe(release);
         expect(registration.readUndoEntriesIds).toHaveBeenCalledExactlyOnceWith(entries);
-        expect(registration.prepareForReplay).toHaveBeenCalledExactlyOnceWith(['deleted-take']);
+        expect(registration.collectActionIds).toHaveBeenCalledExactlyOnceWith(actions);
+        expect(registration.prepareForReplay).toHaveBeenCalledExactlyOnceWith(['deleted-take', 'reverted-take']);
     });
 
     /**

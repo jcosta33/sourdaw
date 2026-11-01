@@ -26,15 +26,23 @@ import {
     executeAppAction,
     redo,
     resetActionReplayAuthority,
+    revertAction,
     setActionHistoryMetadataPort,
+    syncActionReplayMetadata,
     undo,
     undoReplayPreparationPort,
 } from '#/modules/Command/useCases';
+import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
+    clearActionHistory as clearCrdtActionHistory,
     createCrdtDoc,
+    markActionHistoryEntryReverted,
+    recordActionHistoryEntries,
+    recordActionHistoryEntry,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
+    subscribeToPublishedActionHistory,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 
@@ -275,6 +283,47 @@ describe('undo history audio buffer residency (#6003)', () => {
             expect(audioBufferCache.has('rec-unstored')).toBe(true);
         } finally {
             await persistence.release();
+        }
+    });
+
+    it('rehydrates the buffer a revert restores after its undo entry has left the history', async () => {
+        setActionHistoryMetadataPort({
+            record: recordActionHistoryEntry,
+            recordBatch: recordActionHistoryEntries,
+            markReverted: markActionHistoryEntryReverted,
+            clear: clearCrdtActionHistory,
+        });
+        const unsubscribe = subscribeToPublishedActionHistory({
+            onHistory: syncActionReplayMetadata,
+            onRootReplaced: resetActionReplayAuthority,
+        });
+        try {
+            await addRecordedClip('rec-reverted', 0.625);
+            await removeClip();
+            await settleAudioPersistence();
+            await undo();
+            await undo();
+            // A new edit discards the redo entries: only the action history can still revert the removal.
+            await executeAppAction(
+                {
+                    type: 'addClip',
+                    payload: { trackId: TRACK_ID, startBeat: 8, endBeat: 12, name: 'MIDI', type: 'midi' },
+                },
+                { source: 'manual' }
+            );
+            fillCacheWithUnrelatedBuffers('import');
+            expect(audioBufferCache.has('rec-reverted')).toBe(false);
+
+            const removal = actionHistoryStore.value?.entries.find((entry) => entry.actionKind === 'removeClip');
+            if (!removal) {
+                throw new Error('Expected the removal in the action history');
+            }
+            await expect(revertAction(removal.id)).resolves.toEqual({ status: 'executed' });
+            expect(liveBufferIds()).toContain('rec-reverted');
+            expect(residentSample('rec-reverted')).toBe(0.625);
+        } finally {
+            unsubscribe();
+            clearCrdtActionHistory();
         }
     });
 

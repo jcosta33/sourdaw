@@ -1,13 +1,20 @@
+import { type AppAction } from '#/utils/handlerContract';
+
 import { type UndoEntry } from '../models/UndoEntry';
 
 /** Releases what one preparation retained. */
 type UndoReplayRelease = () => void;
 
 /**
- * Readies what the given entries need before they replay, and returns the
- * release to run once they have applied or failed.
+ * Readies what a replay needs before it runs, and returns the release to run
+ * once it has applied or failed. `entries` are the undo entries the replay
+ * applies; `actions` are actions it applies that no undo entry carries any
+ * longer, such as an action history revert's retained inverse.
  */
-type UndoReplayPreparationProvider = (entries: readonly UndoEntry[]) => Promise<UndoReplayRelease>;
+type UndoReplayPreparationProvider = (
+    entries: readonly UndoEntry[],
+    actions: readonly AppAction[]
+) => Promise<UndoReplayRelease>;
 
 let provider: UndoReplayPreparationProvider | null = null;
 
@@ -26,15 +33,23 @@ export const undoReplayPreparationPort = {
     },
 };
 
-/** Runs `replay` once `entries` are ready, releasing what was readied when it settles. */
+/** What one replay applies: the undo entries it runs, and any actions it runs
+ * that no undo entry carries any longer, such as an action history revert's
+ * retained inverse, which outlives the undo entry it came from. */
+type UndoReplaySubjects = {
+    readonly entries?: readonly UndoEntry[];
+    readonly actions?: readonly AppAction[];
+};
+
+/** Runs `replay` once what it applies is ready, releasing what was readied when it settles. */
 export async function runPreparedUndoReplay<Result>(
-    entries: readonly UndoEntry[],
+    { entries = [], actions = [] }: UndoReplaySubjects,
     replay: () => Promise<Result>
 ): Promise<Result> {
     if (!provider) {
         return replay();
     }
-    const release = await provider(entries);
+    const release = await provider(entries, actions);
     try {
         return await replay();
     } finally {

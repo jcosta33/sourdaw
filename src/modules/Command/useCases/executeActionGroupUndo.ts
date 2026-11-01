@@ -56,7 +56,7 @@ export function executeActionGroupUndo(
     entries: readonly UndoEntry[],
     options?: ActionGroupUndoOptions
 ): Promise<UndoOutcome> {
-    return runPreparedUndoReplay(entries, () => replayActionGroupUndo(entries, options));
+    return runPreparedUndoReplay({ entries }, () => replayActionGroupUndo(entries, options));
 }
 
 async function replayActionGroupUndo(
