@@ -1,0 +1,47 @@
+.agents/skills/review-stances/security-and-platform.md
+  s_0314bb17e5dee3::t_41a115f95a7df1 28-29
+  s_0314bb17e5dee3::t_3cf113d7d9c0f7 1,3-7,11-27,32-105,132-147,148-156
+  s_0314bb17e5dee3::t_e4da533e8cbd90 30-31
+  s_0314bb17e5dee3::t_e56a5cb1e38132 127-129
+  s_0314bb17e5dee3::t_32d7e4049c5045 106-126,130-131
+.agents/skills/review-stances/closure-authority-proof.md
+  s_0314bb17e5dee3::t_2799c2cf64a046 1-103
+.agents/skills/review-stances/guard-reclamation-proof.md
+  s_0314bb17e5dee3::t_b18e6108516c2a 107
+  s_0314bb17e5dee3::t_2f172cd49a40df 110
+  s_0314bb17e5dee3::t_45e789c871db57 111-112
+  s_0314bb17e5dee3::t_f833fbc10694dc 115
+  s_0314bb17e5dee3::t_e721d8af34e6a1 1-73,79-104,113-114,116-121
+  s_0314bb17e5dee3::t_2aaf6a41389746 105-106
+  s_0314bb17e5dee3::t_2e4d4916b58316 108-109
+  s_0314bb17e5dee3::t_a3b374df298168 122-124
+  s_0314bb17e5dee3::t_1676dfac9b9a3a 74-78
+.agents/skills/review-stances/public-repair-records.md
+  s_fec7059b7a251c::t_1521909307f5a7 135-148
+.agents/skills/review-stances/review-authorization.md
+  s_fec7059b7a251c::t_abaca5f236101d 105-139
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c5f8bf82c467f7a1b1fded8969cc3f951937b1bd",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
