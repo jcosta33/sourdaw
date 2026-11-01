@@ -255,6 +255,27 @@ describe('lane undo round-trips (#4795)', () => {
             expect(storedPBs()).toEqual([{ id: addedId, value: clickPitchBend, beat: clickBeat, channel: 0 }]);
         });
 
+        it('remove: undo restores a recorded point with its channel-scoped mark', () => {
+            const recorded = { id: 'pb-recorded', value: 40, beat: 2, channel: 1, channelScoped: true };
+            midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: { 'clip-1': [recorded] } });
+            renderLane();
+            const point = document.querySelector('[data-pb-point="true"]');
+            expect(point).not.toBeNull();
+
+            fireEvent.doubleClick(point!);
+            expect(storedPBs()).toEqual([]);
+            const entry = lastEntry();
+
+            entry.undo();
+            expect(storedPBs()).toEqual([recorded]);
+
+            entry.redo();
+            expect(storedPBs()).toEqual([]);
+
+            entry.undo();
+            expect(storedPBs()).toEqual([recorded]);
+        });
+
         it('remove: undo re-creates the removed point under its own id, and redo still removes it', () => {
             midiStore.set({
                 notesByClipId: {},

@@ -93,11 +93,12 @@ export const handleWebMidiPitchBend = inject(midiMessageHandlerDependencies)(
 
             // A bend on a non-member channel moves the whole channel, so it is a
             // channel event of the take. Member-channel bend is per-note data,
-            // recorded on the note it bends.
+            // recorded on the note it bends. Outside MPE the row is scoped to its
+            // channel, as the loop below voices it; the zone master's is not.
             recordChannelEvent(deps, {
                 trackId: targetTrackId,
                 channel,
-                event: { kind: 'pitchBend', value: bendValue },
+                event: { kind: 'pitchBend', value: bendValue, channelScoped: !mpeEnabled },
                 timeStamp,
             });
 

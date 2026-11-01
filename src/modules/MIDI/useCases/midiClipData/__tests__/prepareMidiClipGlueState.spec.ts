@@ -366,6 +366,30 @@ describe('prepareMidiClipGlueState', () => {
         ]);
     });
 
+    it('carries a drawn bend and a later recorded wheel of one channel onto the glued head, in recorded order', () => {
+        // A channel-1 note hears only the drawn (unscoped) row, a channel-0 note the later recorded wheel, so the
+        // glued head keeps both, the earlier one first, whatever order the source list holds them in.
+        const recorded = { id: 'wheel', value: 8191, beat: 2, channel: 0, channelScoped: true };
+        const drawn = { id: 'drawn', value: 4096, beat: 1, channel: 0 };
+        mocks.state.value = {
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: { 'source-b': [recorded, drawn] },
+        };
+        const trimmedSources = [
+            { clipId: 'source-a', beatOffset: 0, visibleStartBeat: 0, visibleEndBeat: 4 },
+            { clipId: 'source-b', beatOffset: 4, visibleStartBeat: 3, visibleEndBeat: 6 },
+        ];
+
+        const plan = prepareMidiClipGlueState({ sources: trimmedSources, targetClipId: 'target' });
+        const target = plan?.next.clips.find((clip) => clip.clipId === 'target');
+
+        expect(target?.data.pitchBends.value).toStrictEqual([
+            { ...drawn, beat: 7 },
+            { ...recorded, beat: 7 },
+        ]);
+    });
+
     describe('the bend range a registered parameter declared', () => {
         type Row = { id: string; beat: number; controller: number; value: number; channel: number };
 

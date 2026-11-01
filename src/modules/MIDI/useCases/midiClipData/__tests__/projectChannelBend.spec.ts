@@ -51,8 +51,56 @@ describe('projectChannelBend', () => {
         });
 
         expect(points).toEqual([
-            { beat: 3, frame: 72_000, recordedBeat: 3, value: 8_191, rangeSemitones: 2 },
-            { beat: 4, frame: 96_000, recordedBeat: 4, value: 0, rangeSemitones: 2 },
+            {
+                beat: 3,
+                frame: 72_000,
+                recordedBeat: 3,
+                value: 8_191,
+                rangeSemitones: 2,
+                channel: 0,
+                channelScoped: false,
+            },
+            { beat: 4, frame: 96_000, recordedBeat: 4, value: 0, rangeSemitones: 2, channel: 0, channelScoped: false },
+        ]);
+    });
+
+    it('keeps the channel of every move and the scope of a recorded wheel', () => {
+        const points = projectChannelBend({
+            clips: [
+                {
+                    clip: { startBeat: 0, endBeat: 8, midiOffsetBeats: 0 },
+                    controlChanges: [],
+                    pitchBends: [{ ...bend('wheel', 1, 8_191, 2), channelScoped: true }, bend('drawn', 2, 0)],
+                },
+            ],
+            frameAtBeat,
+        });
+
+        expect(points.map(({ beat, channel, channelScoped }) => ({ beat, channel, channelScoped }))).toEqual([
+            { beat: 1, channel: 2, channelScoped: true },
+            { beat: 2, channel: 0, channelScoped: false },
+        ]);
+    });
+
+    it('carries a drawn bend and a later recorded wheel of one channel onto a trimmed head, in recorded order', () => {
+        // Keyed by channel alone, the carry kept only the later (scoped) row, so a note of another channel lost the
+        // drawn bend it hears on the untrimmed clip.
+        const points = projectChannelBend({
+            clips: [
+                {
+                    clip: { startBeat: 3, endBeat: 8, midiOffsetBeats: 3 },
+                    controlChanges: [],
+                    pitchBends: [{ ...bend('wheel', 2, 8_191), channelScoped: true }, bend('drawn', 1, 4_096)],
+                },
+            ],
+            frameAtBeat,
+        });
+
+        expect(
+            points.map(({ beat, recordedBeat, value, channelScoped }) => ({ beat, recordedBeat, value, channelScoped }))
+        ).toEqual([
+            { beat: 3, recordedBeat: 1, value: 4_096, channelScoped: false },
+            { beat: 3, recordedBeat: 2, value: 8_191, channelScoped: true },
         ]);
     });
 

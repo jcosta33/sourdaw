@@ -283,6 +283,11 @@ export type ProjectMidiPitchBend = {
     beat: number;
     value: number;
     channel: number;
+    /**
+     * Present and true on a bend the recorder captured from a channel's wheel with MPE off: it moves only the
+     * notes of its channel. Absent, as on every bend saved before bends were scoped, the bend moves every note.
+     */
+    channelScoped?: boolean;
 };
 
 export type ProjectMidi = {

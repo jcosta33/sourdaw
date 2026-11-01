@@ -59,12 +59,15 @@ export function sealHeldRecordedMidiNotes({
                 placement.latencyAdjustedBeat
             );
         };
-        const note = createMidiNote(
-            held.note,
-            placement.clipBeat,
-            Math.max(secondsToBeats(durationSeconds), 0.0625),
-            held.velocity ?? 100
-        );
+        const note = {
+            ...createMidiNote(
+                held.note,
+                placement.clipBeat,
+                Math.max(secondsToBeats(durationSeconds), 0.0625),
+                held.velocity ?? 100
+            ),
+            channel: held.channel,
+        };
         appendRecordedMidiNote({
             clipId,
             note: getMpeEnabled() ? withRecordedNoteExpression(note, held, secondsToBeats) : note,

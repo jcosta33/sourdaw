@@ -1,6 +1,11 @@
 import { PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
 
-import { type MidiCC, type MidiPitchBend } from '../models/MidiNote';
+import {
+    MIDI_PITCH_BEND_OPTIONAL_KEYS,
+    MIDI_PITCH_BEND_REQUIRED_KEYS,
+    type MidiCC,
+    type MidiPitchBend,
+} from '../models/MidiNote';
 import { isMidiNoteSnapshot } from '../transformers/isMidiNoteSnapshot';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -33,10 +38,19 @@ function isControlChange(value: unknown): value is MidiCC {
     );
 }
 
+/** A pitch-bend row's own keys; `channelScoped` is the one it may leave out. */
+function hasPitchBendKeys(value: Record<string, unknown>): boolean {
+    const keys = Object.hasOwn(value, 'channelScoped')
+        ? [...MIDI_PITCH_BEND_REQUIRED_KEYS, ...MIDI_PITCH_BEND_OPTIONAL_KEYS]
+        : MIDI_PITCH_BEND_REQUIRED_KEYS;
+    return hasExactKeys(value, keys);
+}
+
 function isPitchBend(value: unknown): value is MidiPitchBend {
     return (
         isRecord(value) &&
-        hasExactKeys(value, ['id', 'value', 'beat', 'channel']) &&
+        hasPitchBendKeys(value) &&
+        (!Object.hasOwn(value, 'channelScoped') || typeof value.channelScoped === 'boolean') &&
         typeof value.id === 'string' &&
         isFiniteNumber(value.value) &&
         Number.isInteger(value.value) &&

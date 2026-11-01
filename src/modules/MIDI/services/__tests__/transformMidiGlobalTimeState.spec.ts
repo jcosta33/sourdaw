@@ -762,6 +762,27 @@ describe('transformMidiGlobalTimeState split edge cases', () => {
         ]);
     });
 
+    it('carries a drawn bend and a later recorded wheel of one channel onto the right clip, in recorded order', () => {
+        // The drawn row was added after the take, so it follows the recorded one in the list though it sits
+        // earlier. A channel-1 note hears only the drawn (unscoped) row and a channel-0 note the later wheel, so
+        // the right clip keeps both, the earlier one first.
+        const recorded = { id: 'wheel', value: 8191, beat: 2, channel: 0, channelScoped: true };
+        const drawn = { id: 'drawn', value: 4096, beat: 1, channel: 0 };
+        const prepared = state({ pitchBendByClipId: { source: [recorded, drawn] } });
+
+        const result = transformMidiGlobalTimeState({
+            state: prepared,
+            commands: [{ type: 'split-notes', sourceClipId: 'source', targetClipId: 'right', splitBeat: 4 }],
+            targetNoteIds: [],
+        });
+
+        expect(result.status).toBe('ready');
+        expect(result.state.pitchBendByClipId.right).toStrictEqual([
+            { ...drawn, id: 'pb-split:right:1', beat: 0 },
+            { ...recorded, id: 'pb-split:right:0', beat: 0 },
+        ]);
+    });
+
     it('rejects when a note end overflows to non-finite during a discard-window split', () => {
         const prepared = state({
             notesByClipId: {
@@ -1375,9 +1396,10 @@ describe('transformMidiGlobalTimeState split controllers and pitch bends', () =>
 
         const result = split(prepared, 4);
 
+        // The carried rows keep the order they were recorded in, so the latest of them stays the last.
         expect(result.state.pitchBendByClipId.right).toEqual([
-            pitchBend('pb-split:right:0', 0, 4900, 0),
             pitchBend('pb-split:right:2', 0, -3200, 1),
+            pitchBend('pb-split:right:0', 0, 4900, 0),
         ]);
     });
 

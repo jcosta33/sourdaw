@@ -5,7 +5,7 @@ import { Row } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { addPitchBend, removePitchBend, movePitchBend } from '#/modules/MIDI/useCases';
+import { addPitchBend, removePitchBend, movePitchBend, restorePitchBend } from '#/modules/MIDI/useCases';
 import { clampPitchBend, PITCH_BEND_CENTER } from '#/utils/midiData';
 import { cn } from '#/utils/Styles/cn';
 
@@ -136,13 +136,12 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
         }
         const point = points.find((param) => param.id === pbId);
         if (point) {
-            const { value, beat, channel } = point;
             removePitchBend(clipId, pbId);
             pushUndoEntry(
                 'Remove pitch bend point',
-                // Re-add under the removed point's own id so the redo side's
-                // remove still names a point the store holds.
-                () => addPitchBend(clipId, value, beat, channel, pbId),
+                // Restore the whole removed row, its own id included, so the redo side's
+                // remove still names a point the store holds and a recorded row keeps its mark.
+                () => restorePitchBend(clipId, point),
                 () => removePitchBend(clipId, pbId)
             );
         } else {

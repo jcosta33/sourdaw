@@ -10,6 +10,8 @@ import {
     MIDI_EXPRESSION_DIMENSIONS,
     MIDI_NOTE_OPTIONAL_KEYS,
     MIDI_NOTE_REQUIRED_KEYS,
+    MIDI_PITCH_BEND_OPTIONAL_KEYS,
+    MIDI_PITCH_BEND_REQUIRED_KEYS,
     type MidiNote,
     type MidiNoteExpression,
     type MidiCC,
@@ -54,7 +56,6 @@ export const defaultMidiStoreState: MidiStoreState = {
 const MIDI_STORE_STATE_KEYS = ['probabilitySeed', 'notesByClipId', 'ccByClipId', 'pitchBendByClipId'] as const;
 const MIDI_STORE_STATE_OPTIONAL_KEYS = ['migratedAbsoluteNoteClipIds', 'noteCoordinateFormat'] as const;
 const MIDI_CC_KEYS = ['id', 'controller', 'value', 'beat', 'channel'] as const;
-const MIDI_PITCH_BEND_KEYS = ['id', 'value', 'beat', 'channel'] as const;
 
 type HasExactKeysInput = {
     value: object;
@@ -243,21 +244,33 @@ function isValidMidiPitchBend(value: unknown): value is MidiPitchBend {
         'beat' in value &&
         isFiniteNumber(value.beat) &&
         'channel' in value &&
-        isFiniteNumber(value.channel)
+        isFiniteNumber(value.channel) &&
+        (!('channelScoped' in value) || typeof value.channelScoped === 'boolean')
     );
 }
 
 function isExactMidiPitchBend(value: unknown): value is MidiPitchBend {
-    return isValidMidiPitchBend(value) && hasExactKeys({ value, requiredKeys: MIDI_PITCH_BEND_KEYS });
+    return (
+        isValidMidiPitchBend(value) &&
+        hasExactKeys({
+            value,
+            requiredKeys: MIDI_PITCH_BEND_REQUIRED_KEYS,
+            optionalKeys: MIDI_PITCH_BEND_OPTIONAL_KEYS,
+        })
+    );
 }
 
 function normalizeMidiPitchBend(event: MidiPitchBend): MidiPitchBend {
-    return {
+    const normalized: MidiPitchBend = {
         id: event.id,
         value: event.value,
         beat: event.beat,
         channel: event.channel,
     };
+    if (event.channelScoped !== undefined) {
+        normalized.channelScoped = event.channelScoped;
+    }
+    return normalized;
 }
 
 type NormalizeClipMapInput<TRow> = {

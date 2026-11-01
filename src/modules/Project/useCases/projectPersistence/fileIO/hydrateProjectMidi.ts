@@ -58,12 +58,17 @@ function hydrateProjectMidiPitchBend({
     clipId,
     index,
 }: HydrateProjectMidiPitchBendInput): HydrateProjectMidiPitchBendOutput {
-    return {
+    const hydrated: HydrateProjectMidiPitchBendOutput = {
         id: `pb-${clipId}-${index}`,
         value: pb.value,
         beat: pb.beat,
         channel: pb.channel,
     };
+    // A bend saved before bends were scoped has no mark and keeps bending every note, as it did.
+    if (pb.channelScoped === true) {
+        hydrated.channelScoped = true;
+    }
+    return hydrated;
 }
 
 /** Hydrate the runtime MIDI store from the serialized `.sourdaw` MIDI block.

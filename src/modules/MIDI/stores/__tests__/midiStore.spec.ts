@@ -248,6 +248,27 @@ describe('midiStore', () => {
         });
     });
 
+    it('keeps a pitch-bend row’s channel scope and drops a row whose scope is not a boolean', () => {
+        fake_doc.midi = {
+            notesByClipId: {},
+            ccByClipId: {},
+            pitchBendByClipId: {
+                'clip-pitch': [
+                    { id: 'scoped', value: 1, beat: 1, channel: 2, channelScoped: true },
+                    { id: 'unscoped', value: 1, beat: 2, channel: 0 },
+                    { id: 'malformed', value: 1, beat: 3, channel: 0, channelScoped: 'yes' },
+                ],
+            },
+        };
+
+        midiStore.hydrate();
+
+        expect(midiStore.value?.pitchBendByClipId['clip-pitch']).toEqual([
+            { id: 'scoped', value: 1, beat: 1, channel: 2, channelScoped: true },
+            { id: 'unscoped', value: 1, beat: 2, channel: 0 },
+        ]);
+    });
+
     it('should preserve exact valid CRDT hydration without writing back', async () => {
         const valid_state = {
             probabilitySeed: 4_294_967_295,
@@ -273,7 +294,10 @@ describe('midiStore', () => {
                 'clip-cc': [{ id: 'cc-1', controller: 74, value: 0.5, beat: 1, channel: 0 }],
             },
             pitchBendByClipId: {
-                'clip-pitch': [{ id: 'pitch-1', value: -2048, beat: 2, channel: 1 }],
+                'clip-pitch': [
+                    { id: 'pitch-1', value: -2048, beat: 2, channel: 1 },
+                    { id: 'pitch-2', value: 4096, beat: 3, channel: 2, channelScoped: true },
+                ],
             },
         } satisfies MidiStoreState;
         fake_doc.midi = valid_state;

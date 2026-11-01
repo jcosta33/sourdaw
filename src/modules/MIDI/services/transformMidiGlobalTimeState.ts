@@ -10,6 +10,7 @@ import {
     type ChannelRegisteredParameterMessage,
     type EditedClipHead,
 } from './registeredParameterState';
+import { pitchBendLaneKey } from './pitchBendLaneKey';
 import { sliceMidiNoteExtent } from './sliceMidiNoteExtent';
 
 import type { MidiCC, MidiNote, MidiPitchBend } from '../models/MidiNote';
@@ -518,6 +519,12 @@ type SplitEventsInput<TRow extends SplitEventRow> = {
     existingRightEvents: readonly TRow[];
     /** Rows that share a key share one controller lane; the lane's value in force at the cut is carried per key. */
     laneKey: (event: TRow) => string;
+    /**
+     * Whether the rows carried onto the right clip's origin keep the order they were recorded in rather than the
+     * order their lanes first appear. A player that reads the last of them that reaches a note needs it (pitch
+     * bend, whose lanes overlap); a controller lane's carry is the only one of its lane.
+     */
+    carriesInRecordedOrder?: boolean;
     idPrefix: string;
     stateMessages?: StateMessageCarry<TRow>;
 };
@@ -624,6 +631,7 @@ function splitSourceEvents<TRow extends SplitEventRow>({
     command,
     existingRightEvents,
     laneKey,
+    carriesInRecordedOrder = false,
     idPrefix,
     stateMessages,
 }: SplitEventsInput<TRow>): SplitEventsResult<TRow> {
@@ -674,14 +682,16 @@ function splitSourceEvents<TRow extends SplitEventRow>({
         moved,
         createId: createRightId,
     }) ?? { origin: [], beforeMoved: [] };
-    const carriedFromBefore: TRow[] = [];
-    const carried: TRow[] = [];
-    for (const [key, { event, sourceIndex }] of inForceAtCut) {
-        if (!lanesStartingAtOrigin.has(key)) {
-            carriedFromBefore.push(event);
-            carried.push({ ...event, id: createRightId(sourceIndex), beat: 0 });
-        }
-    }
+    const carries = [...inForceAtCut].flatMap(([key, carry]) => (lanesStartingAtOrigin.has(key) ? [] : [carry]));
+    const orderedCarries = carriesInRecordedOrder
+        ? carries.toSorted((left, right) => left.event.beat - right.event.beat)
+        : carries;
+    const carriedFromBefore = orderedCarries.map(({ event }) => event);
+    const carried = orderedCarries.map(({ event, sourceIndex }) => ({
+        ...event,
+        id: createRightId(sourceIndex),
+        beat: 0,
+    }));
 
     return {
         status: 'ready',
@@ -756,7 +766,8 @@ function transformSplit(
         events: sourcePitchBends,
         command,
         existingRightEvents: existingRightPitchBends,
-        laneKey: (event) => `${event.channel}`,
+        laneKey: pitchBendLaneKey,
+        carriesInRecordedOrder: true,
         idPrefix: 'pb-split',
     });
     if (pitchBends.status === 'rejected') {
