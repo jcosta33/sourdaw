@@ -79,6 +79,7 @@ import { alphaNoticeStore } from '../../stores/alphaNoticeStore';
 import { dismissAlphaNotice } from '../../useCases/dismissAlphaNotice';
 import { onShowDevicePanel } from '../../useCases/panels/devicePanels/onShowDevicePanel';
 import { showDevicePanel } from '../../useCases/panels/devicePanels/showDevicePanel';
+import { revealDeviceInInspector } from '../../useCases/panels/revealDeviceInInspector';
 import { closeBranchManager } from '../../useCases/togglePanel/panelToggles/closeBranchManager';
 import { openMixer } from '../../useCases/togglePanel/panelToggles/openMixer';
 import { toggleMixer } from '../../useCases/togglePanel/panelToggles/toggleMixer';
@@ -128,6 +129,7 @@ const SIDEBAR_PANEL_ACTIONS: SidebarPanelActions = {
     showGrandBoule: (deviceId) => showDevicePanel('grand-boule', deviceId),
     showLevain: (deviceId) => showDevicePanel('levain', deviceId),
     showToaster: (deviceId) => showDevicePanel('toaster', deviceId),
+    revealDevice: revealDeviceInInspector,
 };
 const CollaborationPanelLazy = lazy(() =>
     import('#/modules/Collaboration/presentations/views').then((m) => ({

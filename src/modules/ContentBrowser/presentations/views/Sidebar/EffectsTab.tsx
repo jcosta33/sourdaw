@@ -3,7 +3,7 @@ import { Fragment, type ReactElement } from 'react';
 import { Shield, Waves as WavesIcon, Gauge, Sparkles, AudioLines, Layers, Guitar, Bug, GitBranch } from 'lucide-react';
 
 import { logger } from '#/infra/logger/appLogger';
-import { compileLoadPresetActions, executeAddDeviceAction, getFactoryPresets } from '#/modules/Arrangement/useCases';
+import { compileLoadPresetActions, getFactoryPresets } from '#/modules/Arrangement/useCases';
 import { PluginBrowser } from '#/modules/AudioEngine/presentations/views';
 import { MIDI_EFFECT_FACTORIES } from '#/modules/MIDI/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -28,7 +28,15 @@ import { PresetItem } from '../../components/Sidebar/PresetItem';
 import { SearchSummary } from '../../components/Sidebar/SearchSummary';
 import { type PreviewHandle } from '../../hooks/usePreviewAudio';
 
-import { NavCard, EffectItem, EFFECT_GROUPS, type EffectPlugin, Waves, Music2 } from './effectsTabHelpers';
+import {
+    NavCard,
+    EffectItem,
+    EFFECT_GROUPS,
+    addDeviceThroughAction,
+    type EffectPlugin,
+    Waves,
+    Music2,
+} from './effectsTabHelpers';
 import { type SidebarRoute, type SidebarPanelActions } from './SidebarTypes';
 
 const FX_PRESET_CATEGORIES = new Set(['fx', 'vocal']);
@@ -87,14 +95,8 @@ export const EffectsTab = ({
         });
     };
 
-    const addDeviceThroughAction = (deviceType: string, afterApplied?: (deviceId: string | null) => void): void => {
-        if (!selectedTrackId) {
-            return;
-        }
-        // A committed-degraded outcome still carries the device id: the device
-        // is in project truth even when the runtime could not realize it, so
-        // the follow-up panel may open on it.
-        void executeAddDeviceAction(selectedTrackId, deviceType).then((result) => afterApplied?.(result.deviceId));
+    const addSelectedTrackDevice = (deviceType: string, afterApplied: (deviceId: string | null) => void): void => {
+        addDeviceThroughAction(selectedTrackId, deviceType, afterApplied);
     };
 
     const groupedEffects = new Map<string, EffectPlugin[]>();
@@ -131,7 +133,7 @@ export const EffectsTab = ({
                         badge="Mastering"
                         description="EQ · Multiband Dynamics · Imager"
                         onClick={() => {
-                            addDeviceThroughAction('Proof', (deviceId) => panelActions?.showProof(deviceId));
+                            addSelectedTrackDevice('Proof', (deviceId) => panelActions?.showProof(deviceId));
                         }}
                         theme={PROOF_THEME}
                     />
@@ -144,7 +146,7 @@ export const EffectsTab = ({
                         badge="Dynamics"
                         description="Bus compressor · SSL-style"
                         onClick={() => {
-                            addDeviceThroughAction('gluten', (deviceId) => panelActions?.showGluten(deviceId));
+                            addSelectedTrackDevice('gluten', (deviceId) => panelActions?.showGluten(deviceId));
                         }}
                         theme={GLUTEN_THEME}
                     />
@@ -157,7 +159,7 @@ export const EffectsTab = ({
                         badge="Limiter"
                         description="Mastering-grade limiter · 5-level"
                         onClick={() => {
-                            addDeviceThroughAction('crust', (deviceId) => panelActions?.showCrust(deviceId));
+                            addSelectedTrackDevice('crust', (deviceId) => panelActions?.showCrust(deviceId));
                         }}
                         theme={CRUST_THEME}
                     />
@@ -170,7 +172,7 @@ export const EffectsTab = ({
                         badge="Reverb"
                         description="Dattorro plate · FDN · Convolution"
                         onClick={() => {
-                            addDeviceThroughAction('dutch-oven', (deviceId) => panelActions?.showDutchOven(deviceId));
+                            addSelectedTrackDevice('dutch-oven', (deviceId) => panelActions?.showDutchOven(deviceId));
                         }}
                         theme={DUTCH_OVEN_THEME}
                     />
@@ -183,7 +185,7 @@ export const EffectsTab = ({
                         badge="Tuner"
                         description="Peterson-grade strobe · Polyphonic"
                         onClick={() => {
-                            addDeviceThroughAction('native-scoring', (deviceId) => panelActions?.showScoring(deviceId));
+                            addSelectedTrackDevice('native-scoring', (deviceId) => panelActions?.showScoring(deviceId));
                         }}
                         theme={SCORING_THEME}
                     />
@@ -196,7 +198,7 @@ export const EffectsTab = ({
                         badge="Amp Sim"
                         description="Tube amp · Cabinet · Pedalboard · Neural capture"
                         onClick={() => {
-                            addDeviceThroughAction('grinder', (deviceId) =>
+                            addSelectedTrackDevice('grinder', (deviceId) =>
                                 panelActions?.showDevice('grinder', deviceId)
                             );
                         }}
@@ -211,7 +213,7 @@ export const EffectsTab = ({
                         badge="Creative FX"
                         description="Multi-band mangler · Distortion · Granular · Spectral"
                         onClick={() => {
-                            addDeviceThroughAction('bacteria', (deviceId) => panelActions?.showBacteria(deviceId));
+                            addSelectedTrackDevice('bacteria', (deviceId) => panelActions?.showBacteria(deviceId));
                         }}
                         theme={BACTERIA_THEME}
                     />
@@ -228,7 +230,7 @@ export const EffectsTab = ({
                             // state is per device instance, so the panel must
                             // open bound to the device it just added
                             // (issue #2422).
-                            addDeviceThroughAction('yeast', (deviceId) => panelActions?.showYeast(deviceId));
+                            addSelectedTrackDevice('yeast', (deviceId) => panelActions?.showYeast(deviceId));
                         }}
                         theme={YEAST_THEME}
                     />
@@ -256,7 +258,14 @@ export const EffectsTab = ({
                             if (card) {
                                 return <Fragment key={plugin.id}>{card}</Fragment>;
                             }
-                            return <EffectItem key={plugin.id} plugin={plugin} selectedTrackId={selectedTrackId} />;
+                            return (
+                                <EffectItem
+                                    key={plugin.id}
+                                    plugin={plugin}
+                                    selectedTrackId={selectedTrackId}
+                                    panelActions={panelActions}
+                                />
+                            );
                         })}
                     </BrowserRouteSection>
                 ) : null}
@@ -342,7 +351,14 @@ export const EffectsTab = ({
                     if (card) {
                         return <Fragment key={plugin.id}>{card}</Fragment>;
                     }
-                    return <EffectItem key={plugin.id} plugin={plugin} selectedTrackId={selectedTrackId} />;
+                    return (
+                        <EffectItem
+                            key={plugin.id}
+                            plugin={plugin}
+                            selectedTrackId={selectedTrackId}
+                            panelActions={panelActions}
+                        />
+                    );
                 })}
             </BrowserRouteBody>
         );

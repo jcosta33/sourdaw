@@ -7,6 +7,7 @@ import {
     executeAddDeviceAction,
     executeRemoveDeviceAction,
     getPlatformPlugins,
+    selectDevice,
     selectTrack,
 } from '#/modules/Arrangement/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
@@ -30,6 +31,11 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
         openInspector();
     };
 
+    const handleInspectDevice = (deviceId: string): void => {
+        selectDevice(deviceId);
+        handleOpenInspector();
+    };
+
     return (
         <MixerSection label="Devices">
             <Stack
@@ -45,7 +51,7 @@ export const DeviceChainSection = ({ track }: DeviceChainSectionProps): ReactEle
                             )}
                             onClick={(event) => {
                                 event.stopPropagation();
-                                handleOpenInspector();
+                                handleInspectDevice(data.id);
                             }}
                             onDoubleClick={(event) => {
                                 event.stopPropagation();

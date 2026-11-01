@@ -108,6 +108,7 @@ const makePanelActions = (overrides: Partial<SidebarPanelActions> = {}): Sidebar
     showGrandBoule: vi.fn(),
     showLevain: vi.fn(),
     showToaster: vi.fn(),
+    revealDevice: vi.fn(),
     ...overrides,
 });
 

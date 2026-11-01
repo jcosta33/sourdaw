@@ -81,6 +81,7 @@ const createPanelActions = (): SidebarPanelActions => ({
     showScoring: vi.fn(),
     showToaster: vi.fn(),
     showYeast: vi.fn(),
+    revealDevice: vi.fn(),
 });
 
 const renderWithTooltip = (ui: React.ReactElement) => {
@@ -277,6 +278,56 @@ describe('EffectsTab', () => {
         fireEvent.click(screen.getByRole('button', { name: /crust/i }));
 
         await waitFor(() => expect(panelActions.showCrust).toHaveBeenCalledWith(null));
+    });
+
+    describe('plain effect rows', () => {
+        const eqPlugin = createPlugin({ id: 'builtin-eq', name: 'EQ', category: 'effect' });
+        const categoryRoute = { id: 'effects-audiofx-eq-filter', title: 'EQ & Filter' };
+
+        it('reveals the device a plain row adds in the category list', async () => {
+            const panelActions = createPanelActions();
+
+            renderWithTooltip(
+                <EffectsTab
+                    {...defaultProps}
+                    plugins={[eqPlugin]}
+                    currentRoute={categoryRoute}
+                    panelActions={panelActions}
+                />
+            );
+            fireEvent.click(screen.getByText('EQ'));
+
+            expect(arrangementMocks.executeAddDeviceAction).toHaveBeenCalledExactlyOnceWith('track-1', 'builtin-eq');
+            await waitFor(() => expect(panelActions.revealDevice).toHaveBeenCalledExactlyOnceWith('device-77'));
+        });
+
+        it('reveals the device a plain row adds in search results', async () => {
+            const panelActions = createPanelActions();
+
+            renderWithTooltip(
+                <EffectsTab {...defaultProps} plugins={[eqPlugin]} searchQuery="eq" panelActions={panelActions} />
+            );
+            fireEvent.click(screen.getByText('EQ'));
+
+            await waitFor(() => expect(panelActions.revealDevice).toHaveBeenCalledExactlyOnceWith('device-77'));
+        });
+
+        it('does not reveal a device for a premium card, which opens its own panel', async () => {
+            const panelActions = createPanelActions();
+
+            renderWithTooltip(
+                <EffectsTab
+                    {...defaultProps}
+                    plugins={[createPlugin({ id: 'crust', name: 'Crust', category: 'effect' })]}
+                    searchQuery="crust"
+                    panelActions={panelActions}
+                />
+            );
+            fireEvent.click(screen.getByRole('button', { name: /crust/i }));
+
+            await waitFor(() => expect(panelActions.showCrust).toHaveBeenCalledWith('device-77'));
+            expect(panelActions.revealDevice).not.toHaveBeenCalled();
+        });
     });
 
     describe('Audio FX category placement', () => {

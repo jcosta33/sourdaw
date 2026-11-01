@@ -36,4 +36,6 @@ export type SidebarPanelActions = {
     showGrandBoule: (deviceId: string | null) => void;
     showLevain: (deviceId: string | null) => void;
     showToaster: (deviceId: string | null) => void;
+    /** Shows a device that owns no panel of its own in the inspector. */
+    revealDevice: (deviceId: string) => void;
 };
