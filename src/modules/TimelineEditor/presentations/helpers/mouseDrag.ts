@@ -16,6 +16,14 @@ import { beginDragGesture } from '#/utils/UI/activeDragGesture';
  * the same `onCancel` path, not a bare listener removal. Teardown is
  * idempotent so a caller-initiated cancel and a normal mouseup racing each
  * other can never double-remove or double-fire.
+ *
+ * Losing window focus ends the gesture too. A button released while another
+ * app has focus delivers no mouseup here, so without this the drag would stay
+ * marked, follow the pointer with the button up once the user returns, and
+ * take their next Escape. Blur keeps what the user dragged to by running
+ * `onUp` with the last mousemove (a mouseup at that spot), or `onCancel` when
+ * the pointer never moved — the same commit-on-blur rule the piano-roll lane
+ * drags follow. `onUp` must therefore read only what a mousemove also carries.
  */
 export const startMouseDrag = (
     onMove: (e: MouseEvent) => void,
@@ -23,13 +31,20 @@ export const startMouseDrag = (
     onCancel?: () => void
 ): (() => void) => {
     let tornDown = false;
+    let lastMove: MouseEvent | null = null;
     const endDragGesture = beginDragGesture();
 
     const removeListeners = (): void => {
         endDragGesture();
-        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mousemove', handleMove);
         window.removeEventListener('mouseup', handleUp);
         window.removeEventListener('keydown', handleKeyDown);
+        window.removeEventListener('blur', handleBlur);
+    };
+
+    const handleMove = (event: MouseEvent): void => {
+        lastMove = event;
+        onMove(event);
     };
 
     const cancel = (): void => {
@@ -57,9 +72,18 @@ export const startMouseDrag = (
         cancel();
     };
 
-    window.addEventListener('mousemove', onMove);
+    const handleBlur = (): void => {
+        if (!lastMove) {
+            cancel();
+            return;
+        }
+        handleUp(lastMove);
+    };
+
+    window.addEventListener('mousemove', handleMove);
     window.addEventListener('mouseup', handleUp);
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('blur', handleBlur);
 
     return cancel;
 };

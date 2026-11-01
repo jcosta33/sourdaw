@@ -6,6 +6,12 @@
 
 import { getCachedAudioBuffer, getCachedAudioBufferWaveformPeaks } from '#/modules/AudioEngine/useCases';
 
+import {
+    forEachMidiNoteRect,
+    isMidiFrameDrawable,
+    resolveMidiClipFrame,
+    resolveMidiPitchWindow,
+} from '../../models/InlineMidiGeometry';
 import { type TimelineRenderModel, type ClipRenderModel } from '../../models/TimelineRenderModel';
 
 import { getAudioWaveformOccurrences, getAudioWaveformPeakPositions } from './audioWaveformSpan';
@@ -184,8 +190,8 @@ export const drawClip = (
     const cachedAudioBuffer =
         clip.type === 'audio' && clip.audioBufferId ? getCachedAudioBuffer({ bufferId: clip.audioBufferId }) : null;
 
-    if (clip.type === 'midi' && clip.midiNotes.length > 0) {
-        drawMidiNotePreview(ctx, clip, x, trackY, w, trackHeight, padding);
+    if (clip.type === 'midi' && (clip.midiNotes.length > 0 || clip.isInlineEditing)) {
+        drawMidiNotePreview(ctx, clip, model, x, trackY, w, trackHeight);
     } else if (clip.type === 'audio' && clip.audioBufferId && cachedAudioBuffer) {
         drawWaveformPeaks(ctx, clip, cachedAudioBuffer, model, x, trackY, w, trackHeight, padding);
     } else if (w > 20) {
@@ -345,53 +351,29 @@ const drawFadeCurves = (
 const drawMidiNotePreview = (
     ctx: CanvasRenderingContext2D,
     clip: ClipRenderModel,
+    model: TimelineRenderModel,
     clipX: number,
     trackY: number,
     clipW: number,
-    trackHeight: number,
-    padding: number
+    trackHeight: number
 ): void => {
-    const notes = clip.midiNotes;
-    if (notes.length === 0) {
-        return;
-    }
-
     const isInline = clip.isInlineEditing ?? false;
-
-    let minPitch = 127;
-    let maxPitch = 0;
-    // Loop once to find the pitch extent. A spread (Math.min(...notes.map()))
-    // can blow the call-stack for clips with very many notes, so we never spread.
-    for (const node of notes) {
-        if (node.pitch < minPitch) {
-            minPitch = node.pitch;
-        }
-        if (node.pitch > maxPitch) {
-            maxPitch = node.pitch;
-        }
-    }
-    if (isInline) {
-        // When inline, pad the range and ensure at least an octave of visibility.
-        minPitch -= 2;
-        maxPitch += 2;
-        if (maxPitch - minPitch < 12) {
-            const center = Math.round((maxPitch + minPitch) / 2);
-            minPitch = center - 6;
-            maxPitch = center + 6;
-        }
-    }
-    const pitchRange = Math.max(maxPitch - minPitch, 1);
-
-    const contentTop = trackY + (isInline ? padding : 18);
-    const contentHeight = trackHeight - padding - (isInline ? padding : 18);
-    if (contentHeight < 4) {
+    if (clip.midiNotes.length === 0 && !isInline) {
         return;
     }
+
+    const frame = resolveMidiClipFrame(isInline, clipX, clipW, trackY, trackHeight);
+    if (!isMidiFrameDrawable(frame)) {
+        return;
+    }
+    const { contentTop, contentHeight } = frame;
 
     const clipDuration = clip.endBeat - clip.startBeat;
     if (clipDuration <= 0) {
         return;
     }
+
+    const window = resolveMidiPitchWindow(clip.midiNotes, isInline, contentHeight);
 
     if (isInline) {
         // Draw inline piano roll grid
@@ -401,9 +383,8 @@ const drawMidiNotePreview = (
         // Horizontal lines for pitches
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
         ctx.lineWidth = 0.5;
-        const noteHeight = contentHeight / (pitchRange + 1);
-        for (let index = 0; index <= pitchRange + 1; index++) {
-            const ly = contentTop + index * noteHeight;
+        for (let index = 0; index <= window.pitchRange + 1; index++) {
+            const ly = contentTop + index * window.rowHeight;
             ctx.beginPath();
             ctx.moveTo(clipX, ly);
             ctx.lineTo(clipX + clipW, ly);
@@ -417,50 +398,25 @@ const drawMidiNotePreview = (
         ctx.shadowColor = 'rgba(0,0,0,0.3)';
     }
 
-    const loopLen = clip.loopEnabled && clip.loopLength ? clip.loopLength : clipDuration;
-    const midiOffset = clip.midiOffsetBeats ?? 0;
-    let loopOffset = 0;
-    let iterations = 0;
-
-    while (loopOffset < clipDuration && iterations < 100) {
-        for (const note of notes) {
-            const relStart = note.startBeat - midiOffset + loopOffset;
-            if (relStart >= clipDuration) {
-                continue;
-            }
-
-            const nx = clipX + (relStart / clipDuration) * clipW;
-            const nw = Math.max(isInline ? 2 : 1, (note.duration / clipDuration) * clipW);
-            const pitchNorm = (note.pitch - minPitch) / (pitchRange + 1);
-            const ny = contentTop + contentHeight - (pitchNorm + 1 / (pitchRange + 1)) * contentHeight;
-            const nh = Math.max(1, contentHeight / (pitchRange + 1)) - (isInline ? 1 : 0);
-
-            // Only draw if within clip visual bounds
-            if (relStart + note.duration > 0 && nx < clipX + clipW) {
-                const finalX = Math.max(nx, clipX);
-                const finalW = Math.min(nw - (finalX - nx), clipX + clipW - finalX);
-
-                if (finalW > 0) {
-                    if (isInline) {
-                        ctx.beginPath();
-                        ctx.roundRect(finalX, ny, finalW, nh, 1);
-                        ctx.fill();
-                        // Note border when inline
-                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-                        ctx.lineWidth = 0.5;
-                        ctx.stroke();
-                    } else {
-                        ctx.fillRect(finalX, ny, finalW, nh);
-                    }
-                }
+    forEachMidiNoteRect(
+        clip,
+        frame,
+        window,
+        { inline: isInline, visibleBeats: { from: model.viewportStartBeat, to: model.viewportEndBeat } },
+        (_note, x, y, width, height) => {
+            if (isInline) {
+                ctx.beginPath();
+                ctx.roundRect(x, y, width, height, 1);
+                ctx.fill();
+                // Note border when inline
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.lineWidth = 0.5;
+                ctx.stroke();
+            } else {
+                ctx.fillRect(x, y, width, height);
             }
         }
-        loopOffset += loopLen;
-        iterations++;
-        if (!clip.loopEnabled || loopLen <= 0) {
-            break;
-        }
-    }
+    );
 
     if (isInline) {
         ctx.shadowBlur = 0;

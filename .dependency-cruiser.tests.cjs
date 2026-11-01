@@ -74,8 +74,7 @@ module.exports = {
                 path: '^src/modules/',
                 pathNot: [
                     '^$1$2', // same module may import its own internals freely
-                    '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|events|stores|presentations/views)/index(?:\\.ts)?$',
-                    '^src/shared/',
+                    '^src/modules/[^/]+/(useCases|events|stores|presentations/views)/index(?:\\.ts)?$',
                     '^src/helpers/',
                 ],
             },
@@ -104,14 +103,14 @@ module.exports = {
                 'The engine-owned AudioWorkletNode is the only application entrypoint for a worklet module.',
             from: {
                 path: [
-                    '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|repositories|stores|handlers|presentations)/.*__tests__/.*' +
+                    '^src/modules/[^/]+/(useCases|repositories|stores|handlers|presentations)/.*__tests__/.*' +
                         SOURCE_FILE_RE,
-                    '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|repositories|stores|handlers|presentations)/.*\\.(spec|test)' +
+                    '^src/modules/[^/]+/(useCases|repositories|stores|handlers|presentations)/.*\\.(spec|test)' +
                         SOURCE_FILE_RE,
                 ],
             },
             to: {
-                path: '^src/modules/(?:Common/|Supporting/)?[^/]+/worklets/.+' + SOURCE_FILE_RE,
+                path: '^src/modules/[^/]+/worklets/.+' + SOURCE_FILE_RE,
             },
         },
         {
@@ -122,14 +121,14 @@ module.exports = {
                 'The engine-owned Worker client is the only application entrypoint for a Worker module.',
             from: {
                 path: [
-                    '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|repositories|stores|handlers|presentations)/.*__tests__/.*' +
+                    '^src/modules/[^/]+/(useCases|repositories|stores|handlers|presentations)/.*__tests__/.*' +
                         SOURCE_FILE_RE,
-                    '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|repositories|stores|handlers|presentations)/.*\\.(spec|test)' +
+                    '^src/modules/[^/]+/(useCases|repositories|stores|handlers|presentations)/.*\\.(spec|test)' +
                         SOURCE_FILE_RE,
                 ],
             },
             to: {
-                path: '^src/modules/(?:Common/|Supporting/)?[^/]+/workers/.+' + SOURCE_FILE_RE,
+                path: '^src/modules/[^/]+/workers/.+' + SOURCE_FILE_RE,
             },
         },
         {
@@ -143,8 +142,7 @@ module.exports = {
             },
             to: {
                 path: '^src/modules/',
-                pathNot:
-                    '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|events|stores|presentations/views)/index(?:\\.ts)?$',
+                pathNot: '^src/modules/[^/]+/(useCases|events|stores|presentations/views)/index(?:\\.ts)?$',
             },
         },
         {

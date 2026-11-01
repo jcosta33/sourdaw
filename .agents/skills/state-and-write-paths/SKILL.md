@@ -116,7 +116,7 @@ observe release-visible ownership before provider creation begins.
 
 ## Prepared settlement review crosses module instances
 
-Use a strongest-tier integrity review with two module instances sharing IndexedDB and the named storage lock. Test
+Require a dedicated integrity review stance, within the reviewer ceiling in root `AGENTS.md` Review, with two module instances sharing IndexedDB and the named storage lock. Test
 known durable, hydrated, and evicted PCM, and attack fresh durability checks separately from acquisition through an
 older receipt. Reuse one buffer ID and lease with different PCM and persistence revisions, then exercise promotion and
 discard over temporary and already-settled durable owners. Local object identity, runtime tokens, lease equality, and

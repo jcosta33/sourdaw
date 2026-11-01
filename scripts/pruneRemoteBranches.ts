@@ -535,7 +535,9 @@ export function deleteRemoteBranch(name: string, gh: Gh): DeleteOutcome {
         return 'deleted';
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        if (/\bHTTP 422\b/u.test(message) && message.includes('Reference does not exist')) {
+        // Deleting an absent ref has answered both 422 and, while two prunes raced, 404; both carry
+        // this body, while an access failure reads `Not Found`.
+        if (/\bHTTP 4(?:04|22)\b/u.test(message) && message.includes('Reference does not exist')) {
             return 'already-gone';
         }
         throw new Error(`delete branch ${name}: ${message}`, { cause: error });
