@@ -1,0 +1,41 @@
+.agents/skills/review-stances/security-and-platform.md
+  s_dce66f6bf439db::t_c76892eb07ee19 143-158
+.agents/skills/review-stances/test-validity.md
+  s_dce66f6bf439db::t_8c2aedb8b5dcea 2560-2578
+  s_55244eb93b97d1::t_4a00259fb0935c 2579
+  s_55244eb93b97d1::t_620a3fee15e407 2580-2582
+scripts/__tests__/hostedAptInstall.spec.ts
+  s_dce66f6bf439db::t_8f1cc38cde444e 18,441-444,447,458-474,476,478-487,489-490
+scripts/__tests__/resourceGuardStorage.spec.ts
+  s_dce66f6bf439db::t_b3b52880ff1dff 1,1287,1308,1312,1348-1445,4561-4576,4608-4609,4712-4735
+  s_55244eb93b97d1::t_b247b1ee2940b2 4641
+  s_55244eb93b97d1::t_dbc8d4bae03029 4675-4676
+scripts/resourceGuardStorage.ts
+  s_dce66f6bf439db::t_c728cb34fb501a 124,152
+scripts/resourceGuardLsofDiagnostics.ts
+  s_55244eb93b97d1::t_0a90f6629503a5 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8979102150786eb5ff3c9207b0245e3b4d7b22b5",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_dce66f6bf439db": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_dce66f6bf439db",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
