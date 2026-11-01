@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { frozenMidiTakeRepeatAt, frozenMidiTakeRepeats, type FrozenMidiTakeFragment } from '../frozenMidiTakeRepeats';
+import {
+    frozenMidiTakeOccurrenceOriginBeat,
+    frozenMidiTakeRepeatAt,
+    frozenMidiTakeRepeats,
+    type FrozenMidiTakeFragment,
+} from '../frozenMidiTakeRepeats';
 import { type FrozenMidiTakeSource } from '../isFrozenMidiTakeSource';
 
 const rows: FrozenMidiTakeSource['rows'] = {
@@ -92,5 +97,16 @@ describe('frozen MIDI take repeats', () => {
             absoluteOccurrenceIndex: 0,
             passHeadBeat: 8,
         });
+    });
+});
+
+describe('frozen MIDI take occurrence origin', () => {
+    it('counts from the depth capture recorded before the pass head', () => {
+        expect(frozenMidiTakeOccurrenceOriginBeat({ ...firstPass, occurrenceOriginDepthBeats: 5 })).toBe(3);
+    });
+
+    it('counts a source saved without that depth from where its first source beat sounds', () => {
+        // Source 2 sounds at the pass head 8, so source 0 sounds at 6: neither 8 nor 0.
+        expect(frozenMidiTakeOccurrenceOriginBeat(firstPass)).toBe(6);
     });
 });

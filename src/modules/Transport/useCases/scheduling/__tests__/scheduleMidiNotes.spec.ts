@@ -1391,117 +1391,142 @@ describe('scheduleMidiNotes', () => {
             }
         );
 
-        it('rolls a split take on a clip slipped into its notes on the occurrences live rolled before the split', async () => {
-            // Take 1 sits four beats deep in a recording at 8 whose clip reads its notes three beats in:
-            // live reads media t - 1 at beat t and counts the take's occurrences from beat 4, so the comp
-            // opening at 10 starts on its second. A split at 18 freezes the take onto both halves; the
-            // real comp resolution hands the scheduler each side.
-            const rows = [9.25, 10.25, 11.25, 12.25].map((startBeat, index) => ({
-                ...row(`slipped-${index}`, 60 + index, startBeat, 50),
-                recordingPassIndex: 1,
-            }));
-            const take = {
-                id: 'take-1',
-                name: 'Take 1',
-                clipId: 'clip-1',
-                startBeat: 8,
-                endBeat: 12,
-                selected: false,
-                sourceOffsetBeats: 4,
-                recordingPassIndex: 1,
-            };
-            // As capture writes it: the pass head at the take start, entering media 3 + 8 - 4.
-            const midiSource = {
-                sourceClipId: 'clip-1',
-                sourceEntryBeat: 7,
-                sourceEndBeat: 11,
-                phaseHeadBeat: 8,
-                passLengthBeats: 4,
-                occurrenceOriginDepthBeats: 4,
-                rows: {
-                    notes: { present: true, value: rows },
-                    controlChanges: { present: false, value: [] },
-                    pitchBends: { present: false, value: [] },
-                },
-            };
-            const slipped = { startBeat: 8, loopEnabled: true, loopLength: 4, midiOffsetBeats: 3 };
-            const realArrangementUseCases = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
-                '#/modules/Arrangement/useCases'
-            );
-            type CompLane = Pick<TakeLaneStoreState['lanes'][number], 'takes' | 'activeCompRegions'>;
-            const resolved = (clips: Clip[], lane: CompLane) => {
-                takeLaneStore.set({ lanes: [{ id: 'lane', trackId: 'track-1', ...lane }] });
-                return realArrangementUseCases.resolveClipsWithComping('track-1', clips);
-            };
-            const scheduled = async (clips: Clip[], fragments: ReturnType<typeof resolved>, frozen: boolean) => {
-                vi.mocked(projectClipMidiEvents).mockImplementation(realMidiUseCases.projectClipMidiEvents);
-                vi.mocked(scheduleNote).mockClear();
-                shouldPlayProbability.mockClear();
-                (trackStore as { value: unknown }).value = {
-                    tracks: [midiTrack({ clips, devices: frozen ? devices : [] })],
+        it.each([
+            {
+                clip: 'a clip slipped three beats into its notes',
+                clipOffset: 3,
+                origin: { occurrenceOriginDepthBeats: 4 },
+            },
+            // A source saved before capture recorded its origin depth counts from where its first
+            // source beat sounds, 8 - 4: live's origin whenever the clip carried no MIDI offset.
+            { clip: 'an unslipped clip, from a source saved without its origin depth', clipOffset: 0, origin: {} },
+        ])(
+            'rolls a split take on $clip on the occurrences live rolled before the split',
+            async ({ clipOffset, origin }) => {
+                // Take 1 sits four beats deep in a recording at 8, so live reads media clipOffset + t - 4 at
+                // beat t and counts the take's occurrences from beat 4: the comp opening at 10 starts on its
+                // second. A split at 18 freezes the take onto both halves; the real comp resolution hands
+                // the scheduler each side.
+                const rows = [10.25, 11.25, 12.25, 13.25].map((beat, index) => ({
+                    ...row(`slipped-${index}`, 60 + index, clipOffset + beat - 4, 50),
+                    recordingPassIndex: 1,
+                }));
+                const take = {
+                    id: 'take-1',
+                    name: 'Take 1',
+                    clipId: 'clip-1',
+                    startBeat: 8,
+                    endBeat: 12,
+                    selected: false,
+                    sourceOffsetBeats: 4,
+                    recordingPassIndex: 1,
                 };
-                (midiStore as { value: unknown }).value = {
-                    probabilitySeed: 0xdecafbad,
-                    notesByClipId: { 'clip-1': frozen ? [] : rows },
-                    ccByClipId: {},
-                    pitchBendByClipId: {},
+                // As capture writes it: the pass head at the take start, entering media clipOffset + 8 - 4.
+                const midiSource = {
+                    sourceClipId: 'clip-1',
+                    sourceEntryBeat: clipOffset + 4,
+                    sourceEndBeat: clipOffset + 8,
+                    phaseHeadBeat: 8,
+                    passLengthBeats: 4,
+                    ...origin,
+                    rows: {
+                        notes: { present: true, value: rows },
+                        controlChanges: { present: false, value: [] },
+                        pitchBends: { present: false, value: [] },
+                    },
                 };
-                vi.mocked(resolveClipsWithComping).mockReturnValue(fragments);
-                await scheduleMidiNotes(0, 24, 0, new Set<string>(), [], defaultTransportState, 120);
-                return {
-                    notes: vi
-                        .mocked(scheduleNote)
-                        .mock.calls.map(([, , pitch, time]) => [pitch, time])
-                        .sort((left, right) => Number(left[1]) - Number(right[1])),
-                    rolls: [
-                        ...new Set(
-                            shouldPlayProbability.mock.calls.map(
-                                ([input]) => `${input.eventId}@${input.absoluteOccurrenceIndex}`
-                            )
-                        ),
-                    ].sort(),
-                };
-            };
-
-            try {
-                const unsplit = [midiClip({ ...slipped, endBeat: 24 })];
-                const live = await scheduled(
-                    unsplit,
-                    resolved(unsplit, {
-                        takes: [take],
-                        activeCompRegions: [{ startBeat: 10, endBeat: 24, takeId: 'take-1' }],
-                    }),
-                    false
+                const slipped = { startBeat: 8, loopEnabled: true, loopLength: 4, midiOffsetBeats: clipOffset };
+                const realArrangementUseCases = await vi.importActual<typeof import('#/modules/Arrangement/useCases')>(
+                    '#/modules/Arrangement/useCases'
                 );
-                const split = [
-                    midiClip({ ...slipped, endBeat: 18 }),
-                    midiClip({ ...slipped, id: 'right', startBeat: 18, endBeat: 24, midiOffsetBeats: 13 }),
-                ];
-                const frozen = await scheduled(
-                    split,
-                    resolved(split, {
-                        takes: [
-                            { ...take, midiSource },
-                            { ...take, id: 'take-1:right', clipId: 'right', startBeat: 18, endBeat: 24, midiSource },
-                        ],
-                        activeCompRegions: [
-                            { startBeat: 10, endBeat: 18, takeId: 'take-1' },
-                            { startBeat: 18, endBeat: 24, takeId: 'take-1:right' },
-                        ],
-                    }),
-                    true
-                );
+                type CompLane = Pick<TakeLaneStoreState['lanes'][number], 'takes' | 'activeCompRegions'>;
+                const resolved = (clips: Clip[], lane: CompLane) => {
+                    takeLaneStore.set({ lanes: [{ id: 'lane', trackId: 'track-1', ...lane }] });
+                    return realArrangementUseCases.resolveClipsWithComping('track-1', clips);
+                };
+                const scheduled = async (clips: Clip[], fragments: ReturnType<typeof resolved>, frozen: boolean) => {
+                    vi.mocked(projectClipMidiEvents).mockImplementation(realMidiUseCases.projectClipMidiEvents);
+                    vi.mocked(scheduleNote).mockClear();
+                    shouldPlayProbability.mockClear();
+                    (trackStore as { value: unknown }).value = {
+                        tracks: [midiTrack({ clips, devices: frozen ? devices : [] })],
+                    };
+                    (midiStore as { value: unknown }).value = {
+                        probabilitySeed: 0xdecafbad,
+                        notesByClipId: { 'clip-1': frozen ? [] : rows },
+                        ccByClipId: {},
+                        pitchBendByClipId: {},
+                    };
+                    vi.mocked(resolveClipsWithComping).mockReturnValue(fragments);
+                    await scheduleMidiNotes(0, 24, 0, new Set<string>(), [], defaultTransportState, 120);
+                    return {
+                        notes: vi
+                            .mocked(scheduleNote)
+                            .mock.calls.map(([, , pitch, time]) => [pitch, time])
+                            .sort((left, right) => Number(left[1]) - Number(right[1])),
+                        rolls: [
+                            ...new Set(
+                                shouldPlayProbability.mock.calls.map(
+                                    ([input]) => `${input.eventId}@${input.absoluteOccurrenceIndex}`
+                                )
+                            ),
+                        ].sort(),
+                    };
+                };
 
-                expect(live.rolls).toContain('slipped-0@1');
-                expect(live.rolls).not.toContain('slipped-0@0');
-                expect(frozen.notes).toEqual(live.notes);
-                // Live also rolls rows the clip end cuts from the last repeat; frozen rolls none live did not.
-                expect(frozen.rolls.length).toBeGreaterThan(0);
-                expect(live.rolls).toEqual(expect.arrayContaining(frozen.rolls));
-            } finally {
-                takeLaneStore.set({ lanes: [] });
+                try {
+                    const unsplit = [midiClip({ ...slipped, endBeat: 24 })];
+                    const live = await scheduled(
+                        unsplit,
+                        resolved(unsplit, {
+                            takes: [take],
+                            activeCompRegions: [{ startBeat: 10, endBeat: 24, takeId: 'take-1' }],
+                        }),
+                        false
+                    );
+                    const split = [
+                        midiClip({ ...slipped, endBeat: 18 }),
+                        midiClip({
+                            ...slipped,
+                            id: 'right',
+                            startBeat: 18,
+                            endBeat: 24,
+                            midiOffsetBeats: clipOffset + 10,
+                        }),
+                    ];
+                    const frozen = await scheduled(
+                        split,
+                        resolved(split, {
+                            takes: [
+                                { ...take, midiSource },
+                                {
+                                    ...take,
+                                    id: 'take-1:right',
+                                    clipId: 'right',
+                                    startBeat: 18,
+                                    endBeat: 24,
+                                    midiSource,
+                                },
+                            ],
+                            activeCompRegions: [
+                                { startBeat: 10, endBeat: 18, takeId: 'take-1' },
+                                { startBeat: 18, endBeat: 24, takeId: 'take-1:right' },
+                            ],
+                        }),
+                        true
+                    );
+
+                    expect(live.rolls).toContain('slipped-0@1');
+                    expect(live.rolls).not.toContain('slipped-0@0');
+                    expect(frozen.notes).toEqual(live.notes);
+                    // Live also rolls rows the clip end cuts from the last repeat; frozen rolls none live did not.
+                    expect(frozen.rolls.length).toBeGreaterThan(0);
+                    expect(live.rolls).toEqual(expect.arrayContaining(frozen.rolls));
+                } finally {
+                    takeLaneStore.set({ lanes: [] });
+                }
             }
-        });
+        );
 
         it('reads a comp that does not loop straight through, past the pass end', async () => {
             const rows = [row('before', 60, 0.25), row('a', 61, 1.25), row('b', 62, 3.25), row('past', 63, 5.5)];
