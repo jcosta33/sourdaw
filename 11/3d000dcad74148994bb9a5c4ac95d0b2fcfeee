@@ -1,0 +1,253 @@
+.agents/skills/crdt-collaboration/SKILL.md
+  s_4f3825edf7812d::t_f3c2cf5296e1e0 16,24,26,28,42,44,46,48,54,56,58,60,62,64,66,68,70,72,74,76,78,80,82,84,86,88,90,92,94,96,98,100,102,106
+.agents/skills/device-authoring/SKILL.md
+  s_4f3825edf7812d::t_da3cb6ae929bf2 1-106
+.agents/skills/llm-action-bridge/SKILL.md
+  s_4f3825edf7812d::t_9f5e91e178c8db 16,24-25,32-33,40-41,48-49,56-57,60-61,64-65,74-75,82,86,90-92,94,98,100,102,104,106,112
+.agents/skills/native-audio-engine/SKILL.md
+  s_4f3825edf7812d::t_67db440be65981 1-120
+.agents/skills/playwright-ui-bridge/SKILL.md
+  s_4f3825edf7812d::t_9618e415dfb2b4 17,19,21,23,25,29-33,37-41,45-49,53-57,61,63,65-67,91-94,99-110
+.agents/skills/review-stances/asset-cache-publication.md
+  s_4f3825edf7812d::t_473e20fa157d73 20-58
+.agents/skills/review-stances/correctness.md
+  s_4f3825edf7812d::t_6e8766796758eb 1,3-7,11-266
+.agents/skills/review-stances/e2e-server-provenance.md
+  s_4f3825edf7812d::t_d2e829615c5c6c 33-49
+.agents/skills/review-stances/git-notes-preimage.md
+  s_4f3825edf7812d::t_39eb295d9b7566 13-20
+.agents/skills/review-stances/project-integrity.md
+  s_4f3825edf7812d::t_dab78d6452013d 3-296
+.agents/skills/review-stances/provider-egress.md
+  s_4f3825edf7812d::t_7e727d3cfe086d 75-94
+.agents/skills/review-stances/rendered-ui-layout.md
+  s_4f3825edf7812d::t_c001425c96e379 1-46
+.agents/skills/review-stances/review-authorization.md
+  s_4f3825edf7812d::t_4bae9006884acd 31-39
+.agents/skills/review-stances/saved-control-projection.md
+  s_4f3825edf7812d::t_0bcd941a003f8f 9-17
+.agents/skills/review-stances/session-lifecycle.md
+  s_4f3825edf7812d::t_30ccdc2e00327d 732-820
+.agents/skills/review-stances/startup-entry-availability.md
+  s_4f3825edf7812d::t_ec0d3caeff5635 69-70
+.agents/skills/review-stances/test-validity.md
+  s_4f3825edf7812d::t_d27f58bb47d1a9 3-14,18-318
+.agents/skills/state-and-write-paths/SKILL.md
+  s_4f3825edf7812d::t_b8a91f6e50d670 16,35-36,43-44,47,51-52,59-60,67,71,75-76,83,91-93,95,97,99,101,103,105,107,115
+.agents/skills/test-design/SKILL.md
+  s_4f3825edf7812d::t_e71888ac4d92d3 101-124
+.agents/skills/testing-file-layout/SKILL.md
+  s_4f3825edf7812d::t_bf784ed520d101 16,20-24,28-32,36-40,44-48,52-56,64,66,72
+.agents/skills/ui-patterns/SKILL.md
+  s_4f3825edf7812d::t_5a8169af8dfa02 18,22-26,30-34,38-42,46-50,54-58,64-67,70-74,78-82,90
+.agents/skills/web-audio-engine/SKILL.md
+  s_4f3825edf7812d::t_5e89aefcf89c65 16,24-25,28,32-33,40-41,49-50,57-58,65-66,73-74,82,86-87,90-106,118
+.dependency-cruiser.cjs
+  s_4f3825edf7812d::t_6d898ce8a2686d 137,222,653,701,812,824,837
+.dependency-cruiser.tests.cjs
+  s_4f3825edf7812d::t_acd6ab2681e84e 76,93
+AGENTS.md
+  s_4f3825edf7812d::t_4f098c713f80d2 553-555
+docs/affected-e2e.md
+  s_4f3825edf7812d::t_2e0d9415b612f2 33-40
+docs/architecture/agent-release-gates.md
+  s_4f3825edf7812d::t_ecd25eb0b221eb 85-98
+evidence/agent-campaign/corpora/development.json
+  s_4f3825edf7812d::t_b7caf0cf01def4 3249,3296,3349,3392-3486
+evidence/agent-campaign/corpora/held-out.json
+  s_4f3825edf7812d::t_946207a47817a9 3198,3250,3298,3341-3436
+evidence/agent-campaign/manifest.json
+  s_4f3825edf7812d::t_dce7ef7a32f062 6,800,808,820
+release/open-source-inventory.json
+  s_4f3825edf7812d::t_9e7d6077d6e883 1214
+scripts/__tests__/check-dependency-boundaries.spec.ts
+  s_4f3825edf7812d::t_826c77edcf7150 252-281,283-317,319-325
+scripts/__tests__/prValidationScope.spec.ts
+  s_4f3825edf7812d::t_0d4454af2125b0 2242-2298
+scripts/prValidationScope.ts
+  s_4f3825edf7812d::t_13d57b20c5d89a 123-148,162-164
+src/app/__tests__/undoHistoryAudioBufferResidency.integration.spec.ts
+  s_4f3825edf7812d::t_28ad7483e9f4f4 249-252,254
+src/modules/AgentAdapters/AGENTS.md
+  s_4f3825edf7812d::t_6a04fe9941a08a 7,28
+src/modules/AiGeneration/AGENTS.md
+  s_4f3825edf7812d::t_87cb39bf1607f7 7
+src/modules/AiRuntime/AGENTS.md
+  s_4f3825edf7812d::t_d9789432e18667 7,50
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  s_4f3825edf7812d::t_4c5cb4932dabee 75,182-193,201-202,210-226,257,309-310,446-484,501-503,505-508,1005-1009,1057,1063,1746-1788,1899-1902,1915-1921,3332-3350,3352,3354-3355,3358-3359,3435-3491,3528,3547,3552,3555,3559,3562,3569-3678,3698,3719-3723,3725,3728,3730,3754,4104-4344,4432
+src/modules/Arrangement/AGENTS.md
+  s_4f3825edf7812d::t_c4432be50ee9ce 7
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_4f3825edf7812d::t_c2d1ddf25265b9 16,1583-1584,1588,2280-2347
+src/modules/Arrangement/handlers/clip/__tests__/handleCrossfadeClips.spec.ts
+  s_4f3825edf7812d::t_098a655c297d3b 30-32,42,709-945
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreCrossfadeClips.spec.ts
+  s_4f3825edf7812d::t_058360cc74b93a 258-329
+src/modules/Arrangement/handlers/clip/__tests__/handleReverseClip.spec.ts
+  s_4f3825edf7812d::t_5e1120276d06d3 3,43-47,549-787
+src/modules/Arrangement/handlers/clip/handleCrossfadeClips.ts
+  s_4f3825edf7812d::t_6928a80cadf738 4,6,8,10,41-48,81,97-100,110,123-125,127-132
+src/modules/Arrangement/handlers/clip/handleRestoreCrossfadeClips.ts
+  s_4f3825edf7812d::t_8ac5ee79670471 3-5,12,24,40-43,52-59,71-72
+src/modules/Arrangement/handlers/clip/handleRestoreReversedClip.ts
+  s_4f3825edf7812d::t_cf9c873694ca53 4,6-7,20-24,36-39,41
+src/modules/Arrangement/handlers/clip/handleReverseClip.ts
+  s_4f3825edf7812d::t_71df2d43ce5e39 6-7,10,12,25-27,29,32-43,61-65,67-68,87,105
+src/modules/Arrangement/useCases/clipEditing/__tests__/clipAudioSourceFields.spec.ts
+  s_4f3825edf7812d::t_e9ab43be0497e0 1-79
+src/modules/Arrangement/useCases/clipEditing/__tests__/crossfadeClips.spec.ts
+  s_4f3825edf7812d::t_a29f71f31961e6 15-18,45-83,88-243
+src/modules/Arrangement/useCases/clipEditing/__tests__/restoreCrossfadeClips.spec.ts
+  s_4f3825edf7812d::t_7f09570533ca86 237-307
+src/modules/Arrangement/useCases/clipEditing/__tests__/reverseClip.spec.ts
+  s_4f3825edf7812d::t_809b63ffaa2969 3-4,77-80,83-142,901-1062
+src/modules/Arrangement/useCases/clipEditing/clipAudioSourceFields.ts
+  s_4f3825edf7812d::t_3c6f452bb6b6fa 1-31
+src/modules/Arrangement/useCases/clipEditing/crossfadeClipBLoopOriginEntry.ts
+  s_4f3825edf7812d::t_cfc7910a003af8 1-15
+src/modules/Arrangement/useCases/clipEditing/crossfadeClips.ts
+  s_4f3825edf7812d::t_2b447fbc2f82a5 5,8-9,54-59,84-85,104-105,122
+src/modules/Arrangement/useCases/clipEditing/isSameClipAudioSource.ts
+  s_4f3825edf7812d::t_4c7dccfb2fdd01 1-12
+src/modules/Arrangement/useCases/clipEditing/replaceClipAudioSource.ts
+  s_4f3825edf7812d::t_9474fa4fdff546 1-23
+src/modules/Arrangement/useCases/clipEditing/resolveCrossfadeClipB.ts
+  s_4f3825edf7812d::t_71d79fe50038e1 1-168
+src/modules/Arrangement/useCases/clipEditing/restoreCrossfadeClips.ts
+  s_4f3825edf7812d::t_80badbfc91e5aa 3,8-11,20,54,72-77,103-106,119-120,122
+src/modules/Arrangement/useCases/clipEditing/reverseClip.ts
+  s_4f3825edf7812d::t_30ea09641f35b4 9,12,40-47,114
+src/modules/Arrangement/useCases/clipEditing/reversedClipAudioSource.ts
+  s_4f3825edf7812d::t_5d2c2cab8d9c54 1-77
+src/modules/AudioAnalysis/AGENTS.md
+  s_4f3825edf7812d::t_a2cbcf4108bbdf 11
+src/modules/AudioEngine/AGENTS.md
+  s_4f3825edf7812d::t_ab8d8c17e5ec80 11
+src/modules/AudioRendering/AGENTS.md
+  s_4f3825edf7812d::t_909043cba48ff5 11,31
+src/modules/Automation/AGENTS.md
+  s_4f3825edf7812d::t_3e6b2fc19a3c7a 7
+src/modules/Bacteria/AGENTS.md
+  s_4f3825edf7812d::t_b200728651e2c7 7
+src/modules/BrowserAi/AGENTS.md
+  s_4f3825edf7812d::t_3ea28a60a09cc9 7
+src/modules/Collaboration/AGENTS.md
+  s_4f3825edf7812d::t_7a13c04f8a574d 7
+src/modules/Command/AGENTS.md
+  s_4f3825edf7812d::t_e5cca7b13d7a4a 7,32
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_4f3825edf7812d::t_66094e89bf03b9 3908,4137
+src/modules/CommandInterface/AGENTS.md
+  s_4f3825edf7812d::t_fc0e9c09db46bb 7
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydown.spec.ts
+  s_4f3825edf7812d::t_0d6b798fa9a4ae 859-885
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts
+  s_4f3825edf7812d::t_03ac7888c9926f 226-227,229
+src/modules/ContentBrowser/AGENTS.md
+  s_4f3825edf7812d::t_80511b12bf8b4b 7
+src/modules/ControlRoom/AGENTS.md
+  s_4f3825edf7812d::t_e07a2e37fe336f 11
+src/modules/ControlSurface/AGENTS.md
+  s_4f3825edf7812d::t_c9b10bca0dc4c3 11
+src/modules/CrdtDocument/AGENTS.md
+  s_4f3825edf7812d::t_70981d65feda1b 7
+src/modules/Crumbs/AGENTS.md
+  s_4f3825edf7812d::t_9fa65fa5528bfe 7,24
+src/modules/Crust/AGENTS.md
+  s_4f3825edf7812d::t_e5a22a45d6b851 7
+src/modules/CvGate/AGENTS.md
+  s_4f3825edf7812d::t_b3e758debb6c41 7
+src/modules/DawInterchange/AGENTS.md
+  s_4f3825edf7812d::t_5fcfc71839e60d 7
+src/modules/ElasticAudio/AGENTS.md
+  s_4f3825edf7812d::t_e4af12ad5da0cc 11
+src/modules/FactorySynthesis/AGENTS.md
+  s_4f3825edf7812d::t_47908b1fcce3b6 7
+src/modules/Fermenter/AGENTS.md
+  s_4f3825edf7812d::t_1cbd80731ac549 7
+src/modules/Gluten/AGENTS.md
+  s_4f3825edf7812d::t_d834539b587c8b 7
+src/modules/GrandBoule/AGENTS.md
+  s_4f3825edf7812d::t_30a9d148bcd4d2 7
+src/modules/Grinder/AGENTS.md
+  s_4f3825edf7812d::t_b7d9579c5fb92d 7
+src/modules/Knead/AGENTS.md
+  s_4f3825edf7812d::t_d777ad00a1656a 7,20
+src/modules/Knead/useCases/__tests__/syncKneadToEngine.spec.ts
+  s_4f3825edf7812d::t_1c9e49e82d2e4b 224-248
+src/modules/Knead/useCases/syncKneadToEngine.ts
+  s_4f3825edf7812d::t_98f782737b4011 4,15-17,54
+src/modules/Levain/AGENTS.md
+  s_4f3825edf7812d::t_c9f8cee9ba149b 7
+src/modules/MIDI/AGENTS.md
+  s_4f3825edf7812d::t_10f3e8d8873b49 7
+src/modules/Metering/AGENTS.md
+  s_4f3825edf7812d::t_df31594136bf4c 11
+src/modules/MixerConsole/AGENTS.md
+  s_4f3825edf7812d::t_60c0a420c60387 7
+src/modules/Onboarding/AGENTS.md
+  s_4f3825edf7812d::t_e8eebfbe59e3b6 7,12
+src/modules/PluginHost/AGENTS.md
+  s_4f3825edf7812d::t_b3509ecc33da95 11,29
+src/modules/Preferences/AGENTS.md
+  s_4f3825edf7812d::t_f98ab4cd251f4c 7
+src/modules/Project/AGENTS.md
+  s_4f3825edf7812d::t_5079f6044b306c 7,29
+src/modules/ProjectVersioning/AGENTS.md
+  s_4f3825edf7812d::t_f07e101933d17f 7
+src/modules/Proof/AGENTS.md
+  s_4f3825edf7812d::t_6c31830137f9b8 7
+src/modules/ProofChamber/AGENTS.md
+  s_4f3825edf7812d::t_636c470dfda499 7
+src/modules/PunchRecording/AGENTS.md
+  s_4f3825edf7812d::t_e8e8e8efe694ef 7
+src/modules/Routing/AGENTS.md
+  s_4f3825edf7812d::t_52ec33f901bddc 11
+src/modules/SampleLibrary/AGENTS.md
+  s_4f3825edf7812d::t_3bc1c16f4264d7 7
+src/modules/SessionLauncher/AGENTS.md
+  s_4f3825edf7812d::t_d38a2f5aca6af6 7
+src/modules/Setlist/AGENTS.md
+  s_4f3825edf7812d::t_d60030a7f7ea6e 7
+src/modules/Synth/AGENTS.md
+  s_4f3825edf7812d::t_ba5d5128323bb2 7
+src/modules/TimelineEditor/AGENTS.md
+  s_4f3825edf7812d::t_0d043c342c84dc 7
+src/modules/TimelineEditor/presentations/hooks/__tests__/useLaneDragSession.spec.tsx
+  s_4f3825edf7812d::t_14312ca51812e2 350-429
+src/modules/TimelineEditor/presentations/hooks/useLaneDragSession.ts
+  s_4f3825edf7812d::t_2f71ff316b33f0 16-25,239-241,252-261,263,268
+src/modules/TimelineEditor/presentations/views/Timeline/ChordTrackLane.tsx
+  s_4f3825edf7812d::t_dab5512f20e752 147-151,306-307,549-551,557-560
+src/modules/TimelineEditor/presentations/views/Timeline/__tests__/ChordTrackLane.spec.tsx
+  s_4f3825edf7812d::t_58b4a87f88ff03 230-279
+src/modules/Toaster/AGENTS.md
+  s_4f3825edf7812d::t_b64ecc38bcc91c 7
+src/modules/Transport/AGENTS.md
+  s_4f3825edf7812d::t_cb7e965880a367 7,29
+src/modules/Tuner/AGENTS.md
+  s_4f3825edf7812d::t_e89bdbca1a8ed0 7
+src/modules/WorkspaceShell/AGENTS.md
+  s_4f3825edf7812d::t_7526fe899ce43e 7,24
+src/modules/Yeast/AGENTS.md
+  s_4f3825edf7812d::t_06fab2559017d3 7
+src/utils/handlerContract.ts
+  s_4f3825edf7812d::t_6be4e22f5eebbc 730-740,2479-2482,2569-2575,2585
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "113d000dcad74148994bb9a5c4ac95d0b2fcfeee",
+  "prompts": {},
+  "sessions": {
+    "s_4f3825edf7812d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_4f3825edf7812d",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
