@@ -487,6 +487,7 @@ describe('PitchBendLane', () => {
                 fireEvent.pointerDown(point, { pointerId: 2, button: 0, clientX: 8, clientY: 76 });
                 fireEvent.pointerMove(point, { pointerId: 2, clientX: 88, clientY: 20 });
                 expect(readPoint()).toEqual(expect.objectContaining({ beat: draggedBeat, value: draggedValue }));
+                expect(point.className).toContain('cursor-grabbing');
 
                 fireEvent.keyDown(window, { key: 'Escape' });
 
@@ -494,6 +495,7 @@ describe('PitchBendLane', () => {
                     { id: 'pb-a', value: 20, beat: 0, channel: 0 },
                 ]);
                 expect(pushUndoEntry).not.toHaveBeenCalled();
+                expect(point.className).not.toContain('cursor-grabbing');
 
                 fireEvent.pointerMove(point, { pointerId: 2, clientX: 208, clientY: 40 });
                 fireEvent.pointerUp(point, { pointerId: 2, clientX: 208, clientY: 40 });

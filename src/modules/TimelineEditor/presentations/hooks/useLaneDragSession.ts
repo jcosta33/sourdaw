@@ -100,7 +100,9 @@ const commitLaneDrag = (armedRef: RefObject<ArmedLaneDrag | null>): void => {
  * release (the pressed handle unmounting). The swallower is a window capture-phase listener so
  * it runs ahead of every lane. It ends after its click, after the pointerup's task (the click is
  * dispatched in that same task), on the pointer's pointercancel (no click follows one), on the
- * next pointerdown, and when the lane unmounts, so it can never eat a later, real click.
+ * next pointerdown, when the window loses focus or the tab hides (the release may then happen
+ * outside the page, so no pointerup arrives), and when the lane unmounts, so it can never eat a
+ * later, real click such as a keyboard-activated button.
  */
 const swallowCancelledPressClick = (pointerId: number): (() => void) => {
     let releaseTimer: ReturnType<typeof setTimeout> | undefined;
@@ -140,6 +142,12 @@ const swallowCancelledPressClick = (pointerId: number): (() => void) => {
     return end;
 };
 
+/** End the pending cancelled-press swallower, if any. */
+const endCancelledPress = (endRef: RefObject<(() => void) | null>): void => {
+    endRef.current?.();
+    endRef.current = null;
+};
+
 /**
  * The move/end handlers a lane spreads onto the element that outlives its drag handles.
  * All four events bubble, so binding them one level up costs nothing and keeps the gesture
@@ -164,17 +172,12 @@ export const useLaneDragSession = (): UseLaneDragSessionOutput => {
     const armedDragRef = useRef<ArmedLaneDrag | null>(null);
     const endCancelledPressRef = useRef<(() => void) | null>(null);
 
-    const endCancelledPress = (): void => {
-        endCancelledPressRef.current?.();
-        endCancelledPressRef.current = null;
-    };
-
     const cancelArmedDrag = (): void => {
         const armed = takeArmedDrag(armedDragRef);
         if (!armed) {
             return;
         }
-        endCancelledPress();
+        endCancelledPress(endCancelledPressRef);
         endCancelledPressRef.current = swallowCancelledPressClick(armed.session.pointerId);
         armed.session.cancel();
     };
@@ -182,10 +185,12 @@ export const useLaneDragSession = (): UseLaneDragSessionOutput => {
     useEffect(() => {
         const handleWindowBlur = (): void => {
             commitLaneDrag(armedDragRef);
+            endCancelledPress(endCancelledPressRef);
         };
         const handleVisibilityChange = (): void => {
             if (document.visibilityState === 'hidden') {
                 commitLaneDrag(armedDragRef);
+                endCancelledPress(endCancelledPressRef);
             }
         };
 
@@ -200,8 +205,7 @@ export const useLaneDragSession = (): UseLaneDragSessionOutput => {
     useEffect(() => {
         return () => {
             commitLaneDrag(armedDragRef);
-            endCancelledPressRef.current?.();
-            endCancelledPressRef.current = null;
+            endCancelledPress(endCancelledPressRef);
         };
     }, []);
 
@@ -229,7 +233,9 @@ export const useLaneDragSession = (): UseLaneDragSessionOutput => {
         session.captureTarget.setPointerCapture(session.pointerId);
         const endDragGesture = beginDragGesture();
         const handleEscape = (event: KeyboardEvent): void => {
-            if (!isUnmodifiedEscape(event)) {
+            // A held Escape's auto-repeat is ignored, as the global shortcut layer ignores it, so
+            // a drag begun while the key is still down survives.
+            if (event.repeat || !isUnmodifiedEscape(event)) {
                 return;
             }
             cancelArmedDrag();

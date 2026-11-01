@@ -121,6 +121,16 @@ describe('useLaneDragSession', () => {
             expect(callbacks.move).toHaveBeenCalledWith({ clientX: 90, clientY: 40 });
         });
 
+        it('leaves a drag begun while Escape is held running on its auto-repeat', () => {
+            const { callbacks, handle } = renderArmedLane();
+
+            pressEscape({ repeat: true });
+            fireEvent.pointerMove(handle, { pointerId: 3, clientX: 90, clientY: 40 });
+
+            expect(callbacks.cancel).not.toHaveBeenCalled();
+            expect(callbacks.move).toHaveBeenCalledWith({ clientX: 90, clientY: 40 });
+        });
+
         it('ignores other keys while armed', () => {
             const { callbacks } = renderArmedLane();
 
@@ -264,7 +274,7 @@ describe('useLaneDragSession', () => {
             expect(outside).toHaveBeenCalledTimes(1);
         });
 
-        it('ignores another pointer releasing', () => {
+        it('ignores another pointer cancelling', () => {
             const lane = renderArmedLane();
 
             pressEscape();
@@ -273,6 +283,51 @@ describe('useLaneDragSession', () => {
             fireEvent.click(lane.handle);
 
             expect(lane.callbacks.click).not.toHaveBeenCalled();
+        });
+
+        it('ignores another pointer releasing first', () => {
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+            try {
+                const lane = renderArmedLane();
+
+                pressEscape();
+                fireEvent.pointerUp(lane.host, { pointerId: 8 });
+                vi.runAllTimers();
+                fireEvent.pointerUp(lane.handle, { pointerId: 3 });
+                fireEvent.click(lane.host);
+
+                expect(lane.callbacks.click).not.toHaveBeenCalled();
+            } finally {
+                vi.useRealTimers();
+            }
+        });
+
+        it.each([
+            [
+                'the window losing focus',
+                (): void => {
+                    fireEvent(window, new Event('blur'));
+                },
+            ],
+            [
+                'the tab hiding',
+                (): void => {
+                    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+                    try {
+                        fireEvent(document, new Event('visibilitychange'));
+                    } finally {
+                        Reflect.deleteProperty(document, 'visibilityState');
+                    }
+                },
+            ],
+        ])('is no longer swallowed after %s, where the release may never reach the page', (_leave, leave) => {
+            const lane = renderArmedLane();
+
+            pressEscape();
+            leave();
+            fireEvent.click(lane.host);
+
+            expect(lane.callbacks.click).toHaveBeenCalledTimes(1);
         });
 
         it('leaves the click after a committed drag alone', () => {
