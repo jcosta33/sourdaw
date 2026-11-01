@@ -1,0 +1,24 @@
+src/modules/AudioEngine/repositories/engineTransport/__tests__/getEngineTransportPosition.spec.ts
+  s_fec7059b7a251c::t_aa47103c2adb9d 352-365,370-372
+src/modules/AudioEngine/repositories/engineTransport/getEngineTransportPosition.ts
+  s_fec7059b7a251c::t_aa47103c2adb9d 22-26,29-31
+crates/sourdaw-native/src/commands/engine_transport.rs
+  s_fec7059b7a251c::t_80f74a40baac15 50-51,117-151,200-201,208,215-217,1396-1426
+  s_fec7059b7a251c::t_0b218186612e65 1427
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d2dc5b473f5fde91ad63d1198ab14275ef70e97b",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
