@@ -17,7 +17,7 @@ This skill guards against validator gaming: code that passes the rules without p
 
 ### 1. Fix the violation properly — never hack around the rules
 
-Establish the architecture so the code flows through the right boundary. Never: edit validation rules to silence findings; refresh an exact baseline without an intentional debt decision (new and stale baseline rows both fail); create non-contract barrels; move code into a fake use case, action, or projection to make an import legal; rename past the validator; dump forbidden logic into `src/helpers/`, `src/shared/`, or `utils/` (`helpers-no-module-imports`, `shared-no-module-imports`, `utils-no-module-imports`); micro-split or mega-file without better ownership; keep unauthorized mutation behind an allowed import path.
+Establish the architecture so the code flows through the right boundary. Never: edit validation rules to silence findings; refresh an exact baseline without an intentional debt decision (new and stale baseline rows both fail); create non-contract barrels; move code into a fake use case, action, or projection to make an import legal; rename past the validator; dump forbidden logic into `src/helpers/` or `utils/` (`helpers-no-module-imports`, `utils-no-module-imports`); micro-split or mega-file without better ownership; keep unauthorized mutation behind an allowed import path.
 
 **Why:** the architecture encodes non-negotiable DAW constraints. A green check that re-introduces the hazard — now invisible — is a regression.
 

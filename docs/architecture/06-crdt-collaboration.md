@@ -36,7 +36,12 @@ subscribers re-render                   useStore(Store<T>)
 
 Two consequences fall out of this shape:
 
-1. **Undo is a byproduct, not a feature.** Because every action executes inside an Automerge transaction with a semantic context, `Automerge.getHistory()` _is_ the undo/audit log. There is no separate undo stack to keep in sync — but there is also no undo for anything written outside the transaction.
+1. **Undo is an inverse-action stack beside the document, not Automerge history.** An undoable handler's `describe()` runs before `execute()` and returns an inverse `AppAction`. After the transaction commits, `executeAppAction` pushes that pair as an undo entry onto `undoStore` (`src/modules/Command/stores/undoStore.ts`); `undo` replays the inverse through `executeAppAction` with `skipUndo`, so an undo is itself an ordinary document write. Code outside the funnel can register a closure entry (`pushUndoEntry`, a `callback` entry in `models/UndoEntry.ts`) for state the document does not hold, such as audio buffers. Invariants:
+    - The stack is per session and per tab: it holds only this editor's actions, never a peer's, and is mirrored to `sessionStorage` solely so a reload can restore it. The mirror is discarded unless the project id and the document witness (`captureDurableDocumentWitness`) still match, because an inverse is only sound against the document it was captured from.
+    - An inverse is checked against the current document only by its own handler. A single entry refuses when the inverse's `execute` returns `conflict`, as `setClipGain` does when the clip's gain no longer equals the `expectedGain` the inverse captured; a group undo replays as one batch and also refuses when any member's `validate` rejects. A refusal writes nothing and keeps the entry. An inverse with neither check writes unconditionally, so its undo overwrites a newer remote edit of the same target.
+    - Undo steps past a refused unit onto the one beneath only when every member of the unit beneath resolves to a handler declaring `canReportConflict`, the flag a handler sets once its `execute` has a genuine conflict path; the refused unit stays at the head, retryable.
+    - An entry whose inverse is `null` is inert: undo drops it without writing, and redo never re-applies it. A document write outside `executeAppAction` gets no entry unless its writer pushes a callback entry itself.
+    - The document's own history is a separate record and not the undo stack. `executeAppAction` attaches a semantic context, so each Automerge change carries a readable message, and `actionHistoryStore` holds labelled entries with metadata only, no inverse. `revertAction` replays through an in-memory, session-only replay capability (`src/modules/Command/stores/actionReplayCapabilities.ts`, bounded to the newest 200 entries) and returns `unavailable` when none exists, for example after a reload.
 2. **Collaboration is a byproduct, not a feature.** Concurrent editors merge through the same document, so multi-user editing reuses the single-user write path exactly. The price of admission is rule 1: everything goes through the funnel.
 
 ## 2. Ownership: CrdtDocument vs. Collaboration
@@ -79,7 +84,7 @@ Collaboration ships three independent connectivity paths. They share the documen
 
 - **Serializable truth only.** No runtime handles (AudioContext, nodes, worklets, plugin instances, editor windows) in the document or CRDT-backed stores. Automerge must serialize and merge every value.
 - **Projections are disposable.** Stores fed from the document are derived views. Rebuild them; never patch them by hand; never treat them as truth.
-- **Semantics travel with actions.** Automerge guarantees convergence, not meaning. The semantic context attached at dispatch time is what makes history reviewable and undo sane.
+- **Semantics travel with actions.** Automerge guarantees convergence, not meaning. The semantic context attached at dispatch time is what makes document history reviewable; the inverse captured at dispatch time is what makes undo sane.
 - **One owner per write.** Cross-feature intent goes through `executeAppAction`; subscribers react, they do not become writers.
 
 ## References

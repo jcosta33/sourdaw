@@ -19,14 +19,14 @@ Reference-grade chromatic tuner and pitch detection DSP engine compiling to WebA
 
 - **Zero Allocation**: Real-time pitch analysis frame processing must execute with zero heap allocations on the audio thread (`assert_no_alloc` in tests).
 - **Concert-A Calibration**: Frequency reference tuning (A4 = 415Hz to 466Hz, default 440Hz) must interpolate smoothly without triggering buffer resets.
-- **WASM Freshness**: Rust source changes require running `pnpm wasm:scoring` and verifying with `pnpm wasm:verify`.
+- **WASM Freshness**: Rust source changes require running `pnpm guard --profile broad -- pnpm wasm:scoring` and verifying with `pnpm wasm:verify`.
 
 ## Verification
 
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
 ```bash
-pnpm cargo:test --package scoring <filter>
-pnpm wasm:scoring
+pnpm guard --profile focused -- pnpm cargo:test --package scoring <filter>
+pnpm guard --profile broad -- pnpm wasm:scoring
 pnpm wasm:verify
 ```

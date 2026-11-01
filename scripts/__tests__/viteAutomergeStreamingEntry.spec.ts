@@ -13,7 +13,6 @@ const base64Entry = fileURLToPath(new URL('./fullfat_base64.js', import.meta.res
 const wasmBase64Excerpt = readFileSync(new URL('../../automerge.wasm', import.meta.resolve('@automerge/automerge')))
     .toString('base64')
     .slice(1_000, 1_060);
-const streamingEntry = resolve(root, 'src/infra/automerge/automergeStreamingEntry.ts');
 const appImporter = resolve(root, 'src/modules/CrdtDocument/repositories/automergeRepository.ts');
 
 /** An app-side module whose only import is the bare package, built with the real config. */
@@ -44,16 +43,23 @@ async function buildProbe(): Promise<Rolldown.RolldownOutput['output']> {
     return result.output;
 }
 
+/**
+ * The source file the dev server's resolve pipeline picks for the bare specifier. Dependency
+ * discovery stays off: with it on, the answer is the optimizer's pre-bundle id, which waits for a
+ * crawl of the whole app (seconds on a loaded runner) and never names the source entry the
+ * aliases chose.
+ */
 async function resolveThroughDevServer(importer: string): Promise<string | undefined> {
     const server = await createServer({
         root,
         mode: 'development',
         logLevel: 'silent',
         server: { middlewareMode: true, hmr: false },
+        optimizeDeps: { noDiscovery: true, include: [] },
     });
     try {
         const resolved = await server.environments.client.pluginContainer.resolveId('@automerge/automerge', importer);
-        return resolved?.id;
+        return resolved?.id.split('?')[0];
     } finally {
         await server.close();
     }
@@ -83,7 +89,7 @@ describe('Automerge streaming-entry redirect', () => {
     });
 
     it('keeps the dev server on the base64 entry, which module workers share with the page', async () => {
-        expect(await resolveThroughDevServer(appImporter)).not.toBe(streamingEntry);
+        expect(await resolveThroughDevServer(appImporter)).toBe(base64Entry);
     });
 
     it.each(['development', 'e2e', 'test'])('registers no redirect for a %s-mode server', async (mode) => {

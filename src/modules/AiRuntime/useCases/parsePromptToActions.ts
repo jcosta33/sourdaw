@@ -23,7 +23,7 @@ import { type MeasuredPreview } from '../models/MeasuredPreview';
 import { type MeasurementAdmitter } from '../models/MeasurementBudget';
 import { type MetricNativeLiteralUse } from '../models/MetricGoalAdmission';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
-import { type PlanningOutcome } from '../models/PlanningOutcome';
+import { type AnswerSuggestion, type PlanningOutcome } from '../models/PlanningOutcome';
 import {
     type PlanningProfile,
     READONLY_ANSWER_MAX_OUTPUT_TOKENS,
@@ -117,6 +117,7 @@ import { materializeActionStateGuards } from './materializeActionStateGuards';
 import { materializeTransformToolCalls } from './materializeTransformToolCalls';
 import { type MetricRequestAuthority, type MetricGoalState } from './metricGoalContractTypes';
 import { metricGoalStateCodec } from './metricGoalStateCodec';
+import { planAnswerSuggestion } from './planAnswerSuggestion';
 import { planLastCommitContinuation } from './planLastCommitContinuation';
 import { prepareAnswerInterpretationCatalog } from './prepareAnswerInterpretationCatalog';
 import { prepareCreativeInterpretationCatalog } from './prepareCreativeInterpretationCatalog';
@@ -147,6 +148,8 @@ type ParsePromptToActionsInput = {
     onMeasurementAttempt?: MeasurementAdmitter;
     /** The chat thread's earlier turns, which the planner reads as its `thread_context` section. */
     thread?: ThreadContext | null;
+    /** A suggestion an earlier answer offered, which the user asked to see proposed; the prompt is not read. */
+    suggestion?: AnswerSuggestion;
 };
 
 type CreateFastPathResultInput = {
@@ -540,6 +543,83 @@ function createLastCommitContinuationResult(
 }
 
 /**
+ * The proposal of a suggestion an earlier answer offered. The user asked to see it proposed and the
+ * offer said nothing changes until they approve it, so it always goes to confirmation, whatever the
+ * risk policy would let the same commands do on their own; it carries the recipe it adopted as its
+ * provenance, and no provider is asked for anything.
+ */
+function createAnswerSuggestionResult(input: {
+    suggestion: AnswerSuggestion;
+    prompt: string;
+    context: ProjectContext;
+    thread: ThreadContext | null;
+    projectRevision: string | undefined;
+    readonly: boolean;
+}): IntentResult {
+    const refuse = (reason: string): IntentResult => ({
+        actions: [],
+        rawText: input.prompt,
+        requiresConfirmation: false,
+        rejectionReason: reason,
+    });
+    if (input.readonly) {
+        return refuse('Explain can only answer; it cannot prepare a proposal.');
+    }
+    const planned = planAnswerSuggestion({
+        suggestion: input.suggestion,
+        context: input.context,
+        projectRevision: input.projectRevision ?? '',
+        prompt: input.prompt,
+        thread: input.thread,
+    });
+    if (planned.status === 'refused') {
+        return refuse(planned.reason);
+    }
+    const { grounded, creativeAuthority } = planned;
+    // The user chose one named recipe on one named track, as they choose a preset: a literal request
+    // with no objective to verify, which the answer offered as attributed knowledge, never as a
+    // measured claim about the project.
+    const literalAuthority: MetricRequestAuthority = {
+        schemaVersion: 1,
+        authorityId: `answer-suggestion-${creativeAuthority.authorityId}`,
+        origin: 'answer-suggestion',
+        callId: null,
+        turn: null,
+        catalogId: creativeAuthority.catalogId,
+        requestDigest: creativeAuthority.requestDigest,
+        revision: creativeAuthority.revision,
+        projectId: captureProjectIdentity(),
+        selection: getCreativeSelectionSnapshot(input.context),
+        kind: 'literal',
+        goals: [],
+        creativeAuthority,
+    };
+    const result: IntentResult = {
+        metricGoalState: serializePromptMetricState({
+            actions: grounded.actions,
+            steps: [],
+            authorities: [literalAuthority],
+            metricProofs: [],
+            inheritedMetricState: null,
+            nativeLiteralUses: [],
+            refinedRequest: null,
+        }),
+        actions: grounded.actions,
+        rawText: input.prompt,
+        requiresConfirmation: true,
+        adoptedRecipes: [planned.adoptedRecipe],
+        protectionFacts: grounded.protectionFacts,
+    };
+    if (grounded.actionCommandGraph !== undefined) {
+        result.actionCommandGraph = grounded.actionCommandGraph;
+    }
+    if (grounded.providerKnownTargetIds !== undefined) {
+        result.providerKnownTargetIds = grounded.providerKnownTargetIds;
+    }
+    return result;
+}
+
+/**
  * Prompt parsing order:
  * 1. Non-executable recognition for explicitly denied action intents
  * 2. Fast-path: unique exact label or declared command alias in the preset registry
@@ -564,6 +644,7 @@ const planPromptIntent = inject({ logger })(
             onMeasurementAttempt,
             thread,
             profile,
+            suggestion,
         }: ParsePromptToActionsInput): Promise<IntentResult> {
             const readonly = profile === 'readonly-answer';
             const normalized = prompt.toLowerCase().trim();
@@ -616,6 +697,17 @@ const planPromptIntent = inject({ logger })(
                     ...result,
                     requiresConfirmation: result.requiresConfirmation || selected.isDestructive === true,
                 };
+            }
+
+            if (suggestion !== undefined) {
+                return createAnswerSuggestionResult({
+                    suggestion,
+                    prompt,
+                    context,
+                    thread: thread ?? null,
+                    projectRevision,
+                    readonly,
+                });
             }
 
             if (!readonly) {
