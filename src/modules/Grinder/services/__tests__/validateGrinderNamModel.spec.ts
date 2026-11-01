@@ -278,6 +278,49 @@ describe('validateGrinderNamModel', () => {
         expect(validateGrinderNamModel(capture, 'nested-head.nam').architecture).toBe('WaveNet');
     });
 
+    it('chains array channels to the legacy head_size when a nested head is also given', () => {
+        // Native admission and the WASM parser match array 1's channels to
+        // array 0's head_size (3) and its head accumulation to the nested
+        // head width (2); array 1's head1x1 narrows its accumulation to fit.
+        const capture = {
+            version: '0.5.4',
+            architecture: 'WaveNet',
+            config: {
+                layers: [
+                    {
+                        input_size: 1,
+                        condition_size: 1,
+                        channels: 2,
+                        head_size: 3,
+                        head_bias: false,
+                        head: { out_channels: 2, kernel_size: 1, bias: false },
+                        kernel_size: 1,
+                        dilations: [1],
+                        activation: 'Tanh',
+                        gated: false,
+                    },
+                    {
+                        input_size: 2,
+                        condition_size: 1,
+                        channels: 3,
+                        head_size: 1,
+                        head_bias: false,
+                        head1x1: { active: true, out_channels: 2 },
+                        kernel_size: 1,
+                        dilations: [1],
+                        activation: 'Tanh',
+                        gated: false,
+                    },
+                ],
+                head: null,
+                head_scale: 0.02,
+            },
+            weights: Array.from({ length: 64 }, (_, index) => Math.sin(index + 1) * 0.25),
+            sample_rate: 48_000,
+        };
+        expect(validateGrinderNamModel(capture, 'both-head-keys.nam').weights).toHaveLength(64);
+    });
+
     it('rejects unknown activations by name', () => {
         expectError(
             mutate((value) => {

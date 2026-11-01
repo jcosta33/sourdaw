@@ -218,6 +218,16 @@ function readWaveNetArrayHead(layer: UnknownRecord): WaveNetArrayHead {
     };
 }
 
+/** The head width the next array's channels must match: the legacy
+ * `head_size` key, else the nested head's `out_channels`, as native admission
+ * and the WASM parser resolve it. */
+function waveNetChainedHeadSize(layer: UnknownRecord): number {
+    if (layer.head_size === undefined) {
+        return readWaveNetArrayHead(layer).head_size;
+    }
+    return requirePositiveInt(layer, 'head_size', 'Invalid NAM model: head_size must be a positive integer');
+}
+
 /** Kernel sizes: either one `kernel_size` for every layer, or a per-layer
  * `kernel_sizes` array matching the dilation list (NAMCore supports both). */
 function readWaveNetKernelSizes(layer: UnknownRecord, dilations: readonly number[]): number[] {
@@ -365,7 +375,7 @@ function waveNetWeightCount(config: UnknownRecord): number {
                     `Invalid NAM model: layer array ${index}: input_size must equal the preceding array's channels`
                 );
             }
-            if (layer.channels !== readWaveNetArrayHead(previous).head_size) {
+            if (layer.channels !== waveNetChainedHeadSize(previous)) {
                 throw new Error(
                     `Invalid NAM model: layer array ${index}: channels must equal the preceding array's head_size`
                 );
