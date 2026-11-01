@@ -85,7 +85,7 @@ test('exports a 30 s loop region of the Nebula Drift mix as a stereo WAV', async
         await page.keyboard.press(isMac ? 'Meta+Shift+E' : 'Control+Shift+E');
         const dialog = page.getByRole('dialog').filter({ hasText: /The Bakery/i });
         await expect(dialog).toBeVisible();
-        await expect(dialog.getByRole('checkbox', { name: /WAV/i })).toHaveAttribute('aria-checked', 'true');
+        await expect(dialog.getByTestId('export-format-wav')).toHaveAttribute('aria-checked', 'true');
         await expect(dialog.getByRole('checkbox', { name: 'MP3 Lossy crust', exact: true })).toHaveAttribute(
             'aria-checked',
             'false'

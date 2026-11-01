@@ -9,8 +9,11 @@ import {
 
 import { type ExportByteWriter } from '../../models/ExportAudioSource';
 
+import { createWavReportPairLedger } from './wavReportPairLedger';
+
 type NativeExportBatch = {
     beginFile: (name: string) => Promise<{ writer: ExportByteWriter; finish: () => Promise<void> }>;
+    registerReportPair: (audioName: string, reportName: string) => void;
     commit: (onCommitBegin: () => void) => Promise<void>;
     abort: () => Promise<void>;
 };
@@ -39,12 +42,23 @@ function createNativeExportEntry(
     };
 }
 
+/** Reports need a picked directory: a single picked file has no place for its neighbour. */
+function createReportPairLedger(input: { requireReportPairs?: boolean; directoryPath?: string }) {
+    const required = input.requireReportPairs === true;
+    if (required && !input.directoryPath) {
+        throw new Error('WAV reports require a native export directory.');
+    }
+    return createWavReportPairLedger(required);
+}
+
 /** A batch owns only native-issued transaction tokens; paths are granted and checked in Rust. */
 export async function streamExportToNative(input: {
     directoryPath?: string;
     selectedFilePath?: string;
+    requireReportPairs?: boolean;
     checkCancelled: () => void;
 }): Promise<NativeExportBatch> {
+    const reportPairs = createReportPairLedger(input);
     const tokens: string[] = [];
     const pendingBegins = new Set<Promise<string>>();
     const names = new Set<string>();
@@ -116,15 +130,21 @@ export async function streamExportToNative(input: {
             fileOpen = true;
             return createNativeExportEntry(token, checkOpen, input.checkCancelled, () => {
                 fileOpen = false;
+                reportPairs.complete(name, token);
             });
+        },
+        registerReportPair(audioName: string, reportName: string) {
+            checkOpen();
+            reportPairs.register(audioName, reportName);
         },
         async commit(onCommitBegin: () => void) {
             checkOpen();
             if (fileOpen || tokens.length === 0) {
                 throw new Error('Export has no completed files.');
             }
+            const commitTokens = reportPairs.commitOrder(tokens);
             onCommitBegin();
-            await commitExportFiles(tokens);
+            await commitExportFiles(commitTokens);
             closed = true;
         },
         abort,

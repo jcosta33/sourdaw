@@ -20,6 +20,8 @@ import { readExportPcmBlock } from '../../../repositories/audioEncoders/readExpo
 import { resolveDeliveryTargets } from '../../resolveDeliveryTargets';
 import { streamExport } from '../streamExport';
 
+import { expectReportDescribes, reportStem, twoWavReportTargets, wavReportTargets } from './wavReportFixtures';
+
 afterEach(() => vi.unstubAllGlobals());
 
 function browserOutput(holdWrite?: (bytes: Uint8Array) => Promise<void>) {
@@ -591,5 +593,147 @@ describe('multi-target actual output', () => {
         await expect(task).rejects.toThrow('Export cancelled');
         await output.abort();
         expect(abort).toHaveBeenCalledTimes(1);
+    });
+});
+
+// Native reported stems are proved against a recording adapter in streamExport.nativeReports.spec.ts.
+describe('WAV loudness reports in the browser archive', () => {
+    const zipDestination = {
+        kind: 'browser' as const,
+        suggestedName: 'stems.zip',
+        extension: '.zip',
+        mime: 'application/zip',
+        archive: true,
+    };
+
+    async function writeStems(output: Awaited<ReturnType<typeof streamExport>>) {
+        await output.writeAudio({
+            source: reportStem(0),
+            name: 'Kick',
+            stemId: 'track-kick',
+            onProgress: () => {},
+            onLimited: () => {},
+        });
+        await output.writeAudio({
+            source: reportStem(11),
+            name: 'Snare',
+            stemId: 'track-snare',
+            onProgress: () => {},
+            onLimited: () => {},
+        });
+    }
+
+    it('pairs each target its own report', async () => {
+        const sink = browserOutput();
+        const targets = twoWavReportTargets();
+        const output = await streamExport({
+            targets,
+            destination: zipDestination,
+            checkCancelled: () => {},
+            includeWavLoudnessReports: true,
+            exportMode: 'stems',
+        });
+        await output.writeAudio({
+            source: reportStem(0),
+            name: 'Kick',
+            stemId: 'track-kick',
+            onProgress: () => {},
+            onLimited: () => {},
+        });
+        await output.commit(() => {});
+        const entries = unzipSync(joinBytes(sink.chunks));
+        expect(Object.keys(entries)).toEqual([
+            'Kick__a.wav',
+            'Kick__a.wav.loudness.json',
+            'Kick__b.wav',
+            'Kick__b.wav.loudness.json',
+        ]);
+        for (const target of targets) {
+            const audioFile = `Kick__${target.id}.wav`;
+            expectReportDescribes(
+                entries[`${audioFile}.loudness.json`] ?? new Uint8Array(),
+                entries[audioFile] ?? new Uint8Array(),
+                audioFile,
+                'track-kick',
+                target
+            );
+        }
+        expect(output.reportedFiles()).toBe(2);
+    });
+
+    it('pairs a report with each WAV stem inside the browser archive', async () => {
+        const sink = browserOutput();
+        const output = await streamExport({
+            targets: wavReportTargets(),
+            destination: zipDestination,
+            checkCancelled: () => {},
+            includeWavLoudnessReports: true,
+            exportMode: 'stems',
+        });
+        await writeStems(output);
+        await output.commit(() => {});
+        const entries = unzipSync(joinBytes(sink.chunks));
+        expect(Object.keys(entries)).toEqual([
+            'Kick.wav',
+            'Kick.wav.loudness.json',
+            'Snare.wav',
+            'Snare.wav.loudness.json',
+        ]);
+        expectReportDescribes(entries['Kick.wav.loudness.json']!, entries['Kick.wav']!, 'Kick.wav', 'track-kick');
+        expectReportDescribes(entries['Snare.wav.loudness.json']!, entries['Snare.wav']!, 'Snare.wav', 'track-snare');
+        expect(output.reportedFiles()).toBe(2);
+    });
+
+    it.each([
+        ['a mixdown', { exportMode: 'mixdown' as const }],
+        ['an MP3 beside the WAV', { targets: wavReportTargets({ formats: ['wav', 'mp3'] }) }],
+        ['a FLAC-only target', { targets: wavReportTargets({ formats: ['flac'] }) }],
+        ['an unsupported rate', { targets: wavReportTargets({ sampleRate: 22050 }) }],
+        ['more than two channels', { targets: wavReportTargets({ channels: 6 }) }],
+    ])('refuses %s before opening the save picker', async (_case, override) => {
+        const picker = vi.fn();
+        vi.stubGlobal('window', { showSaveFilePicker: picker });
+        await expect(
+            streamExport({
+                targets: wavReportTargets(),
+                destination: zipDestination,
+                checkCancelled: () => {},
+                includeWavLoudnessReports: true,
+                exportMode: 'stems',
+                ...override,
+            })
+        ).rejects.toThrow(/WAV loudness reports/);
+        expect(picker).not.toHaveBeenCalled();
+    });
+
+    it('refuses reports for settings that carry no explicit delivery targets', async () => {
+        const picker = vi.fn();
+        vi.stubGlobal('window', { showSaveFilePicker: picker });
+        await expect(
+            streamExport({ ...settings(['wav']), includeWavLoudnessReports: true, exportMode: 'stems' })
+        ).rejects.toThrow(/WAV loudness reports/);
+        expect(picker).not.toHaveBeenCalled();
+    });
+
+    it('writes only the WAV stems, in the same order, when reports are off', async () => {
+        const sink = browserOutput();
+        const progress: string[] = [];
+        const output = await streamExport({
+            targets: wavReportTargets(),
+            destination: zipDestination,
+            checkCancelled: () => {},
+        });
+        for (const name of ['Kick', 'Snare']) {
+            await output.writeAudio({
+                source: reportStem(0),
+                name,
+                onProgress: (format, fraction) => progress.push(`${name}:${format}:${fraction}`),
+                onLimited: () => {},
+            });
+        }
+        await output.commit(() => {});
+        expect(Object.keys(unzipSync(joinBytes(sink.chunks)))).toEqual(['Kick.wav', 'Snare.wav']);
+        expect(progress.at(-1)).toBe('Snare:wav:1');
+        expect(output.reportedFiles()).toBe(0);
     });
 });
