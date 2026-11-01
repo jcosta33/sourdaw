@@ -55,20 +55,23 @@ const NAM_FIXTURES = resolve(
 /** `[input_size, channels, head_size]` for one legacy-head layer array. */
 type WaveNetArrayShape = readonly [number, number, number];
 
-/** A mono WaveNet over legacy-head arrays (no head bias, kernel 1, one
- * dilation, ungated, layer1x1 active) with its exact weight count, and a
- * single-conv post-stack head when the last head is not mono. */
-function waveNetCapture(shapes: readonly WaveNetArrayShape[]): unknown {
+/** A mono WaveNet over arrays with no head bias, kernel 1, one dilation,
+ * ungated and layer1x1 active, with its exact weight count, and a single-conv
+ * post-stack head when the last head is not mono. Each array's head width is
+ * the legacy `head_size` key, or only the nested `head` object. */
+function waveNetCapture(shapes: readonly WaveNetArrayShape[], heads: 'legacy' | 'nested' = 'legacy'): unknown {
     let weight_count = 1;
     const layers = shapes.map(([input_size, channels, head_size]) => {
         // Rechannel, dilated conv with bias, input mixin, layer1x1 with bias,
         // and the head rechannel fed by the bottleneck (channels).
         weight_count += input_size * channels + 2 * (channels * channels + channels) + channels + channels * head_size;
+        const head_width =
+            heads === 'legacy' ? { head_size } : { head: { out_channels: head_size, kernel_size: 1, bias: false } };
         return {
             input_size,
             condition_size: 1,
             channels,
-            head_size,
+            ...head_width,
             head_bias: false,
             kernel_size: 1,
             dilations: [1],
@@ -262,6 +265,17 @@ describe('validateGrinderNamModel', () => {
         for (const capture of captures) {
             expect(validateGrinderNamModel(capture, 'admitted.nam').architecture).toBe('WaveNet');
         }
+    });
+
+    it('accepts a multi-array WaveNet whose heads are given only as nested heads', () => {
+        const capture = waveNetCapture(
+            [
+                [1, 2, 2],
+                [2, 2, 1],
+            ],
+            'nested'
+        );
+        expect(validateGrinderNamModel(capture, 'nested-head.nam').architecture).toBe('WaveNet');
     });
 
     it('rejects unknown activations by name', () => {

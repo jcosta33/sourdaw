@@ -51,6 +51,21 @@ fn read_bool(config: &Value, key: &str) -> Result<bool, NamModelError> {
         .ok_or_else(|| NamModelError::InvalidConfig(format!("WaveNet layer array requires {key}")))
 }
 
+/// The head width the next array's channels must match: the legacy
+/// `head_size` key, else the nested head's `out_channels`, as native
+/// admission resolves it.
+fn chained_head_size(array_config: &Value) -> Option<u64> {
+    array_config
+        .get("head_size")
+        .and_then(Value::as_u64)
+        .or_else(|| {
+            array_config
+                .get("head")
+                .and_then(|head| head.get("out_channels"))
+                .and_then(Value::as_u64)
+        })
+}
+
 /// Reject unsupported config features explicitly: grouped convolutions and
 /// FiLM modulation are real .nam features this runtime does not implement, so
 /// naming them beats silently dropping them.
@@ -672,7 +687,7 @@ impl WavenetModel {
         // chains are structural, so reject violations explicitly at parse.
         for index in 1..layers.len() {
             let previous_channels = layers[index - 1].get("channels").and_then(Value::as_u64);
-            let previous_head = layers[index - 1].get("head_size").and_then(Value::as_u64);
+            let previous_head = chained_head_size(&layers[index - 1]);
             let input_size = layers[index].get("input_size").and_then(Value::as_u64);
             let channels = layers[index].get("channels").and_then(Value::as_u64);
             if input_size != previous_channels {

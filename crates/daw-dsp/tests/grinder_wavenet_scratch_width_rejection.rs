@@ -141,3 +141,56 @@ fn shapes_native_admission_accepts_still_load_and_render() {
         assert!(left.iter().all(|sample| sample.is_finite()));
     }
 }
+
+/// The same capture with every array's head given only through the nested
+/// `head` object (kernel 1, no bias), so the weight count is unchanged.
+fn with_nested_heads(capture: &str) -> String {
+    let mut capture: serde_json::Value = serde_json::from_str(capture).expect("capture JSON");
+    for array in capture["config"]["layers"]
+        .as_array_mut()
+        .expect("layer arrays")
+    {
+        let array = array.as_object_mut().expect("layer array object");
+        let head_size = array.remove("head_size").expect("legacy head_size");
+        array.insert(
+            "head".into(),
+            serde_json::json!({ "out_channels": head_size, "kernel_size": 1, "bias": false }),
+        );
+    }
+    capture.to_string()
+}
+
+#[test]
+fn a_nested_head_multi_array_capture_loads_exactly_when_native_admits_it() {
+    for arrays in [
+        vec![(1, 2, 2), (2, 2, 1)],
+        vec![(1, 2, 2), (2, 2, 2), (2, 2, 1)],
+    ] {
+        let capture = with_nested_heads(&wavenet_capture(&arrays));
+        NativeNamPlan::inspect(&capture, 48_000.0).expect("native admission accepts this shape");
+
+        let (mut engine, result) = load(&capture);
+        result.unwrap_or_else(|error| {
+            panic!("{arrays:?}: a nested-head shape native admits must load: {error}")
+        });
+        assert!(engine.has_loaded_neural_model());
+        engine.set_param("engineMode", 1.0);
+        let mut left = [0.1_f32; 128];
+        let mut right = left;
+        engine.process_block(&mut left, &mut right);
+        assert!(left.iter().all(|sample| sample.is_finite()));
+    }
+
+    // Array 1's three channels do not match array 0's nested head width.
+    let capture = with_nested_heads(&wavenet_capture(&[(1, 2, 2), (2, 3, 1)]));
+    assert!(NativeNamPlan::inspect(&capture, 48_000.0)
+        .unwrap_err()
+        .contains(NATIVE_REFUSAL));
+    let (engine, result) = load(&capture);
+    let error = result.expect_err("a nested-head shape native refuses must not load");
+    assert!(
+        error.contains("layer array 1: channels must equal the preceding array's head_size"),
+        "{error}"
+    );
+    assert!(!engine.has_loaded_neural_model());
+}
