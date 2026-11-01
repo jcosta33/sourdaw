@@ -144,9 +144,9 @@ function proposalOf(...items: ReturnType<typeof lowerGain>[]): Proposal {
     return { schemaVersion: 1, items };
 }
 
-/** Two seconds of a 1 kHz stereo sine at `amplitude`. */
-function sineBuffer(amplitude: number): AudioBuffer {
-    const length = SAMPLE_RATE * 2;
+/** `seconds` of a 1 kHz stereo sine at `amplitude`. */
+function sineBuffer(amplitude: number, seconds = 2): AudioBuffer {
+    const length = SAMPLE_RATE * seconds;
     const channel = new Float32Array(length);
     for (let frame = 0; frame < length; frame++) {
         channel[frame] = amplitude * Math.sin((2 * Math.PI * 1_000 * frame) / SAMPLE_RATE);
@@ -164,13 +164,13 @@ function sineBuffer(amplitude: number): AudioBuffer {
  * A stand-in renderer that honours what it is handed: the drums sound at their fader gain times
  * every gain device's level, so a preview that lowers a device renders quieter.
  */
-function renderSubgraph(request: SubgraphRequest): Promise<AudioBuffer> {
+function renderSubgraph(request: SubgraphRequest, seconds = 2): Promise<AudioBuffer> {
     const track = request.renderTracks.find((candidate) => candidate.id === 'drums');
     const levelDb = (track?.devices ?? []).reduce(
         (total, device) => total + (device.parameterValues['gain-level'] ?? 0),
         0
     );
-    return Promise.resolve(sineBuffer(0.5 * (track?.gain ?? 1) * 10 ** (levelDb / 20)));
+    return Promise.resolve(sineBuffer(0.5 * (track?.gain ?? 1) * 10 ** (levelDb / 20), seconds));
 }
 
 function drumsLevel(): number | undefined {
@@ -1731,6 +1731,12 @@ describe('real caller sequential measurement opportunity', () => {
             ],
         });
         flushAutomergeStorageWrites();
+        // Both measurements make eight full-metric renders. Half a second each still clears the
+        // integrated and momentary loudness gates and keeps the receipt over the per-call bound
+        // while fitting the default deadline on a loaded CI runner.
+        engine.renderTrackSubgraphOffline.mockImplementation((request: SubgraphRequest) =>
+            renderSubgraph(request, 0.5)
+        );
         const before = captureBefore();
         const proposal = {
             schemaVersion: 1,
