@@ -135,5 +135,5 @@ import after first paint. Before release, observe the real bootstrap evaluation/
 fulfillment owns bootstrap, require effects initiated by bootstrap to stay absent until release. After
 release, require actual App render issuance and bootstrap observation. Do not infer quiescence from
 missing UI or capability markers, fixed microtask counts, or an unrelated hung-import case. The cold
-stylesheet lesson stays in `test-validity.md`. The legacy desktop-test ordering failure during the #5876
+stylesheet lesson stays in `test-timing-and-isolation.md`. The legacy desktop-test ordering failure during the #5876
 repair was caught before merge.

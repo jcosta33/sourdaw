@@ -105,7 +105,7 @@ When a MIDI transform or filter stores a Note On decision for a later Note Off, 
 
 **Why:** a FIFO fallback and true instance correlation agree on single notes; only overlapping equal-pitch holds tell them apart.
 
-**Enforced by:** review only (probe: `review-stances/correctness.md`).
+**Enforced by:** review only (probe: `review-stances/midi-note-correlation.md`).
 
 ### 12. Prefix-dependent inverses need real grouped replay
 
@@ -113,7 +113,7 @@ When one batch member snapshots state produced by an earlier member, inspect the
 
 **Why:** a correct forward final state cannot prove the inverse was composed from the batch prefix.
 
-**Enforced by:** review only (probe: `review-stances/project-integrity.md`).
+**Enforced by:** review only (probe: `review-stances/replay-authority.md`).
 
 ### 13. Recording admission needs the real first-frame seam
 
@@ -121,4 +121,4 @@ For any recording-admission change, hold worker readiness through the real recor
 
 **Why:** a returned boolean, worker-ready message, main-thread callback time, or pre-resolved recorder mock cannot establish capture-clock alignment.
 
-**Enforced by:** review only (probe: `review-stances/session-lifecycle.md`); the nearest existing specs are `src/modules/AudioEngine/repositories/audioRecorder/__tests__/recordingCapturePlacement.integration.spec.ts` and `src/modules/AudioEngine/worklets/__tests__/recordingProcessor.spec.ts`.
+**Enforced by:** review only (probe: `review-stances/recording-session-ownership.md`); the nearest existing specs are `src/modules/AudioEngine/repositories/audioRecorder/__tests__/recordingCapturePlacement.integration.spec.ts` and `src/modules/AudioEngine/worklets/__tests__/recordingProcessor.spec.ts`.
