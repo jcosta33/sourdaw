@@ -9652,7 +9652,15 @@ describe('delivery author authentication', () => {
     }
 
     function commitRange(root: string, changedPath: string | undefined): { baseSha: string; headSha: string } {
-        const run = (args: string[]): string => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+        // The host's global git config can register a trace2 consumer (git-ai) that keeps writing notes and
+        // working logs into .git after `git commit` returns, racing the fixture's rmSync into ENOTEMPTY (#5933).
+        // Fixture git is hermetic: no global or system config.
+        const run = (args: string[]): string =>
+            execFileSync('git', args, {
+                cwd: root,
+                encoding: 'utf8',
+                env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
+            }).trim();
         run(['init', '-b', 'main']);
         run(['config', 'user.name', 'Fixture']);
         run(['config', 'user.email', 'fixture@example.com']);
