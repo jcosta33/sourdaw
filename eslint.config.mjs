@@ -2417,7 +2417,7 @@ export default defineConfig(
 
     // ─── Playwright E2E ─────────────────────────────────────────────────────
     // Playwright specs execute in Node but pass browser callbacks to the page.
-    // Their runner API comes from tests/e2e/e2eTest.ts, which re-exports `@playwright/test`, while both runtime
+    // Their runner API is imported from `@playwright/test`, while both runtime
     // global sets are available to the spec source. Keep type-aware linting on
     // the E2E project instead of excluding the tests from focused lint runs.
     {
@@ -2807,30 +2807,6 @@ export default defineConfig(
             'max-lines-per-function': 'off',
             'max-depth': 'off',
             complexity: 'off',
-        },
-    },
-
-    // ─── Playwright E2E: one fixture module ─────────────────────────────────
-    // Every E2E file takes `test` and `expect` from tests/e2e/e2eTest.ts, so a
-    // per-test fixture added there reaches every test. Type imports stay on
-    // `@playwright/test`.
-    {
-        files: ['tests/e2e/**/*.ts'],
-        ignores: ['tests/e2e/e2eTest.ts'],
-        rules: {
-            'no-restricted-imports': [
-                'error',
-                {
-                    paths: [
-                        {
-                            name: '@playwright/test',
-                            importNames: ['test', 'expect'],
-                            allowTypeImports: true,
-                            message: 'Import test and expect from tests/e2e/e2eTest.ts instead of @playwright/test.',
-                        },
-                    ],
-                },
-            ],
         },
     },
 
