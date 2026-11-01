@@ -143,6 +143,8 @@ function installLock(root: string, owner: unknown): string {
     return oid;
 }
 
+// Cases that run cleanup repeatedly against the real git fixture pass an explicit 30 s ceiling because
+// their cost scales with host load (one measured 7.4 s on a loaded machine). Other cases keep the 5 s default.
 describe('automatic lane cleanup', () => {
     it('preserves raw bytes and original receipt fingerprints, and distinguishes absent files', () => {
         const f = fixture();
@@ -589,7 +591,7 @@ describe('automatic lane cleanup', () => {
         } finally {
             blocked.dispose();
         }
-    });
+    }, 30_000);
 
     it('resets the attempt count to zero when an attempt ends in a safety refusal', () => {
         const f = fixture();
@@ -649,7 +651,7 @@ describe('automatic lane cleanup', () => {
         } finally {
             f.dispose();
         }
-    });
+    }, 30_000);
 
     it('still grows backoff across consecutive generic failures', () => {
         const f = fixture();
@@ -668,7 +670,7 @@ describe('automatic lane cleanup', () => {
         } finally {
             f.dispose();
         }
-    });
+    }, 30_000);
 
     it('preserves the author lock when native removal fails after its final unlock', () => {
         const f = fixture();
@@ -901,7 +903,7 @@ describe('automatic lane cleanup', () => {
         } finally {
             f.dispose();
         }
-    });
+    }, 30_000);
 
     it('reclaims a lock whose PID now belongs to a different live process lifetime', async () => {
         const f = fixture();
