@@ -1,0 +1,29 @@
+src/modules/Metering/presentations/views/LevelMeter.tsx
+  s_0314bb17e5dee3::t_43e562d70486d5 21-22,147-154,156-157,164
+src/modules/Metering/presentations/views/__tests__/LevelMeter.spec.tsx
+  s_0314bb17e5dee3::t_c972761219df2d 107-157
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MixerLevelReadout.spec.tsx
+  s_0314bb17e5dee3::t_e860e49ec3e63d 191-205
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useStatusBarMetrics.spec.ts
+  s_0314bb17e5dee3::t_fab93292fcee70 739-759
+src/modules/MixerConsole/presentations/views/Mixer/MixerLevelReadout.tsx
+  s_0314bb17e5dee3::t_1cc0ba1d57194d 28-34,77
+src/modules/WorkspaceShell/presentations/hooks/useStatusBarMetrics.ts
+  s_0314bb17e5dee3::t_3470d901836b83 519-525
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2c78e817d7e1601f028a6f7a52915f753ad3cae6",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
