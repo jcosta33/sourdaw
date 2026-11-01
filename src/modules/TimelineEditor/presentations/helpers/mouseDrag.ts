@@ -5,8 +5,8 @@ import { beginDragGesture, isDragCancelEscape } from '#/utils/UI/activeDragGestu
  * first mouseup. Eliminates the repeated add/remove boilerplate across every
  * inline drag handler in a component.
  *
- * Escape cancels the gesture (`isDragCancelEscape`: unmodified, not an auto-repeat): listeners are removed and `onCancel` runs
- * instead of `onUp`. This is not a no-op teardown — a gesture that mutates
+ * Escape cancels the gesture (`isDragCancelEscape`: unmodified, not an
+ * auto-repeat): listeners are removed and `onCancel` runs instead of `onUp`. This is not a no-op teardown — a gesture that mutates
  * live state in `onMove` (e.g. writing straight to a CRDT-backed store on
  * every move, as the automation drags do) needs `onCancel` to revert that
  * partial mutation, or Escape leaves it permanently applied with no undo
