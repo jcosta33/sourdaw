@@ -1,0 +1,21 @@
+docs/architecture/03-typescript-module.md
+  s_02d63a0ba8cfa0::t_21ba7871044980 957
+docs/architecture/08-device-authoring.md
+  s_02d63a0ba8cfa0::t_88ffe81f474141 3,15-20,42-43,45-46,51,61-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a5f1e40ee11549aba96554d870b36600e53a503f",
+  "prompts": {},
+  "sessions": {
+    "s_02d63a0ba8cfa0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_02d63a0ba8cfa0",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
