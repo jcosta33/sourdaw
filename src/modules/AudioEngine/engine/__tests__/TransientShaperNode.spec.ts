@@ -14,7 +14,7 @@ vi.mock('#/infra/audioWorklet/workletInitShared', async (importOriginal) => ({
     ensureWorkletRegistered: vi.fn().mockResolvedValue(undefined),
     fetchWasmModule: vi.fn().mockResolvedValue(lease),
 }));
-vi.mock('../../services/transientShaperProcessor.ts?worker&url', () => ({ default: 'processor-url' }));
+vi.mock('../../worklets/transientShaperProcessor.ts?worker&url', () => ({ default: 'processor-url' }));
 class Param {
     constructor(private currentValue = 1) {}
     valueWrites = vi.fn();

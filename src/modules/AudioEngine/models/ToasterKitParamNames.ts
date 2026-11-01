@@ -4,7 +4,7 @@
  * Toaster's kit is pushed to the engine as control writes rather than replayed
  * from `parameterValues` (`projectToasterKitToEngineMessages`), and those writes
  * already carry the DSP's snake_case names — `master_gain`, `reverb_mix`, and so
- * on. The worklet's live `param`/`padParam` door (`services/toasterProcessor.ts`)
+ * on. The worklet's live `param`/`padParam` door (`worklets/toasterProcessor.ts`)
  * still receives the camelCase ids a panel writes for the kit-level controls
  * (`setToasterKitParam`), so it needs this table to translate them the same way
  * `projectToasterKitToEngineMessages` already does; this file is the one place
