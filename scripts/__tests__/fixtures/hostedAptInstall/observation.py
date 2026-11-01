@@ -13,6 +13,16 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
 
+def raising(*errors):
+    """Raise each error in turn, then the last one forever, so a mutant never exhausts the reads."""
+    remaining = list(errors)
+
+    def read():
+        raise remaining.pop(0) if len(remaining) > 1 else remaining[0]
+
+    return read
+
+
 class ObservationTest(unittest.TestCase):
     def run_controller(self, second, reads):
         invocation = 'a' * 32
@@ -123,16 +133,27 @@ class ObservationTest(unittest.TestCase):
         self.assertIn('invocation changed or disappeared', outcome)
         self.assertNotIn('stop', actions)
 
-    def test_other_errno_fails_closed(self):
+    def test_other_errno_fails_closed_on_the_first_read(self):
         denied = OSError(errno.EACCES, 'Permission denied')
-        outcome, _, actions = self.run_controller({}, [denied])
+        outcome, shows, actions = self.run_controller({}, raising(denied))
         self.assertIn('owned cgroup status unavailable', outcome)
+        self.assertIn('Permission denied', outcome)
+        self.assertEqual(len(shows), 1)
         self.assertNotIn('stop', actions)
 
-    def test_unreadable_cgroup_after_device_gone_fails_closed(self):
+    def test_malformed_cgroup_events_fail_closed_on_the_first_read(self):
+        outcome, shows, actions = self.run_controller({}, lambda: 'populated\n')
+        self.assertIn('owned cgroup status unavailable', outcome)
+        self.assertEqual(len(shows), 1)
+        self.assertNotIn('stop', actions)
+
+    def test_unreadable_cgroup_after_device_gone_reports_the_later_error(self):
         gone = OSError(errno.ENODEV, 'No such device')
-        outcome, _, actions = self.run_controller({}, [gone, OSError(errno.EIO, 'Input/output error')])
-        self.assertIn('cgroup status unavailable', outcome)
+        outcome, shows, actions = self.run_controller({}, raising(gone, OSError(errno.EIO, 'Input/output error')))
+        self.assertIn('owned cgroup status unavailable', outcome)
+        self.assertIn('Input/output error', outcome)
+        self.assertNotIn('No such device', outcome)
+        self.assertEqual(len(shows), 2)
         self.assertNotIn('stop', actions)
 
 
