@@ -1,0 +1,67 @@
+.agents/skills/crdt-collaboration/SKILL.md
+  s_0314bb17e5dee3::t_6710875a8aad11 44
+  s_0314bb17e5dee3::t_20b7156b44995f 106
+  s_0314bb17e5dee3::t_ce2d07b44c2b62 60
+  s_0314bb17e5dee3::t_51f9fc46d1132e 16,24,26,28,42,46,48,56,58,62,64,66,68,70,72,74,76,78,80,82,84,86,88,90,92,94,96,98,100,102
+  s_0314bb17e5dee3::t_2ea0598caaaaec 54
+.agents/skills/state-and-write-paths/SKILL.md
+  s_0314bb17e5dee3::t_433800befbe8a1 16,35-36,43-44,47,51-52,59-60,67,71,75-76,91-93,95,97,99,101,103,105,107,115
+  s_0314bb17e5dee3::t_fcc7dedf5b8258 83
+.agents/skills/playwright-ui-bridge/SKILL.md
+  s_0314bb17e5dee3::t_18a14d4c0bfefd 17,19,21,23,25,29-33,37-41,45-49,53-57,61,63,65-67,91-94,99-109
+  s_0314bb17e5dee3::t_ac3fa4e0eca272 110
+.agents/skills/testing-file-layout/SKILL.md
+  s_0314bb17e5dee3::t_07b1bd6342dc3a 16,20-24,28-32,36-39,44-48,52-56,64,66,72
+  s_0314bb17e5dee3::t_2a5ab14d763d5f 40
+.agents/skills/ui-patterns/SKILL.md
+  s_0314bb17e5dee3::t_5859f483c61b3f 18,22-26,30-34,38-42,46-50,54-58,64-67,70-74,78-82,90
+.agents/skills/test-design/SKILL.md
+  s_0314bb17e5dee3::t_3a76b27c69bda6 124
+  s_0314bb17e5dee3::t_271ee09cfd2455 121-123
+  s_0314bb17e5dee3::t_1b6c7c0c9552d2 101-120
+.agents/skills/llm-action-bridge/SKILL.md
+  s_0314bb17e5dee3::t_b50df79cc7780a 16,24-25,32-33,40-41,48-49,56-57,60-61,64-65,75,82,86,90-92,94,98,100,102,104,106,112
+  s_0314bb17e5dee3::t_526e27f47eb1ad 74
+.agents/skills/web-audio-engine/SKILL.md
+  s_0314bb17e5dee3::t_991d51a3596cd4 16,24-25,28,32-33,40-41,49-50,57-58,65-66,73-74,82,86-87,90-106,118
+.agents/skills/review-stances/e2e-server-provenance.md
+  s_7a8e1107313040::t_6c14012bfaec8d 33-39
+.agents/skills/review-stances/rendered-ui-layout.md
+  s_7a8e1107313040::t_74d1fd8e4f6494 1-25
+  s_0314bb17e5dee3::t_e21299769af2e4 26,28-29
+  s_0314bb17e5dee3::t_911dd759956ad7 27,30-34
+.agents/skills/review-stances/test-validity.md
+  s_7a8e1107313040::t_8ae0d09f89598a 2620-2628
+.agents/skills/review-stances/asset-cache-publication.md
+  s_0314bb17e5dee3::t_896fd0a8fb954c 20-58
+.agents/skills/review-stances/correctness.md
+  s_0314bb17e5dee3::t_997b17a90fc08c 1084-1150
+.agents/skills/review-stances/project-integrity.md
+  s_0314bb17e5dee3::t_405479d6522e44 1067-1152
+.agents/skills/review-stances/session-lifecycle.md
+  s_0314bb17e5dee3::t_ad285916bfaf32 732-820
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "535ee49a06c76468509cb9cda58e68b6cf676b3d",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_7a8e1107313040": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54399ae9-2148-45f8-8043-53b64cc39d76",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
