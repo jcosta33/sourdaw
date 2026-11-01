@@ -1,0 +1,130 @@
+src/modules/Yeast/AGENTS.md
+  s_0314bb17e5dee3::t_5c990f5c99dfd7 7
+src/modules/Knead/AGENTS.md
+  s_0314bb17e5dee3::t_bd96afc20bd300 20
+  s_0314bb17e5dee3::t_dd0ff6f85e3b1c 7
+src/modules/SampleLibrary/AGENTS.md
+  s_0314bb17e5dee3::t_828e30e707354c 7
+src/modules/CvGate/AGENTS.md
+  s_0314bb17e5dee3::t_ebf96023106d5b 7
+src/modules/AiGeneration/AGENTS.md
+  s_0314bb17e5dee3::t_6313ede86d0f04 7
+src/modules/Command/AGENTS.md
+  s_0314bb17e5dee3::t_6701b1c8c4ba64 7
+  s_0314bb17e5dee3::t_f625347765e2a8 32
+src/modules/Crumbs/AGENTS.md
+  s_0314bb17e5dee3::t_ecc696759a32bf 24
+  s_0314bb17e5dee3::t_2a6c7495970d7c 7
+src/modules/Setlist/AGENTS.md
+  s_0314bb17e5dee3::t_97408cd5835bdd 7
+src/modules/WorkspaceShell/AGENTS.md
+  s_0314bb17e5dee3::t_a4e6404cee472c 7
+  s_0314bb17e5dee3::t_f82d006715c160 24
+src/modules/ContentBrowser/AGENTS.md
+  s_0314bb17e5dee3::t_6eb6404ff95b00 7
+src/modules/AudioRendering/AGENTS.md
+  s_0314bb17e5dee3::t_d0147ee853bb3c 11
+  s_0314bb17e5dee3::t_754cdbecb53fad 31
+src/modules/Fermenter/AGENTS.md
+  s_0314bb17e5dee3::t_99b220d39fe26c 7
+src/modules/MixerConsole/AGENTS.md
+  s_0314bb17e5dee3::t_73159bad1a4c87 7
+src/modules/CrdtDocument/AGENTS.md
+  s_0314bb17e5dee3::t_b44f965df036d1 7
+src/modules/ControlRoom/AGENTS.md
+  s_0314bb17e5dee3::t_f8e53bd74ffa24 11
+src/modules/Gluten/AGENTS.md
+  s_0314bb17e5dee3::t_954783e1d01089 7
+src/modules/AiRuntime/AGENTS.md
+  s_0314bb17e5dee3::t_cce8048485d337 7
+  s_0314bb17e5dee3::t_6bf68248c8159f 50
+src/modules/Metering/AGENTS.md
+  s_0314bb17e5dee3::t_8f59f26d6363c0 11
+src/modules/BrowserAi/AGENTS.md
+  s_0314bb17e5dee3::t_6269743df91480 7
+src/modules/Automation/AGENTS.md
+  s_0314bb17e5dee3::t_6545b557ee76e3 7
+src/modules/Arrangement/AGENTS.md
+  s_0314bb17e5dee3::t_97be43339e1e6b 7
+src/modules/Onboarding/AGENTS.md
+  s_0314bb17e5dee3::t_7185c1355f5ac5 7
+  s_0314bb17e5dee3::t_e0831d74c50d2f 12
+src/modules/Routing/AGENTS.md
+  s_0314bb17e5dee3::t_c23633839f367a 11
+src/modules/Crust/AGENTS.md
+  s_0314bb17e5dee3::t_86979faf3f7061 7
+src/modules/MIDI/AGENTS.md
+  s_0314bb17e5dee3::t_10f088b4a6e13a 7
+src/modules/Levain/AGENTS.md
+  s_0314bb17e5dee3::t_234cee6713ab27 7
+src/modules/Bacteria/AGENTS.md
+  s_0314bb17e5dee3::t_af98fe52d955ba 7
+src/modules/AgentAdapters/AGENTS.md
+  s_0314bb17e5dee3::t_ac1e9764e24a42 7
+  s_0314bb17e5dee3::t_eb84ac93a95bdb 28
+src/modules/FactorySynthesis/AGENTS.md
+  s_0314bb17e5dee3::t_03cc4ce593b855 7
+src/modules/Preferences/AGENTS.md
+  s_0314bb17e5dee3::t_ec7c8f30a1c5c5 7
+src/modules/Project/AGENTS.md
+  s_0314bb17e5dee3::t_2fffad4d06c147 29
+  s_0314bb17e5dee3::t_85c294970daab8 7
+src/modules/DawInterchange/AGENTS.md
+  s_0314bb17e5dee3::t_f71cdff6ab46d2 7
+src/modules/SessionLauncher/AGENTS.md
+  s_0314bb17e5dee3::t_3a7f3c5000f8cc 7
+src/modules/GrandBoule/AGENTS.md
+  s_0314bb17e5dee3::t_9a927f5e8e6949 7
+src/modules/Synth/AGENTS.md
+  s_0314bb17e5dee3::t_d8ad8675c747d1 7
+src/modules/Toaster/AGENTS.md
+  s_0314bb17e5dee3::t_036db24540dcf8 7
+src/modules/Transport/AGENTS.md
+  s_0314bb17e5dee3::t_4b889b6f009c48 7
+  s_0314bb17e5dee3::t_ad76569cb51b8f 29
+src/modules/CommandInterface/AGENTS.md
+  s_0314bb17e5dee3::t_1b4654eab46ab4 7
+src/modules/Collaboration/AGENTS.md
+  s_0314bb17e5dee3::t_1cc7622bb83de8 7
+src/modules/ProjectVersioning/AGENTS.md
+  s_0314bb17e5dee3::t_47f9c8265592d4 7
+src/modules/TimelineEditor/AGENTS.md
+  s_0314bb17e5dee3::t_a011e572793872 7
+src/modules/Tuner/AGENTS.md
+  s_0314bb17e5dee3::t_34314c447f6063 7
+src/modules/PluginHost/AGENTS.md
+  s_0314bb17e5dee3::t_6cc458d6dbe6e8 11
+  s_0314bb17e5dee3::t_46a76ed51bdc83 29
+src/modules/Proof/AGENTS.md
+  s_0314bb17e5dee3::t_192283a0a51025 7
+src/modules/ElasticAudio/AGENTS.md
+  s_0314bb17e5dee3::t_e1b2b8d40e6109 11
+src/modules/AudioAnalysis/AGENTS.md
+  s_0314bb17e5dee3::t_a1edb10961e891 11
+src/modules/ProofChamber/AGENTS.md
+  s_0314bb17e5dee3::t_9104268da48d6c 7
+src/modules/PunchRecording/AGENTS.md
+  s_0314bb17e5dee3::t_7eb278c456a1ee 7
+src/modules/ControlSurface/AGENTS.md
+  s_0314bb17e5dee3::t_017b44ef6e1d69 11
+src/modules/Grinder/AGENTS.md
+  s_0314bb17e5dee3::t_981b5cab66a713 7
+src/modules/AudioEngine/AGENTS.md
+  s_0314bb17e5dee3::t_cf3c06b138a56f 11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "74fdd0b1ef3ced73014905e1f9d98e968e9917ac",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
