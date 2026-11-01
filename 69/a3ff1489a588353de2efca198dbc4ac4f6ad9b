@@ -1,0 +1,22 @@
+scripts/e2eUncachedResponses.ts
+  s_88fc7e0d05bab6::t_e63de1ee255f42 1-2
+  s_88fc7e0d05bab6::t_3f9dd763bcb66c 25-32
+scripts/__tests__/e2eUncachedResponsesWiring.spec.ts
+  s_88fc7e0d05bab6::t_c4be28f617bbb9 89-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "69a3ff1489a588353de2efca198dbc4ac4f6ad9b",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
