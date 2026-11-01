@@ -6,12 +6,14 @@ import { isDeepStrictEqual } from 'node:util';
 import { change, clone, Counter, toJS } from '@automerge/automerge';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import { type renderAgentMeasurementScope } from '#/modules/AudioRendering/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import * as commandUseCases from '#/modules/Command/useCases';
@@ -33,6 +35,7 @@ import { parseSemanticProjectQueryInput, querySemanticProject } from '#/modules/
 import { defaultTransportState, transportStore, type TransportState } from '#/modules/Transport/stores';
 import { restoreTransportSnapshot } from '#/modules/Transport/useCases';
 import { clampFaderGain, resolveLevelFields, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
+import { digest } from '#/utils/canonicalDigest';
 import { type AppAction } from '#/utils/handlerContract';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
@@ -90,6 +93,8 @@ import { GENERATED_BATCH_LOCAL_ID_PREFIXES } from '../useCases/agentReference/ba
 import { confirmPendingChatActions } from '../useCases/confirmPendingChatActions';
 import { getPlannedActionAffectedIds } from '../useCases/getPlannedActionAffectedIds';
 import { getProjectContext } from '../useCases/getProjectContext';
+import { type ObjectiveMetricId } from '../useCases/metricGoalContractTypes';
+import { OBJECTIVE_METRIC_LABELS, objectiveMetricProjection } from '../useCases/objectiveMetricProjection';
 import { parsePromptToActions } from '../useCases/parsePromptToActions';
 import { type planPromptActions } from '../useCases/planPromptActions';
 import { readChatThreadContext } from '../useCases/readChatThreadContext';
@@ -102,7 +107,12 @@ type PlannedChatRequest = Awaited<ReturnType<typeof planPromptActions>>['result'
 const runtimeMocks = vi.hoisted(() => ({
     generateWebLlmCompletion: vi.fn(),
     getAllSidechainRoutes: vi.fn(() => []),
+    renderAgentMeasurementScope:
+        vi.fn<typeof import('#/modules/AudioRendering/useCases').renderAgentMeasurementScope>(),
     resolveToasterPadBinding: vi.fn(() => null),
+    retainAgentMeasurementRenders: vi.fn<
+        typeof import('#/modules/AudioRendering/useCases').retainAgentMeasurementRenders
+    >(() => []),
     setTrackGain: vi.fn(),
     setTrackMute: vi.fn(),
     setTrackPan: vi.fn(),
@@ -144,6 +154,13 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     setTrackSoloGate: runtimeMocks.setTrackSoloGate,
 }));
 
+// The offline render is the one measurement step node cannot run; everything around it stays real.
+vi.mock('#/modules/AudioRendering/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioRendering/useCases')>()),
+    renderAgentMeasurementScope: runtimeMocks.renderAgentMeasurementScope,
+    retainAgentMeasurementRenders: runtimeMocks.retainAgentMeasurementRenders,
+}));
+
 vi.mock('#/modules/Routing/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Routing/useCases')>()),
     getAllSidechainRoutes: runtimeMocks.getAllSidechainRoutes,
@@ -180,16 +197,17 @@ const CORPUS_RUN_TIMEOUT_MS = 60_000;
 const MINIMUM_SEALED_CLASS_CASES = 3;
 
 /**
- * The two answers a sealed question is held to: a description of the project, pinned to a cited
- * `project.query` item, or one catalog recipe described for one named track with its offer to
- * propose it, pinned to a cited `recipe.discover` receipt and the suggestion the answer carries.
+ * The three answers a sealed question is held to: a description of the project, pinned to a cited
+ * `project.query` item; one catalog recipe described for one named track with its offer to propose
+ * it, pinned to a cited `recipe.discover` receipt and the suggestion the answer carries; or audio
+ * figures for one named target over one named section, pinned to a cited `analysis.measure` receipt.
  */
-const QUESTION_KINDS = ['descriptive', 'suggestion'] as const;
+const QUESTION_KINDS = ['descriptive', 'suggestion', 'measured'] as const;
 
 type QuestionKind = (typeof QUESTION_KINDS)[number];
 
 /** How many cases of each question kind a sealed question corpus carries. */
-const MINIMUM_QUESTION_KIND_CASES: Record<QuestionKind, number> = { descriptive: 3, suggestion: 2 };
+const MINIMUM_QUESTION_KIND_CASES: Record<QuestionKind, number> = { descriptive: 3, suggestion: 2, measured: 2 };
 
 /**
  * A local, minimal type for the corpus files: nothing under `src/` may import from `scripts/`, so
@@ -200,6 +218,9 @@ type CorpusProviderTurn =
     | { kind: 'intake'; intent: 'literal' | 'answer' }
     | CatalogAnswerIntakeTurn
     | RecipeDiscoveryTurn
+    | MeasuredAnswerIntakeTurn
+    | MeasureTurn
+    | MetricAnswerTurn
     | { kind: 'search'; intents: string[] }
     | { kind: 'discover'; names: string[] }
     | { kind: 'propose'; items: Record<string, unknown>[]; plan?: AgentPlanProposal }
@@ -222,6 +243,34 @@ type RecipeDiscoveryTurn = {
     targetName: string;
     role?: string;
     limit: number;
+};
+
+/** What a measured question measures: the master output, or the one fixture track of this name. */
+type CorpusMeasuredTarget = { kind: 'master' } | { kind: 'track'; name: string };
+
+/**
+ * A measured question: the measured-audio answer branch, its scope the named target and its range the
+ * fixture section of this name, both read from the candidates the provider was actually offered.
+ */
+type MeasuredAnswerIntakeTurn = {
+    kind: 'intake';
+    intent: 'answer-measured';
+    target: CorpusMeasuredTarget;
+    rangeName: string;
+    topics: string[];
+};
+
+/** One `analysis.measure` call of the project over the named section, every metric measured. */
+type MeasureTurn = { kind: 'measure'; id: string; target: CorpusMeasuredTarget; rangeName: string };
+
+/** One `answer.respond` stating each named metric of the target from the measurement it cites. */
+type MetricAnswerTurn = {
+    kind: 'metric-answer';
+    id: string;
+    intakeCallId: string;
+    measureCallId: string;
+    target: CorpusMeasuredTarget;
+    metrics: string[];
 };
 
 /**
@@ -482,6 +531,129 @@ function recipeDiscoveryCall(turn: RecipeDiscoveryTurn): ProviderCall & { id: st
     return { id: turn.id, name: 'recipe.discover', arguments: args };
 }
 
+/** The one fixture section carrying this exact name; a name no section or several carry is a corpus defect. */
+function fixtureSection(name: string): NonNullable<ProjectContext['sections']>[number] {
+    const matches = (context.sections ?? []).filter((section) => section.name === name);
+    const [section] = matches;
+    if (matches.length !== 1 || section === undefined) {
+        throw new Error(`The fixture project holds ${String(matches.length)} sections named ${JSON.stringify(name)}`);
+    }
+    return section;
+}
+
+/** The measurement target id a measured question names: the master output, or the named fixture track. */
+function fixtureMeasuredTargetId(target: CorpusMeasuredTarget): string {
+    return target.kind === 'master' ? 'master' : fixtureTrackId(target.name);
+}
+
+/**
+ * A measured question's intake: the measured-audio answer branch, scoped to the advertised candidate
+ * holding the named target and ranged over the advertised candidate for the named section.
+ */
+function measuredAnswerIntakeTurn(turn: MeasuredAnswerIntakeTurn): ScriptedTurn {
+    const targetId = fixtureMeasuredTargetId(turn.target);
+    fixtureSection(turn.rangeName);
+    return (userMessage, providerView) => {
+        const advertised = [providerView, userMessage];
+        return [
+            advertisedAnswerIntake(advertised, {
+                kind: 'measured-audio',
+                topicIds: turn.topics,
+                scopeCandidateIds: [advertisedAnswerCandidateId(advertised, targetId)],
+                rangeCandidateId: advertisedAnswerCandidateId(advertised, turn.rangeName, 'ranges'),
+            }),
+        ];
+    };
+}
+
+/**
+ * A measurement of the frozen subject. The answer phase publishes the frozen range as beats, never a
+ * section id, so the call names the section's beats and the application restores its identity.
+ */
+function measureCall(turn: MeasureTurn): ProviderCall & { id: string } {
+    const scope =
+        turn.target.kind === 'master'
+            ? { kind: 'master' }
+            : { kind: 'tracks', ids: [fixtureMeasuredTargetId(turn.target)] };
+    const { startBeat, endBeat } = fixtureSection(turn.rangeName);
+    return { id: turn.id, name: 'analysis.measure', arguments: { scope, range: { startBeat, endBeat } } };
+}
+
+function metricAnswerCall(turn: MetricAnswerTurn): ProviderCall & { id: string } {
+    const targetId = fixtureMeasuredTargetId(turn.target);
+    return {
+        id: turn.id,
+        name: 'answer.respond',
+        arguments: {
+            intakeCallId: turn.intakeCallId,
+            statements: turn.metrics.map((metricId) => ({
+                kind: 'metric',
+                reference: { callId: turn.measureCallId, targetId, metricId },
+            })),
+        },
+    };
+}
+
+/** Each measured target's own sine level, so two targets never measure alike and a wrong target cannot match. */
+function fixtureMeasurementAmplitude(targetId: string): number {
+    if (targetId === 'master') {
+        return 0.3;
+    }
+    const index = context.tracks.findIndex((track) => track.id === targetId);
+    if (index < 0) {
+        throw new Error(`The fixture project holds no measurement target ${targetId}`);
+    }
+    return 0.02 * (index + 1);
+}
+
+/** Four seconds of a 1 kHz stereo sine at the target's own level, as the measured-answer specs render. */
+function fixtureMeasurementBuffer(amplitude: number): AudioBuffer {
+    const frames = 192_000;
+    const channel = Float32Array.from(
+        { length: frames },
+        (_, index) => amplitude * Math.sin((2 * Math.PI * 1000 * index) / 48_000)
+    );
+    const buffer = MockAudioBuffer.create(2, frames, 48_000);
+    buffer.copyToChannel(channel, 0);
+    buffer.copyToChannel(channel, 1);
+    return buffer;
+}
+
+/**
+ * The offline render node cannot run, answered deterministically per target. Only the render is
+ * doubled: the reduction, the receipt and the answer composed from it stay the production route's.
+ */
+const renderFixtureMeasurementScope: typeof renderAgentMeasurementScope = async ({ scope }) => ({
+    status: 'rendered',
+    soloActive: false,
+    warnings: [],
+    targets: (scope.kind === 'master' ? ['master'] : scope.ids).map((targetId) => ({
+        targetId,
+        targetKind: measuredTargetKind(scope.kind),
+        route: scope.kind === 'master' ? 'mixdown' : 'isolated-subgraph',
+        liveAudibility: 'audible',
+        buffer: fixtureMeasurementBuffer(fixtureMeasurementAmplitude(targetId)),
+        artifact: {
+            contentAddress: `sha256:${targetId}`,
+            sampleRate: 48_000,
+            frameCount: 192_000,
+            channelCount: 2,
+            durationSeconds: 4,
+        },
+    })),
+});
+
+function measuredTargetKind(
+    scopeKind: Parameters<typeof renderAgentMeasurementScope>[0]['scope']['kind']
+): 'master' | 'track' | 'bus' {
+    if (scopeKind === 'master') {
+        return 'master';
+    }
+    return scopeKind === 'tracks' ? 'track' : 'bus';
+}
+
+runtimeMocks.renderAgentMeasurementScope.mockImplementation(renderFixtureMeasurementScope);
+
 /**
  * Maps one corpus-declared provider turn to the same scripted-turn builders the workflow fixture
  * proves against production. `priorProposalId` reads the card a refinement names in `refines`.
@@ -501,9 +673,20 @@ function toScriptedTurn(
             if (turn.intent === 'answer-catalog') {
                 return catalogAnswerIntakeTurn(turn);
             }
+            if (turn.intent === 'answer-measured') {
+                return measuredAnswerIntakeTurn(turn);
+            }
             throw new TypeError('The corpus intake variant has no configured producer.');
         case 'recipe': {
             const call = recipeDiscoveryCall(turn);
+            return () => [call];
+        }
+        case 'measure': {
+            const call = measureCall(turn);
+            return () => [call];
+        }
+        case 'metric-answer': {
+            const call = metricAnswerCall(turn);
             return () => [call];
         }
         case 'search':
@@ -1007,6 +1190,11 @@ function openProjectTracks(): ProjectTrackIdentity[] {
     return (trackStore.value?.tracks ?? []).map((track) => ({ id: track.id, name: track.name }));
 }
 
+/** The sections a question was planned against, read where `analysis.measure` resolves a `sectionId`. */
+function plannedProjectSections(): ProjectSectionIdentity[] {
+    return (context.sections ?? []).map(({ id, name, startBeat, endBeat }) => ({ id, name, startBeat, endBeat }));
+}
+
 /** Plans one single-turn case against the fixture project, with no thread and no chat route. */
 async function runPlannedCorpusCase(testCase: CorpusCase): Promise<AgentAcceptanceCaseResult> {
     expect(
@@ -1022,11 +1210,17 @@ async function runPlannedCorpusCase(testCase: CorpusCase): Promise<AgentAcceptan
         );
     }
     const projectRevision = testCase.oracle.kind === 'answer' ? captureSettledRevision() : `revision-${testCase.id}`;
+    const rendersBefore = runtimeMocks.renderAgentMeasurementScope.mock.calls.length;
     const result = await parsePromptToActions({
         prompt: testCase.prompt,
         context,
         projectRevision,
     });
+    // Only a measured question reaches the render boundary, once; no other case may lean on its double.
+    expect(
+        runtimeMocks.renderAgentMeasurementScope.mock.calls.length - rendersBefore,
+        `Case ${testCase.id} rendered a measurement scope a different number of times than its kind allows`
+    ).toBe(testCase.questionKind === 'measured' ? 1 : 0);
 
     if (testCase.providerTurns.length > 0) {
         expect(
@@ -1061,6 +1255,7 @@ async function runPlannedCorpusCase(testCase: CorpusCase): Promise<AgentAcceptan
             projectId: projectStore.value?.projectId ?? null,
             projectRevision,
             projectTracks: openProjectTracks(),
+            projectSections: plannedProjectSections(),
         });
     }
     if (testCase.oracle.kind === 'proposal') {
@@ -1756,6 +1951,33 @@ function assertHeldOutDisjointness(development: Corpus, heldOut: Corpus): void {
             `Held-out suggestion recipe "${heldOutSuggestion.recipe.recipeId}" is in development`
         ).not.toContain(heldOutSuggestion.recipe.recipeId);
     }
+    // A measured question held out on the target, section and figures development already measures
+    // would score the same reduction twice, so no held-out measurement repeats that triple.
+    const developmentMeasurements = measuredOracles(development).map(measuredQuestionIdentity);
+    for (const heldOutMeasured of measuredOracles(heldOut)) {
+        const identity = measuredQuestionIdentity(heldOutMeasured);
+        expect(developmentMeasurements, `Held-out measured question ${identity} is in development`).not.toContain(
+            identity
+        );
+    }
+}
+
+/** Every measured question's parsed oracle in one corpus. */
+function measuredOracles(corpus: Corpus): MeasuredAnswerOracle[] {
+    return corpus.cases.flatMap((testCase) => {
+        if (testCase.questionKind !== 'measured') {
+            return [];
+        }
+        const oracle = parseAnswerOracle(testCase.oracle, 'measured');
+        return oracle.questionKind === 'measured' ? [oracle] : [];
+    });
+}
+
+/** What a measured question asks for: its target, its section and the set of metrics it pins. */
+function measuredQuestionIdentity(oracle: MeasuredAnswerOracle): string {
+    const { target, rangeName, metrics } = oracle.measurement;
+    const targetName = target.kind === 'master' ? 'master' : `track:${target.name}`;
+    return JSON.stringify([targetName, rangeName, Object.keys(metrics).toSorted()]);
 }
 
 /** Every suggestion question's parsed oracle in one corpus. */
@@ -1926,7 +2148,11 @@ describe('agent acceptance corpora', () => {
                         continue;
                     }
                     const interpreted = frame.providerTurns.some(
-                        (turn) => turn.kind === 'propose' || turn.kind === 'propose-commands' || turn.kind === 'answer'
+                        (turn) =>
+                            turn.kind === 'propose' ||
+                            turn.kind === 'propose-commands' ||
+                            turn.kind === 'answer' ||
+                            turn.kind === 'metric-answer'
                     );
                     const intakes = frame.providerTurns.filter((turn) => turn.kind === 'intake');
                     if (interpreted) {
@@ -2074,6 +2300,28 @@ describe('agent acceptance corpora', () => {
                 ).toThrow('is in development');
             }
         );
+
+        it('rejects a held-out measured question repeating a development target, section and metric set', () => {
+            const developmentOracle = corpusCase('development', 'AC005-DEV-QUESTION-7').oracle;
+            if (developmentOracle.kind !== 'answer' || developmentOracle.measurement === undefined) {
+                throw new Error('The disjointness fixture needs a measured development oracle.');
+            }
+            const heldOutCase = corpusCase('held-out', 'AC005-HO-QUESTION-6');
+            const disjoint = (oracle: CorpusAnswerOracle) => () =>
+                assertHeldOutDisjointness(corpora.development, {
+                    ...corpora['held-out'],
+                    cases: [{ ...heldOutCase, oracle }],
+                });
+            expect(disjoint(developmentOracle)).toThrow('Held-out measured question');
+            // The same target and section over another metric set is a different question.
+            const { truePeak } = developmentOracle.measurement.metrics;
+            expect(
+                disjoint({
+                    ...developmentOracle,
+                    measurement: { ...developmentOracle.measurement, metrics: { truePeak } },
+                })
+            ).not.toThrow();
+        });
     });
 
     describe('write-counter self-checks', () => {
@@ -3333,8 +3581,21 @@ type AnswerQuery = { type: string; facts: Record<string, Fact>; total?: number }
 type AnswerRecipe = { recipeId: string; targetName: string };
 type AnswerOracleSuggestion = { recipeId: string; targetId: string };
 
+/**
+ * What a measured question pins: the target it names, the section it names, and each metric's figure
+ * at the two decimals the composed answer states.
+ */
+type AnswerMeasurementPin = {
+    target: CorpusMeasuredTarget;
+    rangeName: string;
+    metrics: Partial<Record<ObjectiveMetricId, number>>;
+};
+
 /** A track of the open project, by which a suggestion's named target is bound to the id discovery read. */
 type ProjectTrackIdentity = { id: string; name: string };
+
+/** A section the question was planned against, by which a measured question's named range is bound. */
+type ProjectSectionIdentity = { id: string; name: string; startBeat: number; endBeat: number };
 
 /** An answer oracle as a corpus file writes it, read as one shape by its case's question kind. */
 type CorpusAnswerOracle = {
@@ -3343,6 +3604,7 @@ type CorpusAnswerOracle = {
     query?: AnswerQuery;
     recipe?: AnswerRecipe;
     suggestion?: AnswerOracleSuggestion;
+    measurement?: AnswerMeasurementPin;
 };
 
 type DescriptiveAnswerOracle = { kind: 'answer'; questionKind: 'descriptive'; text: string; query: AnswerQuery };
@@ -3355,7 +3617,14 @@ type SuggestionAnswerOracle = {
     suggestion: AnswerOracleSuggestion;
 };
 
-type AnswerOracle = DescriptiveAnswerOracle | SuggestionAnswerOracle;
+type MeasuredAnswerOracle = {
+    kind: 'answer';
+    questionKind: 'measured';
+    text: string;
+    measurement: AnswerMeasurementPin;
+};
+
+type AnswerOracle = DescriptiveAnswerOracle | SuggestionAnswerOracle | MeasuredAnswerOracle;
 
 /**
  * Whether the text states the value as a whole token: a number never inside a longer number or a
@@ -3448,7 +3717,79 @@ function parseAnswerOracle(value: unknown, questionKind: QuestionKind = 'descrip
     if (questionKind === 'suggestion') {
         return parseSuggestionAnswerOracle(value, value.text);
     }
+    if (questionKind === 'measured') {
+        return parseMeasuredAnswerOracle(value, value.text);
+    }
     return parseDescriptiveAnswerOracle(value, value.text);
+}
+
+/** How the composed answer names a measured subject: the master output, or the track's quoted name. */
+function measuredSubjectLabel(target: CorpusMeasuredTarget): string {
+    return target.kind === 'master' ? 'Master output' : quoteSourceData(target.name);
+}
+
+function parseMeasuredTarget(value: unknown): CorpusMeasuredTarget {
+    if (isRecord(value) && value.kind === 'master' && Object.keys(value).length === 1) {
+        return { kind: 'master' };
+    }
+    if (isRecord(value) && value.kind === 'track' && isNonEmptyString(value.name) && Object.keys(value).length === 2) {
+        return { kind: 'track', name: value.name };
+    }
+    throw new TypeError('A measured answer oracle names its target as the master or one track by name.');
+}
+
+/** A scalar metric the answer can state as one figure; a band-energy map has no single figure to pin. */
+function isScalarMetricId(value: string): value is ObjectiveMetricId {
+    return Object.hasOwn(OBJECTIVE_METRIC_LABELS, value) && value !== 'frequencyBandEnergy';
+}
+
+/**
+ * A measured question pins its target, its section and each metric's figure. The figures are bound
+ * at scoring to the cited measurement receipt, so the oracle itself refuses only what no receipt could
+ * ever bind, and a text that does not state each figure in the clause the composer writes for it.
+ */
+function parseMeasuredAnswerOracle(value: Record<string, unknown>, text: string): MeasuredAnswerOracle {
+    if (value.query !== undefined || value.recipe !== undefined || value.suggestion !== undefined) {
+        throw new TypeError(
+            'A measured answer oracle pins a measurement receipt, never a query, recipe or suggestion.'
+        );
+    }
+    const { measurement } = value;
+    if (!isRecord(measurement) || !isNonEmptyString(measurement.rangeName) || !isRecord(measurement.metrics)) {
+        throw new TypeError('A measured answer oracle requires the target, the section name and the metric figures.');
+    }
+    const target = parseMeasuredTarget(measurement.target);
+    const metrics: Partial<Record<ObjectiveMetricId, number>> = {};
+    const subject = measuredSubjectLabel(target);
+    for (const [metricId, figure] of Object.entries(measurement.metrics)) {
+        if (!isScalarMetricId(metricId)) {
+            throw new TypeError(
+                `A measured answer oracle pins ${JSON.stringify(metricId)}, which is no scalar metric.`
+            );
+        }
+        if (typeof figure !== 'number' || formatAnswerNumber(figure) !== String(figure)) {
+            throw new TypeError(`A measured answer oracle pins ${metricId} at other than the answer's two decimals.`);
+        }
+        const clause = `${subject} ${OBJECTIVE_METRIC_LABELS[metricId]} is ${String(figure)} `;
+        if (!text.includes(clause)) {
+            throw new TypeError(`A measured answer oracle text does not state ${JSON.stringify(clause.trim())}.`);
+        }
+        metrics[metricId] = figure;
+    }
+    if (Object.keys(metrics).length === 0) {
+        throw new TypeError('A measured answer oracle requires the target, the section name and the metric figures.');
+    }
+    if (!text.includes(`Over ${quoteSourceData(measurement.rangeName)} (beats `)) {
+        throw new TypeError(
+            `A measured answer oracle text does not range over ${quoteSourceData(measurement.rangeName)}.`
+        );
+    }
+    return {
+        kind: 'answer',
+        questionKind: 'measured',
+        text,
+        measurement: { target, rangeName: measurement.rangeName, metrics },
+    };
 }
 
 /**
@@ -3459,6 +3800,9 @@ function parseAnswerOracle(value: unknown, questionKind: QuestionKind = 'descrip
 function parseSuggestionAnswerOracle(value: Record<string, unknown>, text: string): SuggestionAnswerOracle {
     if (value.query !== undefined) {
         throw new TypeError('A suggestion answer oracle pins a recipe receipt, never a project query.');
+    }
+    if (value.measurement !== undefined) {
+        throw new TypeError('A suggestion answer oracle pins a recipe receipt, never a measurement.');
     }
     const { recipe, suggestion } = value;
     if (!isRecord(recipe) || !isNonEmptyString(recipe.recipeId) || !isNonEmptyString(recipe.targetName)) {
@@ -3487,6 +3831,9 @@ function parseSuggestionAnswerOracle(value: Record<string, unknown>, text: strin
 function parseDescriptiveAnswerOracle(value: Record<string, unknown>, text: string): DescriptiveAnswerOracle {
     if (value.recipe !== undefined || value.suggestion !== undefined) {
         throw new TypeError('A descriptive answer oracle pins a project query, never a recipe or a suggestion.');
+    }
+    if (value.measurement !== undefined) {
+        throw new TypeError('A descriptive answer oracle pins a project query, never a measurement.');
     }
     if (!isRecord(value.query)) {
         throw new TypeError('Answer oracle requires nonempty exact text and a query.');
@@ -3567,6 +3914,7 @@ type AnswerMatchInput = {
     projectId: string | null;
     projectRevision: string;
     projectTracks: readonly ProjectTrackIdentity[];
+    projectSections: readonly ProjectSectionIdentity[];
 };
 
 /** What one cited receipt says about the oracle: malformed or stale, beside it, or the evidence it pins. */
@@ -3641,6 +3989,84 @@ function readCitedRecipeReceipt(receipt: ApplicationToolReceipt, input: AnswerMa
     return targetId !== null && discoveredFor === targetId && listsRecipe ? 'bound' : 'unbound';
 }
 
+/**
+ * A cited `analysis.measure` receipt must have measured the project at this run's revision; it binds a
+ * measured oracle only when it measured the named target over the named section and each pinned
+ * figure is the receipt's own figure for that target at the two decimals the answer states. A
+ * measurement of another target or range, or one missing or differing on any pinned metric, binds
+ * nothing.
+ */
+function readCitedMeasurementReceipt(receipt: ApplicationToolReceipt, input: AnswerMatchInput): CitedReceiptReading {
+    if (!isRecord(receipt.data)) {
+        return 'invalid';
+    }
+    const data = receipt.data;
+    if (
+        data.kind !== 'analysis-measurement' ||
+        data.schemaVersion !== 1 ||
+        receipt.revision !== input.projectRevision ||
+        data.sourceRevisionDigest !== digest(input.projectRevision) ||
+        !isRecord(data.range) ||
+        !Array.isArray(data.targets) ||
+        !data.targets.every((target: unknown) => isRecord(target))
+    ) {
+        return 'invalid';
+    }
+    const { oracle } = input;
+    if (oracle.questionKind !== 'measured') {
+        return 'unbound';
+    }
+    const { target: pinnedTarget, rangeName, metrics } = oracle.measurement;
+    const sections = input.projectSections.filter((section) => section.name === rangeName);
+    const section = sections[0];
+    if (
+        sections.length !== 1 ||
+        section === undefined ||
+        data.range.sectionId !== section.id ||
+        data.range.startBeat !== section.startBeat ||
+        data.range.endBeat !== section.endBeat
+    ) {
+        return 'unbound';
+    }
+    const targetId =
+        pinnedTarget.kind === 'master' ? 'master' : projectTrackIdNamed(input.projectTracks, pinnedTarget.name);
+    const measured = data.targets.find(
+        (target: unknown) =>
+            isRecord(target) &&
+            target.targetId === targetId &&
+            target.targetKind === pinnedTarget.kind &&
+            isRecord(target.measurements)
+    );
+    if (targetId === null || !isRecord(measured) || !isRecord(measured.measurements)) {
+        return 'unbound';
+    }
+    const measurements = measured.measurements;
+    const figuresMatch = Object.entries(metrics).every(([metricId, figure]) => {
+        if (!isScalarMetricId(metricId)) {
+            return false;
+        }
+        const scalar = objectiveMetricProjection(metricId, readMeasuredMetricEntry(measurements[metricId]));
+        return scalar !== null && formatAnswerNumber(scalar.value) === String(figure);
+    });
+    return figuresMatch ? 'bound' : 'unbound';
+}
+
+/** One receipt metric entry, when it carries the measured scalar shape the projection reads. */
+function readMeasuredMetricEntry(value: unknown): Parameters<typeof objectiveMetricProjection>[1] {
+    if (!isRecord(value) || value.status !== 'measured' || value.metricVersion !== 1) {
+        return undefined;
+    }
+    const { unit, confidence, value: figure } = value;
+    if (
+        typeof unit !== 'string' ||
+        typeof figure !== 'number' ||
+        (confidence !== 'exact' && confidence !== 'estimated')
+    ) {
+        return undefined;
+    }
+    return { status: 'measured', metricVersion: 1, unit, value: figure, confidence };
+}
+
 /** The id of the one open-project track carrying this exact name, or null when none or several do. */
 function projectTrackIdNamed(tracks: readonly ProjectTrackIdentity[], name: string): string | null {
     const matches = tracks.filter((track) => track.name === name);
@@ -3658,7 +4084,7 @@ function answerSuggestionMatches(input: AnswerMatchInput): boolean {
     }
     const offered = input.outcome.suggestion;
     const { oracle } = input;
-    if (oracle.questionKind === 'descriptive') {
+    if (oracle.questionKind !== 'suggestion') {
         return offered === undefined;
     }
     return (
@@ -3673,7 +4099,7 @@ function answerSuggestionMatches(input: AnswerMatchInput): boolean {
 /**
  * Compare only the cited, successful receipts from this actual result and its current project: a
  * matching query item for a descriptive oracle, a matching recipe discovery and the exact offer for a
- * suggestion oracle.
+ * suggestion oracle, a matching measurement of the named target and section for a measured oracle.
  */
 function answerMatchesOracle(input: AnswerMatchInput): boolean {
     if (
@@ -3721,6 +4147,8 @@ function answerMatchesOracle(input: AnswerMatchInput): boolean {
             reading = readCitedQueryReceipt(receipt, input, revision);
         } else if (receipt.toolName === 'recipe.discover') {
             reading = readCitedRecipeReceipt(receipt, input);
+        } else if (receipt.toolName === 'analysis.measure') {
+            reading = readCitedMeasurementReceipt(receipt, input);
         }
         if (reading === 'invalid') {
             return false;
@@ -3752,6 +4180,7 @@ function answerOracleFixture(
         projectId: 'project-1',
         projectRevision: JSON.stringify(revision),
         projectTracks: [],
+        projectSections: [],
         receipts: [
             {
                 schema: 'sourdaw.application-tool-receipt',
@@ -4137,6 +4566,7 @@ function suggestionOracleFixture(oracle: unknown = SUGGESTION_ORACLE_FIXTURE): A
             { id: 'track-kick', name: 'Kick' },
             { id: 'track-snare', name: 'Snare' },
         ],
+        projectSections: [],
         receipts: [
             {
                 schema: 'sourdaw.application-tool-receipt',
@@ -4342,6 +4772,385 @@ describe('suggestion answer acceptance oracle', () => {
     });
 });
 
+const MEASURED_FIXTURE_TEXT =
+    'Over “Chorus” (beats 48–80), “Snare” true peak is -27.95 dBTP (exact).\n\nOver “Chorus” (beats 48–80), “Snare” RMS level is -30.97 dBFS (exact).';
+
+const MEASURED_ORACLE_FIXTURE = {
+    kind: 'answer',
+    text: MEASURED_FIXTURE_TEXT,
+    measurement: {
+        target: { kind: 'track', name: 'Snare' },
+        rangeName: 'Chorus',
+        metrics: { truePeak: -27.95, rms: -30.97 },
+    },
+} as const;
+
+const MEASURED_LIMITATION_TEXT =
+    'A successful measurement covering the interpreted subject, range and metrics is unavailable. I cannot report audio figures for this question.';
+
+const MEASURED_FIXTURE_REVISION = JSON.stringify({ documentIdentityEpoch: 1, mutationEpoch: 2, documents: [] });
+
+/** One measured figure as the reduction reports it, unrounded. */
+function measuredFigure(value: number, unit: string) {
+    return { status: 'measured', metricVersion: 1, unit, value, confidence: 'exact' };
+}
+
+/**
+ * A measured answer as the composer returns it: the intake, and one cited measurement of the Snare over
+ * the Chorus beside a Kick measured at other figures.
+ */
+function measuredOracleFixture(oracle: unknown = MEASURED_ORACLE_FIXTURE): AnswerMatchInput {
+    const intakeSummary = 'Interpreted measured-audio: Snare over Chorus.';
+    const summary = 'Measured 1 target(s) over beats 48 to 80.';
+    return {
+        oracle: parseAnswerOracle(oracle, 'measured'),
+        outcome: {
+            kind: 'answer',
+            text: MEASURED_FIXTURE_TEXT,
+            evidence: [
+                { callId: 'intake', toolName: 'selectAnswerInterpretation', summary: intakeSummary },
+                { callId: 'measure', toolName: 'analysis.measure', summary },
+            ],
+        },
+        actions: [],
+        projectId: 'project-1',
+        projectRevision: MEASURED_FIXTURE_REVISION,
+        projectTracks: [
+            { id: 'track-kick', name: 'Kick' },
+            { id: 'track-snare', name: 'Snare' },
+        ],
+        projectSections: [
+            { id: 'section-verse', name: 'Verse', startBeat: 16, endBeat: 48 },
+            { id: 'section-chorus', name: 'Chorus', startBeat: 48, endBeat: 80 },
+        ],
+        receipts: [
+            {
+                schema: 'sourdaw.application-tool-receipt',
+                schemaVersion: 1,
+                callId: 'intake',
+                toolName: 'selectAnswerInterpretation',
+                turn: 1,
+                status: 'success',
+                revision: MEASURED_FIXTURE_REVISION,
+                data: null,
+                summary: intakeSummary,
+                warnings: [],
+                error: null,
+            },
+            {
+                schema: 'sourdaw.application-tool-receipt',
+                schemaVersion: 1,
+                callId: 'measure',
+                toolName: 'analysis.measure',
+                turn: 2,
+                status: 'success',
+                revision: MEASURED_FIXTURE_REVISION,
+                data: {
+                    kind: 'analysis-measurement',
+                    schemaVersion: 1,
+                    scope: { kind: 'tracks', ids: ['track-snare', 'track-kick'] },
+                    sourceRevisionDigest: digest(MEASURED_FIXTURE_REVISION),
+                    range: {
+                        startBeat: 48,
+                        endBeat: 80,
+                        sectionId: 'section-chorus',
+                        measuredSeconds: 16,
+                        renderedSeconds: 40,
+                    },
+                    metrics: ['truePeak', 'rms'],
+                    targets: [
+                        {
+                            targetId: 'track-snare',
+                            targetKind: 'track',
+                            route: 'isolated-subgraph',
+                            liveAudibility: 'audible',
+                            soloActive: false,
+                            artifact: { contentAddress: 'sha256:track-snare' },
+                            measurements: {
+                                truePeak: measuredFigure(-27.952104422399415, 'dBTP'),
+                                rms: measuredFigure(-30.96910010327473, 'dBFS'),
+                            },
+                        },
+                        {
+                            targetId: 'track-kick',
+                            targetKind: 'track',
+                            route: 'isolated-subgraph',
+                            liveAudibility: 'audible',
+                            soloActive: false,
+                            artifact: { contentAddress: 'sha256:track-kick' },
+                            measurements: {
+                                truePeak: measuredFigure(-33.97, 'dBTP'),
+                                rms: measuredFigure(-36.99, 'dBFS'),
+                            },
+                        },
+                    ],
+                },
+                summary,
+                warnings: [],
+                error: null,
+            },
+        ],
+    };
+}
+
+/** The cited measurement's data, its Snare target and that target's figures, to break one fact of any. */
+function measuredFixtureReceipt(input: AnswerMatchInput): {
+    receipt: ApplicationToolReceipt;
+    data: Record<string, unknown>;
+    snare: Record<string, unknown>;
+    measurements: Record<string, unknown>;
+} {
+    const receipt = input.receipts.find((entry) => entry.callId === 'measure');
+    if (receipt === undefined || !isRecord(receipt.data) || !Array.isArray(receipt.data.targets)) {
+        throw new Error('Expected measurement data');
+    }
+    const [snare] = receipt.data.targets;
+    if (!isRecord(snare) || !isRecord(snare.measurements)) {
+        throw new Error('Expected the Snare measurement');
+    }
+    return { receipt, data: receipt.data, snare, measurements: snare.measurements };
+}
+
+describe('measured answer acceptance oracle', () => {
+    it('requires a cited same-run measurement of the named target and section carrying every pinned figure', () => {
+        expect(answerMatchesOracle(measuredOracleFixture())).toBe(true);
+    });
+    it.each([
+        'a figure the receipt does not carry',
+        'a measurement of another target',
+        'a measurement of the master for a track',
+        'a measurement over another section',
+        'a measurement over the section beats without its identity',
+        'a measurement missing a pinned metric',
+        'a pinned metric the measurement could not measure',
+        'a pinned metric in another unit',
+        'a section name no planned section carries',
+        'an uncited measurement',
+        'a measurement from another run',
+        'a failed measurement',
+        'a stale measurement',
+        'a measurement of another revision',
+        'a malformed measurement',
+        'wrong text',
+        'an offer',
+        'actions',
+    ] as const)('refuses %s', (failure) => {
+        const input = measuredOracleFixture();
+        if (input.outcome.kind !== 'answer') {
+            throw new Error('Expected a measured answer');
+        }
+        const { receipt, data, snare, measurements } = measuredFixtureReceipt(input);
+        switch (failure) {
+            case 'a figure the receipt does not carry':
+                measurements.rms = measuredFigure(-30.96910010327473 + 0.01, 'dBFS');
+                break;
+            case 'a measurement of another target':
+                snare.targetId = 'track-tom';
+                break;
+            case 'a measurement of the master for a track':
+                snare.targetKind = 'master';
+                break;
+            case 'a measurement over another section':
+                data.range = {
+                    startBeat: 16,
+                    endBeat: 48,
+                    sectionId: 'section-verse',
+                    measuredSeconds: 16,
+                    renderedSeconds: 24,
+                };
+                break;
+            case 'a measurement over the section beats without its identity':
+                data.range = { startBeat: 48, endBeat: 80, sectionId: null, measuredSeconds: 16, renderedSeconds: 40 };
+                break;
+            case 'a measurement missing a pinned metric':
+                delete measurements.rms;
+                break;
+            case 'a pinned metric the measurement could not measure':
+                measurements.rms = { status: 'unavailable', reason: 'silent' };
+                break;
+            case 'a pinned metric in another unit':
+                measurements.rms = measuredFigure(-30.96910010327473, 'LUFS');
+                break;
+            case 'a section name no planned section carries':
+                input.projectSections = [{ id: 'section-chorus', name: 'Chorus 2', startBeat: 48, endBeat: 80 }];
+                break;
+            case 'an uncited measurement':
+                input.outcome.evidence = input.outcome.evidence.filter((entry) => entry.callId !== 'measure');
+                break;
+            case 'a measurement from another run':
+                input.receipts = input.receipts.filter((entry) => entry.callId !== 'measure');
+                break;
+            case 'a failed measurement':
+                receipt.status = 'failure';
+                break;
+            case 'a stale measurement':
+                receipt.revision = JSON.stringify({ documentIdentityEpoch: 1, mutationEpoch: 1, documents: [] });
+                break;
+            case 'a measurement of another revision':
+                data.sourceRevisionDigest = digest(JSON.stringify({ documentIdentityEpoch: 1, mutationEpoch: 1 }));
+                break;
+            case 'a malformed measurement':
+                // The Snare still measured beside it: a malformed receipt is refused whole, never read in part.
+                data.targets = [null, snare];
+                break;
+            case 'wrong text':
+                input.outcome.text = MEASURED_FIXTURE_TEXT.replace('-30.97', '-30.96');
+                break;
+            case 'an offer':
+                input.outcome.suggestion = {
+                    recipeId: 'drums-punchy',
+                    recipeTitle: 'Transient passes, body compresses',
+                    targetId: 'track-snare',
+                    targetName: 'Snare',
+                    recipeRole: 'drums',
+                    roleSource: 'target',
+                };
+                break;
+            case 'actions':
+                input.actions = [{ type: 'setTrackGain' }];
+                break;
+        }
+        expect(answerMatchesOracle(input)).toBe(false);
+    });
+    it('refuses a descriptive answer scored against a measured oracle', () => {
+        const descriptive = answerOracleFixture();
+        expect(answerMatchesOracle(descriptive)).toBe(true);
+        if (descriptive.outcome.kind !== 'answer') {
+            throw new Error('Expected answer');
+        }
+        const input = measuredOracleFixture();
+        // The measured text verbatim, resting on a genuine project query instead of a measurement.
+        input.outcome = { ...descriptive.outcome, text: MEASURED_FIXTURE_TEXT };
+        input.receipts = descriptive.receipts;
+        input.projectRevision = descriptive.projectRevision;
+        expect(answerMatchesOracle(input)).toBe(false);
+    });
+    it('refuses a limitation answer scored against a measured oracle', () => {
+        const input = measuredOracleFixture();
+        if (input.outcome.kind !== 'answer') {
+            throw new Error('Expected answer');
+        }
+        input.outcome.text = MEASURED_LIMITATION_TEXT;
+        expect(answerMatchesOracle(input)).toBe(false);
+        input.outcome.evidence = input.outcome.evidence.filter((entry) => entry.callId === 'intake');
+        expect(answerMatchesOracle(input)).toBe(false);
+    });
+    it.each([
+        [
+            'a measured oracle carrying a query',
+            'measured',
+            { ...MEASURED_ORACLE_FIXTURE, query: { type: 'tempo', facts: { tempo: 120 } } },
+            'A measured answer oracle pins a measurement receipt, never a query, recipe or suggestion.',
+        ],
+        [
+            'a measured oracle carrying a recipe',
+            'measured',
+            { ...MEASURED_ORACLE_FIXTURE, recipe: SUGGESTION_ORACLE_FIXTURE.recipe },
+            'A measured answer oracle pins a measurement receipt, never a query, recipe or suggestion.',
+        ],
+        [
+            'a measured oracle carrying a suggestion',
+            'measured',
+            { ...MEASURED_ORACLE_FIXTURE, suggestion: SUGGESTION_ORACLE_FIXTURE.suggestion },
+            'A measured answer oracle pins a measurement receipt, never a query, recipe or suggestion.',
+        ],
+        [
+            'a descriptive oracle carrying a measurement',
+            'descriptive',
+            {
+                kind: 'answer',
+                text: ANSWER_FIXTURE_TEXT,
+                query: { type: 'project-summary', facts: { name: 'Song', tempo: 120 }, total: 2 },
+                measurement: MEASURED_ORACLE_FIXTURE.measurement,
+            },
+            'A descriptive answer oracle pins a project query, never a measurement.',
+        ],
+        [
+            'a suggestion oracle carrying a measurement',
+            'suggestion',
+            { ...SUGGESTION_ORACLE_FIXTURE, measurement: MEASURED_ORACLE_FIXTURE.measurement },
+            'A suggestion answer oracle pins a recipe receipt, never a measurement.',
+        ],
+        [
+            'a measured oracle with no measurement',
+            'measured',
+            { kind: 'answer', text: MEASURED_FIXTURE_TEXT },
+            'A measured answer oracle requires the target, the section name and the metric figures.',
+        ],
+        [
+            'a measured oracle pinning no figure',
+            'measured',
+            { ...MEASURED_ORACLE_FIXTURE, measurement: { ...MEASURED_ORACLE_FIXTURE.measurement, metrics: {} } },
+            'A measured answer oracle requires the target, the section name and the metric figures.',
+        ],
+        [
+            'a measured oracle naming a track by id',
+            'measured',
+            {
+                ...MEASURED_ORACLE_FIXTURE,
+                measurement: { ...MEASURED_ORACLE_FIXTURE.measurement, target: { kind: 'track', id: 'track-snare' } },
+            },
+            'A measured answer oracle names its target as the master or one track by name.',
+        ],
+        [
+            'a measured oracle pinning a band map',
+            'measured',
+            {
+                ...MEASURED_ORACLE_FIXTURE,
+                measurement: { ...MEASURED_ORACLE_FIXTURE.measurement, metrics: { frequencyBandEnergy: 0.5 } },
+            },
+            'A measured answer oracle pins "frequencyBandEnergy", which is no scalar metric.',
+        ],
+        [
+            'a measured oracle pinning a figure past two decimals',
+            'measured',
+            {
+                ...MEASURED_ORACLE_FIXTURE,
+                measurement: { ...MEASURED_ORACLE_FIXTURE.measurement, metrics: { truePeak: -27.952, rms: -30.97 } },
+            },
+            "A measured answer oracle pins truePeak at other than the answer's two decimals.",
+        ],
+        [
+            'a measured oracle whose text states no figure',
+            'measured',
+            { ...MEASURED_ORACLE_FIXTURE, text: MEASURED_LIMITATION_TEXT },
+            'A measured answer oracle text does not state "“Snare” true peak is -27.95".',
+        ],
+        [
+            'a measured oracle whose text states the figure for another target',
+            'measured',
+            {
+                ...MEASURED_ORACLE_FIXTURE,
+                measurement: { ...MEASURED_ORACLE_FIXTURE.measurement, target: { kind: 'master' } },
+            },
+            'A measured answer oracle text does not state "Master output true peak is -27.95".',
+        ],
+        [
+            'a measured oracle whose text ranges over another section',
+            'measured',
+            { ...MEASURED_ORACLE_FIXTURE, measurement: { ...MEASURED_ORACLE_FIXTURE.measurement, rangeName: 'Verse' } },
+            'A measured answer oracle text does not range over “Verse”.',
+        ],
+    ] as const)('refuses %s', (_label, questionKind, oracle, message) => {
+        expect(() => parseAnswerOracle(oracle, questionKind)).toThrow(message);
+    });
+    it('refuses a sealed question corpus holding only one measured case', () => {
+        const corpus = corpora['held-out'];
+        expect(questionKindFloorFailures(corpus)).toEqual([]);
+        let kept = 0;
+        const cases = corpus.cases.filter((testCase) => {
+            if (testCase.questionKind !== 'measured') {
+                return true;
+            }
+            kept += 1;
+            return kept === 1;
+        });
+        expect(questionKindFloorFailures({ ...corpus, cases })).toEqual([
+            'measured questions: 1 of at least 2 sealed case(s)',
+        ]);
+    });
+});
+
 describe('fixture transport reaching the chat', () => {
     const TRANSPORT_FIELDS = [
         'tempo',
@@ -4430,6 +5239,7 @@ describe('fixture transport reaching the chat', () => {
                 projectId: receipt.projectId,
                 projectRevision: JSON.stringify(receipt.revision),
                 projectTracks: [],
+                projectSections: [],
                 receipts: [
                     {
                         schema: 'sourdaw.application-tool-receipt',
