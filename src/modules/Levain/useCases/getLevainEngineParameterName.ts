@@ -30,7 +30,7 @@ const PATCH_ENGINE_PARAMETER_NAMES: ReadonlyMap<string, string> = new Map(
  * ensemble and divisi behaviour a lane can spell and `LevainEngine::set_param`
  * (`crates/daw-dsp/src/levain/engine.rs`) answers — and those values reach
  * project truth as `parameterValues` entries. The web twin of this table is
- * `PARAM_MAP` in `services/levainProcessor.ts`, which is not importable here
+ * `PARAM_MAP` in `worklets/levainProcessor.ts`, which is not importable here
  * (the processor ends in a top-level `registerProcessor`), so the two are
  * hand-welded: every pair below is `PARAM_MAP`'s own, and an id added there
  * must be added here or a natively carried strip will ignore it while the web

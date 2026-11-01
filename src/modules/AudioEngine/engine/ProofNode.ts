@@ -15,7 +15,7 @@ import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
 import { createProofRuntimeParameterIds, normalizeProofParameter } from '../models/ProofRuntimeControl';
 import { SET_FALLBACK_PARAM_COMMAND, type RuntimeDeviceControlTarget } from '../models/RuntimeDeviceControl';
 import { compileRuntimeDeviceControl } from '../services/compileRuntimeDeviceControl';
-import proofProcessorUrl from '../services/proofProcessor.ts?worker&url';
+import proofProcessorUrl from '../worklets/proofProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import { telemetryAllocator, createTelemetryReader, PROOF_IDX } from './telemetryAllocator';

@@ -1,7 +1,7 @@
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 
-import processorUrl from '../services/transientShaperProcessor.ts?worker&url';
+import processorUrl from '../worklets/transientShaperProcessor.ts?worker&url';
 
 const RESET_FAULT_EPOCH = 16_777_215;
 const DISPOSE_TIMEOUT_MS = 1000;
