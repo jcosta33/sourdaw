@@ -1,0 +1,25 @@
+src/modules/Arrangement/useCases/clipSelection/__tests__/clipSelection.spec.ts
+  s_898ebec7839794::t_db36086f743a9d 65-75,77-123
+src/modules/Arrangement/useCases/clipSelection/resolvePrimaryClip.ts
+  s_898ebec7839794::t_0c49a06964d023 1-12
+src/modules/Arrangement/useCases/clipSelection/selectAllClips.ts
+  s_898ebec7839794::t_01f32dcfc13b72 2,6-11
+src/modules/Arrangement/useCases/clipSelection/toggleClipInSelection.ts
+  s_898ebec7839794::t_6497a357ae2dc3 3,32-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "04730fef3d9f00bb8c6861093b40cf4bbaf347ed",
+  "prompts": {},
+  "sessions": {
+    "s_898ebec7839794": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_898ebec7839794",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
