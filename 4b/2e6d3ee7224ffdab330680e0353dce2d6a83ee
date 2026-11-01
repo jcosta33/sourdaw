@@ -1,0 +1,25 @@
+src/modules/Arrangement/useCases/clipboard/__tests__/pasteNotes.spec.ts
+  s_ba80576e6f5cb5::t_007363f5a9fa39 151-169
+src/modules/MIDI/services/__tests__/transformMidiGlobalTimeState.spec.ts
+  s_ba80576e6f5cb5::t_ca121615e6c205 313-329
+  s_ba80576e6f5cb5::t_e13c8b36621ca5 179-196
+src/modules/Arrangement/useCases/clipboard/pasteNotes.ts
+  s_ba80576e6f5cb5::t_d75c6d00b8fc03 19
+  s_ba80576e6f5cb5::t_db7049f24d05c2 20-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4b2e6d3ee7224ffdab330680e0353dce2d6a83ee",
+  "prompts": {},
+  "sessions": {
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
