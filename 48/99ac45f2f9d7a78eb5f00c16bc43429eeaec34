@@ -1,0 +1,83 @@
+src/modules/AudioEngine/repositories/audioRecorder/recording.ts
+  s_dde1671ba022b8::t_0c976375665ca3 252
+  s_dde1671ba022b8::t_479c0a73667f94 248-251
+src/modules/AudioEngine/useCases/audioRecorder/__tests__/startAudioRecording.spec.ts
+  s_dde1671ba022b8::t_70678392b54703 127-137
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/stopAudioRecording.spec.ts
+  s_dde1671ba022b8::t_59523f3ba132e7 175
+  s_dde1671ba022b8::t_4912e63d47ca17 184-186
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/recording.spec.ts
+  s_dde1671ba022b8::t_717472035e1610 165-167
+  s_dde1671ba022b8::t_a6a8c1247b30e4 231-245
+  s_dde1671ba022b8::t_a6c9d24c057bc1 59,62-66
+  s_dde1671ba022b8::t_c6d87d1f2e8201 198-204,208-214
+  s_dde1671ba022b8::t_bc0ac87115f7b2 197,205-207
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecording.spec.ts
+  s_dde1671ba022b8::t_8bb69652261f41 976-1022,1036-1041
+  s_dde1671ba022b8::t_007fdff2ef3233 1023-1035
+  s_dde1671ba022b8::t_7ee261d4407dbe 3-4
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_dde1671ba022b8::t_ec3be1bacda938 1405
+  s_dde1671ba022b8::t_420dc1d71a63fb 1435
+  s_dde1671ba022b8::t_a7f5e6f6768fcf 1436-1437
+  s_dde1671ba022b8::t_3ea9ab862a631f 1406-1409
+  s_dde1671ba022b8::t_8ef69f6eb9f8ef 1282
+  s_dde1671ba022b8::t_ce48a1ac50a0d8 1266-1280,1283-1284
+  s_dde1671ba022b8::t_4c058d5b469ace 1281
+  s_dde1671ba022b8::t_ad60f7a2da57cb 1438
+  s_dde1671ba022b8::t_e4e1c8a5c41dca 1412-1413
+  s_dde1671ba022b8::t_169da9bdd9c5df 1285
+  s_dde1671ba022b8::t_b259d936736021 1420-1429
+  s_dde1671ba022b8::t_ed5e01f04994a7 1430
+  s_dde1671ba022b8::t_71443a85e48c47 1435
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_dde1671ba022b8::t_b0084f57d5d635 534-539,544
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchPausePlayCommand.integration.spec.ts
+  s_dde1671ba022b8::t_4f63b95cc695cd 865-881,884-888
+  s_dde1671ba022b8::t_7340335a4f7aca 59
+  s_dde1671ba022b8::t_fb59276bb4fa3b 590-592
+  s_dde1671ba022b8::t_068bd8c5e41d90 682-683,686-689
+  s_dde1671ba022b8::t_24137f904568e3 631,642
+  s_dde1671ba022b8::t_e563f54198f7e4 7
+  s_dde1671ba022b8::t_e03890919f6493 630,632-641,643-653,655-681,684-685,690-702
+  s_dde1671ba022b8::t_c899097a123fd8 654
+  s_dde1671ba022b8::t_dc3edf92d234cc 596
+  s_dde1671ba022b8::t_3df54145682a0e 850
+  s_dde1671ba022b8::t_4239228c970781 882-883
+  s_dde1671ba022b8::t_c7aca3e6b4fc08 593-595,597-600,607-627
+  s_88fc7e0d05bab6::t_ace4897681870d 628-629
+  s_dde1671ba022b8::t_a4873be8c6113d 703-737,760-806
+  s_dde1671ba022b8::t_b4e3a414a455f8 48
+  s_dde1671ba022b8::t_12beaa4d7d1ffc 738-759
+  s_dde1671ba022b8::t_4818aef5468e10 56
+src/modules/Transport/useCases/transportControls/stopActiveRecording.ts
+  s_dde1671ba022b8::t_344cc069013187 17
+src/modules/Transport/useCases/transportControls/recordingLifecycle.ts
+  s_dde1671ba022b8::t_9bf92e818ab105 79
+  s_dde1671ba022b8::t_a9b43041a152fe 191-196
+  s_dde1671ba022b8::t_80c0f5ddb49d23 23-30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4899ac45f2f9d7a78eb5f00c16bc43429eeaec34",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_dde1671ba022b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e4c42ac-51ff-45eb-b81f-f43601ed01dc",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
