@@ -1,0 +1,41 @@
+.agents/skills/review-stances/correctness.md
+  s_ba80576e6f5cb5::t_63d488d57dd04f 1057-1074
+scripts/__tests__/runIsolatedUnitShard.spec.ts
+  s_ba80576e6f5cb5::t_80bbf96e26a102 2,4,56-79,571
+src/modules/MIDI/models/MidiNote.ts
+  s_ba80576e6f5cb5::t_9b2d80afb24d7b 128,130-131,191,195-199
+src/modules/MIDI/stores/__tests__/midiExpressionRawProjectionLoss.spec.ts
+  s_ba80576e6f5cb5::t_5b82b6095a9989 1-133
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWitnessInputs.integration.spec.ts
+  s_ba80576e6f5cb5::t_debcbe72207a2e 1-710
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerLoopSeamTiming.spec.ts
+  s_ba80576e6f5cb5::t_85964e4a405d51 4,453-510
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamPunch.spec.ts
+  s_ba80576e6f5cb5::t_1aa95e4984bc26 567-677
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllers.spec.ts
+  s_ba80576e6f5cb5::t_82b36dd0cdcb46 560-595
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSupersededSeamRecordingPass.spec.ts
+  s_ba80576e6f5cb5::t_f619c9dfc38686 537-566
+src/modules/Transport/useCases/playheadScheduler/prepareInitialBrowserPlayback.ts
+  s_ba80576e6f5cb5::t_ba69bf98c7bf8b 1,36-76,84-87,93-104,108-110,169-170
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_ba80576e6f5cb5::t_cfa50989910d13 121-125,414-418,536-539,798,899,974-1007,1113-1121,1202-1205,1224-1238,1517-1526,1535-1538,1634-1663,1672-1675,1698-1701,1804
+src/modules/Transport/useCases/transportControls/__tests__/executePlayheadSeek.spec.ts
+  s_ba80576e6f5cb5::t_bb1649ede1f5d5 90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1ec639432eae475318ae27f98edc1ee856c78a54",
+  "prompts": {},
+  "sessions": {
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
