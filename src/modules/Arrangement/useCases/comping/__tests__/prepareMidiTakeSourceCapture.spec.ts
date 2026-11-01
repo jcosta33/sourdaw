@@ -46,6 +46,9 @@ describe('prepare MIDI take source capture', () => {
             sourceEndBeat: 9,
             phaseHeadBeat: 0,
             passLengthBeats: 4,
+            // Live counts the pass's occurrences from its media origin, 0 - 4: the clip's own one-beat
+            // offset moves its entry, not where its occurrences count from.
+            occurrenceOriginDepthBeats: 4,
         });
         expect(capture?.rows).not.toBe(rows);
         expect(capture?.rows.controlChanges).toEqual({ present: false, value: [] });
@@ -95,6 +98,7 @@ describe('prepare MIDI take source capture', () => {
             sourceEndBeat: 8,
             phaseHeadBeat: 0,
             passLengthBeats: 4,
+            occurrenceOriginDepthBeats: 4,
         });
     });
 

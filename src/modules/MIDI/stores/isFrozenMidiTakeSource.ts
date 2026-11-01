@@ -13,7 +13,7 @@ function isFiniteBeat(value: unknown): value is number {
 function hasExactSourceKeys(value: object): boolean {
     const keys = Object.keys(value);
     const required = ['sourceClipId', 'rows', 'sourceEntryBeat', 'sourceEndBeat', 'phaseHeadBeat', 'passLengthBeats'];
-    const allowed = [...required, 'readStartBeat', 'readEndBeat'];
+    const allowed = [...required, 'readStartBeat', 'readEndBeat', 'occurrenceOriginDepthBeats'];
     return required.every((key) => keys.includes(key)) && keys.every((key) => allowed.includes(key));
 }
 
@@ -32,6 +32,11 @@ function hasValidReadBounds(value: object): boolean {
     return start !== null && end !== null && start < end;
 }
 
+/** A present occurrence origin depth is a finite beat count. */
+function hasValidOccurrenceOrigin(value: object): boolean {
+    return !('occurrenceOriginDepthBeats' in value) || isFiniteBeat(Reflect.get(value, 'occurrenceOriginDepthBeats'));
+}
+
 /** A non-empty source span no longer than the pass it repeats at, and read bounds that leave a read. */
 function hasValidPassGeometry(value: object): boolean {
     if (
@@ -48,7 +53,11 @@ function hasValidPassGeometry(value: object): boolean {
     ) {
         return false;
     }
-    return value.sourceEndBeat - value.sourceEntryBeat <= value.passLengthBeats && hasValidReadBounds(value);
+    return (
+        value.sourceEndBeat - value.sourceEntryBeat <= value.passLengthBeats &&
+        hasValidReadBounds(value) &&
+        hasValidOccurrenceOrigin(value)
+    );
 }
 
 /** Presence is authoritative: an absent legacy source is handled by the caller. */

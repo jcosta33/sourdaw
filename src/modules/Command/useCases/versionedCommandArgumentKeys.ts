@@ -950,6 +950,7 @@ const schemaDefinitions = [
             passLengthBeats: 1,
             readStartBeat: 1,
             readEndBeat: 1,
+            occurrenceOriginDepthBeats: 1,
         },
         required: ['sourceClipId', 'rows', 'sourceEntryBeat', 'sourceEndBeat', 'phaseHeadBeat', 'passLengthBeats'],
         additionalProperties: false,

@@ -1237,6 +1237,53 @@ describe('projectLiveMidiProgramme for a take a split or Delete Time freezes, ag
         });
     });
 
+    describe('a looping comp of a later pass on a clip slipped three beats into its notes', () => {
+        // Take 1 sits four beats deep in the recording and the clip reads its notes three beats in,
+        // so live reads media t - 1 at beat t and counts the take's occurrences from beat 4: the comp
+        // opening at 10 starts on its second. Every row is a coin toss.
+        const chances = [9.25, 10.25, 11.25, 12.25].map((startBeat, index) =>
+            note({
+                id: `slipped-${index}`,
+                pitch: 60 + index,
+                startBeat,
+                duration: 0.25,
+                probability: 50,
+                recordingPassIndex: 1,
+            })
+        );
+
+        it('rolls every repeat on the occurrence live rolled it on after a split freezes the take', async () => {
+            await recordLoop(8, 9, chances);
+            await dispatch({
+                type: 'slipClipContent',
+                payload: { clipId: recordedClipId(), clipType: 'midi', offset: 3 },
+            });
+            midiStore.set({
+                ...midiStore.value!,
+                notesByClipId: { ...midiStore.value!.notesByClipId, [recordedClipId()]: chances },
+            });
+            await loopClip(24);
+            await compOver('Take 1', 10, 24);
+            expect(trackStore.value?.tracks[0]?.clips[0]?.midiOffsetBeats).toBe(3);
+            expect(frozenTakeNames()).toEqual([]);
+            const live = heard();
+            const liveRolls = [...rolls];
+            // 0 is the uncomped clip under [8, 10); the comp's repeats roll from the take's second.
+            expect(occurrencesOf('slipped-0')).toEqual([0, 1, 2, 3, 4]);
+            expect(live.length).toBeGreaterThan(0);
+            expect(live.length).toBeLessThan(14);
+
+            await splitAt(18);
+            rolls.length = 0;
+
+            expect(frozenTakeNames()).toContain('Take 1');
+            expect(heard()).toEqual(live);
+            // Live also rolls rows the clip end cuts from the last repeat; frozen rolls none live did not.
+            expect(rolls.length).toBeGreaterThan(0);
+            expect(liveRolls).toEqual(expect.arrayContaining(rolls));
+        });
+    });
+
     describe('a looping comp of a pass recorded from the loop start', () => {
         // Pass 0 reads media 0 at its pass head 8; every row is a coin toss, so a pass rolled on
         // the wrong occurrence count sounds a different set of them.

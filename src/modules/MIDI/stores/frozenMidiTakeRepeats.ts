@@ -101,3 +101,14 @@ export function frozenMidiTakeRepeatAt(
     const { loopLengthBeats } = fragmentLoop(fragment);
     return repeatOf(source, fragment, loopLengthBeats, Math.floor((beat - fragment.startBeat) / loopLengthBeats));
 }
+
+/**
+ * The beat a frozen take counts its loop occurrences from: the media origin
+ * live comp playback counted it from when it was captured, carried with the
+ * pass head through every split and Delete Time since. A source captured
+ * before that origin was recorded counts from where its source's first beat
+ * sounds, which is the same beat whenever its clip carried no MIDI offset.
+ */
+export function frozenMidiTakeOccurrenceOriginBeat(source: FrozenMidiTakeSource): number {
+    return source.phaseHeadBeat - (source.occurrenceOriginDepthBeats ?? source.sourceEntryBeat);
+}

@@ -74,6 +74,8 @@ const malformed: ReadonlyArray<readonly [string, SourceEdit]> = [
         },
     ],
     ['the retired run-up key', (source) => (source.runUpEntryBeat = -2)],
+    ['a non-finite occurrence origin depth', (source) => (source.occurrenceOriginDepthBeats = Number.NaN)],
+    ['an occurrence origin depth written as undefined', (source) => (source.occurrenceOriginDepthBeats = undefined)],
 ];
 
 describe('isFrozenMidiTakeSource', () => {
@@ -85,6 +87,11 @@ describe('isFrozenMidiTakeSource', () => {
         expect(isFrozenMidiTakeSource({ ...frozenSource(), readStartBeat: 3 })).toBe(true);
         expect(isFrozenMidiTakeSource({ ...frozenSource(), readEndBeat: -10 })).toBe(true);
         expect(isFrozenMidiTakeSource({ ...frozenSource(), readStartBeat: -10, readEndBeat: 3 })).toBe(true);
+    });
+
+    it('admits the occurrence origin depth capture records, on either side of the pass head', () => {
+        expect(isFrozenMidiTakeSource({ ...frozenSource(), occurrenceOriginDepthBeats: 4 })).toBe(true);
+        expect(isFrozenMidiTakeSource({ ...frozenSource(), occurrenceOriginDepthBeats: -3 })).toBe(true);
     });
 
     it('admits a source read back from the project document, whose objects carry symbol metadata', () => {
