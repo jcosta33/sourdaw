@@ -868,7 +868,8 @@ describe('handleKeydown', () => {
                     },
                 },
             ];
-            clipSelectionStoreMock.value.selectedClipIds = ['clip-a', 'clip-b', 'clip-c'];
+            // Two clips is the smallest selection the context menu hides the command for.
+            clipSelectionStoreMock.value.selectedClipIds = ['clip-a', 'clip-b'];
             clipSelectionStoreMock.value.selectedClipId = 'clip-b';
 
             expect(handleKeydown(descriptor({ key: 'F1' }))).toBe(true);
