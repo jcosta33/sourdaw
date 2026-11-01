@@ -202,10 +202,12 @@ describe('ChordTrackLane', () => {
         fireEvent.pointerDown(block, { button: 0, clientX: 64, pointerId: 9 });
         fireEvent.pointerMove(block, { clientX: 96, pointerId: 9 });
         fireEvent.pointerCancel(block, { pointerId: 9 });
-        fireEvent.pointerUp(block, { clientX: 96, pointerId: 9 });
 
         expect(executeAppAction).toHaveBeenCalledTimes(1);
         expectAction({ type: 'moveChordEvent', payload: { eventId: 'c1', beat: 6 } });
+
+        fireEvent.pointerUp(block, { clientX: 96, pointerId: 9 });
+        expect(executeAppAction).toHaveBeenCalledTimes(1);
     });
 
     it('commits the previewed beat once when pointer capture is lost mid-drag', () => {
@@ -217,10 +219,12 @@ describe('ChordTrackLane', () => {
         fireEvent.pointerMove(block, { clientX: 96, pointerId: 10 });
         expect(block).toHaveStyle({ left: '96px' });
         fireEvent.lostPointerCapture(block, { pointerId: 10 });
-        fireEvent.pointerUp(block, { clientX: 96, pointerId: 10 });
 
         expect(executeAppAction).toHaveBeenCalledTimes(1);
         expectAction({ type: 'moveChordEvent', payload: { eventId: 'c1', beat: 6 } });
+
+        fireEvent.pointerUp(block, { clientX: 96, pointerId: 10 });
+        expect(executeAppAction).toHaveBeenCalledTimes(1);
     });
 
     it('commits the previewed beat once when the window blurs mid-drag', () => {
@@ -230,10 +234,26 @@ describe('ChordTrackLane', () => {
         fireEvent.pointerDown(block, { button: 0, clientX: 64, pointerId: 17 });
         fireEvent.pointerMove(block, { clientX: 96, pointerId: 17 });
         fireEvent.blur(window);
-        fireEvent.pointerUp(block, { clientX: 96, pointerId: 17 });
 
         expect(executeAppAction).toHaveBeenCalledTimes(1);
         expectAction({ type: 'moveChordEvent', payload: { eventId: 'c1', beat: 6 } });
+
+        fireEvent.pointerUp(block, { clientX: 96, pointerId: 17 });
+        expect(executeAppAction).toHaveBeenCalledTimes(1);
+    });
+
+    it('converts pointer travel at the zoom in effect when the pointer moves', () => {
+        const { rerender } = renderChordLane();
+        const block = getChordBlock();
+
+        fireEvent.pointerDown(block, { button: 0, clientX: 64, pointerId: 22 });
+        rerender(<ChordTrackLane pixelsPerBeat={32} scrollX={0} viewportWidth={1000} />);
+        fireEvent.pointerMove(block, { clientX: 96, pointerId: 22 });
+        expect(block).toHaveStyle({ left: '160px' });
+        fireEvent.pointerUp(block, { clientX: 96, pointerId: 22 });
+
+        expect(executeAppAction).toHaveBeenCalledTimes(1);
+        expectAction({ type: 'moveChordEvent', payload: { eventId: 'c1', beat: 5 } });
     });
 
     it('abandons the drag on Escape: the preview snaps back and nothing is dispatched', () => {

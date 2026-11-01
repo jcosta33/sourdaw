@@ -139,6 +139,11 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
     const restoreAddFocusRef = useRef(false);
     const mountedRef = useRef(true);
     const pendingRef = useRef(false);
+    // A drag's move closure outlives the render that armed it; the zoom can change mid-drag.
+    const pixelsPerBeatRef = useRef(pixelsPerBeat);
+    useEffect(() => {
+        pixelsPerBeatRef.current = pixelsPerBeat;
+    });
 
     const beatToX = (beat: number): number => beat * pixelsPerBeat - scrollX;
 
@@ -284,7 +289,7 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
         let previewBeat = event.beat;
 
         const move = ({ clientX }: LanePointerPosition): void => {
-            const beatDelta = (clientX - startX) / pixelsPerBeat;
+            const beatDelta = (clientX - startX) / pixelsPerBeatRef.current;
             previewBeat = Math.max(0, Math.round((event.beat + beatDelta) * 4) / 4);
             setDragState({ eventId: event.id, previewBeat });
         };

@@ -298,18 +298,17 @@ const escapeBelongsToAnotherSurface = (panel: Element | null): boolean =>
 type KeydownRule = 'passthrough' | 'close' | 'octave' | 'note' | 'control' | 'swallow';
 
 /**
- * Only a plain, non-repeat Escape closes the keyboard. A held key's repeats are consumed so the
- * keyboard does not close on the repeat that follows an Escape a drag already took; a modified
- * Escape such as the Shift+Escape MIDI panic belongs to the global shortcut layer.
+ * Only a plain, non-repeat Escape closes the keyboard. A modified Escape, repeat or not, such as
+ * the Shift+Escape MIDI panic belongs to the global shortcut layer. The repeats of a held plain
+ * Escape are consumed so the keyboard does not close on the repeat that follows an Escape a drag
+ * already took.
  */
 const classifyEscape = (event: KeyboardEvent, panel: Element | null): KeydownRule => {
-    if (escapeBelongsToAnotherSurface(panel)) {
+    const isModified = event.shiftKey || event.altKey || event.ctrlKey || event.metaKey;
+    if (escapeBelongsToAnotherSurface(panel) || isModified) {
         return 'passthrough';
     }
-    if (event.repeat) {
-        return 'swallow';
-    }
-    return isPlainEscapePress(event) ? 'close' : 'passthrough';
+    return isPlainEscapePress(event) ? 'close' : 'swallow';
 };
 
 const classifyKeydown = (event: KeyboardEvent, panel: Element | null): KeydownRule => {

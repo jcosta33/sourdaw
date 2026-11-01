@@ -1312,6 +1312,27 @@ describe('VirtualKeyboard', () => {
             expect(onClose).not.toHaveBeenCalled();
         });
 
+        it('lets the auto-repeat of a held Shift+Escape through as well', () => {
+            const onClose = vi.fn();
+            render(<VirtualKeyboard onClose={onClose} />);
+            const globalShortcut = vi.fn();
+            window.addEventListener('keydown', globalShortcut);
+            let notConsumed: boolean;
+            try {
+                notConsumed = fireEvent.keyDown(document.body, {
+                    code: 'Escape',
+                    key: 'Escape',
+                    shiftKey: true,
+                    repeat: true,
+                });
+            } finally {
+                window.removeEventListener('keydown', globalShortcut);
+            }
+            expect(notConsumed).toBe(true);
+            expect(globalShortcut).toHaveBeenCalledTimes(1);
+            expect(onClose).not.toHaveBeenCalled();
+        });
+
         it('cancels an active timeline gesture instead of closing', () => {
             const onClose = vi.fn();
             cancelGestureMock.mockReturnValueOnce(true);
