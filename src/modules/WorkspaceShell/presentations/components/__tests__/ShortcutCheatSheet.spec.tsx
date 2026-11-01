@@ -103,16 +103,18 @@ describe('ShortcutCheatSheet — tool keys', () => {
 
         const shown = [...rowsOf('Tools (letter)'), ...rowsOf('Tools (number)')];
 
-        expect(
-            TOOL_ROWS.map(([tool, description]) => ({
-                tool,
-                keys: shown
-                    .filter((row) => row.description === description)
-                    .map((row) => row.keys)
-                    .sort(),
-            }))
-        ).toStrictEqual(TOOL_ROWS.map(([tool]) => ({ tool, keys: [...getToolShortcutKeys(tool)].sort() })));
-        expect(rowsOf('Tools (letter)').map((row) => row.keys)).not.toContain('A');
+        const keysShownFor = (description: string): string[] => {
+            const rows = shown.filter((row) => row.description === description);
+            const keys = rows.map((row) => row.keys);
+            return keys.sort();
+        };
+        const actual = TOOL_ROWS.map(([tool, description]) => ({ tool, keys: keysShownFor(description) }));
+        const expected = TOOL_ROWS.map(([tool]) => ({ tool, keys: [...getToolShortcutKeys(tool)].sort() }));
+
+        expect(actual).toStrictEqual(expected);
+
+        const letterKeys = rowsOf('Tools (letter)').map((row) => row.keys);
+        expect(letterKeys).not.toContain('A');
     });
 
     it('lists the store-owned shortcuts under View / Zoom', () => {

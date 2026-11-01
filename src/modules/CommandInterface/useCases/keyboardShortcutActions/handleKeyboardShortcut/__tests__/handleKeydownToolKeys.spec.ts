@@ -13,17 +13,32 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual: typeof import('#/modules/Arrangement/useCases') = await importOriginal();
     return { ...actual, addMarker: vi.fn(), zoomTimelineBy: vi.fn() };
 });
-vi.mock('#/modules/SessionLauncher/stores', () => ({ loopStationStore: { value: { armed: false, slots: [] } } }));
-vi.mock('#/modules/SessionLauncher/useCases', () => ({ stopAllSlots: vi.fn(), triggerPad: vi.fn() }));
-vi.mock('#/modules/Transport/useCases', () => ({
-    stopPlayback: vi.fn(() => Promise.resolve()),
-    panicAllNotes: vi.fn(() => Promise.resolve()),
-    seekPlayhead: vi.fn(),
-    setLoopRegion: vi.fn(),
-}));
-vi.mock('#/modules/Transport/stores', () => ({ transportStore: { value: null }, playheadPositionRef: { current: 0 } }));
-vi.mock('#/modules/Onboarding/useCases', () => ({ startOnboardingTour: vi.fn() }));
-vi.mock('#/modules/WorkspaceShell/stores', () => ({ workspaceStore: { value: { collaborationPanelOpen: false } } }));
+vi.mock('#/modules/SessionLauncher/stores', async (importOriginal) => {
+    const actual: typeof import('#/modules/SessionLauncher/stores') = await importOriginal();
+    return { ...actual, loopStationStore: { value: { armed: false, slots: [] } } };
+});
+vi.mock('#/modules/SessionLauncher/useCases', async (importOriginal) => {
+    const actual: typeof import('#/modules/SessionLauncher/useCases') = await importOriginal();
+    return { ...actual, stopAllSlots: vi.fn(), triggerPad: vi.fn() };
+});
+vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
+    const actual: typeof import('#/modules/Transport/useCases') = await importOriginal();
+    return {
+        ...actual,
+        stopPlayback: vi.fn(() => Promise.resolve()),
+        panicAllNotes: vi.fn(() => Promise.resolve()),
+        seekPlayhead: vi.fn(),
+        setLoopRegion: vi.fn(),
+    };
+});
+vi.mock('#/modules/Onboarding/useCases', async (importOriginal) => {
+    const actual: typeof import('#/modules/Onboarding/useCases') = await importOriginal();
+    return { ...actual, startOnboardingTour: vi.fn() };
+});
+vi.mock('#/modules/WorkspaceShell/stores', async (importOriginal) => {
+    const actual: typeof import('#/modules/WorkspaceShell/stores') = await importOriginal();
+    return { ...actual, workspaceStore: { value: { collaborationPanelOpen: false } } };
+});
 vi.mock('#/modules/Command/useCases', async (importOriginal) => {
     const actual: typeof import('#/modules/Command/useCases') = await importOriginal();
     return { ...actual, executeUserAppAction: vi.fn(), pushUndoEntry: vi.fn(), redo: vi.fn(), undo: vi.fn() };
@@ -33,9 +48,7 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => {
 vi.mock('#/modules/WorkspaceShell/useCases', async (importOriginal) => {
     const actual: typeof import('#/modules/WorkspaceShell/useCases') = await importOriginal();
     return {
-        TOOL_SHORTCUTS: actual.TOOL_SHORTCUTS,
-        NUMBER_TOOL_SHORTCUTS: actual.NUMBER_TOOL_SHORTCUTS,
-        getToolShortcutKeys: actual.getToolShortcutKeys,
+        ...actual,
         closeCollaborationPanel: vi.fn(),
         cycleAutomationVisibility: cycleAutomationVisibilityMock,
         openExportDialog: vi.fn(),
@@ -48,11 +61,6 @@ vi.mock('#/modules/WorkspaceShell/useCases', async (importOriginal) => {
         toggleTrackList: vi.fn(),
         toggleVirtualKeyboard: vi.fn(),
         toggleWorkspaceMode: vi.fn(),
-        toggleAutomationPanel: vi.fn(),
-        toggleInspector: vi.fn(),
-        toggleSidebar: vi.fn(),
-        zoomToFit: vi.fn(),
-        zoomToSelection: vi.fn(),
     };
 });
 
@@ -73,10 +81,17 @@ function keysThatSelect(): Record<string, string[]> {
         vi.mocked(setEditingTool).mockClear();
         press(key);
         for (const [tool] of vi.mocked(setEditingTool).mock.calls) {
-            selecting[tool] = [...(selecting[tool] ?? []), key.toUpperCase()];
+            const keys = selecting[tool] ?? [];
+            keys.push(key.toUpperCase());
+            selecting[tool] = keys;
         }
     }
     return selecting;
+}
+
+function sortedKeys(keys: readonly string[] | undefined): string[] {
+    const copy = keys === undefined ? [] : [...keys];
+    return copy.sort();
 }
 
 describe('tool shortcut help matches the keyboard handler', () => {
@@ -90,7 +105,7 @@ describe('tool shortcut help matches the keyboard handler', () => {
         const selecting = keysThatSelect();
 
         for (const tool of TOOLS) {
-            expect([...getToolShortcutKeys(tool)].sort()).toStrictEqual([...(selecting[tool] ?? [])].sort());
+            expect(sortedKeys(getToolShortcutKeys(tool))).toStrictEqual(sortedKeys(selecting[tool]));
         }
     });
 
@@ -107,7 +122,7 @@ describe('tool shortcut help matches the keyboard handler', () => {
         expect(hints).toStrictEqual(
             ['select', 'cut', 'draw', 'automation', 'stretch'].map((tool) => ({
                 tool,
-                keys: [...(selecting[tool] ?? [])].sort(),
+                keys: sortedKeys(selecting[tool]),
             }))
         );
     });
