@@ -1,0 +1,34 @@
+src/modules/Arrangement/useCases/clipSelection/__tests__/clipSelection.spec.ts
+  s_ca4617c7d95148::t_ef6ca64cb95a06 98-107,109-111,114-125,127,129,164-165
+  s_4d70c955b00771::t_15d8ebd861999d 20-21,27-39,108,112-113,126,128,130-163,213
+src/modules/Arrangement/useCases/clipSelection/toggleClipInSelection.ts
+  s_ca4617c7d95148::t_ac186e331e8398 4-14,22,24-25,27-33
+src/modules/WorkspaceShell/presentations/views/__tests__/StatusBar.spec.tsx
+  s_ca4617c7d95148::t_4a4c6a19f80f5a 108-109
+src/modules/Arrangement/useCases/clipSelection/selectClip.ts
+  s_4d70c955b00771::t_e02b65a14a78b2 7-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5e70cac3f619f8b6f4906176c6cb1bdde4fba03e",
+  "prompts": {},
+  "sessions": {
+    "s_4d70c955b00771": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_4d70c955b00771",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ca4617c7d95148": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_ca4617c7d95148",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
