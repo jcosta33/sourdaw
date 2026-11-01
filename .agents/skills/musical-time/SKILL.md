@@ -68,9 +68,9 @@ List order is what says so. A ramp that ends on a shared beat integrates to the 
 
 ### 7. Sum with the compensated clock; keep position as an integer frame
 
-Segment durations accumulate through `advanceClock` (`TempoMap.ts`), which carries each segment's rounding error into the next. `secondsBetweenBeats(a, b)` is not `seconds(b) - seconds(a)`; only the walk from beat 0 is tabled. Never add per-tick float increments to a running beat or second total: the scheduler re-derives its position from an anchor through the map (`startPlayheadScheduler.ts`), and the native engine counts the playhead as an integer `playhead_frames` and reads beats from segment start beats computed once.
+Segment durations accumulate through `advanceClock` (`TempoMap.ts`), which carries each segment's rounding error into the next. `secondsBetweenBeats(a, b)` is not `seconds(b) - seconds(a)`; only the walk from beat 0 is tabled. The scheduler's running beat advances only through `beatAtSecondsFromAnchor(changes, accumulatedPosition, deltaSec, tempo)` on each tick's elapsed seconds, and a tick's span is never charged at its start tempo or added as `deltaSec * beatsPerSecond` (`startPlayheadScheduler.ts`). The native engine counts the playhead as an integer `playhead_frames` and reads beats from segment start beats computed once.
 
-**Why:** a plain running sum lost a source frame (4799 for 4800) over three short tempo segments, and per-tick tempo charging mis-steps every tick that crosses a change.
+**Why:** a plain running sum lost a source frame (4799 for 4800) over three short tempo segments, and charging a tick at its start tempo mis-steps every tick that crosses a change.
 
 **Enforced by:** `keeps the three-row signed-source clock on frame 4800 without sample rounding` (`TempoMap.spec.ts`); `startPlayheadSchedulerTempoChangePosition.spec.ts`; `beats_integrate_across_a_tempo_change_rather_than_scaling_the_last_tempo` (`crates/daw-engine/src/transport_map.rs`).
 
@@ -82,13 +82,13 @@ Segment durations accumulate through `advanceClock` (`TempoMap.ts`), which carri
 
 **Enforced by:** `reaches beat 4 at the second the arrangement reaches beat 4 after a 120 → 240 ramp` (`projectEngineTransportMapsRampBeatCount.spec.ts`); `a_projected_ramp_counts_beats_exactly_when_each_segment_states_its_span_mean` (`transport_map.rs`); `a_map_built_for_another_sample_rate_is_retired_unapplied` (`crates/daw-engine/src/scheduler.rs`); `tempo_segments_under_one_frame_apart_install_as_the_later_one` (`crates/sourdaw-native/src/commands/engine_transport.rs`).
 
-### 9. A window is half-open, and the loop end belongs to the next pass
+### 9. MIDI windows are half-open, audio windows are inclusive, and the loop end belongs to the next pass
 
-Scheduling windows are `[fromBeat, toBeat)`: the beat that ends one window opens the next, so nothing posts twice or never. At a loop seam the frame at `loopEnd` is not rendered; the playhead wraps to `loopStart` when `next >= end` (`advance_playhead`), and a playhead already at or past the end plays straight through. A region shorter than `MIN_LOOP_FRAMES` is held but inert. A stored pedal lift on a clip's closing line is the one documented exception (see Transport `AGENTS.md`).
+MIDI note and controller windows are `[fromBeat, toBeat)` (`scheduleMidiNotes.ts`): the beat that ends one window opens the next, so nothing posts twice or never. Audio clips are inclusive at `toBeat` (`scheduleAudioClips.ts` admits `clip.startBeat == toBeat`) and are deduplicated through `scheduledAudioClipsSet`, so the seam path passes `passUpTo - BEAT_EPSILON` to keep a clip sitting on `loopEnd` out of the dying pass. At a loop seam the frame at `loopEnd` is not rendered; the playhead wraps to `loopStart` when `next >= end` (`advance_playhead`), and a playhead already at or past the end plays straight through. A region shorter than `MIN_LOOP_FRAMES` is held but inert. A stored pedal lift on a clip's closing line is the one documented exception (see Transport `AGENTS.md`).
 
-**Why:** a closed end double-fires the event on the seam, and an open start drops it.
+**Why:** a closed MIDI end double-fires the event on the seam and an open start drops it, while an audio clip is started once by its set and must not start early on the dying pass.
 
-**Enforced by:** `a_loop_wraps_on_the_region_boundary_without_dropping_or_doubling_a_frame` and `a_loop_region_shorter_than_one_callback_is_held_but_not_honoured` (`scheduler.rs`, `transport_map.rs`); `schedules the note sitting exactly on the loop start once per loop pass` (`startPlayheadSchedulerSeamNotes.spec.ts`) and `never schedules material after loopEnd while the loop is on` (`startPlayheadSchedulerLoopSeamTiming.spec.ts`).
+**Enforced by:** `a_loop_wraps_on_the_region_boundary_without_dropping_or_doubling_a_frame` and `a_loop_region_shorter_than_one_callback_is_held_but_not_honoured` (`scheduler.rs`, `transport_map.rs`); `schedules the note sitting exactly on the loop start once per loop pass` (`startPlayheadSchedulerSeamNotes.spec.ts`) and `never schedules material after loopEnd while the loop is on` (`startPlayheadSchedulerLoopSeamTiming.spec.ts`). The audio-clip contract is review only: no spec drives a clip exactly on `loopEnd`.
 
 ### 10. A browser seam is timed in audio seconds through the map
 
@@ -96,11 +96,11 @@ Scheduling windows are `[fromBeat, toBeat)`: the beat that ends one window opens
 
 **Why:** converting the overshoot at one tempo lands the next pass off its downbeat whenever the map changes near the seam.
 
-**Enforced by:** `requests the loop-start downbeat of every wrapped pass at or after the audio clock`, `counts the wraps the published cursor has crossed since the roll began` and `hands a late-wrapped pass over at its own loop end instead of scheduling past it` (`startPlayheadSchedulerLoopSeamTiming.spec.ts`).
+**Enforced by:** `lands a stall that crosses several loop seams on the pass the audio clock is in` (`startPlayheadSchedulerStall.spec.ts`), which runs a 120 to 60 BPM map with the drop past `loopEnd` and so is the case that fails on a single-tempo overshoot conversion. `requests the loop-start downbeat of every wrapped pass at or after the audio clock`, `counts the wraps the published cursor has crossed since the roll began` and `hands a late-wrapped pass over at its own loop end instead of scheduling past it` (`startPlayheadSchedulerLoopSeamTiming.spec.ts`) run on an empty tempo map and cover seam handover only.
 
 ### 11. Compare beats by their domain's tolerance, and never invent a literal
 
-`SAME_BEAT_TOLERANCE` (1e-9, `src/modules/MIDI/models/SameBeatTolerance.ts`) makes two beats one instant for notes, controllers and spans; `src/utils` restates it as `CLIP_LOOP_WINDOW_BEAT_TOLERANCE` because utils cannot import modules. `BEAT_EPSILON` (1e-6, `TempoMap.ts`) is only for the "is there a tempo or meter change at this beat" decision. `GRID_EPSILON` (1e-9, `TimeSignatureMap.ts`) is only for bar-grid membership. A tolerance classifies; it never moves a user's bound. Delete Time classifies against its exact span with `BEAT_EPSILON`, Insert Time with none, and both go through `prepareTimelineMapTimeOperation`.
+`SAME_BEAT_TOLERANCE` (1e-9, `src/modules/MIDI/models/SameBeatTolerance.ts`) makes two beats one instant for notes, controllers and spans; `src/utils` restates it as `CLIP_LOOP_WINDOW_BEAT_TOLERANCE` because utils cannot import modules. `BEAT_EPSILON` (1e-6, `TempoMap.ts`) is the tempo-map scale: the "is there a tempo or meter change at this beat" decision, Delete Time span classification, the scheduler window margins (the groove-slack floor in `scheduleMidiNotes.ts` and the `passUpTo - BEAT_EPSILON` audio window in `startPlayheadScheduler.ts`), and merging engine segments a float step apart in `projectEngineTransportMaps`. `GRID_EPSILON` (1e-9, `TimeSignatureMap.ts`) is only for bar-grid membership. A tolerance classifies; it never moves a user's bound. Delete Time classifies against its exact span with `BEAT_EPSILON`, Insert Time with none, and both go through `prepareTimelineMapTimeOperation`.
 
 **Why:** non-dyadic grids miss exact values by about 1e-16 per beat, so a raw `===` or floor flips a pass or drops a note, and a tolerance wider than a musician can place moves material.
 
