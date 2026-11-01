@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { defaultTransportState } from '../../../models/TransportState';
+import { playheadClockRef } from '../../../stores/playheadClockRef';
 import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
 import { metronomeSchedulingState } from '../../scheduling/metronomeSchedulingState';
 import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
@@ -447,6 +448,64 @@ describe('startPlayheadScheduler loop-seam timing', () => {
             await runTick(worker);
         }
 
+        expect(playheadWrapCountRef.current).toBe(2);
+    });
+
+    async function tickAt(worker: SchedulerWorkerHarness, contextSeconds: number): Promise<void> {
+        ctxTime.now = contextSeconds;
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    const AFTER_LOOP_PITCH = 72;
+
+    /**
+     * A stall that ends one look-ahead short of the loop end: the late wrap
+     * lands the playhead at beat 7.95 of the 0..8 region, so the window it
+     * opens already reaches the next seam. Loop 0..8 at 2 beats/s, first pass
+     * from 0 s, so the boundaries sound at 4 s and 8 s.
+     */
+    async function stallToJustBeforeLoopEnd(): Promise<SchedulerWorkerHarness> {
+        trackStoreState.value = {
+            tracks: [midiTrack([midiClip('clip-loop', 0, 8), midiClip('clip-after', 8, 12)])],
+        };
+        midiStoreState.value = {
+            notesByClipId: {
+                'clip-loop': [midiNote('note-downbeat', 0, DOWNBEAT_PITCH)],
+                'clip-after': [midiNote('note-after', 0, AFTER_LOOP_PITCH)],
+            },
+            probabilitySeed: 1,
+        };
+        transportStoreState.value = playingState({ playheadPosition: 0, isLooping: true, loopStart: 0, loopEnd: 8 });
+        startPlayheadScheduler();
+        const worker = schedulerWorker();
+        await tickAt(worker, 0.05);
+        scheduled = [];
+        // Beat 15.95 wraps to 7.95.
+        await tickAt(worker, 7.975);
+        return worker;
+    }
+
+    it('hands a late-wrapped pass over at its own loop end instead of scheduling past it', async () => {
+        await stallToJustBeforeLoopEnd();
+
+        expect(scheduled.filter((note) => note.pitch === AFTER_LOOP_PITCH)).toEqual([]);
+        expect(schedulerSession.pendingSeam?.seamAudioTime).toBeCloseTo(8, 9);
+        expect(playheadWrapCountRef.current).toBe(1);
+        expect(playheadClockRef.pendingLoopSeam?.passIndex).toBe(2);
+    });
+
+    it('requests the next pass downbeat ahead of its seam after a late wrap near the loop end', async () => {
+        const worker = await stallToJustBeforeLoopEnd();
+        // An ordinary tick 37.5 ms later carries the clock past the 8 s seam.
+        await tickAt(worker, 8.0125);
+
+        const downbeatsAtSeam = scheduled.filter(
+            (note) => note.pitch === DOWNBEAT_PITCH && Math.abs(note.time - 8) < 1e-9
+        );
+        expect(downbeatsAtSeam).toHaveLength(1);
+        expect(downbeatsAtSeam[0]!.requestedAt).toBeLessThan(8);
         expect(playheadWrapCountRef.current).toBe(2);
     });
 });
