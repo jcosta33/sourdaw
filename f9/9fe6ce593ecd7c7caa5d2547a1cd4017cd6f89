@@ -1,0 +1,19 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWitnessInputs.integration.spec.ts
+  s_dde1671ba022b8::t_c3769b29b26849 617-623
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f99fe6ce593ecd7c7caa5d2547a1cd4017cd6f89",
+  "prompts": {},
+  "sessions": {
+    "s_dde1671ba022b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e4c42ac-51ff-45eb-b81f-f43601ed01dc",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
