@@ -866,11 +866,11 @@ They should not become business logic containers.
 
 ### `presentations/helpers/`
 
-Plain, non-React functions and constants that views, hooks, and renderers share: pointer-gesture arithmetic, display constants, and view-model shaping that is too UI-specific for a use case.
+Plain functions and constants, neither components nor hooks, that views, hooks, and renderers share: pointer-gesture arithmetic, display constants, and view-model shaping that is too UI-specific for a use case.
 
 - They are presentation code, so the presentation rules apply to them (`presentation-no-direct-services-validators-transformers`, `presentation-no-direct-repositories`, `presentation-no-direct-handlers`, `presentation-no-engine-runtime-imports`). They reach business logic through use cases and store barrels, like hooks.
 - They are private (`cross-module-index-only`).
-- A helper that decides a business rule belongs in `useCases/` or `services/`; a function that touches React belongs in `hooks/` or `components/`. A helper is the leftover, not a shortcut around either.
+- A helper that decides a business rule belongs in `useCases/` or `services/`. A helper is not a shortcut around them.
 
 ## 4.13 Runtime folders: `engine/`, `worklets/`, `workers/`, `wasm/`
 
@@ -883,13 +883,13 @@ The code that builds and drives live runtime objects: graph nodes, WASM-backed d
 - Use cases and repositories create and drive engine objects; presentation never imports them (`presentation-no-engine-runtime-imports`).
 - Engine code does not import `repositories/` (`usecases-only-write-boundary-to-repositories`).
 - Worklets and workers never import it (`worklets-no-module-runtime-imports`, `workers-no-module-runtime-imports`).
-- `runtime/` is a reserved name that carries the same restrictions in every boundary rule. New runtime code goes in `engine/`.
+- `runtime/` is a reserved name that the presentation, worklet, worker, model, event, and layer-purity rules list beside `engine/`. New runtime code goes in `engine/`.
 
 ### `worklets/`
 
 Code that executes on the audio rendering thread inside an `AudioWorkletGlobalScope`.
 
-- Isolated from every module layer (`worklets-no-module-runtime-imports`) and from `src/helpers/` and the desktop bridge (`worklets-no-app-helper-or-desktop-ipc`).
+- A worklet must not import `useCases/`, `repositories/`, `stores/`, `services/`, `validators/`, `events/`, `handlers/`, `engine/`, `runtime/`, or `presentations/` (`worklets-no-module-runtime-imports`), nor `src/helpers/` or the desktop bridge (`worklets-no-app-helper-or-desktop-ipc`). `models/`, `transformers/`, `errors/`, and `wasm/` are not on that list, so worklet code may use them.
 - Use cases, repositories, stores, handlers, and presentation never import a worklet module (`module-runtime-no-worklet-imports`). It is loaded by URL through `audioWorklet.addModule`, and the host talks to it through its `AudioWorkletNode` port.
 - The audio thread must not allocate, lock, or block (see `DAW System Architecture`).
 
@@ -897,7 +897,7 @@ Code that executes on the audio rendering thread inside an `AudioWorkletGlobalSc
 
 Code that executes in a dedicated `Worker`.
 
-- Same isolation as worklets: no module layers, no `src/helpers/`, no desktop bridge (`workers-no-module-runtime-imports`, `workers-no-app-helper-or-desktop-ipc`).
+- The same lists apply as for worklets (`workers-no-module-runtime-imports`, `workers-no-app-helper-or-desktop-ipc`): the forbidden layers are identical, and `models/`, `transformers/`, `errors/`, and `wasm/` stay allowed.
 - Use cases, repositories, stores, handlers, and presentation do not `import` worker files (`module-runtime-no-worker-imports`). They start one with `new Worker(new URL('…', import.meta.url))`, which is a URL reference, not an import edge, and talk to it by message.
 
 ### `wasm/`
@@ -911,11 +911,11 @@ Generated wasm-bindgen glue for the Rust crates, committed beside the module tha
 
 ## 4.14 `testing/`
 
-Test-support code that production never loads: deterministic fakes and fixtures a module's specs share.
+Test-support code that production code does not load: deterministic fakes and fixtures that a module's specs share.
 
 - It may import dev-only packages: `not-to-dev-dep` exempts `/testing/`, and `no-orphans` does not flag its unreferenced files.
 - Production code must not import it. Convention, not enforced by a rule.
-- Specs themselves stay in `__tests__/` beside the code they cover (`testing-file-layout`). `testing/` holds only what several specs reuse.
+- Specs themselves stay in `__tests__/` beside the code they cover (`testing-file-layout`). Reserve `testing/` for support code that several specs reuse.
 
 ---
 
@@ -923,19 +923,19 @@ Test-support code that production never loads: deterministic fakes and fixtures 
 
 A module sometimes needs a collaborator it cannot import: the import would close a cycle (`no-circular`), drag a heavy module graph into every consumer, or reach a foreign module that is not its to read. The composition root can import both sides (`app-to-modules-public-surface-only`), so it supplies the dependency at startup and the module holds only an empty slot.
 
-| Piece                 | Where                                   | Role                                                                                                                                                         |
-| --------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `<name>Port.ts`       | `useCases/` of the module that needs it | An object that holds the supplied provider. It defines its unconfigured behavior and has a setter (`setProvider`).                                           |
-| `<name>ProjectAccess` | slot in `stores/`                       | The same idea for committed-project reads: the store file holds the slot; the module never imports the document owner.                                       |
-| `configure<Name>`     | `useCases/`                             | The public entry that installs a provider into the slot. It returns a disposer or accepts `null` to detach.                                                  |
-| `init<Name>`          | `src/app/` or a module use case         | Startup wiring run once from `src/app/bootstrap.ts`: it builds the provider and calls `configure*`, or it installs subscriptions and returns their disposer. |
+| Piece                 | Where                                   | Role                                                                                                                                                       |
+| --------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<name>Port.ts`       | `useCases/` of the module that needs it | An object that holds the supplied provider. It defines its unconfigured behavior and has a setter (`setProvider`).                                         |
+| `<name>ProjectAccess` | slot in `stores/`                       | The same idea for committed-project reads: the store file holds the slot; the module never imports the document owner.                                     |
+| `configure<Name>`     | `useCases/`                             | The public entry that installs a provider into the slot. Some return a disposer and some accept `null` to detach; others do neither.                       |
+| `init<Name>`          | `src/app/` or a module use case         | Startup wiring called from `src/app/bootstrap.ts`: it builds the provider and calls `configure*`, or it installs subscriptions and returns their disposer. |
 
 Rules:
 
-- The module that owns the slot never imports the provider's module; the app does the binding.
-- An unconfigured slot has a defined behavior: an inert default, a sentinel the caller can test (`isConfigured()`), or a refusal. It is never an unhandled `null`.
-- Only `configure*` / `setProvider` write the slot; calling code reads it through the port.
-- `init*` is a naming convention for run-once startup wiring. A use case may also own an `init*` subscription so the wiring a test installs is the wiring production runs (`initProjectDirtyTracking`). No rule enforces any of these names.
+- The slot exists so the module need not import the provider's module; the app does the binding.
+- An unconfigured slot must have a defined behavior: an inert default, a sentinel the caller can test (`isConfigured()`), or a refusal, never an unhandled `null`.
+- Install a provider through the port's setter or the `configure*` entry; calling code reads the slot through the port.
+- `init*` is the naming convention for startup wiring (some unrelated use cases also use the prefix for plain initialization). A use case may also own an `init*` subscription so the wiring a test installs is the wiring production runs (`initProjectDirtyTracking`). No rule enforces any of these names.
 
 ---
 
@@ -943,18 +943,18 @@ Rules:
 
 A subfolder of `useCases/` in a device module (`glutenParamBridge/`, `fermenterParamBridge/`). It carries one device's parameters between its panel, the audio engine, and project truth.
 
-- It separates a transient gesture from a committed value. A knob sweep updates the engine on every frame and writes nothing to the document; the settled value is committed once, as one undo entry.
-- It maps the device's patch and parameter ids to the DSP's parameter ids, and batches or throttles engine updates.
+- It typically separates a transient gesture from a committed value. In Gluten's bridge a knob sweep updates the engine on every frame and writes nothing to the document; the settled value is committed once, as one undo entry.
+- It typically maps the device's patch and parameter ids to the DSP's parameter ids, and batches or throttles engine updates.
 - It is ordinary `useCases/` code with no rule of its own. It may take its collaborators as a typed bundle (`BridgeDeps`) so specs can replace them.
-- Why: a panel emits parameter changes at pointer rate. Persisting each would put a document transaction and an undo entry in history per frame (`docs/architecture/08-device-authoring.md` §2).
+- Why: a panel emits parameter changes at pointer rate. Persisting each would put a document transaction in history per frame (`docs/architecture/08-device-authoring.md` §2).
 
 ---
 
 ## 4.17 Projections
 
-A **projection** is a derived, disposable read view of project truth. It is never authoritative and can always be rebuilt from its source (`docs/architecture/06-crdt-collaboration.md` §5).
+A **projection** is a derived, disposable read view of project truth. It is not authoritative, and it is rebuilt from its source rather than patched (`docs/architecture/06-crdt-collaboration.md` §5).
 
-- **Logic lives in `useCases/`**, in files named for the projection (`*Projection*`). A projection is behavior that reads truth and returns or publishes a view, so it follows the use-case rules; a pure computation inside it may be extracted to `services/` or `transformers/`.
+- **Logic belongs in `useCases/`**, in files whose names usually carry `Projection`. A projection is behavior that reads truth and returns or publishes a view, so it follows the use-case rules; a pure computation inside it may be extracted to `services/` or `transformers/`.
 - **Its shape is a model** when it is a stable data type (`models/`).
 - **Its output is read through the module's `stores/` barrel or a use case.** Consumers never patch a projected store by hand; they rebuild it from truth.
 - The document-to-store projection bridge lives in `CrdtDocument/useCases/projection/` because the document is what it reads.
