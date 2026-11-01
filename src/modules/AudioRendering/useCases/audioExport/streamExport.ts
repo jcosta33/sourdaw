@@ -10,6 +10,8 @@ import { audioBufferToMp3 } from '../audioBufferToMp3';
 import { type resolveDeliveryTargets } from '../resolveDeliveryTargets';
 
 import { prepareDeliveryTarget } from './prepareDeliveryTarget';
+import { validateWavLoudnessReportPlan } from './validateWavLoudnessReportPlan';
+import { writeReportedWav } from './writeReportedWav';
 
 type Target = Omit<ReturnType<typeof resolveDeliveryTargets>[number], 'mp3BitRate' | 'channels'> & {
     mp3BitRate: number;
@@ -27,6 +29,8 @@ type LegacySettings = {
 type StreamExportAudioOptions = {
     source: ExportAudioSource;
     name: string;
+    /** The stem's track id; a reported WAV records it so a renamed file still names its stem. */
+    stemId?: string;
     onProgress: (format: DeliveryFormat, fraction: number, targetId: string) => void;
     onLimited: (target: Target) => void;
 };
@@ -41,6 +45,9 @@ type StreamExportInput = {
         | { kind: 'browser'; suggestedName: string; extension: string; mime: string; archive: boolean };
     checkCancelled: () => void;
     signal?: AbortSignal;
+    /** Stage a paired `.loudness.json` report of the exact emitted bytes beside every WAV stem. */
+    includeWavLoudnessReports?: boolean;
+    exportMode?: 'stems' | 'mixdown';
 } & ({ targets: readonly Target[] } | LegacySettings);
 
 function copyTargets(targets: readonly Target[]): Target[] {
@@ -171,17 +178,30 @@ export async function streamExport(input: StreamExportInput) {
     ) {
         throw new Error('Unsupported delivery format.');
     }
+    validateWavLoudnessReportPlan({
+        includeWavLoudnessReports: input.includeWavLoudnessReports,
+        exportMode: input.exportMode,
+        targets,
+    });
+    const requireReportPairs = input.includeWavLoudnessReports === true;
     let destination:
         Awaited<ReturnType<typeof streamExportToNative>> | Awaited<ReturnType<typeof streamExportToBrowser>>;
     if (input.destination.kind === 'native') {
-        destination = await streamExportToNative({ ...input.destination, checkCancelled: input.checkCancelled });
+        destination = await streamExportToNative({
+            ...input.destination,
+            requireReportPairs,
+            checkCancelled: input.checkCancelled,
+        });
     } else {
         destination = await streamExportToBrowser({
             ...input.destination,
+            requireReportPairs,
             checkCancelled: input.checkCancelled,
             signal: input.signal,
         });
     }
+    let stagedReports = 0;
+    let committed = false;
     return {
         async writeAudio(options: StreamExportAudioOptions) {
             input.checkCancelled();
@@ -221,8 +241,31 @@ export async function streamExport(input: StreamExportInput) {
                         throw new Error('Export PCM preparation is unavailable.');
                     }
                     const source = prepared.source;
-                    const entry = await awaitExportOperation(destination.beginFile(`${name}.${format}`), input.signal);
                     const progress = (fraction: number) => options.onProgress(format, fraction, target.id);
+                    if (requireReportPairs && format === 'wav') {
+                        if (!options.stemId) {
+                            throw new Error('A reported WAV stem needs its stem identity.');
+                        }
+                        await awaitExportOperation(
+                            writeReportedWav({
+                                source,
+                                bitDepth: target.bitDepth,
+                                dither: target.dither,
+                                stemId: options.stemId,
+                                targetId: target.id,
+                                audioName: `${name}.wav`,
+                                progress,
+                                destination,
+                                checkCancelled: input.checkCancelled,
+                                signal: input.signal,
+                            }),
+                            input.signal
+                        );
+                        stagedReports++;
+                        input.checkCancelled();
+                        continue;
+                    }
+                    const entry = await awaitExportOperation(destination.beginFile(`${name}.${format}`), input.signal);
                     await encodeDeliveryFormat({
                         format,
                         source,
@@ -237,7 +280,12 @@ export async function streamExport(input: StreamExportInput) {
                 }
             }
         },
-        commit: destination.commit,
+        async commit(onCommitBegin: () => void) {
+            await destination.commit(onCommitBegin);
+            committed = true;
+        },
+        /** Reports delivered by a completed commit; none before it. */
+        reportedFiles: () => (committed ? stagedReports : 0),
         abort: destination.abort,
     };
 }

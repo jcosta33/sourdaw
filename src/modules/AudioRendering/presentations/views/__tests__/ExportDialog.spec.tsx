@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { type ReactNode } from 'react';
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -136,6 +138,7 @@ type ExportDialogMocks = {
         typeof vi.fn<(input: { bytes: Uint8Array; format: string; selectedFilePath: string }) => Promise<void>>
     >;
     exportStems: ReturnType<typeof vi.fn<ExportStems>>;
+    registerReportPair: ReturnType<typeof vi.fn<(audioName: string, reportName: string) => void>>;
     selectNativeAudioExportDirectory: ReturnType<typeof vi.fn>;
     writeNativeAudioStemFile: ReturnType<
         typeof vi.fn<(input: { bytes: Uint8Array; directoryPath: string; fileName: string }) => Promise<void>>
@@ -190,6 +193,7 @@ const mocks = vi.hoisted((): ExportDialogMocks => {
         workspaceStore,
         writeNativeAudioMixdownFile: vi.fn(),
         exportStems: vi.fn<ExportStems>(),
+        registerReportPair: vi.fn<(audioName: string, reportName: string) => void>(),
         selectNativeAudioExportDirectory: vi.fn(),
         writeNativeAudioStemFile:
             vi.fn<(input: { bytes: Uint8Array; directoryPath: string; fileName: string }) => Promise<void>>(),
@@ -446,7 +450,10 @@ vi.mock('../../../repositories/audioExport/streamExportToNative', () => ({
                 writer: {
                     checkCancelled: input.checkCancelled,
                     write: async (chunk: Uint8Array) => {
-                        bytes = chunk.slice();
+                        const joined = new Uint8Array(bytes.length + chunk.length);
+                        joined.set(bytes);
+                        joined.set(chunk, bytes.length);
+                        bytes = joined;
                     },
                 },
                 finish: async () => {
@@ -474,6 +481,10 @@ vi.mock('../../../repositories/audioExport/streamExportToNative', () => ({
                     input.checkCancelled();
                 },
             };
+        },
+        registerReportPair: (audioName: string, reportName: string) => {
+            input.checkCancelled();
+            mocks.registerReportPair(audioName, reportName);
         },
         commit: async (begin: () => void) => {
             input.checkCancelled();
@@ -3326,6 +3337,124 @@ describe('ExportDialog', () => {
             expect(mocks.selectNativeAudioExportFile).not.toHaveBeenCalled();
             expect(mocks.selectNativeAudioExportDirectory).not.toHaveBeenCalled();
             expect(mocks.renderOffline).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('WAV loudness reports', () => {
+        async function encodeRealWav(): Promise<void> {
+            const { audioBufferToWav: realWav } = await vi.importActual<
+                typeof import('../../../repositories/audioEncoders/wavEncoder')
+            >('../../../repositories/audioEncoders/wavEncoder');
+            mocks.encodeWav.mockImplementation(
+                async (buffer, depth, progress, dither) =>
+                    new Uint8Array(await realWav(buffer, depth, progress, dither))
+            );
+        }
+
+        function twoStems(): void {
+            setProjectTracks([
+                { id: 'track-kick', name: 'Kick', kind: 'audio', clips: [] },
+                { id: 'track-snare', name: 'Snare', kind: 'audio', clips: [] },
+            ]);
+            mocks.exportStems.mockResolvedValue(
+                new Map([
+                    ['track-kick', createPodcastFixture(44100)],
+                    ['track-snare', createPodcastFixture(44100)],
+                ])
+            );
+        }
+
+        function writtenFile(fileName: string): Uint8Array {
+            const call = mocks.writeNativeAudioStemFile.mock.calls.find(([written]) => written.fileName === fileName);
+            if (!call) {
+                throw new Error(`${fileName} was not written.`);
+            }
+            return call[0].bytes;
+        }
+
+        it('is off by default and writes only the WAV stems', async () => {
+            twoStems();
+            await encodeRealWav();
+            render(<ExportDialog open={true} onClose={vi.fn()} />);
+            fireEvent.click(screen.getByRole('button', { name: /slices/i }));
+            expect(screen.getByRole('checkbox', { name: 'WAV loudness reports' })).not.toBeChecked();
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            await expectSucceededExportState();
+            expect(mocks.writeNativeAudioStemFile.mock.calls.map(([written]) => written.fileName)).toEqual([
+                'Kick.wav',
+                'Snare.wav',
+            ]);
+            expect(mocks.registerReportPair).not.toHaveBeenCalled();
+            expect(screen.getByText(/Baking Complete/).textContent).toBe('Ding! Baking Complete! 🍞');
+            expect(mocks.notifyUser).toHaveBeenCalledWith('Ding! The audio finished baking', 'success');
+        });
+
+        it('writes a report of the exact WAV beside each stem and counts them on completion', async () => {
+            twoStems();
+            await encodeRealWav();
+            render(<ExportDialog open={true} onClose={vi.fn()} />);
+            fireEvent.click(screen.getByRole('button', { name: /slices/i }));
+            fireEvent.click(screen.getByRole('checkbox', { name: 'WAV loudness reports' }));
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            await expectSucceededExportState();
+            expect(mocks.writeNativeAudioStemFile.mock.calls.map(([written]) => written.fileName)).toEqual([
+                'Kick.wav',
+                'Kick.wav.loudness.json',
+                'Snare.wav',
+                'Snare.wav.loudness.json',
+            ]);
+            expect(mocks.registerReportPair.mock.calls).toEqual([
+                ['Kick.wav', 'Kick.wav.loudness.json'],
+                ['Snare.wav', 'Snare.wav.loudness.json'],
+            ]);
+            const wav = writtenFile('Kick.wav');
+            const report: unknown = JSON.parse(new TextDecoder().decode(writtenFile('Kick.wav.loudness.json')));
+            expect(report).toMatchObject({
+                stemId: 'track-kick',
+                audioFile: 'Kick.wav',
+                wav: { bytes: wav.length, md5: createHash('md5').update(wav).digest('hex') },
+                integrated: { unit: 'LUFS' },
+                maxShortTerm: { unit: 'LUFS' },
+                maxMomentary: { unit: 'LUFS' },
+                truePeak: { unit: 'dBTP' },
+            });
+            expect(screen.getByText(/2 WAV loudness reports/)).toBeInTheDocument();
+            expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringMatching(/2 WAV loudness reports/), 'success');
+        });
+
+        it.each([
+            ['a mixdown', () => {}],
+            [
+                'an MP3 beside the WAV stems',
+                () => {
+                    fireEvent.click(screen.getByRole('button', { name: /slices/i }));
+                    fireEvent.click(screen.getByTestId('export-format-mp3'));
+                },
+            ],
+        ])('refuses %s with reports before choosing a destination or rendering', async (_case, arrange) => {
+            twoStems();
+            render(<ExportDialog open={true} onClose={vi.fn()} />);
+            fireEvent.click(screen.getByRole('checkbox', { name: 'WAV loudness reports' }));
+            arrange();
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            expect(await screen.findByText(/WAV loudness reports need a Stems export/)).toBeInTheDocument();
+            expect(mocks.selectNativeAudioExportDirectory).not.toHaveBeenCalled();
+            expect(mocks.selectNativeAudioExportFile).not.toHaveBeenCalled();
+            expect(mocks.exportStems).not.toHaveBeenCalled();
+            expect(mocks.renderOffline).not.toHaveBeenCalled();
+            expect(mocks.writeNativeAudioStemFile).not.toHaveBeenCalled();
+        });
+
+        it('says the export is incomplete when a reported export fails', async () => {
+            twoStems();
+            await encodeRealWav();
+            mocks.writeNativeAudioStemFile.mockRejectedValueOnce(new Error('disk full'));
+            render(<ExportDialog open={true} onClose={vi.fn()} />);
+            fireEvent.click(screen.getByRole('button', { name: /slices/i }));
+            fireEvent.click(screen.getByRole('checkbox', { name: 'WAV loudness reports' }));
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            expect(await screen.findByText('Export incomplete: disk full')).toBeInTheDocument();
+            expect(mocks.commit).not.toHaveBeenCalled();
         });
     });
 });
