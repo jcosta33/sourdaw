@@ -199,7 +199,24 @@ describe('compileAutomationEvents — beat inversion on a ramp or across a tempo
 
     it('splits a segment at the change where a steady stretch meets a ramp', () => {
         // One segment, beats 1 → 9: steady at 76 up to beat 4, then on the ramp.
-        expectWithinOneSampleOfBisection(lane('smooth', [1, 9]), rampChanges, 78);
+        const points = lane('smooth', [1, 9]);
+        expectWithinOneSampleOfBisection(points, rampChanges, 78);
+
+        // Cut at beat 4, the steady side is interpolated: beyond the straightness probes,
+        // nothing projects a beat inside it, though about two hundred samples fall there.
+        // Bisecting the whole span as one ramp would project dozens of beats per sample there.
+        const projectBeat = renderProjector(rampChanges);
+        const steadySideBeats: number[] = [];
+        const events = compileLane(points, rampChanges, (beat) => {
+            if (beat > 1 && beat < 4) {
+                steadySideBeats.push(beat);
+            }
+            return projectBeat(beat);
+        });
+        const steadySideSamples = events.filter((event) => event.timeSeconds < projectBeat(4)).length;
+
+        expect(steadySideSamples).toBeGreaterThan(200);
+        expect(steadySideBeats.length).toBeLessThanOrEqual(2);
     });
 
     it('brackets a steep ramp, 40 → 400 BPM over one beat', () => {
