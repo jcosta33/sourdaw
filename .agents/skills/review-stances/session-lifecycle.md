@@ -3,8 +3,8 @@
 Defects in anything that starts, stops, parks, replaces or disposes a long-lived runtime the app holds on behalf of
 a user-facing mode: the native live graph session, the playhead scheduler and feed, a recording session, the
 input-monitoring capture, a plugin host instance, a collaboration transport. A lifecycle stance carries this file.
-Each probe names the failure mode, the input or state to drive, the check that must go red and the mutation that
-must fail it. Controlled ports (media, graph, scheduler, wall-clock) prove ordering, ownership and cleanup; they
+Each probe names the failure mode, the input or state to drive and the check that must go red, and names the
+mutation that must fail it where its source lesson established one. Controlled ports (media, graph, scheduler, wall-clock) prove ordering, ownership and cleanup; they
 never establish physical hardware audibility. Runtime-monitor companions to `project-integrity.md` live here and in
 `input-monitoring-ownership.md`.
 
@@ -107,8 +107,9 @@ never establish physical hardware audibility. Runtime-monitor companions to `pro
    removing synchronous punch retirement stops the successor punching in; clearing the flag from, or dropping the
    `isPlaying` guard of, the late pause continuation fails both orderings; admitting the start at once, or resolving
    the old terminal's clip from `activeRecordingRef`, fails the waiting one. Both orderings are proved in
-   `punchPausePlayCommand.integration.spec.ts` (first-window punch Play waiting for the closing take; refused start
-   behind a held flush), which #5998 and #5999 had blocked.
+   `src/modules/Transport/useCases/playheadScheduler/__tests__/punchPausePlayCommand.integration.spec.ts`
+   (first-window punch Play waiting for the closing take; refused start behind a held flush), which #5998 and #5999
+   had blocked.
 9. **Settlement needs the current attempt, root and incarnation.** A continuation admitted by track ID, device ID or
    reused project timestamp alone can publish into a successor. Hold the continuation and replace what it belongs to:
     - Failed Freeze settlement (#2597): the failure settlement after the render refuses must still belong to the exact
@@ -149,7 +150,8 @@ never establish physical hardware audibility. Runtime-monitor companions to `pro
     commit after replacement: the successor stays exact and no notice falsely claims it discarded the take. On the
     same root real success commits once and genuine failure retires its own provisional state. Open a later punch on
     the replacement root while the prior callback is pending; only the later terminal attaches media and history;
-    separate armed-input callbacks stay. A settled capture promise's lifecycle count never proves a landed take.
+    separate armed-input callbacks stay. Settled capture promises, including refusals, keep Transport's existing
+    lifecycle count semantics, and that count alone never proves a landed take.
     Manual Stop (#5289, missing-clip append escape): hold the recorder terminal; a real switch stays on the outgoing
     root until its take and Command entry settle, then saves that branch and clears incoming Undo; a real fork
     installs its copied root while the old flush is held and both old success and old failure preserve the
