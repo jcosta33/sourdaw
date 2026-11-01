@@ -31,5 +31,7 @@ export type { StepRecordState } from './stepRecordStore';
 
 export { webMidiStore, defaultWebMidiState } from './webMidiStore';
 export { isFrozenMidiTakeSource } from './isFrozenMidiTakeSource';
+export { frozenMidiTakeRepeatAt, frozenMidiTakeRepeats } from './frozenMidiTakeRepeats';
+export type { FrozenMidiTakeRepeat } from './frozenMidiTakeRepeats';
 export { projectFrozenMidiTakeWindow } from './projectFrozenMidiTakeWindow';
 export { selectMidiNotesForRecordingPass } from './selectMidiNotesForRecordingPass';

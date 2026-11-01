@@ -32,6 +32,22 @@ function passLengthBeats(clip: Clip, take: Take, siblingTakes: readonly Take[]):
     return Math.max(take.endBeat - take.startBeat, ...completed.map((sibling) => sibling.endBeat - sibling.startBeat));
 }
 
+/**
+ * Live comp playback sounds a take's media from the first beat it can sound,
+ * its clip's start for every MIDI pass, so a take that starts later also plays
+ * the stretch before its own start. The frozen source keeps where that stretch
+ * reads from; the rows already hold it.
+ */
+function runUpOf(
+    media: NonNullable<ReturnType<typeof resolveTakeMedia>>,
+    take: Take
+): Pick<MidiTakeSource, 'runUpEntryBeat'> {
+    if (media.earliestBeat >= take.startBeat) {
+        return {};
+    }
+    return { runUpEntryBeat: media.offsetAt(media.earliestBeat) };
+}
+
 /** Capture a take's original MIDI rows and source interval before ordinary row partitioning. */
 export function prepareMidiTakeSourceCapture({
     clip,
@@ -57,6 +73,7 @@ export function prepareMidiTakeSourceCapture({
         sourceEndBeat: entry + Math.min(span, period),
         phaseHeadBeat: take.startBeat,
         passLengthBeats: period,
+        ...runUpOf(media, take),
     };
     return isFrozenMidiTakeSource(source) ? source : null;
 }

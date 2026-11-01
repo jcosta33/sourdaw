@@ -15,7 +15,12 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation } from '#/modules/Automation/useCases';
-import { midiStore, projectFrozenMidiTakeWindow, selectMidiNotesForRecordingPass } from '#/modules/MIDI/stores';
+import {
+    frozenMidiTakeRepeats,
+    midiStore,
+    projectFrozenMidiTakeWindow,
+    selectMidiNotesForRecordingPass,
+} from '#/modules/MIDI/stores';
 import {
     getChordAtBeat,
     projectChannelBend,
@@ -856,30 +861,20 @@ export async function scheduleMidiNotes(
                 loopEnabled: clip.loopEnabled ?? false,
             });
             const loopLen = frozenSource?.passLengthBeats ?? loopProjection.loopLengthBeats;
-            const maxIterations = frozenSource
-                ? Math.ceil((clip.endBeat - frozenSource.phaseHeadBeat) / loopLen)
-                : loopProjection.iterationCount;
+            const frozenRepeats = frozenSource
+                ? frozenMidiTakeRepeats(
+                      frozenSource,
+                      fromBeat - MIDI_NOTE_GROOVE_LOOKAROUND_BEATS,
+                      Math.min(clip.endBeat, toBeat + MIDI_NOTE_GROOVE_LOOKAROUND_BEATS)
+                  )
+                : [];
+            const firstFrozenRepeatIndex = frozenRepeats[0]?.absoluteOccurrenceIndex ?? 0;
             const scheduledIterationRange = frozenSource
-                ? {
-                      startIndex: Math.max(
-                          0,
-                          Math.floor(
-                              (fromBeat -
-                                  frozenSource.phaseHeadBeat -
-                                  (frozenSource.sourceEndBeat - frozenSource.sourceEntryBeat) -
-                                  MIDI_NOTE_GROOVE_LOOKAROUND_BEATS) /
-                                  loopLen
-                          ) + 1
-                      ),
-                      endIndex: Math.min(
-                          maxIterations,
-                          Math.ceil((toBeat - frozenSource.phaseHeadBeat + MIDI_NOTE_GROOVE_LOOKAROUND_BEATS) / loopLen)
-                      ),
-                  }
+                ? { startIndex: firstFrozenRepeatIndex, endIndex: firstFrozenRepeatIndex + frozenRepeats.length }
                 : getScheduledIterationRange({
                       clipStartBeat: clip.startBeat,
                       fromBeat,
-                      iterationCount: maxIterations,
+                      iterationCount: loopProjection.iterationCount,
                       loopEnabled: clip.loopEnabled ?? false,
                       loopLengthBeats: loopLen,
                       toBeat,
@@ -1006,9 +1001,11 @@ export async function scheduleMidiNotes(
                     return;
                 }
                 const absoluteOccurrenceIndex = frozenSource ? iter : sourceOccurrenceOffset + iter;
-                const iterationStart = frozenSource
-                    ? frozenSource.phaseHeadBeat + iter * loopLen
-                    : clip.startBeat + iter * loopLen;
+                const frozenRepeat = frozenRepeats[iter - firstFrozenRepeatIndex];
+                if (frozenSource && !frozenRepeat) {
+                    throw new Error('Invalid frozen MIDI take repeat');
+                }
+                const iterationStart = frozenRepeat ? frozenRepeat.startBeat : clip.startBeat + iter * loopLen;
                 const yeastRouteId = `live-yeast:${track.id}:${clip.id}:${absoluteOccurrenceIndex}`;
                 let iterNotes: readonly (LiveYeastNote &
                     Pick<ScheduledMidiNote, 'expression'> & { recordedOwnBendBeat?: number })[];
@@ -1128,14 +1125,9 @@ export async function scheduleMidiNotes(
                             events: [note],
                             clipId: frozenSource?.sourceClipId ?? clip.id,
                             clipStartBeat: clip.startBeat,
-                            clipEndBeat: frozenSource
-                                ? Math.min(
-                                      clip.endBeat,
-                                      iterationStart + frozenSource.sourceEndBeat - frozenSource.sourceEntryBeat
-                                  )
-                                : clip.endBeat,
+                            clipEndBeat: frozenRepeat ? Math.min(clip.endBeat, frozenRepeat.endBeat) : clip.endBeat,
                             iterationStartBeat: iterationStart,
-                            loopLengthBeats: loopLen,
+                            loopLengthBeats: frozenRepeat ? frozenRepeat.strideBeats : loopLen,
                             midiOffsetBeats: clipMidiOffset,
                             loopEnabled: frozenSource ? false : (clip.loopEnabled ?? false),
                             loopOriginBeat: clip.loopOriginBeat,
@@ -1191,8 +1183,7 @@ export async function scheduleMidiNotes(
                         }
 
                         const iterationEndBeat = Math.min(
-                            iterationStart +
-                                (frozenSource ? frozenSource.sourceEndBeat - frozenSource.sourceEntryBeat : loopLen),
+                            frozenRepeat ? frozenRepeat.endBeat : iterationStart + loopLen,
                             clip.endBeat
                         );
                         const unswungEndBeat = isTrackScopedYeastNote

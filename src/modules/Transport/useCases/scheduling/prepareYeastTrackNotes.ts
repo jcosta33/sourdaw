@@ -1,5 +1,9 @@
 import { getAudioContext } from '#/modules/AudioEngine/useCases';
-import { projectFrozenMidiTakeWindow, selectMidiNotesForRecordingPass } from '#/modules/MIDI/stores';
+import {
+    frozenMidiTakeRepeats,
+    projectFrozenMidiTakeWindow,
+    selectMidiNotesForRecordingPass,
+} from '#/modules/MIDI/stores';
 import { projectCommittedGroove, shouldPlayMidiEvent } from '#/modules/MIDI/useCases';
 import { isBeatAdmittedByAnchoredClipLoopWindow } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
@@ -391,16 +395,13 @@ function prepareFrozenClipYeastIterations(
         return undefined;
     }
     let activeYeastCarrierRouteId: string | undefined;
-    const span = frozenSource.sourceEndBeat - frozenSource.sourceEntryBeat;
-    const first = Math.max(
-        0,
-        Math.floor((fromBeat - frozenSource.phaseHeadBeat - span) / frozenSource.passLengthBeats)
-    );
-    const last = Math.ceil((toBeat - frozenSource.phaseHeadBeat) / frozenSource.passLengthBeats);
-    for (let absoluteOccurrenceIndex = first; absoluteOccurrenceIndex < last; absoluteOccurrenceIndex++) {
+    // Admits one repeat before the first that reaches the window.
+    const repeats = frozenMidiTakeRepeats(frozenSource, fromBeat - frozenSource.passLengthBeats, toBeat);
+    for (const repeat of repeats) {
         if (!isCurrent()) {
             return null;
         }
+        const { absoluteOccurrenceIndex } = repeat;
         const window = projectFrozenMidiTakeWindow({
             source: frozenSource,
             recordingPassIndex: clip.midiTakeRecordingPassIndex,
@@ -411,22 +412,22 @@ function prepareFrozenClipYeastIterations(
         if (!window) {
             throw new Error('Invalid frozen MIDI take window');
         }
-        const passHead = frozenSource.phaseHeadBeat + absoluteOccurrenceIndex * frozenSource.passLengthBeats;
-        const passEnd = Math.min(passHead + span, clip.endBeat);
-        const isActive = passHead < toBeat && passEnd > fromBeat;
+        const passStart = repeat.startBeat;
+        const passEnd = Math.min(repeat.endBeat, clip.endBeat);
+        const isActive = passStart < toBeat && passEnd > fromBeat;
         if (!isActive && window.notes.length === 0) {
             continue;
         }
         const routeId = `live-yeast:${track.id}:${clip.id}:${absoluteOccurrenceIndex}`;
-        const sourceNotes = window.notes.map((note) => ({ ...note, startBeat: note.startBeat - passHead }));
+        const sourceNotes = window.notes.map((note) => ({ ...note, startBeat: note.startBeat - passStart }));
         const descriptor = {
             routeId,
             clipId: frozenSource.sourceClipId,
-            iterationStartBeat: passHead,
+            iterationStartBeat: passStart,
             iterationEndBeat: passEnd,
             midiOffsetBeats: 0,
             loopEnabled: false,
-            loopLengthBeats: frozenSource.passLengthBeats,
+            loopLengthBeats: repeat.strideBeats,
             clipStartBeat: clip.startBeat,
             sourceNotes,
         } satisfies LiveYeastIteration;

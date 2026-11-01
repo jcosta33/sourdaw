@@ -709,6 +709,8 @@ export type MidiTakeSourceSnapshot = {
     readonly sourceEndBeat: number;
     readonly phaseHeadBeat: number;
     readonly passLengthBeats: number;
+    /** Where the first repeat starts reading, before `sourceEntryBeat`: the run-up between its clip's start and the take's start, which live comp playback plays. Absent means none. */
+    readonly runUpEntryBeat?: number;
 };
 /** A comp region naming a take — structural mirror of Arrangement's `CompRegion`. */
 export type CompRegionSnapshot = {

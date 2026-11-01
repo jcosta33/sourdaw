@@ -9,6 +9,7 @@ import {
     reconcileRegisteredParameterMessages,
 } from '../services/registeredParameterState';
 
+import { frozenMidiTakeRepeat } from './frozenMidiTakeRepeats';
 import { isFrozenMidiTakeSource, type FrozenMidiTakeSource } from './isFrozenMidiTakeSource';
 import { selectMidiNotesForRecordingPass } from './selectMidiNotesForRecordingPass';
 
@@ -56,7 +57,8 @@ function registeredStateBeforeWindow(
 }
 
 /**
- * One original pass occurrence in one timeline window. The MIDI window
+ * One original pass occurrence in one timeline window, from the repeat's own
+ * start (`frozenMidiTakeRepeat`: the first one carries its run-up). The MIDI window
  * projection clips notes and expression and carries ordinary controllers;
  * registered-parameter messages before the head are declared as one coherent
  * state, since the last value of each controller cannot reproduce an RPN.
@@ -87,9 +89,10 @@ export function projectFrozenMidiTakeWindow({
         closingControlChanges: [],
         pitchBends: [],
     };
-    const passHeadBeat = source.phaseHeadBeat + absoluteOccurrenceIndex * source.passLengthBeats;
-    const sourcePassEndBeat = passHeadBeat + source.sourceEndBeat - source.sourceEntryBeat;
-    const visibleStartBeat = Math.max(fromBeat, passHeadBeat);
+    const repeat = frozenMidiTakeRepeat(source, absoluteOccurrenceIndex);
+    const passHeadBeat = repeat.passHeadBeat;
+    const sourcePassEndBeat = repeat.endBeat;
+    const visibleStartBeat = Math.max(fromBeat, repeat.startBeat);
     const visibleEndBeat = Math.min(toBeat, sourcePassEndBeat);
     if (visibleStartBeat >= visibleEndBeat) {
         return empty;

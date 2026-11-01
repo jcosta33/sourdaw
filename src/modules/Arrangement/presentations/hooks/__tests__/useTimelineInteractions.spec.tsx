@@ -231,6 +231,8 @@ vi.mock('#/modules/MIDI/stores', async () => {
     // Keep real validation and sanitation for the Project consumers reached
     // through this graph. The mocked store remains the interaction seam.
     const {
+        frozenMidiTakeRepeatAt,
+        frozenMidiTakeRepeats,
         isFrozenMidiTakeSource,
         isValidMidiProbabilitySeed,
         isValidMidiNoteExpression,
@@ -239,6 +241,8 @@ vi.mock('#/modules/MIDI/stores', async () => {
         selectMidiNotesForRecordingPass,
     } = await vi.importActual<typeof import('#/modules/MIDI/stores')>('#/modules/MIDI/stores');
     return {
+        frozenMidiTakeRepeatAt,
+        frozenMidiTakeRepeats,
         isFrozenMidiTakeSource,
         isValidMidiProbabilitySeed,
         isValidMidiNoteExpression,

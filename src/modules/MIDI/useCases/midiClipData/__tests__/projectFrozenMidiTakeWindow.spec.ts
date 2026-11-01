@@ -344,3 +344,90 @@ describe('frozen MIDI take window', () => {
         expect(isFrozenMidiTakeSource(malformed)).toBe(false);
     });
 });
+
+describe('frozen MIDI take run-up', () => {
+    /**
+     * A loop take recorded from 6 in loop [8, 12): pass 0 reads source [0, 6)
+     * from 6, pass 1 reads source [6, 10) from 8. Each source carries the
+     * run-up from its clip start at 6, where live comp playback starts it.
+     */
+    const runUpRows: FrozenMidiTakeSource['rows'] = {
+        notes: {
+            present: true,
+            value: [
+                {
+                    id: 'pass-0-run-up',
+                    pitch: 60,
+                    startBeat: 0.5,
+                    duration: 0.25,
+                    velocity: 100,
+                    recordingPassIndex: 0,
+                },
+                { id: 'pass-0-late', pitch: 61, startBeat: 4.5, duration: 0.25, velocity: 100, recordingPassIndex: 0 },
+                { id: 'untagged', pitch: 62, startBeat: 5, duration: 0.25, velocity: 100 },
+                { id: 'pass-1', pitch: 63, startBeat: 6.5, duration: 0.25, velocity: 100, recordingPassIndex: 1 },
+            ],
+        },
+        controlChanges: {
+            present: true,
+            value: [{ id: 'swell', controller: 1, value: 90, channel: 0, beat: 5.5 }],
+        },
+        pitchBends: { present: true, value: [] },
+    };
+    const firstPass: FrozenMidiTakeSource = {
+        sourceClipId: 'original',
+        rows: runUpRows,
+        sourceEntryBeat: 2,
+        sourceEndBeat: 6,
+        phaseHeadBeat: 8,
+        passLengthBeats: 4,
+        runUpEntryBeat: 0,
+    };
+    const secondPass: FrozenMidiTakeSource = { ...firstPass, sourceEntryBeat: 6, sourceEndBeat: 10, runUpEntryBeat: 4 };
+
+    function heard(
+        source: FrozenMidiTakeSource,
+        recordingPassIndex: number,
+        absoluteOccurrenceIndex: number,
+        fromBeat: number,
+        toBeat: number
+    ) {
+        const window = projectFrozenMidiTakeWindow({
+            source,
+            recordingPassIndex,
+            absoluteOccurrenceIndex,
+            fromBeat,
+            toBeat,
+        });
+        return {
+            notes: window?.notes.map((note) => [note.id, note.startBeat]),
+            controlChanges: window?.controlChanges.map((row) => [row.id, row.beat]),
+        };
+    }
+
+    it('plays the first pass from the clip start, its run-up included', () => {
+        expect(heard(firstPass, 0, 0, 6, 12).notes).toEqual([
+            ['pass-0-run-up', 6.5],
+            ['pass-0-late', 10.5],
+            ['untagged', 11],
+        ]);
+        expect(heard(firstPass, 0, 0, 6, 8).notes).toEqual([['pass-0-run-up', 6.5]]);
+    });
+
+    it('plays a later pass from the clip start as live does: earlier passes filtered, untagged rows and controllers kept', () => {
+        expect(heard(secondPass, 1, 0, 6, 12)).toEqual({
+            notes: [
+                ['untagged', 7],
+                ['pass-1', 8.5],
+            ],
+            controlChanges: [['swell', 7.5]],
+        });
+    });
+
+    it('sounds no run-up on a later repeat, which starts at its pass head', () => {
+        expect(heard(firstPass, 0, 1, 6, 20).notes).toEqual([
+            ['pass-0-late', 14.5],
+            ['untagged', 15],
+        ]);
+    });
+});

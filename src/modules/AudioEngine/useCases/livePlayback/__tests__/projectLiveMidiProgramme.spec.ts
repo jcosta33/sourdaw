@@ -436,6 +436,65 @@ describe('projectLiveMidiProgramme', () => {
             takeLaneStore.set(before ?? { lanes: [] });
         }
     });
+    it('sounds a frozen first pass’s run-up under a comp that ends at the take start', () => {
+        // Recorded from 6 in loop [8, 12): the first pass's take opens on the loop, its run-up before it.
+        const before = takeLaneStore.value;
+        const clip = midiClip({ id: 'original', trackId: 'midi-1', startBeat: 6, endBeat: 13 });
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane-midi',
+                    trackId: 'midi-1',
+                    takes: [
+                        {
+                            id: 'first-pass',
+                            clipId: 'original',
+                            name: 'First pass',
+                            startBeat: 8,
+                            endBeat: 12,
+                            selected: true,
+                            sourceOffsetBeats: 0,
+                            recordingPassIndex: 0,
+                            midiSource: {
+                                sourceClipId: 'original',
+                                sourceEntryBeat: 2,
+                                sourceEndBeat: 6,
+                                phaseHeadBeat: 8,
+                                passLengthBeats: 4,
+                                runUpEntryBeat: 0,
+                                rows: {
+                                    notes: {
+                                        present: true,
+                                        value: [
+                                            note({ id: 'run-up', pitch: 61, startBeat: 0.5, recordingPassIndex: 0 }),
+                                            note({ id: 'in-loop', pitch: 62, startBeat: 3, recordingPassIndex: 0 }),
+                                        ],
+                                    },
+                                    controlChanges: { present: false, value: [] },
+                                    pitchBends: { present: false, value: [] },
+                                },
+                            },
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 6, endBeat: 8, takeId: 'first-pass' }],
+                },
+            ],
+        });
+        try {
+            const programme = projectProgramme({
+                stripTracks: [voicedTrack([clip])],
+                notesByClipId: { original: [] },
+                projectMidiEvents: createGrooveMidiEventProjector(),
+                span: { startSeconds: 0, endSeconds: 7 },
+            });
+
+            expect(
+                programme.targets[0]?.events.filter((event) => event.isNoteOn).map((event) => [event.note, event.time])
+            ).toEqual([[61, seconds(6.5)]]);
+        } finally {
+            takeLaneStore.set(before ?? { lanes: [] });
+        }
+    });
     it('addresses a voiced strip’s notes to its attached instrument as on/off pairs', () => {
         const clip = midiClip({ id: 'clip-1', trackId: 'midi-1' });
         const programme = projectProgramme({

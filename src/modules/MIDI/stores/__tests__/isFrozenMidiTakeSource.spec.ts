@@ -56,11 +56,26 @@ const malformed: ReadonlyArray<readonly [string, SourceEdit]> = [
     ['an extra rows key', (source) => (rowsOf(source).sustain = { value: [] })],
     ['an extra slot key', (source) => Object.assign(rowsOf(source).notes!, { count: 1 })],
     ['an extra row key', (source) => Object.assign(rowsOf(source).controlChanges!.value[0]!, { label: 'mod' })],
+    ['a run-up at its entry', (source) => (source.runUpEntryBeat = 0)],
+    ['a run-up after its entry', (source) => (source.runUpEntryBeat = 1)],
+    ['a non-finite run-up', (source) => (source.runUpEntryBeat = Number.NEGATIVE_INFINITY)],
+    ['an absent run-up written as undefined', (source) => (source.runUpEntryBeat = undefined)],
+    [
+        'a missing required key beside a run-up',
+        (source) => {
+            source.runUpEntryBeat = -2;
+            delete source.passLengthBeats;
+        },
+    ],
 ];
 
 describe('isFrozenMidiTakeSource', () => {
     it('admits a fragment source whose phase head lies before its window', () => {
         expect(isFrozenMidiTakeSource(frozenSource())).toBe(true);
+    });
+
+    it('admits a run-up before the entry, even one longer than the pass', () => {
+        expect(isFrozenMidiTakeSource({ ...frozenSource(), runUpEntryBeat: -10 })).toBe(true);
     });
 
     it('admits a source read back from the project document, whose objects carry symbol metadata', () => {

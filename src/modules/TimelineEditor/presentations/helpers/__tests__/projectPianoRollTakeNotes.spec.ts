@@ -121,3 +121,66 @@ describe('piano roll frozen take occurrence ownership', () => {
         expect(result.insertOwnerAtBeat(4.5)).toBeNull();
     });
 });
+
+describe('piano roll frozen take run-up', () => {
+    // Recorded from 6 in loop [8, 12): the first pass's take opens on the loop, its run-up before it.
+    const runUp = { id: 'run-up', pitch: 61, startBeat: 0.5, duration: 0.25, velocity: 90, recordingPassIndex: 0 };
+    const inLoop = { id: 'in-loop', pitch: 62, startBeat: 3, duration: 0.25, velocity: 90, recordingPassIndex: 0 };
+    function runUpLane(region: { startBeat: number; endBeat: number }): TakeLaneStoreState {
+        return {
+            lanes: [
+                {
+                    id: 'lane',
+                    trackId: 'track',
+                    takes: [
+                        {
+                            id: 'first-pass',
+                            clipId: 'clip',
+                            name: 'First pass',
+                            startBeat: 8,
+                            endBeat: 12,
+                            selected: true,
+                            recordingPassIndex: 0,
+                            midiSource: {
+                                sourceClipId: 'original',
+                                sourceEntryBeat: 2,
+                                sourceEndBeat: 6,
+                                phaseHeadBeat: 8,
+                                passLengthBeats: 4,
+                                runUpEntryBeat: 0,
+                                rows: {
+                                    notes: { present: true, value: [runUp, inLoop] },
+                                    controlChanges: { present: true, value: [] },
+                                    pitchBends: { present: true, value: [] },
+                                },
+                            },
+                        },
+                    ],
+                    activeCompRegions: [{ ...region, takeId: 'first-pass' }],
+                },
+            ],
+        };
+    }
+    const clip = { id: 'clip', startBeat: 6, endBeat: 13 };
+
+    it('shows the run-up of a comped first pass from the clip start', () => {
+        const result = projectPianoRollTakeNotes(clip, 'track', runUpLane({ startBeat: 6, endBeat: 12 }));
+
+        expect(result.notes.map((note) => [note.pitch, note.startBeat])).toEqual([
+            [61, 0.5],
+            [62, 3],
+        ]);
+        expect(result.ownersByViewId.get(result.notes[0]!.id)).toMatchObject({ row: runUp, occurrenceIndex: 0 });
+    });
+
+    it('shows the run-up under a comp that ends at the take start and inserts into it at its source beat', () => {
+        const result = projectPianoRollTakeNotes(clip, 'track', runUpLane({ startBeat: 6, endBeat: 8 }));
+
+        expect(result.notes.map((note) => [note.pitch, note.startBeat])).toEqual([[61, 0.5]]);
+        expect(result.insertOwnerAtBeat(1)).toMatchObject({
+            takeId: 'first-pass',
+            sourceBeat: 1,
+            recordingPassIndex: 0,
+        });
+    });
+});

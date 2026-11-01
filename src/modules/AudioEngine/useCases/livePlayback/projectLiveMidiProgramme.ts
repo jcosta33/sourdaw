@@ -52,6 +52,7 @@
 
 import { type Track } from '#/modules/Arrangement/stores';
 import {
+    frozenMidiTakeRepeats,
     projectFrozenMidiTakeWindow,
     selectMidiNotesForRecordingPass,
     type MidiStoreState,
@@ -290,11 +291,9 @@ function projectFrozenClipNotes({
     if (!source) {
         return [];
     }
-    const span = source.sourceEndBeat - source.sourceEntryBeat;
-    const first = Math.max(0, Math.floor((clip.startBeat - source.phaseHeadBeat - span) / source.passLengthBeats) + 1);
-    const last = Math.ceil((clip.endBeat - source.phaseHeadBeat) / source.passLengthBeats);
     const projected: ProjectedNote[] = [];
-    for (let absoluteOccurrenceIndex = first; absoluteOccurrenceIndex < last; absoluteOccurrenceIndex++) {
+    for (const repeat of frozenMidiTakeRepeats(source, clip.startBeat, clip.endBeat)) {
+        const { absoluteOccurrenceIndex } = repeat;
         const window = projectFrozenMidiTakeWindow({
             source,
             recordingPassIndex: clip.midiTakeRecordingPassIndex,
@@ -314,14 +313,13 @@ function projectFrozenClipNotes({
                 probabilityPercent: note.probability ?? 100,
             })
         );
-        const passHead = source.phaseHeadBeat + absoluteOccurrenceIndex * source.passLengthBeats;
         const events = input.projectMidiEvents({
             events: admitted,
             clipId: source.sourceClipId,
             clipStartBeat: clip.startBeat,
-            clipEndBeat: Math.min(clip.endBeat, passHead + span),
-            iterationStartBeat: passHead,
-            loopLengthBeats: source.passLengthBeats,
+            clipEndBeat: Math.min(clip.endBeat, repeat.endBeat),
+            iterationStartBeat: repeat.startBeat,
+            loopLengthBeats: repeat.strideBeats,
             midiOffsetBeats: 0,
             loopEnabled: false,
             eventsAreAbsolute: true,

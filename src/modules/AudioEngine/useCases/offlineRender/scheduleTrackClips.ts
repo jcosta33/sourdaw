@@ -2,6 +2,7 @@ import { getGainEnvelopeSeries, type Track } from '#/modules/Arrangement/stores'
 import { automationStore } from '#/modules/Automation/stores';
 import { buildOfflineModulatorPlans, getAutomationLaneCeiling } from '#/modules/Automation/useCases';
 import {
+    frozenMidiTakeRepeats,
     projectFrozenMidiTakeWindow,
     selectMidiNotesForRecordingPass,
     type MidiStoreState,
@@ -69,27 +70,29 @@ function selectedMidiWindows(clip: ResolvedClip) {
     if (!source) {
         return [];
     }
-    const span = source.sourceEndBeat - source.sourceEntryBeat;
-    const first = Math.max(0, Math.floor((clip.startBeat - source.phaseHeadBeat - span) / source.passLengthBeats) + 1);
-    const last = Math.ceil((clip.endBeat - source.phaseHeadBeat) / source.passLengthBeats);
     const windows: {
+        passStart: number;
         passHead: number;
         passEnd: number;
         value: NonNullable<ReturnType<typeof projectFrozenMidiTakeWindow>>;
     }[] = [];
-    for (let index = first; index < last; index++) {
+    for (const repeat of frozenMidiTakeRepeats(source, clip.startBeat, clip.endBeat)) {
         const value = projectFrozenMidiTakeWindow({
             source,
             recordingPassIndex: clip.midiTakeRecordingPassIndex,
-            absoluteOccurrenceIndex: index,
+            absoluteOccurrenceIndex: repeat.absoluteOccurrenceIndex,
             fromBeat: clip.startBeat,
             toBeat: clip.endBeat,
         });
         if (!value) {
             throw new Error('Invalid frozen MIDI take window');
         }
-        const passHead = source.phaseHeadBeat + index * source.passLengthBeats;
-        windows.push({ passHead, passEnd: Math.min(passHead + span, clip.endBeat), value });
+        windows.push({
+            passStart: repeat.startBeat,
+            passHead: repeat.passHeadBeat,
+            passEnd: Math.min(repeat.endBeat, clip.endBeat),
+            value,
+        });
     }
     return windows;
 }
@@ -667,12 +670,12 @@ export async function scheduleTrackClips({
                 }
                 if (clip.midiTakeSource) {
                     const source = clip.midiTakeSource;
-                    return selectedMidiWindows(clip).flatMap(({ passHead, passEnd, value }) =>
+                    return selectedMidiWindows(clip).flatMap(({ passStart, passHead, passEnd, value }) =>
                         value.pitchBends.length === 0
                             ? []
                             : [
                                   {
-                                      clip: { startBeat: passHead, endBeat: passEnd, midiOffsetBeats: passHead },
+                                      clip: { startBeat: passStart, endBeat: passEnd, midiOffsetBeats: passStart },
                                       controlChanges: value.controlChanges,
                                       pitchBends: value.pitchBends,
                                       sourceControlChanges: source.rows.controlChanges.value,
@@ -874,26 +877,19 @@ export async function scheduleTrackClips({
                 loopLength,
                 loopEnabled: clip.loopEnabled ?? false,
             });
-            const firstIteration = frozenSource
-                ? Math.max(
-                      0,
-                      Math.floor(
-                          (clip.startBeat -
-                              frozenSource.phaseHeadBeat -
-                              (frozenSource.sourceEndBeat - frozenSource.sourceEntryBeat)) /
-                              frozenSource.passLengthBeats
-                      ) + 1
-                  )
-                : 0;
-            const iterationCount = frozenSource
-                ? Math.ceil((clip.endBeat - frozenSource.phaseHeadBeat) / frozenSource.passLengthBeats)
-                : loopProjection.iterationCount;
+            const frozenRepeats = frozenSource ? frozenMidiTakeRepeats(frozenSource, clip.startBeat, clip.endBeat) : [];
+            const firstIteration = frozenRepeats[0]?.absoluteOccurrenceIndex ?? 0;
+            const iterationCount = frozenSource ? firstIteration + frozenRepeats.length : loopProjection.iterationCount;
             const loopEnabled = clip.loopEnabled ?? false;
             const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
             for (let iteration = firstIteration; iteration < iterationCount; iteration++) {
                 checkCallerAbort();
                 const absoluteOccurrenceIndex = frozenSource ? iteration : sourceOccurrenceOffset + iteration;
                 if (frozenSource) {
+                    const frozenRepeat = frozenRepeats[iteration - firstIteration];
+                    if (!frozenRepeat) {
+                        throw new Error('Invalid frozen MIDI take repeat');
+                    }
                     const window = projectFrozenMidiTakeWindow({
                         source: frozenSource,
                         recordingPassIndex: clip.midiTakeRecordingPassIndex,
@@ -904,8 +900,8 @@ export async function scheduleTrackClips({
                     if (!window) {
                         throw new Error('Invalid frozen MIDI take window');
                     }
-                    const passHead = frozenSource.phaseHeadBeat + iteration * frozenSource.passLengthBeats;
-                    const passEnd = passHead + frozenSource.sourceEndBeat - frozenSource.sourceEntryBeat;
+                    const passStart = frozenRepeat.startBeat;
+                    const passEnd = frozenRepeat.endBeat;
                     iterations.push({
                         sourceNotes: window.notes
                             .filter((note) =>
@@ -917,12 +913,12 @@ export async function scheduleTrackClips({
                                     probabilityPercent: note.probability ?? 100,
                                 })
                             )
-                            .map((note) => ({ ...note, startBeat: note.startBeat - passHead })),
+                            .map((note) => ({ ...note, startBeat: note.startBeat - passStart })),
                         clipId: frozenSource.sourceClipId,
                         clipStartBeat: clip.startBeat,
                         clipEndBeat: Math.min(clip.endBeat, passEnd),
-                        iterationStartBeat: passHead,
-                        loopLengthBeats: frozenSource.passLengthBeats,
+                        iterationStartBeat: passStart,
+                        loopLengthBeats: frozenRepeat.strideBeats,
                         midiOffsetBeats: 0,
                         loopEnabled: false,
                         toasterPadIndex: padIndex,
@@ -1091,26 +1087,17 @@ export async function scheduleTrackClips({
                 }
             }
 
-            const firstIteration = frozenSource
-                ? Math.max(
-                      0,
-                      Math.floor(
-                          (clip.startBeat -
-                              frozenSource.phaseHeadBeat -
-                              (frozenSource.sourceEndBeat - frozenSource.sourceEntryBeat)) /
-                              frozenSource.passLengthBeats
-                      ) + 1
-                  )
-                : 0;
-            const lastIteration = frozenSource
-                ? Math.ceil((clip.endBeat - frozenSource.phaseHeadBeat) / frozenSource.passLengthBeats)
-                : maxIterations;
+            const frozenRepeats = frozenSource ? frozenMidiTakeRepeats(frozenSource, clip.startBeat, clip.endBeat) : [];
+            const firstIteration = frozenRepeats[0]?.absoluteOccurrenceIndex ?? 0;
+            const lastIteration = frozenSource ? firstIteration + frozenRepeats.length : maxIterations;
             for (let iter = firstIteration; iter < lastIteration; iter++) {
                 checkCallerAbort();
                 const absoluteOccurrenceIndex = frozenSource ? iter : sourceOccurrenceOffset + iter;
-                const iterationStartBeat = frozenSource
-                    ? frozenSource.phaseHeadBeat + iter * frozenSource.passLengthBeats
-                    : clip.startBeat + iter * loopLen;
+                const frozenRepeat = frozenRepeats[iter - firstIteration];
+                if (frozenSource && !frozenRepeat) {
+                    throw new Error('Invalid frozen MIDI take repeat');
+                }
+                const iterationStartBeat = frozenRepeat ? frozenRepeat.startBeat : clip.startBeat + iter * loopLen;
                 const frozenWindow = frozenSource
                     ? projectFrozenMidiTakeWindow({
                           source: frozenSource,
@@ -1136,14 +1123,9 @@ export async function scheduleTrackClips({
                     events: acceptedSourceNotes,
                     clipId: frozenSource?.sourceClipId ?? clip.id,
                     clipStartBeat: clip.startBeat,
-                    clipEndBeat: frozenSource
-                        ? Math.min(
-                              clip.endBeat,
-                              iterationStartBeat + frozenSource.sourceEndBeat - frozenSource.sourceEntryBeat
-                          )
-                        : clip.endBeat,
+                    clipEndBeat: frozenRepeat ? Math.min(clip.endBeat, frozenRepeat.endBeat) : clip.endBeat,
                     iterationStartBeat,
-                    loopLengthBeats: frozenSource?.passLengthBeats ?? loopLen,
+                    loopLengthBeats: frozenRepeat ? frozenRepeat.strideBeats : loopLen,
                     midiOffsetBeats: frozenSource ? 0 : (clip.midiOffsetBeats ?? 0),
                     loopEnabled: frozenSource ? false : (clip.loopEnabled ?? false),
                     eventsAreAbsolute: frozenSource ? true : undefined,

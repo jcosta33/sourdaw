@@ -1129,6 +1129,62 @@ describe('scheduleMidiNotes', () => {
         );
     });
 
+    it('schedules a frozen first pass’s run-up under a comp that ends at the take start', async () => {
+        // Recorded from 6 in loop [8, 12): the first pass's take opens on the loop, its run-up before it.
+        const sourceClip = midiClip({ startBeat: 6, endBeat: 13 });
+        const track = midiTrack({ clips: [sourceClip] });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            probabilitySeed: 0xdecafbad,
+            notesByClipId: { 'clip-1': [] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        vi.mocked(resolveClipsWithComping).mockReturnValue([
+            {
+                ...sourceClip,
+                endBeat: 8,
+                regionStartBeat: 6,
+                regionEndBeat: 8,
+                sourceStartBeat: 6,
+                midiTakeId: 'first-pass',
+                midiTakeRecordingPassIndex: 0,
+                midiTakeSource: {
+                    sourceClipId: 'clip-1',
+                    sourceEntryBeat: 2,
+                    sourceEndBeat: 6,
+                    phaseHeadBeat: 8,
+                    passLengthBeats: 4,
+                    runUpEntryBeat: 0,
+                    rows: {
+                        notes: {
+                            present: true,
+                            value: [
+                                {
+                                    id: 'run-up',
+                                    pitch: 61,
+                                    startBeat: 0.5,
+                                    duration: 0.25,
+                                    velocity: 100,
+                                    recordingPassIndex: 0,
+                                },
+                            ],
+                        },
+                        controlChanges: { present: false, value: [] },
+                        pitchBends: { present: false, value: [] },
+                    },
+                },
+            },
+        ]);
+
+        await scheduleMidiNotes(6, 8, 6, new Set<string>(), [], defaultTransportState, 120);
+
+        expect(vi.mocked(scheduleNote).mock.calls.map(([, , pitch]) => pitch)).toEqual([61]);
+        expect(shouldPlayMidiEvent).toHaveBeenCalledWith(
+            expect.objectContaining({ eventId: 'run-up', absoluteOccurrenceIndex: 0 })
+        );
+    });
+
     it('prepares selected source for the first Yeast window and reads it again while rolling', async () => {
         const sourceClip = midiClip({ startBeat: 0, endBeat: 8 });
         const track = midiTrack({ clips: [sourceClip], devices: [{ id: 'y', type: 'yeast' }] });

@@ -2198,6 +2198,50 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
         expect(arrivals.order).toEqual(['noteOn', 'expression', 'noteOff']);
     });
 
+    it('renders a frozen first pass’s run-up under a comp that ends at the take start', async () => {
+        // Recorded from 6 in loop [8, 12): the first pass's take opens on the loop, its run-up before it.
+        const arrivals = await dispatchOneNote(
+            {},
+            {
+                clip: {
+                    startBeat: 6,
+                    endBeat: 8,
+                    midiTakeRecordingPassIndex: 0,
+                    midiTakeSource: {
+                        sourceClipId: 'clip-1',
+                        sourceEntryBeat: 2,
+                        sourceEndBeat: 6,
+                        phaseHeadBeat: 8,
+                        passLengthBeats: 4,
+                        runUpEntryBeat: 0,
+                        rows: {
+                            notes: {
+                                present: true,
+                                value: [
+                                    {
+                                        id: 'run-up',
+                                        pitch: 61,
+                                        startBeat: 0.5,
+                                        duration: 0.25,
+                                        velocity: 100,
+                                        recordingPassIndex: 0,
+                                    },
+                                ],
+                            },
+                            controlChanges: { present: true, value: [] },
+                            pitchBends: { present: true, value: [] },
+                        },
+                    },
+                },
+                regionStartBeat: 6,
+                productionProjection: true,
+            }
+        );
+
+        // Beat 6.5 is half a beat past the region start: 0.25s, frame 12000 at this context's rate.
+        expect(arrivals.noteOn.map((request) => [request.noteOrPad, request.sampleFrame])).toEqual([[61, 12_000]]);
+    });
+
     it('falls back to the MPE member bend range when the note never recorded one', async () => {
         // Notes captured before RPN 0 was decoded carry no range. Live resolves
         // them to the MPE member default, which is the range they were actually

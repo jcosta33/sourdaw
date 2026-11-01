@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { projectFrozenMidiTakeWindow } from '#/modules/MIDI/stores';
 import { type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
@@ -135,6 +136,67 @@ describe('prepare MIDI take source capture', () => {
             phaseHeadBeat: 8,
             passLengthBeats: 4,
         });
+    });
+
+    it('keeps the first pass run-up a comp over the clip start plays live', () => {
+        // Recorded from 6 in loop [8, 12): the note struck at 6.5 sits in the run-up before the loop.
+        const clip = ClipDummy.create({ id: 'source', type: 'midi', startBeat: 6, endBeat: 13 });
+        const first = { ...createTake('source', 'First pass', 8, 12, 0), recordingPassIndex: 0 };
+        const runUpRows: MidiClipDataActionSnapshot = {
+            ...rows,
+            notes: {
+                present: true,
+                value: [
+                    { id: 'run-up', pitch: 60, startBeat: 0.5, duration: 0.25, velocity: 100, recordingPassIndex: 0 },
+                ],
+            },
+        };
+        const source = prepareMidiTakeSourceCapture({
+            clip,
+            take: first,
+            siblingTakes: [first],
+            rows: runUpRows,
+            timeline,
+        });
+        if (!source) {
+            throw new Error('Expected the first pass source');
+        }
+
+        const window = projectFrozenMidiTakeWindow({
+            source,
+            recordingPassIndex: 0,
+            absoluteOccurrenceIndex: 0,
+            fromBeat: 6,
+            toBeat: 12,
+        });
+
+        expect(window?.notes.map((note) => [note.id, note.startBeat])).toEqual([['run-up', 6.5]]);
+    });
+
+    it('starts every pass of a recording begun before the loop at the clip start, where live plays it from', () => {
+        const clip = ClipDummy.create({ id: 'source', type: 'midi', startBeat: 6, endBeat: 13 });
+        const first = { ...createTake('source', 'First pass', 8, 12, 0), recordingPassIndex: 0 };
+        const second = { ...createTake('source', 'Second pass', 8, 9, 4), recordingPassIndex: 1 };
+        const siblingTakes = [first, second];
+
+        expect(prepareMidiTakeSourceCapture({ clip, take: first, siblingTakes, rows, timeline })).toMatchObject({
+            sourceEntryBeat: 2,
+            runUpEntryBeat: 0,
+        });
+        expect(prepareMidiTakeSourceCapture({ clip, take: second, siblingTakes, rows, timeline })).toMatchObject({
+            sourceEntryBeat: 6,
+            runUpEntryBeat: 4,
+        });
+    });
+
+    it('captures no run-up for a recording begun inside the loop, whose clip starts after its first take', () => {
+        const clip = ClipDummy.create({ id: 'source', type: 'midi', startBeat: 10, endBeat: 13 });
+        const first = { ...createTake('source', 'First pass', 8, 12, 0), recordingPassIndex: 0 };
+
+        const capture = prepareMidiTakeSourceCapture({ clip, take: first, siblingTakes: [first], rows, timeline });
+
+        expect(capture).toMatchObject({ sourceEntryBeat: -2, phaseHeadBeat: 8 });
+        expect(capture).not.toHaveProperty('runUpEntryBeat');
     });
 
     it('accepts a negative source entry and refuses an incomplete present snapshot', () => {

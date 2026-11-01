@@ -1,5 +1,10 @@
 import { type TakeLaneStoreState } from '#/modules/Arrangement/stores';
-import { isFrozenMidiTakeSource, projectFrozenMidiTakeWindow } from '#/modules/MIDI/stores';
+import {
+    frozenMidiTakeRepeatAt,
+    frozenMidiTakeRepeats,
+    isFrozenMidiTakeSource,
+    projectFrozenMidiTakeWindow,
+} from '#/modules/MIDI/stores';
 import { projectMidiClipWindow } from '#/modules/MIDI/useCases';
 
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
@@ -158,13 +163,11 @@ export function projectPianoRollTakeNotes(
     const ownersByViewId = new Map<string, FrozenPianoRollNoteOwner>();
     for (const [regionIndex, region] of regions.entries()) {
         const { source } = region;
-        const span = source.sourceEndBeat - source.sourceEntryBeat;
-        const first = Math.max(
-            0,
-            Math.floor((region.startBeat - source.phaseHeadBeat - span) / source.passLengthBeats) + 1
-        );
-        const last = Math.ceil((region.endBeat - source.phaseHeadBeat) / source.passLengthBeats);
-        for (let occurrenceIndex = first; occurrenceIndex < last; occurrenceIndex++) {
+        for (const { absoluteOccurrenceIndex: occurrenceIndex } of frozenMidiTakeRepeats(
+            source,
+            region.startBeat,
+            region.endBeat
+        )) {
             const projected = projectFrozenMidiTakeWindow({
                 source,
                 recordingPassIndex: region.recordingPassIndex,
@@ -224,18 +227,11 @@ export function projectPianoRollTakeNotes(
             if (!region) {
                 return null;
             }
-            const occurrenceIndex = Math.floor(
-                (arrangementBeat - region.source.phaseHeadBeat) / region.source.passLengthBeats
-            );
-            const passHeadBeat = region.source.phaseHeadBeat + occurrenceIndex * region.source.passLengthBeats;
-            const sourceBeat = region.source.sourceEntryBeat + arrangementBeat - passHeadBeat;
-            if (
-                occurrenceIndex < 0 ||
-                sourceBeat < region.source.sourceEntryBeat ||
-                sourceBeat >= region.source.sourceEndBeat
-            ) {
+            const repeat = frozenMidiTakeRepeatAt(region.source, arrangementBeat);
+            if (!repeat) {
                 return null;
             }
+            const sourceBeat = region.source.sourceEntryBeat + arrangementBeat - repeat.passHeadBeat;
             return {
                 laneId: region.laneId,
                 takeId: region.takeId,
