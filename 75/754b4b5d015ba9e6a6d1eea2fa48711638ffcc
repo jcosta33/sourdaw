@@ -1,0 +1,23 @@
+scripts/__tests__/check-dependency-boundaries.spec.ts
+  s_0314bb17e5dee3::t_79ab9beef55680 252-281,283-317,319-325
+.dependency-cruiser.cjs
+  s_0314bb17e5dee3::t_a702e9d7150864 137,222,653,701,812,824,837
+.dependency-cruiser.tests.cjs
+  s_0314bb17e5dee3::t_fba047461b2cff 76,93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "75754b4b5d015ba9e6a6d1eea2fa48711638ffcc",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
