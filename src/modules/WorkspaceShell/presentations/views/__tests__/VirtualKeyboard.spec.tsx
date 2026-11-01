@@ -1276,6 +1276,42 @@ describe('VirtualKeyboard', () => {
             }
         });
 
+        it('consumes an auto-repeat Escape without closing when no drag is live', () => {
+            const onClose = vi.fn();
+            render(<VirtualKeyboard onClose={onClose} />);
+            const notPrevented = fireEvent.keyDown(document.body, { code: 'Escape', key: 'Escape', repeat: true });
+            expect(notPrevented).toBe(false);
+            expect(onClose).not.toHaveBeenCalled();
+        });
+
+        it('does not close on the auto-repeat that follows an Escape a drag took', () => {
+            const onClose = vi.fn();
+            render(<VirtualKeyboard onClose={onClose} />);
+            document.documentElement.setAttribute('data-drag-gesture-active', '1');
+            fireEvent.keyDown(document.body, { code: 'Escape', key: 'Escape' });
+            expect(onClose).not.toHaveBeenCalled();
+
+            document.documentElement.removeAttribute('data-drag-gesture-active');
+            fireEvent.keyDown(document.body, { code: 'Escape', key: 'Escape', repeat: true });
+            expect(onClose).not.toHaveBeenCalled();
+        });
+
+        it('lets Shift+Escape through to the global shortcut layer without closing', () => {
+            const onClose = vi.fn();
+            render(<VirtualKeyboard onClose={onClose} />);
+            const globalShortcut = vi.fn();
+            window.addEventListener('keydown', globalShortcut);
+            let notConsumed: boolean;
+            try {
+                notConsumed = fireEvent.keyDown(document.body, { code: 'Escape', key: 'Escape', shiftKey: true });
+            } finally {
+                window.removeEventListener('keydown', globalShortcut);
+            }
+            expect(notConsumed).toBe(true);
+            expect(globalShortcut).toHaveBeenCalledTimes(1);
+            expect(onClose).not.toHaveBeenCalled();
+        });
+
         it('cancels an active timeline gesture instead of closing', () => {
             const onClose = vi.fn();
             cancelGestureMock.mockReturnValueOnce(true);

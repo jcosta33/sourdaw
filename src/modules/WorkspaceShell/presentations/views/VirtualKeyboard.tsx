@@ -45,7 +45,7 @@ import {
 } from '#/modules/CommandInterface/useCases';
 import { triggerLiveNoteOn, triggerLiveNoteOff } from '#/modules/MIDI/useCases';
 import { cn } from '#/utils/Styles/cn';
-import { isDragGestureActive } from '#/utils/UI/activeDragGesture';
+import { isDragGestureActive, isPlainEscapePress } from '#/utils/UI/activeDragGesture';
 
 import { workspaceStore, defaultWorkspaceState } from '../../stores/workspaceStore';
 import { setVirtualKeyboardOctave } from '../../useCases/togglePanel/panelToggles/setVirtualKeyboardOctave';
@@ -297,13 +297,28 @@ const escapeBelongsToAnotherSurface = (panel: Element | null): boolean =>
  */
 type KeydownRule = 'passthrough' | 'close' | 'octave' | 'note' | 'control' | 'swallow';
 
+/**
+ * Only a plain, non-repeat Escape closes the keyboard. A held key's repeats are consumed so the
+ * keyboard does not close on the repeat that follows an Escape a drag already took; a modified
+ * Escape such as the Shift+Escape MIDI panic belongs to the global shortcut layer.
+ */
+const classifyEscape = (event: KeyboardEvent, panel: Element | null): KeydownRule => {
+    if (escapeBelongsToAnotherSurface(panel)) {
+        return 'passthrough';
+    }
+    if (event.repeat) {
+        return 'swallow';
+    }
+    return isPlainEscapePress(event) ? 'close' : 'passthrough';
+};
+
 const classifyKeydown = (event: KeyboardEvent, panel: Element | null): KeydownRule => {
     const isShortcutChord = event.metaKey || (event.ctrlKey && !isAltGraphKey(event));
     if (isShortcutChord || yieldsKeyboardToTarget(event)) {
         return 'passthrough';
     }
     if (event.code === 'Escape') {
-        return escapeBelongsToAnotherSurface(panel) ? 'passthrough' : 'close';
+        return classifyEscape(event, panel);
     }
     if (event.key === 'Tab') {
         return 'passthrough';
