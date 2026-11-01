@@ -1,0 +1,72 @@
+src/modules/Transport/models/__tests__/TempoMapIntegration.property.spec.ts
+  s_3bb122e91d89a5::t_36126f2350542f 1-332
+src/modules/Transport/models/TempoMap.ts
+  s_3bb122e91d89a5::t_4ecef82b089c70 159,169-170,172,274-279,288,291-351,355-417,419,421,424
+  s_3bb122e91d89a5::t_0a58c1d8e0fb43 352-354
+  s_3bb122e91d89a5::t_d81041d1efb22a 425
+  s_3bb122e91d89a5::t_f35fc04e42330e 200-202
+  s_3bb122e91d89a5::t_bc2c31709bbe58 67-69
+  s_3bb122e91d89a5::t_95f9d37ffd951d 171
+  s_3bb122e91d89a5::t_f2cca28ee2f155 203
+  s_3bb122e91d89a5::t_d564f7ac309285 61-66,70-72,80-86,90-95,97-104,166
+  s_3bb122e91d89a5::t_129ed1176540d8 418
+  s_3bb122e91d89a5::t_c277407d81f895 130-131,133-135,153-158
+  s_3bb122e91d89a5::t_ce182debe93ad6 204
+  s_3bb122e91d89a5::t_725a7882caefc8 96
+  s_3bb122e91d89a5::t_b5ff75d0ce7867 132
+  s_3bb122e91d89a5::t_6e72df9f51a48c 199,205
+  s_dde1671ba022b8::t_f8783dfbfb7cfd 160-165,167-168,173
+src/modules/Transport/useCases/projectPpqEndpoints.ts
+  s_3bb122e91d89a5::t_c0a95b7ca26a6b 13-14
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts
+  s_3bb122e91d89a5::t_7cbf1d9bfcaef1 167,176,255-264
+  s_3bb122e91d89a5::t_4b9cf7a280ad53 165
+  s_3bb122e91d89a5::t_50a2284285a834 593-599,603,607-608
+  s_3bb122e91d89a5::t_b6462b74b802e8 570-571,573-580
+  s_3bb122e91d89a5::t_65297e58a1f432 157-164,166,168-169,177,179,186-190,192-194,197-200,202-247,249-254,265-290,292-306
+  s_3bb122e91d89a5::t_d2d97ea7f7ad4c 248
+  s_3bb122e91d89a5::t_bcd7cf9deaa54c 609-610
+  s_3bb122e91d89a5::t_a522efc59797fa 178,191,572,581
+  s_3bb122e91d89a5::t_9efc08577460b9 201
+  s_3bb122e91d89a5::t_1344182610ec74 611
+  s_3bb122e91d89a5::t_547a658921adf4 291
+  s_3bb122e91d89a5::t_770c19b7f4f93b 591-592,600-602,604-606
+  s_3bb122e91d89a5::t_cf784f2cc3130f 307
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/compileAutomationEventsBeatInversion.spec.ts
+  s_3bb122e91d89a5::t_a92ecfb851738a 1-2,4-9,19-27,29-50,58-59,75-76,85,87-120,164-167,168,195,197-199,214,284,286,288-290,311-317,338,351-352
+  s_3bb122e91d89a5::t_e8c78d9c7389c8 51-57,77-84
+  s_3bb122e91d89a5::t_af3920ae9c464e 258
+  s_3bb122e91d89a5::t_24413acb74a970 231-257,259-261,275-279
+  s_3bb122e91d89a5::t_d754a22e2b3fa5 10-18,28,60-74,86,121-141,151,152,169-171,174-176,178,180,185-187,193-201,220-225,227-230,280-287
+  s_3bb122e91d89a5::t_9eb81043f5a656 142-146
+  s_3bb122e91d89a5::t_ca014b1c8a9b41 147-150,155-164
+  s_3bb122e91d89a5::t_fea36cb4c839bf 262-274
+  s_3bb122e91d89a5::t_4c299f293d89f7 165
+  s_3bb122e91d89a5::t_1b425d2513f270 202-219
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_3bb122e91d89a5::t_6ed01f633f5c09 240-241
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2d477b0a02123468f8b9c1358b74bd158d1f203e",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_dde1671ba022b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e4c42ac-51ff-45eb-b81f-f43601ed01dc",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
