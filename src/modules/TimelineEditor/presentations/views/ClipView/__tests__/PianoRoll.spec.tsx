@@ -232,12 +232,24 @@ describe('PianoRoll', () => {
     });
 
     it('hands mixed selected-pass occurrences to the real piano roll renderer and interaction boundary', () => {
+        // Two passes of a loop [0, 4) recording, each comped over one loop of the looping clip. Live
+        // reads the second region from a pass past the second pass's row and wraps it into the loop.
         pianoRollStoreState.tracks = {
             tracks: [
                 {
                     id: 'track-1',
                     devices: [],
-                    clips: [{ id: 'clip-1', trackId: 'track-1', type: 'midi', startBeat: 0, endBeat: 8 }],
+                    clips: [
+                        {
+                            id: 'clip-1',
+                            trackId: 'track-1',
+                            type: 'midi',
+                            startBeat: 0,
+                            endBeat: 8,
+                            loopEnabled: true,
+                            loopLength: 4,
+                        },
+                    ],
                 },
             ],
             selectedTrackId: null,

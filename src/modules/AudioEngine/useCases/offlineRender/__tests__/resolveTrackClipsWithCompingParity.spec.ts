@@ -502,6 +502,59 @@ describe('live and offline comp resolution', () => {
         }
     });
 
+    it('counts a frozen MIDI take’s occurrences from the grid it was captured on, after a split re-homes it', () => {
+        // Pass 0 of a loop recorded from 8 sounds its first source beat at 8. A split at 16 puts
+        // its right fragment on a clip starting there; the take keeps counting from 8, so the
+        // repeat opening at 16 is its third, not its first.
+        const right: Clip = {
+            id: 'right',
+            trackId: 't1',
+            name: 'Recording',
+            startBeat: 16,
+            endBeat: 24,
+            type: 'midi',
+            midiOffsetBeats: 8,
+            loopEnabled: true,
+            loopLength: 4,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '#000',
+            locked: false,
+            muted: false,
+        };
+        const take: Take = {
+            id: 'pass-0:right',
+            clipId: 'right',
+            name: 'Pass 0',
+            startBeat: 16,
+            endBeat: 24,
+            selected: false,
+            sourceOffsetBeats: 0,
+            recordingPassIndex: 0,
+            midiSource: {
+                sourceClipId: 'rec',
+                sourceEntryBeat: 0,
+                sourceEndBeat: 4,
+                phaseHeadBeat: 8,
+                passLengthBeats: 4,
+                rows: {
+                    notes: { present: true, value: [] },
+                    controlChanges: { present: false, value: [] },
+                    pitchBends: { present: false, value: [] },
+                },
+            },
+        };
+        const state = lane([take], take.id, 16, 24);
+        takeLaneStore.set(state);
+
+        const live = resolveClipsWithComping('t1', [right]);
+        const offline = resolveTrackClipsWithComping('t1', [right], state);
+
+        expect(offline).toEqual(live);
+        expect(live.map((fragment) => [fragment.startBeat, fragment.sourceStartBeat])).toEqual([[16, 8]]);
+    });
+
     it.each(cases)('resolve the same fragments for a pass $name', ({ state, clip }) => {
         takeLaneStore.set(state);
         expect(takeLaneStore.value).toEqual(state);

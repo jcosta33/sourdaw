@@ -93,6 +93,9 @@ function rows() {
     return takeLaneStore.value?.lanes[0]?.takes.map((take) => take.midiSource?.rows.notes.value);
 }
 
+/** A looping clip restarts a selected region every loop length from its own start, as live does. */
+const loopingClip = { id: 'clip', startBeat: 0, endBeat: 12, loopEnabled: true, loopLength: 4 };
+
 function mixedProjection() {
     const lane = takeLaneStore.value?.lanes[0];
     if (!lane) {
@@ -149,7 +152,7 @@ function mixedProjection() {
             },
         ],
     });
-    return projectPianoRollTakeNotes({ id: 'clip', startBeat: 0, endBeat: 12 }, 'track', takeLaneStore.value);
+    return projectPianoRollTakeNotes(loopingClip, 'track', takeLaneStore.value);
 }
 
 const baseGapRow = { id: 'base-gap-original', pitch: 62, startBeat: 4.5, duration: 0.5, velocity: 87 };
@@ -635,11 +638,7 @@ describe('selected piano roll Command callbacks', () => {
             9,
             9,
         ]);
-        const replayed = projectPianoRollTakeNotes(
-            { id: 'clip', startBeat: 0, endBeat: 12 },
-            'track',
-            takeLaneStore.value
-        );
+        const replayed = projectPianoRollTakeNotes(loopingClip, 'track', takeLaneStore.value);
         expect(
             replayed.notes
                 .filter((note) => replayed.ownersByViewId.get(note.id)?.row.id === original.id)
@@ -681,7 +680,7 @@ describe('selected piano roll Command callbacks', () => {
             ],
         });
         const projection = projectPianoRollTakeNotes(
-            { id: 'clip', startBeat: 0, endBeat: 10 },
+            { id: 'clip', startBeat: 0, endBeat: 10, loopEnabled: true, loopLength: 3.7 },
             'track',
             takeLaneStore.value
         );
@@ -699,7 +698,7 @@ describe('selected piano roll Command callbacks', () => {
             ])
         );
         const replayed = projectPianoRollTakeNotes(
-            { id: 'clip', startBeat: 0, endBeat: 10 },
+            { id: 'clip', startBeat: 0, endBeat: 10, loopEnabled: true, loopLength: 3.7 },
             'track',
             takeLaneStore.value
         );
