@@ -132,7 +132,7 @@ write. Removing the root-installation producer must fail the probe, while author
 prefixes, identical-content replacement and an aborted private preview remain clean. Inject a
 capture failure and reset to verify run-error precedence, fail-closed reporting and both listener
 cleanups. A self-check that calls only the comparator does not observe the missing producer.
-For rejected partial merges, use the complementary real-store probe in `project-integrity.md` (probe 12):
+For rejected partial merges, use the complementary real-store probe in `project-integrity.md`:
 the root-installation scorer alone cannot detect a stale projected store.
 
 ### 2026-10-29 — error fixtures lacked ordinary pathnames containing diagnostic words (introduced by PR #5274)
@@ -656,7 +656,7 @@ The `discardProjectChanges` specs from PR #3141 mocked the transition authority,
 path at epoch 0, where the epoch term is bypassed, and mocked `captureProjectRevision` to a
 constant with a no-op `stopPlayback`. None of them could observe the guard reading the discard's
 own load transaction, transport halt and `loading` publication as a newer transition or an edit
-(#5573). The rule is probe 11 in `project-integrity.md`; the case is pinned by `discardProjectChanges.realPath.spec.ts`.
+(#5573). The full lesson is in `project-integrity.md`.
 
 Probe: run the real revision and identity capture over a real root document, after one real
 transition has activated, with every wait the action crosses spanning a frame so pending document

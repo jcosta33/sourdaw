@@ -33,7 +33,7 @@ Runtime-monitor companions live in `session-lifecycle.md`.
   restoration before encoding and the encoded PCM is inspected. Dropping the frozen ID fails before encoding; stale
   prints stay excluded and the empty-clip all-buffer fallback stays. Owner mocks satisfy the live callable result
   contract (a void strip mock threw inside recovery, was caught, and the spec stayed green); read logged recovery
-  failures before trusting a pass (`test-validity.md`, stale owner result).
+  failures before trusting a pass (`test-validity.md`: a stale owner result swallowed by recovery tests).
 
 ### 3. Admission accepts only what hydration keeps (#4987, #5064, #3354)
 
