@@ -1,0 +1,50 @@
+scripts/__tests__/removeLane.spec.ts
+  s_b6d960d6f9ffc4::t_8d4e0fac87ba2a 446-448,454-464
+  s_b6d960d6f9ffc4::t_90beb7bfa2040c 22
+  s_b6d960d6f9ffc4::t_1d99030ad00014 814
+  s_88fc7e0d05bab6::t_3b3344289612de 465-467
+scripts/unitShardCheckoutOwnership.ts
+  s_b6d960d6f9ffc4::t_69c63ef8c98830 6
+  s_b6d960d6f9ffc4::t_d646b3aaa7c766 2
+scripts/unitExecutionCopy.ts
+  s_b6d960d6f9ffc4::t_ae3aa2e9a55bec 101
+scripts/__tests__/runIsolatedUnitShard.spec.ts
+  s_b6d960d6f9ffc4::t_b3c3bbecf4d296 717-744
+scripts/__tests__/unitExecutionCopy.spec.ts
+  s_b6d960d6f9ffc4::t_a2131b6698d228 146-147
+  s_b6d960d6f9ffc4::t_245ea61ee42d46 183-187
+  s_b6d960d6f9ffc4::t_f6cdd6930b9d7d 198
+  s_b6d960d6f9ffc4::t_67a7c43b53059a 215
+scripts/removeLane.ts
+  s_b6d960d6f9ffc4::t_0bd295a845f199 5
+  s_b6d960d6f9ffc4::t_c4de4285f56f0f 91
+scripts/__tests__/pnpmModulesPreflight.spec.ts
+  s_b6d960d6f9ffc4::t_0ad34e84bb6204 289-307
+scripts/pnpmModulesPreflight.ts
+  s_b6d960d6f9ffc4::t_336bfa12318d69 40
+  s_b6d960d6f9ffc4::t_5178c24b37f08a 285-290
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cb24cfec7282df629d783919a5b51feacc79bdb6",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b6d960d6f9ffc4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cae2256a-e9f4-4e6e-9cf5-89aa54178786",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
