@@ -15,6 +15,7 @@
 //! silently substituted.
 
 mod activations;
+mod admission_plan;
 mod conv;
 mod convnet;
 mod linear;
@@ -222,6 +223,9 @@ pub fn parse_nam_model(json: &str) -> Result<NamModel, NamModelError> {
             if config_layers_are_slimmable(config) {
                 return Err(NamModelError::SlimmableUnsupported);
             }
+            // Native admission's structural and memory plan, before any
+            // buffer is sized from the config.
+            admission_plan::admit_wavenet(json).map_err(NamModelError::InvalidConfig)?;
             let mut slice: &[f32] = &weights;
             let model = WavenetModel::from_config(config, &mut slice, sample_rate)?;
             let leftover = slice.len();
@@ -506,8 +510,10 @@ mod parity {
             serde_json::from_str(&original).expect("fixture must be valid JSON");
         parsed["config"]["layers"][0]["dilations"] = serde_json::json!([1, 2, 4]);
         let mutated = serde_json::to_string(&parsed).expect("mutated fixture must serialize");
+        // The shared admission plan counts the weights before the parser does.
         match parse_nam_model(&mutated) {
-            Err(super::NamModelError::WeightCountMismatch { .. }) => {}
+            Err(super::NamModelError::InvalidConfig(reason))
+                if reason.contains("exact weight count") => {}
             Err(other) => panic!("dilation-count change must fail loudly, got {other}"),
             Ok(_) => panic!("dilation-count change must be rejected, not silently accepted"),
         }

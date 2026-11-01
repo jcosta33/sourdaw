@@ -114,6 +114,10 @@ async function engineFixture() {
     }
     return { context, sources, gate, engine };
 }
+/** The programme gate is its one edge into the listening output, never its gain. */
+function programmeOpen(gate: Node): boolean {
+    return gate.connections.length > 0;
+}
 const ID = 'dc0f62d1-dc26-4c5c-81db-36130c1466e4:0';
 const INPUT = { confirmationId: 'pending', targetId: 'drums', side: 'baseline' as const };
 const applied = (admittedBatch: number) => ({
@@ -221,11 +225,11 @@ describe('measured audition controller through the actual exclusive source execu
         await vi.waitFor(() => expect(apply).toHaveBeenCalledTimes(2));
         expect(measuredPreviewAuditionStore.value?.phase).toBe('releasing');
         expect(driven.sources[0]?.stop).toHaveBeenCalledTimes(1);
-        expect(driven.gate.gain.value).toBe(0);
+        expect(programmeOpen(driven.gate)).toBe(false);
         restore.reject(new Error('actual restore rejected'));
         await expect(stopped).resolves.toEqual({ status: 'restore-failed', reason: RESTORE_FAILURE });
         expect(measuredPreviewAuditionStore.value?.phase).toBe('restore-failed');
-        expect(driven.gate.gain.value).toBe(0);
+        expect(programmeOpen(driven.gate)).toBe(false);
 
         // While the native gate still refuses, each Stop retries the restore and fails on its own
         // attempt: a preview begun during it waits and fails with it, and none after it is held.
@@ -238,7 +242,7 @@ describe('measured audition controller through the actual exclusive source execu
         stillRefused.reject(new Error('actual restore still rejected'));
         await expect(retried).resolves.toEqual({ status: 'restore-failed', reason: RESTORE_FAILURE });
         await duringFails;
-        expect(driven.gate.gain.value).toBe(0);
+        expect(programmeOpen(driven.gate)).toBe(false);
         expect(driven.engine.beginAudioPreviewIntent().ready).toBeUndefined();
 
         // The native gate applies again, so the next Stop restores the programme.
@@ -247,7 +251,7 @@ describe('measured audition controller through the actual exclusive source execu
         expect(apply.mock.calls[3]?.[0]).toEqual([
             expect.objectContaining({ commands: [{ kind: 'set-monitor-shadow', shadowed: false }] }),
         ]);
-        expect(driven.gate.gain.value).toBe(1);
+        expect(programmeOpen(driven.gate)).toBe(true);
         expect(measuredPreviewAuditionStore.value?.phase).toBe('idle');
         const ordinary = audio.playAudioBufferPreview({ buffer: exact, onEnded: vi.fn() });
         await ordinary?.ready;
@@ -257,7 +261,7 @@ describe('measured audition controller through the actual exclusive source execu
     it('stops a playing audition when a project edit retires its pair', async () => {
         const { createCrdtDoc, mutateCrdtDoc } = await import('#/modules/CrdtDocument/useCases');
         await expect(startMeasuredPreviewAudition(INPUT)).resolves.toEqual({ status: 'playing' });
-        expect(driven.gate.gain.value).toBe(0);
+        expect(programmeOpen(driven.gate)).toBe(false);
         createCrdtDoc('root');
         wire.resolve.mockReturnValue({ status: 'unavailable', reason: 'The project changed after measurement.' });
         mutateCrdtDoc<{ tempo?: number }>({
@@ -268,7 +272,7 @@ describe('measured audition controller through the actual exclusive source execu
         });
         expect(driven.sources[0]?.stop).toHaveBeenCalledOnce();
         await vi.waitFor(() => expect(measuredPreviewAuditionStore.value?.phase).toBe('idle'));
-        expect(driven.gate.gain.value).toBe(1);
+        expect(programmeOpen(driven.gate)).toBe(true);
         await expect(startMeasuredPreviewAudition(INPUT)).resolves.toEqual({
             status: 'unavailable',
             reason: 'The project changed after measurement.',

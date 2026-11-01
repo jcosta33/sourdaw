@@ -797,7 +797,7 @@
             "fixtures": [
                 {
                     "path": "evidence/agent-campaign/corpora/development.json",
-                    "digest": "0683f100cfc143a19277fb38e0ed6aad41b9af8f13c52a4bf0ed11eec38b80af"
+                    "digest": "1689a515ca00217e66a06eb679cbdfafb8987b9be9d25e1f6a618dfdc222aa8b"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/fixture-project.json",
@@ -817,7 +817,7 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts",
-                    "digest": "47153a46f35317100dd975dca430f9cdff6c66f5afe3693bb47a343566c29d24"
+                    "digest": "1e433c3731ac46800d0c7af0b8fac43bc5f88ecb2d34cae6bb55b01da820ed20"
                 }
             ]
         },

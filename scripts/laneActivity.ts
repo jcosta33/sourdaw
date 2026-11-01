@@ -13,7 +13,11 @@ export const CENSUS_ATTEMPTS = 4;
 
 type Census = { kind: 'conclusive'; active: boolean } | { kind: 'inconclusive'; reason: string };
 
+type DirectInspection = { kind: 'observed'; pids: ReadonlySet<number>; gone: number[] } | Census;
+
 type Shell = Pick<ShellRunner, 'capture'>;
+
+const INCOMPLETE = 'open-file inspection was incomplete';
 
 function processIsGone(pid: number): boolean {
     try {
@@ -38,6 +42,47 @@ function referencesPath(output: string, target: string): boolean {
         .some((field) => field.startsWith('n') && containsPath(target, canonicalPath(field.slice(1), realpathSync)));
 }
 
+/** Splits processes a catalog omitted into those still running and those that have exited. */
+function uncataloged(pids: Iterable<number>, catalog: ReadonlySet<number>): { live: number[]; gone: number[] } {
+    const live: number[] = [];
+    const gone: number[] = [];
+    for (const pid of new Set(pids)) {
+        if (catalog.has(pid)) {
+            continue;
+        }
+        if (processIsGone(pid)) {
+            gone.push(pid);
+        } else {
+            live.push(pid);
+        }
+    }
+    return { live, gone };
+}
+
+/** Catalogs exactly the processes a broader census omitted; each must be observed or have exited. */
+function inspectDirectly(target: string, pids: number[], shell: Shell, omission: string): DirectInspection {
+    if (pids.length === 0) {
+        return { kind: 'observed', pids: new Set(), gone: [] };
+    }
+    const output = shell.capture('lsof', ['-nP', '-a', '-p', pids.join(','), '-F0pftn'], {
+        preserveStdout: true,
+        unmatchedProcesses: 'allowed',
+    });
+    if (referencesPath(output, target)) {
+        return { kind: 'conclusive', active: true };
+    }
+    // lsof prints nothing when every selected process exited before it read them.
+    const catalog = output === '' ? new Set<number>() : parseLsofCensus(output)?.pids;
+    if (catalog === undefined) {
+        return { kind: 'inconclusive', reason: INCOMPLETE };
+    }
+    const { live, gone } = uncataloged(pids, catalog);
+    if (live.length > 0) {
+        return { kind: 'inconclusive', reason: omission };
+    }
+    return { kind: 'observed', pids: catalog, gone };
+}
+
 function inspectOnce(target: string, uid: number, shell: Shell): Census {
     const before = sameUserProcesses(shell, uid);
     const output = shell.capture('lsof', ['-nP', '-a', '-u', String(uid), '-F0pftn'], {
@@ -50,32 +95,30 @@ function inspectOnce(target: string, uid: number, shell: Shell): Census {
     }
     const census = parseLsofCensus(output);
     if (census === undefined) {
-        return { kind: 'inconclusive', reason: 'open-file inspection was incomplete' };
+        return { kind: 'inconclusive', reason: INCOMPLETE };
     }
     const after = sameUserProcesses(shell, uid);
-    const missed = new Set<number>();
-    for (const pid of new Set([...before, ...after])) {
-        if (census.pids.has(pid)) {
-            continue;
-        }
-        if (processIsGone(pid)) {
-            missed.add(pid);
-            continue;
-        }
-        return { kind: 'inconclusive', reason: 'open-file inspection omitted a live process' };
+    const omitted = uncataloged([...before, ...after], census.pids);
+    const direct = inspectDirectly(target, omitted.live, shell, 'open-file inspection omitted a live process');
+    if (direct.kind !== 'observed') {
+        return direct;
+    }
+    const missed = new Set([...omitted.gone, ...direct.gone]);
+    if (missed.size === 0) {
+        return { kind: 'conclusive', active: false };
     }
     // A missed holder can fork and exit before the liveness check. Sample again after proving it
     // gone, so its heir cannot inherit an absence claim from the earlier process catalog.
-    if (missed.size > 0) {
-        for (const pid of sameUserProcesses(shell, uid)) {
-            if (census.pids.has(pid) || missed.has(pid)) {
-                continue;
-            }
-            if (processIsGone(pid)) {
-                continue;
-            }
-            return { kind: 'inconclusive', reason: 'open-file inspection has an uncovered successor process' };
-        }
+    const observed = new Set([...census.pids, ...direct.pids, ...missed]);
+    const successors = uncataloged(sameUserProcesses(shell, uid), observed);
+    const heirs = inspectDirectly(
+        target,
+        successors.live,
+        shell,
+        'open-file inspection has an uncovered successor process'
+    );
+    if (heirs.kind !== 'observed') {
+        return heirs;
     }
     return { kind: 'conclusive', active: false };
 }

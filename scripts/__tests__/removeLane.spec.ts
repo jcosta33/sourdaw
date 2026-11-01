@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
     existsSync,
     mkdirSync,
@@ -18,6 +18,7 @@ import { AUTHOR_BOT_NODE_ID, AUTHOR_LOCK_REASON } from '../githubAppIdentity.ts'
 import { guardFailureReceiptPath, supersessionCommentBody, type GuardFailureReceipt } from '../prContract.ts';
 import { prunableEntries } from '../pruneLane.ts';
 import {
+    capture,
     disposableIgnored,
     inside,
     isExpectedReviewLaneName,
@@ -1595,6 +1596,23 @@ describe('worktree parser', () => {
 });
 
 describe('lane-removal shell boundary', () => {
+    it.skipIf(process.platform !== 'darwin')(
+        'admits an unmatched lsof process selection only when the caller allows it',
+        () => {
+            const gone = spawnSync(process.execPath, ['-e', '']).pid;
+            const selection = ['-nP', '-a', '-p', `${process.pid},${gone}`, '-F0pftn'];
+            const output = capture('lsof', selection, { preserveStdout: true, unmatchedProcesses: 'allowed' });
+            expect(output.startsWith(`p${process.pid}\0\n`)).toBe(true);
+            expect(output).not.toContain(`p${gone}\0`);
+            expect(() => capture('lsof', selection, { preserveStdout: true })).toThrow('lsof failed with exit 1');
+            expect(() =>
+                capture('lsof', ['-nP', '-a', '-p', 'unknown', '-F0pftn'], { unmatchedProcesses: 'allowed' })
+            ).toThrow(/^lsof: illegal process ID: unknown/);
+            expect(() => capture('ps', ['-p', String(gone)], { unmatchedProcesses: 'allowed' })).toThrow(
+                'unmatched process selection requires lsof inspection'
+            );
+        }
+    );
     it('recognizes an active lsof cwd through an alias', () => {
         const repository = mkdtempSync(join(tmpdir(), 'sourdaw-lane-active-alias-'));
         const aliasParent = mkdtempSync(join(tmpdir(), 'sourdaw-lane-active-alias-link-'));
