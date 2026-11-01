@@ -1,4 +1,4 @@
-import { countSettledOverdubPasses, isOverdubLanding } from '#/modules/MIDI/useCases';
+import { countSettledOverdubPasses, isOverdubLanding, waitForOverdubLanding } from '#/modules/MIDI/useCases';
 
 import type { createNativeRecordingCaptureClock } from '#/modules/AudioEngine/useCases';
 import type { NativeCaptureSnapshot, NativeCaptureBoundary } from './nativeRecordingCaptureHistory';
@@ -51,6 +51,12 @@ type RecordingLifecycle = {
     trackTakeCommit: (commit: Promise<'refused' | 'closed'>) => void;
     /** Resolve once every closing stop has settled, including ones registered while waiting. */
     waitForClosing: () => Promise<void>;
+    /**
+     * Resolve once `isClosingRecording` is false: every closing stop, tracked
+     * commit and overdub landing has settled. Unlike `waitForCommits` it takes
+     * nothing from the stops, so a caller other than a stop may use it.
+     */
+    waitUntilRecordingClosed: () => Promise<void>;
     /**
      * Resolve once every tracked commit has settled, including ones registered while waiting.
      * Only a stop may call it: it takes the commits it awaits away from every later caller.
@@ -156,6 +162,16 @@ async function waitForClosing(): Promise<void> {
     }
 }
 
+async function waitUntilRecordingClosed(): Promise<void> {
+    // Each pass awaits what is closing now; a stop, commit or landing that
+    // registers meanwhile keeps `isClosingRecording` true for the next pass.
+    while (isClosingRecording()) {
+        await waitForClosing();
+        await Promise.allSettled([...commitsInFlight]);
+        await waitForOverdubLanding();
+    }
+}
+
 export const recordingLifecycle: RecordingLifecycle = {
     get countInTimerId() {
         return countInTimerId;
@@ -247,4 +263,5 @@ export const recordingLifecycle: RecordingLifecycle = {
     trackTakeCommit,
     waitForClosing,
     waitForCommits,
+    waitUntilRecordingClosed,
 };

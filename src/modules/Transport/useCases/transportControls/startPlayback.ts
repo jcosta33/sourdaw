@@ -11,14 +11,18 @@ import { playheadWrapCountRef } from '../../stores/playheadWrapCountRef';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 import { ensureTrackStrips } from '../ensureTrackStrips';
 import { claimSchedulerSession } from '../playheadScheduler/claimSchedulerSession';
+import { opensPunchIn } from '../playheadScheduler/opensPunchIn';
 import { prepareInitialBrowserPlayback } from '../playheadScheduler/prepareInitialBrowserPlayback';
 import { schedulerSession } from '../playheadScheduler/schedulerSession';
 import { startPlayheadScheduler } from '../playheadScheduler/startPlayheadScheduler';
 
+import { recordingLifecycle } from './recordingLifecycle';
 import { resolveRollStartBeat } from './resolveRollStartBeat';
 import { startNativeSessionAtBeat } from './startNativeSessionAtBeat';
 import { startSchedulerWhenNativeSessionSettles, type HoldRelease } from './startSchedulerWhenNativeSessionSettles';
 import { stopPlayback } from './stopPlayback';
+
+import type { TransportState } from '../../models/TransportState';
 
 /**
  * Resolves once the scheduler start has been decided, so a caller that has to
@@ -39,6 +43,17 @@ export async function startPlayback(onRoll?: (contextSeconds: number, beat: numb
         logger.error(new Error('Playback start failed', { cause: error }));
         notifyUser('Playback could not start. Press Play again.', 'error');
     }
+}
+
+/**
+ * Whether Play must let an earlier gesture's closing take land before it takes
+ * its programme witness. The take commits into the stores the witness compares,
+ * so landing during preparation would read as a project change and refuse the
+ * Play (#5998). Only a Play whose first window punches in waits: its recorder
+ * start waits behind that same flush anyway, while any other Play rolls at once.
+ */
+function awaitsClosingTake(state: TransportState, startBeat: number): boolean {
+    return recordingLifecycle.isClosingRecording() && opensPunchIn(state, startBeat);
 }
 
 async function startPlaybackRequest(onRoll?: (contextSeconds: number, beat: number) => void): Promise<void> {
@@ -96,6 +111,10 @@ async function startPlaybackRequest(onRoll?: (contextSeconds: number, beat: numb
             }
         };
         try {
+            // The held playhead covers the wait.
+            if (awaitsClosingTake(state, startPosition)) {
+                await recordingLifecycle.waitUntilRecordingClosed();
+            }
             if (!stillOwnsRequest()) {
                 return;
             }
