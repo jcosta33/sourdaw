@@ -34,6 +34,7 @@ import {
     setDeviceParameter,
     initStalenessDetection,
     initTimelineScrollClamp,
+    initClipSelectionReconciliation,
     setArrangementEventBus,
     setClipAudioAssetStager,
     setOfflineRenderDependencies,
@@ -727,6 +728,7 @@ initCrumbsModePush(eventBus);
 syncCrumbsNativeInstances();
 initStalenessDetection();
 initTimelineScrollClamp();
+initClipSelectionReconciliation();
 
 // Registered for the life of the process, so deadline-evidence reading has
 // main-thread long-task coverage from startup regardless of what is mounted.

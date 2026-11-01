@@ -261,6 +261,7 @@ export { toggleVariationLanes } from './toggleTrackState/toggleVariationLanes';
 
 export { zoomTracksVertical } from './trackZoom';
 export { initTimelineScrollClamp } from './initTimelineScrollClamp';
+export { initClipSelectionReconciliation } from './initClipSelectionReconciliation';
 export { detectVariationLaneEnabling } from './detectVariationLaneEnabling';
 export { hasVariationLanes } from './hasVariationLanes';
 export { getTimelineSurfaceMinimumHeight } from './getTimelineSurfaceMinimumHeight';
