@@ -1064,3 +1064,89 @@ Automerge change, where every list read returns a fresh proxy: #5967's table exc
 snapshots that way, and PR #5891's frozen MIDI take sources escaped the same way, failing every
 agent command batch at its in-change postcondition check. Exclude scopes by their path from the
 namespace root, and give every scope check an in-change case run inside a real `change(from(doc))`.
+
+## Standing probes: CRDT undo, imports, checkpoints and branch recovery
+
+Moved from the `crdt-collaboration` skill. Each probe names the input that breaks and the check
+that must fail.
+
+### Identity-scoped undo must survive peer edits (escaped via #3757)
+
+Whole-track snapshots passed ordinary undo/redo coverage while erasing later peer work. Apply a
+peer edit after the original operation and again after undo, then run real undo and redo through
+Command and read both the authoritative CRDT document and its store projection. Whole-aggregate
+snapshot restoration for an identity-scoped edit must fail even when an isolated round trip passes.
+When a divergence guard captures serialized project entities, prove that CRDT serialization field
+order alone never becomes a conflict, while changed values, array order, missing fields and
+malformed captures still fail closed.
+
+### An import must cross the serialized owner boundary (escaped via #3968)
+
+MIDI export, parsing and mocked owner writes were each proven separately while controller-only
+tracks and late control changes still disappeared or landed beyond the usable clip. For an import
+that creates project truth, drive actual serialized source bytes through the real parser and read
+API into the owning stores and authoritative document, then real undo and redo. Include supported
+event-only inputs and point events after notes or exactly on an extent boundary. Mutations that
+drop an event or its channel at each boundary, omit it from the owner write, mis-size its extent,
+or skip either history half must each fail the connected check.
+
+### External checkpoint catalogs need scoped metadata and atomic authority (#3945)
+
+Hydrating the catalog by reading every stored root is the defect. Use actual owner-filtered
+metadata-only reads, and validate only a selected root on the separate artifact route. Prove
+publication on transaction completion, including an abort after queued request successes, and race
+two independent connections against one expected revision: split writes and read-then-write
+conflict checks must not pass.
+
+### Checkpoint restoration must be bound to the active project
+
+The singleton checkpoint catalog and both ownerless restoration routes let a project-scoped handle
+that survived a real create/load lifecycle overwrite the incoming project or advance its cursor.
+Test every restoration route against the active project identity, complete canonical document
+contents and catalog selection; a private bypass must not overwrite the incoming project or move
+its cursor.
+
+### Branch recovery must bind undo to recovered document truth (#3338)
+
+Restoring the outgoing undo snapshot unconditionally after a failed branch switch was approved
+because durable lineage recovery selecting a third branch was dismissed as existing behavior.
+Exercise a durable recovery whose branch, or complete document membership and heads, diverge from
+the outgoing capture, with an exact snapshot rollback as the positive control. Assert the final
+active document reference and the undo history agree; a restore callback having run does not show
+its entries belong to the recovered project truth.
+
+## Standing probes: command entry, identity-scoped replay and grouped inverse capture
+
+Moved from the `state-and-write-paths` skill.
+
+### Command entry must prove normalized state reaches every authority (#4082)
+
+A Loop control updated a visible flag while leaving an invalid loop region that the document
+decoder rejected; a direct use-case or static-prop fixture could not see it. For a normalized
+project-state command, drive the public command entry and require the raw document, the owning
+store projection, the visible control state and the engine projection to agree on the same
+committed value.
+
+### Identity-scoped replay must prove owner and empty-state recovery
+
+Attack undo and redo after replacing an aggregate with a new owner that reuses the same track and
+child identities, and exercise a forward write whose prior state is empty. Persistence evidence
+creates history through the real producer, persists and reloads the document, hydrates that saved
+history, then replays it; an injected undo entry proves neither the producer nor the saved
+contract.
+
+### Grouped inverse capture must read the owning action prefix (#4083, #4073)
+
+`executeAppActionBatch` describes every member before any member executes. Guarded take-selection
+replay had green single-handler coverage but captured each grouped inverse from the same live
+pre-batch selection, and projected validation for heterogeneous grouped replay did not close that
+description-time capture route. Prove prefix-dependent capture through real grouped undo and redo,
+inspecting both raw CRDT authority and the owning store projection; independently green handler
+tests do not establish sibling-state capture. Replace the earlier-sibling projection with the live
+pre-batch state: the grouped case must fail.
+
+A forward comp-then-remove case proved only that the removed lane stayed absent; it did not inspect
+the removal inverse's intermediate snapshot or run grouped undo and redo (#4071). When one batch
+member snapshots state produced by an earlier member, inspect the real history entry and replay the
+group against both raw CRDT authority and its store projection. A correct forward final state cannot
+prove the inverse was composed from the batch prefix.

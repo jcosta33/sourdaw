@@ -15,39 +15,71 @@ description: >-
 
 The presentation layer stays presentation-only. Business truth in the tree, dense editors as DOM forests, and accessibility bolted on late all end the same way: untestable UI and RT-adjacent work on the wrong thread.
 
-## Core rules
+## Rules
 
 ### 1. Presentation only
 
-Components, hooks, and view models bind controls to semantics, layout, and read surfaces. They are not the home of validation, persistence, undo orchestration, or engine control, and they must not import repositories, handlers, or engine (`architecture` rule 5). React stays in presentation (`react-only-in-presentation`). Business logic parked in a hook labelled “UI” is boundary evasion, not presentation. Business rules in the tree duplicate across surfaces and couple domain logic to the React lifecycle.
+Components, hooks, and view models bind controls to semantics, layout, and read surfaces. They are not the home of validation, persistence, undo orchestration, or engine control, and they must not import repositories, handlers, or engine (`architecture` rule 5). React stays in presentation. Business logic parked in a hook labelled “UI” is boundary evasion, not presentation.
+
+**Why:** business rules in the tree duplicate across surfaces and couple domain logic to the React lifecycle.
+
+**Enforced by:** dependency-cruiser `react-only-in-presentation`, `presentation-no-direct-repositories`, `presentation-no-direct-handlers`, `presentation-no-engine-runtime-imports`; logic hidden in a hook is review only.
 
 ### 2. React owns layout; renderer surfaces own pixels
 
-Draw timeline lanes, waveforms, piano roll, automation, spectrograms, dense overlays, and hot-path meters on a Canvas/WebGL/WebGPU-style renderer, never a giant DOM forest. React owns chrome, layout, and accessibility semantics around the surface; the renderer draws, hit-tests, and runs pointer/render loops. DOM-per-clip does not scale.
+Draw timeline lanes, waveforms, piano roll, automation, spectrograms, dense overlays, and hot-path meters on a Canvas/WebGL/WebGPU-style renderer, never a giant DOM forest. React owns chrome, layout, and accessibility semantics around the surface; the renderer draws, hit-tests, and runs pointer/render loops.
+
+**Why:** DOM-per-clip does not scale.
+
+**Enforced by:** review only.
 
 ### 3. Hooks stay thin; leaf components stay dumb
 
-Hooks bind presentation to explicit actions and read surfaces. Leaf `presentations/components/` must not import useCases or business stores (`components-no-usecase-access`, `components-no-business-store-access`, `components-no-usecase-transitively`). Views and hooks compose; pass props into leaves. Fat hooks and business-aware leaves are untestable mini-use-cases hiding in the React tree.
+Hooks bind presentation to explicit actions and read surfaces. Leaf `presentations/components/` must not import useCases or business stores. Views and hooks compose; pass props into leaves.
+
+**Why:** fat hooks and business-aware leaves are untestable mini-use-cases hiding in the React tree.
+
+**Enforced by:** dependency-cruiser `components-no-usecase-access`, `components-no-business-store-access`, and `components-no-usecase-transitively` (`.dependency-cruiser.reachability.cjs`); hook thickness is review only.
 
 ### 4. Accessibility is part of component design
 
-Reach for real buttons, inputs, sliders, lists, dialogs, menus, and labels before anything custom. Toggle/pressed semantics must be explicit for transport, mute/solo, arm, and similar controls. Core workflows stay keyboard-operable. Dense surfaces still need accessible support in the surrounding chrome. Semantics retrofitted after the fact produce visual-only controls that fail a11y and usually keyboard use too.
+Reach for real buttons, inputs, sliders, lists, dialogs, menus, and labels before anything custom. Toggle/pressed semantics must be explicit for transport, mute/solo, arm, and similar controls. Core workflows stay keyboard-operable. Dense surfaces still need accessible support in the surrounding chrome.
+
+**Why:** semantics retrofitted after the fact produce visual-only controls that fail a11y and usually keyboard use too.
+
+**Enforced by:** ESLint `jsx-a11y-x` rules (for example `interactive-supports-focus`) for markup; pressed semantics and keyboard operability are review only.
 
 ### 5. Styling is systematic
 
-Use design tokens and project-standard primitives, tuned for dark-UI legibility at DAW density. No one-off styling system per feature: fragmented styling is unmaintainable at that density. Extend CVA variants on `src/components/ui/` primitives; do not dump a long `className` pile onto `Button` / `Input` / other `ui/` primitives at the call site.
+Use design tokens and project-standard primitives, tuned for dark-UI legibility at DAW density. No one-off styling system per feature. Extend CVA variants on `src/components/ui/` primitives; do not dump a long `className` pile onto `Button` / `Input` / other `ui/` primitives at the call site.
+
+**Why:** fragmented styling is unmaintainable at DAW density.
+
+**Enforced by:** review only (contrast probe: `review-stances/rendered-contrast.md`).
 
 ### 6. No happy-path-only coding
 
 The audio thread, async projections, the network, and rendering backends genuinely fail. Build error boundaries, fallback UIs, and structured pending/error state for async UI. Platform-dependent renderer selection must preserve a working fallback, such as WebGPU to Canvas.
 
+**Why:** a failure with no designed state leaves a blank or frozen surface mid-session.
+
+**Enforced by:** review only.
+
 ### 7. Compiler-friendly components
 
-Prefer a ternary or early `return null` over render `&&`; leaky non-boolean `&&` (e.g. `0 && …`) is **error** lint and silently renders `0`/`''`. Consume Context with `use()`, not `useContext`.
+Prefer a ternary or early `return null` over render `&&`. Consume Context with `use()`, not `useContext`.
+
+**Why:** leaky non-boolean `&&` (e.g. `0 && …`) silently renders `0`/`''`.
+
+**Enforced by:** ESLint `@eslint-react/no-leaked-conditional-rendering` (error); `use()` over `useContext` is review only.
 
 ### 8. View models shape display; writes go through actions
 
-View models shape data for display. Validation, persistence, cross-feature mutation, and undo semantics belong elsewhere. A renderer or view model may interpret interactions; authoritative writes go through use cases / `executeAppAction`. One that writes truth is a use case in the wrong clothes.
+View models shape data for display. Validation, persistence, cross-feature mutation, and undo semantics belong elsewhere. A renderer or view model may interpret interactions; authoritative writes go through use cases / `executeAppAction`.
+
+**Why:** a view model that writes truth is a use case in the wrong clothes.
+
+**Enforced by:** dependency-cruiser `presentation-no-direct-repositories` and `presentation-no-direct-handlers`; direct store writes are review only.
 
 ## References
 
@@ -55,15 +87,4 @@ View models shape data for display. Validation, persistence, cross-feature mutat
 - [docs/architecture/03-typescript-module.md](../../../docs/architecture/03-typescript-module.md) — presentation layer placement.
 - `.dependency-cruiser.cjs` — `components-no-*`, `presentation-no-*`, `react-only-in-presentation`.
 - `.dependency-cruiser.reachability.cjs` — `components-no-usecase-transitively`.
-
-## Dock allocation review
-
-When reviewing dock allocation, exercise the editor and virtual keyboard together and inspect the rendered main and editor viewports. Individual pane state or class assertions cannot prove that the remaining canvas stays usable; this escaped #4027.
-
-Before treating rendered acceptance as evidence for a lane, verify that the served deciding source and port belong to that lane. A reused shared dev server does not prove a lane's layout; isolate it without stopping a foreign server. This escaped #4032.
-
-For maintained editor E2E, create the asserted track and clip deterministically, then require editor admission before interacting. Each advertised outcome needs a visible product readout or control state that fails if the deciding canvas or selector is removed; optional locators and early successful returns are not evidence. Playback evidence must observe two distinct valid post-start Bars.Beats.Ticks positions, since one non-start sample can come from a scheduler that emits only one tick. This escaped the MIDI and expression coverage in #1536 and #1590.
-
-For a fixed-height status strip, measure the effective CSS viewport at every admitted UI scale. Keep engine and active monitoring states direct, and move optional metrics or actions through one React-owned disclosure; CSS-hidden duplicate trees leave stale portals, focus, and mutable DOM refs. This escaped #4054.
-
-When a footer disclosure owns a portaled nested menu, track the menu content ref in each responsive mode. On a mode change, close both portals and restore focus only when the active element belongs to the footer or that portal; recheck focus immediately before an asynchronous handoff and cancel it on cleanup so a newly chosen outside target keeps keyboard control. This escaped #4056.
+- Review probes for dock allocation, status strips and footer disclosure: `../review-stances/rendered-ui-layout.md`.
