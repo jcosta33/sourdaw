@@ -336,6 +336,24 @@ export function startPlayheadScheduler(
     advanceSchedulerDiscontinuityEpoch();
     const schedulerGeneration = schedulerSession.generation;
     let initialEmissionPending = preparedInitial !== undefined;
+    // A refused punch-in start retires its provisional clip with a store write.
+    // While the initial emission is pending that write would break the
+    // programme witness and the planned pass clocks it is about to finalize, so
+    // it waits until the emission settles.
+    const deferredStartRetirements: Array<() => void> = [];
+    function retireRefusedStart(retire: () => void): void {
+        if (initialEmissionPending) {
+            deferredStartRetirements.push(retire);
+            return;
+        }
+        retire();
+    }
+    function settleInitialEmission(): void {
+        initialEmissionPending = false;
+        for (const retire of deferredStartRetirements.splice(0)) {
+            retire();
+        }
+    }
     let preparedMidi: Awaited<ReturnType<PreparedInitialBrowserPlayback['prepareMidiWindows']>> = null;
     schedulerSession.tickInFlight = false;
     const cancellation: SchedulerCancellation = {
@@ -1327,13 +1345,35 @@ export function startPlayheadScheduler(
                         )
                     )
                         .then((started) => {
-                            if (!started) {
-                                captureClocks.remove(track.id);
+                            if (started) {
+                                return;
                             }
+                            // A refused start never runs the terminal, so its
+                            // provisional clip and take would be left with no
+                            // buffer and no history entry (#4265). The recorder's
+                            // `false` covers both a Pause or Stop during the
+                            // same-track wait and an input that failed to open;
+                            // the stop-caused refusal must stay quiet, so no
+                            // notice is posted until #6009 tells them apart.
+                            captureClocks.remove(track.id);
+                            retireRefusedStart(() => {
+                                if (recClip && ownsCapture()) {
+                                    discardRecording(recClip.id);
+                                }
+                            });
                         })
                         .catch((error: unknown) => {
                             captureClocks.remove(track.id);
                             logger.error(new Error('Punch-in audio recording failed to start', { cause: error }));
+                            retireRefusedStart(() => {
+                                if (!ownsCapture()) {
+                                    return;
+                                }
+                                notifyUser('Punch-in recording failed to start — the take was discarded.', 'error');
+                                if (recClip) {
+                                    discardRecording(recClip.id);
+                                }
+                            });
                         });
                     if (initial) {
                         recordingAdmissions.push(admission);
@@ -1737,16 +1777,16 @@ export function startPlayheadScheduler(
         () => {
             if (!preparedMidi?.isCurrent() || !cancellation.isCurrent()) {
                 cancelInitialEmission();
-                initialEmissionPending = false;
+                settleInitialEmission();
                 return false;
             }
-            initialEmissionPending = false;
+            settleInitialEmission();
             startWorker();
             return true;
         },
         (error: unknown) => {
             cancelInitialEmission();
-            initialEmissionPending = false;
+            settleInitialEmission();
             logger.error(new Error('Initial playback emission failed', { cause: error }));
             return false;
         }

@@ -45,6 +45,7 @@ import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/
 import * as transportStateReader from '../../../repositories/transport/getTransportState';
 import { disposePlayheadScheduler } from '../../playheadScheduler/disposePlayheadScheduler';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
+import { scheduleMidiNotes } from '../../scheduling/scheduleMidiNotes';
 import { executePlayheadSeek } from '../../transportControls/executePlayheadSeek';
 import { pausePlayback } from '../../transportControls/pausePlayback';
 import { recordingLifecycle } from '../../transportControls/recordingLifecycle';
@@ -510,6 +511,167 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         expectPcm(old, oldBuffer, 0.25);
         await expectBothCapturesRetained({ old, oldBuffer, successor, successorBuffer });
     });
+    it('discards the successor provisional clip when a pause refuses its start behind the held old flush', async () => {
+        const oldBuffer = pcm(0.25);
+        const old = await openFirst();
+        pausePlayback();
+        expect(mocks.pendingCount()).toBe(1);
+        await executePlayheadSeek(3.95);
+        await startPlayback();
+        mocks.audioClock.currentTime += 0.1;
+        await tick(2);
+        const successor = activeRecordingRef.current[0];
+        expect(successor).toBeTruthy();
+        expect(successor).not.toBe(old);
+        expect(trackStore.value?.tracks[0]?.clips.some((clip) => clip.id === successor)).toBe(true);
+
+        // A second Pause while the successor waits moves the recorder's start generation.
+        pausePlayback();
+        mocks.release(oldBuffer);
+        await vi.waitFor(() => expect(mocks.refusedStarts()).toBe(1));
+        await vi.waitFor(() => expect(commits()).toBe(1));
+        await vi.waitFor(() =>
+            expect(trackStore.value?.tracks[0]?.clips.some((clip) => clip.id === successor)).toBe(false)
+        );
+        await recordingLifecycle.waitForCommits();
+        await recordingLifecycle.waitForClosing();
+        flushAutomergeStorageWrites();
+        const clips = trackStore.value?.tracks[0]?.clips ?? [];
+        expect(clips.map((clip) => clip.id)).toEqual([old]);
+        expect(clips.filter((clip) => clip.audioBufferId === undefined)).toEqual([]);
+        const takeClipIds = takeLaneStore.value?.lanes.flatMap((lane) => lane.takes.map((take) => take.clipId));
+        expect(takeClipIds).not.toContain(successor);
+        expect(takeClipIds).toEqual([old]);
+        expect(actionHistoryStore.value?.entries).toHaveLength(1);
+        expect(activeRecordingRef.current).toEqual([]);
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+        expectPcm(old, oldBuffer, 0.25);
+    });
+
+    it('discards the provisional clip and says so when a punch-in start throws', async () => {
+        mocks.startAudioRecording.mockImplementationOnce(() => Promise.reject(new Error('recorder unavailable')));
+        trackStore.set({ tracks: [recordingTrack('audio')], selectedTrackId: TRACK_ID, ghostClips: [] });
+        takeLaneStore.set({ lanes: [] });
+        transportStore.set({
+            ...defaultTransportState,
+            tempo: 120,
+            isPlaying: false,
+            isRecording: false,
+            countInEnabled: false,
+            punchInEnabled: true,
+            punchInBeat: 4,
+            punchOutBeat: 8,
+            playheadPosition: 3.95,
+        });
+        tempoMapStore.set({ changes: [] });
+        flushAutomergeStorageWrites();
+        await startPlayback();
+        expect(schedulerSession.punchRecordingActive).toBe(false);
+        mocks.audioClock.currentTime += 0.1;
+        // The rolling transport crosses the punch-in point on a later tick.
+        await tick(1);
+        expect(schedulerSession.punchRecordingActive).toBe(true);
+        await vi.waitFor(() => expect(trackStore.value?.tracks[0]?.clips).toEqual([]));
+        expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes)).toEqual([]);
+        expect(activeRecordingRef.current).toEqual([]);
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('Punch-in recording'), 'error');
+        pausePlayback();
+        await recordingLifecycle.waitForClosing();
+        expect(actionHistoryStore.value?.entries).toEqual([]);
+        expect(commits()).toBe(0);
+    });
+
+    function armFirstWindowPunch(loop: { loopStart: number; loopEnd: number } | null): void {
+        trackStore.set({ tracks: [recordingTrack('audio')], selectedTrackId: TRACK_ID, ghostClips: [] });
+        takeLaneStore.set({ lanes: [] });
+        const transport = {
+            ...defaultTransportState,
+            tempo: 120,
+            isPlaying: false,
+            isRecording: false,
+            countInEnabled: false,
+            punchInEnabled: true,
+            punchInBeat: 4,
+            punchOutBeat: 8,
+            playheadPosition: loop ? 7.9 : 4,
+        };
+        if (loop) {
+            transport.isLooping = true;
+            transport.loopStart = loop.loopStart;
+            transport.loopEnd = loop.loopEnd;
+        }
+        transportStore.set(transport);
+        tempoMapStore.set({ changes: [] });
+        flushAutomergeStorageWrites();
+    }
+
+    function expectRefusedPunchRetired(): void {
+        expect(trackStore.value?.tracks[0]?.clips).toEqual([]);
+        expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes)).toEqual([]);
+        expect(actionHistoryStore.value?.entries).toEqual([]);
+        expect(commits()).toBe(0);
+    }
+
+    async function playIntoRefusedFirstWindowPunch(loop: { loopStart: number; loopEnd: number } | null) {
+        mocks.startAudioRecording.mockResolvedValueOnce(false);
+        armFirstWindowPunch(loop);
+        await startPlayback();
+        // The punch opened on Play's own first window.
+        expect(mocks.startAudioRecording).toHaveBeenCalledTimes(1);
+        expect(transportStore.value?.isPlaying).toBe(true);
+        expect(schedulerSession.worker).not.toBeNull();
+        expect(schedulerSession.pendingSeam?.destinationBeat).toBe(loop?.loopStart);
+        expect(trackStore.value?.tracks[0]?.clips).toEqual([]);
+        expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes)).toEqual([]);
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+        expect(actionHistoryStore.value?.entries).toEqual([]);
+        pausePlayback();
+        await recordingLifecycle.waitForClosing();
+        expect(commits()).toBe(0);
+    }
+
+    it('keeps Play rolling and discards the clip when a first-window punch-in start is refused', async () => {
+        await playIntoRefusedFirstWindowPunch(null);
+    });
+
+    it('keeps Play rolling when a refused first-window punch-in start shares the window with a loop seam', async () => {
+        await playIntoRefusedFirstWindowPunch({ loopStart: 0, loopEnd: 8 });
+    });
+
+    it('retires a refused first-window start when the initial emission goes stale', async () => {
+        const start = Promise.withResolvers<boolean>();
+        mocks.startAudioRecording.mockImplementationOnce(() => start.promise);
+        armFirstWindowPunch(null);
+        const playing = startPlayback();
+        await vi.waitFor(() => expect(mocks.startAudioRecording).toHaveBeenCalledTimes(1));
+        expect(trackStore.value?.tracks[0]?.clips).toHaveLength(1);
+        // A tempo-map edit while the start waits stales the prepared programme
+        // without moving capture ownership.
+        tempoMapStore.set({ changes: [] });
+        start.resolve(false);
+        await playing;
+        expect(mocks.notifyUser).toHaveBeenCalledWith('Playback changed while preparing. Press Play again.', 'warning');
+        expect(transportStore.value?.isPlaying).toBe(false);
+        expect(schedulerSession.worker).toBeNull();
+        await recordingLifecycle.waitForClosing();
+        expectRefusedPunchRetired();
+    });
+
+    it('retires a refused first-window start when the initial emission fails', async () => {
+        mocks.startAudioRecording.mockResolvedValueOnce(false);
+        vi.mocked(scheduleMidiNotes).mockRejectedValueOnce(new Error('initial MIDI window failed'));
+        armFirstWindowPunch(null);
+        await startPlayback();
+        expect(mocks.startAudioRecording).toHaveBeenCalledTimes(1);
+        expect(scheduleMidiNotes).toHaveBeenCalled();
+        expect(mocks.notifyUser).toHaveBeenCalledWith('Playback changed while preparing. Press Play again.', 'warning');
+        expect(transportStore.value?.isPlaying).toBe(false);
+        expect(schedulerSession.worker).toBeNull();
+        await recordingLifecycle.waitForClosing();
+        expectRefusedPunchRetired();
+    });
+
     it('commits an ordinary pause before resuming without a held predecessor', async () => {
         const old = await openFirst();
         pausePlayback();
@@ -522,6 +684,49 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         pausePlayback();
         mocks.release(pcm(0.125));
         await vi.waitFor(() => expect(commits()).toBe(2));
+    });
+
+    it('leaves the new owner arrangement alone when a refused punch-in start arrives after root replacement', async () => {
+        const old = await openFirst();
+        pausePlayback();
+        expect(mocks.pendingCount()).toBe(1);
+        await executePlayheadSeek(3.95);
+        await startPlayback();
+        mocks.audioClock.currentTime += 0.1;
+        await tick(2);
+        const successor = activeRecordingRef.current[0];
+        expect(successor).toBeTruthy();
+        expect(successor).not.toBe(old);
+        pausePlayback();
+        flushAutomergeStorageWrites();
+        const root = getCrdtDoc(DOC_PREFIX_ROOT);
+        if (!root) {
+            throw new Error('Expected outgoing project root');
+        }
+        replaceCrdtDoc({ id: DOC_PREFIX_ROOT, doc: cloneAutomergeDoc(root) });
+        projectCrdtToStores({ resetProjections: true });
+        flushAutomergeStorageWrites();
+        const successorRoot = getCrdtDoc(DOC_PREFIX_ROOT);
+        if (!successorRoot) {
+            throw new Error('Expected successor project root');
+        }
+        const before = structuredClone(toJS(successorRoot));
+        const beforeProjection = captured();
+        // The new owner holds a clip with the refused start's id.
+        expect(beforeProjection.tracks?.tracks[0]?.clips.some((clip) => clip.id === successor)).toBe(true);
+
+        mocks.release(pcm(0.125));
+        await vi.waitFor(() => expect(mocks.refusedStarts()).toBe(1));
+        await recordingLifecycle.waitForCommits();
+        await recordingLifecycle.waitForClosing();
+        flushAutomergeStorageWrites();
+        const after = getCrdtDoc(DOC_PREFIX_ROOT);
+        if (!after) {
+            throw new Error('Expected successor project root after the refusal');
+        }
+        expect(captured()).toEqual(beforeProjection);
+        expect(toJS(after)).toEqual(before);
+        expect(commits()).toBe(0);
     });
 
     it('refuses an old terminal after root replacement without changing its successor', async () => {
