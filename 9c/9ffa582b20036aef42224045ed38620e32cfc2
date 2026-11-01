@@ -1,0 +1,27 @@
+.agents/skills/state-and-write-paths/SKILL.md
+  s_0314bb17e5dee3::t_fcc7dedf5b8258 83
+.agents/skills/crdt-collaboration/SKILL.md
+  s_0314bb17e5dee3::t_2ea0598caaaaec 54
+.agents/skills/llm-action-bridge/SKILL.md
+  s_0314bb17e5dee3::t_bddc29ee49632e 74
+.agents/skills/testing-file-layout/SKILL.md
+  s_0314bb17e5dee3::t_2a5ab14d763d5f 40
+.agents/skills/review-stances/rendered-ui-layout.md
+  s_0314bb17e5dee3::t_e21299769af2e4 26-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9c9ffa582b20036aef42224045ed38620e32cfc2",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
