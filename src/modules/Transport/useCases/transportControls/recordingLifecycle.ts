@@ -20,6 +20,14 @@ type RecordingLifecycle = {
     readonly countInTimerId: ReturnType<typeof setTimeout> | null;
     /** How many take commits and overdub passes have settled, whether they landed or were retired. */
     readonly settledCommitCount: number;
+    /**
+     * How many recordings a stop gesture has closed (Pause, Stop, Record off,
+     * or a seek while recording). A punch-out and a loop wrap end a pass on
+     * their own and never count, so a start that fails after one is still
+     * the musician's to hear about.
+     */
+    readonly recordingStopCount: number;
+    noteRecordingStop: () => void;
     beginPendingRecordingStart: () => number;
     cancelPendingRecordingStart: () => void;
     completePendingRecordingStart: (token: number) => boolean;
@@ -68,6 +76,7 @@ let countInTimerId: ReturnType<typeof setTimeout> | null = null;
 let nextRecordingStartToken = 0;
 let pendingRecordingStartToken: number | null = null;
 let settledCommitCount = 0;
+let recordingStopCount = 0;
 
 /**
  * Commit promises a capture terminal started but nobody awaits. The terminal
@@ -178,6 +187,12 @@ export const recordingLifecycle: RecordingLifecycle = {
     },
     get settledCommitCount() {
         return settledCommitCount + countSettledOverdubPasses();
+    },
+    get recordingStopCount() {
+        return recordingStopCount;
+    },
+    noteRecordingStop: () => {
+        recordingStopCount += 1;
     },
     beginPendingRecordingStart: () => {
         const token = ++nextRecordingStartToken;
