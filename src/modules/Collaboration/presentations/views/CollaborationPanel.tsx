@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type ReactElement, useState, useRef, useEffect } from 'react';
+import { type ReactElement, useState, useRef, useEffect } from 'react';
 
 import { X, Copy, Users, Wifi, WifiOff, Loader2, QrCode } from 'lucide-react';
 
@@ -10,8 +10,10 @@ import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
+import { hasOpenModalSurface, isNativeTextEditableTarget } from '#/modules/CommandInterface/useCases';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { closeCollaborationPanel } from '#/modules/WorkspaceShell/useCases';
+import { isDragGestureActive } from '#/utils/UI/activeDragGesture';
 
 import { acceptAnswer } from '../../useCases/collaboration/acceptAnswer';
 import { createSession } from '../../useCases/collaboration/createSession';
@@ -54,6 +56,7 @@ export const CollaborationPanel = (): ReactElement | null => {
     const [isLeaving, setIsLeaving] = useState(false);
     const copiedInviteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const copiedAnswerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const panelRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         return () => {
@@ -66,16 +69,35 @@ export const CollaborationPanel = (): ReactElement | null => {
         };
     }, []);
 
+    // The panel is non-modal, so focus is usually elsewhere (timeline, virtual keyboard).
+    // Escape closes it from anywhere, ahead of the global handler that would stop transport,
+    // unless something above it owns the key: a dialog or menu, a text field cancelling its
+    // own edit, or a drag in progress.
+    useEffect(() => {
+        if (!panelOpen) {
+            return undefined;
+        }
+        const closeOnEscape = (event: KeyboardEvent): void => {
+            if (event.key !== 'Escape') {
+                return;
+            }
+            const panel = panelRef.current;
+            const target = event.target instanceof Element ? event.target : null;
+            const editsOutsidePanel = isNativeTextEditableTarget(target) && (panel === null || !panel.contains(target));
+            if (editsOutsidePanel || hasOpenModalSurface(panel) || isDragGestureActive()) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            closeCollaborationPanel();
+        };
+        window.addEventListener('keydown', closeOnEscape, true);
+        return () => window.removeEventListener('keydown', closeOnEscape, true);
+    }, [panelOpen]);
+
     if (!panelOpen) {
         return null;
     }
-
-    const handlePanelKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-        if (event.key === 'Escape') {
-            event.stopPropagation();
-            closeCollaborationPanel();
-        }
-    };
 
     const handleCreate = async () => {
         setIsCreating(true);
@@ -211,7 +233,7 @@ export const CollaborationPanel = (): ReactElement | null => {
             role="dialog"
             aria-label="Collaborate"
             tabIndex={-1}
-            onKeyDown={handlePanelKeyDown}
+            ref={panelRef}
         >
             {/* Header */}
             <DawHeaderBand
