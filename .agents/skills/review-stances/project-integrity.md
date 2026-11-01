@@ -45,15 +45,15 @@ Runtime-monitor companions live in `session-lifecycle.md`.
   every route (top-level and saved-arrangement take lanes): reject anchor-only, depth-only, negative or nonfinite
   placement, malformed offset, a missing required capture; keep JSON-roundtripped legacy takes. For saved clip inverses
   seed real gain/warp envelopes and two automation lanes, corrupt one nested field of the persisted capture (string
-  `gainDb`, point value, unsupported curve, negative beat, empty id, negative stair steps, duplicate note IDs, malformed
-  CC/bend, nonfinite number), hydrate fresh handlers and run real Undo: the entry is dropped before any write, raw,
-  projections and history unchanged. Corrupt the inverse and the redo leg separately (also the paired point shapes of a
-  move; swap a clip identity, placement or split snapshot; change a Delete Time plan's scope or make its replay legs
-  disagree: a neutral generated schema can be narrower than the time-operation snapshot). Partial move captures (`id`,
-  `trackId`, `points`) use Automation's point contract, not the full-lane one. Revert the admission hunk and the
-  rejection cases fail; array-only or sanitizer-only assertions cannot carry the claim. Keep valid null, present-empty
-  and legacy-alias controls, and keep restore validation with the owner: admitting a forward action to the session
-  mirror must not add it to executable action discovery.
+  `gainDb`, point value, unsupported, malformed or non-name curve, negative beat, empty id, zero, negative, fractional
+  or non-integer stair steps, duplicate note IDs, malformed CC/bend, nonfinite number), hydrate fresh handlers and run
+  real Undo: the entry is dropped before any write, raw, projections and history unchanged. Corrupt the inverse and the
+  redo leg separately (also the paired point shapes of a move; swap a clip identity, placement or split snapshot;
+  change a Delete Time plan's scope or make its replay legs disagree: a neutral generated schema can be narrower than
+  the time-operation snapshot). Partial move captures (`id`, `trackId`, `points`) use Automation's point contract, not
+  the full-lane one. Revert the admission hunk and the rejection cases fail; array-only or sanitizer-only assertions
+  cannot carry the claim. Keep valid null, present-empty and legacy-alias controls, and keep restore validation with
+  the owner: admitting a forward action to the session mirror must not add it to executable action discovery.
 
 ### 4. Saved replay binds relationships between individually valid rows (#5064, #3328, #4108, #4519)
 
@@ -114,7 +114,8 @@ Runtime-monitor companions live in `session-lifecycle.md`.
   nothing and writes no engine value (mutation-owner authorization captured before the first await). A failed Freeze
   settles its diagnostic through a separate non-undoable action; withdraw task, cancellation, root, revision or
   expected-aggregate authority before admission and after settlement stages its replacement, and a stale attempt cannot
-  erase its successor while real rollback, cleanup and storage failures stay observable. Missing-capture MIDI inverses
+  erase its successor while real rollback, cleanup and storage failures stay observable; a refusal still discards the
+  Redo capture, and a durable or ambiguous commit keeps its proven settlement. Missing-capture MIDI inverses
   refuse in any mode; saved audio stays replayable; history snapshots keep callback identity. Pair the group revert with
   an unrelated later musician edit and real Redo, from panel and thread callers.
 
@@ -140,7 +141,9 @@ Runtime-monitor companions live in `session-lifecycle.md`.
   callbacks, document B, cache and pending count stay unchanged after a later flush, and `set`/`clear` in an entered
   scope mutate nothing. Re-enter hydrate with and without a nested flush: one original-owner mutation, identical
   raw/cache/decoder results; publish-then-throw stays committed; `null` from an inbound projector is a value. Fill
-  bounded history, stage eviction through the public storage transaction, abort: the oldest replay capability returns.
+  bounded history, stage eviction through the public storage transaction, abort: the oldest replay capability returns
+  (reconcile authority from committed history, never elapsed time as a publication signal or restored metadata). Keep a
+  same-content empty clear followed by an ID re-add, successful eviction and consumed or claimed inverses as controls.
   Hold a scoped write, queue an unscoped one, advance the scope, flush the older: `null` captures lose to the newer
   commit, every nonnull journal (including `[]`) keeps owner semantics. Fail only `Storage.setItem` of a run, then
   cancel: the terminal revision reaches storage before any cleanup. Every callback in the terminal read path can
@@ -206,10 +209,13 @@ Runtime-monitor companions live in `session-lifecycle.md`.
   device and parameter, and an old queued direct parameter frame cannot overwrite the newer choice. A generator
   spanning pads or lanes submits one compensated batch bound to project and document identity: fail a later lane after
   an earlier is valid, raw, stores and Undo unchanged; one Undo removes all. Follower-point refusal through
-  `executeAppAction` and singleton `executeAppActionBatch` leaves document, links and history unchanged. A mounted
-  reader (ruler basis after Insert Time) repaints after Undo and Redo: capture raw and projected figures around the real
-  Command and require a fresh drawing per history transition (a matching earlier frame is not a fresh read); replacing
-  its map subscription with an imperative read must fail the stopped map-change and history paint checks.
+  `executeAppAction` and singleton `executeAppActionBatch` leaves document, links, samples and history unchanged, with a
+  positive source-write Undo/Redo control reaching the follower. Multi-action `addAutomationPoint` batches are a
+  separate Command contract, never inferred from singleton proof: drive one whose refusal leaks no follower-point
+  write. A mounted reader (ruler basis after Insert Time) repaints after Undo and Redo: capture raw and projected
+  figures around the real Command and require a fresh drawing per history transition (a matching earlier frame is not
+  a fresh read); replacing its map subscription with an imperative read must fail the stopped map-change and history
+  paint checks.
 
 ### 14. Regeneration and interval edits keep everything outside their footprint (#5515, #645)
 
