@@ -14,6 +14,12 @@ export type FrozenMidiTakeFragment = {
 };
 
 export type FrozenMidiTakeRepeat = {
+    /**
+     * The repeat's position in its fragment, counted from the fragment start.
+     * A reader rolls a note's chance on the take's own occurrence count, which
+     * live comp playback takes as the fragment's source occurrence offset plus
+     * this position.
+     */
     readonly absoluteOccurrenceIndex: number;
     /** The fragment start plus whole loop lengths: where live restarts the fragment's loop. */
     readonly startBeat: number;

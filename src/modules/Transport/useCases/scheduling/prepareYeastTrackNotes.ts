@@ -400,18 +400,25 @@ function prepareFrozenClipYeastIterations(
         configuredLoopLengthBeats: clip.loopLength,
         loopEnabled: clip.loopEnabled ?? false,
     });
+    // A frozen take counts its occurrences on its own grid, as live does.
+    const sourceOccurrenceOffset = getSourceOccurrenceOffset({
+        sourceStartBeat: clip.sourceStartBeat,
+        segmentStartBeat: clip.startBeat,
+        loopLength: loopLengthBeats,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
     // Admits one repeat before the first that reaches the window.
     const repeats = frozenMidiTakeRepeats(frozenSource, clip, fromBeat - loopLengthBeats, toBeat);
     for (const repeat of repeats) {
         if (!isCurrent()) {
             return null;
         }
-        const { absoluteOccurrenceIndex } = repeat;
+        const absoluteOccurrenceIndex = sourceOccurrenceOffset + repeat.absoluteOccurrenceIndex;
         const window = projectFrozenMidiTakeWindow({
             source: frozenSource,
             fragment: clip,
             recordingPassIndex: clip.midiTakeRecordingPassIndex,
-            absoluteOccurrenceIndex,
+            absoluteOccurrenceIndex: repeat.absoluteOccurrenceIndex,
             fromBeat: clip.startBeat,
             toBeat: clip.endBeat,
         });

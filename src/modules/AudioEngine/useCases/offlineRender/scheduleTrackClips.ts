@@ -887,7 +887,8 @@ export async function scheduleTrackClips({
             const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
             for (let iteration = firstIteration; iteration < iterationCount; iteration++) {
                 checkCallerAbort();
-                const absoluteOccurrenceIndex = frozenSource ? iteration : sourceOccurrenceOffset + iteration;
+                // A frozen take counts its occurrences on its own grid, as live does.
+                const absoluteOccurrenceIndex = sourceOccurrenceOffset + iteration;
                 if (frozenSource) {
                     const frozenRepeat = frozenRepeats[iteration - firstIteration];
                     if (!frozenRepeat) {
@@ -897,7 +898,7 @@ export async function scheduleTrackClips({
                         source: frozenSource,
                         fragment: clip,
                         recordingPassIndex: clip.midiTakeRecordingPassIndex,
-                        absoluteOccurrenceIndex,
+                        absoluteOccurrenceIndex: iteration,
                         fromBeat: clip.startBeat,
                         toBeat: clip.endBeat,
                     });
@@ -1098,7 +1099,8 @@ export async function scheduleTrackClips({
             const lastIteration = frozenSource ? firstIteration + frozenRepeats.length : maxIterations;
             for (let iter = firstIteration; iter < lastIteration; iter++) {
                 checkCallerAbort();
-                const absoluteOccurrenceIndex = frozenSource ? iter : sourceOccurrenceOffset + iter;
+                // A frozen take counts its occurrences on its own grid, as live does.
+                const absoluteOccurrenceIndex = sourceOccurrenceOffset + iter;
                 const frozenRepeat = frozenRepeats[iter - firstIteration];
                 if (frozenSource && !frozenRepeat) {
                     throw new Error('Invalid frozen MIDI take repeat');
@@ -1109,7 +1111,7 @@ export async function scheduleTrackClips({
                           source: frozenSource,
                           fragment: clip,
                           recordingPassIndex: clip.midiTakeRecordingPassIndex,
-                          absoluteOccurrenceIndex,
+                          absoluteOccurrenceIndex: iter,
                           fromBeat: clip.startBeat,
                           toBeat: clip.endBeat,
                       })

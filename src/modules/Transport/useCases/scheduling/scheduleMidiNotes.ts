@@ -1008,7 +1008,8 @@ export async function scheduleMidiNotes(
                 if (!isCurrent()) {
                     return;
                 }
-                const absoluteOccurrenceIndex = frozenSource ? iter : sourceOccurrenceOffset + iter;
+                // A frozen take counts its occurrences on its own grid, as live does.
+                const absoluteOccurrenceIndex = sourceOccurrenceOffset + iter;
                 const frozenRepeat = frozenRepeats[iter - firstFrozenRepeatIndex];
                 if (frozenSource && !frozenRepeat) {
                     throw new Error('Invalid frozen MIDI take repeat');
@@ -1024,7 +1025,7 @@ export async function scheduleMidiNotes(
                         source: frozenSource,
                         fragment: clip,
                         recordingPassIndex: clip.midiTakeRecordingPassIndex,
-                        absoluteOccurrenceIndex,
+                        absoluteOccurrenceIndex: iter,
                         fromBeat: clip.startBeat,
                         toBeat: clip.endBeat,
                     });

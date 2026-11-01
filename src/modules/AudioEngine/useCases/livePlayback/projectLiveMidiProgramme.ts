@@ -292,13 +292,24 @@ function projectFrozenClipNotes({
         return [];
     }
     const projected: ProjectedNote[] = [];
+    // A frozen take counts its occurrences on its own grid, as live does.
+    const sourceOccurrenceOffset = getSourceOccurrenceOffset({
+        sourceStartBeat: clip.sourceStartBeat,
+        segmentStartBeat: clip.startBeat,
+        loopLength: projectClipLoopExpansion({
+            clipDurationBeats: clip.endBeat - clip.startBeat,
+            configuredLoopLengthBeats: clip.loopLength,
+            loopEnabled: clip.loopEnabled ?? false,
+        }).loopLengthBeats,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
     for (const repeat of frozenMidiTakeRepeats(source, clip, clip.startBeat, clip.endBeat)) {
-        const { absoluteOccurrenceIndex } = repeat;
+        const absoluteOccurrenceIndex = sourceOccurrenceOffset + repeat.absoluteOccurrenceIndex;
         const window = projectFrozenMidiTakeWindow({
             source,
             fragment: clip,
             recordingPassIndex: clip.midiTakeRecordingPassIndex,
-            absoluteOccurrenceIndex,
+            absoluteOccurrenceIndex: repeat.absoluteOccurrenceIndex,
             fromBeat: clip.startBeat,
             toBeat: clip.endBeat,
         });
