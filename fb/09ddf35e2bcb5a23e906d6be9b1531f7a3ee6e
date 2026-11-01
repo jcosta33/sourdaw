@@ -1,0 +1,42 @@
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  s_55244eb93b97d1::t_30588b43630ec5 3689-3721,3743-3750,3753-3754,3756-3799
+  s_55244eb93b97d1::t_b11ec2abeb113b 3751-3752,3755
+  s_55244eb93b97d1::t_903912d0e1ce76 3214-3219,3221-3227,3259-3263,3265-3274,3311-3313,3317-3341,3344-3346
+  s_55244eb93b97d1::t_b8e3f2ca9cf71d 3220,3443-3444
+  s_55244eb93b97d1::t_24b105d3ebf5a4 3641-3642,3646,3652
+  s_55244eb93b97d1::t_3794febdef5429 62
+  s_55244eb93b97d1::t_04340d9106cd9e 3228-3258,3264
+  s_55244eb93b97d1::t_652058cc93177b 3201-3203,3207,3209
+  s_55244eb93b97d1::t_bf88db9fff6b07 3722-3742
+src/modules/AiRuntime/useCases/composeMeasuredAnswer.ts
+  s_55244eb93b97d1::t_f5e9374e9b23cc 8
+src/modules/AiRuntime/services/answerSourceFormat.ts
+  s_55244eb93b97d1::t_f5e9374e9b23cc 1,3-4,8-13
+  s_55244eb93b97d1::t_8b89f39bb8883d 2,5-7
+evidence/agent-campaign/manifest.json
+  s_55244eb93b97d1::t_50adbde1e304d1 820
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fb09ddf35e2bcb5a23e906d6be9b1531f7a3ee6e",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
