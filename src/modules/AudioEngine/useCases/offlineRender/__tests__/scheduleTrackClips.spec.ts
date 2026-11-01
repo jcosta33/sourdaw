@@ -396,6 +396,8 @@ type RunScheduleInput = {
     /** Replaces the clip's note list. */
     notes?: NonNullable<MidiStoreState>['notesByClipId'][string];
     abortSignal?: AbortSignal;
+    /** Places notes through the groove projector the composition root injects, loop folding included. */
+    productionProjection?: boolean;
 };
 
 async function runSchedule({
@@ -421,6 +423,7 @@ async function runSchedule({
     includeSecondNote = false,
     notes,
     abortSignal,
+    productionProjection = false,
 }: RunScheduleInput = {}): Promise<PendingWorkletEvent[]> {
     const offlineCtx = makeOfflineCtx();
     const track = makeMidiTrack();
@@ -503,7 +506,7 @@ async function runSchedule({
     const destination = {} as AudioNode;
 
     const projections: Parameters<typeof scheduleTrackClips>[0]['projections'] = {
-        projectMidiEvents,
+        projectMidiEvents: productionProjection ? createGrooveMidiEventProjector() : projectMidiEvents,
         projectPpqEndpoints,
         processYeastMidi,
         resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
@@ -922,7 +925,8 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
             ],
         };
 
-        const events = await runSchedule({ withStoredControl: true, clipEndBeat: 8 });
+        // A looping comp restarts the take each loop length, as live does.
+        const events = await runSchedule({ withStoredControl: true, clipEndBeat: 8, loopLengthBeats: 4 });
 
         expect(
             events.filter(isPendingControlWorkletEvent).map(({ time, controller, value }) => ({
@@ -935,6 +939,68 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
             { time: 2.125, controller: 64, value: 127 },
             { time: 4, controller: 64, value: 0 },
         ]);
+    });
+
+    it('renders a frozen take in a looping comp that opens mid-pass as live comp playback does, over two repeats', async () => {
+        // Pass 1 of a loop [0, 4) recording reads source 5 at its pass head 0. The comp opens a beat into
+        // the pass, so live restarts every loop length from beat 1 reading source 6 there: 63, a beat past
+        // the pass end, closes the first repeat and 64, before the read, folds into its tail.
+        const rows = [
+            { id: 'fold', pitch: 64, startBeat: 5.75, duration: 0.25, velocity: 100 },
+            { id: 'early', pitch: 61, startBeat: 6.25, duration: 0.25, velocity: 100 },
+            { id: 'tagged', pitch: 62, startBeat: 7.5, duration: 0.25, velocity: 100, recordingPassIndex: 1 },
+            { id: 'past-pass', pitch: 63, startBeat: 9.5, duration: 0.25, velocity: 100 },
+        ];
+        const pass = {
+            id: 'pass-1',
+            clipId: 'clip-1',
+            name: 'Pass 1',
+            startBeat: 0,
+            endBeat: 9,
+            selected: true,
+            sourceOffsetBeats: 5,
+            recordingPassIndex: 1,
+        };
+        const midiSource = {
+            sourceClipId: 'clip-1',
+            sourceEntryBeat: 5,
+            sourceEndBeat: 9,
+            phaseHeadBeat: 0,
+            passLengthBeats: 4,
+            rows: {
+                notes: { present: true, value: rows },
+                controlChanges: { present: true, value: [] },
+                pitchBends: { present: true, value: [] },
+            },
+        };
+        async function heard(frozen: boolean) {
+            mocks.takeLaneValue.value = {
+                lanes: [
+                    {
+                        id: 'lane-midi',
+                        trackId: 'track-inst',
+                        takes: [frozen ? { ...pass, midiSource } : pass],
+                        activeCompRegions: [{ startBeat: 1, endBeat: 9, takeId: 'pass-1' }],
+                    },
+                ],
+            };
+            const events = await runSchedule({
+                clipEndBeat: 9,
+                loopLengthBeats: 4,
+                notes: frozen ? [] : rows,
+                productionProjection: true,
+            });
+            return voiceEvents(events)
+                .filter((event) => event.type === 'on')
+                .map((event) => [event.pitch, event.time])
+                .sort((left, right) => Number(left[1]) - Number(right[1]));
+        }
+
+        const live = await heard(false);
+        const frozen = await heard(true);
+
+        expect(live.map(([pitch]) => pitch)).toEqual([61, 62, 63, 64, 61, 62, 63, 64]);
+        expect(frozen).toEqual(live);
     });
 
     it('projects the same canonical Levain articulation into full-mix worklet events without changing note clocks', async () => {
@@ -2213,7 +2279,6 @@ describe('scheduleTrackClips — per-note MPE for offline worklet instruments', 
                         sourceEndBeat: 6,
                         phaseHeadBeat: 8,
                         passLengthBeats: 4,
-                        runUpEntryBeat: 0,
                         rows: {
                             notes: {
                                 present: true,

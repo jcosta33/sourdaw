@@ -11,6 +11,7 @@ import { type Clip } from '../../models/Track';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { liveTempoTimeline } from '../liveTempoTimeline';
 
+import { boundMidiTakeSourceAtDeletedSpan } from './boundMidiTakeSourceAtDeletedSpan';
 import { captureTakeSource } from './captureTakeSource';
 import { prepareMidiTakeSourceCapture } from './prepareMidiTakeSourceCapture';
 import { relocateMidiTakeSource } from './relocateMidiTakeSource';
@@ -177,12 +178,74 @@ function captureMidiTakeSource(
     return { ...take, midiSource };
 }
 
+/** A MIDI pass take sounds from its clip's start, so its sounding pieces start there; any other take sounds its own. */
+function soundingPiecesOf(
+    take: Take,
+    sourceClip: Clip | undefined,
+    pieces: MappedPiece[],
+    takeWindows: readonly TakeReKeyClipWindow[]
+): MappedPiece[] {
+    if (sourceClip?.type !== 'midi') {
+        return pieces;
+    }
+    return mapRangeThroughWindows(Math.min(take.startBeat, sourceClip.startBeat), take.endBeat, takeWindows);
+}
+
+/**
+ * A fragment's region map reaches back over what its take sounds before its
+ * own start in the same window: live comp playback plays a MIDI pass take from
+ * its clip's start, so a comp over that run-up keeps it on the fragment.
+ */
+function regionPieceOf(piece: MappedPiece, soundingPieces: readonly MappedPiece[]): MappedPiece {
+    return (
+        soundingPieces.find(
+            (sounding) =>
+                sounding.targetClipId === piece.targetClipId &&
+                sounding.preImageStartBeat <= piece.preImageStartBeat &&
+                sounding.preImageEndBeat >= piece.preImageEndBeat
+        ) ?? piece
+    );
+}
+
+/** Only a clip the deleted span cuts holds rows the span removed; a clip it merely shifts keeps them all. */
+function isCutByDeletedSpan(clip: Clip | undefined, input: CaptureTakeReKeyTransitionsInput): boolean {
+    return (
+        clip !== undefined &&
+        (input.operationKind ?? 'delete-time') === 'delete-time' &&
+        clip.startBeat < input.deleteEndBeat &&
+        clip.endBeat > input.deleteStartBeat
+    );
+}
+
+function boundFragmentSource(
+    take: Take,
+    piece: MappedPiece,
+    clip: Clip | undefined,
+    input: CaptureTakeReKeyTransitionsInput
+): Take {
+    if (take.midiSource === undefined || !isCutByDeletedSpan(clip, input)) {
+        return take;
+    }
+    const bounded = boundMidiTakeSourceAtDeletedSpan(take.midiSource, {
+        preImageStartBeat: piece.preImageStartBeat,
+        preImageEndBeat: piece.preImageEndBeat,
+        deleteStartBeat: input.deleteStartBeat,
+        deleteEndBeat: input.deleteEndBeat,
+    });
+    if (!bounded) {
+        throw new Error('MIDI take source cannot be bounded at the deleted span');
+    }
+    return { ...take, midiSource: bounded };
+}
+
 function buildTakeFragments(
     take: Take,
     pieces: readonly MappedPiece[],
-    deleteStartBeat: number,
-    deleteEndBeat: number
+    soundingPieces: readonly MappedPiece[],
+    clip: Clip | undefined,
+    input: CaptureTakeReKeyTransitionsInput
 ): { fragmentTakes: Take[]; fragments: TakeFragmentMap[] } {
+    const { deleteStartBeat, deleteEndBeat } = input;
     const fragmentTakes: Take[] = [];
     const fragments: TakeFragmentMap[] = [];
     for (const [pieceIndex, piece] of pieces.entries()) {
@@ -195,7 +258,7 @@ function buildTakeFragments(
             fragmentTakeId = `${take.id}:time-delete-right:${deleteStartBeat}:${deleteEndBeat}`;
         }
         const fragmentTake: Take = {
-            ...take,
+            ...boundFragmentSource(take, piece, clip, input),
             id: fragmentTakeId,
             clipId: piece.targetClipId,
             startBeat: piece.startBeat,
@@ -204,19 +267,20 @@ function buildTakeFragments(
         if (take.passOriginBeat !== undefined) {
             fragmentTake.passOriginBeat = take.passOriginBeat + piece.startBeat - piece.preImageStartBeat;
         }
-        if (take.midiSource !== undefined) {
-            const moved = relocateMidiTakeSource(take.midiSource, piece.preImageStartBeat, piece.startBeat);
+        if (fragmentTake.midiSource !== undefined) {
+            const moved = relocateMidiTakeSource(fragmentTake.midiSource, piece.preImageStartBeat, piece.startBeat);
             if (!moved) {
                 throw new Error('MIDI take source cannot be re-keyed');
             }
             fragmentTake.midiSource = moved;
         }
         fragmentTakes.push(fragmentTake);
+        const regionPiece = regionPieceOf(piece, soundingPieces);
         fragments.push({
             takeId: fragmentTakeId,
-            sourceStartBeat: piece.preImageStartBeat,
+            sourceStartBeat: regionPiece.preImageStartBeat,
             sourceEndBeat: piece.preImageEndBeat,
-            targetStartBeat: piece.startBeat,
+            targetStartBeat: regionPiece.startBeat,
             targetEndBeat: piece.endBeat,
         });
     }
@@ -254,17 +318,20 @@ function mapLaneTakes(
         }
         const pieces = mapRangeThroughWindows(take.startBeat, take.endBeat, takeWindows);
         if (pieces.length === 1 && areSameTakeGeometry(take, pieces[0]!)) {
-            mapping.takesAfter.push(capturedTake);
-            mapping.takesChanged = mapping.takesChanged || !valuesEqual(capturedTake, take);
+            const keptTake = boundFragmentSource(capturedTake, pieces[0]!, sourceClip, input);
+            mapping.takesAfter.push(keptTake);
+            mapping.takesChanged = mapping.takesChanged || !valuesEqual(keptTake, take);
             continue;
         }
 
         mapping.takesChanged = true;
+        const soundingPieces = soundingPiecesOf(take, sourceClip, pieces, takeWindows);
         const { fragmentTakes, fragments } = buildTakeFragments(
             capturedTake,
             pieces,
-            input.deleteStartBeat,
-            input.deleteEndBeat
+            soundingPieces,
+            sourceClip,
+            input
         );
         mapping.takesAfter.push(...fragmentTakes);
         mapping.fragmentsBySourceTakeId.set(take.id, fragments);

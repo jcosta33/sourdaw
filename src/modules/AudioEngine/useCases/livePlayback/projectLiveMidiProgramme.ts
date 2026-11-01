@@ -292,10 +292,11 @@ function projectFrozenClipNotes({
         return [];
     }
     const projected: ProjectedNote[] = [];
-    for (const repeat of frozenMidiTakeRepeats(source, clip.startBeat, clip.endBeat)) {
+    for (const repeat of frozenMidiTakeRepeats(source, clip, clip.startBeat, clip.endBeat)) {
         const { absoluteOccurrenceIndex } = repeat;
         const window = projectFrozenMidiTakeWindow({
             source,
+            fragment: clip,
             recordingPassIndex: clip.midiTakeRecordingPassIndex,
             absoluteOccurrenceIndex,
             fromBeat: clip.startBeat,

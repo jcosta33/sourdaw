@@ -860,10 +860,11 @@ export async function scheduleMidiNotes(
                 configuredLoopLengthBeats: clip.loopLength,
                 loopEnabled: clip.loopEnabled ?? false,
             });
-            const loopLen = frozenSource?.passLengthBeats ?? loopProjection.loopLengthBeats;
+            const loopLen = loopProjection.loopLengthBeats;
             const frozenRepeats = frozenSource
                 ? frozenMidiTakeRepeats(
                       frozenSource,
+                      clip,
                       fromBeat - MIDI_NOTE_GROOVE_LOOKAROUND_BEATS,
                       Math.min(clip.endBeat, toBeat + MIDI_NOTE_GROOVE_LOOKAROUND_BEATS)
                   )
@@ -1014,6 +1015,7 @@ export async function scheduleMidiNotes(
                 } else if (frozenSource) {
                     const window = projectFrozenMidiTakeWindow({
                         source: frozenSource,
+                        fragment: clip,
                         recordingPassIndex: clip.midiTakeRecordingPassIndex,
                         absoluteOccurrenceIndex,
                         fromBeat: clip.startBeat,

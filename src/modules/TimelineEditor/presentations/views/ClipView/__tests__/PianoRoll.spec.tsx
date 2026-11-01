@@ -290,7 +290,8 @@ describe('PianoRoll', () => {
                             startBeat: 0,
                             endBeat: 8,
                             recordingPassIndex: 1,
-                            midiSource: { ...source, sourceEntryBeat: 9, sourceEndBeat: 13 },
+                            // Its pass head is where its region opens, so the region reads the second pass.
+                            midiSource: { ...source, sourceEntryBeat: 9, sourceEndBeat: 13, phaseHeadBeat: 4 },
                         },
                     ],
                     activeCompRegions: [

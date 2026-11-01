@@ -366,7 +366,8 @@ describe('projectLiveMidiProgramme', () => {
 
     it('sounds only selected frozen source rows on each original pass occurrence', () => {
         const before = takeLaneStore.value;
-        const clip = midiClip({ id: 'original', trackId: 'midi-1', endBeat: 10 });
+        // A looping comp restarts the take each loop length, as live does.
+        const clip = midiClip({ id: 'original', trackId: 'midi-1', endBeat: 10, loopEnabled: true, loopLength: 4 });
         takeLaneStore.set({
             lanes: [
                 {
@@ -461,7 +462,6 @@ describe('projectLiveMidiProgramme', () => {
                                 sourceEndBeat: 6,
                                 phaseHeadBeat: 8,
                                 passLengthBeats: 4,
-                                runUpEntryBeat: 0,
                                 rows: {
                                     notes: {
                                         present: true,

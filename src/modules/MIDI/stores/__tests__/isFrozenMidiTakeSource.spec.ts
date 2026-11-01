@@ -56,17 +56,24 @@ const malformed: ReadonlyArray<readonly [string, SourceEdit]> = [
     ['an extra rows key', (source) => (rowsOf(source).sustain = { value: [] })],
     ['an extra slot key', (source) => Object.assign(rowsOf(source).notes!, { count: 1 })],
     ['an extra row key', (source) => Object.assign(rowsOf(source).controlChanges!.value[0]!, { label: 'mod' })],
-    ['a run-up at its entry', (source) => (source.runUpEntryBeat = 0)],
-    ['a run-up after its entry', (source) => (source.runUpEntryBeat = 1)],
-    ['a non-finite run-up', (source) => (source.runUpEntryBeat = Number.NEGATIVE_INFINITY)],
-    ['an absent run-up written as undefined', (source) => (source.runUpEntryBeat = undefined)],
+    ['a non-finite read start', (source) => (source.readStartBeat = Number.NEGATIVE_INFINITY)],
+    ['a non-finite read end', (source) => (source.readEndBeat = Number.NaN)],
+    ['an absent read start written as undefined', (source) => (source.readStartBeat = undefined)],
     [
-        'a missing required key beside a run-up',
+        'a read end at its read start',
         (source) => {
-            source.runUpEntryBeat = -2;
+            source.readStartBeat = 1;
+            source.readEndBeat = 1;
+        },
+    ],
+    [
+        'a missing required key beside a read bound',
+        (source) => {
+            source.readStartBeat = -2;
             delete source.passLengthBeats;
         },
     ],
+    ['the retired run-up key', (source) => (source.runUpEntryBeat = -2)],
 ];
 
 describe('isFrozenMidiTakeSource', () => {
@@ -74,8 +81,10 @@ describe('isFrozenMidiTakeSource', () => {
         expect(isFrozenMidiTakeSource(frozenSource())).toBe(true);
     });
 
-    it('admits a run-up before the entry, even one longer than the pass', () => {
-        expect(isFrozenMidiTakeSource({ ...frozenSource(), runUpEntryBeat: -10 })).toBe(true);
+    it('admits the read bounds a Delete Time cut leaves, on either side of the entry', () => {
+        expect(isFrozenMidiTakeSource({ ...frozenSource(), readStartBeat: 3 })).toBe(true);
+        expect(isFrozenMidiTakeSource({ ...frozenSource(), readEndBeat: -10 })).toBe(true);
+        expect(isFrozenMidiTakeSource({ ...frozenSource(), readStartBeat: -10, readEndBeat: 3 })).toBe(true);
     });
 
     it('admits a source read back from the project document, whose objects carry symbol metadata', () => {

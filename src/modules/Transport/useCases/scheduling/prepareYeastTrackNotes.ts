@@ -395,8 +395,13 @@ function prepareFrozenClipYeastIterations(
         return undefined;
     }
     let activeYeastCarrierRouteId: string | undefined;
+    const { loopLengthBeats } = projectClipLoopExpansion({
+        clipDurationBeats: clip.endBeat - clip.startBeat,
+        configuredLoopLengthBeats: clip.loopLength,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
     // Admits one repeat before the first that reaches the window.
-    const repeats = frozenMidiTakeRepeats(frozenSource, fromBeat - frozenSource.passLengthBeats, toBeat);
+    const repeats = frozenMidiTakeRepeats(frozenSource, clip, fromBeat - loopLengthBeats, toBeat);
     for (const repeat of repeats) {
         if (!isCurrent()) {
             return null;
@@ -404,6 +409,7 @@ function prepareFrozenClipYeastIterations(
         const { absoluteOccurrenceIndex } = repeat;
         const window = projectFrozenMidiTakeWindow({
             source: frozenSource,
+            fragment: clip,
             recordingPassIndex: clip.midiTakeRecordingPassIndex,
             absoluteOccurrenceIndex,
             fromBeat: clip.startBeat,

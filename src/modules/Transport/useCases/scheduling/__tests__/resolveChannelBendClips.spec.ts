@@ -47,7 +47,16 @@ describe('resolveChannelBendClips', () => {
     it('projects selected bend and its RPN range through each original pass for seek chase', () => {
         const clips = resolveChannelBendClips({
             trackId: TRACK_ID,
-            clips: [midiClip({ startBeat: 0, endBeat: 8, midiTakeSource: selectedSource })],
+            // A looping clip restarts the take each loop length, as live does.
+            clips: [
+                midiClip({
+                    startBeat: 0,
+                    endBeat: 8,
+                    loopEnabled: true,
+                    loopLength: 4,
+                    midiTakeSource: selectedSource,
+                }),
+            ],
             ccByClipId: { 'clip-1': rpn },
             pitchBendByClipId: { 'clip-1': bends },
         });

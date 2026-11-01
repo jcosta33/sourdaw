@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { createMidiChannelControllerState } from '../../../models/MidiControllerState';
 import { type MidiCC } from '../../../models/MidiNote';
 import { applyRegisteredParameterChange } from '../../../services/applyRegisteredParameterChange';
+import { type FrozenMidiTakeFragment } from '../../../stores/frozenMidiTakeRepeats';
 import { isFrozenMidiTakeSource } from '../../../stores/isFrozenMidiTakeSource';
+import { projectClipMidiEvents } from '../../grooveTemplates/projectClipMidiEvents';
 import { createStoredBendRangeReader } from '../createStoredBendRangeReader';
 import { type FrozenMidiTakeSource, projectFrozenMidiTakeWindow } from '../projectFrozenMidiTakeWindow';
 
@@ -46,7 +48,7 @@ function source(): FrozenMidiTakeSource {
 }
 
 describe('frozen MIDI take window', () => {
-    it('plays a pedal lift at a selected terminal or a source gap, never at a continuous inner repeat', () => {
+    it('plays a pedal lift on the fragment’s closing line, never at an inner loop seam', () => {
         const original = source();
         const pedal = { id: 'press', controller: 64, value: 127, channel: 0, beat: 5 };
         const lift = { id: 'press-lift', controller: 64, value: 0, channel: 0, beat: 9 };
@@ -54,17 +56,23 @@ describe('frozen MIDI take window', () => {
             ...original,
             rows: { ...original.rows, controlChanges: { present: true as const, value: [pedal, lift] } },
         };
-        const project = (selectedSource: FrozenMidiTakeSource, absoluteOccurrenceIndex: number, toBeat: number) =>
+        const project = (
+            selectedSource: FrozenMidiTakeSource,
+            fragment: FrozenMidiTakeFragment,
+            absoluteOccurrenceIndex: number
+        ) =>
             projectFrozenMidiTakeWindow({
                 source: selectedSource,
+                fragment,
                 absoluteOccurrenceIndex,
-                fromBeat: 0,
-                toBeat,
+                fromBeat: fragment.startBeat,
+                toBeat: fragment.endBeat,
             });
+        const looping = { startBeat: 0, endBeat: 8, loopEnabled: true, loopLength: 4 };
 
-        expect(project(frozen, 0, 8)?.closingControlChanges).toEqual([]);
-        expect(project(frozen, 1, 8)?.closingControlChanges).toEqual([{ ...lift, beat: 8 }]);
-        expect(project(frozen, 0, 4)?.closingControlChanges).toEqual([{ ...lift, beat: 4 }]);
+        expect(project(frozen, looping, 0)?.closingControlChanges).toEqual([]);
+        expect(project(frozen, looping, 1)?.closingControlChanges).toEqual([{ ...lift, beat: 8 }]);
+        expect(project(frozen, { startBeat: 0, endBeat: 4 }, 0)?.closingControlChanges).toEqual([{ ...lift, beat: 4 }]);
 
         const shortPass = {
             ...frozen,
@@ -74,7 +82,9 @@ describe('frozen MIDI take window', () => {
                 controlChanges: { present: true as const, value: [pedal, { ...lift, beat: 8 }] },
             },
         };
-        expect(project(shortPass, 0, 8)?.closingControlChanges).toEqual([{ ...lift, beat: 3 }]);
+        expect(project(shortPass, { startBeat: 0, endBeat: 3 }, 0)?.closingControlChanges).toEqual([
+            { ...lift, beat: 3 },
+        ]);
     });
 
     it('locates the last own bend before a crop without changing original scalar or curve rows', () => {
@@ -109,6 +119,7 @@ describe('frozen MIDI take window', () => {
 
         const window = projectFrozenMidiTakeWindow({
             source: frozen,
+            fragment: { startBeat: 0, endBeat: 4 },
             absoluteOccurrenceIndex: 0,
             fromBeat: 2,
             toBeat: 4,
@@ -154,7 +165,13 @@ describe('frozen MIDI take window', () => {
         };
         const beforeProjection = structuredClone(frozen);
         const project = (absoluteOccurrenceIndex: number, fromBeat: number, toBeat: number) =>
-            projectFrozenMidiTakeWindow({ source: frozen, absoluteOccurrenceIndex, fromBeat, toBeat });
+            projectFrozenMidiTakeWindow({
+                source: frozen,
+                fragment: { startBeat: 0, endBeat: 8, loopEnabled: true, loopLength: 4 },
+                absoluteOccurrenceIndex,
+                fromBeat,
+                toBeat,
+            });
         const sourceBeats = (window: NonNullable<ReturnType<typeof project>>) =>
             window.pitchBends.map(({ id, beat, sourceRecordedBeat }) => [id, beat, sourceRecordedBeat]);
 
@@ -206,12 +223,14 @@ describe('frozen MIDI take window', () => {
         const beforeProjection = structuredClone(frozen);
         const first = projectFrozenMidiTakeWindow({
             source: frozen,
+            fragment: { startBeat: 0, endBeat: 4 },
             absoluteOccurrenceIndex: 0,
             fromBeat: 0,
             toBeat: 4,
         });
         const right = projectFrozenMidiTakeWindow({
             source: frozen,
+            fragment: { startBeat: 0, endBeat: 4 },
             absoluteOccurrenceIndex: 0,
             fromBeat: 1,
             toBeat: 4,
@@ -234,42 +253,56 @@ describe('frozen MIDI take window', () => {
         expect(frozen).toEqual(beforeProjection);
     });
 
-    it('keeps original row ids, occurrence and controller state through right fragment windows', () => {
+    it('keeps original row ids, occurrence and controller state through the repeats of a looping fragment', () => {
         const original = source();
+        const fragment = { startBeat: 0, endBeat: 12, loopEnabled: true, loopLength: 4 };
         const first = projectFrozenMidiTakeWindow({
             source: original,
+            fragment,
             absoluteOccurrenceIndex: 0,
             fromBeat: 0,
             toBeat: 2,
         });
         const rightFirst = projectFrozenMidiTakeWindow({
             source: original,
+            fragment,
             absoluteOccurrenceIndex: 0,
             fromBeat: 2,
             toBeat: 4,
         });
         const rightSecond = projectFrozenMidiTakeWindow({
             source: original,
+            fragment,
             absoluteOccurrenceIndex: 1,
             fromBeat: 2,
             toBeat: 8,
         });
         const partialThird = projectFrozenMidiTakeWindow({
             source: original,
+            fragment,
             absoluteOccurrenceIndex: 2,
             fromBeat: 8,
             toBeat: 9,
         });
 
-        expect(first?.notes.map((note) => [note.id, note.startBeat])).toEqual([['selected', 0.5]]);
+        // The seam note crosses the loop end, so its tail wraps onto every repeat's start, as live loops it;
+        // the other pass's note lies past the loop end and never sounds.
+        expect(first?.notes.map((note) => [note.id, note.startBeat, note.duration])).toEqual([
+            ['seam', 0, 0.75],
+            ['selected', 0.5, 1],
+        ]);
         expect(rightFirst?.notes.map((note) => [note.id, note.startBeat, note.duration])).toEqual([
             ['seam', 3.75, 0.25],
         ]);
         expect(rightSecond?.notes.map((note) => [note.id, note.startBeat, note.duration])).toEqual([
+            ['seam', 4, 0.75],
             ['selected', 4.5, 1],
             ['seam', 7.75, 0.25],
         ]);
-        expect(partialThird?.notes.map((note) => [note.id, note.startBeat])).toEqual([['selected', 8.5]]);
+        expect(partialThird?.notes.map((note) => [note.id, note.startBeat])).toEqual([
+            ['seam', 8],
+            ['selected', 8.5],
+        ]);
         expect(rightSecond?.controlChanges.map((row) => [row.id, row.beat])).toEqual([['pedal', 4]]);
         expect(rightSecond?.pitchBends.map((row) => [row.id, row.beat])).toEqual([['bend', 4]]);
         expect(rightSecond?.sourceClipId).toBe('original');
@@ -280,11 +313,13 @@ describe('frozen MIDI take window', () => {
         const moved = { ...source(), phaseHeadBeat: -2 };
         const projected = projectFrozenMidiTakeWindow({
             source: moved,
+            fragment: { startBeat: -2, endBeat: 6, loopEnabled: true, loopLength: 4 },
             absoluteOccurrenceIndex: 1,
             fromBeat: 2,
             toBeat: 6,
         });
         expect(projected?.notes.map((note) => [note.id, note.startBeat])).toEqual([
+            ['seam', 2],
             ['selected', 2.5],
             ['seam', 5.75],
         ]);
@@ -323,6 +358,7 @@ describe('frozen MIDI take window', () => {
         };
         const projected = projectFrozenMidiTakeWindow({
             source: selected,
+            fragment: { startBeat: 0, endBeat: 4 },
             recordingPassIndex: 1,
             absoluteOccurrenceIndex: 0,
             fromBeat: 0,
@@ -337,7 +373,13 @@ describe('frozen MIDI take window', () => {
         const original = source();
         const empty = { ...original, rows: { ...original.rows, notes: { present: true, value: [] } } };
         expect(
-            projectFrozenMidiTakeWindow({ source: empty, absoluteOccurrenceIndex: 1, fromBeat: 4, toBeat: 8 })?.notes
+            projectFrozenMidiTakeWindow({
+                source: empty,
+                fragment: { startBeat: 0, endBeat: 8, loopEnabled: true, loopLength: 4 },
+                absoluteOccurrenceIndex: 1,
+                fromBeat: 4,
+                toBeat: 8,
+            })?.notes
         ).toEqual([]);
 
         const malformed = { ...source(), rows: { notes: { present: true, value: [] } } };
@@ -347,9 +389,10 @@ describe('frozen MIDI take window', () => {
 
 describe('frozen MIDI take run-up', () => {
     /**
-     * A loop take recorded from 6 in loop [8, 12): pass 0 reads source [0, 6)
-     * from 6, pass 1 reads source [6, 10) from 8. Each source carries the
-     * run-up from its clip start at 6, where live comp playback starts it.
+     * A loop take recorded from 6 in loop [8, 12): pass 0 reads source 2 at 8,
+     * pass 1 reads source 6 at 8. Live comp playback plays a pass take from
+     * its clip's start at 6, so a comp from there reads the stretch before
+     * each take's own entry.
      */
     const runUpRows: FrozenMidiTakeSource['rows'] = {
         notes: {
@@ -366,6 +409,7 @@ describe('frozen MIDI take run-up', () => {
                 { id: 'pass-0-late', pitch: 61, startBeat: 4.5, duration: 0.25, velocity: 100, recordingPassIndex: 0 },
                 { id: 'untagged', pitch: 62, startBeat: 5, duration: 0.25, velocity: 100 },
                 { id: 'pass-1', pitch: 63, startBeat: 6.5, duration: 0.25, velocity: 100, recordingPassIndex: 1 },
+                { id: 'untagged-late', pitch: 64, startBeat: 7.5, duration: 0.25, velocity: 100 },
             ],
         },
         controlChanges: {
@@ -381,23 +425,22 @@ describe('frozen MIDI take run-up', () => {
         sourceEndBeat: 6,
         phaseHeadBeat: 8,
         passLengthBeats: 4,
-        runUpEntryBeat: 0,
     };
-    const secondPass: FrozenMidiTakeSource = { ...firstPass, sourceEntryBeat: 6, sourceEndBeat: 10, runUpEntryBeat: 4 };
+    const secondPass: FrozenMidiTakeSource = { ...firstPass, sourceEntryBeat: 6, sourceEndBeat: 10 };
 
     function heard(
         source: FrozenMidiTakeSource,
         recordingPassIndex: number,
-        absoluteOccurrenceIndex: number,
-        fromBeat: number,
-        toBeat: number
+        fragment: FrozenMidiTakeFragment,
+        absoluteOccurrenceIndex = 0
     ) {
         const window = projectFrozenMidiTakeWindow({
             source,
+            fragment,
             recordingPassIndex,
             absoluteOccurrenceIndex,
-            fromBeat,
-            toBeat,
+            fromBeat: fragment.startBeat,
+            toBeat: fragment.endBeat,
         });
         return {
             notes: window?.notes.map((note) => [note.id, note.startBeat]),
@@ -406,28 +449,135 @@ describe('frozen MIDI take run-up', () => {
     }
 
     it('plays the first pass from the clip start, its run-up included', () => {
-        expect(heard(firstPass, 0, 0, 6, 12).notes).toEqual([
+        expect(heard(firstPass, 0, { startBeat: 6, endBeat: 12 }).notes).toEqual([
             ['pass-0-run-up', 6.5],
             ['pass-0-late', 10.5],
             ['untagged', 11],
         ]);
-        expect(heard(firstPass, 0, 0, 6, 8).notes).toEqual([['pass-0-run-up', 6.5]]);
+        expect(heard(firstPass, 0, { startBeat: 6, endBeat: 8 }).notes).toEqual([['pass-0-run-up', 6.5]]);
     });
 
     it('plays a later pass from the clip start as live does: earlier passes filtered, untagged rows and controllers kept', () => {
-        expect(heard(secondPass, 1, 0, 6, 12)).toEqual({
+        expect(heard(secondPass, 1, { startBeat: 6, endBeat: 12 })).toEqual({
             notes: [
                 ['untagged', 7],
                 ['pass-1', 8.5],
+                ['untagged-late', 9.5],
             ],
             controlChanges: [['swell', 7.5]],
         });
     });
 
-    it('sounds no run-up on a later repeat, which starts at its pass head', () => {
-        expect(heard(firstPass, 0, 1, 6, 20).notes).toEqual([
-            ['pass-0-late', 14.5],
-            ['untagged', 15],
+    it('reads straight through past the pass end when the fragment does not loop', () => {
+        expect(heard(firstPass, 0, { startBeat: 6, endBeat: 16 }).notes).toEqual([
+            ['pass-0-run-up', 6.5],
+            ['pass-0-late', 10.5],
+            ['untagged', 11],
+            ['untagged-late', 13.5],
+        ]);
+    });
+
+    it('restarts every repeat of a looping fragment at its own start, as live does', () => {
+        const looping = { startBeat: 6, endBeat: 14, loopEnabled: true, loopLength: 4 };
+        expect(heard(firstPass, 0, looping, 0).notes).toEqual([['pass-0-run-up', 6.5]]);
+        expect(heard(firstPass, 0, looping, 1).notes).toEqual([['pass-0-run-up', 10.5]]);
+    });
+});
+
+describe('frozen MIDI take in a looping comp fragment', () => {
+    /** Pass 0's take reads source 2 at 8; a note crosses the loop end and one lies past it. */
+    const pass: FrozenMidiTakeSource = {
+        sourceClipId: 'original',
+        sourceEntryBeat: 2,
+        sourceEndBeat: 6,
+        phaseHeadBeat: 8,
+        passLengthBeats: 4,
+        rows: {
+            notes: {
+                present: true,
+                value: [
+                    { id: 'a', pitch: 60, startBeat: 0.5, duration: 0.25, velocity: 100 },
+                    { id: 'b', pitch: 61, startBeat: 2.5, duration: 0.5, velocity: 100 },
+                    { id: 'c', pitch: 62, startBeat: 3.75, duration: 1, velocity: 100 },
+                    { id: 'd', pitch: 63, startBeat: 5.25, duration: 0.25, velocity: 100 },
+                    { id: 'e', pitch: 64, startBeat: 6.75, duration: 1, velocity: 100 },
+                    { id: 'f', pitch: 65, startBeat: 7.75, duration: 0.25, velocity: 100 },
+                ],
+            },
+            controlChanges: { present: false, value: [] },
+            pitchBends: { present: false, value: [] },
+        },
+    };
+    /** A comp region starting mid-pass, over two loop lengths. */
+    const fragment = { startBeat: 9.5, endBeat: 17.5, loopEnabled: true, loopLength: 4 };
+
+    function segments(notes: readonly { id: string; startBeat: number; duration: number }[]) {
+        return notes
+            .map((note) => [note.id, note.startBeat, note.duration] as const)
+            .toSorted((first, second) => first[1] - second[1] || first[0].localeCompare(second[0]));
+    }
+
+    function frozenSegments(source: FrozenMidiTakeSource) {
+        return segments(
+            [0, 1].flatMap(
+                (absoluteOccurrenceIndex) =>
+                    projectFrozenMidiTakeWindow({
+                        source,
+                        fragment,
+                        absoluteOccurrenceIndex,
+                        fromBeat: fragment.startBeat,
+                        toBeat: fragment.endBeat,
+                    })?.notes ?? []
+            )
+        );
+    }
+
+    /** What the live comp fragment plays: the same rows, entered at the media offset of the fragment start. */
+    function liveSegments() {
+        const midiOffsetBeats = pass.sourceEntryBeat + fragment.startBeat - pass.phaseHeadBeat;
+        return segments(
+            [0, 1].flatMap((iteration) =>
+                projectClipMidiEvents({
+                    events: pass.rows.notes.value,
+                    clipId: 'live',
+                    clipStartBeat: fragment.startBeat,
+                    clipEndBeat: fragment.endBeat,
+                    iterationStartBeat: fragment.startBeat + iteration * fragment.loopLength,
+                    loopLengthBeats: fragment.loopLength,
+                    midiOffsetBeats,
+                    loopEnabled: true,
+                })
+            )
+        );
+    }
+
+    it('plays what the live comp fragment plays over two repeats: folded earlier notes, a wrapped tail, nothing past the loop end', () => {
+        const live = liveSegments();
+        expect(live).toEqual([
+            ['e', 9.5, 0.25],
+            ['c', 9.75, 1],
+            ['a', 10.5, 0.25],
+            ['d', 11.25, 0.25],
+            ['b', 12.5, 0.5],
+            ['e', 12.75, 0.75],
+            ['e', 13.5, 0.25],
+            ['c', 13.75, 1],
+            ['a', 14.5, 0.25],
+            ['d', 15.25, 0.25],
+            ['b', 16.5, 0.5],
+            ['e', 16.75, 0.75],
+        ]);
+        expect(frozenSegments(pass)).toEqual(live);
+    });
+
+    it('reads nothing a Delete Time cut off the source, folded or wrapped', () => {
+        expect(frozenSegments({ ...pass, readStartBeat: 3, readEndBeat: 7 })).toEqual([
+            ['c', 9.75, 1],
+            ['d', 11.25, 0.25],
+            ['e', 12.75, 0.25],
+            ['c', 13.75, 1],
+            ['d', 15.25, 0.25],
+            ['e', 16.75, 0.25],
         ]);
     });
 });

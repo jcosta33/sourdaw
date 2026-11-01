@@ -4,6 +4,7 @@ import {
     frozenMidiTakeRepeats,
     isFrozenMidiTakeSource,
     projectFrozenMidiTakeWindow,
+    type FrozenMidiTakeFragment,
 } from '#/modules/MIDI/stores';
 import { projectMidiClipWindow } from '#/modules/MIDI/useCases';
 
@@ -18,6 +19,8 @@ type ClipPlacement = {
     readonly startBeat: number;
     readonly endBeat: number;
     readonly midiOffsetBeats?: number;
+    readonly loopEnabled?: boolean;
+    readonly loopLength?: number;
 };
 
 export type FrozenPianoRollNoteOwner = {
@@ -62,6 +65,8 @@ type SelectedRegion = {
     readonly sourceClipId: string;
     readonly startBeat: number;
     readonly endBeat: number;
+    /** The comp fragment the take sounds through, as live comp playback resolves it. */
+    readonly fragment: FrozenMidiTakeFragment;
     readonly source: NonNullable<TakeLaneStoreState['lanes'][number]['takes'][number]['midiSource']>;
     readonly recordingPassIndex?: number;
 };
@@ -91,6 +96,7 @@ function selectedRegions(clip: ClipPlacement, trackId: string, laneState: TakeLa
                 sourceClipId: take.midiSource.sourceClipId,
                 startBeat,
                 endBeat,
+                fragment: { startBeat, endBeat, loopEnabled: clip.loopEnabled, loopLength: clip.loopLength },
                 source: take.midiSource,
                 recordingPassIndex: take.recordingPassIndex,
             },
@@ -98,8 +104,16 @@ function selectedRegions(clip: ClipPlacement, trackId: string, laneState: TakeLa
     });
 }
 
-function viewId(region: SelectedRegion, occurrenceIndex: number, regionIndex: number, rowId: string): string {
-    return `frozen:${JSON.stringify([region.laneId, region.takeId, occurrenceIndex, regionIndex, rowId])}`;
+/** A looping repeat can sound one row twice, its head and its wrapped tail; the tail is a second segment. */
+function viewId(
+    region: SelectedRegion,
+    occurrenceIndex: number,
+    regionIndex: number,
+    rowId: string,
+    segmentIndex: number
+): string {
+    const key = [region.laneId, region.takeId, occurrenceIndex, regionIndex, rowId];
+    return `frozen:${JSON.stringify(segmentIndex === 0 ? key : [...key, segmentIndex])}`;
 }
 
 function projectBaseGapNotes(
@@ -165,11 +179,13 @@ export function projectPianoRollTakeNotes(
         const { source } = region;
         for (const { absoluteOccurrenceIndex: occurrenceIndex } of frozenMidiTakeRepeats(
             source,
+            region.fragment,
             region.startBeat,
             region.endBeat
         )) {
             const projected = projectFrozenMidiTakeWindow({
                 source,
+                fragment: region.fragment,
                 recordingPassIndex: region.recordingPassIndex,
                 absoluteOccurrenceIndex: occurrenceIndex,
                 fromBeat: region.startBeat,
@@ -178,12 +194,15 @@ export function projectPianoRollTakeNotes(
             if (!projected) {
                 throw new Error('Invalid frozen MIDI take window');
             }
+            const segmentsByRowId = new Map<string, number>();
             for (const note of projected.notes) {
                 const original = source.rows.notes.value.find((row) => row.id === note.id);
                 if (!original) {
                     throw new Error('Frozen MIDI note has no original row');
                 }
-                const id = viewId(region, occurrenceIndex, regionIndex, note.id);
+                const segmentIndex = segmentsByRowId.get(note.id) ?? 0;
+                segmentsByRowId.set(note.id, segmentIndex + 1);
+                const id = viewId(region, occurrenceIndex, regionIndex, note.id, segmentIndex);
                 const displayedStartBeat = note.startBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);
                 const { recordedOwnBendBeat: _recordedOwnBendBeat, ...displayedNote } = note;
                 const display: MidiNote = { ...displayedNote, id, startBeat: displayedStartBeat };
@@ -227,7 +246,7 @@ export function projectPianoRollTakeNotes(
             if (!region) {
                 return null;
             }
-            const repeat = frozenMidiTakeRepeatAt(region.source, arrangementBeat);
+            const repeat = frozenMidiTakeRepeatAt(region.source, region.fragment, arrangementBeat);
             if (!repeat) {
                 return null;
             }

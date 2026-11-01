@@ -14,7 +14,7 @@ export function resolveFrozenMidiControllerPasses(clip: PlayedClip) {
         throw new Error('Invalid frozen MIDI take source');
     }
     const passes = [];
-    for (const repeat of frozenMidiTakeRepeats(source, clip.startBeat, clip.endBeat)) {
+    for (const repeat of frozenMidiTakeRepeats(source, clip, clip.startBeat, clip.endBeat)) {
         const startBeat = Math.max(repeat.startBeat, clip.startBeat);
         const endBeat = Math.min(repeat.endBeat, clip.endBeat);
         if (startBeat >= endBeat) {
@@ -22,6 +22,7 @@ export function resolveFrozenMidiControllerPasses(clip: PlayedClip) {
         }
         const value = projectFrozenMidiTakeWindow({
             source,
+            fragment: clip,
             absoluteOccurrenceIndex: repeat.absoluteOccurrenceIndex,
             fromBeat: clip.startBeat,
             toBeat: clip.endBeat,

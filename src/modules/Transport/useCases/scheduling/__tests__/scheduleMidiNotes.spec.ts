@@ -1062,7 +1062,8 @@ describe('scheduleMidiNotes', () => {
     );
 
     it('schedules selected frozen source in both first and rolling WebAudio windows', async () => {
-        const sourceClip = midiClip({ startBeat: 0, endBeat: 8 });
+        // A looping comp restarts the take each loop length, as live does.
+        const sourceClip = midiClip({ startBeat: 0, endBeat: 8, loopEnabled: true, loopLength: 4 });
         const track = midiTrack({ clips: [sourceClip] });
         (trackStore as { value: unknown }).value = { tracks: [track] };
         (midiStore as { value: unknown }).value = {
@@ -1155,7 +1156,6 @@ describe('scheduleMidiNotes', () => {
                     sourceEndBeat: 6,
                     phaseHeadBeat: 8,
                     passLengthBeats: 4,
-                    runUpEntryBeat: 0,
                     rows: {
                         notes: {
                             present: true,
@@ -1185,8 +1185,72 @@ describe('scheduleMidiNotes', () => {
         );
     });
 
+    it('schedules a frozen take in a looping comp that opens mid-pass as live comp playback does, over two repeats', async () => {
+        // Pass 1 of a loop [0, 4) recording reads source 5 at its pass head 0. The comp opens a beat into
+        // the pass, so live restarts every loop length from beat 1 reading source 6 there: 63, a beat past
+        // the pass end, closes the first repeat and 64, before the read, folds into its tail.
+        const rows = [
+            { id: 'fold', pitch: 64, startBeat: 5.75, duration: 0.25, velocity: 100 },
+            { id: 'early', pitch: 61, startBeat: 6.25, duration: 0.25, velocity: 100 },
+            { id: 'tagged', pitch: 62, startBeat: 7.5, duration: 0.25, velocity: 100, recordingPassIndex: 1 },
+            { id: 'past-pass', pitch: 63, startBeat: 9.5, duration: 0.25, velocity: 100 },
+        ];
+        vi.mocked(projectClipMidiEvents).mockImplementation(realMidiUseCases.projectClipMidiEvents);
+        const sourceClip = midiClip({ startBeat: 0, endBeat: 9, loopEnabled: true, loopLength: 4 });
+        const fragment = {
+            ...sourceClip,
+            startBeat: 1,
+            regionStartBeat: 1,
+            regionEndBeat: 9,
+            sourceStartBeat: -5,
+            midiOffsetBeats: 6,
+            midiTakeRecordingPassIndex: 1,
+        };
+        (trackStore as { value: unknown }).value = { tracks: [midiTrack({ clips: [sourceClip] })] };
+        const heard = async (frozen: boolean) => {
+            vi.mocked(scheduleNote).mockClear();
+            (midiStore as { value: unknown }).value = {
+                probabilitySeed: 0xdecafbad,
+                notesByClipId: { 'clip-1': frozen ? [] : rows },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            };
+            vi.mocked(resolveClipsWithComping).mockReturnValue([
+                frozen
+                    ? {
+                          ...fragment,
+                          midiTakeId: 'pass-1',
+                          midiTakeSource: {
+                              sourceClipId: 'clip-1',
+                              sourceEntryBeat: 5,
+                              sourceEndBeat: 9,
+                              phaseHeadBeat: 0,
+                              passLengthBeats: 4,
+                              rows: {
+                                  notes: { present: true, value: rows },
+                                  controlChanges: { present: false, value: [] },
+                                  pitchBends: { present: false, value: [] },
+                              },
+                          },
+                      }
+                    : fragment,
+            ]);
+            await scheduleMidiNotes(0, 9, 0, new Set<string>(), [], defaultTransportState, 120);
+            return vi
+                .mocked(scheduleNote)
+                .mock.calls.map(([, , pitch, time]) => [pitch, time])
+                .sort((left, right) => Number(left[1]) - Number(right[1]));
+        };
+
+        const live = await heard(false);
+        const frozen = await heard(true);
+
+        expect(live.map(([pitch]) => pitch)).toEqual([61, 62, 63, 64, 61, 62, 63, 64]);
+        expect(frozen).toEqual(live);
+    });
+
     it('prepares selected source for the first Yeast window and reads it again while rolling', async () => {
-        const sourceClip = midiClip({ startBeat: 0, endBeat: 8 });
+        const sourceClip = midiClip({ startBeat: 0, endBeat: 8, loopEnabled: true, loopLength: 4 });
         const track = midiTrack({ clips: [sourceClip], devices: [{ id: 'y', type: 'yeast' }] });
         (trackStore as { value: unknown }).value = { tracks: [track] };
         (midiStore as { value: unknown }).value = {
@@ -4966,7 +5030,7 @@ describe('scheduleMidiNotes', () => {
                     deviceId: 'lv-1',
                     levainControls: { noteOn: vi.fn(), noteOff: vi.fn(), noteExpression: vi.fn(), handleCc },
                 });
-                const sourceClip = midiClip({ startBeat: 0, endBeat: 8 });
+                const sourceClip = midiClip({ startBeat: 0, endBeat: 8, loopEnabled: true, loopLength: 4 });
                 const track = midiTrack({ clips: [sourceClip], devices: [{ id: 'lv-1', type: 'levain' }] });
                 (trackStore as { value: unknown }).value = { tracks: [track] };
                 (midiStore as { value: unknown }).value = {

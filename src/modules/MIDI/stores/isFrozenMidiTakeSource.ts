@@ -13,19 +13,26 @@ function isFiniteBeat(value: unknown): value is number {
 function hasExactSourceKeys(value: object): boolean {
     const keys = Object.keys(value);
     const required = ['sourceClipId', 'rows', 'sourceEntryBeat', 'sourceEndBeat', 'phaseHeadBeat', 'passLengthBeats'];
-    const allowed = [...required, 'runUpEntryBeat'];
+    const allowed = [...required, 'readStartBeat', 'readEndBeat'];
     return required.every((key) => keys.includes(key)) && keys.every((key) => allowed.includes(key));
 }
 
-/** A present run-up starts strictly before the take's own entry; a run-up of nothing is written as absence. */
-function hasValidRunUp(value: { readonly sourceEntryBeat: number }): boolean {
-    if (!('runUpEntryBeat' in value)) {
-        return true;
+/** A present read bound is a finite beat, and two bounds leave something to read. */
+function readBound(value: object, key: 'readStartBeat' | 'readEndBeat', absent: number): number | null {
+    if (!(key in value)) {
+        return absent;
     }
-    return isFiniteBeat(value.runUpEntryBeat) && value.runUpEntryBeat < value.sourceEntryBeat;
+    const beat: unknown = Reflect.get(value, key);
+    return isFiniteBeat(beat) ? beat : null;
 }
 
-/** A non-empty source span no longer than the pass it repeats at, and a run-up before it. */
+function hasValidReadBounds(value: object): boolean {
+    const start = readBound(value, 'readStartBeat', -Infinity);
+    const end = readBound(value, 'readEndBeat', Infinity);
+    return start !== null && end !== null && start < end;
+}
+
+/** A non-empty source span no longer than the pass it repeats at, and read bounds that leave a read. */
 function hasValidPassGeometry(value: object): boolean {
     if (
         !('sourceEntryBeat' in value) ||
@@ -41,7 +48,7 @@ function hasValidPassGeometry(value: object): boolean {
     ) {
         return false;
     }
-    return value.sourceEndBeat - value.sourceEntryBeat <= value.passLengthBeats && hasValidRunUp(value);
+    return value.sourceEndBeat - value.sourceEntryBeat <= value.passLengthBeats && hasValidReadBounds(value);
 }
 
 /** Presence is authoritative: an absent legacy source is handled by the caller. */

@@ -44,48 +44,51 @@ function laneState(): TakeLaneStoreState {
                         endBeat: 12,
                         selected: false,
                         recordingPassIndex: 1,
-                        midiSource: { ...source, sourceEntryBeat: 9, sourceEndBeat: 13 },
+                        // Read from where its region opens, its first beat is the second pass's.
+                        midiSource: { ...source, sourceEntryBeat: 9, sourceEndBeat: 13, phaseHeadBeat: 8 },
                     },
                 ],
                 activeCompRegions: [
-                    { startBeat: 0, endBeat: 4, takeId: 'first' },
-                    { startBeat: 4, endBeat: 8, takeId: 'second' },
-                    { startBeat: 8, endBeat: 12, takeId: 'first' },
+                    { startBeat: 0, endBeat: 8, takeId: 'first' },
+                    { startBeat: 8, endBeat: 12, takeId: 'second' },
                 ],
             },
         ],
     };
 }
 
+const loopingClip = { id: 'clip', startBeat: 0, endBeat: 12, loopEnabled: true, loopLength: 4 };
+
 describe('piano roll frozen take occurrence ownership', () => {
     it('shows two selected passes and gives repeated occurrences unique view identities with one original row owner', () => {
-        const result = projectPianoRollTakeNotes({ id: 'clip', startBeat: 0, endBeat: 12 }, 'track', laneState());
+        // A looping clip restarts the first pass's region every loop length, as live does.
+        const result = projectPianoRollTakeNotes(loopingClip, 'track', laneState());
         expect(result.notes.map((note) => [note.pitch, note.startBeat])).toEqual([
             [60, 0.5],
-            [64, 4.5],
-            [60, 8.5],
+            [60, 4.5],
+            [64, 8.5],
         ]);
         expect(new Set(result.notes.map((note) => note.id)).size).toBe(3);
         const firstOwner = result.ownersByViewId.get(result.notes[0]!.id);
-        const repeatOwner = result.ownersByViewId.get(result.notes[2]!.id);
+        const repeatOwner = result.ownersByViewId.get(result.notes[1]!.id);
         expect(firstOwner?.row).toBe(first);
         expect(repeatOwner?.row).toBe(first);
         expect(firstOwner?.occurrenceIndex).toBe(0);
-        expect(repeatOwner?.occurrenceIndex).toBe(2);
-        expect(result.ownersByViewId.get(result.notes[1]!.id)?.takeId).toBe('second');
+        expect(repeatOwner?.occurrenceIndex).toBe(1);
+        expect(result.ownersByViewId.get(result.notes[2]!.id)?.takeId).toBe('second');
     });
 
     it('maps insertion through a selected region to original source coordinates and pass identity', () => {
         const result = projectPianoRollTakeNotes(
-            { id: 'clip', startBeat: 2, endBeat: 12, midiOffsetBeats: 2 },
+            { ...loopingClip, startBeat: 2, midiOffsetBeats: 2 },
             'track',
             laneState()
         );
-        expect(result.insertOwnerAtBeat(6.5)).toEqual({
+        expect(result.insertOwnerAtBeat(8.5)).toEqual({
             laneId: 'lane',
             takeId: 'second',
             sourceClipId: 'original',
-            sourceBeat: 11.5,
+            sourceBeat: 9.5,
             recordingPassIndex: 1,
             slotPresent: true,
         });
@@ -147,7 +150,6 @@ describe('piano roll frozen take run-up', () => {
                                 sourceEndBeat: 6,
                                 phaseHeadBeat: 8,
                                 passLengthBeats: 4,
-                                runUpEntryBeat: 0,
                                 rows: {
                                     notes: { present: true, value: [runUp, inLoop] },
                                     controlChanges: { present: true, value: [] },
