@@ -1,0 +1,23 @@
+eslint.config.mjs
+  s_3bb122e91d89a5::t_61d58e5aac28bc 2420
+docs/06-testing.md
+  s_3bb122e91d89a5::t_addc306d79e9d7 12
+scripts/__tests__/e2eSharedTestFixture.spec.ts
+  s_3bb122e91d89a5::t_a20d2c9a55e458 1-96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ff3ff0fe3e9c851407d9e06bb101dce9d869b0c9",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
