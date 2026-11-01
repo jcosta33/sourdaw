@@ -5,7 +5,7 @@ description: >-
     ALWAYS apply when writing or changing an assertion, a spec's setup, fixture or
     waiting logic, a Vitest or Playwright case, or a Rust test, and when reviewing
     whether a test observes what its name claims — even if the change looks like a
-    one-line tweak to an existing spec. Skip where a spec file lives
+    one-line tweak to an existing spec. Skip questions of where a spec file lives
     (testing-file-layout), driving the live UI ad hoc (playwright-ui-bridge), and
     production code with no test change.
 ---
@@ -26,9 +26,9 @@ Name the mutation that turns the case red: revert the behavioural hunk or apply 
 
 ### 2. Assert the observable the claim names
 
-Assert the output value, the emitted event, the written document state or the rendered text. Not a mock call count, and not an intermediate the subject could skip. Assert ownership and non-effects (a stale completion must not revive retired state) when they are part of the claim.
+Assert the output value, the emitted event, the written document state or the rendered text, and not an intermediate the subject could skip. A call on a double is the observable only when the claim is that call to a doubled external system (an engine node's `connect` or `setTargetAtTime`, an `eventBus.emit`, as in `docs/06-testing.md` §5 and §6.11); then prefer asserting its arguments over its mere occurrence. Assert ownership and non-effects (a stale completion must not revive retired state) when they are part of the claim.
 
-**Why:** a call-count assertion stays green when the subject is rewired to a different route that produces the wrong result.
+**Why:** a bare call-count assertion stays green when the subject is rewired to a different route that produces the wrong result.
 
 **Enforced by:** review only; `docs/06-testing.md` §1 "Observe the outcome".
 
