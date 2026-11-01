@@ -1,0 +1,157 @@
+src/modules/Onboarding/AGENTS.md
+  s_0314bb17e5dee3::t_d692e0e56ae4a1 28
+.agents/skills/desktop-platform/SKILL.md
+  s_0314bb17e5dee3::t_088a7ccb1ad98f 59
+  s_0314bb17e5dee3::t_b0aa8000ed5fe3 53
+src/modules/Setlist/AGENTS.md
+  s_0314bb17e5dee3::t_e6896168c4aed1 30
+.agents/skills/testing-file-layout/SKILL.md
+  s_0314bb17e5dee3::t_aef0ba8ef1abb7 41
+src/modules/PluginHost/AGENTS.md
+  s_0314bb17e5dee3::t_6449999cbd7b09 42
+src/modules/Arrangement/AGENTS.md
+  s_0314bb17e5dee3::t_065a73dd3eefd5 37
+src/modules/DawInterchange/AGENTS.md
+  s_0314bb17e5dee3::t_61776f87cba0ba 29
+src/modules/AudioEngine/AGENTS.md
+  s_0314bb17e5dee3::t_df9edec44f0af7 57
+src/modules/Proof/AGENTS.md
+  s_0314bb17e5dee3::t_a10bfb208b3342 29
+  s_0314bb17e5dee3::t_f65293a134b77b 30
+src/modules/ContentBrowser/AGENTS.md
+  s_0314bb17e5dee3::t_4f17aa7cc4fa44 28
+src/modules/Synth/AGENTS.md
+  s_0314bb17e5dee3::t_dedc50fa7f164f 27
+src/modules/ElasticAudio/AGENTS.md
+  s_0314bb17e5dee3::t_68060659a520d0 34
+src/modules/Command/AGENTS.md
+  s_0314bb17e5dee3::t_0ff85ad69c265c 46
+src/modules/SessionLauncher/AGENTS.md
+  s_0314bb17e5dee3::t_6138290062ca1c 32
+src/modules/TimelineEditor/AGENTS.md
+  s_0314bb17e5dee3::t_7624992f049e23 30
+src/modules/MixerConsole/AGENTS.md
+  s_0314bb17e5dee3::t_c13de56aed6bc3 29
+src/modules/CommandInterface/AGENTS.md
+  s_0314bb17e5dee3::t_a36f58e1915323 27
+src/modules/AudioRendering/AGENTS.md
+  s_0314bb17e5dee3::t_cd36e7384ff9e0 40
+src/modules/Levain/AGENTS.md
+  s_0314bb17e5dee3::t_687d8df9368d97 29
+  s_0314bb17e5dee3::t_e721eed7b66321 28
+src/modules/WorkspaceShell/AGENTS.md
+  s_0314bb17e5dee3::t_3006c5fe57a465 40
+src/modules/CrdtDocument/AGENTS.md
+  s_0314bb17e5dee3::t_b45420940bf36f 44
+src/modules/Yeast/AGENTS.md
+  s_0314bb17e5dee3::t_cd23a826cdc182 30
+.agents/skills/architecture-violations/SKILL.md
+  s_0314bb17e5dee3::t_b7e77f88d4f7fd 20
+src/modules/AudioAnalysis/AGENTS.md
+  s_0314bb17e5dee3::t_74bb9c5dd25f15 36
+src/modules/Bacteria/AGENTS.md
+  s_0314bb17e5dee3::t_dbba2f85f48ca0 31
+  s_0314bb17e5dee3::t_80de2d8d4507ba 32
+src/modules/AgentAdapters/AGENTS.md
+  s_0314bb17e5dee3::t_4d9fe26d3f8c72 40
+src/modules/Fermenter/AGENTS.md
+  s_0314bb17e5dee3::t_d6f21e9cd70992 30
+  s_0314bb17e5dee3::t_c74bee62c59174 29
+src/modules/Project/AGENTS.md
+  s_0314bb17e5dee3::t_d8579274f1a799 51
+src/modules/FactorySynthesis/AGENTS.md
+  s_0314bb17e5dee3::t_6b7c2de4bcb501 29
+src/modules/Grinder/AGENTS.md
+  s_0314bb17e5dee3::t_98b80934bc9d5a 29
+  s_0314bb17e5dee3::t_0a8e527529062b 30
+src/modules/Preferences/AGENTS.md
+  s_0314bb17e5dee3::t_f91f7e98713d61 26
+src/modules/CvGate/AGENTS.md
+  s_0314bb17e5dee3::t_3e8d74e41bb9de 26
+.agents/skills/architecture/SKILL.md
+  s_0314bb17e5dee3::t_9a1bf8334c3aef 82
+src/modules/PunchRecording/AGENTS.md
+  s_0314bb17e5dee3::t_f0e73aa5d87af5 31
+src/modules/ProjectVersioning/AGENTS.md
+  s_0314bb17e5dee3::t_5b8b5612799cf7 30
+src/modules/Gluten/AGENTS.md
+  s_0314bb17e5dee3::t_e2814ed68ca709 29
+  s_0314bb17e5dee3::t_602e2dfd0c6658 30
+docs/06-testing.md
+  s_0314bb17e5dee3::t_78ff894ee04f40 707
+  s_0314bb17e5dee3::t_e35896005d6b3c 11
+  s_0314bb17e5dee3::t_220fb2118911f4 705
+  s_0314bb17e5dee3::t_4977b5216c13d0 708
+  s_0314bb17e5dee3::t_27a9ad7eb00121 702-704
+  s_0314bb17e5dee3::t_faeed55afcf526 706
+src/modules/AiRuntime/AGENTS.md
+  s_0314bb17e5dee3::t_1f5a96d7135979 65
+src/modules/GrandBoule/AGENTS.md
+  s_0314bb17e5dee3::t_c78f0489351b33 30
+  s_0314bb17e5dee3::t_b980750d3bda6c 31
+src/modules/BrowserAi/AGENTS.md
+  s_0314bb17e5dee3::t_3833aeda970bf0 31
+src/modules/Crust/AGENTS.md
+  s_0314bb17e5dee3::t_cdeb258e891c8b 28
+  s_0314bb17e5dee3::t_e156c732543e24 29
+src/modules/ProofChamber/AGENTS.md
+  s_0314bb17e5dee3::t_c688bf0f73a845 30
+  s_0314bb17e5dee3::t_7bbd28edbfcba2 29
+src/modules/Tuner/AGENTS.md
+  s_0314bb17e5dee3::t_602725fbcebb50 26
+src/modules/MIDI/AGENTS.md
+  s_0314bb17e5dee3::t_b3600793646294 36
+src/modules/AiGeneration/AGENTS.md
+  s_0314bb17e5dee3::t_3e2db7d297cdd2 31
+src/modules/Metering/AGENTS.md
+  s_0314bb17e5dee3::t_95b6b82ead66e2 32
+src/modules/Collaboration/AGENTS.md
+  s_0314bb17e5dee3::t_c0cb74c1b3e2bb 32
+src/modules/Toaster/AGENTS.md
+  s_0314bb17e5dee3::t_5422943d28c6c6 30
+  s_0314bb17e5dee3::t_7a000cd89531ea 31
+src/modules/Knead/AGENTS.md
+  s_0314bb17e5dee3::t_ee707ec886282b 27
+AGENTS.md
+  s_0314bb17e5dee3::t_9f982c572be93c 279-280
+  s_0314bb17e5dee3::t_c2c91cc24e8173 282
+  s_0314bb17e5dee3::t_c43e3302762f13 277-278
+  s_0314bb17e5dee3::t_f62af2a4488bd3 281
+  s_0314bb17e5dee3::t_72f37fecdb0584 283-285
+  s_0314bb17e5dee3::t_d0eb46456cd042 286-290
+src/modules/ControlRoom/AGENTS.md
+  s_0314bb17e5dee3::t_37593e7fa750f0 33
+src/modules/Routing/AGENTS.md
+  s_0314bb17e5dee3::t_29310d73a026df 34
+src/modules/SampleLibrary/AGENTS.md
+  s_0314bb17e5dee3::t_ac3af1a41fe3e2 31
+.agents/skills/crdt-collaboration/SKILL.md
+  s_0314bb17e5dee3::t_b0b694d72bb8e2 56
+src/modules/Automation/AGENTS.md
+  s_0314bb17e5dee3::t_a97069315d197b 33
+src/modules/ControlSurface/AGENTS.md
+  s_0314bb17e5dee3::t_41c6331c201383 36
+src/modules/Transport/AGENTS.md
+  s_0314bb17e5dee3::t_34573e950ee2d7 40
+src/modules/Crumbs/AGENTS.md
+  s_0314bb17e5dee3::t_5f21e58827e4e9 32
+  s_0314bb17e5dee3::t_ec98223e75791e 33
+.agents/skills/state-and-write-paths/SKILL.md
+  s_0314bb17e5dee3::t_3436fbd24772cd 119
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "73e0e934c943f4bf317a13a5b7c244474c70f4f2",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
