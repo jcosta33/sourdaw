@@ -1,0 +1,30 @@
+src/modules/Collaboration/presentations/views/CollaborationPanel.tsx
+  s_88fc7e0d05bab6::t_a2427995b2d2e9 87
+  s_ba80576e6f5cb5::t_2677fef4c7c08e 1,13,16,59,72-86,88-97,236
+src/modules/Collaboration/presentations/views/__tests__/CollaborationPanel.spec.tsx
+  s_ba80576e6f5cb5::t_25c46fbb931d12 4-5,110-198
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e3367bdbe5c29bb6fcf47f7dc8185120bcb35772",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
