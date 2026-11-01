@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import {
     existsSync,
     linkSync,
+    lstatSync,
     mkdirSync,
     mkdtempSync,
     readFileSync,
@@ -12,7 +13,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -173,6 +174,23 @@ describe('cleanup installation', () => {
             const alias = join(foreign, 'home');
             symlinkSync(f.root, alias, 'dir');
             expect(() => installCleanupLanes({ ...f.port, home: alias })).toThrow('canonical');
+            expect(existsSync(join(f.root, 'Library'))).toBe(false);
+            expect(f.events).toHaveLength(0);
+        } finally {
+            f.dispose();
+            rmSync(foreign, { recursive: true });
+        }
+    });
+
+    it('refuses a home reached through a symlinked ancestor before creating managed directories', () => {
+        const f = fixture();
+        const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-home-ancestor-alias-')));
+        try {
+            const ancestor = join(foreign, 'ancestor');
+            symlinkSync(dirname(f.root), ancestor, 'dir');
+            const home = join(ancestor, basename(f.root));
+            expect(lstatSync(home).isSymbolicLink()).toBe(false);
+            expect(() => installCleanupLanes({ ...f.port, home })).toThrow('canonical');
             expect(existsSync(join(f.root, 'Library'))).toBe(false);
             expect(f.events).toHaveLength(0);
         } finally {
