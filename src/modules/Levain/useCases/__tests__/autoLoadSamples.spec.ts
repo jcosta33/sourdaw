@@ -66,6 +66,26 @@ describe('autoLoadLevainSamples', () => {
         expect(setSampleLoadProgress).toHaveBeenCalledWith('d1', 1.0);
     });
 
+    it('forwards real queued activity without changing UI progress and ignores it after abort', async () => {
+        const pending = Promise.withResolvers<undefined>();
+        vi.mocked(loadInstrumentFromManifest).mockImplementation(() => pending.promise);
+        const controller = new AbortController();
+        const observed = vi.fn();
+        const loading = autoLoadLevainSamples('d1', {} as MessagePort, 'violin-1', controller.signal, observed);
+        await vi.waitFor(() => expect(loadInstrumentFromManifest).toHaveBeenCalledTimes(1));
+        const report = vi.mocked(loadInstrumentFromManifest).mock.calls[0]![0].onProgress!;
+        report(0.25);
+        const writes = vi.mocked(setSampleLoadProgress).mock.calls.length;
+        report({ type: 'activity' });
+        expect(observed).toHaveBeenLastCalledWith({ type: 'activity' });
+        expect(setSampleLoadProgress).toHaveBeenCalledTimes(writes);
+        controller.abort();
+        report({ type: 'activity' });
+        expect(observed).toHaveBeenCalledTimes(2);
+        pending.resolve(undefined);
+        await loading;
+    });
+
     it('hands the loader the configured zone table builder, so no route builds tables on the render thread', async () => {
         const tables = { lut: new Uint32Array([0, 1]), arena: new Uint32Array([0]) };
         const builder = vi.fn(() => Promise.resolve(tables));

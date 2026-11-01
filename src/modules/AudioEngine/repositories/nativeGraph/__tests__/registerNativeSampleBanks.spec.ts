@@ -171,13 +171,45 @@ describe('registerNativeSampleBanks', () => {
 
     const commands = [createStrip('audio-1', [device({ sampleBankKey: 'levain:violin-1' })])];
 
+    it('reports native activity only after acknowledgements and releases admission on transport failure', async () => {
+        const begin = deferred();
+        const sample = deferred();
+        const reportActivity = vi.fn();
+        const release = vi.fn();
+        const { transport } = recordingTransport({
+            beginLevainBank: () => begin.promise.then(() => null),
+            registerLevainSample: () =>
+                sample.promise.then(() => {
+                    throw new Error('transfer refused');
+                }),
+        });
+        const loading = registerNativeSampleBanks({
+            transport,
+            commands,
+            backendId: LIVE_BACKEND_ID,
+            acquire: () => Promise.resolve({ ...lease(release), reportActivity }),
+        });
+        await vi.waitFor(() => expect(inFlightNativeSampleBankShipments.size).toBe(1));
+        expect(reportActivity).not.toHaveBeenCalled();
+        expect(release).not.toHaveBeenCalled();
+        begin.settle();
+        await vi.waitFor(() => expect(reportActivity).toHaveBeenCalledTimes(1));
+        expect(release).not.toHaveBeenCalled();
+        sample.settle();
+        await expect(loading).resolves.toEqual([]);
+        expect(reportActivity).toHaveBeenCalledTimes(1);
+        expect(release).toHaveBeenCalledOnce();
+        expect(registeredNativeSampleBankKeys.size).toBe(0);
+    });
+
     it('stages a bank as begin, then every sample, then commit', async () => {
         const { transport, calls } = recordingTransport();
+        const reportActivity = vi.fn();
 
         const committed = await registerNativeSampleBanks({
             transport,
             commands,
-            acquire: () => Promise.resolve(lease(vi.fn())),
+            acquire: () => Promise.resolve({ ...lease(vi.fn()), reportActivity }),
             backendId: LIVE_BACKEND_ID,
         });
 
@@ -188,6 +220,7 @@ describe('registerNativeSampleBanks', () => {
             'commit:levain:violin-1',
         ]);
         expect(committed).toEqual(['levain:violin-1']);
+        expect(reportActivity).toHaveBeenCalledTimes(4);
     });
 
     it('commits the zone layout alone, without the fields the store would refuse', async () => {

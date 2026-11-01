@@ -44,7 +44,11 @@ export async function acquireLevainNativeBank(bankKey: string) {
     });
 
     try {
-        return { bank: decodedBankToNativeSampleBank(lease.bank), release: lease.release };
+        return {
+            bank: decodedBankToNativeSampleBank(lease.bank),
+            release: lease.release,
+            reportActivity: lease.reportActivity,
+        };
     } catch (error) {
         // The translation throws on a bank the wire cannot carry — a missing
         // file, a channel count the store refuses. Release before rethrowing:
