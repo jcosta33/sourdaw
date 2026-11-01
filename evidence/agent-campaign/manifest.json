@@ -126,7 +126,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Project/useCases/__tests__/productionBrief.spec.ts",
-                    "digest": "f42064dc868370e329c8c50da08f64d0247958ef214084bbd0fe62e2f484e6d8"
+                    "digest": "2f8b5c8f4515b2a4bae68f682eb681c281d02bfdc74ea405570ed26aee2ba287"
                 }
             ]
         },

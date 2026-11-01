@@ -879,12 +879,12 @@ describe('production brief', () => {
                 },
             });
         };
-        const chorusClip = (id: string) => ({
+        const chorusClip = (id: string, endBeat = 44) => ({
             id,
             trackId: 'track-takes',
             name: id,
             startBeat: 36,
-            endBeat: 44,
+            endBeat,
             type: 'audio' as const,
             color: '#000',
             fadeInBeats: 0,
@@ -900,7 +900,7 @@ describe('production brief', () => {
                 tracks: [
                     {
                         ...createTrack({ id: 'track-takes', name: 'Takes', kind: 'audio' }),
-                        clips: liveClipIds.map(chorusClip),
+                        clips: liveClipIds.map((id) => chorusClip(id)),
                         activeAlternativeId: 'alt-main',
                         alternatives: [{ id: 'alt-main', name: 'Alternative 1', clips: [chorusClip('clip-deleted')] }],
                     },
@@ -917,6 +917,52 @@ describe('production brief', () => {
             expect(
                 doesProductionBriefAllowActionBatch([{ type: 'duplicateTrack', payload: { trackId: 'track-takes' } }])
             ).toBe(true);
+        });
+
+        // `clip-wide` runs 36-52, so moving it to start at beat 20 (outside the locked 32-48 on its own
+        // beats) only reaches the range through the clip's length, which `findClip` has to supply.
+        const seedWideClip = (where: 'live' | 'stale-active-copy') =>
+            setTrackStoreState({
+                ...structuredClone(defaultTrackState),
+                tracks: [
+                    {
+                        ...createTrack({ id: 'track-takes', name: 'Takes', kind: 'audio' }),
+                        clips: where === 'live' ? [chorusClip('clip-wide', 52)] : [],
+                        activeAlternativeId: 'alt-main',
+                        alternatives: [
+                            {
+                                id: 'alt-main',
+                                name: 'Alternative 1',
+                                clips: where === 'stale-active-copy' ? [chorusClip('clip-wide', 52)] : [],
+                            },
+                        ],
+                    },
+                ],
+            });
+        const moveWideClipBeforeRange: AppAction = {
+            type: 'moveClip',
+            payload: { clipId: 'clip-wide', startBeat: 20 },
+        };
+
+        it('measures a move by the live clip length and ignores a clip only the stale active copy holds', () => {
+            lockChorusRange();
+
+            seedWideClip('live');
+            expect(doesProductionBriefAllowActionBatch([moveWideClipBeforeRange])).toBe(false);
+
+            seedWideClip('stale-active-copy');
+            expect(doesProductionBriefAllowActionBatch([moveWideClipBeforeRange])).toBe(true);
+        });
+
+        it('admits an action naming a clip only the stale active copy holds inside the locked range', () => {
+            lockChorusRange();
+            const removeClip: AppAction = { type: 'removeClip', payload: { clipId: 'clip-deleted' } };
+
+            seedTakesTrack([]);
+            expect(doesProductionBriefAllowActionBatch([removeClip])).toBe(true);
+
+            seedTakesTrack(['clip-deleted']);
+            expect(doesProductionBriefAllowActionBatch([removeClip])).toBe(false);
         });
 
         it('owns the live and parked clips under a track lock, not the clip deleted from the track', () => {
