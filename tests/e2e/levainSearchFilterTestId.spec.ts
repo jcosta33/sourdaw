@@ -4,7 +4,7 @@ import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 async function openLevain(page: Page): Promise<void> {
     const browser = page.getByRole('complementary', { name: 'Browser panel' });
-    await browser.getByRole('button', { name: 'Instruments', exact: true }).click();
+    await browser.getByRole('tab', { name: 'Instruments', exact: true }).click();
     await browser.getByRole('button', { name: /^Levain/ }).click();
     await expect(page.getByRole('button', { name: 'Close Levain' })).toBeVisible({
         timeout: 30_000,

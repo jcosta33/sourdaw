@@ -6,7 +6,7 @@ import {
     grinderSetParamCalls,
     resetGrinderProcessorCalls,
     type GrinderProcessorLike,
-} from '../../../services/__tests__/grinderProcessorTestHarness';
+} from '../../../testing/grinderProcessorTestHarness';
 import { createNativeDspStrategy } from '../NativeDspDeviceStrategy';
 
 vi.mock('#/infra/audioWorklet/workletInitShared', async (importOriginal) => ({

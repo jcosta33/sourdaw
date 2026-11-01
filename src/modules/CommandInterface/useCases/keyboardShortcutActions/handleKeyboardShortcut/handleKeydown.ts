@@ -223,8 +223,10 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                 return true;
             }
             if (appAction.type === 'duplicateClipToNextBar' && appAction.payload.clipId === 'selected') {
+                // Single-clip command: the clip context menu hides it for a multi-clip selection, so the key does too.
+                const selectedClipIds = clipSelectionStore.value?.selectedClipIds ?? [];
                 const selectedClipId = clipSelectionStore.value?.selectedClipId;
-                if (selectedClipId) {
+                if (selectedClipId && selectedClipIds.length <= 1) {
                     void executeUserAppAction({ type: 'duplicateClipToNextBar', payload: { clipId: selectedClipId } });
                 }
                 return true;

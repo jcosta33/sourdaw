@@ -26,7 +26,7 @@ export type ProjectToasterKitToNativePatchInput = {
  *
  * `delay_time` is left in milliseconds, exactly as the message projection
  * states it. The worklet converts to seconds at its own door
- * (`toEngineKitParamValue`, `services/toasterProcessor.ts`) because
+ * (`toEngineKitParamValue`, `worklets/toasterProcessor.ts`) because
  * `StereoDelay::set_param` there consumes seconds; the native `ToasterBody`
  * accepts milliseconds directly at its own door instead, so this projection
  * must not perform that conversion a second time.

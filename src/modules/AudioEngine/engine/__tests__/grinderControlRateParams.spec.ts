@@ -24,7 +24,7 @@ vi.mock('../telemetryAllocator', () => ({
     GRINDER_IDX: {},
 }));
 
-vi.mock('../../services/grinderProcessor.ts?worker&url', () => ({ default: 'grinder-processor-url' }));
+vi.mock('../../worklets/grinderProcessor.ts?worker&url', () => ({ default: 'grinder-processor-url' }));
 
 describe('grinderControlRateParams', () => {
     const postMessage = vi.fn();

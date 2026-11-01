@@ -2194,6 +2194,51 @@ describe('repository tooling selects no browser suite', () => {
         expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
         expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
     });
+
+    it.each([
+        'src/app/AGENTS.md',
+        'src/modules/Tuner/CLAUDE.md',
+        'src/infra/ZCODE.md',
+        'src/modules/GrandBoule/GEMINI.md',
+        'src/app/CODEX.md',
+        'src/app/KIMI.md',
+        'tests/e2e/AGENTS.md',
+    ])('keeps per-vendor agent guidance %s on broad non-browser validation', (path) => {
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(plan).toMatchObject(BROAD_WITHOUT_BROWSER);
+        expect(plan.reasons).toEqual([
+            { path, reason: 'repository tooling; broad non-browser validation without browser execution' },
+        ]);
+        expect(productPathsOf([path], INVENTORY, false)).toEqual([]);
+    });
+
+    it('lets the product path decide browser selection when agent guidance changes beside it', () => {
+        expect(productPathsOf(['src/modules/Tuner/AGENTS.md', TUNER], INVENTORY, false)).toEqual([TUNER]);
+    });
+
+    it.each([
+        'public/AGENTS.md',
+        'src/modules/Tuner/notes.md',
+        'src/app/agents.md',
+        'src/app/AGENTS.mdx',
+        'src/app/AGENTS.md.bak',
+        'src/app/NOTAGENTS.md',
+        'src/modules/Tuner/README.md',
+    ])('retains full browser coverage for non-guidance Markdown %s', (path) => {
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+        expect(productPathsOf([path], INVENTORY, false)).toEqual([path]);
+    });
+
+    it('keeps full browser coverage when agent guidance is renamed to product code', () => {
+        const plan = selectValidationPlan(
+            parseChangedPaths('R100\0src/app/AGENTS.md\0src/app/bootstrap.ts\0'),
+            INVENTORY
+        );
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+    });
 });
 
 const UNIT_SPEC_REASON = 'unit test source; broad non-browser validation without browser execution';

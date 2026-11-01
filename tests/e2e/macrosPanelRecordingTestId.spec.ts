@@ -16,7 +16,7 @@ test.describe('Macros panel — recording toggle', () => {
             await page.getByTestId('toggle-browser').click();
             await page.waitForTimeout(500);
         }
-        await browser.getByRole('button', { name: 'Macros', exact: true }).click();
+        await browser.getByRole('tab', { name: 'Macros', exact: true }).click();
         await page.waitForTimeout(400);
     });
 

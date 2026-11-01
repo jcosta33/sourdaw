@@ -370,7 +370,8 @@
                 "src/**/useCases/**/*.{ts,tsx}",
                 "src/**/services/**/*.{ts,tsx}",
                 "src/**/validators/**/*.{ts,tsx}",
-                "src/**/transformers/**/*.{ts,tsx}"
+                "src/**/transformers/**/*.{ts,tsx}",
+                "src/**/worklets/**/*.{ts,tsx}"
             ],
             "rules": {
                 "no-restricted-imports": [

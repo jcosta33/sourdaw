@@ -3611,7 +3611,7 @@ impl DutchOvenBody {
 ///
 /// The figure the web host constructs its own worklet instance with
 /// (`TOASTER_PAD_COUNT` in
-/// `src/modules/AudioEngine/services/toasterProcessor.ts`), so a kit that moves
+/// `src/modules/AudioEngine/worklets/toasterProcessor.ts`), so a kit that moves
 /// between the two runtimes finds the same grid on both. It is also the size of
 /// the two note banks [`toaster_pad_for_note`] maps and the bound
 /// [`toaster_pad_key`] refuses a pad address past.
@@ -3971,7 +3971,7 @@ impl ToasterBody {
 ///
 /// The figure the web runtime builds its own instance with
 /// (`new LevainInstance(sampleRate, 64)`,
-/// `src/modules/AudioEngine/services/levainProcessor.ts`), so a strip that
+/// `src/modules/AudioEngine/worklets/levainProcessor.ts`), so a strip that
 /// moves between the two runtimes steals voices at the same point rather than
 /// sounding different under load.
 const LEVAIN_MAX_VOICES: u32 = 64;
@@ -27936,7 +27936,7 @@ mod timeline_tests {
     /// (`crates/daw-engine/AGENTS.md`). So an unaddressable channel reaches the
     /// instrument's unnarrowed `note_off`, which is also what the worklet sends
     /// for a message carrying no channel at all (`_dispatch`,
-    /// `src/modules/AudioEngine/services/levainProcessor.ts`).
+    /// `src/modules/AudioEngine/worklets/levainProcessor.ts`).
     ///
     /// Two notes of one pitch are struck on two channels so the two answers
     /// differ: the narrowed release leaves one of them sounding, the broad one
