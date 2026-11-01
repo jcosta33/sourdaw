@@ -1,0 +1,25 @@
+src/app/__tests__/main.spec.tsx
+  s_88fc7e0d05bab6::t_32d78026d63570 11,280,308,482-494
+src/app/main.tsx
+  s_88fc7e0d05bab6::t_a8d023b4c59d70 98-101
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useStatusBarMetrics.spec.ts
+  s_88fc7e0d05bab6::t_9f77d87de2c319 759-800
+src/modules/WorkspaceShell/presentations/hooks/useStatusBarMetrics.ts
+  s_88fc7e0d05bab6::t_0e49cf8dd898c5 73-87,534
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "20e3fd67c7050c15770b84e545e4d278ab4ba694",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
