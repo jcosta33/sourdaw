@@ -1,0 +1,55 @@
+crates/proof-chamber/AGENTS.md
+  s_0314bb17e5dee3::t_b2b7ae2d3f8a57 17
+  s_0314bb17e5dee3::t_2de055b8d1dc8a 24-25
+src/app/AGENTS.md
+  s_0314bb17e5dee3::t_c326571d0e368c 25
+crates/daw-engine/AGENTS.md
+  s_0314bb17e5dee3::t_5085694b2b3561 162
+crates/daw-collab/AGENTS.md
+  s_0314bb17e5dee3::t_45b86ebcbcf4dc 23
+crates/daw-plugin-host/AGENTS.md
+  s_0314bb17e5dee3::t_399e46ae8b26aa 26
+electron/AGENTS.md
+  s_0314bb17e5dee3::t_38170ea677de53 25
+crates/daw-io/AGENTS.md
+  s_0314bb17e5dee3::t_079591fcf435c6 22
+docs/modern-primitives.md
+  s_0314bb17e5dee3::t_7f16c1dd2e9d7f 22
+crates/scoring/AGENTS.md
+  s_0314bb17e5dee3::t_345d61ab76db20 29-30
+  s_0314bb17e5dee3::t_eb9a12ab5b7370 22
+crates/daw-wasm-decoder/AGENTS.md
+  s_0314bb17e5dee3::t_3f02e638c3b5f5 20
+  s_0314bb17e5dee3::t_cfb8141836b0d6 15
+AGENTS.md
+  s_0314bb17e5dee3::t_ac4ae51f855b60 285
+crates/daw-core/AGENTS.md
+  s_0314bb17e5dee3::t_3c3d9e3b7be7cc 22
+CONTRIBUTING.md
+  s_0314bb17e5dee3::t_5b3febd9f8d7c7 26
+  s_0314bb17e5dee3::t_08f9e5daa395d0 22
+  s_0314bb17e5dee3::t_d52a88bf7268e8 25
+.agents/skills/delivery-orchestration/SKILL.md
+  s_0314bb17e5dee3::t_4414728d4764ba 137
+  s_0314bb17e5dee3::t_477c71425edffa 142-143
+src/infra/AGENTS.md
+  s_0314bb17e5dee3::t_d0a08c53f94856 25
+crates/daw-dsp/benches/quantum-cost-table.md
+  s_0314bb17e5dee3::t_f83f29c980f5a1 490,494,497,499
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c14cd583f7ebed1d46dac44247cbfd86a729423a",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
