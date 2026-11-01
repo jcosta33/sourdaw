@@ -1,0 +1,19 @@
+src/modules/MIDI/stores/__tests__/midiExpressionRawProjectionLoss.spec.ts
+  s_48ea05b5ee4985::t_b87ffa4ed07418 22,26-27,84-92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "86b625659c74e6ba92e354f01c1936be982d67ba",
+  "prompts": {},
+  "sessions": {
+    "s_48ea05b5ee4985": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_48ea05b5ee4985",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
