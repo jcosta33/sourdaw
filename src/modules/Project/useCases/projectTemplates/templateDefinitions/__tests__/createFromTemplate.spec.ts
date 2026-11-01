@@ -326,7 +326,18 @@ describe('createFromTemplate', () => {
 
         await expect(createFromTemplate('empty', { shouldProceed })).resolves.toBe(true);
 
-        expect(mocks.newProject).toHaveBeenCalledWith('Untitled', { shouldProceed });
+        expect(mocks.newProject).toHaveBeenCalledWith('Untitled', {
+            outgoingProject: 'save-closed-takes',
+            shouldProceed,
+        });
+    });
+
+    it("hands a project-replacement template the caller's Don't Save choice", async () => {
+        const shouldProceed = (): boolean => true;
+
+        await expect(createFromTemplate('empty', { outgoingProject: 'discard', shouldProceed })).resolves.toBe(true);
+
+        expect(mocks.newProject).toHaveBeenCalledWith('Untitled', { outgoingProject: 'discard', shouldProceed });
     });
 
     // Choosing the open project's Recent entry starts no transaction of its own,
@@ -578,6 +589,20 @@ describe('createFromTemplate', () => {
         expect(mocks.saveProject.mock.invocationCallOrder[0]!).toBeLessThan(
             mocks.resetCrdtProject.mock.invocationCallOrder[0]!
         );
+    });
+
+    // Don't Save drops the outgoing project, so a take its own stop commits is
+    // acknowledged without the save that would persist every dropped edit.
+    it("does not save the outgoing project for a take its own stop commits after the user chose Don't Save", async () => {
+        mocks.stopPlayback.mockImplementationOnce(() => {
+            mocks.takesSettled.value++;
+            return Promise.resolve();
+        });
+
+        await expect(createFromTemplate('pop-song', { outgoingProject: 'discard' })).resolves.toBe(true);
+
+        expect(mocks.saveProject).not.toHaveBeenCalled();
+        expect(mocks.resetCrdtProject).toHaveBeenCalledOnce();
     });
 
     it('resets the audio graph and unloads the plugins again before asking again after a refused reset', async () => {

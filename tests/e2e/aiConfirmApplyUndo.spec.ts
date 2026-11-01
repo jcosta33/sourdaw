@@ -3,7 +3,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { createLoopbackAnswerIntake, createLoopbackAnswerToolCalls } from '../../scripts/loopbackOpenAiProvider';
 
 import { admitLoopbackProvider } from './admitLoopbackProvider';
-import { launch_new_project, setupWorkspace } from './e2eUtils';
+import { add_midi_track, launch_new_project, setupWorkspace } from './e2eUtils';
 import { startLoopbackOpenAiProvider, type LoopbackOpenAiProvider } from './loopbackOpenAiProvider';
 import { startScriptedToolProvider } from './scriptedToolProvider';
 
@@ -47,6 +47,18 @@ async function projectTruth(page: Page) {
             history: JSON.stringify(actionHistoryStore.value),
             transport: JSON.stringify(transportStore.value),
         };
+    });
+}
+
+async function projectSaveState(page: Page): Promise<{ updatedAt: number; dirty: boolean; revision: string }> {
+    return page.evaluate(async () => {
+        const { projectStore } = await import('/src/modules/Project/stores/index.ts');
+        const { captureProjectRevision } = await import('/src/modules/CrdtDocument/useCases/index.ts');
+        const project = projectStore.value;
+        if (project === null) {
+            throw new Error('The project store has no state.');
+        }
+        return { updatedAt: project.updatedAt, dirty: project.dirty, revision: captureProjectRevision() };
     });
 }
 
@@ -327,5 +339,113 @@ test.describe('AI chat over an admitted loopback provider', () => {
 
         await redo.click();
         await expect(trackArmButtons(page)).toHaveCount(baseline + 3);
+    });
+});
+
+// A Prompt Bar answer stays on screen until dismissed, across project changes, so "Open in chat"
+// must show it only while the project it answered about is still open and unchanged.
+test.describe('a Prompt Bar answer opened in the chat', () => {
+    const QUESTION = 'Describe the project structure and tempo setting.';
+    let provider: LoopbackOpenAiProvider;
+
+    test.beforeEach(async ({ page }) => {
+        test.setTimeout(120000);
+        provider = await startLoopbackOpenAiProvider({
+            reply: LOOPBACK_REPLY,
+            toolCalls: createLoopbackAnswerToolCalls(),
+        });
+        await setupWorkspace(page);
+        await launch_new_project(page);
+        await admitLoopbackProvider(page, provider);
+    });
+
+    test.afterEach(async () => {
+        await provider.close();
+    });
+
+    async function askInPromptBar(page: Page): Promise<string> {
+        const tracks = await trackArmButtons(page).count();
+        const answer = `The project has ${String(tracks)} audio/MIDI track(s), 0 bus(es), and 0 folder(s). Master output is separate. Tempo is 120 BPM in 4/4.`;
+        await page.getByTestId('prompt-input').fill(QUESTION);
+        await page.getByTestId('prompt-input').press('Enter');
+        await expect(page.getByText(answer)).toBeVisible({ timeout: 30_000 });
+        expect(provider.completionRequests).toHaveLength(3);
+        await expect(page.getByTestId('chat-composer-input')).toHaveCount(0);
+        return answer;
+    }
+
+    test('opens the whole answer and its evidence in the same project after a save, changing nothing', async ({
+        page,
+    }) => {
+        const answer = await askInPromptBar(page);
+        const savedBefore = await projectSaveState(page);
+
+        // A save writes into the document (its timestamp, the active arrangement's copy of the live
+        // tracks) without changing what was answered about.
+        await page.getByRole('button', { name: 'Project menu', exact: true }).click();
+        await page
+            .getByRole('menu', { name: 'Project menu', exact: true })
+            .getByRole('menuitem', { name: /^Save/ })
+            .first()
+            .click();
+        await expect
+            .poll(
+                async () => {
+                    const saved = await projectSaveState(page);
+                    return saved.updatedAt > savedBefore.updatedAt && !saved.dirty;
+                },
+                { timeout: 15_000 }
+            )
+            .toBe(true);
+        expect((await projectSaveState(page)).revision).not.toBe(savedBefore.revision);
+        const before = await projectTruth(page);
+
+        await page.getByRole('button', { name: 'Open in chat' }).click();
+
+        await expect(page.getByTestId('chat-composer-input')).toBeVisible({ timeout: 10_000 });
+        const conversation = page.getByRole('log', { name: 'Chat conversation' });
+        await expect(conversation).toContainText(QUESTION);
+        await expect(conversation).toContainText(answer);
+        await conversation.getByRole('button', { name: /Evidence/ }).click();
+        await expect(conversation.getByRole('list', { name: 'Evidence' })).toContainText('project.query');
+        await expect(page.getByRole('button', { name: 'Confirm' })).toHaveCount(0);
+        expect(await projectTruth(page)).toEqual(before);
+    });
+
+    test('does not add an answer from the previous project to a new project chat', async ({ page }) => {
+        const answer = await askInPromptBar(page);
+
+        await page.getByRole('button', { name: 'Project menu', exact: true }).click();
+        await page.getByRole('menuitem', { name: 'New Project', exact: true }).click();
+        await expect(page.getByRole('group', { name: 'Playback controls' })).toBeVisible();
+        await page.getByRole('button', { name: 'Open in chat' }).click();
+
+        await expect(
+            page.getByText('This answer was about another project, so it was not added to this chat. Ask again here.')
+        ).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Open in chat' })).toHaveCount(0);
+        await expect(page.getByTestId('chat-composer-input')).toHaveCount(0);
+        await openChatPanel(page);
+        const conversation = page.getByRole('log', { name: 'Chat conversation' });
+        await expect(conversation).not.toContainText(answer);
+        await expect(conversation).not.toContainText(QUESTION);
+    });
+
+    test('does not present an answer as current after the project changed', async ({ page }) => {
+        const answer = await askInPromptBar(page);
+
+        await add_midi_track(page);
+        await page.getByRole('button', { name: 'Open in chat' }).click();
+
+        await expect(
+            page.getByText(
+                'The project changed after this answer, so it was not added to the chat. Ask again for an answer about the project as it is now.'
+            )
+        ).toBeVisible();
+        await expect(page.getByTestId('chat-composer-input')).toHaveCount(0);
+        await openChatPanel(page);
+        const conversation = page.getByRole('log', { name: 'Chat conversation' });
+        await expect(conversation).not.toContainText(answer);
+        await expect(conversation).not.toContainText(QUESTION);
     });
 });

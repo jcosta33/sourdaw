@@ -98,6 +98,9 @@ vi.mock('../../models/TempoMap', () => ({
     // exercises the tick's control flow, not the integration; the integration
     // itself is covered where the tempo map is real.
     secondsBetweenBeats: vi.fn((_changes: unknown, fromBeat: number, toBeat: number) => (toBeat - fromBeat) / 2),
+    beatAtSecondsFromAnchor: vi.fn(
+        (_changes: unknown, anchorBeat: number, elapsedSeconds: number) => anchorBeat + elapsedSeconds * 2
+    ),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRootIdentity: vi.fn<typeof import('#/modules/CrdtDocument/useCases').captureProjectRootIdentity>(
@@ -459,7 +462,7 @@ describe('playhead scheduler tick', () => {
         disposePlayheadScheduler();
     });
 
-    it('clamps a suspended/resumed clock leap so the playhead does not skip events (regression: §B fix 1)', async () => {
+    it('keeps the playhead on the audio clock across a main-thread stall', async () => {
         startPlayheadScheduler();
 
         // Normal small tick: 0.05 s at 120bpm (2 beats/s) advances 0.1 beats.
@@ -467,14 +470,12 @@ describe('playhead scheduler tick', () => {
         await fireTick();
         expect(playheadPositionRef.current).toBeCloseTo(0.1, 6);
 
-        // The context was suspended and resumed: the clock leaps forward 5 s. An
-        // unclamped delta would advance 5 * 2 = 10 beats in a single tick, skipping
-        // every event in between. The clamp caps the advance at one grain window
-        // (SCHEDULE_AHEAD_SECONDS = 0.1 s -> 0.2 beats).
+        // No tick runs for 5 s while the context keeps rendering (a suspended
+        // context would not advance `currentTime`): the audio already scheduled
+        // played on, so the playhead is the audio clock's 10 beats later.
         harness.clock = 5.05;
         await fireTick();
-        expect(playheadPositionRef.current).toBeCloseTo(0.3, 6); // 0.1 + clamp(0.2)
-        expect(playheadPositionRef.current).toBeLessThan(1);
+        expect(playheadPositionRef.current).toBeCloseTo(10.1, 6);
     });
 
     it('invalidates scheduled clips when the tempo map changes mid-playback (regression: §B fix 4)', async () => {

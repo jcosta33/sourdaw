@@ -187,6 +187,17 @@ describe('importDawProject', () => {
         expect(mocks.applyImportedProjectData).toHaveBeenCalledWith(expect.objectContaining({ shouldProceed }));
     });
 
+    it("hands the replacement the Don't Save choice for the outgoing project", async () => {
+        vi.clearAllMocks();
+        setupHappyPath();
+
+        await importDawProject({ buffer: new ArrayBuffer(8), fileName: 'test.dawproject', outgoingProject: 'discard' });
+
+        expect(mocks.applyImportedProjectData).toHaveBeenCalledWith(
+            expect.objectContaining({ outgoingProject: 'discard' })
+        );
+    });
+
     it('does not notify success when apply returns false', async () => {
         vi.clearAllMocks();
         mocks.runProjectLoadTransaction.mockReturnValue(mockTransaction);

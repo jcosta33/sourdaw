@@ -124,6 +124,17 @@ describe('startAudioRecording', () => {
             expect(mocks.stopTrackInputMonitoring).not.toHaveBeenCalled();
         });
 
+        it('propagates a failed start and engages no listening path', async () => {
+            mocks.tracks.push({ id: 'track-1', inputMonitoring: 'on' });
+            const failure = new Error('input could not open');
+            vi.mocked(startAudioRecordingRepo).mockRejectedValueOnce(failure);
+
+            await expect(startAudioRecording('track-1', vi.fn())).rejects.toBe(failure);
+
+            expect(mocks.startInputMonitoring).not.toHaveBeenCalled();
+            expect(mocks.stopTrackInputMonitoring).not.toHaveBeenCalled();
+        });
+
         it('keeps an admitted recording and logs when the listening path fails', async () => {
             mocks.tracks.push({ id: 'track-1', inputMonitoring: 'off' });
             const failure = new Error('listening edge teardown failed');

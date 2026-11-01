@@ -658,15 +658,19 @@ describe('planReviewRisk', () => {
         'scripts/ensurePinnedRustToolchain.sh',
         'scripts/ciApprovalAdmission.ts',
         'scripts/prepareReviewEntry.ts',
+        'scripts/installCleanupLanes.ts',
         '.github/CODEOWNERS',
         '.github/dependabot.yml',
-    ])('should plan the dependency, toolchain or review-tooling surface %s alone native-security', (path) => {
-        const result = planNumstat([`5\t5\t${path}`]);
+    ])(
+        'should plan the dependency, toolchain, review-tooling or cleanup-installer surface %s alone native-security',
+        (path) => {
+            const result = planNumstat([`5\t5\t${path}`]);
 
-        expect(result.riskClasses).toEqual(['native-security']);
-        expect(result.triggers).toEqual([`native-security:${path}`]);
-        expect(reviewStanceFloor(result)).toBe(3);
-    });
+            expect(result.riskClasses).toEqual(['native-security']);
+            expect(result.triggers).toEqual([`native-security:${path}`]);
+            expect(reviewStanceFloor(result)).toBe(3);
+        }
+    );
 
     it.each([
         ['public/audio/worklets/sidechain-compressor-processor.js', 'realtime-audio:public/audio/worklets/'],
