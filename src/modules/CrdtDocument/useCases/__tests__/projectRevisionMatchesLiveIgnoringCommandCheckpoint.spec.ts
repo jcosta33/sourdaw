@@ -3,7 +3,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { captureProjectRevision } from '../captureProjectRevision';
-import { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from '../projectRevisionMatchesLiveIgnoringCommandCheckpoint';
+import {
+    projectRevisionMatchesLiveIgnoringSaveWrites,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
+} from '../projectRevisionMatchesLiveIgnoringCommandCheckpoint';
 
 function projectTruth(document: Record<string, unknown> | undefined): unknown {
     if (!document) {
@@ -323,5 +326,142 @@ describe('projectRevisionMatchesLiveIgnoringCommandCheckpoint', () => {
         expect(Object.values(getConflicts(merged, 'tempo') ?? {})).toContain(128);
         expect(projectTruth(merged)).toEqual(capturedTruth);
         expect(projectRevisionMatchesLiveIgnoringCommandCheckpoint(revision)).toBe(false);
+    });
+});
+
+type ArrangementEntry = { id: string; name: string; tracks: { tracks: string[] } };
+type SavedRoot = {
+    projectMeta: { name: string; createdAt: number; updatedAt: number };
+    tempo: number;
+    tracks: { tracks: string[] };
+    arrangements: { activeArrangementId: string; arrangements: ArrangementEntry[] };
+};
+
+describe('projectRevisionMatchesLiveIgnoringSaveWrites', () => {
+    beforeEach(() => {
+        automergeRepository.reset();
+        automergeRepository.createProject('save timestamp revision test');
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.projectMeta = { name: 'Song', createdAt: 1, updatedAt: 1 };
+            doc.tempo = 120;
+            doc.tracks = { tracks: ['master', 'drums'] };
+            doc.arrangements = {
+                activeArrangementId: 'verse',
+                arrangements: [
+                    { id: 'verse', name: 'Verse', tracks: { tracks: [] } },
+                    { id: 'chorus', name: 'Chorus', tracks: { tracks: ['master'] } },
+                ],
+            };
+        });
+    });
+
+    function changeArrangement(position: number, change: (entry: ArrangementEntry) => void): void {
+        automergeRepository.changeDoc<SavedRoot>('root', (doc) => {
+            const entry = doc.arrangements.arrangements[position];
+            if (entry === undefined) {
+                throw new Error('No arrangement at that position.');
+            }
+            change(entry);
+        });
+    }
+
+    afterEach(() => {
+        automergeRepository.reset();
+    });
+
+    function stampSave(updatedAt: number): void {
+        automergeRepository.changeDoc<SavedRoot>('root', (doc) => {
+            doc.projectMeta.updatedAt = updatedAt;
+        });
+    }
+
+    it('accepts a prior revision after only a save timestamp and a command checkpoint moved', () => {
+        const revision = captureProjectRevision();
+
+        stampSave(2);
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.commandBatchIdempotency = { records: [{ batchId: 'batch-1' }] };
+        });
+
+        expect(projectRevisionMatchesLiveIgnoringSaveWrites(revision)).toBe(true);
+        expect(projectRevisionMatchesLiveIgnoringCommandCheckpoint(revision)).toBe(false);
+    });
+
+    it('rejects a prior revision after another project-meta field changed beside the timestamp', () => {
+        const revision = captureProjectRevision();
+
+        automergeRepository.changeDoc<SavedRoot>('root', (doc) => {
+            doc.projectMeta.name = 'Renamed song';
+            doc.projectMeta.updatedAt = 2;
+        });
+
+        expect(projectRevisionMatchesLiveIgnoringSaveWrites(revision)).toBe(false);
+    });
+
+    it('rejects a prior revision after a project edit that a save then followed', () => {
+        const revision = captureProjectRevision();
+
+        automergeRepository.changeDoc('root', (doc: Record<string, unknown>) => {
+            doc.tempo = 128;
+        });
+        stampSave(2);
+
+        expect(projectRevisionMatchesLiveIgnoringSaveWrites(revision)).toBe(false);
+    });
+
+    it('accepts a prior revision after a save refreshed the active arrangement from the live slots', () => {
+        const revision = captureProjectRevision();
+
+        changeArrangement(0, (entry) => {
+            entry.tracks.tracks.push('master', 'drums');
+        });
+        stampSave(2);
+
+        expect(projectRevisionMatchesLiveIgnoringSaveWrites(revision)).toBe(true);
+        expect(projectRevisionMatchesLiveIgnoringCommandCheckpoint(revision)).toBe(false);
+    });
+
+    it('rejects a prior revision after the active arrangement was renamed', () => {
+        const revision = captureProjectRevision();
+
+        changeArrangement(0, (entry) => {
+            entry.name = 'Intro';
+        });
+
+        expect(projectRevisionMatchesLiveIgnoringSaveWrites(revision)).toBe(false);
+    });
+
+    it('rejects a prior revision after an inactive arrangement changed', () => {
+        const revision = captureProjectRevision();
+
+        changeArrangement(1, (entry) => {
+            entry.tracks.tracks.push('drums');
+        });
+
+        expect(projectRevisionMatchesLiveIgnoringSaveWrites(revision)).toBe(false);
+    });
+
+    it('rejects a prior revision after another arrangement became active', () => {
+        const revision = captureProjectRevision();
+
+        automergeRepository.changeDoc<SavedRoot>('root', (doc) => {
+            doc.arrangements.activeArrangementId = 'chorus';
+        });
+
+        expect(projectRevisionMatchesLiveIgnoringSaveWrites(revision)).toBe(false);
+    });
+
+    it('rejects a prior revision after a live track slot changed, saved or not', () => {
+        const revision = captureProjectRevision();
+
+        automergeRepository.changeDoc<SavedRoot>('root', (doc) => {
+            doc.tracks.tracks.push('bass');
+        });
+        changeArrangement(0, (entry) => {
+            entry.tracks.tracks.push('master', 'drums', 'bass');
+        });
+        stampSave(2);
+
+        expect(projectRevisionMatchesLiveIgnoringSaveWrites(revision)).toBe(false);
     });
 });

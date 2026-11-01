@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { installTransactionalIndexedDb } from '#/infra/testing/installTransactionalIndexedDb';
 import { undoHistoryStore } from '#/modules/Command/stores';
@@ -9,7 +13,10 @@ import {
     createCrdtProject,
     DOC_PREFIX_ROOT,
     mutateCrdtDoc,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
+    registerCrdtStorageRuntime,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultProjectStoreState, projectStore, type ProjectStoreState } from '#/modules/Project/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { chatStore, clearChatMessages } from '../../../stores/chatStore';
@@ -139,5 +146,80 @@ describe('openAnswerInChat', () => {
 
         expect(chatMessages()).toEqual([]);
         expect(mocks.toggleChatPanel).not.toHaveBeenCalled();
+    });
+
+    describe('across a save of the project the answer was about', () => {
+        const createdAt = 1_700_000_000_000;
+
+        beforeEach(() => {
+            registerCrdtStorageRuntime();
+            projectStore.set({
+                ...defaultProjectStoreState,
+                name: 'Project A',
+                createdAt,
+                updatedAt: createdAt,
+            });
+            flushAutomergeStorageWrites();
+        });
+
+        afterEach(() => {
+            configureAutomergeStoragePort(null);
+        });
+
+        function projectMetaUpdate(update: Partial<ProjectStoreState>): void {
+            const current = projectStore.value;
+            if (current === null) {
+                throw new Error('The project store has no state.');
+            }
+            projectStore.set({ ...current, ...update });
+            flushAutomergeStorageWrites();
+        }
+
+        it('still opens an answer when only a save stamped its timestamp since', () => {
+            setChatPanelOpen(true);
+            const answer = answerAboutLiveProject();
+
+            // The two project-store writes saveProject makes around its snapshot.
+            projectMetaUpdate({ updatedAt: createdAt + 60_000, dirty: true });
+            projectMetaUpdate({ dirty: false, identityPersistencePending: false });
+            expect(captureProjectRevision()).not.toBe(answer.projectRevision);
+            expect(projectRevisionMatchesLiveIgnoringCommandCheckpoint(answer.projectRevision)).toBe(false);
+
+            expect(openAnswerInChat(answer)).toBe('opened');
+
+            expect(chatMessages().map(({ content }) => content)).toEqual([answer.prompt, answer.text]);
+        });
+
+        it('refuses an answer once the project was renamed, saved or not', () => {
+            setChatPanelOpen(false);
+            const answer = answerAboutLiveProject();
+
+            projectMetaUpdate({ name: 'Project A (renamed)', updatedAt: createdAt + 60_000 });
+
+            expect(openAnswerInChat(answer)).toBe('project-changed');
+
+            expect(chatMessages()).toEqual([]);
+            expect(mocks.toggleChatPanel).not.toHaveBeenCalled();
+        });
+
+        it('refuses an answer once the tuning changed', () => {
+            setChatPanelOpen(false);
+            const answer = answerAboutLiveProject();
+            const tuning = projectStore.value?.tuning;
+            if (tuning === undefined) {
+                throw new Error('The project store has no tuning.');
+            }
+
+            projectMetaUpdate({
+                tuning: {
+                    name: 'A = 442 Hz',
+                    frequencies: tuning.frequencies.map((frequency) => frequency * (442 / 440)),
+                },
+            });
+
+            expect(openAnswerInChat(answer)).toBe('project-changed');
+
+            expect(chatMessages()).toEqual([]);
+        });
     });
 });

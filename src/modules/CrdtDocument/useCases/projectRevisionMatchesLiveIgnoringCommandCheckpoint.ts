@@ -73,17 +73,65 @@ function normalizeJsonValue(value: unknown): unknown {
     return normalized;
 }
 
+/** The part of the root document a comparison counts as project truth. */
+type RootProjection = (document: Record<string, unknown>) => Record<string, unknown>;
+
 function projectDocumentWithoutCommandCheckpoint(document: Record<string, unknown>): Record<string, unknown> {
     const { commandBatchIdempotency: _commandCheckpoint, ...projectDocument } = document;
     return projectDocument;
 }
 
-function readProjectedDocument(document: Record<string, unknown> | undefined): Record<string, unknown> | null {
+function withoutSaveTimestamp(projectMeta: unknown): unknown {
+    if (!isRecord(projectMeta)) {
+        return projectMeta;
+    }
+    const { updatedAt: _saveTimestamp, ...meta } = projectMeta;
+    return meta;
+}
+
+/**
+ * The active arrangement's entry copies the live slots (`tracks`, `automation`, `midi`, the tempo
+ * and time-signature maps, `markers`, take lanes), which the comparison still reads on their own;
+ * only its id and name are its own.
+ */
+function withoutActiveArrangementSnapshot(arrangements: unknown): unknown {
+    if (!isRecord(arrangements) || !Array.isArray(arrangements.arrangements)) {
+        return arrangements;
+    }
+    const activeId = arrangements.activeArrangementId;
+    return {
+        ...arrangements,
+        arrangements: arrangements.arrangements.map((entry: unknown) =>
+            isRecord(entry) && entry.id === activeId ? { id: entry.id, name: entry.name } : entry
+        ),
+    };
+}
+
+/**
+ * What a save writes into root besides content: it stamps `projectMeta.updatedAt` before it
+ * serializes, and refreshes the active arrangement's entry from the live slots
+ * (`syncCurrentArrangementToStore`). Every other root field, those live slots included, still counts.
+ */
+function projectDocumentWithoutCommandCheckpointOrSaveWrites(
+    document: Record<string, unknown>
+): Record<string, unknown> {
+    const projectDocument = projectDocumentWithoutCommandCheckpoint(document);
+    return {
+        ...projectDocument,
+        projectMeta: withoutSaveTimestamp(projectDocument.projectMeta),
+        arrangements: withoutActiveArrangementSnapshot(projectDocument.arrangements),
+    };
+}
+
+function readProjectedDocument(
+    document: Record<string, unknown> | undefined,
+    project: RootProjection
+): Record<string, unknown> | null {
     if (!document) {
         return null;
     }
     const parsed: unknown = JSON.parse(JSON.stringify(document));
-    return isRecord(parsed) ? projectDocumentWithoutCommandCheckpoint(parsed) : null;
+    return isRecord(parsed) ? project(parsed) : null;
 }
 
 function snapshotsEqual(left: unknown, right: unknown): boolean {
@@ -98,13 +146,16 @@ function headsEqual(left: readonly string[], right: readonly string[]): boolean 
     return [...left].toSorted().every((head, index) => head === sortedRight[index]);
 }
 
-function readProjectedRootAtHeads(heads: Heads): Record<string, unknown> | null {
-    return readProjectedDocument(automergeRepository.getDocAtHeads<Record<string, unknown>>(DOC_PREFIX_ROOT, heads));
+function readProjectedRootAtHeads(heads: Heads, project: RootProjection): Record<string, unknown> | null {
+    return readProjectedDocument(
+        automergeRepository.getDocAtHeads<Record<string, unknown>>(DOC_PREFIX_ROOT, heads),
+        project
+    );
 }
 
 /**
- * True when every root change after `expectedHeads` left project truth outside
- * the command-batch checkpoint slot untouched.
+ * True when every root change after `expectedHeads` left the project truth
+ * `project` keeps untouched.
  *
  * Comparing the live document against the expected view is not enough on its
  * own: an edit that is reverted afterwards — tempo 120 -> 128 -> 120, or a
@@ -114,9 +165,12 @@ function readProjectedRootAtHeads(heads: Heads): Record<string, unknown> | null 
  * A branch need not contain every captured sibling head: comparing its isolated
  * state with the merged capture would mistake missing sibling truth for an edit.
  */
-function rootAdvancedOnlyByCommandCheckpoint(expectedHeads: Heads): boolean {
-    const expectedProjection = readProjectedRootAtHeads(expectedHeads);
-    const liveProjection = readProjectedDocument(automergeRepository.getDoc<Record<string, unknown>>(DOC_PREFIX_ROOT));
+function rootAdvancedOnlyOutsideProjection(expectedHeads: Heads, project: RootProjection): boolean {
+    const expectedProjection = readProjectedRootAtHeads(expectedHeads, project);
+    const liveProjection = readProjectedDocument(
+        automergeRepository.getDoc<Record<string, unknown>>(DOC_PREFIX_ROOT),
+        project
+    );
     if (!expectedProjection || !liveProjection || !snapshotsEqual(liveProjection, expectedProjection)) {
         return false;
     }
@@ -125,19 +179,13 @@ function rootAdvancedOnlyByCommandCheckpoint(expectedHeads: Heads): boolean {
         return false;
     }
     return changes.every(({ hash, deps }) => {
-        const before = readProjectedRootAtHeads(deps);
-        const after = readProjectedRootAtHeads([hash]);
+        const before = readProjectedRootAtHeads(deps, project);
+        const after = readProjectedRootAtHeads([hash], project);
         return before !== null && after !== null && snapshotsEqual(before, after);
     });
 }
 
-/**
- * True when live project truth still matches `expectedRevision` except for the
- * command-batch checkpoint slot journaled onto root after the musician-visible
- * commit. Mutation epoch and root heads may advance for that slot; any other
- * document identity or content change is a real project change.
- */
-export function projectRevisionMatchesLiveIgnoringCommandCheckpoint(expectedRevision: string): boolean {
+function projectRevisionMatchesLiveWithinRootProjection(expectedRevision: string, project: RootProjection): boolean {
     const expected = parseCapturedProjectRevision(expectedRevision);
     if (!expected || automergeRepository.getLastHistoryDiscardEpoch() > expected.mutationEpoch) {
         return false;
@@ -163,7 +211,7 @@ export function projectRevisionMatchesLiveIgnoringCommandCheckpoint(expectedRevi
             if (headsEqual(document.heads, liveDocument.heads)) {
                 continue;
             }
-            if (!rootAdvancedOnlyByCommandCheckpoint(document.heads)) {
+            if (!rootAdvancedOnlyOutsideProjection(document.heads, project)) {
                 return false;
             }
             continue;
@@ -173,4 +221,29 @@ export function projectRevisionMatchesLiveIgnoringCommandCheckpoint(expectedRevi
         }
     }
     return true;
+}
+
+/**
+ * True when live project truth still matches `expectedRevision` except for the
+ * command-batch checkpoint slot journaled onto root after the musician-visible
+ * commit. Mutation epoch and root heads may advance for that slot; any other
+ * document identity or content change is a real project change.
+ */
+export function projectRevisionMatchesLiveIgnoringCommandCheckpoint(expectedRevision: string): boolean {
+    return projectRevisionMatchesLiveWithinRootProjection(expectedRevision, projectDocumentWithoutCommandCheckpoint);
+}
+
+/**
+ * As `projectRevisionMatchesLiveIgnoringCommandCheckpoint`, and also tolerating what a save writes
+ * into root: the save timestamp (`projectMeta.updatedAt`) and the active arrangement's copy of the
+ * live slots. A save between capture and check is then no project change, while every other
+ * `projectMeta` field (name, key, scale, tuning, brief, identity), the live slots themselves and the
+ * active arrangement's id and name still count. For a reader that only asks "is this still the same
+ * project content"; command admission keeps the stricter check.
+ */
+export function projectRevisionMatchesLiveIgnoringSaveWrites(expectedRevision: string): boolean {
+    return projectRevisionMatchesLiveWithinRootProjection(
+        expectedRevision,
+        projectDocumentWithoutCommandCheckpointOrSaveWrites
+    );
 }

@@ -1,7 +1,4 @@
-import {
-    captureProjectIdentity,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
-} from '#/modules/CrdtDocument/useCases';
+import { captureProjectIdentity, projectRevisionMatchesLiveIgnoringSaveWrites } from '#/modules/CrdtDocument/useCases';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { toggleChatPanel } from '#/modules/WorkspaceShell/useCases';
 
@@ -19,15 +16,15 @@ export type OpenAnswerInChatResult = 'opened' | 'project-switched' | 'project-ch
  * be expanded, and opens the chat panel if it is closed.
  *
  * The notice outlives the project it answered about, so the answer is shown only while that project
- * is still open at the revision it was answered against; a command-batch checkpoint alone is not a
- * change. A stale answer is not shown at all, rather than appended to another project's chat or
+ * is still open at the revision it was answered against; a command-batch checkpoint or a save
+ * alone is not a change. A stale answer is not shown at all, rather than appended to another project's chat or
  * presented as current.
  */
 export function openAnswerInChat(answer: AiAnswerNotice): OpenAnswerInChatResult {
     if (captureProjectIdentity() !== answer.projectIdentity) {
         return 'project-switched';
     }
-    if (!projectRevisionMatchesLiveIgnoringCommandCheckpoint(answer.projectRevision)) {
+    if (!projectRevisionMatchesLiveIgnoringSaveWrites(answer.projectRevision)) {
         return 'project-changed';
     }
     appendAnswerChatMessages(answer.prompt, answer);

@@ -50,6 +50,18 @@ async function projectTruth(page: Page) {
     });
 }
 
+async function projectSaveState(page: Page): Promise<{ updatedAt: number; dirty: boolean; revision: string }> {
+    return page.evaluate(async () => {
+        const { projectStore } = await import('/src/modules/Project/stores/index.ts');
+        const { captureProjectRevision } = await import('/src/modules/CrdtDocument/useCases/index.ts');
+        const project = projectStore.value;
+        if (project === null) {
+            throw new Error('The project store has no state.');
+        }
+        return { updatedAt: project.updatedAt, dirty: project.dirty, revision: captureProjectRevision() };
+    });
+}
+
 function trackArmButtons(page: Page) {
     return page
         .getByRole('grid', { name: /Track list/i })
@@ -362,8 +374,30 @@ test.describe('a Prompt Bar answer opened in the chat', () => {
         return answer;
     }
 
-    test('opens the whole answer and its evidence in the same project, changing nothing', async ({ page }) => {
+    test('opens the whole answer and its evidence in the same project after a save, changing nothing', async ({
+        page,
+    }) => {
         const answer = await askInPromptBar(page);
+        const savedBefore = await projectSaveState(page);
+
+        // A save writes into the document (its timestamp, the active arrangement's copy of the live
+        // tracks) without changing what was answered about.
+        await page.getByRole('button', { name: 'Project menu', exact: true }).click();
+        await page
+            .getByRole('menu', { name: 'Project menu', exact: true })
+            .getByRole('menuitem', { name: /^Save/ })
+            .first()
+            .click();
+        await expect
+            .poll(
+                async () => {
+                    const saved = await projectSaveState(page);
+                    return saved.updatedAt > savedBefore.updatedAt && !saved.dirty;
+                },
+                { timeout: 15_000 }
+            )
+            .toBe(true);
+        expect((await projectSaveState(page)).revision).not.toBe(savedBefore.revision);
         const before = await projectTruth(page);
 
         await page.getByRole('button', { name: 'Open in chat' }).click();
