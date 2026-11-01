@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
         return null;
     },
     bootstrap: vi.fn(),
+    reportError: vi.fn(),
     clearInheritedRetrospectiveCaptureArm: vi.fn(),
     desktopStartupError: vi.fn(() => null),
     mountBrowserDisplayScaleHost: vi.fn(),
@@ -276,6 +277,7 @@ describe('app main composition', () => {
         }
         vi.clearAllMocks();
         vi.resetModules();
+        vi.stubGlobal('reportError', mocks.reportError);
         mocks.loadApp.mockReset();
         mocks.loadApp.mockImplementation(() => Promise.resolve());
         appImportGateReleasedByCleanup = false;
@@ -303,6 +305,7 @@ describe('app main composition', () => {
         await settlePendingStartup();
         expect(mocks.isExactMidiClipDataActionSnapshot).not.toHaveBeenCalled();
         vi.unstubAllEnvs();
+        vi.unstubAllGlobals();
     });
 
     it.each([
@@ -474,6 +477,19 @@ describe('app main composition', () => {
         expect(typeof terminal.props.onReload).toBe('function');
         terminal.props.onReload();
         expect(mocks.reloadApplication).toHaveBeenCalledWith(window.location);
+    });
+
+    it('reports the persistent App import failure before rendering the terminal view', async () => {
+        const failure = new Error('controlled persistent import failure');
+        mocks.resolveAppComposition.mockReturnValue('application');
+        mocks.loadApp.mockRejectedValue(failure);
+
+        await import('../main');
+        await vi.waitFor(() => expect(mocks.render).toHaveBeenCalledTimes(2));
+
+        expect(mocks.reportError).toHaveBeenCalledOnce();
+        // Vitest wraps a module rejection in its own mock-factory error and keeps the original as `cause`.
+        expect(mocks.reportError).toHaveBeenCalledWith(expect.objectContaining({ cause: failure }));
     });
 
     it('renders only the fatal startup surface when a desktop document has no bridge', async () => {

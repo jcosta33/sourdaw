@@ -756,6 +756,48 @@ describe('useStatusBarMetrics', () => {
         expect(refs.masterLevelText.current!.textContent).toBe('-∞ dB');
     });
 
+    it('shows +∞ dB, not "Infinity dB", when the master peak is infinite', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 44100,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: 0.01,
+            outputLatency: 0,
+        });
+        vi.mocked(getMasterPeakLevel).mockReturnValue(Number.POSITIVE_INFINITY);
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+        capturedTick!();
+
+        expect(refs.masterLevelText.current!.textContent).toBe('+∞ dB');
+        expect(refs.masterLevelBar.current!.style.width).toBe('100%');
+    });
+
+    it('keeps a finite master peak above full scale as a one-decimal dB reading', () => {
+        vi.mocked(getEngineState).mockReturnValue({
+            isReady: true,
+            sampleRate: 44100,
+            state: 'running',
+            masterGain: 1,
+            currentTime: 0,
+            baseLatency: 0.01,
+            outputLatency: 0,
+        });
+        // 2.0 amplitude → 20*log10(2) ≈ +6.0 dB.
+        vi.mocked(getMasterPeakLevel).mockReturnValue(2);
+
+        const refs = makeRefs();
+        makeElements(refs);
+        renderHook(() => useStatusBarMetrics(refs));
+        capturedTick!();
+
+        expect(refs.masterLevelText.current!.textContent).toBe('6.0 dB');
+    });
+
     it('hides the memory container when performance.memory is unavailable', () => {
         vi.mocked(getEngineState).mockReturnValue({
             isReady: true,

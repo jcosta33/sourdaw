@@ -95,7 +95,10 @@ async function renderApplication(): Promise<void> {
         })
         .then(
             ({ App }) => reactRoot.render(<App />),
-            () => reactRoot.render(<ApplicationFirstPaint onReload={() => reloadApplication(window.location)} />)
+            (error: unknown) => {
+                reportError(error);
+                reactRoot.render(<ApplicationFirstPaint onReload={() => reloadApplication(window.location)} />);
+            }
         );
 }
 
