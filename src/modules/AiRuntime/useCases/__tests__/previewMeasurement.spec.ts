@@ -1731,8 +1731,9 @@ describe('real caller sequential measurement opportunity', () => {
             ],
         });
         flushAutomergeStorageWrites();
-        // Both measurements make eight full-metric renders; half a second each keeps every metric's
-        // figure in the receipt while fitting the default deadline on a loaded CI runner.
+        // Both measurements make eight full-metric renders. Half a second each still clears the
+        // integrated and momentary loudness gates and keeps the receipt over the per-call bound
+        // while fitting the default deadline on a loaded CI runner.
         engine.renderTrackSubgraphOffline.mockImplementation((request: SubgraphRequest) =>
             renderSubgraph(request, 0.5)
         );
