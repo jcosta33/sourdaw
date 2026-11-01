@@ -1,0 +1,53 @@
+src/modules/CommandInterface/useCases/commands/ViewCommands.ts
+  s_a1143ebcb2d07b::t_44844b647c863c 12,201,209,217,225,233
+src/modules/CommandInterface/useCases/commands/__tests__/ViewCommands.spec.ts
+  s_a1143ebcb2d07b::t_1de365591ea5cb 37
+src/modules/CommandInterface/useCases/keyboardShortcutActions/__tests__/handleKeyboardShortcut.spec.ts
+  s_a1143ebcb2d07b::t_16a5e22e373eaf 56
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydown.spec.ts
+  s_a1143ebcb2d07b::t_1e59a4cbb84b92 161
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydownToolKeys.spec.ts
+  s_a1143ebcb2d07b::t_4da1a864f73bc7 4-5,73-82,117,145-166
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts
+  s_a1143ebcb2d07b::t_7b4ac28bff402c 25,553-554,580,648-649,657
+src/modules/WorkspaceShell/AGENTS.md
+  s_a1143ebcb2d07b::t_d38abe466c70d3 25
+src/modules/WorkspaceShell/presentations/components/ShortcutCheatSheet.tsx
+  s_a1143ebcb2d07b::t_527f87a0b1724e 29-31
+src/modules/WorkspaceShell/presentations/components/__tests__/ShortcutCheatSheet.spec.tsx
+  s_a1143ebcb2d07b::t_2992b386f696df 17-21,136-139
+src/modules/WorkspaceShell/presentations/views/__tests__/ShortcutHelp.spec.tsx
+  s_a1143ebcb2d07b::t_f7095609e6c6fb 24-36,56-64
+src/modules/WorkspaceShell/useCases/__tests__/getToolForKeyPress.spec.ts
+  s_a1143ebcb2d07b::t_34c146f9eee388 1-43
+src/modules/WorkspaceShell/useCases/__tests__/getToolShortcutHint.spec.ts
+  s_a1143ebcb2d07b::t_19011d9c080c47 1-16
+src/modules/WorkspaceShell/useCases/getToolForKeyPress.ts
+  s_a1143ebcb2d07b::t_6c1125e6a2b546 1-19
+src/modules/WorkspaceShell/useCases/getToolShortcutHint.ts
+  s_a1143ebcb2d07b::t_9dff6fe6206cfe 1-6
+src/modules/WorkspaceShell/useCases/index.ts
+  s_a1143ebcb2d07b::t_6f8c7ce01485af 18-19
+src/modules/WorkspaceShell/useCases/setEditingTool.ts
+  s_a1143ebcb2d07b::t_c4692dd68e310c 1
+src/modules/WorkspaceShell/useCases/workspaceQueries/__tests__/helpers.spec.ts
+  s_a1143ebcb2d07b::t_5774d97007fed0 3
+src/modules/WorkspaceShell/useCases/workspaceQueries/helpers.ts
+  s_a1143ebcb2d07b::t_675a9ab4c0e0de 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f3c2adda16f3d1734384b7ee79a48b65a54686a4",
+  "prompts": {},
+  "sessions": {
+    "s_a1143ebcb2d07b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_a1143ebcb2d07b",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
