@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/__tests__/previewMeasurement.spec.ts
+  s_55244eb93b97d1::t_d36c47187b1f59 1734-1736
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7a052f61d54e15a85f78983227d3e92689348531",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
