@@ -4,9 +4,7 @@ Application-wide user preferences (audio settings, MIDI configuration, appearanc
 
 ## Public Contract Surface
 
-- `useCases`: `updatePreferences`, `resetPreferences`, `setTrackHeight`, `setTimelineMinimapHeight`, `gridSnapBeats`, `defaultPreferences`, `TRACK_HEIGHT_VALUES`.
-- `stores`: `preferencesStore` (`Preferences`).
-- `presentations/views`: `PreferencesDialog`.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 

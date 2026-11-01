@@ -4,10 +4,7 @@
 
 ## Public Contract Surface
 
-- **Use Cases** (`useCases/index.ts`): `compileToasterTrackStackActions`, `disposeEveryToasterDevice`, `getDefaultPadNames`, `getToasterPresetDeviceState`, `prepareOfflineToaster`, `setToasterEventBus`, `initToasterSubscribers`, `initToasterKitPersistence`, `getToasterPresets`, `setToasterGrooveAssignmentExecutor`.
-- **Stores** (`stores/index.ts`): `defaultToasterState`, `toasterStore`, `resetToasterDeviceLifecycleState`.
-- **Views** (`presentations/views/index.ts`): `ToasterPanel`.
-- **Events** (`events/index.ts`): No public events.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 

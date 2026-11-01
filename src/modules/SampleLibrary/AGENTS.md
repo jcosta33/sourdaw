@@ -4,9 +4,7 @@ Local and native sample collection indexing, folder tree hierarchies, sample met
 
 ## Public Contract Surface
 
-- `stores`: `libraryStore` (`LibraryState`), `embeddingStore`.
-- `useCases`: `buildFolderTree`, `requestPermission`, `readNativeLibrarySampleFile`, `resolveDroppedSampleFile`, `restoreLibrary`, `searchSamples`, `findSimilarSamples`, `searchAgentCatalog`, `resolveAgentCatalogCandidate`, `projectSpatialMap`, `seedFactoryLibrary`.
-- `presentations/views`: `LibraryBrowser`, `SpatialMapRenderer`.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 

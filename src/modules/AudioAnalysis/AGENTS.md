@@ -8,11 +8,7 @@ Owns audio feature extraction, pitch/key/tempo detection, monophonic/polyphonic 
 
 ## Public Contract Surface
 
-- **`useCases`**: `getAnalysisHandlers`, `setMixAnalysisDisplayLifecycle`, `separateStems`, `isStemSeparationAvailable`, `summarizeFeatures`, `analyzeAgentRenderReceipt`, `analyzeAgentAuditionBuffer`, `analyzeAgentReferenceBuffer`, `compareAgentReferenceToProject`, `audioToMidi`, `detectOnsets`, `insertPolyphonicMidiNotes`, `detectKey`, `describeDetectedKey`, `detectDominantPitch`, `polyphonicAudioToMidi`, `analyzeCurrentMix`, `compareToReference`, `detectTempo`.
-- **`events`**: None.
-- **`stores`**: None.
-- **`presentations/views`**: None.
-- **Handler maps**: `getAnalysisHandlers`.
+Public surface: `useCases/index.ts` only; the module exports no stores, events or views.
 
 ## Key Subsystems
 
