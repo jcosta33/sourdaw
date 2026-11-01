@@ -471,7 +471,42 @@ describe('caller-bound measurement receipt sequence', () => {
         expect(declineAdmission).toHaveBeenCalledOnce();
     });
 
-    it('refuses a step decline its admission refuses, as on any other turn, and runs no measure beside it', async () => {
+    it('keeps the measurement witness when a step decline is refused, so the final proposal completes unverified', async () => {
+        const reason = 'This is work to plan.';
+        const run = runSequence([[intake], [read('read-2')], [read('read-3')], [clarify], [terminal]], {
+            terminalToolNames: declineTerminals,
+            declineAdmission: () => ({ status: 'refused', reason }),
+            history: true,
+        });
+        const result = await run.result;
+        expect(result).toMatchObject({ status: 'complete', turns: 5, toolCalls: [terminal], decline: null });
+        expect(result).not.toHaveProperty('terminalMeasurementSettlement');
+        expect(run.execute).not.toHaveBeenCalled();
+        expect(run.requestTurn.mock.calls[4]?.[0]).toMatchObject({
+            history: expect.arrayContaining([
+                expect.objectContaining({
+                    turn: 4,
+                    calls: [clarify],
+                    receipts: [
+                        expect.objectContaining({
+                            callId: 'clarify',
+                            toolName: 'command.batch.decline',
+                            status: 'failure',
+                            error: expect.objectContaining({ code: 'decline-not-admitted', safeMessage: reason }),
+                        }),
+                    ],
+                }),
+            ]),
+        });
+        expect(result.receipts.at(-1)).toMatchObject({
+            toolName: 'analysis.measure',
+            turn: 4,
+            error: { code: 'measurement-not-requested' },
+        });
+        expect(result.receipts.some((entry) => entry.callId === 'clarify')).toBe(false);
+    });
+
+    it('runs the step measure beside a refused decline, and a refused decline on the final turn still ends the run', async () => {
         const reason = 'This is work to plan.';
         const run = runSequence(
             [[intake], [read('read-2')], [read('read-3')], [measure, clarify], [{ ...clarify, id: 'clarify-2' }]],
@@ -487,13 +522,9 @@ describe('caller-bound measurement receipt sequence', () => {
             turns: 5,
             reason: 'Provider declined a request the application plans, and no turn remained to plan it.',
         });
-        expect(run.execute).not.toHaveBeenCalled();
+        expect(run.execute).toHaveBeenCalledOnce();
         expect(result.receipts.filter((entry) => entry.turn === 4)).toEqual([
-            expect.objectContaining({
-                callId: 'clarify',
-                status: 'failure',
-                error: expect.objectContaining({ code: 'decline-not-admitted', safeMessage: reason }),
-            }),
+            expect.objectContaining({ callId: 'measure', status: 'success' }),
         ]);
         expect(run.requestTurn.mock.calls[4]?.[0]).toMatchObject({
             history: expect.arrayContaining([
@@ -501,13 +532,10 @@ describe('caller-bound measurement receipt sequence', () => {
                     turn: 4,
                     calls: [measure, clarify],
                     receipts: [
-                        expect.objectContaining({
-                            callId: 'measure',
-                            error: expect.objectContaining({ code: 'measurement-step-refused' }),
-                        }),
+                        expect.objectContaining({ callId: 'measure', status: 'success' }),
                         expect.objectContaining({
                             callId: 'clarify',
-                            error: expect.objectContaining({ code: 'decline-not-admitted' }),
+                            error: expect.objectContaining({ code: 'decline-not-admitted', safeMessage: reason }),
                         }),
                     ],
                 }),

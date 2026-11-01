@@ -1576,6 +1576,57 @@ describe('real caller sequential measurement opportunity', () => {
         assertUnchanged(before);
     });
 
+    it('keeps a visible unverified plan when the application refuses a clarify sent on the measurement step', async () => {
+        // The perceptual-goal admission refuses a clarify for this delegated goal.
+        const prompt = 'make the drums punchier';
+        const before = captureBefore();
+        scriptTurns(
+            before.revision,
+            [
+                [queryCall()],
+                [recipeExpansionCall()],
+                [
+                    {
+                        id: 'step-clarify',
+                        name: 'command.batch.decline',
+                        arguments: {
+                            kind: 'clarify',
+                            reason: 'Punch is subjective.',
+                            questions: ['What do you mean by punchier?'],
+                        },
+                    },
+                ],
+                [proposeCall({ commands: [], compiledCallIds: ['expand-1'] })],
+            ],
+            'unsupported',
+            prompt
+        );
+        const planned = await parsePromptToActions({
+            prompt,
+            context: getProjectContext(),
+            projectRevision: before.revision,
+        });
+        expect(planned.rejectionReason).toBeUndefined();
+        expect(planned.planningOutcome?.kind).not.toBe('clarify');
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(5);
+        expect(planned.applicationToolReceipts?.filter((entry) => entry.turn === 4)).toEqual([
+            expect.objectContaining({
+                toolName: 'analysis.measure',
+                status: 'failure',
+                error: expect.objectContaining({ code: 'measurement-not-requested' }),
+            }),
+        ]);
+        expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        expect(planned.actions.some((action) => action.type === 'addDevice')).toBe(true);
+        const confirmationId = persistForApproval(planned, before.revision);
+        expect(getAgentApprovalView({ confirmationId })).toMatchObject({
+            status: 'proposed',
+            canConfirm: false,
+            metricGoals: { status: 'blocked' },
+        });
+        assertUnchanged(before);
+    });
+
     it.each(['matched', 'contradicted', 'incomparable'] as const)(
         'keeps sequencing separate from actual %s frozen metric proof',
         async (kind) => {

@@ -1842,6 +1842,11 @@ type IdentifiedToolCall = { call: ToolCallResult; callId: string };
 type NativeTurnRecord = { calls: readonly IdentifiedToolCall[]; receipts: readonly ApplicationToolReceipt[] };
 
 /** How the loop answers one reply to the single-measurement step. */
+/** A valid decline on the measurement step, as its admission answered it. */
+type StepDecline =
+    | { status: 'admitted'; calls: IdentifiedToolCall[]; record: NativeTurnRecord }
+    | { status: 'refused'; callId: string; reason: string };
+
 type MeasurementStepReply =
     | { status: 'rejected'; reason: string; receipts: ApplicationToolReceipt[] }
     | { status: 'unmeasured'; kept: HeldTerminal | null }
@@ -2196,6 +2201,19 @@ export async function runApplicationOwnedToolLoop(
         return totalCalls > limits.maxTotalCalls ? 'Provider exceeded the total application tool-call budget.' : null;
     };
 
+    const declineRefusalReceipt = (callId: string, turn: number, reason: string): ApplicationToolReceipt =>
+        boundReceipt(
+            failureReceipt({
+                callId,
+                toolName: COMMAND_BATCH_DECLINE_TOOL_NAME,
+                turn,
+                code: 'decline-not-admitted',
+                safeMessage: reason,
+                retryable: true,
+            }),
+            limits.maxReceiptBytesPerCall
+        );
+
     const stepRefusalReceipt = (
         call: ToolCallResult,
         callId: string,
@@ -2214,14 +2232,15 @@ export async function runApplicationOwnedToolLoop(
             limits.maxReceiptBytesPerCall
         );
 
-    // A valid decline sent on the measurement step, with no proposal held, needs no measurement: it
-    // is answered as on any other turn, and every other call of the reply, a measure included, is
-    // refused in native history only.
+    // A valid decline sent on the measurement step, with no proposal held, needs no measurement: once
+    // admitted it is answered as on any other turn, and every other call of the reply, a measure
+    // included, is refused in native history only. A refused one is answered as the step answers any
+    // other refused call, so the step still leaves its witness.
     const readStepDecline = (
         toolName: string,
         identifiedCalls: readonly IdentifiedToolCall[],
         turn: number
-    ): { calls: IdentifiedToolCall[]; record: NativeTurnRecord } | null => {
+    ): StepDecline | null => {
         const terminalCalls = identifiedCalls.filter(
             ({ call }) => call.name !== toolName && input.terminalToolNames.has(call.name)
         );
@@ -2232,8 +2251,16 @@ export async function runApplicationOwnedToolLoop(
         if (validation.status === 'rejected' || validation.decline === null) {
             return null;
         }
+        const admission =
+            input.declineAdmission === undefined || answerIntake !== null
+                ? null
+                : input.declineAdmission(validation.decline);
+        if (admission?.status === 'refused') {
+            return { status: 'refused', callId: terminalCalls[0]!.callId, reason: admission.reason };
+        }
         const declineCallIds = new Set(terminalCalls.map(({ callId }) => callId));
         return {
+            status: 'admitted',
             calls: terminalCalls,
             record: {
                 calls: identifiedCalls,
@@ -2281,15 +2308,16 @@ export async function runApplicationOwnedToolLoop(
     };
 
     // Answers a reply to the single-measurement step, held proposal or not: the first primary
-    // measurement runs, a valid proposal is kept, every other call is refused in native history
-    // only, and a reply without a measurement records that none was requested, so the proposal
-    // stays unverified.
+    // measurement runs, a valid proposal is kept, a refused decline carries its admission's reason,
+    // every other call is refused in native history only, and a reply without a measurement records
+    // that none was requested, so the proposal stays unverified.
     const answerMeasurementStepReply = (
         toolName: string,
         opportunity: MeasurementOpportunity,
         identifiedCalls: readonly IdentifiedToolCall[],
         outcome: Extract<ApplicationToolPlanningOutcome, { status: 'complete' }>,
-        turn: number
+        turn: number,
+        refusedDecline: { callId: string; reason: string } | null
     ): MeasurementStepReply => {
         const measureCalls = identifiedCalls.filter(({ call }) => call.name === toolName);
         const kept = keepStepTerminal(toolName, opportunity, identifiedCalls, outcome, turn);
@@ -2298,16 +2326,20 @@ export async function runApplicationOwnedToolLoop(
             calls: identifiedCalls,
             receipts: identifiedCalls
                 .filter(({ call }) => call.name !== toolName)
-                .map(({ call, callId }) =>
-                    keptCallIds.has(callId)
-                        ? deferredCompletionReceipt(call, callId, turn)
-                        : stepRefusalReceipt(
-                              call,
-                              callId,
-                              turn,
-                              'Only the required measurement runs on this step; this call did not run.'
-                          )
-                ),
+                .map(({ call, callId }) => {
+                    if (keptCallIds.has(callId)) {
+                        return deferredCompletionReceipt(call, callId, turn);
+                    }
+                    if (callId === refusedDecline?.callId) {
+                        return declineRefusalReceipt(callId, turn, refusedDecline.reason);
+                    }
+                    return stepRefusalReceipt(
+                        call,
+                        callId,
+                        turn,
+                        'Only the required measurement runs on this step; this call did not run.'
+                    );
+                }),
         };
         // A kept proposal is charged as a held one is; refused calls never run and spend nothing.
         const overCallBudget = chargeCalls(Math.min(measureCalls.length, 1) + keptCallIds.size);
@@ -2444,22 +2476,25 @@ export async function runApplicationOwnedToolLoop(
 
         let measurementStepRecord: NativeTurnRecord | undefined;
         let stepTerminal: HeldTerminal | null = null;
-        const stepDecline: { calls: IdentifiedToolCall[]; record: NativeTurnRecord } | null =
+        const stepDecline: StepDecline | null =
             measurementStepToolName === undefined
                 ? null
                 : readStepDecline(measurementStepToolName, identifiedCalls, turn);
-        if (stepDecline !== null) {
-            measurementStepRecord = stepDecline.record;
-            identifiedCalls = stepDecline.calls;
-            outcome = { ...outcome, toolCalls: stepDecline.calls.map(({ call }) => call) };
+        const admittedStepDecline: Extract<StepDecline, { status: 'admitted' }> | null =
+            stepDecline?.status === 'admitted' ? stepDecline : null;
+        if (admittedStepDecline !== null) {
+            measurementStepRecord = admittedStepDecline.record;
+            identifiedCalls = admittedStepDecline.calls;
+            outcome = { ...outcome, toolCalls: admittedStepDecline.calls.map(({ call }) => call) };
         }
-        if (stepDecline === null && measurementStepToolName !== undefined && measurementOpportunity !== null) {
+        if (admittedStepDecline === null && measurementStepToolName !== undefined && measurementOpportunity !== null) {
             const reply: MeasurementStepReply = answerMeasurementStepReply(
                 measurementStepToolName,
                 measurementOpportunity,
                 identifiedCalls,
                 outcome,
-                turn
+                turn,
+                stepDecline?.status === 'refused' ? stepDecline : null
             );
             if (reply.status === 'rejected') {
                 return { status: 'rejected', reason: reply.reason, receipts: reply.receipts, turns: turn };
@@ -2833,8 +2868,12 @@ export async function runApplicationOwnedToolLoop(
                 turns: turn,
             };
         }
+        // A decline on the measurement step was admitted when the step read it.
         const declineRefusal =
-            terminalValidation.decline === null || input.declineAdmission === undefined || answerIntake !== null
+            admittedStepDecline !== null ||
+            terminalValidation.decline === null ||
+            input.declineAdmission === undefined ||
+            answerIntake !== null
                 ? null
                 : input.declineAdmission(terminalValidation.decline);
         if (declineRefusal?.status === 'refused') {
@@ -2848,25 +2887,8 @@ export async function runApplicationOwnedToolLoop(
                     turns: turn,
                 };
             }
-            const refusalReceipt = boundReceipt(
-                failureReceipt({
-                    callId: terminalCalls[0]!.callId,
-                    toolName: COMMAND_BATCH_DECLINE_TOOL_NAME,
-                    turn,
-                    code: 'decline-not-admitted',
-                    safeMessage: declineRefusal.reason,
-                    retryable: true,
-                }),
-                limits.maxReceiptBytesPerCall
-            );
-            const refusalOverBudget = admitTurnReceipts(
-                [refusalReceipt],
-                turn,
-                outcome,
-                terminalCalls,
-                undefined,
-                withStepRecord(measurementStepRecord, [refusalReceipt])
-            );
+            const refusalReceipt = declineRefusalReceipt(terminalCalls[0]!.callId, turn, declineRefusal.reason);
+            const refusalOverBudget = admitTurnReceipts([refusalReceipt], turn, outcome, terminalCalls);
             if (refusalOverBudget !== null) {
                 return {
                     status: 'rejected',
