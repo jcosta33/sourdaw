@@ -1,0 +1,26 @@
+scripts/__tests__/e2eServerIdentityWiring.spec.ts
+  s_fec7059b7a251c::t_dc4846872bbd1d 249
+  s_fec7059b7a251c::t_7fea61b9831782 241,328,330,347,392
+  s_fec7059b7a251c::t_9fe5c63a39f656 222
+  s_fec7059b7a251c::t_4ca6b039d281f5 486
+  s_fec7059b7a251c::t_47784606700a1a 243,346,391
+  s_fec7059b7a251c::t_4d7389d64f6278 381
+tests/e2e/firstPaintWarmup.ts
+  s_fec7059b7a251c::t_305d6790a8958e 23-29,31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "07a2a6b18712a2b6d417eaaaa006f538e57c39be",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
