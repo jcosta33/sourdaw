@@ -2,7 +2,10 @@ import { createHash } from 'node:crypto';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { measureIntegratedLoudness } from '#/utils/audioMetering/measureIntegratedLoudness';
+import {
+    createIntegratedLoudnessAccumulator,
+    measureIntegratedLoudness,
+} from '#/utils/audioMetering/measureIntegratedLoudness';
 import { measureTruePeak } from '#/utils/audioMetering/measureTruePeak';
 
 import { type WavLoudnessReport } from '../../../models/ExportLoudnessReport';
@@ -138,6 +141,33 @@ describe('reported WAV staging', () => {
             `${input.audioName}.loudness.json`
         );
         expect(input.progress).toHaveBeenLastCalledWith(1);
+    });
+
+    it('reports the integrated value gated by the first pass relative gate', async () => {
+        // One second near -20 dBFS, then one second near -50 dBFS: above the absolute gate, below the relative one.
+        const samples = Float32Array.from({ length: 2 * 44100 }, (_, frame) => {
+            const amplitude = frame < 44100 ? 0.1 : 0.003;
+            return amplitude * Math.sin((2 * Math.PI * 1000 * frame) / 44100);
+        });
+        const input = {
+            ...options(),
+            source: { length: samples.length, sampleRate: 44100, numberOfChannels: 1, getChannelData: () => samples },
+            bitDepth: 24 as const,
+            dither: { mode: 'none' as const, seed: 7 },
+        };
+        await writeReportedWav(input);
+        const bytes = collect(input.destination.entries.get(input.audioName)!.chunks);
+        const decoded = decode(bytes, 24, samples.length);
+        const absoluteOnly = createIntegratedLoudnessAccumulator({ numberOfChannels: 1, sampleRate: 44100 });
+        absoluteOnly.push([decoded]);
+        const ungatedRelative = absoluteOnly.integratedLufs();
+        const expected = measureIntegratedLoudness({ channels: [decoded], length: decoded.length, sampleRate: 44100 });
+        const { integrated } = report(input.destination);
+        if (expected === null || ungatedRelative === null || !('value' in integrated)) {
+            throw new Error('Expected gated integrated readings.');
+        }
+        expect(integrated.value).toBeCloseTo(expected, 5);
+        expect(Math.abs(integrated.value - ungatedRelative)).toBeGreaterThan(1);
     });
 
     it('replays a cropped block source without AudioBuffer access or mutation', async () => {

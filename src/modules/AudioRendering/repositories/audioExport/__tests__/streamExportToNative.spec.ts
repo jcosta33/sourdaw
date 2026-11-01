@@ -199,11 +199,7 @@ describe('native export transaction adapter', () => {
                 throw new Error('Export cancelled');
             }
         };
-        const batch = await streamExportToNative({
-            directoryPath: '/picked',
-            requireReportPairs: true,
-            checkCancelled,
-        });
+        const batch = await streamExportToNative({ directoryPath: '/picked', checkCancelled });
         const beginning = batch.beginFile('mix.wav');
         await entered.promise;
         cancelled = true;
@@ -237,11 +233,7 @@ describe('native export transaction adapter', () => {
                 throw new Error('Export cancelled');
             }
         };
-        const batch = await streamExportToNative({
-            directoryPath: '/picked',
-            requireReportPairs: true,
-            checkCancelled,
-        });
+        const batch = await streamExportToNative({ selectedFilePath: '/picked/mix.wav', checkCancelled });
         const beginning = batch.beginFile('mix.wav');
         const lateToken = await entered.promise;
         expect(reservations.get('/picked/mix.wav')).toBe(lateToken);
@@ -296,11 +288,7 @@ describe('native export transaction adapter', () => {
                 throw new Error('Export cancelled');
             }
         };
-        const batch = await streamExportToNative({
-            directoryPath: '/picked',
-            requireReportPairs: true,
-            checkCancelled,
-        });
+        const batch = await streamExportToNative({ directoryPath: '/picked', checkCancelled });
         const first = await batch.beginFile('first.wav');
         await first.finish();
         const lateBegin = batch.beginFile('second.wav');
@@ -365,11 +353,7 @@ describe('native export transaction adapter', () => {
             return token;
         });
         native.abort.mockRejectedValueOnce(new Error('cleanup denied'));
-        const batch = await streamExportToNative({
-            directoryPath: '/picked',
-            requireReportPairs: true,
-            checkCancelled: () => {},
-        });
+        const batch = await streamExportToNative({ selectedFilePath: '/picked/mix.wav', checkCancelled: () => {} });
         const beginning = batch.beginFile('mix.wav');
         const token = await entered.promise;
         const aborting = batch.abort();
@@ -398,11 +382,7 @@ describe('native export transaction adapter', () => {
             entered.resolve();
             return release.promise;
         });
-        const batch = await streamExportToNative({
-            directoryPath: '/picked',
-            requireReportPairs: true,
-            checkCancelled: () => {},
-        });
+        const batch = await streamExportToNative({ selectedFilePath: '/picked/mix.wav', checkCancelled: () => {} });
         const beginning = batch.beginFile('mix.wav');
         await entered.promise;
         const aborting = batch.abort();
@@ -416,5 +396,192 @@ describe('native export transaction adapter', () => {
         expect(native.abort).toHaveBeenCalledWith([]);
         expect(native.append).not.toHaveBeenCalled();
         expect(native.commit).not.toHaveBeenCalled();
+    });
+
+    describe('with report pairs required', () => {
+        it('does not begin a native file after cancellation overtakes destination resolution', async () => {
+            const { reservations } = controlledNativeReservations();
+            const entered = Promise.withResolvers<void>();
+            const release = Promise.withResolvers<string>();
+            native.join.mockImplementationOnce(() => {
+                entered.resolve();
+                return release.promise;
+            });
+            let cancelled = false;
+            const checkCancelled = () => {
+                if (cancelled) {
+                    throw new Error('Export cancelled');
+                }
+            };
+            const batch = await streamExportToNative({
+                directoryPath: '/picked',
+                requireReportPairs: true,
+                checkCancelled,
+            });
+            const beginning = batch.beginFile('mix.wav');
+            await entered.promise;
+            cancelled = true;
+            await batch.abort();
+            release.resolve('/picked/mix.wav');
+            await expect(beginning).rejects.toThrow('Export cancelled');
+            expect(native.begin).not.toHaveBeenCalled();
+            expect(reservations.size).toBe(0);
+        });
+
+        it('aborts the exact late native token after cancellation', async () => {
+            const { reservations, reserve } = controlledNativeReservations();
+            const entered = Promise.withResolvers<string>();
+            const release = Promise.withResolvers<void>();
+            native.begin.mockImplementationOnce(async (path) => {
+                const token = reserve(path);
+                entered.resolve(token);
+                await release.promise;
+                return token;
+            });
+            let cancelled = false;
+            const checkCancelled = () => {
+                if (cancelled) {
+                    throw new Error('Export cancelled');
+                }
+            };
+            const batch = await streamExportToNative({
+                directoryPath: '/picked',
+                requireReportPairs: true,
+                checkCancelled,
+            });
+            const beginning = batch.beginFile('mix.wav');
+            const lateToken = await entered.promise;
+            expect(reservations.get('/picked/mix.wav')).toBe(lateToken);
+            cancelled = true;
+            const aborting = batch.abort();
+            expect(native.abort).not.toHaveBeenCalled();
+            release.resolve();
+            await aborting;
+            await expect(beginning).rejects.toThrow('Export cancelled');
+            expect(native.abort).toHaveBeenCalledWith([lateToken]);
+            expect(reservations.size).toBe(0);
+            expect(native.append).not.toHaveBeenCalled();
+            expect(native.seal).not.toHaveBeenCalled();
+            expect(native.commit).not.toHaveBeenCalled();
+        });
+
+        it('fences a returned begin token while abort is awaiting native cleanup', async () => {
+            const { reservations, reserve } = controlledNativeReservations();
+            const abortEntered = Promise.withResolvers<void>();
+            const finishAbort = Promise.withResolvers<void>();
+            const beginEntered = Promise.withResolvers<string>();
+            const finishBegin = Promise.withResolvers<void>();
+            const firstAbort = native.abort.getMockImplementation()!;
+            native.abort.mockImplementation(async (tokens) => {
+                if (tokens.includes('native-token-1')) {
+                    abortEntered.resolve();
+                    await finishAbort.promise;
+                }
+                await firstAbort(tokens);
+            });
+            const firstBegin = native.begin.getMockImplementation()!;
+            native.begin.mockImplementation(async (path) => {
+                if (path.endsWith('second.wav')) {
+                    const token = reserve(path);
+                    beginEntered.resolve(token);
+                    await finishBegin.promise;
+                    return token;
+                }
+                return firstBegin(path);
+            });
+            let cancelled = false;
+            const checkCancelled = () => {
+                if (cancelled) {
+                    throw new Error('Export cancelled');
+                }
+            };
+            const batch = await streamExportToNative({
+                directoryPath: '/picked',
+                requireReportPairs: true,
+                checkCancelled,
+            });
+            const first = await batch.beginFile('first.wav');
+            await first.finish();
+            const lateBegin = batch.beginFile('second.wav');
+            const lateToken = await beginEntered.promise;
+            cancelled = true;
+            const aborting = batch.abort();
+            await expect(first.writer.write(new Uint8Array([9]))).rejects.toThrow('Export cancelled');
+            await expect(first.finish()).rejects.toThrow('Export cancelled');
+            expect(native.append).not.toHaveBeenCalled();
+            expect(native.seal).toHaveBeenCalledTimes(1);
+            finishBegin.resolve();
+            await abortEntered.promise;
+            expect(native.abort).toHaveBeenCalledWith(['native-token-1', lateToken]);
+            finishAbort.resolve();
+            await aborting;
+            await expect(lateBegin).rejects.toThrow('Export cancelled');
+            expect(reservations.size).toBe(0);
+            expect(native.commit).not.toHaveBeenCalled();
+        });
+
+        it('coalesces cleanup failures and retains late tokens for an explicit abort retry', async () => {
+            const { reservations, reserve } = controlledNativeReservations();
+            const entered = Promise.withResolvers<string>();
+            const release = Promise.withResolvers<void>();
+            native.begin.mockImplementationOnce(async (path) => {
+                const token = reserve(path);
+                entered.resolve(token);
+                await release.promise;
+                return token;
+            });
+            native.abort.mockRejectedValueOnce(new Error('cleanup denied'));
+            const batch = await streamExportToNative({
+                directoryPath: '/picked',
+                requireReportPairs: true,
+                checkCancelled: () => {},
+            });
+            const beginning = batch.beginFile('mix.wav');
+            const token = await entered.promise;
+            const aborting = batch.abort();
+            const coalesced = batch.abort();
+            const failedBegin = expect(beginning).rejects.toThrow('cleanup denied');
+            const failedAbort = expect(aborting).rejects.toThrow('cleanup denied');
+            const failedCoalesced = expect(coalesced).rejects.toThrow('cleanup denied');
+            release.resolve();
+            await Promise.all([failedBegin, failedAbort, failedCoalesced]);
+            expect(native.abort).toHaveBeenCalledTimes(1);
+            expect(native.abort).toHaveBeenLastCalledWith([token]);
+            expect(reservations.get('/picked/mix.wav')).toBe(token);
+            await expect(batch.beginFile('other.wav')).rejects.toThrow('Export cancelled');
+
+            await batch.abort();
+
+            expect(native.abort).toHaveBeenCalledTimes(2);
+            expect(native.abort).toHaveBeenLastCalledWith([token]);
+            expect(reservations.size).toBe(0);
+        });
+
+        it('settles abort after a pending native begin rejects without inventing a token', async () => {
+            const entered = Promise.withResolvers<void>();
+            const release = Promise.withResolvers<string>();
+            native.begin.mockImplementationOnce(() => {
+                entered.resolve();
+                return release.promise;
+            });
+            const batch = await streamExportToNative({
+                directoryPath: '/picked',
+                requireReportPairs: true,
+                checkCancelled: () => {},
+            });
+            const beginning = batch.beginFile('mix.wav');
+            await entered.promise;
+            const aborting = batch.abort();
+            const failedBegin = expect(beginning).rejects.toThrow('native begin failed');
+
+            release.reject(new Error('native begin failed'));
+
+            await failedBegin;
+            await aborting;
+            expect(native.abort).toHaveBeenCalledOnce();
+            expect(native.abort).toHaveBeenCalledWith([]);
+            expect(native.append).not.toHaveBeenCalled();
+            expect(native.commit).not.toHaveBeenCalled();
+        });
     });
 });

@@ -2,7 +2,10 @@ import { createHash } from 'node:crypto';
 
 import { describe, expect, it } from 'vitest';
 
-import { measureIntegratedLoudness } from '#/utils/audioMetering/measureIntegratedLoudness';
+import {
+    createIntegratedLoudnessAccumulator,
+    measureIntegratedLoudness,
+} from '#/utils/audioMetering/measureIntegratedLoudness';
 import { measureMaxWindowedLoudness } from '#/utils/audioMetering/measureMaxWindowedLoudness';
 import { measureTruePeak } from '#/utils/audioMetering/measureTruePeak';
 
@@ -147,6 +150,45 @@ describe('emitted WAV loudness analysis', () => {
             5
         );
         expect(Math.max(...decoded.subarray(0, 100))).toBeLessThanOrEqual(1);
+    });
+
+    it('carries the first pass relative gate so a passage over 10 LU quieter leaves the integrated value', async () => {
+        const rate = 48000;
+        // One second near -20 dBFS, then one second near -50 dBFS: above the absolute gate, below the relative one.
+        const samples = Float32Array.from({ length: 2 * rate }, (_, frame) => {
+            const amplitude = frame < rate ? 0.1 : 0.003;
+            return amplitude * Math.sin((2 * Math.PI * 1000 * frame) / rate);
+        });
+        const bytes = new Uint8Array(
+            await audioBufferToWav(
+                { length: samples.length, sampleRate: rate, numberOfChannels: 1, getChannelData: () => samples },
+                24,
+                undefined,
+                { mode: 'none' }
+            )
+        );
+        const decoded = new Float32Array(samples.length);
+        for (let frame = 0; frame < decoded.length; frame++) {
+            const offset = 44 + frame * 3;
+            const raw = bytes[offset]! + bytes[offset + 1]! * 256 + bytes[offset + 2]! * 65536;
+            decoded[frame] = (raw >= 8388608 ? raw - 16777216 : raw) / 8388608;
+        }
+        const absoluteOnly = createIntegratedLoudnessAccumulator({ numberOfChannels: 1, sampleRate: rate });
+        absoluteOnly.push([decoded]);
+        const ungatedRelative = absoluteOnly.integratedLufs();
+
+        const first = createWavLoudnessReportAnalyzer(createIncrementalMd5());
+        first.write(bytes);
+        const second = createWavLoudnessReportAnalyzer(createIncrementalMd5(), first.finish().relativeGatePower);
+        second.write(bytes);
+        const { integrated } = second.finish();
+
+        const expected = measureIntegratedLoudness({ channels: [decoded], length: decoded.length, sampleRate: rate });
+        if (expected === null || ungatedRelative === null || !('value' in integrated)) {
+            throw new Error('Expected gated integrated readings.');
+        }
+        expect(integrated.value).toBeCloseTo(expected, 5);
+        expect(Math.abs(integrated.value - ungatedRelative)).toBeGreaterThan(1);
     });
 
     it('sign-extends emitted 24-bit negative boundaries and matches negative-only decoded meters', async () => {

@@ -692,17 +692,23 @@ describe('WAV loudness reports', () => {
         });
     }
 
-    function expectReportDescribes(reportBytes: Uint8Array, wav: Uint8Array, audioFile: string, stemId: string) {
+    function expectReportDescribes(
+        reportBytes: Uint8Array,
+        wav: Uint8Array,
+        audioFile: string,
+        stemId: string,
+        target = { id: 'custom', sampleRate: 48000 }
+    ) {
         expect(wav.length).toBeGreaterThan(44);
         const report: unknown = JSON.parse(new TextDecoder().decode(reportBytes));
         expect(report).toMatchObject({
             measurementBasis: 'decoded-WAV-bytes',
             stemId,
-            targetId: 'custom',
+            targetId: target.id,
             audioFile,
             wav: {
                 channels: 2,
-                sampleRate: 48000,
+                sampleRate: target.sampleRate,
                 bitDepth: 24,
                 bytes: wav.length,
                 md5: createHash('md5').update(wav).digest('hex'),
@@ -713,6 +719,53 @@ describe('WAV loudness reports', () => {
             truePeak: { value: expect.any(Number), unit: 'dBTP' },
         });
     }
+
+    it.each(['browser', 'native'] as const)('pairs each target its own report on the %s destination', async (kind) => {
+        const sink = browserOutput();
+        const staged = nativeStaging();
+        const [base] = wavTargets();
+        const targets = [
+            { ...base!, id: 'a', name: 'A', sampleRate: 48000 },
+            { ...base!, id: 'b', name: 'B', sampleRate: 96000 },
+        ];
+        const output = await streamExport({
+            targets,
+            destination: kind === 'browser' ? zipDestination : { kind: 'native', directoryPath: '/stems' },
+            checkCancelled: () => {},
+            includeWavLoudnessReports: true,
+            exportMode: 'stems',
+        });
+        await output.writeAudio({
+            source: stem(0),
+            name: 'Kick',
+            stemId: 'track-kick',
+            onProgress: () => {},
+            onLimited: () => {},
+        });
+        await output.commit(() => {});
+        const names = ['Kick__a.wav', 'Kick__a.wav.loudness.json', 'Kick__b.wav', 'Kick__b.wav.loudness.json'];
+        let fileBytes: (name: string) => Uint8Array;
+        if (kind === 'browser') {
+            const entries = unzipSync(joinBytes(sink.chunks));
+            expect(Object.keys(entries)).toEqual(names);
+            fileBytes = (name) => entries[name] ?? new Uint8Array();
+        } else {
+            const committed = native.commit.mock.calls[0]?.[0].map((token) => staged.paths.get(token));
+            expect(committed).toEqual([names[1], names[0], names[3], names[2]].map((name) => `/stems/${name}`));
+            fileBytes = (name) => staged.fileBytes(`/stems/${name}`);
+        }
+        for (const target of targets) {
+            const audioFile = `Kick__${target.id}.wav`;
+            expectReportDescribes(
+                fileBytes(`${audioFile}.loudness.json`),
+                fileBytes(audioFile),
+                audioFile,
+                'track-kick',
+                target
+            );
+        }
+        expect(output.reportedFiles()).toBe(2);
+    });
 
     it('pairs a report with each WAV stem inside the browser archive', async () => {
         const sink = browserOutput();
