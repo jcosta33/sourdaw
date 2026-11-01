@@ -4,8 +4,7 @@ Built-in polyphonic synthesizer voice scheduling (analog-modeled subtractive syn
 
 ## Public Contract Surface
 
-- **Use Cases** (`useCases/index.ts`): `scheduleNote`, `getSynthParamsFromDevices`, `scheduleNoteOffline`, `scheduleKitNote`, `getDrumKitDefByIndex`, `scheduleDrumKitNote`, `registerProSynthInstruments`.
-- **Events** (`events/index.ts`): No public events.
+Public surface: `useCases/index.ts`.
 
 ## Key Subsystems
 

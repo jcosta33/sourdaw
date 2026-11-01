@@ -4,9 +4,10 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
+import { type Locator, type Page, type TestInfo } from '@playwright/test';
 import { stringify } from 'superjson';
 
+import { expect, test } from './e2eTest';
 import {
     enable_direct_e2e_viewport,
     launch_new_project,

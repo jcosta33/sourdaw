@@ -1,7 +1,8 @@
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
 import { KOKORO_MODEL_ARTIFACT } from '../../src/modules/BrowserAi/models/KokoroArtifactManifest';
 
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const KOKORO_DOWNLOAD_URL = KOKORO_MODEL_ARTIFACT.url;

@@ -4,8 +4,7 @@ Control Voltage (CV) and Gate output routing and conversion for analog/modular s
 
 ## Public Contract Surface
 
-- **Use Cases** (`useCases/index.ts`): `addCvOutput`, `removeCvOutput`, `setCvValue`, `setVoltageStandard`, `setClockDivision`, `hydrateCvGateState`.
-- **Stores** (`stores/index.ts`): `cvGateStore`, `defaultCvGateState`, `CvGateState`, `CvOutputChannel`.
+Public surface: `useCases/index.ts`, `stores/index.ts`.
 
 ## Key Subsystems
 

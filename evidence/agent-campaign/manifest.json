@@ -3,7 +3,7 @@
     "campaign": "sourdaw-agent-production-system",
     "thresholds": {
         "path": "docs/architecture/agent-release-gates.md",
-        "digest": "f613a56df2d71a67562432a476163c43f3d319c8e4ea6be8d8272902f98e9c69"
+        "digest": "87be12ed29e47ad264ed092da6301d6fe556d00e8521adf3646c94dc459a1fca"
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
@@ -749,7 +749,7 @@
                 },
                 {
                     "path": "tests/e2e/agentWorkspace.spec.ts",
-                    "digest": "8419e1a3db5310d19e3f2be62769025bebe6cfbde9d62f557fa429082591b147"
+                    "digest": "e0715ee32a0289e1b14649e29b1baf49bbb2c2dc12f809cd10d4efffbb61d5bc"
                 }
             ]
         },
@@ -797,7 +797,7 @@
             "fixtures": [
                 {
                     "path": "evidence/agent-campaign/corpora/development.json",
-                    "digest": "1689a515ca00217e66a06eb679cbdfafb8987b9be9d25e1f6a618dfdc222aa8b"
+                    "digest": "b2a1368197bf202224377ba2b3980330089622b0c5b8d67d8b0e164acc7ce059"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/fixture-project.json",
@@ -805,7 +805,7 @@
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/held-out.json",
-                    "digest": "6ebb39c90fd0ffaaa69730382c045946f95fc4ebcb53de30ff01372663a1dfa3"
+                    "digest": "870409b1f9645cd45696eac6749360949552c9f2424c5b9f055214e48d85ead2"
                 },
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",
@@ -817,7 +817,7 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts",
-                    "digest": "7ad63434f6b4bfb9bc7dd4e449907c60ee958b12aff432dbbcaa8cbe00bad8f8"
+                    "digest": "2e55fc416b9af97bfc791d4aef3183057a8150015e85955ad5b4d5e9d0daafce"
                 }
             ]
         },

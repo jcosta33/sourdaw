@@ -1,8 +1,9 @@
-import { test, expect, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
 import { createLoopbackAnswerIntake, createLoopbackAnswerToolCalls } from '../../scripts/loopbackOpenAiProvider';
 
 import { admitLoopbackProvider } from './admitLoopbackProvider';
+import { test, expect } from './e2eTest';
 import { add_midi_track, launch_new_project, setupWorkspace } from './e2eUtils';
 import { startLoopbackOpenAiProvider, type LoopbackOpenAiProvider } from './loopbackOpenAiProvider';
 import { startScriptedToolProvider } from './scriptedToolProvider';

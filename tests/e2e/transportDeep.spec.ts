@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { add_midi_track, launch_new_project, setupWorkspace } from './e2eUtils';
 
 // ---------------------------------------------------------------------------

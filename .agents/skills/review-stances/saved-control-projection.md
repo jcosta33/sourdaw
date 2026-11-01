@@ -6,6 +6,15 @@ PR #5749 addresses a saved Proof scalar that could first appear at its default u
 
 Save a non-default parameter, close the original page, and reopen the explicitly saved snapshot in a fresh runtime before playback or editing. Assert its exact value on the visible control. Separately seed the persisted row, clear the module cache, and mount the actual panel without bridge registration; assert the same value. While mounted, reset the cache with the saved disclosure tier equal to the default tier and assert the saved value again before a gesture. Revert only the panel restoration call: the cold-value case must fail. Preserve validated read-only rehydration, initialized live state, stale-owner refusal, and live meters; assert there is no engine or project write. Unconditional UI admission and a genuine saved snapshot prevent a vacuous pass. UI evidence does not establish audible behavior or runtime-engine acceptance.
 
+### Linked automation followers must reach the sampler (PRs #931 and #4392; fixed in #4506)
+
+PR #931 tested point delegation with a mocked unlinked writer, and PR #4392 tested decibel forms
+only on unlinked lanes, so inaudible follower writes passed. Dispatch a point command through real
+Command and CRDT-backed Automation state on a linked lane, then inspect the raw document, owning
+projection, undo history and `getAutomationValueAtBeat` for the follower. Replacing the follower
+write with the mocked unlinked writer must fail the case; a handler-call or stored-value assertion
+cannot prove the sampler uses the point.
+
 ### 2026-10-29 — a declared Body choice never entered the worklet schema (PR #5254)
 
 PR #5254 (`07182eab40171c11502e287c0da15a808fe09f11`) exposed the numeric Body chooser

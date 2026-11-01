@@ -2194,6 +2194,108 @@ describe('repository tooling selects no browser suite', () => {
         expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
         expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
     });
+
+    it.each([
+        'src/app/AGENTS.md',
+        'src/modules/Tuner/CLAUDE.md',
+        'src/infra/ZCODE.md',
+        'src/modules/GrandBoule/GEMINI.md',
+        'src/app/CODEX.md',
+        'src/app/KIMI.md',
+        'tests/e2e/AGENTS.md',
+    ])('keeps per-vendor agent guidance %s on broad non-browser validation', (path) => {
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(plan).toMatchObject(BROAD_WITHOUT_BROWSER);
+        expect(plan.reasons).toEqual([
+            { path, reason: 'repository tooling; broad non-browser validation without browser execution' },
+        ]);
+        expect(productPathsOf([path], INVENTORY, false)).toEqual([]);
+    });
+
+    it('lets the product path decide browser selection when agent guidance changes beside it', () => {
+        expect(productPathsOf(['src/modules/Tuner/AGENTS.md', TUNER], INVENTORY, false)).toEqual([TUNER]);
+    });
+
+    it.each([
+        'public/AGENTS.md',
+        'src/modules/Tuner/notes.md',
+        'src/app/agents.md',
+        'src/app/AGENTS.mdx',
+        'src/app/AGENTS.md.bak',
+        'src/app/NOTAGENTS.md',
+        'src/modules/Tuner/README.md',
+    ])('retains full browser coverage for non-guidance Markdown %s', (path) => {
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+        expect(productPathsOf([path], INVENTORY, false)).toEqual([path]);
+    });
+
+    it('keeps full browser coverage when agent guidance is renamed to product code', () => {
+        const plan = selectValidationPlan(
+            parseChangedPaths('R100\0src/app/AGENTS.md\0src/app/bootstrap.ts\0'),
+            INVENTORY
+        );
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+    });
+
+    it.each([
+        'crates/sourdaw-native/src/lib.rs',
+        'crates/daw-dsp/src/filters.rs',
+        'crates/daw-dsp/Cargo.toml',
+        'Cargo.toml',
+        'Cargo.lock',
+        'rust-toolchain.toml',
+        '.github/workflows/nightly.yml',
+        'evidence/agent-campaign/manifest.json',
+        'evidence/agent-campaign/corpora/held-out.json',
+    ])('keeps %s on broad non-browser validation', (path) => {
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(plan).toMatchObject(BROAD_WITHOUT_BROWSER);
+        expect(plan.reasons).toEqual([
+            { path, reason: 'repository tooling; broad non-browser validation without browser execution' },
+        ]);
+        expect(productPathsOf([path], INVENTORY, false)).toEqual([]);
+    });
+
+    it.each([
+        'crates/daw-dsp/src/filters.rs',
+        'Cargo.lock',
+        '.github/workflows/nightly.yml',
+        'evidence/agent-campaign/manifest.json',
+    ])('lets the feature presentation narrow when %s changes beside it', (path) => {
+        expect(productPathsOf([path, TUNER], INVENTORY, false)).toEqual([TUNER]);
+    });
+
+    it.each([
+        'public/wasm/daw-dsp/daw_dsp_bg.wasm',
+        'src/modules/AudioEngine/wasm/daw_dsp.js',
+        'crates/daw-dsp/src/grinder/nam/fixtures/lstm.nam',
+        'crates/daw-dsp/src/foo.json',
+        'src/foo.rs',
+        '.github/workflows/health-gates.yml',
+        '.github/workflows/heavy-gates.yml',
+        '.github/workflows/nightly.yaml',
+        'cratesx/foo.rs',
+        'src/crates/foo.ts',
+        'evidencex/manifest.json',
+        'electron/main.ts',
+    ])('retains full browser coverage for %s', (path) => {
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+        expect(productPathsOf([path], INVENTORY, false)).toEqual([path]);
+    });
+
+    it('keeps full browser coverage when a Rust source is renamed to product code', () => {
+        const plan = selectValidationPlan(
+            parseChangedPaths('R100\0crates/daw-dsp/src/a.rs\0src/app/bootstrap.ts\0'),
+            INVENTORY
+        );
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+    });
 });
 
 const UNIT_SPEC_REASON = 'unit test source; broad non-browser validation without browser execution';

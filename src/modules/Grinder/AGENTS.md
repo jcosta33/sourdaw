@@ -4,10 +4,7 @@ Guitar amplifier modeler, Neural Amp Modeler (NAM) host, cabinet impulse respons
 
 ## Public Contract Surface
 
-- **Use Cases** (`useCases/index.ts`): `loadGrinderPatchWithAudio`, `moveGrinderPedalInChainWithAudio`, `recallGrinderSnapshotWithAudio`, `setGrinderMicParamWithAudio`, `setGrinderParamWithAudio`, `setGrinderPedalParamWithAudio`, `exportGrinderNeuralModel`, `importGrinderNeuralModels`, `removeGrinderNeuralModel`, `restoreGrinderNeuralLibrary`, `grinderPresets`.
-- **Stores** (`stores/index.ts`): `grinderStore`, `grinderNeuralLibraryStore`, `grinderTelemetryStore`.
-- **Views** (`presentations/views/index.ts`): `GrinderPanel`.
-- **Events** (`events/index.ts`): No public events.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 

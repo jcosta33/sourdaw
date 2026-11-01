@@ -113,11 +113,45 @@ function isDocumentation(path: string): boolean {
     return path.endsWith('.md') && (path.startsWith('docs/') || path.startsWith('.agents/') || !path.includes('/'));
 }
 
+/** Per-vendor agent guidance, read by coding agents and never loaded by the product. */
+const AGENT_GUIDANCE_NAMES = new Set(['AGENTS.md', 'CLAUDE.md', 'CODEX.md', 'GEMINI.md', 'KIMI.md', 'ZCODE.md']);
+
+function isAgentGuidance(path: string): boolean {
+    return /^(?:src|tests)\//.test(path) && AGENT_GUIDANCE_NAMES.has(path.slice(path.lastIndexOf('/') + 1));
+}
+
+/**
+ * Rust sources and Cargo manifests reach the browser only as compiled WASM under public/wasm and
+ * src/modules/AudioEngine/wasm, which are changed paths that select browser coverage themselves;
+ * the broad profile's `wasm:verify` fails a Rust change that lacks regenerated artifacts. Other files
+ * under crates/ are data a Playwright spec may read directly, so they stay on the product route.
+ */
+function isRustCompilerInput(path: string): boolean {
+    return (
+        /^crates\/.+\.rs$/.test(path) ||
+        /^crates\/.+\/Cargo\.toml$/.test(path) ||
+        path === 'Cargo.toml' ||
+        path === 'Cargo.lock' ||
+        path === 'rust-toolchain.toml'
+    );
+}
+
+/** The nightly workflow answers to schedule and dispatch events alone, so no pull request runs it. */
+function isNightlyWorkflow(path: string): boolean {
+    return path === '.github/workflows/nightly.yml';
+}
+
+/** Agent-campaign corpora and manifest are read by Vitest specs and scripts, never by product or Playwright code. */
+function isAgentCampaignEvidence(path: string): boolean {
+    return path.startsWith('evidence/');
+}
+
 /**
  * Repository tooling and prose never select browser execution, though they keep broad non-browser
  * validation. Generator and build scripts reach the browser only through their outputs, which land
  * under src/ or public/ and select browser coverage there. Product trees may load Markdown, so it
- * stays classified with them.
+ * stays classified with them. Agent guidance under src/ and tests/ is the exception, because no
+ * product code loads it.
  */
 function isRepositoryTooling(path: string): boolean {
     return (
@@ -125,8 +159,11 @@ function isRepositoryTooling(path: string): boolean {
         path.startsWith('.agents/') ||
         path === '.gitleaksignore' ||
         path === '.gitleaks.toml' ||
+        isRustCompilerInput(path) ||
+        isNightlyWorkflow(path) ||
+        isAgentCampaignEvidence(path) ||
         /^release\/[^/]+\.json$/.test(path) ||
-        (path.endsWith('.md') && !/^(?:src|public|tests)\//.test(path))
+        (path.endsWith('.md') && (!/^(?:src|public|tests)\//.test(path) || isAgentGuidance(path)))
     );
 }
 

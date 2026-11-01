@@ -4,10 +4,7 @@ Mastering limiter, saturator, and multiband dynamic peak controller (brickwall l
 
 ## Public Contract Surface
 
-- **Stores** (`stores/index.ts`): `crustStore`, `defaultCrustState`, `updateCrustMeters`, `resetCrustMeters`.
-- **Views** (`presentations/views/index.ts`): `CrustPanel`.
-- **Use Cases** (`useCases/`): Internal parameter bridge (`loadCrustPatchWithAudio`, `setCrustParamWithAudio`, `createFlushHandlers`), presets (`crustPresets`), and metering controls (`resetCrustPanelMeters`, `resetCrustTruePeakIndicator`, `setCrustPanelUiLevel`).
-- **Events**: No public events.
+Public surface: `stores/index.ts`, `presentations/views/index.ts`. The parameter bridge, presets and metering controls under `useCases/` are internal.
 
 ## Key Subsystems
 

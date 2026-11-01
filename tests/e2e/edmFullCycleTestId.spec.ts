@@ -1,5 +1,4 @@
-import { expect, test } from '@playwright/test';
-
+import { expect, test } from './e2eTest';
 import { setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 test.describe('EDM full cycle — playback, mixer, transport, tools', () => {

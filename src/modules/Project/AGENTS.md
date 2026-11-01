@@ -4,23 +4,7 @@ Root Project aggregate lifecycle, project persistence (IndexedDB and native file
 
 ## Public Contract Surface
 
-- `stores`:
-    - `projectStore` (`ProjectStoreState`, `defaultProjectStoreState`)
-    - `arrangementStore` (`ArrangementStoreState`, `defaultArrangementId`)
-    - `missingMediaStore` (`MissingMediaStoreState`, `defaultMissingMediaStoreState`, `MissingMediaItem`, `MissingMediaKind`)
-    - `projectLoadFailureStore` (`ProjectLoadFailureState`)
-- `useCases`:
-    - **Lifecycle & Persistence**: `newProject`, `saveProject`, `saveProjectBeforeReplacement`, `pendingProjectReplacements`, `loadProject`, `renameProject`, `markDirty`, `initProjectDirtyTracking`, `initGrooveTemplateDirtyTracking`, `captureProjectTransitionAuthority`, `setProjectIdentityTransitionDependencies`, `finishProjectLoading`.
-    - **Templates & Previews**: `createFromTemplate`, `getTemplates`, `getPreviewLoop`.
-    - **Tuning & Scales**: `importSclFile`, `setProjectKeyRoot`, `setProjectScaleName`.
-    - **Media & Files**: `pickFiles`, `verifyAudioBufferReferences`, `exportProjectFile`, `pickAndImportProjectFile`.
-    - **Interchange Contracts**: `buildProjectData`, `applyImportedProjectData`, `runProjectLoadTransaction`, `isNativeProjectRuntimeAvailable`.
-    - **Semantic Queries & Briefs**: `doesProductionBriefAllowActionBatch`, `productionBriefActionBatchAdmission`, `collectProtectedScopes`, `isProjectWideScope`, `getProjectScopedBriefLock`, `acceptCreativeIntent`, `querySemanticProject`, `queryAgentDiscovery`, `parseSemanticProjectQueryInput`, `parseAgentDiscoveryInput`, `agentCapabilityDiscoveryPort`, `getProjectProtocolContracts`, `getAgentProjectModelContract`, `getDurableProjectOwnerId`.
-    - **Agent Asset File Boundary**: `agentAssetFileBoundary` (`pickAndRegister`, `importAsset`, `stageExport`, `finalizeExport`, `cleanup`) — the only handle-only surface that may drive the native agent asset saga; `pickAndRegister` mints read handles through the native open dialog and read-write handles through the native save dialog, because only the save channel grants write access.
-    - **Recent Projects**: `getRecentProjects`, `loadRecentProject`, `isOpenProjectKey`.
-    - **Handlers**: `getProjectHandlers`.
-- `presentations/views`: `ArrangementSelector`, `MissingMediaPanel`, `RecentProjectsMenu`, `TemplateGallery`.
-- Handlers: `getProjectHandlers` (`createProjectFromTemplate`, `setProductionBrief`).
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 
@@ -42,6 +26,7 @@ Root Project aggregate lifecycle, project persistence (IndexedDB and native file
 - **Runtime Detection**: Always check `isNativeProjectRuntimeAvailable` / `isNativeFileSystemAvailable` before issuing native desktop filesystem commands.
 - **Scala Tuning Validation**: `.scl` parsing enforces valid pitch ratios/cents and line formats, rejecting corrupted tuning files.
 - **One Protected-Scope Source**: `collectProtectedScopes` is the only place that decides which brief entries protect anything, and `isProjectWideScope` the only place that decides what "the whole project" means. Batch admission and `getProjectScopedBriefLock` both read them, so a surface that explains a refusal can never name a lock the guard does not enforce.
+- **Agent Asset File Boundary**: `agentAssetFileBoundary` is the only handle-only surface that may drive the native agent asset saga. `pickAndRegister` mints read handles through the native open dialog and read-write handles through the native save dialog, because only the save channel grants write access.
 
 ## Verification
 

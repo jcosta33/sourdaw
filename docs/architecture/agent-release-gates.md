@@ -82,7 +82,20 @@ Schema version 2 carries, per corpus file:
 - `cases[].promptClass` — the case's prompt class; `cases[].class` remains its outcome class.
 - `cases[].oracle.kind: pending` — the placeholder an unsealed class's case carries. A sealed class
   holding a pending oracle is a corpus defect.
-- `cases[].oracle.kind: answer` — a sealed question pins nonempty exact text, a query type, and nonempty substantive scalar facts from one item in a successful cited `project.query` receipt from the same run, project, and revision. Provider prose, capability or recipe reads, empty citations, actions, and mutations cannot substitute for that evidence. Each sealed question corpus contains at least three cases.
+- `cases[].oracle.kind: answer` — a sealed question pins nonempty exact text and the evidence of the
+  shape its `cases[].questionKind` names; an oracle carrying the other shape's evidence is a corpus
+  defect, never read as either. A `descriptive` question pins a query type and nonempty substantive
+  scalar facts from one item in a successful cited `project.query` receipt from the same run,
+  project, and revision, and its answer carries no suggestion. A `suggestion` question pins the
+  `recipe` it describes, `{recipeId, targetName}`, which a successful cited `recipe.discover`
+  receipt from the same run must bind: discovered for the one open-project track of that name and
+  listing that recipe among its candidates. It also pins the `suggestion` the answer offers,
+  `{recipeId, targetId}`, which must equal the answer's own offer for that same track; the exact
+  text includes the offer sentence. Provider prose, capability reads, empty citations, actions, and
+  mutations cannot substitute for that evidence. Each sealed question corpus contains at least
+  three cases, at least three of them descriptive and at least two suggestions.
+- `cases[].questionKind` — a `question` case only, and every one of them: `descriptive` or
+  `suggestion`.
 - `cases[].oracle.invariants` — optional reach bounds on a `proposal` oracle: the project ids the
   batch may affect, the ids it must not touch, and the most commands it may compile to. Ids the
   batch itself mints carry a published creation prefix and belong to no project snapshot, so they

@@ -1,11 +1,10 @@
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { test as base } from '@playwright/test';
-
 import { startCompiledPersistenceServer } from '../../scripts/compiledPersistenceServer';
 import { isBuiltE2eShardRun } from '../../scripts/e2eServerIdentity';
 
+import { test as base } from './e2eTest';
 import warmFirstPaint from './firstPaintWarmup';
 
 const root = realpathSync(fileURLToPath(new URL('../../', import.meta.url)));
