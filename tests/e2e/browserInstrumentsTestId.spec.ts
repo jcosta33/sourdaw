@@ -28,10 +28,10 @@ test.describe('Browser Instruments tab', () => {
         await expect(fermenter).toBeVisible();
         await expect(toaster).toBeVisible();
 
-        await browser.getByRole('button', { name: 'Effects', exact: true }).click();
+        await browser.getByRole('tab', { name: 'Effects', exact: true }).click();
         await expect(fermenter).toHaveCount(0);
 
-        await browser.getByRole('button', { name: 'Instruments', exact: true }).click();
+        await browser.getByRole('tab', { name: 'Instruments', exact: true }).click();
         await expect(fermenter).toBeVisible();
     });
 });

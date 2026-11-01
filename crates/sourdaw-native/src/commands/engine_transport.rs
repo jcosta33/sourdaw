@@ -47,7 +47,8 @@ use daw_engine::transport_map::{
     TransportMaps,
 };
 use daw_engine::{CaptureClockQuality, CaptureClockSnapshot};
-use serde::{Deserialize, Serialize};
+use serde::ser::SerializeMap;
+use serde::{Deserialize, Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};
 
 /// One tempo segment of the arrangement's map, in seconds on the engine clock.
@@ -113,6 +114,41 @@ pub struct TransportMapsApplied {
     pub admitted_batch: u64,
 }
 
+/// A held peak as it crosses the JSON bridge.
+///
+/// JSON cannot carry an infinite number, and `serde_json` turns one into
+/// `null`, which the renderer would read as silence. An output that blew up
+/// is a measurement the meter must show, so an infinite peak travels as the
+/// exact string `"Infinity"` and every other peak stays a plain number. The
+/// renderer's `peakLevel` reader is the other half of this rule. Peaks come
+/// from `f32::max` folds, so they are never NaN.
+struct WirePeak(f64);
+
+impl Serialize for WirePeak {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if self.0 == f64::INFINITY {
+            serializer.serialize_str("Infinity")
+        } else {
+            serializer.serialize_f64(self.0)
+        }
+    }
+}
+
+fn serialize_peak<S: Serializer>(peak: &f64, serializer: S) -> Result<S::Ok, S::Error> {
+    WirePeak(*peak).serialize(serializer)
+}
+
+fn serialize_peak_map<S: Serializer>(
+    peaks: &BTreeMap<String, f64>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    let mut map = serializer.serialize_map(Some(peaks.len()))?;
+    for (strip_id, peak) in peaks {
+        map.serialize_entry(strip_id, &WirePeak(*peak))?;
+    }
+    map.end()
+}
+
 /// Where the engine's transport stands, as one wire payload.
 ///
 /// `running` distinguishes a stopped engine from an engine parked at frame
@@ -161,20 +197,24 @@ pub struct EngineTransportPosition {
     pub tempo: f64,
     pub time_sig_num: u16,
     pub time_sig_denom: u16,
-    /// The engine's held master peak, linear and non-negative. Zero for an
+    /// The engine's held master peak, linear and non-negative, or the string
+    /// `"Infinity"` when the output blew up (see [`WirePeak`]). Zero for an
     /// engine that is not running, which is also what a running engine
     /// handing the device silence reports — `running` is what tells them
     /// apart, exactly as it does for every other number here. When `running`
     /// is false because the render callback has stalled, this and the other
     /// position fields on the payload are the last values that callback
     /// published, not what anyone is currently hearing.
+    #[serde(serialize_with = "serialize_peak")]
     pub master_peak: f64,
     /// Every timeline track strip's own held peak, keyed by the strip id the
     /// renderer knows it by — one entry per track strip the registry holds,
     /// held at the engine like the master. A strip the registry has not
     /// registered is absent from the map, never zero: zero would claim a
     /// reading the engine never published for it, while an absent key says
-    /// plainly that none exists yet.
+    /// plainly that none exists yet. Each value follows the `masterPeak` wire
+    /// rule: linear, non-negative, and `"Infinity"` for a strip that blew up.
+    #[serde(serialize_with = "serialize_peak_map")]
     pub strip_peaks: BTreeMap<String, f64>,
     /// What every native Tuner body last detected, keyed by the device id the
     /// renderer knows it by — one entry per scoring device the registry
@@ -1351,6 +1391,38 @@ mod tests {
         );
 
         assert_eq!(position.master_peak, 0.25);
+    }
+
+    /// JSON has no infinity and `serde_json` writes one as `null`, which the
+    /// renderer reads as silence. A blown-up output must reach it as the
+    /// `"Infinity"` token, and every finite peak must stay a plain number.
+    #[test]
+    fn an_infinite_peak_crosses_the_bridge_as_the_infinity_token() {
+        let wire = serde_json::to_value(EngineTransportPosition {
+            master_peak: f64::INFINITY,
+            strip_peaks: [("a".to_string(), f64::INFINITY), ("b".to_string(), 0.5)]
+                .into_iter()
+                .collect(),
+            ..EngineTransportPosition::default()
+        })
+        .expect("position serializes");
+
+        assert_eq!(wire["masterPeak"], serde_json::json!("Infinity"));
+        assert_eq!(wire["stripPeaks"]["a"], serde_json::json!("Infinity"));
+        assert_eq!(wire["stripPeaks"]["b"], serde_json::json!(0.5));
+    }
+
+    #[test]
+    fn a_finite_peak_stays_a_json_number() {
+        let wire = serde_json::to_value(EngineTransportPosition {
+            master_peak: 0.25,
+            strip_peaks: [("a".to_string(), 0.0)].into_iter().collect(),
+            ..EngineTransportPosition::default()
+        })
+        .expect("position serializes");
+
+        assert_eq!(wire["masterPeak"], serde_json::json!(0.25));
+        assert_eq!(wire["stripPeaks"]["a"], serde_json::json!(0.0));
     }
 
     /// Every field of a reading comes from the one snapshot the engine

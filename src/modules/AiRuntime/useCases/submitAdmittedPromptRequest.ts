@@ -336,11 +336,20 @@ export async function submitAdmittedPromptRequest(
             const answerText = describePlanningOutcome(planningOutcome);
             if (answerText === null) {
                 notifyAiChange(NO_PROMPT_ACTIONS_NOTICE, []);
+            } else if (planningOutcome.suggestion === undefined) {
+                notifyAiAnswer({
+                    prompt,
+                    text: answerText,
+                    evidence: planningOutcome.evidence,
+                    projectIdentity: answeredProjectIdentity,
+                    projectRevision: planned.projectRevision,
+                });
             } else {
                 notifyAiAnswer({
                     prompt,
                     text: answerText,
                     evidence: planningOutcome.evidence,
+                    suggestion: planningOutcome.suggestion,
                     projectIdentity: answeredProjectIdentity,
                     projectRevision: planned.projectRevision,
                 });

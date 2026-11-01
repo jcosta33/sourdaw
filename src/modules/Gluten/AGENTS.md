@@ -26,6 +26,6 @@ Multi-topology compressor audio effect (VCA, Opto, FET, Diode models with Thrust
 
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
-- `pnpm test:run <changed-spec>`
-- `pnpm cargo:test --package daw-dsp gluten`
+- `pnpm guard --profile focused -- pnpm test:run <changed-spec>`
+- `pnpm guard --profile focused -- pnpm cargo:test --package daw-dsp gluten`
 - PR CI checks module boundaries; inspect that result after cross-module changes.

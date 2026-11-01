@@ -13,11 +13,12 @@ import {
     readCheckpointAudioVersionKey,
 } from '../models/CheckpointAudioRetention';
 
+import { isAudioBufferHeld } from './audioBufferResidencyHolds';
 import {
     fetchDurableOwnedAudioBufferIds,
     type DurableAudioBufferOwnershipSnapshot,
 } from './durableAudioBufferOwnership';
-import { readLiveAudioBufferReferences } from './liveAudioBufferReferences';
+import { readHistoryAudioBufferReferences, readLiveAudioBufferReferences } from './liveAudioBufferReferences';
 import {
     createPreparedAudioBufferLifecycle,
     PreparedAudioStoragePhaseUnavailableError,
@@ -104,20 +105,53 @@ function isValidExportedAudioBuffer(data: ExportedAudioBuffer): boolean {
 
 // Main AudioBuffer cache. Non-project buffers are LRU bounded; buffers needed by
 // the active arrangement stay resident because scheduling reads are synchronous:
-// those a project load pinned, and those the arrangement references now.
+// those a project load pinned, those the arrangement references now, and those
+// an in-flight operation holds. A buffer only the undo history names stays until
+// its PCM is durably stored; after that the replay rehydrates it from storage.
 const MAX_AUDIO_BUFFER_ENTRIES = 64;
 const cache = new Map<string, AudioBuffer>();
 const pinnedBufferIds = new Set<string>();
 const residentFreezeProjectIdById = new Map<string, number | undefined>();
 
-function findLeastRecentEvictableId(): string | undefined {
+type EvictionProtection = (id: string) => boolean;
+
+function isRehydratableFromStorage(id: string): boolean {
+    const source = durabilitySourceById.get(id);
+    return source?.status === 'durable' && source.isAuthoritative() && source.identity.status === 'authenticated';
+}
+
+/** Reads the injected references once for a whole eviction pass. */
+function readEvictionProtection(): EvictionProtection {
     const liveReferences = readLiveAudioBufferReferences();
+    const historyReferences = readHistoryAudioBufferReferences();
+    return (id) =>
+        pinnedBufferIds.has(id) ||
+        isAudioBufferHeld(id) ||
+        liveReferences.has(id) ||
+        (historyReferences.has(id) && !isRehydratableFromStorage(id));
+}
+
+function findLeastRecentEvictableId(isProtected: EvictionProtection): string | undefined {
     for (const key of cache.keys()) {
-        if (!pinnedBufferIds.has(key) && !liveReferences.has(key)) {
+        if (!isProtected(key)) {
             return key;
         }
     }
     return undefined;
+}
+
+function evictUnprotectedWhile(isOverCapacity: () => boolean): void {
+    if (!isOverCapacity()) {
+        return;
+    }
+    const isProtected = readEvictionProtection();
+    while (isOverCapacity()) {
+        const lruKey = findLeastRecentEvictableId(isProtected);
+        if (lruKey === undefined) {
+            return;
+        }
+        evictCachedBuffer(lruKey);
+    }
 }
 
 function writeAudioCacheEntry(id: string, buffer: AudioBuffer, freezeProjectId?: number, ownershipKnown = false): void {
@@ -125,13 +159,7 @@ function writeAudioCacheEntry(id: string, buffer: AudioBuffer, freezeProjectId?:
     if (cache.has(id)) {
         cache.delete(id);
     } else {
-        while (cache.size >= MAX_AUDIO_BUFFER_ENTRIES) {
-            const lruKey = findLeastRecentEvictableId();
-            if (lruKey === undefined) {
-                break;
-            }
-            evictCachedBuffer(lruKey);
-        }
+        evictUnprotectedWhile(() => cache.size >= MAX_AUDIO_BUFFER_ENTRIES);
     }
     cache.set(id, buffer);
     if (ownershipKnown) {
@@ -151,13 +179,7 @@ function writePinnedBufferIds(ids: readonly string[]): void {
     for (const id of ids) {
         pinnedBufferIds.add(id);
     }
-    while (cache.size > MAX_AUDIO_BUFFER_ENTRIES) {
-        const lruKey = findLeastRecentEvictableId();
-        if (lruKey === undefined) {
-            break;
-        }
-        evictCachedBuffer(lruKey);
-    }
+    evictUnprotectedWhile(() => cache.size > MAX_AUDIO_BUFFER_ENTRIES);
 }
 
 function replacePinnedBufferIds(ids: readonly string[]): void {
@@ -1652,6 +1674,70 @@ async function prepareBuffersFromIdb({
     };
 }
 
+type StoredPcmRehydration = {
+    buffer: AudioBuffer;
+    freezeProjectId: number | undefined;
+    id: string;
+    metadataKnown: boolean;
+    source: CachedAudioDurabilitySource;
+};
+
+async function readStoredPcmRehydration(tx: IDBTransaction, id: string): Promise<StoredPcmRehydration | undefined> {
+    const source = durabilitySourceById.get(id);
+    if (source?.identity.status !== 'authenticated') {
+        return undefined;
+    }
+    const [data, meta] = await Promise.all([
+        awaitRequest(tx.objectStore(STORE_NAME).get(id) as IDBRequest<unknown>),
+        awaitRequest(tx.objectStore(META_STORE_NAME).get(id) as IDBRequest<BufferMeta | undefined>),
+    ]);
+    if (preparedAudioBufferLifecycle.shouldSuppressNonLeaseRead(id, readPreparedOwner(meta))) {
+        return undefined;
+    }
+    if (!isValidSerializedBuffer(data) || readPersistentPcmRevision(meta) !== source.identity.revision) {
+        return undefined;
+    }
+    return {
+        buffer: createRuntimeBuffer(data),
+        freezeProjectId: meta?.freezeProjectId,
+        id,
+        metadataKnown: meta !== undefined,
+        source,
+    };
+}
+
+/**
+ * Puts back the PCM eviction let go because storage holds it durably, for an
+ * undo or redo about to replay an entry that names it. A record whose durable
+ * source changed in the meantime (removed, rewritten) stays out. A failed read
+ * leaves the buffer missing: the replay still applies, and the clip sounds once
+ * its PCM is cached again.
+ */
+async function rehydrateEvictedDurableBuffers(ids: readonly string[]): Promise<void> {
+    const evictedIds = [...new Set(ids)].filter((id) => !cache.has(id) && isRehydratableFromStorage(id));
+    if (evictedIds.length === 0) {
+        return;
+    }
+    let staged: Array<StoredPcmRehydration | undefined>;
+    try {
+        const db = await openDb();
+        const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readonly');
+        staged = await Promise.all(evictedIds.map((id) => readStoredPcmRehydration(tx, id)));
+    } catch (error) {
+        logger.warn('[audioBufferCache] Stored audio could not be rehydrated for an undo replay', {
+            ids: evictedIds,
+            error,
+        });
+        return;
+    }
+    for (const record of staged) {
+        if (!record || cache.has(record.id) || durabilitySourceById.get(record.id) !== record.source) {
+            continue;
+        }
+        audioCacheSet(record.id, record.buffer, record.freezeProjectId, record.metadataKnown);
+    }
+}
+
 type GarbageCollectFreezeFilesInput = {
     activeIds: Set<string>;
     projectId: number;
@@ -2312,6 +2398,8 @@ export const audioBufferCache = {
     }): Promise<PreparedStoredAudioBuffers | null> {
         return prepareBuffersFromIdb({ context, ids, shouldContinue });
     },
+
+    rehydrateEvicted: rehydrateEvictedDurableBuffers,
 
     clear(): void {
         cancelAllImportCandidates();

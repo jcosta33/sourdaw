@@ -184,7 +184,6 @@ const ENGINE_SOURCES: Record<NativeDspDeviceType, DeviceEngines> = {
     'transient-shaper': singleEngine('crates/daw-dsp/src/toaster/transient.rs'),
 };
 
-const SERVICES = 'src/modules/AudioEngine/services';
 const WORKLETS = 'src/modules/AudioEngine/worklets';
 
 /**
@@ -204,7 +203,7 @@ type NameTranslation =
     | { readonly kind: 'camelToSnake'; readonly source: string; readonly functionName: string };
 
 const PARAM_NAME_TRANSLATIONS: Record<NativeDspDeviceType, NameTranslation> = {
-    fermenter: { kind: 'camelToSnake', source: `${SERVICES}/fermenterProcessor.ts`, functionName: 'camelToSnake' },
+    fermenter: { kind: 'camelToSnake', source: `${WORKLETS}/fermenterProcessor.ts`, functionName: 'camelToSnake' },
     // Pad-scoped writes go through `set_pad_param` and PAD_PARAM_MAP; the
     // device-level `param` message automation reads `TOASTER_KIT_PARAM_NAMES`,
     // which the worklet now imports from `models/` rather than keeping its own
@@ -214,7 +213,7 @@ const PARAM_NAME_TRANSLATIONS: Record<NativeDspDeviceType, NameTranslation> = {
         source: 'src/modules/AudioEngine/models/ToasterKitParamNames.ts',
         constName: 'TOASTER_KIT_PARAM_NAMES',
     },
-    levain: { kind: 'table', source: `${SERVICES}/levainProcessor.ts`, constName: 'PARAM_MAP' },
+    levain: { kind: 'table', source: `${WORKLETS}/levainProcessor.ts`, constName: 'PARAM_MAP' },
     'builtin-crumbs': { kind: 'identity' },
     // Grand Boule's two processors share one core, and the map lives there.
     'grand-boule': { kind: 'table', source: `${WORKLETS}/grandBouleEngineCore.ts`, constName: 'PARAM_MAP' },
@@ -230,8 +229,8 @@ const PARAM_NAME_TRANSLATIONS: Record<NativeDspDeviceType, NameTranslation> = {
         source: 'src/modules/AudioEngine/models/CrustDspParamNames.ts',
         constName: 'CRUST_DSP_PARAM_NAMES',
     },
-    bacteria: { kind: 'table', source: `${SERVICES}/bacteriaProcessor.ts`, constName: 'PARAM_MAP' },
-    grinder: { kind: 'table', source: `${SERVICES}/grinderProcessor.ts`, constName: 'PARAM_MAP' },
+    bacteria: { kind: 'table', source: `${WORKLETS}/bacteriaProcessor.ts`, constName: 'PARAM_MAP' },
+    grinder: { kind: 'table', source: `${WORKLETS}/grinderProcessor.ts`, constName: 'PARAM_MAP' },
     proof: { kind: 'identity' },
     'dutch-oven': { kind: 'identity' },
     'native-scoring': { kind: 'identity' },
@@ -239,7 +238,7 @@ const PARAM_NAME_TRANSLATIONS: Record<NativeDspDeviceType, NameTranslation> = {
     'transient-shaper': {
         kind: 'numericArguments',
         source: 'crates/daw-dsp/src/toaster/transient.rs',
-        processor: `${SERVICES}/transientShaperProcessor.ts`,
+        processor: `${WORKLETS}/transientShaperProcessor.ts`,
     },
 };
 

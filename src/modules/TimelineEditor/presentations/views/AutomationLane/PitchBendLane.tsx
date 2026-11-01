@@ -120,11 +120,21 @@ export const PitchBendLane = ({ clipId, beatWidth }: PitchBendLaneProps): ReactE
             }
         };
 
+        // Moves only rewrite this row in place, so putting its press-time beat and value back is
+        // the whole revert; nothing was committed, so there is nothing to undo.
+        const onCancel = () => {
+            setDragId(null);
+            if (origPoint) {
+                movePitchBend(clipId, pbId, origBeat, origValue);
+            }
+        };
+
         beginDrag({
             pointerId: event.pointerId,
             captureTarget: event.currentTarget,
             move: onMove,
             commit: onCommit,
+            cancel: onCancel,
         });
         setDragId(pbId);
     };

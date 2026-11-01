@@ -1,5 +1,20 @@
 # Lesson library: test and evidence validity
 
+### 2026-11-01 — a pinned clip-protection verdict no ordinary caller read (#4929, introduced by PR #3905)
+
+PR #3905 (`7af5520405`) added the clip protection reader with a `complete` flag, and its spec pinned
+`excluding Alpha and Omega` as incomplete when only the whole-name clip exists. Only the protected
+clips reached the proposal scope; no caller refused on the flag. PR #4881 (`a20f8c6cda`) consumed it
+inside the transform-compile branch alone, and PR #5698 (`237dd9616b`) added the ordinary-route
+refusal reading only track protections, so a direct `setAllVelocities` beside that exclusion was
+admitted. The historical review stances, prompts and tiers are unestablished.
+
+A reader verdict pinned in its own spec proves nothing about admission. For every flag a protection
+reader returns, drive the ordinary bridge with a provider call and the same request: the
+unresolved list, an unquoted whole-name collision, a quoted literal name and an edit of the
+protected clip itself. Assert empty actions and the refusal reason. Remove the final consumer of
+the flag on that route; the bridge case must fail.
+
 ### 2026-10-30 — prepared-scope fixtures hid missing Prompt Bar budget admission (introduced by PR #2648)
 
 PR #1986 made `prepareStemImport` reject absent local-work admission, then PR #2648 introduced the Prompt Bar submission route without forwarding one. PR #4479 kept that path. The existing recovery fixture supplied raw import actions and mocked `planPromptActions`, so it could test receipt settlement while never reaching the file-preparation gate. Public #2648 review text covers recovery and terminal behavior; exact private prompts and tiers are unknown.
@@ -186,6 +201,20 @@ deadline. Shorten case-local render length while keeping the scope, the metric s
 assertion that the raw receipt exceeds `maxReceiptBytesPerCall`. Fewer metrics or tracks drop the
 receipt below the bound and stop observing it; a timeout increase hides the cost instead of
 bounding it.
+
+### 2026-11-01 — a dev-server resolve waited on whole-app dependency discovery (introduced by PR #5964)
+
+PR #5964 (`7f1b87369d`) added the `viteAutomergeStreamingEntry.spec.ts` case that creates a real
+Vite dev server and asks it to resolve `@automerge/automerge`. With dependency discovery on, that
+first resolve waits for the optimizer to crawl the whole app and answers with the pre-bundle id.
+Locally that took about 0.7 s. On a loaded Unit shard (Gate run 41315957312, shard 3, PR #6007 head
+`6465cd9df5`) it ran past the 5,000 ms default and failed an unrelated head. Review checked what
+the resolve returned but not what the resolve waited on.
+
+When a spec starts a real dev server, name what its first request awaits. Turn off what the
+assertion does not observe (`optimizeDeps: { noDiscovery: true, include: [] }` here), and assert
+the exact source file the resolve pipeline chose instead of an inequality. A timeout increase or a
+warm-up call keeps the crawl and only hides its cost.
 
 ### 2026-10-30 — source-clock fixtures must match hydrated project state (PR #2169)
 

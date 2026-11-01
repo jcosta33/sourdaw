@@ -216,8 +216,6 @@ describe('check-dependency-boundaries', () => {
             'src/modules/Foo/index.cts',
             'src/modules/Foo/index.d.ts',
             'src/modules/Foo/Index.D.MTS',
-            'src/modules/Common/Foo/Index.tsx',
-            'src/modules/Supporting/Foo/INDEX.JS',
             'src\\modules\\Foo\\Index.TSX',
         ];
 
@@ -231,6 +229,8 @@ describe('check-dependency-boundaries', () => {
             'src/modules/Foo/events/index.js',
             'src/modules/Foo/stores/Index.d.ts',
             'src/modules/Foo/presentations/views/index.mts',
+            'src/modules/Common/Foo/Index.tsx',
+            'src/modules/Supporting/Foo/INDEX.JS',
         ];
 
         for (const filePath of contractEntries) {
@@ -240,13 +240,36 @@ describe('check-dependency-boundaries', () => {
         expect(isUseCaseBarrel('src\\modules\\Foo\\useCases\\index.ts')).toBe(true);
     });
 
-    it('should capture namespaced modules as distinct modules', () => {
+    it('should treat a Common folder under src/modules as an ordinary module name', () => {
         const ruleConfig = mainConfig.forbidden.find(
             (candidate: { name: string }) => candidate.name === 'cross-module-index-only'
         );
         const match = new RegExp(ruleConfig.from.path).exec('src/modules/Common/Foo/useCases/run.ts');
 
-        expect(match?.slice(1)).toEqual(['src/modules/Common/', 'Foo']);
+        expect(match?.slice(1)).toEqual(['src/modules/', 'Common']);
+    });
+
+    it('should reject a cross-module import of a non-barrel path and accept barrels and own internals', () => {
+        const ruleConfig = mainConfig.forbidden.find(
+            (candidate: { name: string }) => candidate.name === 'cross-module-index-only'
+        );
+        const from = 'src/modules/A/useCases/x.ts';
+        const fromMatch = new RegExp(ruleConfig.from.path).exec(from);
+        const [prefix, moduleName] = fromMatch?.slice(1) ?? [];
+        const sameModulePattern = ruleConfig.to.pathNot[0].replace('$1', prefix).replace('$2', moduleName);
+        const violates = (to: string): boolean =>
+            new RegExp(ruleConfig.to.path).test(to) &&
+            ![sameModulePattern, ...ruleConfig.to.pathNot.slice(1)].some((pattern: string) =>
+                new RegExp(pattern).test(to)
+            );
+
+        expect(fromMatch).not.toBeNull();
+        expect(violates('src/modules/B/models/Thing/Thing.ts')).toBe(true);
+        expect(violates('src/modules/B/repositories/read.ts')).toBe(true);
+        expect(violates('src/modules/B/useCases/helper.ts')).toBe(true);
+        expect(violates('src/modules/B/useCases/index.ts')).toBe(false);
+        expect(violates('src/modules/B/presentations/views/index.ts')).toBe(false);
+        expect(violates('src/modules/A/models/Thing/Thing.ts')).toBe(false);
     });
 
     it('should include tests outside modules and global test setup', () => {
@@ -310,7 +333,14 @@ describe('check-dependency-boundaries', () => {
         );
 
         expect(new RegExp(moduleRule.to.path).test('src/modules/Bar/useCases/run.ts')).toBe(true);
+        expect(new RegExp(moduleRule.to.path).test('src/modules/AudioEngine/workers/grandBouleEngineWorker.ts')).toBe(
+            true
+        );
+        expect(new RegExp(moduleRule.to.path).test('src/modules/AudioEngine/worklets/wasmView.ts')).toBe(false);
         expect(new RegExp(desktopIpcRule.to.path).test('/node_modules/.pnpm/@tauri-apps/api/index.js')).toBe(true);
+        expect(new RegExp(desktopIpcRule.from.path).test('src/modules/A/worklets/processor.ts')).toBe(true);
+        expect(new RegExp(desktopIpcRule.to.path).test('src/helpers/clamp.ts')).toBe(true);
+        expect(new RegExp(desktopIpcRule.to.path).test('src/utils/desktopBridge.ts')).toBe(true);
     });
 
     it('should block reverse imports into AudioEngine worklets while keeping the Yeast Worker client separate', () => {
@@ -418,18 +448,16 @@ describe('check-dependency-boundaries', () => {
             'src/components/TauriClient.tsx',
             'src/app/tauriClient.ts',
             'src/routes/tauriClient.ts',
-            'src/shared/tauriClient.ts',
+            'src/engine/tauriClient.ts',
             'src/helpers/tauriClient.ts',
             'src/types/tauriClient.d.ts',
             'src/utils/otherBridge.ts',
             'src/utils/__tests__/other.spec.ts',
         ];
-        const allowedRepositoryOrigins = [
-            'src/modules/Foo/repositories/read.ts',
+        const allowedRepositoryOrigins = ['src/modules/Foo/repositories/read.ts'];
+        const nestedRepositoryOrigins = [
             'src/modules/Common/Foo/repositories/read.ts',
             'src/modules/Supporting/Foo/repositories/read.ts',
-        ];
-        const nestedRepositoryOrigins = [
             'src/modules/Foo/useCases/repositories/tauriClient.ts',
             'src/modules/Foo/presentations/repositories/tauriClient.ts',
             'src/modules/Foo/repositoriesSibling/tauriClient.ts',
@@ -500,6 +528,40 @@ describe('check-dependency-boundaries', () => {
         expect(violates('src/modules/Foo/useCases/__tests__/run.spec.ts', resolvedTauriPath)).toBe(true);
         expect(violates('src/modules/Foo/useCases/run.ts', 'src/utils/desktopBridge.ts')).toBe(true);
         expect(violates('src/modules/Foo/repositories/read.ts', 'src/utils/desktopBridge.ts')).toBe(false);
+    });
+
+    it('should treat only src/modules/<Module>/repositories as a repository surface', () => {
+        let repositoryRoot: string | undefined;
+
+        try {
+            repositoryRoot = mkdtempSync(join(tmpdir(), 'check-dependency-boundaries-repository-root-'));
+            const vendorExport = "export type { InvokeArgs } from '@tauri-apps/api/core';\n";
+            const moduleRepository = join(repositoryRoot, 'src/modules/Foo/repositories');
+            const namespacedRepository = join(repositoryRoot, 'src/modules/Common/Foo/repositories');
+            mkdirSync(moduleRepository, { recursive: true });
+            mkdirSync(namespacedRepository, { recursive: true });
+            writeFileSync(join(moduleRepository, 'direct.ts'), vendorExport);
+            writeFileSync(join(namespacedRepository, 'direct.ts'), vendorExport);
+            const consumer = [
+                "import type { InvokeArgs } from '../repositories/direct';",
+                'export type Consumed = InvokeArgs;',
+                '',
+            ].join('\n');
+            mkdirSync(join(repositoryRoot, 'src/modules/Foo/useCases'), { recursive: true });
+            mkdirSync(join(repositoryRoot, 'src/modules/Common/Foo/useCases'), { recursive: true });
+            writeFileSync(join(repositoryRoot, 'src/modules/Foo/useCases/consume.ts'), consumer);
+            writeFileSync(join(repositoryRoot, 'src/modules/Common/Foo/useCases/consume.ts'), consumer);
+
+            const vendorFiles = findStaticGuardFindings(repositoryRoot)
+                .filter(({ reason }) => reason.includes('Tauri vendor type'))
+                .map(({ file }) => file);
+
+            expect(vendorFiles).toEqual(['src/modules/Foo/repositories/direct.ts']);
+        } finally {
+            if (repositoryRoot) {
+                rmSync(repositoryRoot, { force: true, recursive: true });
+            }
+        }
     });
 
     it('should reject Tauri vendor types crossing repository public surfaces', () => {

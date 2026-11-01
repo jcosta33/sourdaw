@@ -32,7 +32,7 @@ vi.mock('../telemetryAllocator', async () => {
     return { ...actual, telemetryAllocator: { allocateSlot: vi.fn(() => null), releaseSlot: vi.fn() } };
 });
 
-vi.mock('../../services/bacteriaProcessor.ts?worker&url', () => ({ default: 'bacteria-processor-url' }));
+vi.mock('../../worklets/bacteriaProcessor.ts?worker&url', () => ({ default: 'bacteria-processor-url' }));
 
 describe('isBacteriaDevice', () => {
     it('should return true only for the bacteria device type string', () => {

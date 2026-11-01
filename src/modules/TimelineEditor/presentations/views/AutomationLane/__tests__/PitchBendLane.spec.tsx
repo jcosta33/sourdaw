@@ -463,6 +463,50 @@ describe('PitchBendLane', () => {
                 expect(pushUndoEntry).toHaveBeenCalledTimes(1);
             });
 
+            it('releasing over empty lane after an Escape cancel adds no point', () => {
+                seedPoint();
+                const { container } = render(<PitchBendLane {...defaultProps} />);
+                const point = getPoint(container);
+                const lane = screen.getByRole('group');
+
+                fireEvent.pointerDown(point, { pointerId: 2, button: 0, clientX: 8, clientY: 76 });
+                fireEvent.pointerMove(point, { pointerId: 2, clientX: 88, clientY: 20 });
+                fireEvent.keyDown(window, { key: 'Escape' });
+
+                // The release lands on empty lane, so its click targets the lane container.
+                fireEvent.pointerUp(lane, { pointerId: 2, button: 0, clientX: 300, clientY: 40 });
+                fireEvent.click(lane, { button: 0, clientX: 300, clientY: 40 });
+
+                expect(laneMocks.midiState.pitchBendByClipId['clip-1']).toEqual([
+                    { id: 'pb-a', value: 20, beat: 0, channel: 0 },
+                ]);
+                expect(pushUndoEntry).not.toHaveBeenCalled();
+            });
+
+            it('Escape mid-drag puts the point back where it was pressed and records no undo entry', () => {
+                seedPoint();
+                const { container } = render(<PitchBendLane {...defaultProps} />);
+                const point = getPoint(container);
+
+                fireEvent.pointerDown(point, { pointerId: 2, button: 0, clientX: 8, clientY: 76 });
+                fireEvent.pointerMove(point, { pointerId: 2, clientX: 88, clientY: 20 });
+                expect(readPoint()).toEqual(expect.objectContaining({ beat: draggedBeat, value: draggedValue }));
+                expect(point.className).toContain('cursor-grabbing');
+
+                fireEvent.keyDown(window, { key: 'Escape' });
+
+                expect(laneMocks.midiState.pitchBendByClipId['clip-1']).toEqual([
+                    { id: 'pb-a', value: 20, beat: 0, channel: 0 },
+                ]);
+                expect(pushUndoEntry).not.toHaveBeenCalled();
+                expect(point.className).not.toContain('cursor-grabbing');
+
+                fireEvent.pointerMove(point, { pointerId: 2, clientX: 208, clientY: 40 });
+                fireEvent.pointerUp(point, { pointerId: 2, clientX: 208, clientY: 40 });
+                expect(readPoint()).toEqual(expect.objectContaining({ beat: 0, value: 20 }));
+                expect(pushUndoEntry).not.toHaveBeenCalled();
+            });
+
             it('losing window focus finalizes a latched drag', () => {
                 seedPoint();
                 const { container } = render(<PitchBendLane {...defaultProps} />);

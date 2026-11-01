@@ -5,6 +5,8 @@ import { digest } from '#/utils/canonicalDigest';
 import { type AnswerOnsets } from '../models/AnswerEvidence';
 import { ANSWER_RESPOND_MAX_COMPOSED_CHARACTERS, type PlanningAnswer } from '../models/AnswerRespond';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import { type AnswerSuggestion } from '../models/PlanningOutcome';
+import { formatAnswerNumber, quoteSourceData } from '../services/answerSourceFormat';
 
 import {
     type AnswerMeasurement,
@@ -14,6 +16,7 @@ import {
     type AnswerRespondArguments,
     type AnswerStatement,
 } from './answerContractTypes';
+import { CANONICAL_ROLE_OPTIONS, CANONICAL_ROLE_TO_RECIPE_ROLE } from './canonicalRoleFamilies';
 import { type RecipeDiscoveryReceiptData } from './discoverMixRecipes';
 import { objectiveMetricProjection, OBJECTIVE_METRIC_LABELS } from './objectiveMetricProjection';
 
@@ -43,17 +46,6 @@ const LIMITATIONS = {
     'bounded-evidence': 'This answer is limited to the available bounded evidence.',
     'perception-not-inferred': 'These objective measurements do not establish perceived sound quality or its cause.',
 };
-/** Names are attributed data, including digits, units and Markdown metacharacters. */
-function quoteSourceData(value: string): string {
-    return `“${value.replaceAll(/[\\`*_{}[\]()<>!#|~]/g, '\\$&').replaceAll(/[\r\n]/g, ' ')}”`;
-}
-function formatAnswerNumber(value: number): string {
-    if (!Number.isFinite(value)) {
-        return 'unavailable';
-    }
-    const rounded = Math.round(value * 100) / 100;
-    return String(Object.is(rounded, -0) ? 0 : rounded);
-}
 function formatSubjectLabel(authority: AnswerRequestAuthority, id: string): string {
     if (id === 'master') {
         return 'Master output';
@@ -249,6 +241,117 @@ function recipeText(recipe: RecipeDiscoveryReceiptData['candidates'][number]): s
 
 type StatementText = { text: string; callIds: string[] };
 
+/** A recipe is applied to one track's own chain; a bus, folder or the master is not offered as a proposal. */
+const SUGGESTION_TRACK_KINDS: ReadonlySet<string> = new Set(['audio', 'midi']);
+
+type SuggestionTrack = AnswerRequestAuthority['context']['tracks'][number];
+
+/**
+ * The discovered track an offer may change: one audio or MIDI track the frozen read holds, inside the
+ * subjects the frozen interpretation names. A discovery target alone is the provider's choice, so an
+ * interpretation naming no subject offers nothing and an answer never offers a track it was not asked about.
+ */
+function readSuggestionTrack(
+    targetId: string | undefined,
+    authority: AnswerRequestAuthority
+): SuggestionTrack | undefined {
+    const track = authority.context.tracks.find((entry) => entry.id === targetId);
+    if (track === undefined || !SUGGESTION_TRACK_KINDS.has(track.kind)) {
+        return undefined;
+    }
+    return interpretedTargetIds(authority).includes(track.id) ? track : undefined;
+}
+
+/**
+ * Whether the discovery's role is one the track serves: read from the track itself, or argued for a track
+ * whose own canonical role gives no recipe role. An argued role over the track's own would offer one role's
+ * recipe for another role's track.
+ */
+function servesTrackRole(
+    role: RecipeDiscoveryReceiptData['role'],
+    track: SuggestionTrack
+): role is RecipeDiscoveryReceiptData['role'] & { source: AnswerSuggestion['roleSource'] } {
+    if (role.source !== 'argument') {
+        return role.source === 'target';
+    }
+    const canonicalRole = CANONICAL_ROLE_OPTIONS.find((option) => option === track.canonicalRole?.role);
+    const ownRole = canonicalRole === undefined ? null : CANONICAL_ROLE_TO_RECIPE_ROLE[canonicalRole];
+    return ownRole === null || ownRole === role.recipeRole;
+}
+
+/**
+ * The proposal an answer may offer, read only from the admitted discovery receipt and the frozen
+ * project read: exactly one recipe statement, whose discovery named one audio or MIDI track that read
+ * holds and resolved a role the recipe is authored for. Several recipes, an untargeted discovery or
+ * any other scope offer nothing, because the offer must say which one change it prepares.
+ */
+function readAnswerSuggestion(
+    statements: readonly AnswerStatement[],
+    intake: AdmittedAnswerIntake,
+    reads: ReadonlyMap<string, AdmittedAnswerRead>
+): AnswerSuggestion | null {
+    const recipeStatements = statements.filter(
+        (statement): statement is Extract<AnswerStatement, { kind: 'recipe' }> => statement.kind === 'recipe'
+    );
+    const statement = recipeStatements[0];
+    if (recipeStatements.length !== 1 || statement === undefined) {
+        return null;
+    }
+    const read = reads.get(statement.callId);
+    if (read?.source.kind !== 'recipe') {
+        return null;
+    }
+    const discovery = read.source.value;
+    const candidate = discovery.candidates.find((entry) => entry.id === statement.recipeId);
+    const track = readSuggestionTrack(discovery.target?.id, intake.authority);
+    const { role } = discovery;
+    if (
+        candidate === undefined ||
+        track === undefined ||
+        role.recipeRole === null ||
+        !servesTrackRole(role, track) ||
+        !candidate.roles.includes(role.recipeRole)
+    ) {
+        return null;
+    }
+    return {
+        recipeId: candidate.id,
+        recipeTitle: candidate.title,
+        targetId: track.id,
+        targetName: track.name,
+        recipeRole: role.recipeRole,
+        roleSource: role.source,
+    };
+}
+
+/**
+ * The answer's text, with the offer stated after the recipe it prepares. Composed statements keep the
+ * document's order, so the recipe's paragraph sits at the recipe statement's index. An offer that would
+ * push the text past the composed bound is dropped and the answer kept as it was, so offering a change
+ * never costs the user an answer that fits.
+ */
+function composeAnswerText(
+    resolved: readonly StatementText[],
+    statements: readonly AnswerStatement[],
+    suggestion: AnswerSuggestion | null
+): { text: string } | { text: string; suggestion: AnswerSuggestion } {
+    const text = resolved.map((statement) => statement.text).join('\n\n');
+    if (suggestion === null) {
+        return { text };
+    }
+    const offerIndex = statements.findIndex((entry) => entry.kind === 'recipe');
+    const offered = resolved
+        .map((statement, index) =>
+            index === offerIndex ? `${statement.text} ${describeSuggestionOffer(suggestion)}` : statement.text
+        )
+        .join('\n\n');
+    return offered.length > ANSWER_RESPOND_MAX_COMPOSED_CHARACTERS ? { text } : { text: offered, suggestion };
+}
+
+function describeSuggestionOffer(suggestion: AnswerSuggestion): string {
+    return `Choose Propose this to prepare it for ${quoteSourceData(suggestion.targetName)} as a proposal, using the middle of each authored window; nothing changes until you approve it.`;
+}
+
 function composeDifference(
     statement: Extract<AnswerStatement, { kind: 'difference' }>,
     intake: AdmittedAnswerIntake,
@@ -437,6 +540,34 @@ function coversInterpretedTargets(statements: AnswerStatement[], authority: Answ
     return interpretedTargetIds(authority).every((id) => targets.has(id));
 }
 
+/** The limitation that answers in place of every statement, if the frozen measured question cannot be answered. */
+function readAnswerLimitation(
+    authority: AnswerRequestAuthority,
+    completeMeasurement: boolean,
+    unsupportedTiming: boolean
+): 'timing-unavailable' | 'measurement-unavailable' | null {
+    if (unsupportedTiming) {
+        return 'timing-unavailable';
+    }
+    if (authority.kind === 'measured-audio' && !completeMeasurement) {
+        return 'measurement-unavailable';
+    }
+    return null;
+}
+
+/** The document's statements composed in order, or the one limitation that answers in place of them all. */
+function composeStatements(
+    statements: readonly AnswerStatement[],
+    intake: AdmittedAnswerIntake,
+    reads: ReadonlyMap<string, AdmittedAnswerRead>,
+    limitation: keyof typeof LIMITATIONS | null
+): Array<StatementText | null> {
+    if (limitation !== null) {
+        return [{ text: LIMITATIONS[limitation], callIds: [] }];
+    }
+    return statements.map((statement) => composeStatement(statement, intake, reads));
+}
+
 /** Every factual clause and calculation is application-owned; provider input selects finite references only. */
 export function composeMeasuredAnswer(input: {
     document: AnswerRespondArguments;
@@ -469,18 +600,8 @@ export function composeMeasuredAnswer(input: {
     ) {
         return rejection;
     }
-    const missingMeasurement = authority.kind === 'measured-audio' && !completeMeasurement;
-    let statements: Array<StatementText | null>;
-    if (missingMeasurement || unsupportedTiming) {
-        statements = [
-            {
-                text: unsupportedTiming ? LIMITATIONS['timing-unavailable'] : LIMITATIONS['measurement-unavailable'],
-                callIds: [],
-            },
-        ];
-    } else {
-        statements = document.statements.map((statement) => composeStatement(statement, intake, reads));
-    }
+    const limitation = readAnswerLimitation(authority, completeMeasurement, unsupportedTiming);
+    const statements = composeStatements(document.statements, intake, reads, limitation);
     if (statements.some((statement) => statement === null)) {
         return rejection;
     }
@@ -494,12 +615,11 @@ export function composeMeasuredAnswer(input: {
         }
         evidence.push({ callId, toolName: receipt.toolName, summary: receipt.summary });
     }
-    const text = resolved.map((statement) => statement.text).join('\n\n');
-    return {
-        status: 'accepted',
-        answer: {
-            text: text.length > ANSWER_RESPOND_MAX_COMPOSED_CHARACTERS ? LIMITATIONS['bounded-evidence'] : text,
-            evidence,
-        },
-    };
+    // A limitation replaces the statements, so beside one there is no recipe to offer.
+    const offer = limitation === null ? readAnswerSuggestion(document.statements, intake, reads) : null;
+    const composed = composeAnswerText(resolved, document.statements, offer);
+    if (composed.text.length > ANSWER_RESPOND_MAX_COMPOSED_CHARACTERS) {
+        return { status: 'accepted', answer: { text: LIMITATIONS['bounded-evidence'], evidence } };
+    }
+    return { status: 'accepted', answer: { ...composed, evidence } };
 }

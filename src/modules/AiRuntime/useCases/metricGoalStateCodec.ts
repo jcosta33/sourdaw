@@ -185,7 +185,12 @@ function authorityIdentity(entry: Record<string, unknown>): boolean {
     return (
         entry.schemaVersion === 1 &&
         text(entry.authorityId) &&
-        oneOf(entry.origin, ['complete-literal-parser', 'configured-joint-intake', 'admitted-workflow']) &&
+        oneOf(entry.origin, [
+            'complete-literal-parser',
+            'configured-joint-intake',
+            'admitted-workflow',
+            'answer-suggestion',
+        ]) &&
         (entry.callId === null || text(entry.callId)) &&
         (entry.turn === null || integer(entry.turn)) &&
         text(entry.catalogId) &&

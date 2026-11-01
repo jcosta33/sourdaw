@@ -48,7 +48,7 @@ beforeEach(() => {
     }));
 });
 
-vi.mock('../../services/fermenterProcessor.ts?worker&url', () => ({ default: 'fermenter-processor-url' }));
+vi.mock('../../worklets/fermenterProcessor.ts?worker&url', () => ({ default: 'fermenter-processor-url' }));
 
 // Bypass-entry voice release is owned by TrackNode.updateBypass, which calls
 // `controller.allNotesOff()` when entering bypass. The node must therefore

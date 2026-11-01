@@ -348,6 +348,11 @@ const REFUSALS: readonly { label: string; record: ReviewRepairRecord; fragment: 
         fragment: 'review repair summary must not be blank',
     },
     {
+        label: 'an empty finding path',
+        record: repairRecord({ finding: { ...VALID_RECORD.finding, path: '' } }),
+        fragment: 'review repair path must not be blank',
+    },
+    {
         label: 'a blank finding path',
         record: repairRecord({ finding: { ...VALID_RECORD.finding, path: '  ' } }),
         fragment: 'review repair path must not be blank',
@@ -385,6 +390,11 @@ const REFUSALS: readonly { label: string; record: ReviewRepairRecord; fragment: 
     {
         label: 'a negative line',
         record: repairRecord({ finding: { ...VALID_RECORD.finding, line: -3 } }),
+        fragment: 'review repair line must be a positive safe integer',
+    },
+    {
+        label: 'a fractional line',
+        record: repairRecord({ finding: { ...VALID_RECORD.finding, line: 4.5 } }),
         fragment: 'review repair line must be a positive safe integer',
     },
     {
@@ -529,18 +539,29 @@ describe('selectEligibleRepairs', () => {
         });
     });
 
-    it('should refuse a finding whose path is not the thread root', () => {
-        const record = repairRecord({ finding: { ...VALID_RECORD.finding, path: 'scripts/other.ts' } });
-        const selection = selectRepairs([threadState({ replies: [repairReply(11, record)] })]);
+    it('should accept a finding whose recorded path a later rename left behind the thread root', () => {
+        const record = repairRecord();
+        const selection = selectRepairs([
+            threadState({ rootPath: 'scripts/renamed.ts', replies: [repairReply(11, record)] }),
+        ]);
 
         expect(selection).toEqual({
-            eligible: [],
-            refused: [
-                {
-                    thread: THREAD,
-                    reason: `finding path scripts/other.ts does not match the thread root ${FINDING_PATH}`,
-                },
-            ],
+            eligible: [{ thread: THREAD, record, replyId: 11 }],
+            refused: [],
+            ignored: [],
+        });
+    });
+
+    it.each([
+        { label: 'moved', rootLine: FINDING_LINE + 17 },
+        { label: 'outdated to its original line', rootLine: FINDING_LINE - 9 },
+    ])('should accept a finding whose recorded line the thread root has since $label', ({ rootLine }) => {
+        const record = repairRecord();
+        const selection = selectRepairs([threadState({ rootLine, replies: [repairReply(11, record)] })]);
+
+        expect(selection).toEqual({
+            eligible: [{ thread: THREAD, record, replyId: 11 }],
+            refused: [],
             ignored: [],
         });
     });
@@ -943,7 +964,7 @@ describe('selectEligibleRepairs', () => {
         const staleRecord = repairRecord({ thread: staleThread, head: STALE_HEAD });
         const invalidRecord = repairRecord({
             thread: invalidThread,
-            finding: { ...VALID_RECORD.finding, line: FINDING_LINE + 1 },
+            finding: { ...VALID_RECORD.finding, side: 'LEFT' },
         });
 
         const selection = selectRepairs([
@@ -958,10 +979,7 @@ describe('selectEligibleRepairs', () => {
             eligible: [{ thread: eligibleThread, record: eligibleRecord, replyId: 21 }],
             refused: [
                 { thread: staleThread, reason: `head ${STALE_HEAD} does not match the confirmed head ${HEAD}` },
-                {
-                    thread: invalidThread,
-                    reason: `finding line ${FINDING_LINE + 1} does not match the thread root ${FINDING_LINE}`,
-                },
+                { thread: invalidThread, reason: 'finding side LEFT does not match the thread root RIGHT' },
             ],
             ignored: [
                 { thread: resolvedThread, reason: 'already resolved' },
