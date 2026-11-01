@@ -105,8 +105,8 @@ describe('StatusBar', () => {
 
     describe('master output readout width', () => {
         // The hook writes `${(20 * log10(peak)).toFixed(1)} dB` for any positive peak. A float32 peak
-        // bottoms out near 1.4e-45, which is -826.8 dB, so no readout is wider than this.
-        const widestReadout = '-826.8 dB';
+        // bottoms out near 1.4e-45, which is -897.1 dB, so no readout is wider than this.
+        const widestReadout = '-897.1 dB';
 
         it('reserves a monospace width in ch that holds the widest level readout', () => {
             renderWithTooltip(<StatusBar />);

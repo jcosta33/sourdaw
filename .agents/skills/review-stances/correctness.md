@@ -11,6 +11,15 @@ have caught it. Keep each lesson short enough to paste into a dispatch. A behavi
 matching no more specific file carries this file; a stance with a more specific match never
 carries it in addition.
 
+### 2026-11-01 — clip-protection completeness held on one grounding route (#4929, introduced by PR #3905)
+
+PR #3905 introduced the clip protection reader's completeness verdict; PR #4881 refused on it only
+for transform compilation, and PR #5698's ordinary-route refusal read track protections alone. A
+direct edit beside an incomplete clip exclusion, or one changing the excluded clip, was admitted.
+The historical review stances, prompts and tiers are unestablished. When a protection is enforced
+on one route, list every route that returns actions (direct, coordinated, atomic, compiled,
+refined) and drive each with the same request; a route that never reads the verdict is the finding.
+
 ### 2026-10-29 — enabling a bypassed gate skipped detector acquisition
 
 Grinder's initial gate (`bc017e1b06b6521a7ee4258a10b9fd871e72b057`) enabled with an empty
@@ -1054,3 +1063,21 @@ already-satisfied guarded target without a write. Keep controls where the live s
 both the target and expectation, the target track is missing, and an unguarded manual inverse
 would overwrite a later user solo. Reverting the target-equal admission and no-write handling in
 `soloTrack.ts` must fail the real Command Undo/Redo regression.
+
+### 2026-11-01 — a window opened by a late wrap was not re-projected against the loop end (introduced by PR #6004)
+
+PR #6004 kept the scheduler on the audio clock after a main-thread stall. A stalled tick can
+late-wrap to a wrapped position within one look-ahead before `loopEnd`. The late-wrap branch then
+emitted one window, `[newPosition, newPosition + lookAhead)`, on the wrapped pass's beats, and armed
+no pending seam. Material past `loopEnd` was therefore posted at the seam instant, and the next
+pass's downbeat was requested only after its seam, so it played late. Every window the scheduler
+opens must be projected against the loop end, including one a late wrap opens at `loopStart`. The
+stall probes stopped ticks well inside the region, so the wrapped window never reached `loopEnd`.
+
+Probe: a stalled tick landing within one look-ahead before `loopEnd`. Use loop 0..8 at 120 BPM,
+with a clip after the loop, and tick once at 7.975 s after a 0.05 s tick. Nothing from that window
+may be posted at or past `loopEnd`. A seam must be armed at the loop-end instant, and the
+pending-seam pass index must count the late wrap. On the next tick, the next pass's beat-0 note
+must be requested before its seam frame, and it must land exactly on that frame. Reverting the
+post-wrap seam projection in `startPlayheadScheduler.ts` must fail both cases in
+`startPlayheadSchedulerLoopSeamTiming.spec.ts`.

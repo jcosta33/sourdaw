@@ -138,6 +138,17 @@ describe('startRecording', () => {
         expect(mocks.setTrackState).not.toHaveBeenCalled();
     });
 
+    it('excludes a master track left armed by an earlier project before clip, take, or store work', () => {
+        mocks.getTrackState.mockReturnValue({
+            tracks: [{ id: 'master', armed: true, kind: 'master', clips: [] }],
+        });
+        mocks.transportStoreValue = { playheadPosition: 4 };
+
+        expect(startRecording()).toEqual([]);
+        expect(mocks.stageRecordingTake).not.toHaveBeenCalled();
+        expect(mocks.setTrackState).not.toHaveBeenCalled();
+    });
+
     it('returns empty when the transport store has no state, even with armed tracks', () => {
         mocks.getTrackState.mockReturnValue({
             tracks: [{ id: 't1', armed: true, kind: 'audio', clips: [] }],

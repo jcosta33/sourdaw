@@ -9,8 +9,17 @@ import { InspectorPanel } from '../InspectorPanel';
 const mockUseStore = vi.fn((_store: unknown, _defaultState: unknown): { selectedClipId: string | null } => ({
     selectedClipId: null,
 }));
+const deviceSelection = vi.hoisted(() => ({
+    store: { name: 'deviceSelectionStore' },
+    selectedDeviceId: null as string | null,
+}));
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: (store: unknown, defaultState: unknown) => mockUseStore(store, defaultState),
+    useStore: (store: unknown, defaultState: unknown) => {
+        if (store === deviceSelection.store) {
+            return { selectedDeviceId: deviceSelection.selectedDeviceId };
+        }
+        return mockUseStore(store, defaultState);
+    },
 }));
 
 type TrackFixture = {
@@ -31,15 +40,21 @@ vi.mock('../../hooks/useTracks', () => ({
 vi.mock('#/modules/Arrangement/stores', () => ({
     clipSelectionStore: {},
     defaultClipSelectionState: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null },
+    deviceSelectionStore: deviceSelection.store,
+    defaultDeviceSelectionState: { selectedDeviceId: null },
 }));
 
 const mockToggleInspector = vi.fn();
 const mockClearClipSelection = vi.fn();
 const mockSelectClipWithFocus = vi.fn();
+const mockClearDeviceSelection = vi.fn();
+const mockSelectDevice = vi.fn();
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     selectClipWithFocus: (id: string) => mockSelectClipWithFocus(id),
     clearClipSelection: () => mockClearClipSelection(),
+    clearDeviceSelection: () => mockClearDeviceSelection(),
+    selectDevice: (id: string) => mockSelectDevice(id),
 }));
 
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({
@@ -96,8 +111,13 @@ vi.mock('#/components/ui/button', () => ({
 }));
 
 vi.mock('../Inspector/TrackInspector', () => ({
-    TrackInspector: ({ track }: { track: { name: string } }) => (
-        <div data-testid="track-inspector">Track: {track.name}</div>
+    TrackInspector: ({ track, onSelectDevice }: { track: { name: string }; onSelectDevice: (id: string) => void }) => (
+        <div data-testid="track-inspector">
+            Track: {track.name}
+            <button type="button" onClick={() => onSelectDevice('device-1')}>
+                Pick device
+            </button>
+        </div>
     ),
 }));
 
@@ -113,14 +133,21 @@ vi.mock('../Inspector/ClipInspector', () => ({
 }));
 
 vi.mock('../Inspector/DeviceInspector', () => ({
-    DeviceInspector: ({ device }: { device: { name: string } }) => (
-        <div data-testid="device-inspector">Device: {device.name}</div>
+    DeviceInspector: ({ device, onBack }: { device: { name: string }; onBack: () => void }) => (
+        <div data-testid="device-inspector">
+            Device: {device.name}
+            <button type="button" onClick={onBack}>
+                Back from device
+            </button>
+        </div>
     ),
 }));
 
 describe('InspectorPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mockUseStore.mockReturnValue({ selectedClipId: null });
+        deviceSelection.selectedDeviceId = null;
     });
 
     it('should render without crashing', () => {
@@ -221,19 +248,52 @@ describe('InspectorPanel', () => {
         expect(screen.getByTestId('clip-inspector')).toHaveTextContent('Clip: Clip B');
     });
 
-    it('should render device inspector when device is selected', () => {
-        mockUseTracks.mockReturnValue({
-            tracks: [
-                {
-                    id: 'track-1',
-                    name: 'Test Track',
-                    kind: 'audio',
-                    clips: [],
-                    devices: [{ id: 'device-1', name: 'Test Device' }],
-                },
-            ],
-            selectedTrackId: 'track-1',
+    describe('device selection', () => {
+        const trackWithDevice = {
+            id: 'track-1',
+            name: 'Test Track',
+            kind: 'audio',
+            clips: [],
+            devices: [{ id: 'device-1', name: 'Test Device' }],
+        };
+
+        it('shows the stored device in the device inspector', () => {
+            mockUseTracks.mockReturnValue({ tracks: [trackWithDevice], selectedTrackId: 'track-1' });
+            deviceSelection.selectedDeviceId = 'device-1';
+
+            render(<InspectorPanel />);
+
+            expect(screen.getByTestId('device-inspector')).toHaveTextContent('Device: Test Device');
+            expect(screen.queryByTestId('track-inspector')).not.toBeInTheDocument();
         });
-        render(<InspectorPanel />);
+
+        it('falls back to the track view when the stored id names no device on the selected track', () => {
+            mockUseTracks.mockReturnValue({ tracks: [trackWithDevice], selectedTrackId: 'track-1' });
+            deviceSelection.selectedDeviceId = 'device-on-another-track';
+
+            render(<InspectorPanel />);
+
+            expect(screen.getByTestId('track-inspector')).toBeInTheDocument();
+            expect(screen.queryByTestId('device-inspector')).not.toBeInTheDocument();
+        });
+
+        it('clears the stored selection when the device view goes back', () => {
+            mockUseTracks.mockReturnValue({ tracks: [trackWithDevice], selectedTrackId: 'track-1' });
+            deviceSelection.selectedDeviceId = 'device-1';
+            render(<InspectorPanel />);
+
+            fireEvent.click(screen.getByText('Back from device'));
+
+            expect(mockClearDeviceSelection).toHaveBeenCalledOnce();
+        });
+
+        it('stores the device a rack row picks', () => {
+            mockUseTracks.mockReturnValue({ tracks: [trackWithDevice], selectedTrackId: 'track-1' });
+            render(<InspectorPanel />);
+
+            fireEvent.click(screen.getByText('Pick device'));
+
+            expect(mockSelectDevice).toHaveBeenCalledExactlyOnceWith('device-1');
+        });
     });
 });
