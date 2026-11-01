@@ -363,7 +363,13 @@ describe('high-level intent execution', () => {
         const confirmation = requireConfirmation();
         expect(confirmation.projectRevision).toBe(revisionBefore);
         expect(confirmation.approvalSnapshot.commandBatch?.authority.baseRevision).toBe(revisionBefore);
-        expect(agentRunLifecycle.get(confirmation.runId)?.phase).toBe('waiting-for-approval');
+        const run = agentRunLifecycle.get(confirmation.runId);
+        expect(run?.phase).toBe('waiting-for-approval');
+        expect(run?.plan?.applicationToolReceipts).toBeDefined();
+        expect(run?.plan?.applicationToolReceipts?.some((receipt) => receipt.toolName === 'analysis.measure')).toBe(
+            false
+        );
+        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(4);
 
         await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
             status: 'executed',

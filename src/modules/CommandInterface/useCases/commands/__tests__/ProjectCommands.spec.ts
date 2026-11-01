@@ -44,7 +44,7 @@ function runAction(id: string): void {
 describe('projectCommands', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.mocked(saveProjectBeforeReplacement).mockResolvedValue(true);
+        vi.mocked(saveProjectBeforeReplacement).mockResolvedValue('save-closed-takes');
     });
 
     it('exposes the project commands under the Project category', () => {
@@ -94,18 +94,19 @@ describe('projectCommands', () => {
 
         await vi.waitFor(() => expect(saveProjectBeforeReplacement).toHaveBeenCalledTimes(1));
         await vi.waitFor(() => expect(newProject).toHaveBeenCalledTimes(1));
+        expect(vi.mocked(newProject).mock.calls[0]?.[1]?.outgoingProject).toBe('save-closed-takes');
     });
 
     // Choosing the open project's Recent entry while New is pending withdraws
     // it, so the session stays in the project the user chose last.
     it('new-project does not start once a pre-save that the open project choice outlasted finishes', async () => {
-        const save = Promise.withResolvers<boolean>();
+        const save = Promise.withResolvers<'discard'>();
         vi.mocked(saveProjectBeforeReplacement).mockReturnValueOnce(save.promise);
 
         runAction('new-project');
         await vi.waitFor(() => expect(saveProjectBeforeReplacement).toHaveBeenCalledTimes(1));
         pendingProjectReplacements.withdraw();
-        save.resolve(true);
+        save.resolve('discard');
 
         await new Promise((resolve) => setTimeout(resolve, 0));
         expect(newProject).not.toHaveBeenCalled();
@@ -121,12 +122,21 @@ describe('projectCommands', () => {
         expect(shouldProceed?.()).toBe(false);
     });
 
-    // Issue 3694: the palette replaces the open project, so it must refuse
-    // when the guard refuses — a save that resolved with the project still
-    // dirty (a plugin capture rejected before commit) must not be replaced
-    // over. Removing the guard call from the action reds this test.
-    it('new-project refuses the replacement when the pre-switch guard refuses', async () => {
-        vi.mocked(saveProjectBeforeReplacement).mockResolvedValue(false);
+    it("new-project discards the outgoing project when the user chose Don't Save", async () => {
+        vi.mocked(saveProjectBeforeReplacement).mockResolvedValue('discard');
+
+        runAction('new-project');
+
+        await vi.waitFor(() => expect(newProject).toHaveBeenCalledTimes(1));
+        expect(vi.mocked(newProject).mock.calls[0]?.[1]?.outgoingProject).toBe('discard');
+    });
+
+    // Issue 3694: the palette replaces the open project, so it must stay when
+    // the user cancels after a failed save or one that resolved with the
+    // project still dirty (a plugin capture rejected before commit). Removing
+    // the guard call from the action reds this test.
+    it('new-project stays in the open project when the user cancels', async () => {
+        vi.mocked(saveProjectBeforeReplacement).mockResolvedValue('stay');
 
         runAction('new-project');
 

@@ -17,6 +17,7 @@ import { panicYeastRuntime } from './panicYeastRuntime';
 import { stopActiveRecording } from './stopActiveRecording';
 
 export function pausePlayback(): void {
+    audioEngine.beginAudioPreviewIntent().release();
     const state = getTransportState();
     if (!state) {
         return;

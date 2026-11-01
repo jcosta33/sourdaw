@@ -126,6 +126,7 @@ const STALE_CANCELLATION_WARNING =
 let plannedRunId: string | null = null;
 
 const mocks = vi.hoisted(() => ({
+    stopMeasuredPreviewAudition: vi.fn(async () => ({ status: 'idle' })),
     aiBackendPreference: { value: 'auto' },
     appendChatMessage: vi.fn(),
     captureProjectRevision: vi.fn(),
@@ -151,6 +152,8 @@ const mocks = vi.hoisted(() => ({
     streamCloudChatCompletion: vi.fn(),
     updateChatMessage: vi.fn(),
 }));
+
+vi.mock('../stopMeasuredPreviewAudition', () => ({ stopMeasuredPreviewAudition: mocks.stopMeasuredPreviewAudition }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
@@ -708,6 +711,8 @@ describe('sendChatMessage retained-provider selection', () => {
         mocks.getCloudProviderInfo.mockReturnValue(null);
         mocks.isCloudAvailable.mockReturnValue(false);
         mocks.getLlmEngine.mockReturnValue(null);
+        // The shared persistence caller reads the materialized approval snapshot.
+        // Carry only the input's optional metric state; this supplies no proof or permit.
         mocks.proposePendingActionConfirmation.mockImplementation((input) => ({
             id: 'confirmation-fixture',
             approvalSnapshot: { metricGoalState: input.metricGoalState },
@@ -761,22 +766,26 @@ describe('sendChatMessage retained-provider selection', () => {
             'No AI backend available. Configure a hosted provider in the desktop app or use a WebGPU-capable browser.'
         );
 
+        expect(mocks.stopMeasuredPreviewAudition).not.toHaveBeenCalled();
         expect(readAgentRunState().runs).toEqual([]);
         expect(mocks.planPromptActions).not.toHaveBeenCalled();
     });
 
     it('admits prompt planning without a backend and records no model route or provider usage', async () => {
         mocks.resolveBackend.mockReturnValue('none');
-        mocks.planPromptActions.mockResolvedValue({
-            context: {},
-            result: {
-                actions: [],
-                planningOutcome: {
-                    kind: 'denied',
-                    reason: 'No AI backend is available for this request. Configure a hosted provider in the desktop app or use a WebGPU-capable browser.',
+        mocks.planPromptActions.mockImplementation(async () => {
+            expect(mocks.stopMeasuredPreviewAudition).toHaveBeenCalledTimes(1);
+            return {
+                context: {},
+                result: {
+                    actions: [],
+                    planningOutcome: {
+                        kind: 'denied',
+                        reason: 'No AI backend is available for this request. Configure a hosted provider in the desktop app or use a WebGPU-capable browser.',
+                    },
                 },
-            },
-            projectRevision: 'revision-fixture',
+                projectRevision: 'revision-fixture',
+            };
         });
 
         await expect(sendChatMessage('make the chorus warmer', { mode: 'apply' })).resolves.toBeUndefined();

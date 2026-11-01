@@ -1,27 +1,12 @@
-import { type ReactElement, type DragEvent, useState, useEffect, useRef } from 'react';
+import { type ComponentProps, type ReactElement, type DragEvent, useState, useEffect, useRef } from 'react';
 
-import {
-    LayoutTemplate,
-    Sparkles,
-    FolderOpen,
-    Upload,
-    Download,
-    ArrowLeft,
-    Music,
-    Mic,
-    Film,
-    FileText,
-    Guitar,
-    Headphones,
-    Piano,
-    Layers,
-    Clock,
-} from 'lucide-react';
+import { LayoutTemplate, Sparkles, FolderOpen, Upload, Download, ArrowLeft, Clock } from 'lucide-react';
 
 import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { pickAndImportDawProject } from '#/modules/DawInterchange/useCases';
+import { TemplateGallery } from '#/modules/Project/presentations/views';
 import {
     newProject,
     createFromTemplate,
@@ -35,25 +20,16 @@ import { cn } from '#/utils/Styles/cn';
 import { importDroppedLaunchFiles } from '../../useCases/importDroppedLaunchFiles';
 import { SourdawLogo } from '../components/SourdawLogo';
 
-import { TemplatePreviewThumb } from './TemplatePreviewThumb';
-
 // ─────────────────────────────────────────────────────────────
 // Constants & metadata
 // ─────────────────────────────────────────────────────────────
 
 type View = 'home' | 'grid' | 'loading';
 
+type GalleryCategory = NonNullable<ComponentProps<typeof TemplateGallery>['initialCategory']>;
+
 export type LaunchScreenProps = {
     exiting: boolean;
-};
-
-type LaunchTemplateCategory = 'empty' | 'music' | 'podcast' | 'film' | 'demo';
-
-type LaunchTemplate = {
-    id: string;
-    name: string;
-    description: string;
-    category: LaunchTemplateCategory;
 };
 
 const LOADING_QUIPS = [
@@ -82,54 +58,6 @@ const BREAD_TAGLINES = [
 ];
 
 const randomTagline = BREAD_TAGLINES[Math.floor(Math.random() * BREAD_TAGLINES.length)] ?? BREAD_TAGLINES[0]!;
-
-const CATEGORY_ORDER: Array<LaunchTemplateCategory | 'all'> = ['all', 'demo', 'music', 'podcast', 'film'];
-
-const CATEGORY_LABELS: Record<string, string> = {
-    all: 'All',
-    demo: 'Demos',
-    music: 'Music',
-    podcast: 'Podcast',
-    film: 'Film',
-};
-
-const CATEGORY_COLORS: Record<string, { text: string; bg: string; activeBg: string; border: string }> = {
-    all: { text: 'text-white/60', bg: 'bg-white/5', activeBg: 'bg-white/10', border: 'border-white/10' },
-    demo: {
-        text: 'text-[var(--color-accent-mint)]',
-        bg: 'bg-[var(--color-accent-mint)]/8',
-        activeBg: 'bg-[var(--color-accent-mint)]/15',
-        border: 'border-[var(--color-accent-mint)]/25',
-    },
-    music: {
-        text: 'text-[var(--color-accent-lavender)]',
-        bg: 'bg-[var(--color-accent-lavender)]/8',
-        activeBg: 'bg-[var(--color-accent-lavender)]/15',
-        border: 'border-[var(--color-accent-lavender)]/25',
-    },
-    podcast: {
-        text: 'text-[var(--color-accent-peach)]',
-        bg: 'bg-[var(--color-accent-peach)]/8',
-        activeBg: 'bg-[var(--color-accent-peach)]/15',
-        border: 'border-[var(--color-accent-peach)]/25',
-    },
-    film: {
-        text: 'text-[var(--color-accent-cyan)]',
-        bg: 'bg-[var(--color-accent-cyan)]/8',
-        activeBg: 'bg-[var(--color-accent-cyan)]/15',
-        border: 'border-[var(--color-accent-cyan)]/25',
-    },
-    empty: { text: 'text-white/50', bg: 'bg-white/5', activeBg: 'bg-white/10', border: 'border-white/10' },
-};
-
-const TEMPLATE_ICONS: Record<string, ReactElement> = {
-    empty: <FileText className="size-4" aria-hidden="true" />,
-    'basic-band': <Guitar className="size-4" aria-hidden="true" />,
-    electronic: <Headphones className="size-4" aria-hidden="true" />,
-    podcast: <Mic className="size-4" aria-hidden="true" />,
-    'film-score': <Film className="size-4" aria-hidden="true" />,
-    'singer-songwriter': <Piano className="size-4" aria-hidden="true" />,
-};
 
 // ─────────────────────────────────────────────────────────────
 // Sub-components (internal, not exported)
@@ -194,30 +122,13 @@ const LogoBlock = (): ReactElement => (
     </Stack>
 );
 
-// Icon for a category pill. Mirrors the original ternary chain: any category
-// other than all/demo/music/podcast (i.e. film) falls back to the Film icon.
-const CategoryPillIcon = ({ category }: { category: LaunchTemplateCategory | 'all' }): ReactElement => {
-    switch (category) {
-        case 'all':
-            return <Layers className="size-3" aria-hidden="true" />;
-        case 'demo':
-            return <Sparkles className="size-3" aria-hidden="true" />;
-        case 'music':
-            return <Music className="size-3" aria-hidden="true" />;
-        case 'podcast':
-            return <Mic className="size-3" aria-hidden="true" />;
-        default:
-            return <Film className="size-3" aria-hidden="true" />;
-    }
-};
-
 // ─────────────────────────────────────────────────────────────
 // Main export
 // ─────────────────────────────────────────────────────────────
 
 export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     const [view, setView] = useState<View>('home');
-    const [activeCategory, setActiveCategory] = useState<LaunchTemplateCategory | 'all'>('all');
+    const [galleryCategory, setGalleryCategory] = useState<GalleryCategory>('all');
     const [loadingName, setLoadingName] = useState('');
     const [importingDawProject, setImportingDawProject] = useState(false);
     const [isDragOver, setIsDragOver] = useState(false);
@@ -227,14 +138,7 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     );
     const intervalRef = useRef<ReturnType<typeof setInterval>>(undefined);
 
-    const allTemplates: LaunchTemplate[] = getTemplates().map((template) => ({
-        id: template.id,
-        name: template.name,
-        description: template.description,
-        category: template.category,
-    }));
-    const filteredTemplates =
-        activeCategory === 'all' ? allTemplates : allTemplates.filter((t) => t.category === activeCategory);
+    const templates = getTemplates();
 
     // Rotate quips during loading
     useEffect(() => {
@@ -294,8 +198,8 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
         void executeUserAppAction({ type: 'exportDawProject' });
     };
 
-    const handleOpenGrid = (category: LaunchTemplateCategory | 'all'): void => {
-        setActiveCategory(category);
+    const handleOpenGrid = (category: GalleryCategory): void => {
+        setGalleryCategory(category);
         setView('grid');
     };
 
@@ -316,7 +220,11 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
         })();
     };
 
-    const handleTemplateSelect = (template: LaunchTemplate): void => {
+    const handleTemplateSelect = (templateId: string): void => {
+        const template = templates.find((candidate) => candidate.id === templateId);
+        if (!template) {
+            return;
+        }
         setLoadingName(template.name);
         setView('loading');
         // Fire-and-forget: the click handler returns void; activation failure
@@ -536,70 +444,11 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                             <p className="text-xs text-white/50 font-medium">Start a new project</p>
                         </Row>
 
-                        {/* Category pills */}
-                        <Row align="stretch" wrap gap={1.5}>
-                            {CATEGORY_ORDER.map((cat) => {
-                                const colors = CATEGORY_COLORS[cat] ?? CATEGORY_COLORS.all!;
-                                const isActive = activeCategory === cat;
-                                return (
-                                    <Button
-                                        variant="bare"
-                                        size="bare"
-                                        key={cat}
-                                        type="button"
-                                        onClick={() => setActiveCategory(cat)}
-                                        className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all cursor-pointer ${
-                                            isActive
-                                                ? `${colors.activeBg} ${colors.text} ${colors.border}`
-                                                : 'bg-white/[0.03] text-white/35 border-white/[0.06] hover:bg-white/[0.06] hover:text-white/60'
-                                        }`}
-                                    >
-                                        <CategoryPillIcon category={cat} />
-                                        {CATEGORY_LABELS[cat]}
-                                    </Button>
-                                );
-                            })}
-                        </Row>
-
-                        {/* Template grid */}
-                        <Grid cols={2} gap={2.5} className="max-h-[400px] overflow-y-auto pr-1 scrollbar-thin">
-                            {filteredTemplates.map((template) => {
-                                const colors = CATEGORY_COLORS[template.category] ?? CATEGORY_COLORS.empty!;
-                                const icon = TEMPLATE_ICONS[template.id] ?? (
-                                    <FileText className="size-4" aria-hidden="true" />
-                                );
-                                return (
-                                    <Button
-                                        variant="bare"
-                                        size="bare"
-                                        key={template.id}
-                                        type="button"
-                                        onClick={() => handleTemplateSelect(template)}
-                                        className={`group flex items-start gap-3 p-4 rounded-xl border transition-all duration-150 cursor-pointer text-left hover:shadow-[0_4px_16px_rgba(0,0,0,0.4)] hover:brightness-110 ${colors.border} bg-white/[0.03] hover:bg-white/[0.06] backdrop-blur-sm`}
-                                    >
-                                        <div
-                                            className={`mt-0.5 shrink-0 size-8 rounded-lg ${colors.bg} flex items-center justify-center ${colors.text} transition-colors group-hover:${colors.activeBg}`}
-                                        >
-                                            {icon}
-                                        </div>
-                                        <div className="min-w-0 flex-1">
-                                            <p className={`text-xs font-semibold text-white/80 truncate`}>
-                                                {template.name}
-                                            </p>
-                                            <p className={`text-[10px] mt-0.5 ${colors.text}/70 capitalize`}>
-                                                {template.category === 'empty' ? 'Blank' : template.category}
-                                            </p>
-                                            <p className="text-[10px] text-white/30 mt-1 leading-relaxed line-clamp-2">
-                                                {template.description}
-                                            </p>
-                                            <div className="mt-2 overflow-hidden rounded-md border border-white/[0.06]">
-                                                <TemplatePreviewThumb templateId={template.id} />
-                                            </div>
-                                        </div>
-                                    </Button>
-                                );
-                            })}
-                        </Grid>
+                        <TemplateGallery
+                            templates={templates}
+                            initialCategory={galleryCategory}
+                            onSelect={handleTemplateSelect}
+                        />
 
                         <p className="text-[9px] text-white/15 text-center">
                             Or drop audio / MIDI files on the home screen to import instantly

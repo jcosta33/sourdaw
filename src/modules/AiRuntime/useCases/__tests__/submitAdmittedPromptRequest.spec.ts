@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { undoHistoryStore } from '#/modules/Command/stores';
 import {
+    captureProjectIdentity,
     captureProjectMutationAuthorization,
     captureProjectRootIdentity,
     mutateCrdtDoc,
@@ -38,6 +39,7 @@ import { readChatThreadContext } from '../readChatThreadContext';
 import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
 
 const mocks = vi.hoisted(() => ({
+    stopMeasuredPreviewAudition: vi.fn(async () => ({ status: 'idle' })),
     settlePendingProjectWritesAndCaptureRevision: vi.fn(() => 'revision-1'),
     compileAgentActionExecution: vi.fn(),
     describePlannedAction: vi.fn(() => 'Toggle playback'),
@@ -49,6 +51,8 @@ const mocks = vi.hoisted(() => ({
     planPromptActions: vi.fn(),
     parsePromptToActions: vi.fn(),
 }));
+
+vi.mock('../stopMeasuredPreviewAudition', () => ({ stopMeasuredPreviewAudition: mocks.stopMeasuredPreviewAudition }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     commandSourcePublicationMatches: vi.fn<
@@ -193,6 +197,7 @@ describe('submitAdmittedPromptRequest', () => {
         mocks.getProjectContext.mockReturnValue({ tracks: [], selectedClipIds: [] });
         vi.mocked(captureProjectMutationAuthorization).mockReturnValue(() => true);
         vi.mocked(captureProjectRootIdentity).mockReturnValue('root-identity');
+        vi.mocked(captureProjectIdentity).mockReturnValue('revision-1');
         mocks.parsePromptToActions.mockResolvedValue({
             actions: [action],
             rawText: 'Play',
@@ -387,6 +392,7 @@ describe('submitAdmittedPromptRequest', () => {
     it('claims provider work before planning and records real intermediate and final budget usage', async () => {
         const claim = vi.spyOn(agentRunWorkLease, 'claim');
         mocks.planPromptActions.mockImplementation(async (input) => {
+            expect(mocks.stopMeasuredPreviewAudition).toHaveBeenCalledTimes(1);
             expect(
                 input.onProviderAttempt?.({
                     backend: 'cloud',
@@ -533,6 +539,7 @@ describe('submitAdmittedPromptRequest', () => {
     });
 
     it('shows an answer outcome as its text, completes the run, and creates no confirmation', async () => {
+        vi.mocked(captureProjectIdentity).mockReturnValue('project-a');
         mocks.planPromptActions.mockResolvedValue({
             context: { tracks: [] },
             result: {
@@ -556,6 +563,8 @@ describe('submitAdmittedPromptRequest', () => {
             prompt: 'How loud is the mix?',
             text: 'The mix peaks at -1.2 dBFS.',
             evidence: [{ callId: 'call-1', toolName: 'analysis.measure', summary: 'Peak -1.2 dBFS.' }],
+            projectIdentity: 'project-a',
+            projectRevision: 'revision-1',
         });
         expect(mocks.notifyAiChange).not.toHaveBeenCalled();
         expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({ phase: 'completed' });
@@ -585,6 +594,8 @@ describe('submitAdmittedPromptRequest', () => {
             prompt: 'How loud is the mix?',
             text: 'The mix peaks at -1.2 dBFS.',
             evidence: [],
+            projectIdentity: 'revision-1',
+            projectRevision: 'revision-1',
         });
         expect(agentRunLifecycle.get(RUN_ID)).toMatchObject({ phase: 'completed' });
     });

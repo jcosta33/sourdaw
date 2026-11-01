@@ -1,4 +1,4 @@
-import { type ReactElement, useState } from 'react';
+import { type ReactElement, type ReactNode, useState } from 'react';
 
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
@@ -87,9 +87,11 @@ type AgentApprovalSectionProps = {
     onConfirm: (confirmationId: string) => void;
     onCancel: (confirmationId: string) => void;
     onRePreview: (confirmationId: string, selectedIntentGroupIds: readonly string[] | undefined) => void;
+    renderAudition: (input: { confirmationId: string; selectedIntentGroupIds: readonly string[] }) => ReactNode;
+    onBeforeSelectionChange: (confirmationId: string) => void;
 };
 
-type ApprovalCardProps = Omit<AgentApprovalSectionProps, 'approvals'> & {
+type ApprovalCardProps = Omit<AgentApprovalSectionProps, 'approvals' | 'onBeforeSelectionChange'> & {
     view: AgentApprovalView;
     excludedGroupIds: readonly string[];
     onToggleGroup: (groupId: string, included: boolean) => void;
@@ -371,6 +373,10 @@ function renderFreshness(freshness: AgentApprovalView['freshness']): ReactElemen
     );
 }
 
+function includedIntentGroupIds(view: AgentApprovalView, excludedGroupIds: readonly string[]): string[] {
+    return view.intentGroups.filter((group) => !excludedGroupIds.includes(group.id)).map((group) => group.id);
+}
+
 const ApprovalCard = ({
     view,
     excludedGroupIds,
@@ -378,10 +384,9 @@ const ApprovalCard = ({
     onConfirm,
     onCancel,
     onRePreview,
+    renderAudition,
 }: ApprovalCardProps): ReactElement => {
-    const includedGroupIds = view.intentGroups
-        .filter((group) => !excludedGroupIds.includes(group.id))
-        .map((group) => group.id);
+    const includedGroupIds = includedIntentGroupIds(view, excludedGroupIds);
     // A partially accepted proposal may still match the project, so a subset re-preview
     // stands on its own rather than on the staleness the whole-proposal route needs. A
     // subset excludes both ends: the whole selection uses the undefined/whole-proposal
@@ -408,6 +413,9 @@ const ApprovalCard = ({
             </ul>
             {renderRecipes(view.recipes)}
             {renderMeasuredPreview(view.measuredPreview)}
+            {view.status === 'proposed'
+                ? renderAudition({ confirmationId: view.confirmationId, selectedIntentGroupIds: includedGroupIds })
+                : null}
             <div aria-label="Metric goal verification">
                 <p>{`Objective verification: ${view.metricGoals.status}`}</p>
                 {view.metricGoals.reason === null ? null : <p>{view.metricGoals.reason}</p>}
@@ -480,12 +488,15 @@ export const AgentApprovalSection = ({
     onConfirm,
     onCancel,
     onRePreview,
+    renderAudition,
+    onBeforeSelectionChange,
 }: AgentApprovalSectionProps): ReactElement => {
     const [excludedByConfirmation, setExcludedByConfirmation] = useState<Readonly<Record<string, readonly string[]>>>(
         {}
     );
 
     const toggleGroup = (view: AgentApprovalView, groupId: string, included: boolean): void => {
+        onBeforeSelectionChange(view.confirmationId);
         setExcludedByConfirmation((current) => ({
             ...current,
             [view.confirmationId]: nextExclusion(
@@ -510,6 +521,7 @@ export const AgentApprovalSection = ({
                     onConfirm={onConfirm}
                     onCancel={onCancel}
                     onRePreview={onRePreview}
+                    renderAudition={renderAudition}
                 />
             ))}
         </Stack>

@@ -251,7 +251,7 @@ async function createCompRegion(
     const y = box.y + box.height / 2;
     await page.mouse.move(x(startBeat), y);
     await page.mouse.down();
-    // Release inside the drag preview, which spans to the strip's inner edge; the strip must still be the target.
+    // The strip holds pointer capture, so the release (and its compatibility mouseup) targets the strip wherever it lands.
     await page.mouse.move(x(endBeat) - COMP_RELEASE_INSET_PX, y, { steps: 8 });
     await page.mouse.up();
 }

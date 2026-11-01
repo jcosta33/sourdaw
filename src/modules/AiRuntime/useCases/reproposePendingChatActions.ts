@@ -24,6 +24,7 @@ import { getPlannedActionAffectedIds } from './getPlannedActionAffectedIds';
 import { getProjectContext } from './getProjectContext';
 import { metricGoalStateCodec } from './metricGoalStateCodec';
 import { prepareMetricGoalPreview } from './prepareMetricGoalPreview';
+import { stopMeasuredPreviewAudition } from './stopMeasuredPreviewAudition';
 
 type ReproposePendingChatActionsInput = {
     confirmationId: string;
@@ -433,6 +434,7 @@ function persistReproposalConfirmation(
 export async function reproposePendingChatActions(
     input: ReproposePendingChatActionsInput
 ): Promise<ReproposePendingChatActionsResult> {
+    void stopMeasuredPreviewAudition({ confirmationId: input.confirmationId });
     const prepared = prepareReproposal(input);
     if (prepared.status !== 'prepared') {
         return prepared;

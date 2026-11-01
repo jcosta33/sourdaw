@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { normalizeTrack } from '../../../models/Track';
@@ -81,6 +81,8 @@ function makeTake(overrides: Partial<Take> & Pick<Take, 'id'>): Take {
 function makeTrack(overrides: Partial<Track> & Pick<Track, 'id' | 'name' | 'kind'>): Track {
     return normalizeTrack(overrides);
 }
+
+const PRIMARY_POINTER = { pointerId: 1, isPrimary: true, button: 0 };
 
 const stripRect = { width: 200, height: 24, top: 0, left: 0, right: 200, bottom: 24, x: 0, y: 0, toJSON: () => {} };
 
@@ -240,16 +242,16 @@ describe('TakeLanePanel', () => {
                 {
                     id: 'lane1',
                     trackId: 't1',
-                    takes: [makeTake({ id: 'take1', name: 'Take A' })],
+                    takes: [makeTake({ id: 'take1', name: 'Take A', endBeat: 8 })],
                     activeCompRegions: [],
                 },
             ],
         };
         const { container, rerender } = renderPanel();
         const row = container.querySelector('[role="presentation"]')!;
-        fireEvent.mouseDown(row, { button: 0, clientX: 50 });
-        fireEvent.mouseMove(row, { clientX: 150 });
-        fireEvent.mouseUp(row);
+        fireEvent.pointerDown(row, { ...PRIMARY_POINTER, clientX: 50 });
+        fireEvent.pointerMove(row, { pointerId: 1, buttons: 1, clientX: 150 });
+        fireEvent.pointerUp(row, { pointerId: 1, button: 0, clientX: 150 });
         expect(mocks.setCompRegion).toHaveBeenCalledWith('t1', { startBeat: 2, endBeat: 6, takeId: 'take1' });
 
         state.laneState = {
@@ -291,13 +293,179 @@ describe('TakeLanePanel', () => {
         };
         const { container } = renderPanel();
         const strip = container.querySelector('[role="presentation"]')!;
-        fireEvent.mouseDown(strip, { button: 0, clientX: 50 });
-        fireEvent.mouseMove(strip, { clientX: 150 });
+        fireEvent.pointerDown(strip, { ...PRIMARY_POINTER, clientX: 50 });
+        fireEvent.pointerMove(strip, { pointerId: 1, buttons: 1, clientX: 150 });
 
         const decorations = Array.from(strip.children);
         expect(decorations.length).toBeGreaterThanOrEqual(2);
         for (const decoration of decorations) {
             expect(decoration.classList.contains('pointer-events-none')).toBe(true);
         }
+    });
+
+    describe('comp swipe gesture', () => {
+        const renderSwipePanel = (take: Take, clips: Clip[]) => {
+            state.trackState = {
+                tracks: [makeTrack({ id: 't1', name: 'Vox', kind: 'audio', clips })],
+                selectedTrackId: null,
+            };
+            state.laneState = {
+                lanes: [{ id: 'lane1', trackId: 't1', takes: [take], activeCompRegions: [] }],
+            };
+            const { container } = renderPanel();
+            return container.querySelector<HTMLElement>('[role="presentation"]')!;
+        };
+        const clip0to8 = [makeClip({ id: 'c1', startBeat: 0, endBeat: 8 })];
+        const takeA0to8 = makeTake({ id: 'take1', name: 'Take A', endBeat: 8 });
+
+        it('keeps swiping after the pointer leaves the row and commits the region clamped to the row edge', () => {
+            const strip = renderSwipePanel(takeA0to8, clip0to8);
+            const setPointerCapture = vi.spyOn(strip, 'setPointerCapture');
+            fireEvent.pointerDown(strip, { ...PRIMARY_POINTER, clientX: 50 });
+            expect(setPointerCapture).toHaveBeenCalledWith(PRIMARY_POINTER.pointerId);
+            fireEvent.pointerMove(strip, { pointerId: 1, buttons: 1, clientX: 150 });
+            fireEvent.mouseLeave(strip);
+            fireEvent.pointerLeave(strip);
+            fireEvent.pointerMove(strip, { pointerId: 1, buttons: 1, clientX: 400 });
+            expect(strip.children).toHaveLength(2);
+            fireEvent.pointerUp(strip, { pointerId: 1, button: 0, clientX: 400 });
+            expect(mocks.setCompRegion).toHaveBeenCalledWith('t1', { startBeat: 2, endBeat: 8, takeId: 'take1' });
+        });
+
+        it('does not commit when a non-primary button is released, and drops the preview', () => {
+            const strip = renderSwipePanel(takeA0to8, clip0to8);
+            fireEvent.pointerDown(strip, { ...PRIMARY_POINTER, clientX: 50 });
+            fireEvent.pointerMove(strip, { pointerId: 1, buttons: 1, clientX: 150 });
+            fireEvent.pointerUp(strip, { pointerId: 1, button: 2, clientX: 150 });
+            expect(mocks.setCompRegion).not.toHaveBeenCalled();
+            expect(strip.children).toHaveLength(1);
+        });
+
+        it('does not start a swipe from a non-primary button or a non-primary pointer', () => {
+            const strip = renderSwipePanel(takeA0to8, clip0to8);
+            fireEvent.pointerDown(strip, { pointerId: 1, isPrimary: true, button: 2, clientX: 50 });
+            fireEvent.pointerDown(strip, { pointerId: 2, isPrimary: false, button: 0, clientX: 50 });
+            fireEvent.pointerMove(strip, { pointerId: 2, clientX: 150 });
+            fireEvent.pointerUp(strip, { pointerId: 2, button: 0, clientX: 150 });
+            expect(mocks.setCompRegion).not.toHaveBeenCalled();
+            expect(strip.children).toHaveLength(1);
+        });
+
+        it('commits the release position when the move and release land before React re-renders', () => {
+            const strip = renderSwipePanel(takeA0to8, clip0to8);
+            fireEvent.pointerDown(strip, { ...PRIMARY_POINTER, clientX: 50 });
+            act(() => {
+                fireEvent.pointerMove(strip, { pointerId: 1, buttons: 1, clientX: 100 });
+                fireEvent.pointerMove(strip, { pointerId: 1, buttons: 1, clientX: 150 });
+                fireEvent.pointerUp(strip, { pointerId: 1, button: 0, clientX: 175 });
+            });
+            expect(mocks.setCompRegion).toHaveBeenCalledWith('t1', { startBeat: 2, endBeat: 7, takeId: 'take1' });
+        });
+
+        it('commits a swipe released with no prior move from the release position alone', () => {
+            const strip = renderSwipePanel(takeA0to8, clip0to8);
+            fireEvent.pointerDown(strip, { ...PRIMARY_POINTER, clientX: 100 });
+            fireEvent.pointerUp(strip, { pointerId: 1, button: 0, clientX: 20 });
+            expect(mocks.setCompRegion).toHaveBeenCalledWith('t1', { startBeat: 0.8, endBeat: 4, takeId: 'take1' });
+        });
+
+        it('draws an overhanging take inside the strip but previews and commits only the part inside its clip', () => {
+            const strip = renderSwipePanel(makeTake({ id: 'take1', name: 'Take A', startBeat: 2, endBeat: 12 }), [
+                makeClip({ id: 'c1', startBeat: 4, endBeat: 8 }),
+            ]);
+            const extent = strip.children[0] as HTMLElement;
+            const left = parseFloat(extent.style.left);
+            const width = parseFloat(extent.style.width);
+            expect(left).toBeGreaterThanOrEqual(0);
+            expect(left + width).toBeLessThanOrEqual(100);
+
+            fireEvent.pointerDown(strip, { ...PRIMARY_POINTER, clientX: 160 });
+            fireEvent.pointerMove(strip, { pointerId: 1, buttons: 1, clientX: 196 });
+            expect(strip.children).toHaveLength(1);
+            fireEvent.pointerUp(strip, { pointerId: 1, button: 0, clientX: 196 });
+            expect(mocks.setCompRegion).not.toHaveBeenCalled();
+
+            fireEvent.pointerDown(strip, { ...PRIMARY_POINTER, clientX: 100 });
+            fireEvent.pointerMove(strip, { pointerId: 1, buttons: 1, clientX: 160 });
+            const preview = strip.children[1] as HTMLElement;
+            expect(parseFloat(preview.style.left)).toBeCloseTo(50);
+            expect(parseFloat(preview.style.width)).toBeCloseTo(10);
+            fireEvent.pointerUp(strip, { pointerId: 1, button: 0, clientX: 160 });
+            expect(mocks.setCompRegion).toHaveBeenCalledTimes(1);
+            expect(mocks.setCompRegion).toHaveBeenCalledWith('t1', { startBeat: 7, endBeat: 8, takeId: 'take1' });
+        });
+
+        it('commits nothing when the swipe clamps to a sliver below the minimum span', () => {
+            const strip = renderSwipePanel(makeTake({ id: 'take1', name: 'Take A', startBeat: 0, endBeat: 12 }), [
+                makeClip({ id: 'c1', startBeat: 0, endBeat: 8 }),
+            ]);
+            // Strip spans 0..12 at 200px: beat 7.99 is 133.17px and beat 9 is 150px, so 0.01 beat survives the clip.
+            fireEvent.pointerDown(strip, { ...PRIMARY_POINTER, clientX: 133.17 });
+            fireEvent.pointerMove(strip, { pointerId: 1, buttons: 1, clientX: 150 });
+            expect(strip.children).toHaveLength(1);
+            fireEvent.pointerUp(strip, { pointerId: 1, button: 0, clientX: 150 });
+            expect(mocks.setCompRegion).not.toHaveBeenCalled();
+        });
+
+        it('shows no preview and commits nothing for a take with no source clip', () => {
+            const strip = renderSwipePanel(
+                makeTake({ id: 'take1', name: 'Take A', clipId: 'missing', endBeat: 8 }),
+                clip0to8
+            );
+            expect((strip.children[0] as HTMLElement).style.width).toBe('100%');
+            fireEvent.pointerDown(strip, { ...PRIMARY_POINTER, clientX: 50 });
+            fireEvent.pointerMove(strip, { pointerId: 1, buttons: 1, clientX: 150 });
+            expect(strip.children).toHaveLength(1);
+            fireEvent.pointerUp(strip, { pointerId: 1, button: 0, clientX: 150 });
+            expect(mocks.setCompRegion).not.toHaveBeenCalled();
+        });
+
+        it('commits a chorded release once, at the move that reports the primary button gone', () => {
+            const strip = renderSwipePanel(takeA0to8, clip0to8);
+            fireEvent.pointerDown(strip, { ...PRIMARY_POINTER, buttons: 1, clientX: 50 });
+            fireEvent.pointerMove(strip, { pointerId: 1, button: 2, buttons: 3, clientX: 100 });
+            fireEvent.pointerMove(strip, { pointerId: 1, button: 0, buttons: 2, clientX: 150 });
+            expect(mocks.setCompRegion).toHaveBeenCalledTimes(1);
+            expect(mocks.setCompRegion).toHaveBeenCalledWith('t1', { startBeat: 2, endBeat: 6, takeId: 'take1' });
+            expect(strip.children).toHaveLength(1);
+            fireEvent.pointerUp(strip, { pointerId: 1, button: 2, buttons: 0, clientX: 190 });
+            expect(mocks.setCompRegion).toHaveBeenCalledTimes(1);
+        });
+
+        it('drops the swipe without committing when it loses pointer capture', () => {
+            const strip = renderSwipePanel(takeA0to8, clip0to8);
+            fireEvent.pointerDown(strip, { ...PRIMARY_POINTER, clientX: 50 });
+            fireEvent.pointerMove(strip, { pointerId: 1, buttons: 1, clientX: 150 });
+            expect(strip.children).toHaveLength(2);
+            fireEvent.lostPointerCapture(strip, { pointerId: 1 });
+            expect(strip.children).toHaveLength(1);
+            fireEvent.pointerUp(strip, { pointerId: 1, button: 0, clientX: 150 });
+            expect(mocks.setCompRegion).not.toHaveBeenCalled();
+        });
+
+        it('removes the drag preview on release and on cancel', () => {
+            const strip = renderSwipePanel(takeA0to8, clip0to8);
+            fireEvent.pointerDown(strip, { ...PRIMARY_POINTER, clientX: 50 });
+            fireEvent.pointerMove(strip, { pointerId: 1, buttons: 1, clientX: 150 });
+            expect(strip.children).toHaveLength(2);
+            fireEvent.pointerUp(strip, { pointerId: 1, button: 0, clientX: 150 });
+            expect(strip.children).toHaveLength(1);
+
+            mocks.setCompRegion.mockClear();
+            fireEvent.pointerDown(strip, { ...PRIMARY_POINTER, clientX: 50 });
+            fireEvent.pointerMove(strip, { pointerId: 1, buttons: 1, clientX: 150 });
+            expect(strip.children).toHaveLength(2);
+            fireEvent.pointerCancel(strip, { pointerId: 1 });
+            expect(strip.children).toHaveLength(1);
+            fireEvent.pointerUp(strip, { pointerId: 1, button: 0, clientX: 150 });
+            expect(mocks.setCompRegion).not.toHaveBeenCalled();
+        });
+
+        it('ignores a swipe shorter than the minimum span', () => {
+            const strip = renderSwipePanel(takeA0to8, clip0to8);
+            fireEvent.pointerDown(strip, { ...PRIMARY_POINTER, clientX: 50 });
+            fireEvent.pointerUp(strip, { pointerId: 1, button: 0, clientX: 52 });
+            expect(mocks.setCompRegion).not.toHaveBeenCalled();
+        });
     });
 });

@@ -100,6 +100,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     commitRecording: mocks.commitRecording,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    audioEngine: { beginAudioPreviewIntent: () => ({ release: vi.fn() }) },
     createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
     ensureCachedAudioBuffersDurable: vi.fn(),
     resumeEngine: mocks.resumeEngine,

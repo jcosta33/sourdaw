@@ -1,7 +1,70 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { type Store } from '#/infra/store/types';
 import { type commitRecording, type startRecording, type stopRecording } from '#/modules/Arrangement/useCases';
 import { type startAudioRecording } from '#/modules/AudioEngine/useCases';
+import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
+
+const nativeWire = vi.hoisted(() => ({
+    fence: 0,
+    position: 1.9,
+    wraps: 0,
+    apply: vi.fn<(_: unknown) => Promise<unknown>>(),
+}));
+const nativeRuntime = vi.hoisted(
+    (): {
+        audio: typeof import('#/modules/AudioEngine/useCases') | null;
+        tracks: Store<{ tracks: unknown[] }> | null;
+    } => ({
+        audio: null,
+        tracks: null,
+    })
+);
+const invokeNative: SourdawDesktopBridge['invoke'] = async (command, args) => {
+    if (command === 'apply_graph_commands') {
+        return nativeWire.apply(args);
+    }
+    if (command === 'map_graph_batch') {
+        return {};
+    }
+    if (command === 'engine_transport_position') {
+        return {
+            engineIncarnation: 'dc0f62d1-dc26-4c5c-81db-36130c1466e4:0',
+            running: true,
+            playing: true,
+            positionSeconds: nativeWire.position,
+            loopWraps: nativeWire.wraps,
+            batchesApplied: nativeWire.fence,
+        };
+    }
+    if (command === 'engine_transport_set_maps') {
+        return {
+            sampleRate: 48_000,
+            tempoSegments: 1,
+            timeSignatureSegments: 1,
+            loopEnabled: false,
+            admittedBatch: nativeWire.fence,
+        };
+    }
+    if (command === 'timeline_sample_lifecycle') {
+        const request = args?.[0];
+        if (typeof request === 'object' && request !== null && 'action' in request) {
+            if (request.action === 'open') {
+                return { owner: 'scheduler-native-owner' };
+            }
+            if (request.action === 'prepare') {
+                return { lease: 'scheduler-native-lease', missing: [] };
+            }
+            if (request.action === 'release') {
+                return { released: true };
+            }
+            if (request.action === 'retire') {
+                return { complete: true, remainingReaders: 0, pendingFence: false };
+            }
+        }
+    }
+    throw new Error(`Unexpected scheduler native command: ${command}`);
+};
 
 import { secondsBetweenBeats } from '../../../models/TempoMap';
 import { defaultTransportState } from '../../../models/TransportState';
@@ -39,7 +102,17 @@ function completedPunchResult(
 // without fighting vi.mock hoisting.
 const transportStoreState: { value: typeof defaultTransportState | null } = { value: null };
 const tempoMapStoreState: { value: { changes: unknown[] } | null } = { value: { changes: [] } };
-const trackStoreState: { value: { tracks: unknown[] } | null } = { value: { tracks: [] } };
+const trackStoreState = {
+    get value(): { tracks: unknown[] } | null {
+        return nativeRuntime.tracks?.value ?? null;
+    },
+    set value(value: { tracks: unknown[] } | null) {
+        if (nativeRuntime.tracks === null) {
+            throw new Error('The public track fixture did not initialize.');
+        }
+        nativeRuntime.tracks.set(value);
+    },
+};
 const takeLaneStoreState: { value: { lanes: unknown[] } | null } = { value: { lanes: [] } };
 // The clip ids `startRecording` marks active; the loop-wrap path resolves each
 // armed track's take onto the clip actually recording the pass.
@@ -89,39 +162,42 @@ const audioEngineMocks = {
     readNativeEnginePlayheadSeconds: vi.fn((): number | null => null),
 };
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     captureProjectRootIdentity: vi.fn<typeof import('#/modules/CrdtDocument/useCases').captureProjectRootIdentity>(
         () => 'root-identity'
     ),
 }));
-vi.mock('#/modules/Arrangement/stores', () => ({
-    resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
-        () => ({ status: 'ineligible' })
-    ),
-    adjustmentLayerStore: { value: null },
-    gainEnvelopeStore: { value: null },
-    getTrackEligibility: vi.fn(),
-    markerStore: { value: null },
-    updateClipInStore: vi.fn(() => false),
-    vcaGroupStore: { value: null },
-    warpStateStore: { value: null },
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/stores')>();
+    const { createStore } = await import('#/infra/store/createStore');
+    const tracks = createStore<{ tracks: unknown[] }>({ initialData: { tracks: [] } });
+    nativeRuntime.tracks = tracks;
+    return {
+        ...actual,
+        resolveEligibleClipWriteTarget: vi.fn<
+            typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget
+        >(() => ({ status: 'ineligible' })),
+        adjustmentLayerStore: { value: null },
+        gainEnvelopeStore: { value: null },
+        getTrackEligibility: vi.fn(),
+        markerStore: { value: null },
+        updateClipInStore: vi.fn(() => false),
+        warpStateStore: { value: null },
 
-    trackStore: {
-        get value() {
-            return trackStoreState.value;
+        trackStore: tracks,
+        takeLaneStore: {
+            get value() {
+                return takeLaneStoreState.value;
+            },
         },
-    },
-    takeLaneStore: {
-        get value() {
-            return takeLaneStoreState.value;
+        activeRecordingRef: {
+            get current() {
+                return activeRecordingRefState.current;
+            },
         },
-    },
-    activeRecordingRef: {
-        get current() {
-            return activeRecordingRefState.current;
-        },
-    },
-}));
+    };
+});
 vi.mock('../../../stores/transportStore', () => ({
     transportStore: {
         get value() {
@@ -169,7 +245,8 @@ const evaluateFollowActionsMock = vi.fn<
 >(() => ({ jumpToPosition: null, shouldStop: false }));
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
-vi.mock('#/modules/Arrangement/useCases', () => ({
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     prepareRecoveredRecording: vi.fn(),
     admitRecordingCaptureClock: vi.fn((clipId: string) => `fixture-owner:${clipId}`),
     observeRecordingPassEntry: vi.fn(),
@@ -231,7 +308,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: (...args: unknown[]) => (notifyUserMock as (...a: unknown[]) => unknown)(...args),
 }));
-vi.mock('#/modules/MIDI/useCases', () => ({
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
     projectCommittedGroove: <Event>({ events }: { events: readonly Event[] }): readonly Event[] => events,
     shouldPlayMidiEvent: ({ probabilityPercent }: { probabilityPercent: number }) => {
         if (probabilityPercent <= 0) {
@@ -254,47 +332,53 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     countSettledOverdubPasses: () => 0,
     waitForOverdubLanding: () => Promise.resolve(),
 }));
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    ensureCachedAudioBuffersDurable: vi.fn(),
-    createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
-    analyzePitchForClip: vi.fn(),
-    ensureBusStrip: vi.fn(),
-    getEngineState: vi.fn(),
-    removeSend: vi.fn(),
-    setBusGain: vi.fn(),
-    setSend: vi.fn(),
-    unwireSidechainRoute: vi.fn(),
-    wireSidechainRoute: vi.fn(),
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    nativeRuntime.audio = actual;
+    return {
+        ...actual,
+        ensureCachedAudioBuffersDurable: vi.fn(),
+        createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
+        analyzePitchForClip: vi.fn(),
+        ensureBusStrip: vi.fn(),
+        getEngineState: vi.fn(),
+        removeSend: vi.fn(),
+        setBusGain: vi.fn(),
+        setSend: vi.fn(),
+        unwireSidechainRoute: vi.fn(),
+        wireSidechainRoute: vi.fn(),
 
-    // A held note that survived would still have a change due, so a test that expects none sees it.
-    advanceNoteExpression: ({ timeline }: { timeline: unknown }) => ({
-        timeline,
-        changes: [{ beat: 2, frame: 96_000, expression: { pressure: 80 } }],
-    }),
-    getAudioContext: () => audioEngineMocks.getAudioContext(),
-    getTrackStrip: vi.fn(),
-    getCompensationDelay: (...args: unknown[]) =>
-        (audioEngineMocks.getCompensationDelay as (...a: unknown[]) => unknown)(...args),
-    audioEngine: {
-        setTransportInfo: (...args: unknown[]) =>
-            (audioEngineMocks.audioEngine.setTransportInfo as (...a: unknown[]) => unknown)(...args),
-    },
-    stopAllScheduled: (...args: unknown[]) =>
-        (audioEngineMocks.stopAllScheduled as (...a: unknown[]) => unknown)(...args),
-    startAudioRecording: (...args: unknown[]) =>
-        (audioEngineMocks.startAudioRecording as (...a: unknown[]) => unknown)(...args),
-    stopAudioRecording: (...args: unknown[]) =>
-        (audioEngineMocks.stopAudioRecording as (...a: unknown[]) => unknown)(...args),
-    cacheAudioBuffer: (...args: unknown[]) =>
-        (audioEngineMocks.cacheAudioBuffer as (...a: unknown[]) => unknown)(...args),
-    refreshSidechainAlignment: (...args: unknown[]) =>
-        (audioEngineMocks.refreshSidechainAlignment as (...a: unknown[]) => unknown)(...args),
-    scheduleAdjustmentLayers: (...args: unknown[]) =>
-        (audioEngineMocks.scheduleAdjustmentLayers as (...a: unknown[]) => unknown)(...args),
-    readNativeEnginePlayheadSeconds: (...args: unknown[]) =>
-        (audioEngineMocks.readNativeEnginePlayheadSeconds as (...a: unknown[]) => unknown)(...args),
-}));
-vi.mock('#/modules/Automation/useCases', () => ({
+        // A held note that survived would still have a change due, so a test that expects none sees it.
+        advanceNoteExpression: ({ timeline }: { timeline: unknown }) => ({
+            timeline,
+            changes: [{ beat: 2, frame: 96_000, expression: { pressure: 80 } }],
+        }),
+        getAudioContext: () => audioEngineMocks.getAudioContext(),
+        getTrackStrip: vi.fn(),
+        getCompensationDelay: (...args: unknown[]) =>
+            (audioEngineMocks.getCompensationDelay as (...a: unknown[]) => unknown)(...args),
+        audioEngine: {
+            setTransportInfo: (...args: unknown[]) =>
+                (audioEngineMocks.audioEngine.setTransportInfo as (...a: unknown[]) => unknown)(...args),
+        },
+        stopAllScheduled: (...args: unknown[]) =>
+            (audioEngineMocks.stopAllScheduled as (...a: unknown[]) => unknown)(...args),
+        startAudioRecording: (...args: unknown[]) =>
+            (audioEngineMocks.startAudioRecording as (...a: unknown[]) => unknown)(...args),
+        stopAudioRecording: (...args: unknown[]) =>
+            (audioEngineMocks.stopAudioRecording as (...a: unknown[]) => unknown)(...args),
+        cacheAudioBuffer: (...args: unknown[]) =>
+            (audioEngineMocks.cacheAudioBuffer as (...a: unknown[]) => unknown)(...args),
+        refreshSidechainAlignment: (...args: unknown[]) =>
+            (audioEngineMocks.refreshSidechainAlignment as (...a: unknown[]) => unknown)(...args),
+        scheduleAdjustmentLayers: (...args: unknown[]) =>
+            (audioEngineMocks.scheduleAdjustmentLayers as (...a: unknown[]) => unknown)(...args),
+        readNativeEnginePlayheadSeconds: (...args: unknown[]) =>
+            (audioEngineMocks.readNativeEnginePlayheadSeconds as (...a: unknown[]) => unknown)(...args),
+    };
+});
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Automation/useCases')>()),
     startAutomationRecording: (...args: unknown[]) =>
         (automationMocks.startAutomationRecording as (...a: unknown[]) => unknown)(...args),
     applyModulation: (...args: unknown[]) => (automationMocks.applyModulation as (...a: unknown[]) => unknown)(...args),
@@ -317,6 +401,46 @@ vi.mock('../../../repositories/transport/updateTransportState', () => ({ updateT
 
 function playingState(overrides: Partial<typeof defaultTransportState> = {}): typeof defaultTransportState {
     return { ...defaultTransportState, isPlaying: true, playheadPosition: 0, ...overrides };
+}
+
+function installRetainedSource(context: AudioContext) {
+    const pcm = new Float32Array([0.1, -0.2, 0.3, -0.4]);
+    const channel = (index: number) => {
+        if (index !== 0) {
+            throw new RangeError('The retained fixture has exactly one channel.');
+        }
+        return pcm;
+    };
+    const buffer: AudioBuffer = {
+        length: pcm.length,
+        numberOfChannels: 1,
+        sampleRate: 48_000,
+        duration: pcm.length / 48_000,
+        getChannelData: channel,
+        copyFromChannel: (destination, index, start = 0) => destination.set(channel(index).subarray(start)),
+        copyToChannel: (input, index, start = 0) => channel(index).set(input, start),
+    };
+    const source = {
+        buffer: null,
+        onended: null,
+        connect: vi.fn(),
+        disconnect: vi.fn(),
+        start: vi.fn(),
+        stop: vi.fn(),
+    };
+    const descriptor = Object.getOwnPropertyDescriptor(context, 'createBufferSource');
+    Object.defineProperty(context, 'createBufferSource', { configurable: true, value: () => source });
+    return {
+        buffer,
+        source,
+        restore: () => {
+            if (descriptor === undefined) {
+                Reflect.deleteProperty(context, 'createBufferSource');
+            } else {
+                Object.defineProperty(context, 'createBufferSource', descriptor);
+            }
+        },
+    };
 }
 
 type SchedulerWorkerHarness = {
@@ -458,6 +582,134 @@ describe('startPlayheadScheduler', () => {
         expect(schedulerSession.accumulatedPosition).toBeLessThan(1);
     });
 
+    it('keeps the actual native programme reader through temporary audition suppression and a loop seam', async () => {
+        const audio = nativeRuntime.audio;
+        if (audio === null) {
+            throw new Error('The public audio fixture did not initialize.');
+        }
+        const arrangement = await import('#/modules/Arrangement/useCases');
+        const stores = await import('#/modules/Arrangement/stores');
+        expect(stores.trackStore).toBe(nativeRuntime.tracks);
+        const frames = new Map<string, Parameters<typeof animationScheduler.register>[1]>();
+        const register = vi.spyOn(animationScheduler, 'register').mockImplementation((id, callback) => {
+            frames.set(id, callback);
+        });
+        const unregister = vi.spyOn(animationScheduler, 'unregister').mockImplementation((id) => {
+            frames.delete(id);
+        });
+        const applied = () => ({
+            acceptance: 'accepted',
+            application: 'applied',
+            runtimeRevision: 1,
+            reports: [],
+            engineIncarnation: 'dc0f62d1-dc26-4c5c-81db-36130c1466e4:0',
+            admittedBatch: ++nativeWire.fence,
+        });
+        const bridgeDescriptor = Object.getOwnPropertyDescriptor(window, 'sourdaw');
+        Object.defineProperty(window, 'sourdaw', {
+            configurable: true,
+            value: { invoke: invokeNative } satisfies Pick<SourdawDesktopBridge, 'invoke'>,
+        });
+        nativeWire.fence = 0;
+        nativeWire.position = 1.9;
+        nativeWire.wraps = 0;
+        nativeWire.apply.mockImplementation(async () => applied());
+        const track = arrangement.createTrack({ id: 'native-programme', name: 'Native programme', kind: 'midi' });
+        const device = track.devices[0];
+        if (device === undefined) {
+            throw new Error('The public track constructor must supply its instrument.');
+        }
+        track.devices = [{ ...device, type: 'fermenter', parameterValues: {} }];
+        trackStoreState.value = { tracks: [track] };
+        expect(stores.trackStore.value).toBe(trackStoreState.value);
+        transportStoreState.value = playingState({ playheadPosition: 0, isLooping: true, loopStart: 0, loopEnd: 4 });
+        let audition: ReturnType<typeof audio.playExclusiveAudioBufferPreview> | undefined;
+        const restoration = Promise.withResolvers<ReturnType<typeof applied>>();
+        const retained = installRetainedSource(audio.audioEngine.context);
+        try {
+            const session = await audio.startNativeLiveGraphSession({
+                positionSeconds: 0,
+                transport: { kind: 'held', webAudioRollingSince: () => null },
+                transportMaps: {
+                    tempo: [{ startSeconds: 0, beatsPerMinute: 120 }],
+                    timeSignature: [{ startSeconds: 0, numerator: 4, denominator: 4 }],
+                    loopRegion: { enabled: false, startSeconds: 0, endSeconds: 0 },
+                },
+                sampleRate: 48_000,
+            });
+            expect(session.outcome).toBe('started');
+            expect(nativeWire.apply).toHaveBeenCalledWith([
+                expect.objectContaining({
+                    schemaVersion: 1,
+                    replaceTopology: true,
+                    timelineLease: 'scheduler-native-lease',
+                    commands: expect.arrayContaining([
+                        { kind: 'set-monitor-shadow', shadowed: false },
+                        { kind: 'set-transport', playing: false, positionSeconds: 0 },
+                        expect.objectContaining({
+                            kind: 'create-track-strip',
+                            trackId: 'native-programme',
+                            contributesAudio: true,
+                        }),
+                    ]),
+                }),
+            ]);
+            const poll = () => {
+                for (const frame of frames.values()) {
+                    frame(performance.now(), 0);
+                }
+            };
+            poll();
+            await vi.waitFor(() => expect(audio.readNativeEnginePlayheadSeconds()).toBe(1.9));
+            audition = audio.playExclusiveAudioBufferPreview({
+                buffer: retained.buffer,
+                gain: 1,
+                isCurrent: () => true,
+                onEnded: vi.fn(),
+            });
+            await audition.ready;
+            expect(retained.source.buffer).toBe(retained.buffer);
+            expect(retained.source.start).toHaveBeenCalledTimes(1);
+            audioEngineMocks.readNativeEnginePlayheadSeconds.mockImplementation(audio.readNativeEnginePlayheadSeconds);
+            startPlayheadScheduler();
+            const worker = schedulerSession.worker as unknown as {
+                onmessage: ((event: { data: unknown }) => void) | null;
+            };
+            ctxTime.now = 0.1;
+            emitSchedulerTick(worker);
+            await vi.waitFor(() => expect(playheadPositionRef.current).toBeCloseTo(3.8, 6));
+            await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false));
+            nativeWire.apply.mockReturnValueOnce(restoration.promise);
+            const restoring = audition.stop();
+            expect(retained.source.stop).toHaveBeenCalledTimes(1);
+            nativeWire.position = 0.1;
+            nativeWire.wraps = 1;
+            poll();
+            await vi.waitFor(() => expect(audio.readNativeEnginePlayheadSeconds()).toBe(0.1));
+            ctxTime.now = 0.2;
+            emitSchedulerTick(worker);
+            await vi.waitFor(() => expect(playheadPositionRef.current).toBeCloseTo(0.2, 6));
+            expect(schedulerSession.accumulatedPosition).toBeLessThan(1);
+            restoration.resolve(applied());
+            await restoring;
+        } finally {
+            try {
+                restoration.resolve(applied());
+                await audition?.stop();
+                await audio.stopNativeLiveGraphSession({ positionSeconds: 0 });
+            } finally {
+                retained.restore();
+                if (bridgeDescriptor === undefined) {
+                    Reflect.deleteProperty(window, 'sourdaw');
+                } else {
+                    Object.defineProperty(window, 'sourdaw', bridgeDescriptor);
+                }
+                register.mockRestore();
+                unregister.mockRestore();
+            }
+        }
+    });
+
     it('keeps the cursor on its own integration when no engine answers', async () => {
         transportStoreState.value = playingState({ playheadPosition: 0 });
         ctxTime.now = 0.1;
@@ -583,12 +835,12 @@ describe('startPlayheadScheduler', () => {
         expect(vi.mocked(scheduleMetronome)).not.toHaveBeenCalled();
     });
 
-    it('clamps a suspended-context clock leap so the playhead never races past scheduled beats', async () => {
+    it('advances by the whole audio time a main-thread stall left and opens the window at the playhead', async () => {
         transportStoreState.value = playingState({ playheadPosition: 0 });
         // Init reads currentTime 0 → lastTickTime seeded at 0.
         startPlayheadScheduler();
-        // The first tick sees a huge currentTime leap (10s), which an unclamped
-        // delta would turn into ~20 beats of skipped advance.
+        // No tick runs for 10 s while the context keeps rendering: a suspended
+        // context would not have advanced `currentTime` at all.
         ctxTime.now = 10;
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
@@ -597,10 +849,43 @@ describe('startPlayheadScheduler', () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        // deltaSec clamped to MAX_DELTA_SECONDS (0.1); at 120bpm (2 bps) that is
-        // 0.2 beats of advance — not the 20 beats an unclamped 10s leap implies.
-        expect(schedulerSession.accumulatedPosition).toBeLessThan(1);
-        expect(schedulerSession.accumulatedPosition).toBeCloseTo(0.2, 5);
+        // 10 s at 120 BPM: the playhead is where the audio clock is, beat 20.
+        expect(schedulerSession.accumulatedPosition).toBeCloseTo(20, 9);
+        // The 20 beats the stall passed are not replayed: every window opens at
+        // the playhead, and the MIDI window is a relocation that chases the
+        // stored controllers there.
+        expect(vi.mocked(scheduleMetronome).mock.calls[0]?.[0]).toBeCloseTo(20, 9);
+        expect(vi.mocked(scheduleAudioClips).mock.calls[0]?.[0]).toBeCloseTo(20, 9);
+        const midiWindow = vi.mocked(scheduleMidiNotes).mock.calls[0];
+        expect(midiWindow?.[0]).toBeCloseTo(20, 9);
+        expect(midiWindow?.[8]).toBe(true);
+        expect(vi.mocked(panicYeastRuntime)).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the continuing window when a gap past the look-ahead leaves it less than one look-ahead overdue', async () => {
+        transportStoreState.value = playingState({ playheadPosition: 0 });
+        startPlayheadScheduler();
+        const worker = schedulerSession.worker as unknown as {
+            onmessage: ((event: { data: unknown }) => void) | null;
+        };
+        ctxTime.now = 0.0625;
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const continuingFrom = schedulerSession.lastScheduledBeat;
+        vi.mocked(scheduleMidiNotes).mockClear();
+
+        // A 0.125 s gap (exact in binary) outruns the 0.1 s look-ahead, but the
+        // window it continues ended 0.025 s ago: its events play that late.
+        ctxTime.now = 0.1875;
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        const midiWindow = vi.mocked(scheduleMidiNotes).mock.calls[0];
+        expect(midiWindow?.[0]).toBe(continuingFrom);
+        expect(midiWindow?.[8]).toBe(false);
+        expect(vi.mocked(panicYeastRuntime)).not.toHaveBeenCalled();
     });
 
     /**
@@ -702,10 +987,11 @@ describe('startPlayheadScheduler', () => {
             loopStart: 0,
             loopEnd: 4,
         });
-        // Init reads currentTime 0 → lastTickTime seeded at 0.
+        // Init reads currentTime 0.1 → lastTickTime seeded at 0.1.
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
-        // A 0.2s clock delta is clamped to MAX_DELTA_SECONDS (0.1) → 0.2 beats
-        // of advance from 3.9 → 4.1, crossing loopEnd 4 and wrapping to 0.1.
+        // A 0.1 s tick, no longer than the look-ahead → 0.2 beats of advance
+        // from 3.9 → 4.1, crossing loopEnd 4 and wrapping to 0.1.
         ctxTime.now = 0.2;
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
@@ -747,29 +1033,32 @@ describe('startPlayheadScheduler', () => {
             playheadPosition: 0,
             isLooping: true,
             loopStart: 0,
-            loopEnd: 0.2,
+            loopEnd: 0.125,
         });
+        ctxTime.now = 0.25;
         startPlayheadScheduler();
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
 
-        // Tick 1 wraps (0 → 0.2 beats) and its post-wrap emission plants the
+        // Tick 1 wraps (0 → 0.125 beats) and its post-wrap emission plants the
         // sources; tick 2 wraps again, and its fence is the one under test.
-        ctxTime.now = 0.2;
+        ctxTime.now = 0.3125;
         emitSchedulerTick(worker);
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
-        ctxTime.now = 0.4;
+        ctxTime.now = 0.375;
         emitSchedulerTick(worker);
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        // The clamped advance lands the playhead exactly on loopEnd 0.2, so the
-        // seam instant is the tick's own clock (0.4). Unfixed, both sources are
-        // stopped at 0.405 and the compensated tail never plays.
-        expect(plain.stop).toHaveBeenCalledWith(0.4);
-        expect(compensated.stop).toHaveBeenCalledWith(expect.closeTo(0.65, 9));
+        // Each 0.0625 s tick (exact in binary, so no rounding moves the seam)
+        // advances exactly the region's 0.125 beats and lands the playhead on
+        // loopEnd, so the seam instant is the tick's own clock (0.375).
+        // Unfixed, both sources are stopped at the tick's clock and the
+        // compensated tail never plays.
+        expect(plain.stop).toHaveBeenCalledWith(0.375);
+        expect(compensated.stop).toHaveBeenCalledWith(expect.closeTo(0.625, 9));
     });
 
     it('plays straight through without wrapping when starting playback at or past loopEnd (#4117)', async () => {
@@ -779,6 +1068,7 @@ describe('startPlayheadScheduler', () => {
             loopStart: 0,
             loopEnd: 4,
         });
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
         ctxTime.now = 0.2;
         const worker = schedulerSession.worker as unknown as {
@@ -801,6 +1091,7 @@ describe('startPlayheadScheduler', () => {
             loopStart: 0,
             loopEnd: 4,
         });
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
         ctxTime.now = 0.2;
         const worker = schedulerSession.worker as unknown as {
@@ -829,6 +1120,7 @@ describe('startPlayheadScheduler', () => {
             loopEnd: 4,
             isRecording: true,
         });
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
         ctxTime.now = 0.2;
         const worker = schedulerSession.worker as unknown as {
@@ -869,6 +1161,7 @@ describe('startPlayheadScheduler', () => {
             isRecording: true,
         });
 
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
         ctxTime.now = 0.2;
         const worker = schedulerSession.worker as unknown as {
@@ -956,6 +1249,7 @@ describe('startPlayheadScheduler', () => {
             loopEnd: 4,
             isRecording: true,
         });
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
         ctxTime.now = 0.2;
         const worker = schedulerSession.worker as unknown as {
@@ -1011,6 +1305,7 @@ describe('startPlayheadScheduler', () => {
             loopEnd: 4,
             isRecording: true,
         });
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
         ctxTime.now = 0.2;
         const worker = schedulerSession.worker as unknown as {
@@ -1058,6 +1353,7 @@ describe('startPlayheadScheduler', () => {
             loopEnd: 4,
             isRecording: true,
         });
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
@@ -1133,6 +1429,7 @@ describe('startPlayheadScheduler', () => {
             loopEnd: 4,
             isRecording: true,
         });
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
@@ -1172,6 +1469,7 @@ describe('startPlayheadScheduler', () => {
             loopEnd: 6,
             isRecording: true,
         });
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
         ctxTime.now = 0.2;
         const worker = schedulerSession.worker as unknown as {
@@ -1215,6 +1513,7 @@ describe('startPlayheadScheduler', () => {
             loopEnd: 4,
             isRecording: true,
         });
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
         ctxTime.now = 0.2;
         const worker = schedulerSession.worker as unknown as {
@@ -1268,6 +1567,7 @@ describe('startPlayheadScheduler', () => {
             loopEnd: 16,
             isRecording: true,
         });
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
         ctxTime.now = 0.2;
         const worker = schedulerSession.worker as unknown as {
@@ -1901,8 +2201,9 @@ describe('startPlayheadScheduler', () => {
             punchOutBeat: 8,
         });
         schedulerSession.punchRecordingActive = true;
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
-        // 0.2s delta at 120bpm = 0.4 beats → from 7.9 to 8.3, crossing punchOut 8.
+        // 0.1 s tick at 120bpm = 0.2 beats → from 7.9 to 8.1, crossing punchOut 8.
         ctxTime.now = 0.2;
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
@@ -1913,7 +2214,7 @@ describe('startPlayheadScheduler', () => {
 
         expect(audioEngineMocks.stopAudioRecording).toHaveBeenCalledTimes(1);
         expect(arrangementMocks.stopRecording).toHaveBeenCalledTimes(1);
-        // The tick overshoots to 8.3; the take ends at the punch-out point.
+        // The tick overshoots to 8.1; the take ends at the punch-out point.
         expect(schedulerSession.accumulatedPosition).toBeGreaterThan(8);
         expect(arrangementMocks.stopRecording).toHaveBeenCalledWith(
             8,

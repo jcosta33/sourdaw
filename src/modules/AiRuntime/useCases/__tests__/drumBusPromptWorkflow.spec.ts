@@ -699,16 +699,29 @@ function createTurnTrackedWebLlmResponder(
     { planningRounds = 1, intake = literalMetricIntakeTurn }: { planningRounds?: number; intake?: ScriptedTurn } = {}
 ): (systemPrompt: string, userMessage: string) => Promise<string> {
     let turn = 0;
+    const turnsPerRound = intake === maskingMetricIntake ? 4 : 3;
+    const maxTurns = planningRounds * turnsPerRound;
     return (systemPrompt, userMessage) => {
         turn += 1;
-        if (turn > planningRounds * 3) {
-            throw new Error(`Expected at most ${planningRounds * 3} WebLLM provider turns`);
+        if (turn > maxTurns) {
+            throw new Error(`Expected at most ${maxTurns} WebLLM provider turns`);
         }
-        if (turn % 3 === 1) {
+        const phase = (turn - 1) % turnsPerRound;
+        if (phase === 3) {
+            return Promise.resolve(
+                JSON.stringify([
+                    {
+                        name: 'analysis.measure',
+                        arguments: { scope: { kind: 'master' }, range: { sectionId: 'missing-section' } },
+                    },
+                ])
+            );
+        }
+        if (phase === 0) {
             return Promise.resolve(JSON.stringify(intake(userMessage, systemPrompt)));
         }
         const finalCalls = buildFinalCalls(userMessage);
-        if (turn % 3 === 2) {
+        if (phase === 1) {
             return Promise.resolve(JSON.stringify(catalogDiscoveryPlan(finalCalls)));
         }
         assertDiscoveredCommandSchemas(getApplicationToolReceipts(userMessage), finalCalls);
@@ -741,18 +754,29 @@ function createTurnTrackedHostedResponder(
     intake: ScriptedTurn = literalMetricIntakeTurn
 ): (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch> {
     let turn = 0;
+    const maxTurns = intake === maskingMetricIntake ? 4 : 3;
     return (_input, init) => {
         if (typeof init?.body !== 'string') {
             throw new TypeError('Expected hosted provider request body');
         }
         turn += 1;
-        if (turn > 3) {
-            throw new Error('Expected exactly three hosted provider turns');
+        if (turn > maxTurns) {
+            throw new Error(`Expected at most ${maxTurns} hosted provider turns`);
         }
         const userMessage = getHostedUserMessage(init.body);
         if (turn === 1) {
             const request = JSON.parse(init.body) as { tools: ToolSchema[] };
             return Promise.resolve(toolCallsResponse(intake(userMessage, request.tools)));
+        }
+        if (turn === 4 && intake === maskingMetricIntake) {
+            return Promise.resolve(
+                toolCallsResponse([
+                    {
+                        name: 'analysis.measure',
+                        arguments: { scope: { kind: 'master' }, range: { sectionId: 'missing-section' } },
+                    },
+                ])
+            );
         }
         const finalCalls = buildFinalCalls(userMessage);
         if (turn === 2) {
@@ -4349,6 +4373,13 @@ describe('drum bus prompt workflow', () => {
             ]);
             expect(confirmation.approvalSnapshot.agentApproval?.metricGoalState).toBe(metricState);
             expect(agentRunLifecycle.get(confirmation.runId ?? '')?.plan?.metricGoalState).toBe(metricState);
+            expect(agentRunLifecycle.get(confirmation.runId ?? '')?.plan?.applicationToolReceipts).toContainEqual(
+                expect.objectContaining({
+                    toolName: 'analysis.measure',
+                    status: 'failure',
+                    error: expect.objectContaining({ code: 'unknown-section' }),
+                })
+            );
             expect(confirmation?.actions.map((action) => action.type)).toEqual([
                 'addSidechainRoute',
                 'addSidechainRoute',

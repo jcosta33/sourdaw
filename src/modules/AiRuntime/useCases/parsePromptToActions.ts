@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { requiresAppActionConfirmation } from '#/modules/Command/useCases';
-import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
+import { captureProjectIdentity, captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases';
 import { canonicalJson, digest } from '#/utils/canonicalDigest';
 
@@ -674,8 +674,10 @@ const planPromptIntent = inject({ logger })(
                 };
             }
 
-            let applicationToolReceiptFields: { applicationToolReceipts?: IntentResult['applicationToolReceipts'] } =
-                {};
+            let applicationToolReceiptFields: Pick<
+                IntentResult,
+                'applicationToolReceipts' | 'terminalMeasurementSettlement'
+            > = {};
             try {
                 const drumRoutingScope = readonly ? null : getDrumRoutingPromptScope(context, projectRevision);
                 const drumRenderComparisonScope = readonly
@@ -966,6 +968,25 @@ const planPromptIntent = inject({ logger })(
                 };
                 const planningOutcome = await runApplicationOwnedToolLoop({
                     ...(readonly ? {} : { requireWholeRequestIntake: true as const }),
+                    // The loop binds this authority to the actual admitted generic or workflow intake.
+                    readMeasurementOpportunity: () => {
+                        if (
+                            readonly ||
+                            metricAuthority === undefined ||
+                            metricAuthority.callId === null ||
+                            metricAuthority.turn === null
+                        ) {
+                            return null;
+                        }
+                        return {
+                            authorityId: metricAuthority.authorityId,
+                            callId: metricAuthority.callId,
+                            turn: metricAuthority.turn,
+                            revision: metricAuthority.revision,
+                            required: metricAuthority.kind === 'perceptual' || metricAuthority.kind === 'comparative',
+                            available: metricAuthority.revision === captureProjectRevision(),
+                        };
+                    },
                     transientOnsetRead: transientRead,
                     textReceiptCharacterBudget: AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS,
                     loopId: `planning-${crypto.randomUUID()}`,
@@ -1288,7 +1309,13 @@ const planPromptIntent = inject({ logger })(
                 applicationToolReceiptFields =
                     planningOutcome.receipts.length === 0
                         ? {}
-                        : { applicationToolReceipts: [...planningOutcome.receipts] };
+                        : {
+                              applicationToolReceipts: [...planningOutcome.receipts],
+                              ...(planningOutcome.status === 'complete' &&
+                              planningOutcome.terminalMeasurementSettlement !== undefined
+                                  ? { terminalMeasurementSettlement: planningOutcome.terminalMeasurementSettlement }
+                                  : {}),
+                          };
 
                 if (signal?.aborted) {
                     return {

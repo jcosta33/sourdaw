@@ -148,6 +148,25 @@ describe('pasteNotes', () => {
         });
     });
 
+    it('pastes a loop-recorded note as a drawn note, without its pass index', () => {
+        mocks.appendMidiNotes.mockImplementation(appendMidiNotesActual);
+        vi.spyOn(crypto, 'randomUUID').mockReturnValueOnce('33333333-3333-4333-8333-333333333333');
+        setNoteClipboard({
+            notes: [{ id: 'loop-note', pitch: 60, startBeat: 0, duration: 1, velocity: 100, recordingPassIndex: 1 }],
+        });
+
+        expect(() => pasteNotes('destination', 8)).not.toThrow();
+        expect(midiStore.value?.notesByClipId.destination).toStrictEqual([
+            {
+                id: 'note-33333333-3333-4333-8333-333333333333',
+                pitch: 60,
+                startBeat: 8,
+                duration: 1,
+                velocity: 100,
+            },
+        ]);
+    });
+
     it('pastes a real split note copied through the Arrangement clipboard', async () => {
         mocks.appendMidiNotes.mockImplementation(appendMidiNotesActual);
         vi.spyOn(crypto, 'randomUUID')

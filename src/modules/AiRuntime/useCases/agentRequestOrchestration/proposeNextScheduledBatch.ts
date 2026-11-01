@@ -138,6 +138,7 @@ function groundScheduledSlice(
             rawText: run.request,
             requiresConfirmation: grounded.requiresConfirmation,
             applicationToolReceipts: structuredClone(run.plan?.applicationToolReceipts ?? []),
+            terminalMeasurementSettlement: run.plan?.terminalMeasurementSettlement,
             executionMode: 'atomic',
             providerKnownTargetIds: grounded.providerKnownTargetIds,
             matchSelectorPredicates:

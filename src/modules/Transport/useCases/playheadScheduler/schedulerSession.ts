@@ -137,4 +137,13 @@ export const schedulerSession = {
     // onto it (applyAutomation). Cleared by a tempo-map or loop-region edit
     // (whose teardown cuts the tail) and by every new scheduler session.
     lastLoopSeamAudioTime: null as number | null,
+    // Initial emissions still preparing, across every scheduler session. A
+    // refused punch-in start retires its provisional clip with a store write,
+    // and that write breaks the programme witness of whichever emission is
+    // preparing, not only its own session's: a Play pressed after a Pause can
+    // be preparing while the paused session's start is refused (#5998).
+    pendingInitialEmissions: new Set<symbol>(),
+    // Retirements held until no initial emission is preparing. Each decides
+    // whether it still owns its capture when it runs, not when it was queued.
+    deferredStartRetirements: [] as Array<() => void>,
 };

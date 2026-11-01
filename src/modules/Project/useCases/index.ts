@@ -62,6 +62,7 @@ export { getRecentProjects, recentProjectChanges } from './recentProjects/helper
 export { isOpenProjectKey } from './recentProjects/isOpenProjectKey';
 export { loadRecentProject } from './recentProjects/loadRecentProject';
 export { collectDurableOwnedAudioBufferIds } from './projectPersistence/durableOwnership/collectDurableOwnedAudioBufferIds';
+export { collectTrackStateAudioBufferIds } from './projectPersistence/helpers/collectTrackStateAudioBufferIds';
 
 export { isNativeProjectRuntimeAvailable } from './isNativeProjectRuntimeAvailable'; // export-runtime check (ADR 0011 W4)
 

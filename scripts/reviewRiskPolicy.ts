@@ -98,8 +98,9 @@ const CARGO_WORKSPACE_PATHS = ['Cargo.lock', 'Cargo.toml'] as const;
  * Native toolchain, dependency and packaging surfaces outside `electron/` and `crates/`: the Rust
  * toolchain and build flags, the JavaScript dependency manifests, the native addon build, the
  * packaging config with its fuse and entitlement wiring, the bundled sandboxed preload, the pinned
- * Electron runtime with its provenance check, and the review tooling that admits CI or feeds the
- * review bundle. `.cargo/config` and `rust-toolchain` are the extensionless legacy names: Cargo
+ * Electron runtime with its provenance check, the review tooling that admits CI or feeds the
+ * review bundle, and the installer of the user launchd job that deletes delivered lane worktrees.
+ * `.cargo/config` and `rust-toolchain` are the extensionless legacy names: Cargo
  * still reads `.cargo/config` and prefers it when both forms exist, and rustup reads
  * `rust-toolchain` and prefers it over `rust-toolchain.toml` in the same directory, so either name
  * overrides the pinned toolchain.
@@ -123,6 +124,7 @@ const NATIVE_SECURITY_PATHS = [
     'scripts/buildElectronPreload.ts',
     'scripts/electronRuntimeContract.ts',
     'scripts/checkElectronRuntimeProvenance.ts',
+    'scripts/installCleanupLanes.ts',
 ] as const;
 /** macOS entitlement files the packaging config signs with, `build/entitlements.mac.plist` and kin. */
 const ENTITLEMENTS_PATTERN = /^build\/entitlements[^/]*\.plist$/u;

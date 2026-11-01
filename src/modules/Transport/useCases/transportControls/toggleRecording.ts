@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { getTrackEligibility } from '#/modules/Arrangement/stores';
 import { getTrackStoreState, startRecording, discardRecording, commitRecording } from '#/modules/Arrangement/useCases';
 import {
+    audioEngine,
     resumeEngine,
     getAudioContext,
     scheduleClick,
@@ -530,12 +531,17 @@ async function beginActualRecording(
     });
 
     if (recordingStarts.length > 0) {
-        const started = await Promise.all(recordingStarts);
+        const starts = await Promise.allSettled(recordingStarts);
+        for (const start of starts) {
+            if (start.status === 'rejected') {
+                logger.error(new Error('Audio recording failed to start', { cause: start.reason }));
+            }
+        }
         if (!recordingLifecycle.ownsPendingRecordingStart(startToken)) {
             detachReaders();
             return false;
         }
-        if (started.some((didStart) => !didStart)) {
+        if (starts.some((start) => start.status === 'rejected' || !start.value)) {
             detachReaders();
             recordingLifecycle.completePendingRecordingStart(startToken);
             await stopAudioRecording();
@@ -688,6 +694,7 @@ function armCountInRecordingStart(countInEndTimeSec: number, countInDurationSec:
 }
 
 export function toggleRecording(): void {
+    audioEngine.beginAudioPreviewIntent().release();
     const state = getTransportState();
     if (!state) {
         return;

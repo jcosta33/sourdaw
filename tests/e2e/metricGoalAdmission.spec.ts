@@ -202,6 +202,18 @@ for (const entry of ['chat', 'prompt-bar'] as const) {
                     },
                 ];
             }
+            if (turn === 3) {
+                // The held proposal's single-measurement step offers the measurement tool alone. A
+                // live master read witnesses the step without proving the unapplied preview.
+                expect(request.tools.map((tool) => tool.function.name)).toEqual(['analysis_measure']);
+                return [
+                    {
+                        id: 'metric-step-measurement',
+                        name: 'analysis_measure',
+                        arguments: { scope: { kind: 'master' }, range: { startBeat: 0, endBeat: 4 } },
+                    },
+                ];
+            }
             expect(turn).toBe(2);
             return [
                 {
@@ -266,7 +278,10 @@ for (const entry of ['chat', 'prompt-bar'] as const) {
             await expect(confirm).toBeDisabled();
             await expect(page.getByText('Objective verification: blocked', { exact: true })).toBeVisible();
             expect(provider.failures).toEqual([]);
-            expect(provider.requests).toHaveLength(3);
+            expect(provider.requests).toHaveLength(4);
+            expect(JSON.parse(provider.completionRequests[3] ?? 'null') as unknown).toMatchObject({
+                tool_choice: 'required',
+            });
             expect(await projectTruth(page)).toEqual(before);
             await expect(repreview).toBeEnabled();
             await repreview.click();
@@ -318,7 +333,7 @@ for (const entry of ['chat', 'prompt-bar'] as const) {
                         receipt.origin === 'application-verification'
                 )
             ).toBe(true);
-            expect(provider.requests).toHaveLength(3);
+            expect(provider.requests).toHaveLength(4);
             await confirm.click();
             await expect
                 .poll(() =>

@@ -65,6 +65,7 @@ export type AgentRunPlan = {
     commandIds: string[];
     serializedBatchIdentity: string | null;
     applicationToolReceipts?: ApplicationToolReceipt[];
+    terminalMeasurementSettlement?: string;
     revision: string | null;
     classification: 'simple' | 'complex';
     showPlanPanel: boolean;

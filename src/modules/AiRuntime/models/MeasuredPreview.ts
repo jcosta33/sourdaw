@@ -35,6 +35,15 @@ export type MeasuredMetricDelta =
     | { readonly status: 'compared'; readonly delta: number; readonly unit: string }
     | { readonly status: 'incomparable'; readonly reason: string };
 
+type RetainedPreviewRender = {
+    readonly route: 'mixdown' | 'isolated-subgraph';
+    readonly artifact: { readonly contentAddress: string };
+    readonly sampleRate: number;
+    readonly frameCount: number;
+    readonly channelCount: number;
+    readonly durationSeconds: number;
+};
+
 /** One rendered target of a preview measurement, in both documents, keyed by metric id. */
 export type MeasuredPreviewTarget = {
     readonly targetId: string;
@@ -42,6 +51,13 @@ export type MeasuredPreviewTarget = {
     readonly baseline: Readonly<Partial<Record<string, MeasuredMetricEntry>>>;
     readonly preview: Readonly<Partial<Record<string, MeasuredMetricEntry>>>;
     readonly deltas: Readonly<Partial<Record<string, MeasuredMetricDelta>>>;
+    /** App-only exact retained render identities; absent on legacy measurements. */
+    readonly audition?: {
+        readonly baseline: RetainedPreviewRender;
+        readonly preview: RetainedPreviewRender;
+        readonly baselineIntegratedLoudness: MeasuredMetricEntry;
+        readonly previewIntegratedLoudness: MeasuredMetricEntry;
+    };
 };
 
 /**

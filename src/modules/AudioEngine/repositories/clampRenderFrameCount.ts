@@ -1,3 +1,5 @@
+import { countRenderFrames } from './countRenderFrames';
+
 /**
  * Maximum OfflineAudioContext frame length. Chrome enforces 2^30; Firefox is
  * higher but we cap conservatively to avoid OOM on both.
@@ -25,7 +27,7 @@ type ClampRenderFrameCountInput = {
  * not schedule past it — resolves the same ceil and the same cap.
  */
 export function clampRenderFrameCount({ durationSeconds, sampleRate, onWarning }: ClampRenderFrameCountInput): number {
-    const requestedFrames = Math.ceil(durationSeconds * sampleRate);
+    const requestedFrames = countRenderFrames({ durationSeconds, sampleRate });
     const frameCount = Math.min(requestedFrames, MAX_OFFLINE_FRAMES);
 
     if (frameCount < requestedFrames) {

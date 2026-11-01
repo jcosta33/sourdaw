@@ -31,9 +31,11 @@ import { defaultTransportState, transportStore } from '#/modules/Transport/store
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { type TerminalMeasurementSettlement } from '../../models/ApplicationOwnedTool';
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
+import { readAgentRunState, sanitizeAgentRunState, persistAgentRunState } from '../../stores/agentRunStore';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
 import {
@@ -45,7 +47,9 @@ import { agentRunLifecycle } from '../agentRunLifecycle';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getAgentApprovalView } from '../getAgentApprovalView';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
+import { planAgentRun } from '../planAgentRun';
 import { planPromptActions } from '../planPromptActions';
+import { reproposePendingChatActions } from '../reproposePendingChatActions';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 
 import {
@@ -378,7 +382,8 @@ function toolCallsResponse(calls: readonly ProviderCall[]): Response {
 function installProviderFixtures(
     transformPlan: (plan: ProviderCall[]) => ProviderCall[] = (plan) => plan,
     intake: ScriptedTurn = literalMetricIntakeTurn,
-    executionSelection?: string
+    executionSelection?: string,
+    measureHeldProposal = false
 ): void {
     const proposal = (userMessage: string): ProviderCall[] => {
         const plan = transformPlan(createProviderPlanFromUserMessage(userMessage));
@@ -388,9 +393,26 @@ function installProviderFixtures(
         }
         return calls;
     };
+    const measurement = (userMessage: string): ProviderCall[] => {
+        const capability = getProviderContext(userMessage).wholeProjectVibeMixCapability;
+        if (!isRecord(capability) || !Array.isArray(capability.exactTargetIds) || !isRecord(capability.targetSection)) {
+            throw new TypeError('Expected the published workflow measurement scope.');
+        }
+        const { startBeat, endBeat } = capability.targetSection;
+        if (typeof startBeat !== 'number' || typeof endBeat !== 'number') {
+            throw new TypeError('Expected the published workflow measurement range.');
+        }
+        return [
+            {
+                name: 'analysis.measure',
+                arguments: { scope: { kind: 'buses', ids: capability.exactTargetIds }, range: { startBeat, endBeat } },
+            },
+        ];
+    };
+    const turnCount = measureHeldProposal ? 4 : 3;
     let webLlmTurn = 0;
     runtimeMocks.generateWebLlmCompletion.mockImplementation((systemPrompt: string, userMessage: string) => {
-        const phase = webLlmTurn++ % 3;
+        const phase = webLlmTurn++ % turnCount;
         if (phase === 0) {
             return Promise.resolve(JSON.stringify(intake(userMessage, systemPrompt)));
         }
@@ -404,6 +426,9 @@ function installProviderFixtures(
                 ])
             );
         }
+        if (phase === 3) {
+            return Promise.resolve(JSON.stringify(measurement(userMessage)));
+        }
         assertDiscoveredCommandSchema(getApplicationToolReceipts(userMessage));
         return Promise.resolve(JSON.stringify(proposal(userMessage)));
     });
@@ -413,7 +438,7 @@ function installProviderFixtures(
             throw new TypeError('Expected hosted provider request body');
         }
         const userMessage = getHostedUserMessage(init.body);
-        const phase = hostedTurn++ % 3;
+        const phase = hostedTurn++ % turnCount;
         if (phase === 0) {
             const request = JSON.parse(init.body) as { tools: ToolSchema[] };
             return Promise.resolve(toolCallsResponse(intake(userMessage, request.tools)));
@@ -427,6 +452,21 @@ function installProviderFixtures(
                     },
                 ])
             );
+        }
+        if (phase === 3) {
+            const receipts = getReplayedToolReceipts(init.body);
+            expect(receipts).toContainEqual(
+                expect.objectContaining({
+                    toolName: 'command.batch.propose',
+                    status: 'failure',
+                    error: expect.objectContaining({ code: 'measurement-required' }),
+                })
+            );
+            const body = JSON.parse(init.body) as { tools: ToolSchema[]; tool_choice: string };
+            expect(body.tools.map((tool) => tool.function.name)).toEqual(['analysis_measure']);
+            expect(body.tool_choice).toBe('required');
+            expect(body).not.toHaveProperty('parallel_tool_calls');
+            return Promise.resolve(toolCallsResponse(measurement(userMessage)));
         }
         assertDiscoveredCommandSchema(getReplayedToolReceipts(init.body));
         return Promise.resolve(toolCallsResponse(proposal(userMessage)));
@@ -681,7 +721,7 @@ describe('whole-project vibe-mix planning', () => {
         'keeps the original impact request visible and blocks approval without actual metric proof: $backend $prompt',
         async ({ prompt, backend }) => {
             runtimeMocks.backend.value = backend;
-            installProviderFixtures((plan) => plan, impactMetricIntake);
+            installProviderFixtures((plan) => plan, impactMetricIntake, undefined, true);
             flushAutomergeStorageWrites();
             const before = {
                 tracks: structuredClone(trackStore.value),
@@ -695,7 +735,10 @@ describe('whole-project vibe-mix planning', () => {
             const confirmationId = getConfirmationId();
             const confirmation = getPendingActionConfirmation(confirmationId);
             if (!confirmation) {
-                throw new TypeError('Expected the complete original perceptual proposal to remain visible.');
+                const message = chatStore.value?.messages.at(-1);
+                throw new TypeError(
+                    `Expected the complete original perceptual proposal to remain visible: ${message?.error ?? message?.content}`
+                );
             }
             const metricState = confirmation.approvalSnapshot.metricGoalState;
             expect(metricGoalStateCodec(metricState)?.authorities).toMatchObject([
@@ -703,6 +746,111 @@ describe('whole-project vibe-mix planning', () => {
             ]);
             expect(confirmation.approvalSnapshot.agentApproval?.metricGoalState).toBe(metricState);
             expect(agentRunLifecycle.get(confirmation.runId ?? '')?.plan?.metricGoalState).toBe(metricState);
+            const sequenceReceipts = agentRunLifecycle.get(confirmation.runId ?? '')?.plan?.applicationToolReceipts;
+            expect(sequenceReceipts).toContainEqual(
+                expect.objectContaining({
+                    toolName: 'command.batch.propose',
+                    turn: 3,
+                    status: 'failure',
+                    error: expect.objectContaining({ code: 'measurement-required' }),
+                })
+            );
+            expect(sequenceReceipts).toContainEqual(expect.objectContaining({ toolName: 'analysis.measure', turn: 4 }));
+            expect(metricGoalStateCodec(metricState)?.proofs).toEqual([]);
+            const run = agentRunLifecycle.get(confirmation.runId ?? '');
+            const plan = run?.plan;
+            if (
+                run === null ||
+                run === undefined ||
+                plan === null ||
+                plan === undefined ||
+                plan.terminalMeasurementSettlement === undefined
+            ) {
+                throw new TypeError('Expected the actual held-terminal settlement in the persisted run plan.');
+            }
+            const replanInput = {
+                request: prompt,
+                revision: before.revision,
+                actions: confirmation.actions,
+                actionLabels: confirmation.actionLabels,
+                scope: plan.scope,
+                grants: run.grants,
+                budgets: run.budgets,
+                requiresConfirmation: true,
+                metricGoalState: plan.metricGoalState,
+                applicationToolReceipts: plan.applicationToolReceipts,
+                terminalMeasurementSettlement: plan.terminalMeasurementSettlement,
+            };
+            expect(planAgentRun(structuredClone(replanInput))).toMatchObject({ status: 'planned' });
+            expect(planAgentRun({ ...replanInput, terminalMeasurementSettlement: undefined })).toMatchObject({
+                status: 'rejected',
+            });
+            const settlement: TerminalMeasurementSettlement = JSON.parse(plan.terminalMeasurementSettlement);
+            const corruptions: Array<(value: TerminalMeasurementSettlement) => void> = [
+                (value) => {
+                    value.authorityId = 'foreign-authority';
+                },
+                (value) => {
+                    value.revision = 'foreign-snapshot';
+                },
+                (value) => {
+                    value.intake.callId = 'foreign-intake';
+                },
+                (value) => {
+                    value.intake.turn += 1;
+                },
+                (value) => {
+                    value.deferredCalls[0]!.callId = 'foreign-terminal';
+                },
+                (value) => {
+                    value.deferredCalls[0]!.turn += 1;
+                },
+                (value) => {
+                    value.measurement.callId = 'unexecuted-primary';
+                },
+                (value) => {
+                    value.measurement.toolName = 'analysis.compareReference';
+                },
+                (value) => {
+                    value.measurement.turn -= 1;
+                },
+                (value) => {
+                    value.measurement.receiptDigest = 'foreign-receipt';
+                },
+            ];
+            for (const corrupt of corruptions) {
+                const changed = structuredClone(settlement);
+                corrupt(changed);
+                expect(
+                    planAgentRun({ ...replanInput, terminalMeasurementSettlement: JSON.stringify(changed) })
+                ).toMatchObject({ status: 'rejected' });
+            }
+            const control = plan.applicationToolReceipts?.find(
+                (receipt) => receipt.error?.code === 'measurement-required'
+            );
+            if (control === undefined) {
+                throw new TypeError('Expected the real deferred control receipt.');
+            }
+            const existingReceipts = plan.applicationToolReceipts ?? [];
+            expect(
+                planAgentRun({
+                    ...replanInput,
+                    applicationToolReceipts: [
+                        ...existingReceipts,
+                        { ...control, callId: 'failed-catalog', toolName: 'agent.catalog.discover' },
+                    ],
+                })
+            ).toMatchObject({ status: 'rejected' });
+            const hydrated = sanitizeAgentRunState(structuredClone(readAgentRunState()));
+            expect(hydrated.runs.find((entry) => entry.runId === run.runId)?.plan?.terminalMeasurementSettlement).toBe(
+                plan.terminalMeasurementSettlement
+            );
+            persistAgentRunState(hydrated);
+            expect(
+                backend === 'cloud'
+                    ? runtimeMocks.fetch.mock.calls.length
+                    : runtimeMocks.generateWebLlmCompletion.mock.calls.length
+            ).toBe(4);
             expect(confirmation?.actions).toEqual([expect.objectContaining({ type: 'automateTrackGainRange' })]);
             expect(getAgentApprovalView({ confirmationId })).toMatchObject({
                 canConfirm: false,
@@ -718,6 +866,74 @@ describe('whole-project vibe-mix planning', () => {
             expect(captureProjectRevision()).toBe(before.revision);
         }
     );
+
+    it('retains historical control settlement through hydration and a real re-preview at a moved revision', async () => {
+        installProviderFixtures((plan) => plan, impactMetricIntake, undefined, true);
+        flushAutomergeStorageWrites();
+        const originalRevision = captureProjectRevision();
+        await sendChatMessage(PROMPT);
+        const confirmationId = getConfirmationId();
+        const confirmation = getPendingActionConfirmation(confirmationId);
+        let originalRun: ReturnType<typeof agentRunLifecycle.get> | null = null;
+        if (confirmation !== null && confirmation !== undefined) {
+            originalRun = agentRunLifecycle.get(confirmation.runId ?? '');
+        }
+        const originalSettlement = originalRun?.plan?.terminalMeasurementSettlement;
+        if (confirmation === null || confirmation === undefined || originalSettlement === undefined) {
+            throw new TypeError('Expected the genuine workflow proposal and settlement.');
+        }
+        persistAgentRunState(sanitizeAgentRunState(structuredClone(readAgentRunState())));
+        landProjectEdit(() => {
+            const state = trackStore.value;
+            if (state === null) {
+                throw new TypeError('Expected the current project.');
+            }
+            trackStore.set({
+                ...state,
+                tracks: state.tracks.map((track) =>
+                    track.id === 'track-backing-vocal' ? { ...track, notes: 'Unrelated collaborator note.' } : track
+                ),
+            });
+        });
+        const currentRevision = captureProjectRevision();
+        expect(currentRevision).not.toBe(originalRevision);
+        const reproposed = await reproposePendingChatActions({ confirmationId });
+        expect(reproposed.status).toBe('reproposed');
+        if (reproposed.status !== 'reproposed') {
+            throw new TypeError('Expected the actual re-preview result.');
+        }
+        const rebound = getPendingActionConfirmation(reproposed.confirmationId);
+        const run = agentRunLifecycle.get(confirmation.runId ?? '');
+        const plan = run?.plan;
+        if (rebound === null || rebound === undefined || run === null || plan === null || plan === undefined) {
+            throw new TypeError('Expected the rebound persisted proposal.');
+        }
+        expect(plan.terminalMeasurementSettlement).toBe(originalSettlement);
+        expect(rebound.projectRevision).toBe(currentRevision);
+        expect(metricGoalStateCodec(plan.metricGoalState)?.authorities[0]?.revision).toBe(originalRevision);
+        expect(
+            planAgentRun({
+                request: PROMPT,
+                revision: currentRevision,
+                actions: rebound.actions,
+                actionLabels: rebound.actionLabels,
+                scope: plan.scope,
+                grants: run.grants,
+                budgets: run.budgets,
+                requiresConfirmation: true,
+                metricGoalState: plan.metricGoalState,
+                applicationToolReceipts: plan.applicationToolReceipts,
+                terminalMeasurementSettlement: plan.terminalMeasurementSettlement,
+            })
+        ).toMatchObject({ status: 'planned' });
+        expect(getAgentApprovalView({ confirmationId: reproposed.confirmationId })).toMatchObject({
+            status: 'proposed',
+            canConfirm: false,
+            metricGoals: { status: 'blocked' },
+        });
+        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(4);
+        expect(run.grants).toEqual(originalRun?.grants);
+    });
 
     it('refuses selecting finite metric workflows after a literal relabeling of the original request', async () => {
         installProviderFixtures((plan) => plan, literalMetricIntakeTurn, 'whole-project-vibe-mix');
@@ -835,7 +1051,7 @@ describe('whole-project vibe-mix planning', () => {
     it('lets unrelated text enlarge nothing — the derived scope stays the project-derived bound (#2002)', async () => {
         const unrelated =
             'totally unrelated rambling about mastering, the second chorus, and hitting harder drums, please ignore';
-        installProviderFixtures((plan) => plan, impactMetricIntake);
+        installProviderFixtures((plan) => plan, impactMetricIntake, undefined, true);
         const { result } = await planPromptActions({ prompt: unrelated, onProviderAttempt: admitProviderAttempt });
         const plan = result.wholeProjectVibeMixPlan;
         if (!plan) {
