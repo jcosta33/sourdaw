@@ -516,13 +516,7 @@ export const useStatusBarMetrics = (refs: StatusBarMetricRefs): void => {
                 return;
             }
 
-            // An infinite peak is a blown-up output, not a number to format.
-            let levelDb = '-∞';
-            if (masterLevel === Number.POSITIVE_INFINITY) {
-                levelDb = '+∞';
-            } else if (masterLevel > 0) {
-                levelDb = (20 * Math.log10(masterLevel)).toFixed(1);
-            }
+            const levelDb = masterLevel > 0 ? (20 * Math.log10(masterLevel)).toFixed(1) : '-∞';
             if (refs.masterLevelBar.current) {
                 refs.masterLevelBar.current.style.width = `${Math.min(100, masterLevel * 300)}%`;
             }

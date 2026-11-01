@@ -736,27 +736,6 @@ describe('useStatusBarMetrics', () => {
         expect(refs.masterLevelBar.current!.style.width).toBe('0%');
     });
 
-    it('shows +∞ dB when the master level is infinite, with the bar full', () => {
-        vi.mocked(getEngineState).mockReturnValue({
-            isReady: true,
-            sampleRate: 44100,
-            state: 'running',
-            masterGain: 1,
-            currentTime: 0,
-            baseLatency: 0.01,
-            outputLatency: 0,
-        });
-        vi.mocked(getMasterPeakLevel).mockReturnValue(Number.POSITIVE_INFINITY);
-
-        const refs = makeRefs();
-        makeElements(refs);
-        renderHook(() => useStatusBarMetrics(refs));
-        capturedTick!();
-
-        expect(refs.masterLevelText.current!.textContent).toBe('+∞ dB');
-        expect(refs.masterLevelBar.current!.style.width).toBe('100%');
-    });
-
     it('shows -inf dB when the master level is zero', () => {
         vi.mocked(getEngineState).mockReturnValue({
             isReady: true,
