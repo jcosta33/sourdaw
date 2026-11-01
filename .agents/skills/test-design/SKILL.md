@@ -26,7 +26,7 @@ Name the mutation that turns the case red: revert the behavioural hunk or apply 
 
 ### 2. Assert the observable the claim names
 
-Assert the output value, the emitted event, the written document state or the rendered text, and not an intermediate the subject could skip. A call on a double is the observable only when the claim is that call to a doubled external system (an engine node's `connect` or `setTargetAtTime`, an `eventBus.emit`, as in `docs/06-testing.md` §5 and §6.11); then prefer asserting its arguments over its mere occurrence. Assert ownership and non-effects (a stale completion must not revive retired state) when they are part of the claim.
+Assert the output value, the emitted event, the written document state or the rendered text, and not an intermediate the subject could skip. A call on a double is the observable only when the claim is that call to a doubled external system (an engine node's `connect` in `docs/06-testing.md` §6.3, an `eventBus.emit` in §7.2); then prefer asserting its arguments over its mere occurrence. A scheduled parameter call's time argument follows rule 8, not the raw `currentTime`. Assert ownership and non-effects (a stale completion must not revive retired state) when they are part of the claim.
 
 **Why:** a bare call-count assertion stays green when the subject is rewired to a different route that produces the wrong result.
 
