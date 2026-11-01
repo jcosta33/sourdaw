@@ -241,6 +241,7 @@ function isDomainLogicFile(filename) {
     return (
         normalized.includes('/useCases/') ||
         normalized.includes('/services/') ||
+        normalized.includes('/worklets/') ||
         normalized.includes('/validators/') ||
         normalized.includes('/transformers/')
     );
@@ -2711,6 +2712,7 @@ export default defineConfig(
             'src/**/events/**/*.ts',
             'src/**/services/**/*.ts',
             'src/**/validators/**/*.ts',
+            'src/**/worklets/**/*.ts',
             'src/helpers/**/*.ts',
         ],
         rules: {
