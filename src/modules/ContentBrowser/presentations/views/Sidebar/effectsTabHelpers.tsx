@@ -30,12 +30,27 @@ import { PLUGIN_DRAG_MIME_TYPE } from '#/utils/dragMimeTypes';
 
 import { type PluginDescriptorView as PluginDescriptor } from '../../../models/PluginDescriptorViewTypes';
 
+import { type SidebarPanelActions } from './SidebarTypes';
+
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export type EffectPlugin = PluginDescriptor;
 
-function addDeviceThroughAction(trackId: string, deviceType: string): void {
-    void executeAddDeviceAction(trackId, deviceType);
+/**
+ * The one browser add path. A committed-degraded outcome still carries the
+ * device id: the device is in project truth even when the runtime could not
+ * realize it, so the follow-up reveal may open on it. A refused add carries
+ * `null`, which callers must not reveal.
+ */
+export function addDeviceThroughAction(
+    trackId: string | null,
+    deviceType: string,
+    afterApplied?: (deviceId: string | null) => void
+): void {
+    if (!trackId) {
+        return;
+    }
+    void executeAddDeviceAction(trackId, deviceType).then((result) => afterApplied?.(result.deviceId));
 }
 
 export type EffectGroup = {
@@ -189,55 +204,67 @@ export const NavCard = ({
 export const EffectItem = ({
     plugin,
     selectedTrackId,
+    panelActions,
 }: {
     plugin: EffectPlugin;
     selectedTrackId: string | null;
-}): ReactElement => (
-    <Stack
-        justify="center"
-        className="group rounded-md px-3 py-2.5 bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 hover:border-border/40 hover:from-surface-overlay transition-all cursor-grab active:cursor-grabbing relative overflow-hidden shadow-sm"
-        draggable
-        onDragStart={(event) => {
-            event.dataTransfer.setData(PLUGIN_DRAG_MIME_TYPE, JSON.stringify({ name: plugin.name, id: plugin.id }));
-            event.dataTransfer.effectAllowed = 'copy';
-        }}
-        onClick={() => {
-            if (selectedTrackId) {
-                addDeviceThroughAction(selectedTrackId, plugin.id);
+    panelActions?: SidebarPanelActions;
+}): ReactElement => {
+    // A plain device owns no panel, so the inspector is where the add shows up;
+    // without it a click looks inert and users click again, stacking duplicates.
+    const addPlugin = (): void => {
+        addDeviceThroughAction(selectedTrackId, plugin.id, (deviceId) => {
+            if (deviceId !== null) {
+                panelActions?.revealDevice(deviceId);
             }
-        }}
-        title={selectedTrackId ? `Add "${plugin.name}" to selected track` : 'Drag to a track or select a track first'}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(event) => {
-            if ((event.key === 'Enter' || event.key === ' ') && selectedTrackId) {
-                addDeviceThroughAction(selectedTrackId, plugin.id);
+        });
+    };
+
+    return (
+        <Stack
+            justify="center"
+            className="group rounded-md px-3 py-2.5 bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 hover:border-border/40 hover:from-surface-overlay transition-all cursor-grab active:cursor-grabbing relative overflow-hidden shadow-sm"
+            draggable
+            onDragStart={(event) => {
+                event.dataTransfer.setData(PLUGIN_DRAG_MIME_TYPE, JSON.stringify({ name: plugin.name, id: plugin.id }));
+                event.dataTransfer.effectAllowed = 'copy';
+            }}
+            onClick={addPlugin}
+            title={
+                selectedTrackId ? `Add "${plugin.name}" to selected track` : 'Drag to a track or select a track first'
             }
-        }}
-    >
-        <Row justify="between">
-            <Stack className="min-w-0">
-                <span className="text-[12px] font-semibold text-foreground/90 leading-tight block truncate drop-shadow-sm">
-                    {plugin.name}
-                </span>
-                <span className="text-[10px] text-muted-foreground/70 mt-0.5 capitalize">
-                    {plugin.category || 'Effect'}
-                </span>
-            </Stack>
-            <Stack align="end" gap={1} shrink={false} className="ml-2">
-                {selectedTrackId ? (
-                    <Plus
-                        className="size-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
-                        aria-hidden="true"
-                    />
-                ) : null}
-                <span className="text-[9px] font-medium text-muted-foreground/60 tabular-nums bg-surface-base/50 px-1 rounded">
-                    {plugin.parameters.length} params
-                </span>
-            </Stack>
-        </Row>
-    </Stack>
-);
+            role="button"
+            tabIndex={0}
+            onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    addPlugin();
+                }
+            }}
+        >
+            <Row justify="between">
+                <Stack className="min-w-0">
+                    <span className="text-[12px] font-semibold text-foreground/90 leading-tight block truncate drop-shadow-sm">
+                        {plugin.name}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground/70 mt-0.5 capitalize">
+                        {plugin.category || 'Effect'}
+                    </span>
+                </Stack>
+                <Stack align="end" gap={1} shrink={false} className="ml-2">
+                    {selectedTrackId ? (
+                        <Plus
+                            className="size-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                            aria-hidden="true"
+                        />
+                    ) : null}
+                    <span className="text-[9px] font-medium text-muted-foreground/60 tabular-nums bg-surface-base/50 px-1 rounded">
+                        {plugin.parameters.length} params
+                    </span>
+                </Stack>
+            </Row>
+        </Stack>
+    );
+};
 
 // ── UnimplementedBadge ───────────────────────────────────────────────────────
 
