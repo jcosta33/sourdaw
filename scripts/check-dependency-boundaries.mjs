@@ -20,7 +20,7 @@ const ruleName = 'components-no-usecase-transitively';
 const useCasesPath = /\/useCases\//;
 const leafComponentPath = /(^src\/components\/|\/presentations\/components\/)/;
 const sourceFilePath = new RegExp(SOURCE_FILE_RE, 'i');
-const moduleRootRepositoryPath = /^src\/modules\/(?:Common\/|Supporting\/)?[^/]+\/repositories(?:\/|$)/;
+const moduleRootRepositoryPath = /^src\/modules\/[^/]+\/repositories(?:\/|$)/;
 const desktopBridgeModulePath = /(?:^|\/)utils\/desktopBridge(?:\.(?:js|mjs|cjs|jsx|ts|mts|cts|tsx))?$/i;
 const commonJsRuntimeNames = new Set(['exports', 'module', 'require']);
 const globalObjectNames = new Set(['global', 'globalThis', 'self', 'window']);
@@ -202,7 +202,7 @@ function toPosixPath(filePath) {
 }
 
 export function isModuleRootIndex(filePath) {
-    const match = /^src\/modules\/(?:Common\/|Supporting\/)?[^/]+\/([^/]+)$/.exec(toPosixPath(filePath));
+    const match = /^src\/modules\/[^/]+\/([^/]+)$/.exec(toPosixPath(filePath));
     if (!match) {
         return false;
     }
@@ -1585,8 +1585,7 @@ function hidesSourceFromTheWalk(absolutePath, file) {
 // publication carries its own reason at the site), so the guard's rows go through the same
 // exact-baseline comparison as every cruise: a hop is legal only once registered, and any
 // unregistered hop — the laundering shape — fails the gate naming the edge.
-const contractFolderPath =
-    /^src\/modules\/(?:Common\/|Supporting\/)?[^/]+\/(?:useCases|events|stores|presentations\/views)\//;
+const contractFolderPath = /^src\/modules\/[^/]+\/(?:useCases|events|stores|presentations\/views)\//;
 const privateSurfaceSegmentPath = /\/(models|repositories|transformers)\//;
 const contractReexportRule = {
     severity: 'error',

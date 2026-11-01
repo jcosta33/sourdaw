@@ -196,11 +196,21 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
             }
         };
 
+        // Moves only rewrite this row in place, so putting its press-time beat and value back is
+        // the whole revert; nothing was committed, so there is nothing to undo.
+        const onCancel = () => {
+            setDragId(null);
+            if (origPoint) {
+                moveMidiCC(clipId, ccId, origBeat, origValue);
+            }
+        };
+
         beginDrag({
             pointerId: event.pointerId,
             captureTarget: event.currentTarget,
             move: onMove,
             commit: onCommit,
+            cancel: onCancel,
         });
         setDragId(ccId);
     };

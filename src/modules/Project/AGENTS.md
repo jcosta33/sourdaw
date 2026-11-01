@@ -48,5 +48,5 @@ Root Project aggregate lifecycle, project persistence (IndexedDB and native file
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
 ```bash
-pnpm test:run <changed-spec>
+pnpm guard --profile focused -- pnpm test:run <changed-spec>
 ```

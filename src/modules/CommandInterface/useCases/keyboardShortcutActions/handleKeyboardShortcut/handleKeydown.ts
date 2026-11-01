@@ -242,11 +242,17 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                     if (cancelActiveTimelineGesture()) {
                         return true;
                     }
+                    // A marked drag owns Escape completely: its own window listener
+                    // cancels it, so no later step may also act on the same key.
+                    // Returning true only prevents the default; that listener still runs.
+                    if (key === 'Escape' && isDragGestureActive()) {
+                        return true;
+                    }
                     // The Collaborate panel is a non-modal floating surface, so Escape
                     // dismisses it here, below a gesture cancel and above the selection
                     // and transport steps, wherever focus is. Enter shares this binding
-                    // but is not a dismissal, and a mouse drag owns its own Escape cancel.
-                    if (key === 'Escape' && !isDragGestureActive() && workspaceStore.value?.collaborationPanelOpen) {
+                    // but is not a dismissal.
+                    if (key === 'Escape' && workspaceStore.value?.collaborationPanelOpen) {
                         closeCollaborationPanel();
                         return true;
                     }

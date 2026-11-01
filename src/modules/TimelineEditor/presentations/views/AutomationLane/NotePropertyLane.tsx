@@ -166,12 +166,14 @@ const buildLaneNotes = (
 /** Undo diff row: what one note's value was before a gesture and is after. */
 type UndoChange = { clipId: string; id: string; oldVal: number; newVal: number };
 
+type GestureStartValues = Map<string, { clipId: string; storedId: string; value: number }>;
+
 /** The value of every note in a gesture's scope when it starts, keyed by note id. */
 const captureInitialValues = (
     entries: LaneNoteEntry[],
     getValue: (note: MidiNote) => number,
     storedId: (viewId: string) => string
-): Map<string, { clipId: string; storedId: string; value: number }> =>
+): GestureStartValues =>
     new Map(
         entries.map((entry) => [
             entry.note.id,
@@ -184,10 +186,7 @@ const captureInitialValues = (
  * from its own clip. Undo keeps the keyboard velocity path's shape: one entry
  * per gesture, every note addressed through its owner clip.
  */
-const collectUndoChanges = (
-    initialValues: Map<string, { clipId: string; storedId: string; value: number }>,
-    getValue: (note: MidiNote) => number
-): UndoChange[] => {
+const collectUndoChanges = (initialValues: GestureStartValues, getValue: (note: MidiNote) => number): UndoChange[] => {
     const changes: UndoChange[] = [];
     const seen = new Set<string>();
     for (const initial of initialValues.values()) {
@@ -359,6 +358,15 @@ export const NotePropertyLane = ({
             }
         }
         pendingFrozenValues.current.clear();
+    };
+    /**
+     * Abandon a gesture without an undo entry. Frozen-take values were only buffered, so dropping
+     * the buffer reverts them; every stored value the gesture changed, the press's own write
+     * included, goes back to what it held at the press through the same setter its undo uses.
+     */
+    const revertGesture = (initialValues: GestureStartValues): void => {
+        pendingFrozenValues.current.clear();
+        replayChanges(collectUndoChanges(initialValues, getValue), 'oldVal', setValue);
     };
 
     // Every clip in scope resolves its own color, the same lookup the piano
@@ -611,6 +619,7 @@ export const NotePropertyLane = ({
                 captureTarget: canvas,
                 move: onMove,
                 commit: onCommit,
+                cancel: () => revertGesture(initialValues),
             });
             // Apply initial ramp from anchor position — only once the gesture has an owner.
             applyRamp(valueAt(event));
@@ -655,6 +664,7 @@ export const NotePropertyLane = ({
             captureTarget: canvas,
             move: onMove,
             commit: onCommit,
+            cancel: () => revertGesture(origValues),
         });
         writeValue(pressedEntry.clipId, pressedEntry.note.id, valueAt(event));
     };
@@ -726,6 +736,7 @@ export const NotePropertyLane = ({
             captureTarget,
             move: onMove,
             commit: onCommit,
+            cancel: () => revertGesture(initialValues),
         });
     };
 

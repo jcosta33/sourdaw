@@ -24,5 +24,5 @@ Interactive command palette UI, keyboard shortcut mappings and rebindings, comma
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
 ```bash
-pnpm test:run <changed-spec>
+pnpm guard --profile focused -- pnpm test:run <changed-spec>
 ```
