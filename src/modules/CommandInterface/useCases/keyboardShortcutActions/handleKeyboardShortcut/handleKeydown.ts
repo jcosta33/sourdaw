@@ -18,7 +18,7 @@ import { CommandEventBus, executeUserAppAction, pushUndoEntry, redo, undo } from
 import { loopStationStore } from '#/modules/SessionLauncher/stores';
 import { stopAllSlots, triggerPad } from '#/modules/SessionLauncher/useCases';
 import { panicAllNotes, stopPlayback, seekPlayhead, setLoopRegion } from '#/modules/Transport/useCases';
-import { type EditingTool, workspaceStore } from '#/modules/WorkspaceShell/stores';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import {
     closeCollaborationPanel,
     cycleAutomationVisibility,
@@ -32,6 +32,7 @@ import {
     toggleTrackList,
     toggleVirtualKeyboard,
     toggleWorkspaceMode,
+    NUMBER_TOOL_SHORTCUTS,
     TOOL_SHORTCUTS,
 } from '#/modules/WorkspaceShell/useCases';
 import { isDragGestureActive } from '#/utils/UI/activeDragGesture';
@@ -109,14 +110,6 @@ function dispatchAiChord(key: string): boolean {
             return false;
     }
 }
-
-const NUMBER_TOOL_MAP: Record<string, EditingTool> = {
-    '1': 'select',
-    '2': 'cut',
-    '3': 'draw',
-    '4': 'automation',
-    '5': 'stretch',
-};
 
 export type KeyDescriptor = {
     key: string;
@@ -584,7 +577,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                 goToPreviousMarker();
                 return false;
             default: {
-                const numberTool = NUMBER_TOOL_MAP[key];
+                const numberTool = NUMBER_TOOL_SHORTCUTS[key];
                 if (numberTool) {
                     setEditingTool(numberTool);
                     return false;
@@ -658,7 +651,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
 
         // R-A3: Track hold duration for tool shortcuts (press-and-hold for temporary swap)
         const normalizedKey = key.toLowerCase();
-        const tool = NUMBER_TOOL_MAP[key] || TOOL_SHORTCUTS[normalizedKey];
+        const tool = NUMBER_TOOL_SHORTCUTS[key] || TOOL_SHORTCUTS[normalizedKey];
         if (tool && !mod && !shift && !alt && !repeat) {
             startToolSwap({
                 key,

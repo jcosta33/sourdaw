@@ -159,6 +159,7 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     toggleVirtualKeyboard: vi.fn(),
     toggleWorkspaceMode: vi.fn(),
     TOOL_SHORTCUTS: { d: 'draw' },
+    NUMBER_TOOL_SHORTCUTS: { '1': 'select' },
 }));
 
 vi.mock('../../../../stores/shortcutStore', () => ({

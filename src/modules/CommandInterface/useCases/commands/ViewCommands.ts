@@ -2,6 +2,7 @@ import { addMarker, zoomTimelineBy } from '#/modules/Arrangement/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { startOnboardingTour } from '#/modules/Onboarding/useCases';
 import { transportStore, playheadPositionRef } from '#/modules/Transport/stores';
+import { type EditingTool } from '#/modules/WorkspaceShell/stores';
 import {
     zoomToFit,
     zoomToSelection,
@@ -9,10 +10,13 @@ import {
     toggleInspector,
     toggleMixer,
     toggleAutomationPanel,
+    getToolShortcutKeys,
 } from '#/modules/WorkspaceShell/useCases';
 
 import { type CallableCommandEntry } from '../searchCommandRegistry';
 import { getSelectedClipId } from '../selectionHelpers/getSelectedClipId';
+
+const toolShortcutHint = (tool: EditingTool): string => getToolShortcutKeys(tool).join(' / ');
 
 /** View commands — zoom, panels, workspace modes, tools, markers. */
 export const viewCommands: CallableCommandEntry[] = [
@@ -197,7 +201,7 @@ export const viewCommands: CallableCommandEntry[] = [
         label: 'Select Tool',
         description: 'Switch to the select tool',
         category: 'Tools',
-        shortcut: 'S / 1',
+        shortcut: toolShortcutHint('select'),
         action: { type: 'setEditingTool', payload: { tool: 'select' } },
     },
     {
@@ -205,7 +209,7 @@ export const viewCommands: CallableCommandEntry[] = [
         label: 'Cut Tool',
         description: 'Switch to the cut / split tool',
         category: 'Tools',
-        shortcut: 'C / 2',
+        shortcut: toolShortcutHint('cut'),
         action: { type: 'setEditingTool', payload: { tool: 'cut' } },
     },
     {
@@ -213,7 +217,7 @@ export const viewCommands: CallableCommandEntry[] = [
         label: 'Draw Tool',
         description: 'Switch to the draw tool',
         category: 'Tools',
-        shortcut: 'D / 3',
+        shortcut: toolShortcutHint('draw'),
         action: { type: 'setEditingTool', payload: { tool: 'draw' } },
     },
     {
@@ -221,7 +225,7 @@ export const viewCommands: CallableCommandEntry[] = [
         label: 'Automation Tool',
         description: 'Switch to the automation tool',
         category: 'Tools',
-        shortcut: 'A / 4',
+        shortcut: toolShortcutHint('automation'),
         action: { type: 'setEditingTool', payload: { tool: 'automation' } },
     },
     {
@@ -229,7 +233,7 @@ export const viewCommands: CallableCommandEntry[] = [
         label: 'Stretch Tool',
         description: 'Switch to the stretch tool',
         category: 'Tools',
-        shortcut: 'T / 5',
+        shortcut: toolShortcutHint('stretch'),
         action: { type: 'setEditingTool', payload: { tool: 'stretch' } },
     },
 

@@ -22,4 +22,4 @@ export type {
 // `models/EditingTool` and dropped `e: 'marquee'`, so the keyboard path (which
 // reads this copy through `useCases/index.ts`) could not reach a tool whose own
 // label advertises the shortcut.
-export { TOOL_SHORTCUTS } from '../../models/EditingTool';
+export { TOOL_SHORTCUTS, NUMBER_TOOL_SHORTCUTS, getToolShortcutKeys } from '../../models/EditingTool';

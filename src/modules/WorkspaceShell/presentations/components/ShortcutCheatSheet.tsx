@@ -8,10 +8,28 @@ import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 
+import { type EditingTool, NUMBER_TOOL_SHORTCUTS, TOOL_SHORTCUTS } from '../../models/EditingTool';
+
+export type ShortcutRow = { keys: string; description: string };
+
 type ShortcutGroup = {
     title: string;
-    shortcuts: { keys: string; description: string }[];
+    shortcuts: ShortcutRow[];
 };
+
+const TOOL_DESCRIPTIONS: Record<EditingTool, string> = {
+    select: 'Select tool',
+    cut: 'Cut / Split tool',
+    draw: 'Draw tool',
+    automation: 'Automation tool',
+    stretch: 'Stretch tool',
+    marquee: 'Marquee tool',
+};
+
+// Rows come from the maps `handleKeydown` selects tools with, so a key shown
+// here is a key that selects the tool.
+const toolRows = (shortcuts: Record<string, EditingTool>): ShortcutRow[] =>
+    Object.entries(shortcuts).map(([key, tool]) => ({ keys: key.toUpperCase(), description: TOOL_DESCRIPTIONS[tool] }));
 
 const SHORTCUT_GROUPS: ShortcutGroup[] = [
     {
@@ -26,26 +44,8 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
             { keys: 'End', description: 'Go to end' },
         ],
     },
-    {
-        title: 'Tools (letter)',
-        shortcuts: [
-            { keys: 'S', description: 'Select tool' },
-            { keys: 'C', description: 'Cut / Split tool' },
-            { keys: 'D', description: 'Draw tool' },
-            { keys: 'A', description: 'Automation tool' },
-            { keys: 'T', description: 'Stretch tool' },
-        ],
-    },
-    {
-        title: 'Tools (number)',
-        shortcuts: [
-            { keys: '1', description: 'Select tool' },
-            { keys: '2', description: 'Cut tool' },
-            { keys: '3', description: 'Draw tool' },
-            { keys: '4', description: 'Automation tool' },
-            { keys: '5', description: 'Stretch tool' },
-        ],
-    },
+    { title: 'Tools (letter)', shortcuts: toolRows(TOOL_SHORTCUTS) },
+    { title: 'Tools (number)', shortcuts: toolRows(NUMBER_TOOL_SHORTCUTS) },
     {
         title: 'Editing',
         shortcuts: [
@@ -57,7 +57,6 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
             { keys: '⌘ D', description: 'Duplicate clip' },
             { keys: '⌥ D', description: 'Duplicate to next bar' },
             { keys: '⌘ A', description: 'Select all clips' },
-            { keys: '⌘ ⇧ A', description: 'Deselect all' },
             { keys: 'Del', description: 'Delete selected' },
         ],
     },
@@ -68,7 +67,6 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
             { keys: ']', description: 'Next marker' },
             { keys: '[', description: 'Previous marker' },
             { keys: 'Tab', description: 'Toggle arrange / clip' },
-            { keys: 'V', description: 'Voice command (hold)' },
             { keys: '?', description: 'This shortcut sheet' },
         ],
     },
@@ -116,6 +114,12 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
 
 type ShortcutCheatSheetProps = {
     /**
+     * Rows for bindings the shortcut store owns (and the user can remap). The sheet
+     * is a leaf and may not read that store, so the view that mounts it derives the
+     * rows and they are listed under View / Zoom.
+     */
+    storeShortcuts?: ShortcutRow[];
+    /**
      * Notified whenever the sheet opens or closes. The sheet declares
      * `aria-modal="true"`, which tells assistive tech the rest of the app does not
      * exist; AppShell marks the shell root `inert` so that holds for the tab order
@@ -135,7 +139,10 @@ type ShortcutCheatSheetProps = {
     onOpenChange?: (open: boolean) => void;
 };
 
-export const ShortcutCheatSheet = ({ onOpenChange }: ShortcutCheatSheetProps = {}): ReactElement | null => {
+export const ShortcutCheatSheet = ({
+    onOpenChange,
+    storeShortcuts = [],
+}: ShortcutCheatSheetProps = {}): ReactElement | null => {
     const [open, setOpen] = useState(false);
     const panelRef = useRef<HTMLDivElement>(null);
     const returnFocusRef = useRef<HTMLElement | null>(null);
@@ -186,6 +193,10 @@ export const ShortcutCheatSheet = ({ onOpenChange }: ShortcutCheatSheetProps = {
         return null;
     }
 
+    const groups = SHORTCUT_GROUPS.map((group) =>
+        group.title === 'View / Zoom' ? { ...group, shortcuts: [...group.shortcuts, ...storeShortcuts] } : group
+    );
+
     return (
         <Row
             justify="center"
@@ -218,7 +229,7 @@ export const ShortcutCheatSheet = ({ onOpenChange }: ShortcutCheatSheetProps = {
                 />
 
                 <Grid cols={2} gap={6} className="overflow-y-auto px-4 py-4">
-                    {SHORTCUT_GROUPS.map((group) => (
+                    {groups.map((group) => (
                         <div key={group.title}>
                             <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
                                 {group.title}

@@ -54,6 +54,7 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     openExportDialog: vi.fn(),
     openPreferencesDialog: vi.fn(),
     TOOL_SHORTCUTS: {},
+    NUMBER_TOOL_SHORTCUTS: {},
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
