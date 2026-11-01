@@ -1,0 +1,19 @@
+src/modules/AudioEngine/repositories/engineTransport/__tests__/getEngineTransportPosition.spec.ts
+  s_6589e76281e3d0::t_b807658f04a8bb 352-365
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6545a0d4b8e595ef73bc54a861894c3af5966531",
+  "prompts": {},
+  "sessions": {
+    "s_6589e76281e3d0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_6589e76281e3d0",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
