@@ -1,0 +1,37 @@
+src/modules/Arrangement/useCases/clipEditing/resolveCrossfadeClipB.ts
+  s_7a8e1107313040::t_f78954d0f0cc31 8
+src/modules/Arrangement/handlers/clip/handleCrossfadeClips.ts
+  s_7a8e1107313040::t_4c51371617a204 3
+src/modules/Arrangement/handlers/clip/handleRestoreCrossfadeClips.ts
+  s_7a8e1107313040::t_2af30bce090890 7-8
+src/modules/Arrangement/handlers/clip/__tests__/handleReverseClip.spec.ts
+  s_7a8e1107313040::t_931324d079b761 45-47
+src/modules/Arrangement/useCases/clipEditing/restoreCrossfadeClips.ts
+  s_7a8e1107313040::t_c51dcb748e6464 8-12
+src/modules/Arrangement/useCases/clipEditing/__tests__/reverseClip.spec.ts
+  s_7a8e1107313040::t_012a0668b73d6a 78-80
+src/modules/Arrangement/handlers/clip/handleReverseClip.ts
+  s_7a8e1107313040::t_f2b88a819593f8 6
+src/modules/Arrangement/models/ClipAudioSource.ts
+  s_7a8e1107313040::t_150575f9d27a95 3
+src/modules/Arrangement/models/__tests__/ClipAudioSource.spec.ts
+  s_7a8e1107313040::t_abc0183120fbb2 3-4
+src/modules/Arrangement/handlers/clip/handleRestoreReversedClip.ts
+  s_7a8e1107313040::t_3215e55c642bff 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f0c35479a4cf99baf103fdcc8e840ce98982a9d4",
+  "prompts": {},
+  "sessions": {
+    "s_7a8e1107313040": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54399ae9-2148-45f8-8043-53b64cc39d76",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
