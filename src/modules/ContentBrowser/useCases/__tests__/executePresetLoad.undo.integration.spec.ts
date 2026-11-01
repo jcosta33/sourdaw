@@ -6,7 +6,7 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { type Track, trackStore } from '#/modules/Arrangement/stores';
 import {
     compileLoadPresetActions,
     getArrangementHandlers,
@@ -58,8 +58,7 @@ type NotificationEvents = {
     'ui.prompt': PromptPayload;
 };
 
-type TrackRow = { id: string; kind: string; parentId?: string; devices: { id: string; type: string }[] };
-type ProjectDocument = { tracks?: { tracks?: TrackRow[] } };
+type ProjectDocument = { tracks?: { tracks?: Track[] } };
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -67,11 +66,11 @@ const noActionHistoryMetadataPort = {
     clear: () => undefined,
 };
 
-function storeTracks(): readonly TrackRow[] {
+function storeTracks(): readonly Track[] {
     return trackStore.value?.tracks ?? [];
 }
 
-function documentTracks(): readonly TrackRow[] {
+function documentTracks(): readonly Track[] {
     return getCrdtDoc<ProjectDocument>('root')?.tracks?.tracks ?? [];
 }
 
