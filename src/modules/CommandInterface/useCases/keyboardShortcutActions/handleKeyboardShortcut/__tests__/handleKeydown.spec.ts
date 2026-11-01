@@ -389,6 +389,77 @@ describe('handleKeydown', () => {
             expect(stopPlaybackMock).not.toHaveBeenCalled();
         });
 
+        describe('with a drag marked', () => {
+            let endDrag: () => void = () => undefined;
+
+            beforeEach(() => {
+                endDrag = beginDragGesture();
+            });
+
+            afterEach(() => {
+                endDrag();
+            });
+
+            it.each([
+                {
+                    step: 'dismissing the selected ghost clip',
+                    arm: (): void => {
+                        trackStoreMock.value.ghostClips = [{ id: 'ghost-1', trackId: 't1' }];
+                        clipSelectionStoreMock.value.selectedClipId = 'ghost-1';
+                    },
+                },
+                {
+                    step: 'clearing the marquee',
+                    arm: (): void => {
+                        clipSelectionStoreMock.value.marqueeSelection = { startBeat: 0, endBeat: 4, trackIds: ['t1'] };
+                    },
+                },
+                {
+                    step: 'clearing the clip selection',
+                    arm: (): void => {
+                        clipSelectionStoreMock.value.selectedClipId = 'clip-1';
+                        clipSelectionStoreMock.value.selectedClipIds = ['clip-1'];
+                    },
+                },
+                {
+                    step: 'stopping loop-station slots',
+                    arm: (): void => {
+                        loopStationStoreMock.value.slots = [{ state: 'playing' }];
+                    },
+                },
+                {
+                    step: 'stopping the transport',
+                    arm: (): void => undefined,
+                },
+            ])('leaves Escape to the drag instead of $step', ({ arm }) => {
+                bindEscape();
+                arm();
+
+                const prevent = handleKeydown(descriptor({ key: 'Escape' }));
+
+                expect(prevent).toBe(true);
+                expect(dismissGhostClip).not.toHaveBeenCalled();
+                expect(setMarqueeSelection).not.toHaveBeenCalled();
+                expect(clearClipSelection).not.toHaveBeenCalled();
+                expect(stopAllSlots).not.toHaveBeenCalled();
+                expect(stopPlaybackMock).not.toHaveBeenCalled();
+            });
+
+            it('still lets Enter stop the transport it is bound to', () => {
+                shortcutStoreMock.value.definitions = [
+                    {
+                        id: 'transport.stopPlayback',
+                        defaultKeys: ['Escape', 'Enter'],
+                        action: { type: 'callback', id: 'stopPlayback' },
+                    },
+                ];
+
+                handleKeydown(descriptor({ key: 'Enter' }));
+
+                expect(stopPlaybackMock).toHaveBeenCalledTimes(1);
+            });
+        });
+
         describe('with the Collaborate panel open', () => {
             beforeEach(() => {
                 workspaceStore.value!.collaborationPanelOpen = true;
