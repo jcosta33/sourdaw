@@ -8,6 +8,7 @@ export function selectAllClips(getAllClipIds: () => string[]): void {
     clipSelectionStore.set({
         ...current,
         selectedClipIds,
-        selectedClipId: resolvePrimaryClip(selectedClipIds, current.selectedClipId),
+        // Several commands act on the primary alone, so a many-clip Select All keeps none.
+        selectedClipId: resolvePrimaryClip(selectedClipIds, null),
     });
 }

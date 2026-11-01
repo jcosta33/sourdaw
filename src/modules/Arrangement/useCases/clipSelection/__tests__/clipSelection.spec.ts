@@ -63,7 +63,7 @@ describe('clip selection use cases', () => {
     });
 
     it.each([
-        ['keeps a primary that is in the set', 'b', ['a', 'b', 'c'], 'b'],
+        ['leaves a many-clip selection unfocused even when the primary is in the set', 'b', ['a', 'b', 'c'], null],
         ['leaves a many-clip selection unfocused when the primary is not in the set', 'x', ['a', 'b', 'c'], null],
         ['leaves a many-clip selection unfocused when there is no primary', null, ['a', 'b', 'c'], null],
         ['focuses the clip of a one-clip project', null, ['a'], 'a'],
