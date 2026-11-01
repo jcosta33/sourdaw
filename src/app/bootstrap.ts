@@ -33,7 +33,7 @@ import {
     setTrackPan as setTrackPanArrangement,
     setDeviceParameter,
     initStalenessDetection,
-    initTimelineScrollClamp,
+    initTimelineViewReconciliation,
     setArrangementEventBus,
     setClipAudioAssetStager,
     setOfflineRenderDependencies,
@@ -726,7 +726,7 @@ initCrumbsModePush(eventBus);
 // this restores.
 syncCrumbsNativeInstances();
 initStalenessDetection();
-initTimelineScrollClamp();
+initTimelineViewReconciliation();
 
 // Registered for the life of the process, so deadline-evidence reading has
 // main-thread long-task coverage from startup regardless of what is mounted.
