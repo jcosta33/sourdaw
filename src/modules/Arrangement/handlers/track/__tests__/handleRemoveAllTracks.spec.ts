@@ -185,7 +185,7 @@ describe('handleRemoveAllTracks', () => {
             mocks.getTrackStoreState.mockReturnValue({
                 tracks: [
                     { id: 't1', kind: 'audio' },
-                    { id: 'master', kind: 'master' },
+                    { id: 'master', kind: 'master', outputId: 'hw_out', sends: [] },
                 ],
             });
             const snapshotT1 = createSnapshot('t1', 0);

@@ -258,7 +258,7 @@ describe('handleRemoveTrack', () => {
             mocks.getTrackStoreState.mockReturnValue({ tracks: [master], selectedTrackId: 'master' });
             const action = { type: 'removeTrack', payload: { trackId: 'master' } } as const;
 
-            expect(handleRemoveTrack.validate?.(action, [])).toBe(false);
+            expect(handleRemoveTrack.validate?.(action, { actions: [action], actionIndex: 0 })).toBe(false);
             expect(await handleRemoveTrack.execute(action)).toEqual({ status: 'conflict' });
             expect(mocks.removeTrack).not.toHaveBeenCalled();
             expect(mocks.removeTrackModulationReferences).not.toHaveBeenCalled();
