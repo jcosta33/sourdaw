@@ -1,0 +1,21 @@
+src/modules/Arrangement/handlers/track/__tests__/handleRemoveAllTracks.undoRouting.spec.ts
+  s_ba80576e6f5cb5::t_495692a3794fdc 26
+src/modules/Arrangement/handlers/track/handleRemoveAllTracks.ts
+  s_ba80576e6f5cb5::t_4f000f94bfd488 74-79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cf3f23a39e6d66af4ea7c6167a8123c0b0fe5d00",
+  "prompts": {},
+  "sessions": {
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
