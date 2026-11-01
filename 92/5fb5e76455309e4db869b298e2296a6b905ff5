@@ -1,0 +1,207 @@
+release/open-source-inventory.json
+  s_88fc7e0d05bab6::t_50f4f78491aa73 1213-1214
+scripts/__tests__/cleanupLanes.spec.ts
+  s_55244eb93b97d1::t_ffffafb406bf46 1,39,146-147,594,596,609-631,654,673,906,1272-1334
+scripts/__tests__/installCleanupLanes.spec.ts
+  s_55244eb93b97d1::t_9b4e2d43573b0a 5,16,185-201
+scripts/__tests__/pnpmModulesPreflight.spec.ts
+  s_55244eb93b97d1::t_ec4710573d694d 289-307
+scripts/__tests__/prContract.spec.ts
+  s_55244eb93b97d1::t_fb86db69b07cb8 3425-3431
+scripts/__tests__/removeLane.spec.ts
+  s_55244eb93b97d1::t_f940bc9e71f755 22,446-448,454-467,814
+scripts/__tests__/reviewRiskPolicy.spec.ts
+  s_55244eb93b97d1::t_d6939e74fb1ba6 661,664-667,669-673
+scripts/__tests__/runIsolatedUnitShard.spec.ts
+  s_55244eb93b97d1::t_e6cc35d2c6ddb5 717-744
+scripts/__tests__/unitExecutionCopy.spec.ts
+  s_55244eb93b97d1::t_02d6707e58b9fc 146-147,183-187,198,215
+scripts/laneActivity.ts
+  s_55244eb93b97d1::t_c880217e303488 8-17,27-30,32-42,48-49,53,55,65,70,77-94,96,98
+scripts/pnpmModulesPreflight.ts
+  s_55244eb93b97d1::t_4091cf5556e86d 40,285-290
+scripts/prContract.ts
+  s_55244eb93b97d1::t_48c488dec66972 16,921
+scripts/removeLane.ts
+  s_55244eb93b97d1::t_319c2e9d6abecd 5,91
+scripts/reviewRiskPolicy.ts
+  s_55244eb93b97d1::t_accd90360732c1 101-103,127
+scripts/unitExecutionCopy.ts
+  s_55244eb93b97d1::t_f55843a79d4f9d 101
+scripts/unitShardCheckoutOwnership.ts
+  s_55244eb93b97d1::t_24176517cc06b4 2,6
+src/components/ui/dialog.tsx
+  s_55244eb93b97d1::t_e13fd97e0fb8eb 41,45-46,51
+src/infra/dialogService/ConfirmDialog.tsx
+  s_55244eb93b97d1::t_e1af97640daf8c 8,52-59,63,66,79,82
+src/infra/dialogService/NotificationToast.tsx
+  s_55244eb93b97d1::t_acd2c70ee01b26 9,35-36
+src/infra/dialogService/PromptDialog.tsx
+  s_55244eb93b97d1::t_703aad2136e290 7,9,54-58
+src/infra/dialogService/__tests__/ConfirmDialog.spec.tsx
+  s_55244eb93b97d1::t_e1a8e3d052e6f6 8,138-187
+src/infra/dialogService/dialogServiceLayer.ts
+  s_55244eb93b97d1::t_0cf1932191981f 1-12
+src/modules/AiRuntime/AGENTS.md
+  s_55244eb93b97d1::t_88b0a95c99d05f 36
+src/modules/AiRuntime/presentations/views/AiChangeToast.tsx
+  s_55244eb93b97d1::t_fe829a2280fae5 10,15-30,62-68,115-120
+src/modules/AiRuntime/presentations/views/__tests__/AiChangeToast.spec.tsx
+  s_55244eb93b97d1::t_58db45b47383de 18-20,22,64,271-272,313-342
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_55244eb93b97d1::t_88a86b4c44c6d1 6,200,542,566-567,597-598
+src/modules/AiRuntime/useCases/aiChangeNotificationState.ts
+  s_55244eb93b97d1::t_40d072fa94a09b 5-16
+src/modules/AiRuntime/useCases/aiPanelActions/__tests__/openAnswerInChat.spec.ts
+  s_55244eb93b97d1::t_e1254d6eeb6b11 1,3-19,23-24,35-43,53-61,63-65,67-69,73-78,80-83,85,87,92-94,100,104-224
+src/modules/AiRuntime/useCases/aiPanelActions/openAnswerInChat.ts
+  s_55244eb93b97d1::t_e7a00feb15d6c8 1,8-13,17-21,23-29,34
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_55244eb93b97d1::t_2edd5028f8ab4d 4,334,340-346
+src/modules/Arrangement/models/MidiNoteViewTypes.ts
+  s_55244eb93b97d1::t_80cdc571576595 28-29
+src/modules/Arrangement/useCases/clipboard/__tests__/pasteNotes.spec.ts
+  s_55244eb93b97d1::t_5dd81e054ce864 151-169
+src/modules/Arrangement/useCases/clipboard/pasteNotes.ts
+  s_55244eb93b97d1::t_47b3b880abecde 19-29
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/recording.spec.ts
+  s_55244eb93b97d1::t_80341f48677149 59,62-66,165-167,197-214,231-245
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/stopAudioRecording.spec.ts
+  s_55244eb93b97d1::t_ec87075091ee37 175,184-186
+src/modules/AudioEngine/repositories/audioRecorder/recording.ts
+  s_55244eb93b97d1::t_e994572d692748 248-252
+src/modules/AudioEngine/useCases/audioRecorder/__tests__/startAudioRecording.spec.ts
+  s_55244eb93b97d1::t_42fd6975c06cef 127-137
+src/modules/CommandInterface/useCases/commands/ProjectCommands.ts
+  s_55244eb93b97d1::t_36762a54acbbfe 24-28,31
+src/modules/CommandInterface/useCases/commands/__tests__/ProjectCommands.spec.ts
+  s_55244eb93b97d1::t_682f0ecaf3905e 47,97,103,109,125-139
+src/modules/CrdtDocument/useCases/__tests__/projectRevisionMatchesLiveIgnoringCommandCheckpoint.spec.ts
+  s_55244eb93b97d1::t_b0f5d77da779c3 7,329-465
+src/modules/CrdtDocument/useCases/index.ts
+  s_55244eb93b97d1::t_3fde16996f5d87 10
+src/modules/CrdtDocument/useCases/projectRevisionMatchesLiveIgnoringCommandCheckpoint.ts
+  s_55244eb93b97d1::t_53eccddc3ba084 76-78,84-87,92,107-111,115-116,126-131,140-141,146,172,183-201
+src/modules/CrdtDocument/useCases/projectRevisionMatchesLiveIgnoringSaveWrites.ts
+  s_55244eb93b97d1::t_0c2baef373abc0 1-62
+src/modules/DawInterchange/useCases/__tests__/importDawProject.spec.ts
+  s_55244eb93b97d1::t_d1bb77430a9154 190-200
+src/modules/DawInterchange/useCases/__tests__/pickAndImportDawProject.spec.ts
+  s_55244eb93b97d1::t_e34192a672e039 34,56,65,71,95-98,100,106-114
+src/modules/DawInterchange/useCases/importDawProject.ts
+  s_55244eb93b97d1::t_73ddc4a0224096 13-14,110
+src/modules/DawInterchange/useCases/pickAndImportDawProject.ts
+  s_55244eb93b97d1::t_959b69df0bbf83 15-20,25
+src/modules/MIDI/services/__tests__/transformMidiGlobalTimeState.spec.ts
+  s_55244eb93b97d1::t_13135706772728 149-216,284-348
+src/modules/MIDI/services/transformMidiGlobalTimeState.ts
+  s_55244eb93b97d1::t_f5683de379cc7f 342-344,835-837
+src/modules/MIDI/useCases/webMidiInput/__tests__/eventTimeRecordingBeat.spec.ts
+  s_55244eb93b97d1::t_adf1e58d6249ec 385-388,394-395,450-455,480-484,488,514-541
+src/modules/MIDI/useCases/webMidiInput/captureEventBeat.ts
+  s_55244eb93b97d1::t_6ac29303820b77 86-89,111-116,130-132,149-153
+src/modules/Project/AGENTS.md
+  s_55244eb93b97d1::t_85b50fa64ccf6e 39
+src/modules/Project/presentations/views/RecentProjectsMenu.tsx
+  s_55244eb93b97d1::t_efc5dd9673bcdc 76-82,85,135-143,146
+src/modules/Project/presentations/views/TemplateChooser.tsx
+  s_55244eb93b97d1::t_8fc57e6d462262 239-246,249
+src/modules/Project/presentations/views/__tests__/RecentProjectsMenu.spec.tsx
+  s_55244eb93b97d1::t_1808b759013e54 4,33-37,119,264-265,273-275,280-315,359-365
+src/modules/Project/presentations/views/__tests__/TemplateChooser.spec.tsx
+  s_55244eb93b97d1::t_924969aa57293b 4-5,29-33,59,87-90,92,132-133,140-141,145-163
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  s_55244eb93b97d1::t_b16f94a411d14d 19,21,63,105-106,206,1566-1595
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/pickAndImportProjectFile.spec.ts
+  s_55244eb93b97d1::t_4b54fe43ac062e 28,61-70,86,124,213-214,228,237,242-258
+src/modules/Project/useCases/projectPersistence/fileIO/applyImportedProjectData.ts
+  s_55244eb93b97d1::t_f6962d88173a9b 4,13-14,23,36
+src/modules/Project/useCases/projectPersistence/fileIO/pickAndImportProjectFile.ts
+  s_55244eb93b97d1::t_3bac0149113b98 28-33,50-55
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetCrdtProjectWithTransportStopped.recording.integration.spec.ts
+  s_55244eb93b97d1::t_c81aeefc9c163a 406,481
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProjectBeforeReplacement.spec.ts
+  s_55244eb93b97d1::t_6e8975d713c673 3-6,9-10,13-14,19-31,37-66,69,71-75,77-84,86,89,92-122,128-130,132-133,135-137,140-159,161
+src/modules/Project/useCases/projectPersistence/saveProject/saveProjectBeforeReplacement.ts
+  s_55244eb93b97d1::t_a97f63de8b9e7b 1-4,6,10-51,54,56-66,68,70-76
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/createFromTemplate.spec.ts
+  s_55244eb93b97d1::t_8fae81c3d3d9c9 329-340,594-607
+src/modules/Project/useCases/projectTemplates/templateDefinitions/createFromTemplate.ts
+  s_55244eb93b97d1::t_7835d2683674f4 16,104-105,112,119,166-167
+src/modules/Project/useCases/projectTemplates/templateDefinitions/helpers.ts
+  s_55244eb93b97d1::t_a6960c88df3e37 2,23-27
+src/modules/Transport/AGENTS.md
+  s_55244eb93b97d1::t_d3fdd0857810ed 30-32
+src/modules/Transport/models/TempoMap.ts
+  s_55244eb93b97d1::t_667fc4200cd733 278-328
+src/modules/Transport/stores/__tests__/captureGestureBeat.spec.ts
+  s_55244eb93b97d1::t_e19428697c6b60 169-172,174,178-212
+src/modules/Transport/stores/captureGestureBeat.ts
+  s_55244eb93b97d1::t_443309c15d13cf 20-31,40,51-52,55-56,58-111,148-149,161-162,164,166-167
+src/modules/Transport/stores/index.ts
+  s_55244eb93b97d1::t_4d83e66a9b1420 9
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_55244eb93b97d1::t_cbfc865e009d73 101-103,465,473-475,478
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_55244eb93b97d1::t_980ffe46d37fd4 2467-2472,2478,3142-3244,3295-3299,3303-3304
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchPausePlayCommand.integration.spec.ts
+  s_55244eb93b97d1::t_e5368466f9ef51 7,48,56,59,590-600,607-806,850,865-888
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_55244eb93b97d1::t_18d8d8629c38bd 838,842-843,852-888,990-991,993-994,1036,1038,1044,1046,1050,1055-1061,1071,1094,1123,1164,1252,1308,1356,1432,1472,1516,1570,2204,2206,2217
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStall.spec.ts
+  s_55244eb93b97d1::t_51c143ce3bd934 1-544
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllers.spec.ts
+  s_55244eb93b97d1::t_8d42383573fc03 637-657
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSupersededSeamRecordingPass.spec.ts
+  s_55244eb93b97d1::t_48b493bd8f8977 7-8,487-536
+src/modules/Transport/useCases/playheadScheduler/beatAtSecondsFromAnchor.ts
+  s_55244eb93b97d1::t_c2bbb4dbe126ae 1,3,10
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_55244eb93b97d1::t_7c4e64f19c458b 198,278-284,485-493,521-536,765-772,783-791,794-795,799,826,865,960-996,1026,1112-1114,1116,1266-1285,1405-1409,1412-1413,1420-1430,1435-1436,1438,1583-1586,1701-1714,1726-1728,1738
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastGrooveWindowAdmission.spec.ts
+  s_55244eb93b97d1::t_22cc6a8b2724e1 293,324-326,562-617
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_55244eb93b97d1::t_d28ad4b6e59893 536-542,544
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecording.spec.ts
+  s_55244eb93b97d1::t_6c2a690970f9a7 3-4,976-1041
+src/modules/Transport/useCases/transportControls/recordingLifecycle.ts
+  s_55244eb93b97d1::t_8854d36bf04ebd 23-30,79,191-196
+src/modules/Transport/useCases/transportControls/stopActiveRecording.ts
+  s_55244eb93b97d1::t_8154880517436d 17
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_55244eb93b97d1::t_9162b6c35f0551 534-539,544
+src/modules/WorkspaceShell/handlers/workspace/__tests__/workspaceProjectHandlers.spec.ts
+  s_55244eb93b97d1::t_8dca1746d6a6e6 83,91,94-107,110-123,129,134
+src/modules/WorkspaceShell/handlers/workspace/handleNewProject.ts
+  s_55244eb93b97d1::t_affc3ffd1f1f8c 11-15,18
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useNativeApplicationMenu.spec.tsx
+  s_55244eb93b97d1::t_687a49c596d378 56-58,268,1238-1243,1302-1337,1359-1368,1441-1442,1449,1471,1478,1500,1503,1530
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  s_55244eb93b97d1::t_777a4ce68f4ef7 54-69,91,99-101,105,108-110
+tests/e2e/aiConfirmApplyUndo.spec.ts
+  s_55244eb93b97d1::t_b65d3413baa3e3 6,53-64,344-451
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "925fb5e76455309e4db869b298e2296a6b905ff5",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
