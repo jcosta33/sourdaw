@@ -19,7 +19,7 @@ test.describe('Export & Bouncing', () => {
         await expect(exportDialog).toBeVisible();
 
         // Find format checkboxes (WAV, MP3, FLAC are rendered with role='checkbox' in Sourdaw)
-        const wavButton = exportDialog.getByRole('checkbox', { name: /WAV/i });
+        const wavButton = exportDialog.getByTestId('export-format-wav');
         const mp3Button = exportDialog.getByRole('checkbox', { name: 'MP3 Lossy crust', exact: true });
         const flacButton = exportDialog.getByRole('checkbox', { name: /FLAC/i });
 
