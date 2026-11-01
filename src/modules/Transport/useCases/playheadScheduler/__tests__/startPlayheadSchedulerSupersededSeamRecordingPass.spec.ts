@@ -534,4 +534,34 @@ describe('superseded loop seam during MIDI loop recording', () => {
         expect(closedPasses().map((take) => take.endBeat)).toEqual([LOOP_BEATS, LOOP_BEATS]);
         expect(openTake().recordingPassIndex).toBe(2);
     });
+
+    it('stages the pass a late wrap closed before the planned end of the pass it hands over at its seam', async () => {
+        await advanceUntil(() => schedulerSession.pendingSeam !== null);
+        const plannedSeam = schedulerSession.pendingSeam!.seamAudioTime;
+        stageSpy.mockClear();
+
+        // The main thread stalls past the planned seam and on to 50 ms short of
+        // the end of the pass after it: the late wrap counts both seams and lands
+        // at beat 3.9 of the third pass, whose own seam falls inside this tick's
+        // look-ahead and is scheduled.
+        ctxTime.now = plannedSeam + 2 + 1.95;
+        await tick(0);
+
+        expect(schedulerSession.pendingSeam?.seamAudioTime).toBeCloseTo(plannedSeam + 4, 9);
+        expect(notePass()).toBe(2);
+        // In pass order: the pass the late wrap closed at the seam it crossed,
+        // then the planned end of the pass that now hands over.
+        expect(
+            stageSpy.mock.calls.map(([input]) => ({
+                plannedPassEnd: input.plannedPassEnd,
+                passEndContextSeconds: input.passEndContextSeconds,
+                recordingPassIndex: input.recordingPassIndex,
+            }))
+        ).toEqual([
+            { plannedPassEnd: undefined, passEndContextSeconds: plannedSeam + 2, recordingPassIndex: 1 },
+            { plannedPassEnd: true, passEndContextSeconds: plannedSeam + 4, recordingPassIndex: 2 },
+        ]);
+        expect(closedPasses().map((take) => take.recordingPassIndex)).toEqual([0, 1, 2]);
+        expect(openTake().recordingPassIndex).toBe(3);
+    });
 });

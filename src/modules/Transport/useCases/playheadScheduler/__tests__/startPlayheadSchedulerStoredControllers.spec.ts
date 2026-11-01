@@ -557,6 +557,42 @@ describe('startPlayheadScheduler stored controller restore at a relocation', () 
         });
     });
 
+    describe('late loop wrap that hands its pass over at the seam', () => {
+        // Longer than the look-ahead (0.2 beats), so a seam can be scheduled, and
+        // short enough that a stall landing 0.15 beats into a pass is both inside
+        // one look-ahead of the loop end and less than one look-ahead past the
+        // loop start, so the stall skip does not mark the window by itself.
+        const SEAM_LOOP = { loopStart: 3.4, loopEnd: 3.7 };
+
+        it('restores the value in force at the loop start ahead of the dying window, then plays its press', async () => {
+            loadClip(pedalLane());
+            transportStoreState.value = playingState({ playheadPosition: 2, isLooping: true, ...SEAM_LOOP });
+            startPlayheadScheduler();
+            await runTick();
+            expect(pedalCalls).toEqual([]);
+
+            // Stalled until the audio stands at 3.85, 0.15 beats past the loop
+            // end: the late wrap lands at 3.55 and the pass it opens reaches its
+            // own seam at 3.7 within this tick's look-ahead.
+            const stalledTickSeconds = ctxTime.now + (3.85 - schedulerSession.accumulatedPosition) / BEATS_PER_SECOND;
+            ctxTime.now = stalledTickSeconds - TICK_SECONDS;
+            await runTick();
+            const seamSeconds = stalledTickSeconds + 0.075;
+            expect(schedulerSession.pendingSeam?.seamAudioTime).toBeCloseTo(seamSeconds, 9);
+
+            // The dying window opens at the loop start as a relocation, on that
+            // pass's own clock (the loop start sounded 0.3 beats before the seam):
+            // the up in force there comes first, then the press at 3.5, then the
+            // incoming pass's own restore of that up on the seam frame.
+            const secondsBeforeSeam = (beats: number) => beats / BEATS_PER_SECOND;
+            expect(pedalCalls).toEqual([
+                { position: 0, frame: frameOf(seamSeconds - secondsBeforeSeam(0.3)) },
+                { position: 1, frame: frameOf(seamSeconds - secondsBeforeSeam(0.2)) },
+                { position: 0, frame: frameOf(seamSeconds) },
+            ]);
+        });
+    });
+
     describe('follow-action jump', () => {
         async function playUntilPedalDown(): Promise<void> {
             await runTicksUntil(() => pedalCalls.some((call) => call.position === 1), 50);
