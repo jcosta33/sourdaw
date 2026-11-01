@@ -24,10 +24,11 @@ immediately before an asynchronous handoff and cancel it on cleanup. Choose an o
 during the handoff: it must keep keyboard control. A restore that steals focus from the newly
 chosen target fails this probe.
 
-## A layout assertion must read the allocated rectangle, not the requested size
+## A layout assertion must check the requested size and the allocated rectangle separately
 
 An element's inline `style.height` (or flex basis) is the requested CSS size; its bounding rect is
-what layout actually allocated, and flex can shrink a panel below its request. Assert on the
-allocated bounding rect, and record the requested value separately when both matter. A case that
-asserts only `style.height` or the flex basis must fail this probe: make a sibling push the panel
-below its request and confirm the case goes red.
+what layout actually allocated, and flex can shrink a panel below its request. Assert both values,
+each on its own: the requested value and the allocated bounding rect. A case that asserts only one
+of them must fail this probe. Make a sibling push the panel below its request: a case asserting only
+`style.height` or the flex basis stays green and must go red, and a case asserting only the rect
+must go red when the request itself is changed.
