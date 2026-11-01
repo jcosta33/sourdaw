@@ -1,0 +1,21 @@
+src/modules/Arrangement/handlers/recording/__tests__/loopRecordedInsideLoop.integration.spec.ts
+  s_ba80576e6f5cb5::t_6c8b91141e4406 562-616
+src/modules/Arrangement/useCases/recording/stageRecordingTake.ts
+  s_ba80576e6f5cb5::t_f38849b2b25322 32-37,44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "78894373c246f6d257f8c2da32a788ba5cfc636c",
+  "prompts": {},
+  "sessions": {
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
