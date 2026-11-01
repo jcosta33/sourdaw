@@ -2541,3 +2541,22 @@ file once #5917 merged. A spec must not read refs, history or remotes that a CI 
 does not fetch. Grep changed specs for `origin/`, `HEAD~` and `merge-base`, then compare against
 the checkout depth of every job that collects them: `unit` uses `fetch-depth: 0`, while
 `tooling-unit` uses the default shallow checkout.
+
+### Process-catalog fixtures must carry the production transport boundary (#5331)
+
+PR #5331 (`4781fe4e1e`) introduced a controlled process monitor whose nested
+`execFileSync` calls retained Node's smaller default output buffer while the real
+monitor allowed a bounded larger catalog. A valid catalog above that fixture
+limit failed before readiness and hid the actual error behind ignored supervisor
+output and a later wait timeout. Historical private reviewer prompts and tiers
+are unknown; the mechanical gap was an untested nested transport boundary.
+
+Exercise the actual generated monitor with a synthetic valid catalog above the
+old default and below the production ceiling through both forwarding routes.
+Require exact complete bytes, and make the old-default mutation fail. Reject
+over-ceiling output without forwarding partial bytes; reject opaque catalog
+rows before admission. Keep production monitoring unavailable on incomplete
+input. When readiness fails, capture the supervisor's actual error, exit and
+private readiness records before teardown; a later pass does not explain the
+original failure. Use synthetic process data in durable evidence rather than
+publishing real process environment values.
