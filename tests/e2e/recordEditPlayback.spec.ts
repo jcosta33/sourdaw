@@ -136,7 +136,7 @@ test.describe('Record, edit, playback — MIDI clip lifecycle', () => {
         // arrangement must retain one usable track row rather than collapsing
         // the renderer while the editor keeps its protected minimum.
         const canvas = page.getByLabel('Timeline editor surface');
-        const editorDock = page.getByRole('tabpanel').locator('..');
+        const editorDock = page.getByRole('tabpanel', { name: 'Editor' }).locator('..');
         const timelineBox = await getBox(canvas);
         const editorBox = await getBox(editorDock);
         expect(timelineBox.width).toBeGreaterThan(0);
