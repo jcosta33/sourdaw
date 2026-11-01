@@ -349,6 +349,20 @@ describe('getEngineTransportPosition', () => {
         expect(position.stripPeaks).toEqual({ 'strip-a': Number.POSITIVE_INFINITY, 'strip-b': 0.5 });
     });
 
+    it('keeps a zero peak as a reading: silence is a measurement', async () => {
+        vi.mocked(desktopInvoke).mockResolvedValue({
+            running: true,
+            playing: true,
+            masterPeak: 0,
+            stripPeaks: { 'strip-a': 0, 'strip-b': 0.5 },
+        });
+
+        const position = await getEngineTransportPosition();
+
+        expect(position.masterPeak).toBe(0);
+        expect(position.stripPeaks).toEqual({ 'strip-a': 0, 'strip-b': 0.5 });
+    });
+
     it('reads the native "Infinity" token as an infinite peak', async () => {
         vi.mocked(desktopInvoke).mockResolvedValue({
             running: true,
