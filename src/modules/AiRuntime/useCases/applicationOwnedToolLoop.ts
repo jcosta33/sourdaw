@@ -2009,6 +2009,9 @@ export async function runApplicationOwnedToolLoop(
     let measurementIntake: MeasurementIntake | null = null;
     let measurementWitness: { opportunity: MeasurementOpportunity; receipt: ApplicationToolReceipt } | null = null;
     let heldTerminal: HeldTerminal | null = null;
+    // Read through a function: the loop's measurement step decides which turns reach the hold,
+    // and inline narrowing of `heldTerminal` at the loop head would depend on that decision.
+    const heldOpportunity = (): MeasurementOpportunity | null => heldTerminal?.opportunity ?? null;
 
     const hasMeasurementWitness = (opportunity: MeasurementOpportunity): boolean =>
         measurementWitness !== null && sameMeasurementAuthority(measurementWitness.opportunity, opportunity);
@@ -2354,9 +2357,7 @@ export async function runApplicationOwnedToolLoop(
         // A held candidate can still receive the real executor's stale-snapshot refusal. Snapshot
         // movement itself is neither an invocation nor a receipt and cannot settle its control.
         const measurementOpportunity: MeasurementOpportunity | null =
-            readCurrentMeasurementOpportunity(input, receipts, measurementIntake, turn) ??
-            heldTerminal?.opportunity ??
-            null;
+            readCurrentMeasurementOpportunity(input, receipts, measurementIntake, turn) ?? heldOpportunity();
         const needsMeasurementStep: boolean =
             measurementOpportunity !== null &&
             !hasMeasurementWitness(measurementOpportunity) &&
@@ -2453,7 +2454,7 @@ export async function runApplicationOwnedToolLoop(
             outcome = { ...outcome, toolCalls: stepDecline.calls.map(({ call }) => call) };
         }
         if (stepDecline === null && measurementStepToolName !== undefined && measurementOpportunity !== null) {
-            const reply = answerMeasurementStepReply(
+            const reply: MeasurementStepReply = answerMeasurementStepReply(
                 measurementStepToolName,
                 measurementOpportunity,
                 identifiedCalls,
@@ -2804,7 +2805,7 @@ export async function runApplicationOwnedToolLoop(
             ...(input.recipe === undefined ? [] : [input.recipe.toolName]),
         ]);
         const safeReadCalls = identifiedCalls.filter(({ call }) => safeReadToolNames.has(call.name));
-        const terminalCalls = identifiedCalls.filter(
+        const terminalCalls: IdentifiedToolCall[] = identifiedCalls.filter(
             ({ call }) => !safeReadToolNames.has(call.name) && input.terminalToolNames.has(call.name)
         );
         if (safeReadCalls.length + terminalCalls.length !== outcome.toolCalls.length) {
@@ -2823,7 +2824,7 @@ export async function runApplicationOwnedToolLoop(
                 turns: turn,
             };
         }
-        const terminalValidation = validateTerminalCalls(terminalCalls);
+        const terminalValidation: ValidatedTerminalCalls = validateTerminalCalls(terminalCalls);
         if (terminalValidation.status === 'rejected') {
             return {
                 status: 'rejected',
