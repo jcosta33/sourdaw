@@ -86,14 +86,16 @@ function isServeCommandCheck(node: ts.Expression): boolean {
 }
 
 function isE2eModeCheck(node: ts.Expression): boolean {
-    return (
-        ts.isCallExpression(node) &&
-        ts.isIdentifier(node.expression) &&
-        node.expression.text === 'isSourdawE2eServeMode' &&
-        node.arguments.length === 1 &&
-        ts.isIdentifier(node.arguments[0]) &&
-        node.arguments[0].text === 'mode'
-    );
+    if (
+        !ts.isCallExpression(node) ||
+        !ts.isIdentifier(node.expression) ||
+        node.expression.text !== 'isSourdawE2eServeMode' ||
+        node.arguments.length !== 1
+    ) {
+        return false;
+    }
+    const [argument] = node.arguments;
+    return argument !== undefined && ts.isIdentifier(argument) && argument.text === 'mode';
 }
 
 function launcherModeArgument(sourceFile: ts.SourceFile): string | undefined {

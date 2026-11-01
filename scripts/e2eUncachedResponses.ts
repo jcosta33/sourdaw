@@ -1,7 +1,7 @@
+import { isSourdawE2eServeMode } from './e2eServerIdentity.ts';
+
 import type { IncomingMessage, OutgoingHttpHeader, OutgoingHttpHeaders, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
-
-import { isSourdawE2eServeMode } from './e2eServerIdentity.ts';
 
 /**
  * Chromium drops a tab's network connection after tens of thousands of
@@ -22,8 +22,14 @@ function headerEntries(headers: OutgoingHttpHeaders | OutgoingHttpHeader[]): [st
         );
     }
     const entries: [string, OutgoingHttpHeader][] = [];
-    for (let index = 0; index + 1 < headers.length; index += 2) {
-        entries.push([String(headers[index]), headers[index + 1]]);
+    for (let index = 0; index < headers.length; index += 2) {
+        const name = String(headers[index]);
+        const value = headers[index + 1];
+        // Node itself rejects a raw header list of odd length.
+        if (value === undefined) {
+            throw new TypeError(`writeHead received header ${name} without a value`);
+        }
+        entries.push([name, value]);
     }
     return entries;
 }
