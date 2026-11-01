@@ -6,6 +6,7 @@ import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { cn } from '#/utils/Styles/cn';
 
+import { DIALOG_SERVICE_LAYER } from './dialogServiceLayer';
 import { useNotificationQueue } from './useNotificationQueue';
 
 export { notifyUser } from '#/utils/Notification/notifyUser';
@@ -31,7 +32,8 @@ export const NotificationToast = (): ReactElement | null => {
     return (
         <div
             className={cn(
-                'pointer-events-none fixed top-14 right-4 z-[10000] w-80 rounded-lg border p-3 shadow-xl animate-in slide-in-from-top-2',
+                'pointer-events-none fixed top-14 right-4 w-80 rounded-lg border p-3 shadow-xl animate-in slide-in-from-top-2',
+                DIALOG_SERVICE_LAYER,
                 levelSurface
             )}
             role="alert"

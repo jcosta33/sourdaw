@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { confirmUser } from '#/utils/Notification/confirmUser';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { pickFiles } from '../../../useCases/fileDialog';
@@ -27,6 +28,11 @@ vi.mock('../../../stores/projectStore', async (importOriginal) => ({
 
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
+}));
+
+// The Don't Save dialog's answer; Cancel unless a case chooses otherwise.
+vi.mock('#/utils/Notification/confirmUser', () => ({
+    confirmUser: vi.fn(),
 }));
 
 vi.mock('../../../useCases/recentProjects/loadRecentProject', () => ({
@@ -110,6 +116,7 @@ describe('RecentProjectsMenu', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.projectStoreValue.value = null;
+        vi.mocked(confirmUser).mockResolvedValue(false);
     });
 
     it('should render without crashing', () => {
@@ -254,7 +261,8 @@ describe('RecentProjectsMenu', () => {
         await waitFor(() => expect(newProject).toHaveBeenCalledOnce());
     });
 
-    it('aborts the new-project transition when the pre-switch save fails', async () => {
+    it('keeps the project open when the user cancels after the pre-switch save fails', async () => {
+        mocks.projectStoreValue.value = { dirty: true, createdAt: 1 };
         vi.mocked(saveProject).mockResolvedValue(false);
         vi.mocked(newProject).mockResolvedValue(true);
 
@@ -262,12 +270,47 @@ describe('RecentProjectsMenu', () => {
         fireEvent.click(screen.getByLabelText(/Project menu/i));
         fireEvent.click(screen.getByRole('menuitem', { name: /New Project/i }));
 
-        await waitFor(() => expect(saveProject).toHaveBeenCalledOnce());
-        // Flush the aborted continuation (microtasks only — no timers).
-        await Promise.resolve();
-        await Promise.resolve();
+        await waitFor(() => expect(confirmUser).toHaveBeenCalledOnce());
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(saveProject).toHaveBeenCalledOnce();
         expect(newProject).not.toHaveBeenCalled();
         expect(notifyUser).not.toHaveBeenCalled();
+    });
+
+    // A project that cannot be saved must not trap the user: Don't Save
+    // replaces it as a discard, so nothing saves the outgoing project again.
+    it("starts the new project as a discard when the user chose Don't Save after a failed save", async () => {
+        mocks.projectStoreValue.value = { dirty: true, createdAt: 1 };
+        vi.mocked(saveProject).mockResolvedValue(false);
+        vi.mocked(confirmUser).mockResolvedValue(true);
+        vi.mocked(newProject).mockResolvedValue(true);
+
+        render(<RecentProjectsMenu />);
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        fireEvent.click(screen.getByRole('menuitem', { name: /New Project/i }));
+
+        await waitFor(() =>
+            expect(newProject).toHaveBeenCalledWith(undefined, expect.objectContaining({ outgoingProject: 'discard' }))
+        );
+        expect(saveProject).toHaveBeenCalledOnce();
+    });
+
+    it("opens the recent project as a discard when the user chose Don't Save after a failed save", async () => {
+        mocks.projectStoreValue.value = { dirty: true, createdAt: 1 };
+        vi.mocked(saveProject).mockResolvedValue(false);
+        vi.mocked(confirmUser).mockResolvedValue(true);
+        vi.mocked(loadRecentProject).mockResolvedValue('committed');
+
+        render(<RecentProjectsMenu />);
+        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        fireEvent.click(screen.getByText('Project One'));
+
+        await waitFor(() =>
+            expect(loadRecentProject).toHaveBeenCalledWith(
+                'proj-1',
+                expect.objectContaining({ outgoingProject: 'discard' })
+            )
+        );
     });
 
     // Issue 3694: a save can resolve true while the project is still dirty —
@@ -313,7 +356,13 @@ describe('RecentProjectsMenu', () => {
         fireEvent.click(screen.getByText('Project One'));
 
         await waitFor(() => expect(saveProject).toHaveBeenCalledOnce());
-        await waitFor(() => expect(loadRecentProject).toHaveBeenCalledWith('proj-1', expect.anything()));
+        await waitFor(() =>
+            expect(loadRecentProject).toHaveBeenCalledWith(
+                'proj-1',
+                expect.objectContaining({ outgoingProject: 'save-closed-takes' })
+            )
+        );
+        expect(confirmUser).not.toHaveBeenCalled();
         await waitFor(() =>
             expect(notifyUser).toHaveBeenCalledWith(
                 'Could not find "Project One" — removing it from recent projects.',

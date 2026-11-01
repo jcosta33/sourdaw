@@ -58,6 +58,18 @@ export const BEAT_EPSILON = 1e-6;
  */
 const sortedTempoChanges = new WeakMap<readonly TempoChange[], readonly TempoChange[]>();
 
+/**
+ * Sorted lists whose beats never decrease and include no NaN.
+ *
+ * Every lookup below is defined as a front-to-back scan that stops at the first
+ * change past a beat. On such a list the scan's stopping test is false for a
+ * prefix and true for the rest, so a binary search stops on the same change.
+ * A NaN comparison (a NaN beat, or two equal infinities whose difference is
+ * NaN) can leave the comparator sort out of order, so a list it touches keeps
+ * the scans.
+ */
+const searchableSortedLists = new WeakSet<readonly TempoChange[]>();
+
 function sortTempoChanges(changes: readonly TempoChange[]): readonly TempoChange[] {
     const cached = sortedTempoChanges.get(changes);
     if (cached) {
@@ -65,7 +77,29 @@ function sortTempoChanges(changes: readonly TempoChange[]): readonly TempoChange
     }
     const sorted = [...changes].sort((alpha, beta) => alpha.beat - beta.beat);
     sortedTempoChanges.set(changes, sorted);
+    if (
+        sorted.every(
+            (change, index) => !Number.isNaN(change.beat) && (index === 0 || sorted[index - 1]!.beat <= change.beat)
+        )
+    ) {
+        searchableSortedLists.add(sorted);
+    }
     return sorted;
+}
+
+/** The index the scan "stop at the first change whose beat is not `<= beat`" stops at. */
+function indexPastChangesAtOrBefore(sortedChanges: readonly TempoChange[], beat: number): number {
+    let low = 0;
+    let high = sortedChanges.length;
+    while (low < high) {
+        const middle = (low + high) >>> 1;
+        if (sortedChanges[middle]!.beat <= beat) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    return low;
 }
 
 /**
@@ -93,17 +127,12 @@ function getGoverningTempoFromSorted(
 
     let previous: TempoChange | undefined;
     let next: TempoChange | undefined;
-    for (const change of sortedChanges) {
-        // A non-finite beat fails this comparison for every change, so `previous`
-        // stays undefined and the first change governs — the same answer the
-        // reported tempo gives. Scanning for "the last change at or before the
-        // beat" instead would silently pick the *last* change.
-        if (change.beat <= beat) {
-            previous = change;
-        } else {
-            next = change;
-            break;
-        }
+    if (searchableSortedLists.has(sortedChanges)) {
+        const index = indexPastChangesAtOrBefore(sortedChanges, beat);
+        previous = index > 0 ? sortedChanges[index - 1] : undefined;
+        next = sortedChanges[index];
+    } else {
+        ({ previous, next } = scanGoverningNeighbours(sortedChanges, beat));
     }
 
     if (!previous) {
@@ -119,6 +148,27 @@ function getGoverningTempoFromSorted(
         return { change: previous, rampTarget: undefined };
     }
     return { change: previous, rampTarget: next };
+}
+
+function scanGoverningNeighbours(
+    sortedChanges: readonly TempoChange[],
+    beat: number
+): { previous: TempoChange | undefined; next: TempoChange | undefined } {
+    let previous: TempoChange | undefined;
+    let next: TempoChange | undefined;
+    for (const change of sortedChanges) {
+        // A non-finite beat fails this comparison for every change, so `previous`
+        // stays undefined and the first change governs — the same answer the
+        // reported tempo gives. Scanning for "the last change at or before the
+        // beat" instead would silently pick the *last* change.
+        if (change.beat <= beat) {
+            previous = change;
+        } else {
+            next = change;
+            break;
+        }
+    }
+    return { previous, next };
 }
 
 function getTempoAtBeatFromSorted(changes: readonly TempoChange[], beat: number, defaultTempo: number): number {
@@ -146,6 +196,13 @@ function getSegmentRamp(
     changes: readonly TempoChange[],
     segmentStart: number
 ): { active: TempoChange | undefined; target: TempoChange | undefined } {
+    if (searchableSortedLists.has(changes)) {
+        // The scan below runs off the end for a NaN start, where this stops at
+        // the first change; the segment's length is NaN then, and so are its
+        // seconds whichever ramp it is given.
+        const index = indexPastChangesAtOrBefore(changes, segmentStart);
+        return { active: index > 0 ? changes[index - 1] : undefined, target: changes[index] };
+    }
     let active: TempoChange | undefined;
     for (const change of changes) {
         if (change.beat > segmentStart) {
@@ -214,6 +271,12 @@ function secondsAcrossSortedTempoRange(
     if (toBeat < fromBeat) {
         return -secondsAcrossSortedTempoRange(sortedChanges, toBeat, fromBeat, defaultTempo);
     }
+    if (Object.is(fromBeat, 0)) {
+        const table = getIntegrationFromZero(sortedChanges);
+        if (table) {
+            return secondsFromZero(table, toBeat);
+        }
+    }
 
     const boundaries = [fromBeat];
     for (const change of sortedChanges) {
@@ -222,36 +285,144 @@ function secondsAcrossSortedTempoRange(
         }
     }
     boundaries.push(toBeat);
-    let seconds = 0;
-    let compensation = 0;
+    let clock = START_OF_INTEGRATION;
     for (let index = 0; index < boundaries.length - 1; index++) {
         const segmentStart = boundaries[index]!;
-        const segmentEnd = boundaries[index + 1]!;
-        const startTempo = getTempoAtBeatFromSorted(sortedChanges, segmentStart, defaultTempo);
-        const { active, target } = getSegmentRamp(sortedChanges, segmentStart);
-        let segmentSeconds: number;
-        if (!active || active.curve === 'instant' || !target) {
-            segmentSeconds = (segmentEnd - segmentStart) * (60 / startTempo);
-        } else {
-            const rampProgress = (segmentEnd - active.beat) / (target.beat - active.beat);
-            const endTempo = active.tempo + (target.tempo - active.tempo) * rampProgress;
-            const tempoDelta = endTempo - startTempo;
-            if (tempoDelta === 0) {
-                segmentSeconds = (segmentEnd - segmentStart) * (60 / startTempo);
-            } else {
-                const relativeTempoDelta = tempoDelta / startTempo;
-                segmentSeconds =
-                    (((segmentEnd - segmentStart) * 60) / startTempo) *
-                    (Math.log1p(relativeTempoDelta) / relativeTempoDelta);
-            }
-        }
-        // Keep the low-order contribution of short tempo segments in the shared clock.
-        const adjustedSeconds = segmentSeconds - compensation;
-        const nextSeconds = seconds + adjustedSeconds;
-        compensation = Number.isFinite(nextSeconds) ? nextSeconds - seconds - adjustedSeconds : 0;
-        seconds = nextSeconds;
+        const segment = getSegmentShape(sortedChanges, segmentStart, defaultTempo);
+        clock = advanceClock(clock, segmentSecondsOf(segment, segmentStart, boundaries[index + 1]!));
     }
-    return seconds;
+    return clock.seconds;
+}
+
+/** The tempo a segment starts at and the ramp it lies on, as the integrator reads them. */
+type SegmentShape = {
+    startTempo: number;
+    active: TempoChange | undefined;
+    target: TempoChange | undefined;
+};
+
+function getSegmentShape(
+    sortedChanges: readonly TempoChange[],
+    segmentStart: number,
+    defaultTempo: number
+): SegmentShape {
+    const { active, target } = getSegmentRamp(sortedChanges, segmentStart);
+    return { startTempo: getTempoAtBeatFromSorted(sortedChanges, segmentStart, defaultTempo), active, target };
+}
+
+function segmentSecondsOf(
+    { startTempo, active, target }: SegmentShape,
+    segmentStart: number,
+    segmentEnd: number
+): number {
+    if (!active || active.curve === 'instant' || !target) {
+        return (segmentEnd - segmentStart) * (60 / startTempo);
+    }
+    const rampProgress = (segmentEnd - active.beat) / (target.beat - active.beat);
+    const endTempo = active.tempo + (target.tempo - active.tempo) * rampProgress;
+    const tempoDelta = endTempo - startTempo;
+    if (tempoDelta === 0) {
+        return (segmentEnd - segmentStart) * (60 / startTempo);
+    }
+    const relativeTempoDelta = tempoDelta / startTempo;
+    return (((segmentEnd - segmentStart) * 60) / startTempo) * (Math.log1p(relativeTempoDelta) / relativeTempoDelta);
+}
+
+/** The integrator's running sum and the rounding error it carries into the next segment. */
+type IntegrationClock = {
+    seconds: number;
+    compensation: number;
+};
+
+const START_OF_INTEGRATION: IntegrationClock = { seconds: 0, compensation: 0 };
+
+function advanceClock({ seconds, compensation }: IntegrationClock, segmentSeconds: number): IntegrationClock {
+    // Keep the low-order contribution of short tempo segments in the shared clock.
+    const adjustedSeconds = segmentSeconds - compensation;
+    const nextSeconds = seconds + adjustedSeconds;
+    return {
+        seconds: nextSeconds,
+        compensation: Number.isFinite(nextSeconds) ? nextSeconds - seconds - adjustedSeconds : 0,
+    };
+}
+
+/**
+ * The integration from beat 0, stopped at every change beat after it.
+ *
+ * Offline rendering converts beats to time dozens of times per automation sample,
+ * and each conversion used to integrate from 0 through every segment before the
+ * beat.
+ * Integrating from 0 to any `toBeat` visits the same leading boundaries — the
+ * distinct change beats above 0 and below `toBeat` — and a segment's arithmetic
+ * reads only its own two boundaries, so the clock arriving at a boundary is the
+ * same whatever `toBeat` is. Recording that clock and the shape of the segment
+ * leaving each boundary, then running only the last segment per query, therefore
+ * returns the very bits the full walk returns. `secondsBetweenBeats(a, b)` is
+ * not `seconds(b) − seconds(a)`: that subtraction rounds differently, which is
+ * why only the walk from 0 is tabled.
+ */
+type IntegrationFromZero = {
+    /** `0`, then each distinct change beat above it, ascending. */
+    boundaries: readonly number[];
+    clocks: readonly IntegrationClock[];
+    segments: readonly SegmentShape[];
+};
+
+const integrationsFromZero = new WeakMap<readonly TempoChange[], IntegrationFromZero>();
+
+/**
+ * Only a non-empty searchable list has a table. A non-empty list always has a
+ * governing change, so the default tempo is never read and the table holds for
+ * every default; an empty map has no boundary to table.
+ */
+function getIntegrationFromZero(sortedChanges: readonly TempoChange[]): IntegrationFromZero | undefined {
+    if (sortedChanges.length === 0 || !searchableSortedLists.has(sortedChanges)) {
+        return undefined;
+    }
+    const cached = integrationsFromZero.get(sortedChanges);
+    if (cached) {
+        return cached;
+    }
+    const table = buildIntegrationFromZero(sortedChanges);
+    integrationsFromZero.set(sortedChanges, table);
+    return table;
+}
+
+function buildIntegrationFromZero(sortedChanges: readonly TempoChange[]): IntegrationFromZero {
+    const boundaries = [0];
+    for (const change of sortedChanges) {
+        if (change.beat > 0 && change.beat !== boundaries.at(-1)) {
+            boundaries.push(change.beat);
+        }
+    }
+    const unreadDefaultTempo = Number.NaN;
+    const segments = boundaries.map((boundary) => getSegmentShape(sortedChanges, boundary, unreadDefaultTempo));
+    const clocks = [START_OF_INTEGRATION];
+    for (let index = 1; index < boundaries.length; index++) {
+        clocks.push(
+            advanceClock(
+                clocks[index - 1]!,
+                segmentSecondsOf(segments[index - 1]!, boundaries[index - 1]!, boundaries[index]!)
+            )
+        );
+    }
+    return { boundaries, clocks, segments };
+}
+
+function secondsFromZero({ boundaries, clocks, segments }: IntegrationFromZero, toBeat: number): number {
+    // The last boundary strictly below `toBeat`; beat 0 itself always opens the walk.
+    let low = 1;
+    let high = boundaries.length;
+    while (low < high) {
+        const middle = (low + high) >>> 1;
+        if (boundaries[middle]! < toBeat) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    const index = low - 1;
+    return advanceClock(clocks[index]!, segmentSecondsOf(segments[index]!, boundaries[index]!, toBeat)).seconds;
 }
 
 /**
@@ -273,6 +444,57 @@ export function secondsBetweenBeats(
     defaultTempo: number
 ): number {
     return secondsAcrossSortedTempoRange(sortTempoChanges(changes), fromBeat, toBeat, defaultTempo);
+}
+
+/**
+ * The beat the tempo map assigns `elapsedSeconds` after `anchorBeat`.
+ *
+ * Inverts `secondsBetweenBeats` — the map's own exact integrator — around the
+ * anchor by bracketed bisection, the same inversion `samplesToBeat` performs
+ * from beat 0 for recording. The scheduler advances its position through this
+ * instead of charging each tick at the tick-start tempo (#4658): a tick that
+ * crosses a tempo change moves the position the map's exact integrated
+ * distance, so no per-tick error accumulates and `accumulatedPosition` equals
+ * the map's beat at the current audio time at every tick. A flat map
+ * degenerates to `anchorBeat + elapsedSeconds * beatsPerSecond`.
+ */
+export function beatAtSecondsFromAnchor(
+    changes: readonly TempoChange[],
+    anchorBeat: number,
+    elapsedSeconds: number,
+    defaultTempo: number
+): number {
+    if (elapsedSeconds === 0) {
+        return anchorBeat;
+    }
+
+    // Every legal tempo is positive, so the integrated span is strictly
+    // monotone in the target beat and bisection is exact. Negative elapsed —
+    // reachable when a scheduled loop seam has not arrived yet — travels the
+    // same way backwards; `secondsBetweenBeats` supports negative spans.
+    const travelsForward = elapsedSeconds > 0;
+    let lowerBeat = travelsForward ? anchorBeat : anchorBeat - 1;
+    let upperBeat = travelsForward ? anchorBeat + 1 : anchorBeat;
+    if (travelsForward) {
+        while (secondsBetweenBeats(changes, anchorBeat, upperBeat, defaultTempo) < elapsedSeconds) {
+            upperBeat = anchorBeat + (upperBeat - anchorBeat) * 2;
+        }
+    } else {
+        while (secondsBetweenBeats(changes, anchorBeat, lowerBeat, defaultTempo) > elapsedSeconds) {
+            lowerBeat = anchorBeat - (anchorBeat - lowerBeat) * 2;
+        }
+    }
+
+    for (let iteration = 0; iteration < 64; iteration++) {
+        const midpoint = (lowerBeat + upperBeat) / 2;
+        const midpointSeconds = secondsBetweenBeats(changes, anchorBeat, midpoint, defaultTempo);
+        if (midpointSeconds < elapsedSeconds) {
+            lowerBeat = midpoint;
+        } else {
+            upperBeat = midpoint;
+        }
+    }
+    return (lowerBeat + upperBeat) / 2;
 }
 
 export function beatToSamples(

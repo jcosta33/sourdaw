@@ -2,8 +2,18 @@ import { type AnswerEvidenceEntry } from '../models/PlanningOutcome';
 
 export const HOSTED_AI_PRIVACY_DISCLOSURE_SUMMARY = 'Hosted AI privacy disclosure';
 
-/** An answer the Prompt Bar shows, kept whole so the user can open it in the chat. */
-export type AiAnswerNotice = { prompt: string; text: string; evidence: readonly AnswerEvidenceEntry[] };
+/**
+ * An answer the Prompt Bar shows, kept whole so the user can open it in the chat. It names the
+ * project and the revision it answered about: the notice outlives both, so opening it must prove
+ * they are still the ones the user is looking at.
+ */
+export type AiAnswerNotice = {
+    prompt: string;
+    text: string;
+    evidence: readonly AnswerEvidenceEntry[];
+    projectIdentity: string;
+    projectRevision: string;
+};
 
 type AiChangeNotificationFields = {
     id: string;

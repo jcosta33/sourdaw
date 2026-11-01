@@ -204,8 +204,18 @@ export const PianoRollContextMenu = ({
                 onClick={act(() => {
                     if (usesFrozenRows && takeProjection) {
                         runFrozen(pastePianoRollTakeNotes(takeProjection, clipId, menu.beat), 'Paste');
-                    } else {
-                        pasteNotes(clipId, menu.beat);
+                        return;
+                    }
+                    const notesBefore = snapshotClipNotes(clipId);
+                    pasteNotes(clipId, menu.beat);
+                    const notesAfter = snapshotClipNotes(clipId);
+                    const pastedCount = notesAfter.length - notesBefore.length;
+                    if (pastedCount > 0) {
+                        pushUndoEntry(
+                            `Paste ${pastedCount} note${pastedCount > 1 ? 's' : ''}`,
+                            () => setNotesForClip(clipId, notesBefore),
+                            () => setNotesForClip(clipId, notesAfter)
+                        );
                     }
                 })}
             >

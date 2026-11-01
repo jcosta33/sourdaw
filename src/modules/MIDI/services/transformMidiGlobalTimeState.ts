@@ -339,6 +339,9 @@ function createSplitRightHalf(note: MidiNote, fromOffset: number, duration: numb
     if (sliced.expression !== undefined) {
         rightHalf.expression = sliced.expression;
     }
+    if (note.recordingPassIndex !== undefined) {
+        rightHalf.recordingPassIndex = note.recordingPassIndex;
+    }
 
     return rightHalf;
 }
@@ -828,6 +831,9 @@ function createDuplicateClone(note: MidiNote, id: string): MidiNote {
     }
     if (note.expression !== undefined) {
         clone.expression = note.expression;
+    }
+    if (note.recordingPassIndex !== undefined) {
+        clone.recordingPassIndex = note.recordingPassIndex;
     }
 
     return clone;

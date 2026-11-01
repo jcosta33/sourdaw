@@ -53,7 +53,9 @@ const crdt = vi.hoisted(() => ({
 const withdrawals = vi.hoisted(() => ({ count: 0 }));
 const projectActions = vi.hoisted(() => ({
     saveProject: vi.fn(async () => true),
-    saveProjectBeforeReplacement: vi.fn<ProjectUseCases['saveProjectBeforeReplacement']>(async () => true),
+    saveProjectBeforeReplacement: vi.fn<ProjectUseCases['saveProjectBeforeReplacement']>(
+        async () => 'save-closed-takes'
+    ),
     quiesceProjectSession: vi.fn<ProjectUseCases['quiesceProjectSession']>(async () => 'success'),
     cancelProjectSessionQuiesce: vi.fn<ProjectUseCases['cancelProjectSessionQuiesce']>(async () => 'rejected'),
     discardProjectChanges: vi.fn(async () => true),
@@ -263,7 +265,7 @@ describe('useNativeApplicationMenu', () => {
         projectActions.saveProject.mockReset();
         projectActions.saveProject.mockResolvedValue(true);
         projectActions.saveProjectBeforeReplacement.mockReset();
-        projectActions.saveProjectBeforeReplacement.mockResolvedValue(true);
+        projectActions.saveProjectBeforeReplacement.mockResolvedValue('save-closed-takes');
         projectActions.discardProjectChanges.mockReset();
         projectActions.discardProjectChanges.mockResolvedValue(true);
         projectActions.pickAndImportProjectFile.mockReset();
@@ -1233,12 +1235,12 @@ describe('useNativeApplicationMenu', () => {
         );
     });
 
-    // Issue 3694: both transitions replace the open project, so a guard
-    // refusal — a save that failed or resolved with the project still dirty —
-    // must hold both in place. The guard's dirty semantics are pinned in the
-    // guard's own spec; this pins the hook routing through it.
-    it('keeps New and Open Recent in place when the pre-switch guard refuses', async () => {
-        projectActions.saveProjectBeforeReplacement.mockResolvedValue(false);
+    // Issue 3694: both transitions replace the open project, so Cancel after a
+    // save that failed or resolved with the project still dirty must hold both
+    // in place. The guard's dirty semantics are pinned in the guard's own
+    // spec; this pins the hook routing through it.
+    it('keeps New and Open Recent in place when the user cancels after the pre-switch save', async () => {
+        projectActions.saveProjectBeforeReplacement.mockResolvedValue('stay');
         renderHook(() =>
             useNativeApplicationMenu({
                 projectId: 'project',
@@ -1297,6 +1299,42 @@ describe('useNativeApplicationMenu', () => {
         expect(projectActions.loadRecentProject).not.toHaveBeenCalled();
     });
 
+    // A project that cannot be saved must not trap the user. Don't Save drops
+    // it whatever its failed save left behind, an identity receipt that only a
+    // successful save clears included.
+    it("replaces the open project as a discard when the user chose Don't Save", async () => {
+        projectActions.saveProjectBeforeReplacement.mockResolvedValue('discard');
+        projectState.identityPersistencePending = true;
+        renderHook(() =>
+            useNativeApplicationMenu({
+                projectId: 'project',
+                name: 'Song',
+                createdAt: 1,
+                updatedAt: 2,
+                dirty: true,
+                loading: false,
+                keyRoot: 0,
+                scaleName: 'chromatic',
+                tuning: { name: 'Equal Temperament', frequencies: [] },
+                productionBrief: {} as never,
+                initialized: true,
+            })
+        );
+
+        desktop.listener?.({ action: 'project:new' });
+        desktop.listener?.({ action: 'project:open-recent', recentKey: 'recent-project' });
+
+        await vi.waitFor(() => expect(projectActions.loadRecentProject).toHaveBeenCalledTimes(1));
+        expect(projectActions.newProject).toHaveBeenCalledWith(
+            undefined,
+            expect.objectContaining({ outgoingProject: 'discard' })
+        );
+        expect(projectActions.loadRecentProject).toHaveBeenCalledWith(
+            'recent-project',
+            expect.objectContaining({ outgoingProject: 'discard' })
+        );
+    });
+
     it('creates a new project and opens the selected recent project after a clean save', async () => {
         renderHook(() =>
             useNativeApplicationMenu({
@@ -1318,7 +1356,16 @@ describe('useNativeApplicationMenu', () => {
         desktop.listener?.({ action: 'project:open-recent', recentKey: 'recent-project' });
 
         await vi.waitFor(() => expect(projectActions.newProject).toHaveBeenCalledTimes(1));
-        expect(projectActions.loadRecentProject).toHaveBeenCalledWith('recent-project', expect.anything());
+        await vi.waitFor(() =>
+            expect(projectActions.loadRecentProject).toHaveBeenCalledWith(
+                'recent-project',
+                expect.objectContaining({ outgoingProject: 'save-closed-takes' })
+            )
+        );
+        expect(projectActions.newProject).toHaveBeenCalledWith(
+            undefined,
+            expect.objectContaining({ outgoingProject: 'save-closed-takes' })
+        );
         expect(projectActions.saveProjectBeforeReplacement).toHaveBeenCalledTimes(2);
     });
 
@@ -1391,15 +1438,15 @@ describe('useNativeApplicationMenu', () => {
             initialized: true,
         };
 
-        it('does not load the Recent project whose pre-save finishes after the withdrawal', async () => {
-            const save = Promise.withResolvers<boolean>();
+        it("does not load the Recent project whose Don't Save choice lands after the withdrawal", async () => {
+            const save = Promise.withResolvers<'discard'>();
             projectActions.saveProjectBeforeReplacement.mockImplementationOnce(() => save.promise);
             renderHook(() => useNativeApplicationMenu(openProject));
 
             desktop.listener?.({ action: 'project:open-recent', recentKey: 'recent-project' });
             await vi.waitFor(() => expect(projectActions.saveProjectBeforeReplacement).toHaveBeenCalledTimes(1));
             projectActions.pendingProjectReplacements.withdraw();
-            save.resolve(true);
+            save.resolve('discard');
 
             // A macrotask turn lets the route's continuation run to its end.
             await new Promise((resolve) => setTimeout(resolve, 0));
@@ -1421,14 +1468,14 @@ describe('useNativeApplicationMenu', () => {
         });
 
         it('does not create the new project whose pre-save finishes after the withdrawal', async () => {
-            const save = Promise.withResolvers<boolean>();
+            const save = Promise.withResolvers<'save-closed-takes'>();
             projectActions.saveProjectBeforeReplacement.mockImplementationOnce(() => save.promise);
             renderHook(() => useNativeApplicationMenu(openProject));
 
             desktop.listener?.({ action: 'project:new' });
             await vi.waitFor(() => expect(projectActions.saveProjectBeforeReplacement).toHaveBeenCalledTimes(1));
             projectActions.pendingProjectReplacements.withdraw();
-            save.resolve(true);
+            save.resolve('save-closed-takes');
 
             await new Promise((resolve) => setTimeout(resolve, 0));
             expect(projectActions.newProject).not.toHaveBeenCalled();
@@ -1450,10 +1497,10 @@ describe('useNativeApplicationMenu', () => {
     });
 
     it('opens a project chosen after a pending native replacement through the queue', async () => {
-        let releaseSave: ((saved: boolean) => void) | undefined;
+        let releaseSave: ((outgoingProject: 'save-closed-takes') => void) | undefined;
         projectActions.saveProjectBeforeReplacement.mockImplementationOnce(
             () =>
-                new Promise<boolean>((resolve) => {
+                new Promise<'save-closed-takes'>((resolve) => {
                     releaseSave = resolve;
                 })
         );
@@ -1480,7 +1527,7 @@ describe('useNativeApplicationMenu', () => {
         desktop.listener?.({ action: 'project:open-recent', recentKey: 'recent-project' });
         desktop.listener?.({ action: 'project:open-recent', recentKey: 'sourdaw:project:1' });
         await vi.waitFor(() => expect(releaseSave).toBeDefined());
-        releaseSave?.(true);
+        releaseSave?.('save-closed-takes');
 
         await vi.waitFor(() => expect(projectActions.loadRecentProject).toHaveBeenCalledTimes(2));
         expect(projectActions.loadRecentProject.mock.calls.map(([key]) => key)).toEqual([

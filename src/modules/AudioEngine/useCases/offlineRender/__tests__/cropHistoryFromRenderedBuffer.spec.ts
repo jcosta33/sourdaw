@@ -12,6 +12,15 @@ import { cropHistoryFromRenderedBuffer } from '../cropHistoryFromRenderedBuffer'
 import { resolveHistoryAwareRenderContext } from '../resolveHistoryAwareRenderContext';
 import { resolveRenderContext } from '../resolveRenderContext';
 
+/** A ramp whose every sample is its own frame index; Float64 holds every index of a long timeline exactly. */
+function frameIndexRamp(length: number) {
+    const ramp = new Float64Array(length);
+    for (let frame = 0; frame < length; frame++) {
+        ramp[frame] = frame;
+    }
+    return ramp;
+}
+
 /** Holds one channel whose every sample is its own frame index, so a crop shows where it cut. */
 class FrameIndexBuffer {
     readonly length: number;
@@ -23,10 +32,7 @@ class FrameIndexBuffer {
         this.length = length;
         this.sampleRate = sampleRate;
         this.numberOfChannels = numberOfChannels ?? 1;
-        // Float64 holds every frame index of a long timeline exactly.
-        this.channels = Array.from({ length: this.numberOfChannels }, () =>
-            Float64Array.from({ length }, (_, frame) => frame)
-        );
+        this.channels = Array.from({ length: this.numberOfChannels }, () => frameIndexRamp(length));
     }
 
     getChannelData(channel: number) {

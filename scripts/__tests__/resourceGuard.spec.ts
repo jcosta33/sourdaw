@@ -1100,6 +1100,12 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
             args: ['--silent', 'run', 'typecheck:test'],
             expected: 7168 * 1024 ** 2,
         },
+        {
+            profile: 'focused' as const,
+            command: 'pnpm',
+            args: ['cargo:test', '--package', 'daw-dsp', 'some_filter'],
+            expected: 5632 * 1024 ** 2,
+        },
     ])('resolves $profile/$command/$args to $expected bytes', ({ profile, command, args, expected }) => {
         expect(resolveDefaultMaxRssBytes({ profile, command, args })).toBe(expected);
     });
