@@ -1,0 +1,19 @@
+release/open-source-inventory.json
+  s_74f408559b2747::t_4adc97968c9728 1213
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "099187aa15e7d88dd0857a51a004e0396de6e7b7",
+  "prompts": {},
+  "sessions": {
+    "s_74f408559b2747": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_74f408559b2747",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
