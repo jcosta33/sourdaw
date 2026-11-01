@@ -63,11 +63,7 @@ const {
 const PRIVATE_PRESENTATION_FOLDERS =
     '(presentations/hooks/|presentations/stores/|presentations/context/|presentations/components/|presentations/renderers/)';
 
-const MODULE_PRESENTATION_PATH_NOT = [
-    '^src/modules/[^/]+/presentations/',
-    '^src/modules/Common/[^/]+/presentations/',
-    '^src/modules/Supporting/[^/]+/presentations/',
-];
+const MODULE_PRESENTATION_PATH_NOT = ['^src/modules/[^/]+/presentations/'];
 
 // ------------------------------
 // Config
@@ -75,15 +71,8 @@ const MODULE_PRESENTATION_PATH_NOT = [
 module.exports = {
     forbidden: [
         // --------------------------------------------------------------------
-        // FORWARD-LOOKING RULES (provisioned, not yet exercised)
-        // --------------------------------------------------------------------
-        // Several rules below reference structure that is not present in the
-        // current flat 34-module tree: the `Common/` / `Supporting/` module
-        // subgroups, the `application/` layer, the `presentations/stores/` and
-        // `presentations/context/` folders, and the `validators/` / `runtime/` /
-        // `worklets/` and `workers/` private folders. They enforce nothing today (no files
-        // match), but they guard the intended structure the moment it is added,
-        // so they are kept in place deliberately — do not delete them.
+        // The rules for `presentations/stores/`, `presentations/context/` and
+        // `runtime/` match no file today; they guard those folders if a module adds one.
         // --------------------------------------------------------------------
         // Circular dependencies
         // --------------------------------------------------------------------
@@ -146,10 +135,8 @@ module.exports = {
                 path: '^src/modules/',
                 pathNot: [
                     '^$1$2', // same module may import its own internals freely
-                    // Migration complete: only contract-folder barrels are accepted.
-                    // Module-root barrels are no longer allowed (0/34 modules have a root index.ts).
-                    '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|events|stores|presentations/views)/index(?:\\.ts)?$',
-                    '^src/shared/',
+                    // Only contract-folder barrels are accepted; module-root barrels are not.
+                    '^src/modules/[^/]+/(useCases|events|stores|presentations/views)/index(?:\\.ts)?$',
                     '^src/helpers/',
                 ],
             },
@@ -166,8 +153,7 @@ module.exports = {
             },
             to: {
                 path: '^src/modules/',
-                pathNot:
-                    '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|events|stores|presentations/views)/index(?:\\.ts)?$',
+                pathNot: '^src/modules/[^/]+/(useCases|events|stores|presentations/views)/index(?:\\.ts)?$',
             },
         },
 
@@ -182,7 +168,7 @@ module.exports = {
                 'presentations/hooks/, presentations/components/, presentations/context/, ' +
                 'engine/, runtime/, worklets/, or workers/ is forbidden.',
             from: {
-                path: '^(src/modules/(?:Common/|Supporting/)?[^/]+)/index\\.ts$',
+                path: '^(src/modules/[^/]+)/index\\.ts$',
             },
             to: {
                 path: '^$1/',
@@ -199,7 +185,7 @@ module.exports = {
                 'Importing from sibling contract folders, models/, repositories/, or other private ' +
                 'folders is forbidden — each barrel has a self-contained scope.',
             from: {
-                path: '^(src/modules/(?:Common/|Supporting/)?[^/]+)/(useCases|events|stores|presentations/views)/index\\.ts$',
+                path: '^(src/modules/[^/]+)/(useCases|events|stores|presentations/views)/index\\.ts$',
             },
             to: {
                 path: '^$1/',
@@ -215,7 +201,7 @@ module.exports = {
                 'A carrier file beside the barrel re-exporting the same private folders is refused by the static re-export guard in ' +
                 'scripts/check-dependency-boundaries.mjs — dependency edges cannot tell that laundering re-export from a legitimate internal import.',
             from: {
-                path: '^(src/modules/(?:Common/|Supporting/)?[^/]+)/(useCases|events|stores|presentations/views)/index\\.ts$',
+                path: '^(src/modules/[^/]+)/(useCases|events|stores|presentations/views)/index\\.ts$',
             },
             to: {
                 path: '/(models|repositories|transformers)/',
@@ -276,7 +262,7 @@ module.exports = {
                 '(.dependency-cruiser.types.cjs with tsPreCompilationDeps: specify). Kept here so the rule ' +
                 'name is documented with the main contract set; the types cruise is the hard gate.',
             from: {
-                path: '^(src/modules/(?:Common/|Supporting/)?[^/]+)/(index|(useCases|events|stores|presentations/views)/index)\\.ts$',
+                path: '^(src/modules/[^/]+)/(index|(useCases|events|stores|presentations/views)/index)\\.ts$',
             },
             to: {
                 path: '^$1/useCases/',
@@ -336,7 +322,7 @@ module.exports = {
                 path: `(^${MODULE_ROOT.slice(1)}presentations/components/|^src/components/).+${SOURCE_FILE_RE}`,
             },
             to: {
-                path: 'src/modules/(?:Common/|Supporting/)?[^/]+/useCases/.+' + SOURCE_FILE_RE,
+                path: 'src/modules/[^/]+/useCases/.+' + SOURCE_FILE_RE,
             },
         },
 
@@ -352,7 +338,7 @@ module.exports = {
             },
             to: {
                 // Any module's business stores (not presentations/stores)
-                path: 'src/modules/(?:Common/|Supporting/)?[^/]+/stores/.+' + SOURCE_FILE_RE,
+                path: 'src/modules/[^/]+/stores/.+' + SOURCE_FILE_RE,
             },
         },
 
@@ -378,7 +364,7 @@ module.exports = {
                 path: `(^${MODULE_ROOT.slice(1)}presentations/components/|^src/components/).+${SOURCE_FILE_RE}`,
             },
             to: {
-                path: 'src/modules/(?:Common/|Supporting/)?[^/]+/presentations/views/.+' + SOURCE_FILE_RE,
+                path: 'src/modules/[^/]+/presentations/views/.+' + SOURCE_FILE_RE,
             },
         },
 
@@ -435,7 +421,7 @@ module.exports = {
                 path: '^' + MODULE_ROOT.slice(1) + '(?!presentations/).*' + SOURCE_FILE_RE,
             },
             to: {
-                path: 'src/modules/(?:Common/|Supporting/)?[^/]+/presentations/.+' + SOURCE_FILE_RE,
+                path: 'src/modules/[^/]+/presentations/.+' + SOURCE_FILE_RE,
             },
         },
 
@@ -462,9 +448,7 @@ module.exports = {
                 path: '^' + MODULE_ROOT.slice(1) + 'repositories/.+' + SOURCE_FILE_RE,
             },
             to: {
-                path:
-                    'src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|handlers|presentations|events|stores)/.+' +
-                    SOURCE_FILE_RE,
+                path: 'src/modules/[^/]+/(useCases|handlers|presentations|events|stores)/.+' + SOURCE_FILE_RE,
                 pathNot: '^$1$2/stores/',
             },
         },
@@ -497,7 +481,7 @@ module.exports = {
             },
             to: {
                 path:
-                    'src/modules/(?:Common/|Supporting/)?[^/]+/' +
+                    'src/modules/[^/]+/' +
                     '(useCases|repositories|stores|events|handlers|services|validators|transformers|presentations|engine|worklets|workers|runtime)/.+' +
                     SOURCE_FILE_RE,
             },
@@ -515,7 +499,7 @@ module.exports = {
             },
             to: {
                 path:
-                    'src/modules/(?:Common/|Supporting/)?[^/]+/' +
+                    'src/modules/[^/]+/' +
                     '(useCases|repositories|stores|handlers|presentations|engine|worklets|workers|runtime|services|validators|transformers)/.+' +
                     SOURCE_FILE_RE,
             },
@@ -531,7 +515,7 @@ module.exports = {
             },
             to: {
                 path:
-                    'src/modules/(?:Common/|Supporting/)?[^/]+/' +
+                    'src/modules/[^/]+/' +
                     '(repositories|useCases|stores|events|handlers|presentations|engine|worklets|workers|runtime)/.+' +
                     SOURCE_FILE_RE,
             },
@@ -548,7 +532,7 @@ module.exports = {
             },
             to: {
                 path:
-                    'src/modules/(?:Common/|Supporting/)?[^/]+/' +
+                    'src/modules/[^/]+/' +
                     '(useCases|stores|repositories|events|handlers|presentations|engine|worklets|workers|runtime)/.+' +
                     SOURCE_FILE_RE,
             },
@@ -565,7 +549,7 @@ module.exports = {
             },
             to: {
                 path:
-                    'src/modules/(?:Common/|Supporting/)?[^/]+/' +
+                    'src/modules/[^/]+/' +
                     '(useCases|stores|repositories|events|handlers|presentations|engine|worklets|workers|runtime)/.+' +
                     SOURCE_FILE_RE,
             },
@@ -584,7 +568,7 @@ module.exports = {
             },
             to: {
                 path:
-                    'src/modules/(?:Common/|Supporting/)?[^/]+/' +
+                    'src/modules/[^/]+/' +
                     '(useCases|repositories|stores|services|validators|events|handlers|engine|runtime|presentations)/.+' +
                     SOURCE_FILE_RE,
             },
@@ -597,24 +581,22 @@ module.exports = {
                 'Use cases, repositories, stores, handlers, and presentations must not import module worklet internals. ' +
                 'The engine-owned AudioWorkletNode is the only application entrypoint for a worklet module.',
             from: {
-                path:
-                    '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|repositories|stores|handlers|presentations)/.+' +
-                    SOURCE_FILE_RE,
+                path: '^src/modules/[^/]+/(useCases|repositories|stores|handlers|presentations)/.+' + SOURCE_FILE_RE,
             },
             to: {
-                path: '^src/modules/(?:Common/|Supporting/)?[^/]+/worklets/.+' + SOURCE_FILE_RE,
+                path: '^src/modules/[^/]+/worklets/.+' + SOURCE_FILE_RE,
             },
         },
 
         {
             name: 'worklets-no-app-helper-or-desktop-ipc',
             severity: 'error',
-            comment: 'Worklets must not depend on application/, src/helpers/, or desktop IPC.',
+            comment: 'Worklets must not depend on src/helpers/, or desktop IPC.',
             from: {
                 path: '^' + MODULE_ROOT.slice(1) + 'worklets/.+' + SOURCE_FILE_RE,
             },
             to: {
-                path: '^(application/|src/helpers/|src/utils/desktopBridge\\.ts$)|/@tauri-apps/',
+                path: '^(src/helpers/|src/utils/desktopBridge\\.ts$)|/@tauri-apps/',
             },
         },
 
@@ -628,7 +610,7 @@ module.exports = {
             },
             to: {
                 path:
-                    'src/modules/(?:Common/|Supporting/)?[^/]+/' +
+                    'src/modules/[^/]+/' +
                     '(useCases|repositories|stores|services|validators|events|handlers|engine|runtime|presentations)/.+' +
                     SOURCE_FILE_RE,
             },
@@ -641,24 +623,22 @@ module.exports = {
                 'Use cases, repositories, stores, handlers, and presentations must not import Worker internals. ' +
                 'The engine-owned Worker client is the only application entrypoint for a Worker module.',
             from: {
-                path:
-                    '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|repositories|stores|handlers|presentations)/.+' +
-                    SOURCE_FILE_RE,
+                path: '^src/modules/[^/]+/(useCases|repositories|stores|handlers|presentations)/.+' + SOURCE_FILE_RE,
             },
             to: {
-                path: '^src/modules/(?:Common/|Supporting/)?[^/]+/workers/.+' + SOURCE_FILE_RE,
+                path: '^src/modules/[^/]+/workers/.+' + SOURCE_FILE_RE,
             },
         },
 
         {
             name: 'workers-no-app-helper-or-desktop-ipc',
             severity: 'error',
-            comment: 'Dedicated Workers must not depend on application/, src/helpers/, or desktop IPC.',
+            comment: 'Dedicated Workers must not depend on src/helpers/, or desktop IPC.',
             from: {
                 path: '^' + MODULE_ROOT.slice(1) + 'workers/.+' + SOURCE_FILE_RE,
             },
             to: {
-                path: '^(application/|src/helpers/|src/utils/desktopBridge\\.ts$)|/@tauri-apps/',
+                path: '^(src/helpers/|src/utils/desktopBridge\\.ts$)|/@tauri-apps/',
             },
         },
 
@@ -745,7 +725,7 @@ module.exports = {
             name: 'app-to-modules-public-surface-only',
             severity: 'error',
             comment:
-                'src/app/ may only depend on module contract-folder barrels, src/shared/, and src/helpers/. ' +
+                'src/app/ may only depend on module contract-folder barrels and src/helpers/. ' +
                 'Migration complete: module-root index.ts is no longer accepted.',
             from: {
                 path: '^src/app/',
@@ -753,30 +733,16 @@ module.exports = {
             to: {
                 path: '^src/modules/',
                 pathNot: [
-                    '^src/shared/',
                     '^src/helpers/',
-                    // Migration complete: only contract-folder barrels are accepted.
-                    // Module-root barrels are no longer allowed (0/34 modules have a root index.ts).
-                    '^src/modules/(?:Common/|Supporting/)?[^/]+/(useCases|events|stores|presentations/views)/index(?:\\.ts)?$',
+                    // Only contract-folder barrels are accepted; module-root barrels are not.
+                    '^src/modules/[^/]+/(useCases|events|stores|presentations/views)/index(?:\\.ts)?$',
                 ],
             },
         },
 
         // --------------------------------------------------------------------
-        // Shared / helpers purity
+        // Helpers purity
         // --------------------------------------------------------------------
-        {
-            name: 'shared-no-module-imports',
-            severity: 'error',
-            comment: 'src/shared/ must remain module-agnostic and may not import from src/modules/.',
-            from: {
-                path: '^src/shared/',
-            },
-            to: {
-                path: '^src/modules/',
-            },
-        },
-
         {
             name: 'helpers-no-module-imports',
             severity: 'error',
