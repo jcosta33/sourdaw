@@ -1,0 +1,30 @@
+.agents/skills/review-stances/session-lifecycle.md
+  s_55244eb93b97d1::t_1ec6c7bb946f7a 384-386,700-722,724-731
+  s_dde1671ba022b8::t_cfa6264ad990e9 723
+.agents/skills/review-stances/test-validity.md
+  s_55244eb93b97d1::t_2b118903bd23c4 2544-2555
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3afce8054d1d7909e0aaecf05d42f7fb6c31e273",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_dde1671ba022b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e4c42ac-51ff-45eb-b81f-f43601ed01dc",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
