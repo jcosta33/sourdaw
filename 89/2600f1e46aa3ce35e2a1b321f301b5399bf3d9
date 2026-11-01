@@ -1,0 +1,31 @@
+src/modules/Arrangement/handlers/clip/handleCrossfadeClips.ts
+  s_7a8e1107313040::t_9207cda6ae31a8 6-8
+src/modules/Arrangement/useCases/clipEditing/__tests__/clipAudioSourceFields.spec.ts
+  s_7a8e1107313040::t_d5806c1546088c 75
+src/modules/Arrangement/useCases/clipEditing/restoreCrossfadeClips.ts
+  s_7a8e1107313040::t_73c7f22e064bc9 123,125
+src/modules/Arrangement/useCases/clipEditing/crossfadeClips.ts
+  s_7a8e1107313040::t_397897afe38998 8-9
+src/modules/Arrangement/handlers/clip/__tests__/handleCrossfadeClips.spec.ts
+  s_7a8e1107313040::t_d942eab7b3f3fc 758
+src/modules/Arrangement/useCases/clipEditing/resolveCrossfadeClipB.ts
+  s_7a8e1107313040::t_397897afe38998 1-168
+src/modules/Arrangement/useCases/clipEditing/crossfadeClipBLoopOriginEntry.ts
+  s_7a8e1107313040::t_397897afe38998 1-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "892600f1e46aa3ce35e2a1b321f301b5399bf3d9",
+  "prompts": {},
+  "sessions": {
+    "s_7a8e1107313040": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54399ae9-2148-45f8-8043-53b64cc39d76",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
