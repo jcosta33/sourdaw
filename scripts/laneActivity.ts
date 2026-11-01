@@ -1,7 +1,7 @@
 import { realpathSync } from 'node:fs';
 
 import { canonicalPath, containsPath } from './prContract.ts';
-import { parseLsofCensus, sameUserProcessIds } from './resourceGuardStorage.ts';
+import { parseLsofCensus, sameUserProcessParents } from './resourceGuardStorage.ts';
 
 import type { ShellRunner } from './removeLane.ts';
 
@@ -24,12 +24,45 @@ function processIsGone(pid: number): boolean {
     }
 }
 
-function sameUserProcesses(shell: Shell, uid: number): number[] {
-    const pids = sameUserProcessIds(shell.capture('ps', ['-axo', 'pid=,uid=']), uid, process.pid, []);
-    if (pids === undefined) {
+/** Same-user processes mapped to their parent process. */
+type ProcessSample = ReadonlyMap<number, number>;
+
+function sameUserProcesses(shell: Shell, uid: number): ProcessSample {
+    const parents = sameUserProcessParents(shell.capture('ps', ['-axo', 'pid=,ppid=,uid=']), uid, process.pid);
+    if (parents === undefined) {
         throw new Error('open-file process inspection was incomplete');
     }
-    return pids;
+    return parents;
+}
+
+// A process born after lsof enumerated holds only references inherited from its parent at fork or
+// opened later. Opening later is unobservable for cataloged processes too, and a cataloged parent's
+// inheritable references already vetoed. An orphan's original parent is unknown, so it never inherits.
+function inheritsCatalogedParent(
+    pid: number,
+    sample: ProcessSample,
+    uncovered: ReadonlySet<number>,
+    catalog: ReadonlySet<number>
+): boolean {
+    if (uncovered.has(pid)) {
+        return false;
+    }
+    const walked = new Set([pid]);
+    let parent = sample.get(pid);
+    while (parent !== undefined) {
+        if (parent <= 1 || walked.has(parent)) {
+            return false;
+        }
+        if (catalog.has(parent)) {
+            return true;
+        }
+        if (uncovered.has(parent)) {
+            return false;
+        }
+        walked.add(parent);
+        parent = sample.get(parent);
+    }
+    return false;
 }
 
 function referencesPath(output: string, target: string): boolean {
@@ -53,9 +86,10 @@ function inspectOnce(target: string, uid: number, shell: Shell): Census {
         return { kind: 'inconclusive', reason: 'open-file inspection was incomplete' };
     }
     const after = sameUserProcesses(shell, uid);
+    const earlier = new Set(before.keys());
     const missed = new Set<number>();
-    for (const pid of new Set([...before, ...after])) {
-        if (census.pids.has(pid)) {
+    for (const pid of new Set([...earlier, ...after.keys()])) {
+        if (census.pids.has(pid) || inheritsCatalogedParent(pid, after, earlier, census.pids)) {
             continue;
         }
         if (processIsGone(pid)) {
@@ -67,8 +101,14 @@ function inspectOnce(target: string, uid: number, shell: Shell): Census {
     // A missed holder can fork and exit before the liveness check. Sample again after proving it
     // gone, so its heir cannot inherit an absence claim from the earlier process catalog.
     if (missed.size > 0) {
-        for (const pid of sameUserProcesses(shell, uid)) {
-            if (census.pids.has(pid) || missed.has(pid)) {
+        const successors = sameUserProcesses(shell, uid);
+        const uncovered = new Set([...earlier, ...missed]);
+        for (const pid of successors.keys()) {
+            if (
+                census.pids.has(pid) ||
+                missed.has(pid) ||
+                inheritsCatalogedParent(pid, successors, uncovered, census.pids)
+            ) {
                 continue;
             }
             if (processIsGone(pid)) {

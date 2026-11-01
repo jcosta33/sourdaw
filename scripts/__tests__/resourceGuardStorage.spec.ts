@@ -45,6 +45,7 @@ import {
     resolveGuardStorageRoot,
     storageReferenceState,
     sameUserProcessIds,
+    sameUserProcessParents,
     parseLsofCensus,
     referencesStoragePath,
     DEFAULT_DISK_RESERVE_BYTES,
@@ -3646,6 +3647,22 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
         expect(sameUserProcessIds('11 501\n', 501, 10, [])).toBeUndefined();
         expect(sameUserProcessIds('10 501\n10 501\n', 501, 10, [])).toBeUndefined();
         expect(sameUserProcessIds('', 501, 10, [])).toBeUndefined();
+    });
+
+    it('maps same-UID processes to their parents only from a complete process table', () => {
+        expect(sameUserProcessParents('1 0 0\n10 1 501\n11 10 501\n12 10 0\n', 501, 10)).toEqual(
+            new Map([
+                [10, 1],
+                [11, 10],
+            ])
+        );
+        expect(sameUserProcessParents('10 1 501\n11 ? 501\n', 501, 10)).toBeUndefined();
+        expect(sameUserProcessParents('10 1 501\n11 501\n', 501, 10)).toBeUndefined();
+        expect(sameUserProcessParents('10 1 501\n11 10 501\n11 1 501\n', 501, 10)).toBeUndefined();
+        expect(sameUserProcessParents('10 1 501\n0 1 501\n', 501, 10)).toBeUndefined();
+        expect(sameUserProcessParents('10 1 501\n11 99999999999999999 501\n', 501, 10)).toBeUndefined();
+        expect(sameUserProcessParents('10 1 0\n', 501, 10)).toBeUndefined();
+        expect(sameUserProcessParents('', 501, 10)).toBeUndefined();
     });
 
     it.skipIf(process.platform !== 'darwin').each([

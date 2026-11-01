@@ -1587,7 +1587,7 @@ describe('lane-removal shell boundary', () => {
             const port = shellPort({
                 capture: (command) => {
                     if (command === 'ps') {
-                        return `${process.pid} ${process.getuid?.()}`;
+                        return `${process.pid} ${process.ppid} ${process.getuid?.()}`;
                     }
                     if (command !== 'lsof') {
                         throw new Error(`unexpected capture: ${command}`);
@@ -1611,7 +1611,7 @@ describe('lane-removal shell boundary', () => {
             capture: (command, args) => {
                 captures.push({ command, args });
                 if (command === 'ps') {
-                    return `${process.pid} ${process.getuid?.()}`;
+                    return `${process.pid} ${process.ppid} ${process.getuid?.()}`;
                 }
                 if (command === 'lsof') {
                     return `p${process.pid}\0\nfcwd\0tDIR\0n${target}\0\n`;

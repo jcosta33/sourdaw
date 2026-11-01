@@ -89,6 +89,38 @@ export function sameUserProcessIds(
     return pids;
 }
 
+/** Maps each same-user process in `ps -axo pid=,ppid=,uid=` output to its parent process. */
+export function sameUserProcessParents(
+    output: string,
+    uid: number,
+    supervisorPid: number
+): Map<number, number> | undefined {
+    const rows = new Map<number, { parent: number; user: number }>();
+    for (const line of output.trim().split('\n')) {
+        const match = /^\s*(\d+)\s+(\d+)\s+(\d+)\s*$/.exec(line);
+        if (match === null) {
+            return undefined;
+        }
+        const pid = Number(match[1]);
+        const parent = Number(match[2]);
+        const user = Number(match[3]);
+        if (![pid, parent, user].every(Number.isSafeInteger) || pid <= 0 || rows.has(pid)) {
+            return undefined;
+        }
+        rows.set(pid, { parent, user });
+    }
+    if (rows.get(supervisorPid)?.user !== uid) {
+        return undefined;
+    }
+    const parents = new Map<number, number>();
+    for (const [pid, row] of rows) {
+        if (row.user === uid) {
+            parents.set(pid, row.parent);
+        }
+    }
+    return parents;
+}
+
 function parseLsofFile(
     fields: string[],
     knownTypes: Set<string>,
