@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
-import { type TakeLaneStoreState } from '#/modules/Arrangement/stores';
+import { type Clip, takeLaneStore, type TakeLaneStoreState } from '#/modules/Arrangement/stores';
+import { resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 
 import { projectPianoRollTakeNotes } from '../projectPianoRollTakeNotes';
 
@@ -19,6 +20,10 @@ const source = {
     },
 };
 
+/**
+ * Two passes of a loop [0, 4) recording that began at 0: the first reads
+ * source 5 at its pass head 0, the next a pass deeper.
+ */
 function laneState(): TakeLaneStoreState {
     return {
         lanes: [
@@ -44,8 +49,8 @@ function laneState(): TakeLaneStoreState {
                         endBeat: 12,
                         selected: false,
                         recordingPassIndex: 1,
-                        // Read from where its region opens, its first beat is the second pass's.
-                        midiSource: { ...source, sourceEntryBeat: 9, sourceEndBeat: 13, phaseHeadBeat: 8 },
+                        // The loop's next pass: it opens on the same loop start, a pass deeper in the source.
+                        midiSource: { ...source, sourceEntryBeat: 9, sourceEndBeat: 13 },
                     },
                 ],
                 activeCompRegions: [
@@ -78,21 +83,46 @@ describe('piano roll frozen take occurrence ownership', () => {
         expect(result.ownersByViewId.get(result.notes[2]!.id)?.takeId).toBe('second');
     });
 
+    afterEach(() => {
+        takeLaneStore.set({ lanes: [] });
+    });
+
     it('maps insertion through a selected region to original source coordinates and pass identity', () => {
-        const result = projectPianoRollTakeNotes(
-            { ...loopingClip, startBeat: 2, midiOffsetBeats: 2 },
-            'track',
-            laneState()
-        );
+        const placement = { ...loopingClip, startBeat: 2, midiOffsetBeats: 2 };
+        const result = projectPianoRollTakeNotes(placement, 'track', laneState());
         expect(result.insertOwnerAtBeat(8.5)).toEqual({
             laneId: 'lane',
             takeId: 'second',
             sourceClipId: 'original',
-            sourceBeat: 9.5,
+            sourceBeat: 17.5,
             recordingPassIndex: 1,
             slotPresent: true,
         });
         expect(result.insertOwnerAtBeat(20)).toBeNull();
+
+        // Live comp playback of the same passes, before any freeze, reads the same source beat there.
+        const live = laneState();
+        live.lanes[0]!.takes = live.lanes[0]!.takes.map(({ midiSource, ...take }) => ({
+            ...take,
+            sourceOffsetBeats: midiSource!.sourceEntryBeat - midiSource!.phaseHeadBeat,
+        }));
+        takeLaneStore.set(live);
+        const clip: Clip = {
+            ...placement,
+            trackId: 'track',
+            name: 'Recording',
+            type: 'midi',
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            color: '#000',
+            locked: false,
+            muted: false,
+        };
+        const fragment = resolveClipsWithComping('track', [clip]).find(
+            (candidate) => candidate.startBeat <= 8.5 && candidate.endBeat > 8.5
+        );
+        expect((fragment?.midiOffsetBeats ?? 0) + 8.5 - (fragment?.startBeat ?? 0)).toBe(17.5);
     });
 
     it('clips base notes around a selected empty region and keeps both gap views on one base row', () => {
