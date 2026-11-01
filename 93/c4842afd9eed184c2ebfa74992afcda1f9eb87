@@ -1,0 +1,135 @@
+.agents/skills/musical-time/SKILL.md
+  s_0314bb17e5dee3::t_604fe14c7fac52 1-130
+.agents/skills/review-stances/closure-authority-proof.md
+  s_0314bb17e5dee3::t_d7ed174dc6ba16 1-103
+.agents/skills/review-stances/guard-reclamation-proof.md
+  s_0314bb17e5dee3::t_4bbabb7f16b47e 1-124
+.agents/skills/review-stances/input-monitoring-ownership.md
+  s_0314bb17e5dee3::t_2957f4298af5bb 1-144
+.agents/skills/review-stances/public-repair-records.md
+  s_0314bb17e5dee3::t_55b08e65411838 135-148
+.agents/skills/review-stances/review-authorization.md
+  s_0314bb17e5dee3::t_1b609205055a47 105-139
+.agents/skills/review-stances/security-and-platform.md
+  s_0314bb17e5dee3::t_ae281f85b25fe6 1,3-7,11-156
+.agents/skills/review-stances/session-lifecycle.md
+  s_0314bb17e5dee3::t_97f5fffcf52e8e 1,3-9,13-254,258-339
+.agents/skills/review-stances/startup-entry-availability.md
+  s_0314bb17e5dee3::t_210061e344b65b 103-139
+docs/architecture/agent-release-gates.md
+  s_0314bb17e5dee3::t_bb1c1d41253b7b 17,86,94-106
+evidence/agent-campaign/corpora/development.json
+  s_0314bb17e5dee3::t_1e274e199d9e45 3487-3564
+evidence/agent-campaign/corpora/held-out.json
+  s_0314bb17e5dee3::t_4b2693f177cf8e 3437-3514
+evidence/agent-campaign/manifest.json
+  s_0314bb17e5dee3::t_a60c5222de97da 6,800,808,820
+release/open-source-inventory.json
+  s_0314bb17e5dee3::t_349000eca0e741 1213-1214
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  s_0314bb17e5dee3::t_098d3096997e6b 9,16,38,96-97,110-111,113-115,157-163,200-203,205,210,221-223,248-275,534-664,684-686,692-699,1201-1205,1221,1227-1231,1266,1962-1988,2159-2163,2311-2332,3592-3601,3605-3607,3615,3628-3635,3728-3730,3734-3802,3812-3814,3843-3845,3925,4000-4077,4095,4110,4158-4159,4191,4577,4783-5161,5250
+src/modules/Arrangement/handlers/clip/__tests__/deleteTimeCompMidiLoopPass.integration.spec.ts
+  s_0314bb17e5dee3::t_0dab75c1a3064e 229-232,235
+src/modules/Arrangement/handlers/recording/__tests__/loopRecordedInsideLoop.integration.spec.ts
+  s_0314bb17e5dee3::t_2bd5be58e3a84f 28-33,625-845
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx
+  s_0314bb17e5dee3::t_5af3e87a289c09 234-236,245-247
+src/modules/Arrangement/useCases/clipboard/__tests__/cutSelectedClip.spec.ts
+  s_0314bb17e5dee3::t_46898e5847b0d9 40-44
+src/modules/Arrangement/useCases/comping/__tests__/prepareMidiTakeSourceCapture.spec.ts
+  s_0314bb17e5dee3::t_7a5f366a63b39f 3,9,49-51,101,146-214,265-287
+src/modules/Arrangement/useCases/comping/boundMidiTakeSourceAtDeletedSpan.ts
+  s_0314bb17e5dee3::t_a2c5e917e9913c 1-39
+src/modules/Arrangement/useCases/comping/captureTakeReKeyTransitions.ts
+  s_0314bb17e5dee3::t_358ca7d90d82ed 14,137-147,181-206,208-209,211-281,283,286-287,289,296,298,300-302,305-306,308-313,322-325,361-365,370
+src/modules/Arrangement/useCases/comping/prepareMidiTakeSourceCapture.ts
+  s_0314bb17e5dee3::t_c0010628d7e8aa 60
+src/modules/Arrangement/useCases/comping/resolveCompingProgramme.ts
+  s_0314bb17e5dee3::t_8a91e17318b86a 1,48-63,122
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveMidiProgramme.spec.ts
+  s_0314bb17e5dee3::t_57f0231d78bbc1 19,27-37,55-57,62-67,388-389,459-516,998-1340
+src/modules/AudioEngine/useCases/livePlayback/projectLiveMidiProgramme.ts
+  s_0314bb17e5dee3::t_8698d83ceeafea 55,295-307,310,312,332-334
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveTrackClipsWithCompingParity.spec.ts
+  s_0314bb17e5dee3::t_b91d0c495b06ad 505-557
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_0314bb17e5dee3::t_329cfad9b26b55 399-400,426,509,928-929,944-1113,2375-2417
+src/modules/AudioEngine/useCases/offlineRender/resolveTrackClipsWithComping.ts
+  s_0314bb17e5dee3::t_77a5d981bd27ce 2,255-270,329
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_0314bb17e5dee3::t_de78e5e00ecd64 5,74,79,82,84,91-96,674,679,881-885,890-891,893-896,899,901,908-909,921,925-926,1095-1099,1102-1108,1112,1114,1135,1137
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_0314bb17e5dee3::t_dda2b62a48cef8 254-259,261
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_0314bb17e5dee3::t_9a877331ad9d85 951-953
+src/modules/MIDI/stores/__tests__/frozenMidiTakeRepeats.spec.ts
+  s_0314bb17e5dee3::t_eb0cf19341f658 1-112
+src/modules/MIDI/stores/__tests__/isFrozenMidiTakeSource.spec.ts
+  s_0314bb17e5dee3::t_f6eddd056112e0 59-78,86-96
+src/modules/MIDI/stores/frozenMidiTakeRepeats.ts
+  s_0314bb17e5dee3::t_f51c11ef3fdf33 1-114
+src/modules/MIDI/stores/index.ts
+  s_0314bb17e5dee3::t_ea5e1ccb7bfda6 34-39
+src/modules/MIDI/stores/isFrozenMidiTakeSource.ts
+  s_0314bb17e5dee3::t_8fb24a5d87b788 15-17,20-23,25-41,56-77
+src/modules/MIDI/stores/projectFrozenMidiTakeWindow.ts
+  s_0314bb17e5dee3::t_263242f4e62108 1,12,21-22,30-36,68-175,177-182,190,198,201,216-218,222-230,233,243,245-250
+src/modules/MIDI/useCases/midiClipData/__tests__/projectFrozenMidiTakeWindow.spec.ts
+  s_0314bb17e5dee3::t_240e9b8be67a34 6,8,51,59-63,66,68-69,71,73-75,85-87,122,168-174,226,233,256,258,261,268,275,282,288-293,298,302-305,316,322,361,376-382,389-583
+src/modules/TimelineEditor/presentations/helpers/__tests__/editPianoRollTakeNote.integration.spec.tsx
+  s_0314bb17e5dee3::t_3a4429c55220aa 96-98,155,641,683,701
+src/modules/TimelineEditor/presentations/helpers/__tests__/pianoRollConstants.spec.ts
+  s_0314bb17e5dee3::t_aa8caaf83d0b17 10-14,176-196
+src/modules/TimelineEditor/presentations/helpers/__tests__/projectPianoRollTakeNotes.spec.ts
+  s_0314bb17e5dee3::t_051a5a5cca7565 1,3-4,23-26,52,57-58,65-66,69-70,73-74,78,82-87,91-93,97,102-125,157-218
+src/modules/TimelineEditor/presentations/helpers/pianoRollConstants.ts
+  s_0314bb17e5dee3::t_d0bb7ff080ddfd 30-52
+src/modules/TimelineEditor/presentations/helpers/projectPianoRollTakeNotes.ts
+  s_0314bb17e5dee3::t_e386e0f53b6cc4 2-8,22-23,68-69,99,107-116,180-185,188,197,203-205,249-250,253
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollRenderer.spec.ts
+  s_0314bb17e5dee3::t_8c258c59f86487 4,217-236
+src/modules/TimelineEditor/presentations/hooks/usePianoRollInteractions.ts
+  s_0314bb17e5dee3::t_1e3de71630e4e6 63-64,666,765-766,861,964,993,996,1505
+src/modules/TimelineEditor/presentations/hooks/usePianoRollRenderer.ts
+  s_0314bb17e5dee3::t_5acbe5436e9b30 72-73,237,349,371
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx
+  s_0314bb17e5dee3::t_e78c41d7ba8dad 56-57,527-531,540,546
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRoll.spec.tsx
+  s_0314bb17e5dee3::t_40af7de53e0b46 179-180,235-236,242-252
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollExpressionLaneReach.spec.tsx
+  s_0314bb17e5dee3::t_e7d788c929fcfc 198-199
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollKeyRailGeometry.spec.tsx
+  s_0314bb17e5dee3::t_0b18b18605fee9 1-191
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollMpeExpressionLanes.spec.tsx
+  s_0314bb17e5dee3::t_9a76be756ae311 156-157
+src/modules/Transport/useCases/scheduling/__tests__/resolveChannelBendClips.spec.ts
+  s_0314bb17e5dee3::t_6d6418cd68fcb8 50-59
+src/modules/Transport/useCases/scheduling/__tests__/resolveStoredControllerClips.spec.ts
+  s_0314bb17e5dee3::t_b7a7f81c1b4642 53-62,71-73
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_0314bb17e5dee3::t_3e330eec4bc7bf 3,15,80-82,1067-1068,1135-1541,1543,5323
+src/modules/Transport/useCases/scheduling/prepareYeastTrackNotes.ts
+  s_0314bb17e5dee3::t_de9588de728d42 2-6,398-412,416,419,421,428-430,435,439,443
+src/modules/Transport/useCases/scheduling/resolveFrozenMidiControllerPasses.ts
+  s_0314bb17e5dee3::t_3b92cff53fbc49 1,17-19,25-26,38
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_0314bb17e5dee3::t_59388f8d863830 18-23,870-879,881,885,1011-1017,1026,1028,1138,1140,1196
+src/utils/handlerContract.ts
+  s_0314bb17e5dee3::t_f04aaeaaf8710a 712-722
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "93c4842afd9eed184c2ebfa74992afcda1f9eb87",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
