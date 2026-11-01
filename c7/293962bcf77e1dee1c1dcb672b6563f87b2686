@@ -1,0 +1,21 @@
+src/modules/Arrangement/useCases/getAlternativeClips.ts
+  s_16dc519b202dab::t_4a4921277532a6 1-14
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackAlternativesSection.spec.tsx
+  s_16dc519b202dab::t_b087b2a63ef344 15-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c7293962bcf77e1dee1c1dcb672b6563f87b2686",
+  "prompts": {},
+  "sessions": {
+    "s_16dc519b202dab": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_16dc519b202dab",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
