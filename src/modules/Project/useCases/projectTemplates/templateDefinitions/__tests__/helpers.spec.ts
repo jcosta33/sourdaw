@@ -9,7 +9,7 @@ describe('helpers', () => {
         expect(empty?.category).toBe('empty');
     });
 
-    it('exposes all nine genre templates with non-empty descriptions', () => {
+    it('exposes all ten genre templates with non-empty descriptions', () => {
         const expectedIds = [
             'pop-song',
             'hiphop-trap',
@@ -17,6 +17,7 @@ describe('helpers', () => {
             'rock-band',
             'lofi',
             'cinematic',
+            'string-orchestra',
             'podcast',
             'singer-songwriter',
             'ambient',
@@ -35,6 +36,14 @@ describe('helpers', () => {
         expect(demos.map((template) => template.id)).toEqual(['demo-nebula-drift']);
         expect(demos[0]).toMatchObject({
             name: 'Nebula Drift',
+            executionBoundary: 'app-action',
+        });
+    });
+
+    it('offers the String Orchestra film template through the project action', () => {
+        expect(templates.find((template) => template.id === 'string-orchestra')).toMatchObject({
+            name: 'String Orchestra',
+            category: 'film',
             executionBoundary: 'app-action',
         });
     });
