@@ -1,0 +1,38 @@
+src/modules/TimelineEditor/presentations/hooks/__tests__/useLaneDragSession.spec.tsx
+  s_0314bb17e5dee3::t_238b82982dc1c0 350-383,418,422,427-429
+  s_fec7059b7a251c::t_ecc91656a0fd5a 384-417,419-421,423-426
+src/modules/TimelineEditor/presentations/hooks/useLaneDragSession.ts
+  s_0314bb17e5dee3::t_0f089207ebaa79 16-25,239-241,252-261,263,268
+src/modules/TimelineEditor/presentations/views/Timeline/ChordTrackLane.tsx
+  s_0314bb17e5dee3::t_de6cd47b2fdd39 147-151,306-307
+  s_fec7059b7a251c::t_33c65e6310077c 560
+  s_fec7059b7a251c::t_edbceb6ee2308b 549-551
+  s_fec7059b7a251c::t_b9e72dd7a5c567 557-559
+src/modules/TimelineEditor/presentations/views/Timeline/__tests__/ChordTrackLane.spec.tsx
+  s_0314bb17e5dee3::t_158eb90c26862f 249-279
+  s_fec7059b7a251c::t_6e28fa569d464a 230-248
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f07ec5d16c5bd4ebea180ede2be9d1930c6e96fe",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
