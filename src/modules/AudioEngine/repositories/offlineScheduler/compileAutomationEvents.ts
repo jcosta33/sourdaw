@@ -155,6 +155,31 @@ function beatAtTime(firstBeat: number, secondBeat: number, time: number, project
 }
 
 /**
+ * `beatAtTime` for a span whose beat-to-time projection is a straight line.
+ *
+ * The projection is quantised to whole samples, so bisecting it converges on
+ * the edge of a one-sample rounding step, not on a truer beat: interpolating
+ * along the line lands within one sample's worth of beats of it, and costs no
+ * projection at all where the bisection costs over forty per sample.
+ */
+function beatAtLinearTime(
+    startBeat: number,
+    endBeat: number,
+    startTime: number,
+    endTime: number,
+    time: number
+): number {
+    if (time <= startTime) {
+        return startBeat;
+    }
+    if (time >= endTime) {
+        return endBeat;
+    }
+    const beat = startBeat + (endBeat - startBeat) * ((time - startTime) / (endTime - startTime));
+    return Math.min(endBeat, Math.max(startBeat, beat));
+}
+
+/**
  * Sort by beat, keeping ties.
  *
  * Two points on one beat are how this codebase writes a hard automation jump,
@@ -433,13 +458,17 @@ export function compileAutomationEvents(
         // Only tightened when a slew is actually configured — gain and pan are
         // a-rate and unslewed on both sides, and pay nothing for this.
         const sampleIntervalSec = Math.min(AUTOMATION_SAMPLE_INTERVAL_SEC, options?.slew?.tickSeconds ?? Infinity);
+        const isLinearCurve = current.point.curve === 'linear';
         const steps =
-            current.point.curve === 'linear' && hasLinearTimeProjection
-                ? 1
-                : Math.max(1, Math.ceil(timeSpan / sampleIntervalSec));
+            isLinearCurve && hasLinearTimeProjection ? 1 : Math.max(1, Math.ceil(timeSpan / sampleIntervalSec));
+        // Only a curve sampled on the grid takes the interpolated beat; a
+        // segment crossing a tempo change or riding a ramp keeps the bisection.
+        const interpolatesBeat = !isLinearCurve && hasLinearTimeProjection;
         for (let step = 1; step <= steps; step++) {
             const time = visibleStart + ((visibleEnd - visibleStart) * step) / steps;
-            const beat = beatAtTime(visibleStartBeat, visibleEndBeat, time, projectBeat);
+            const beat = interpolatesBeat
+                ? beatAtLinearTime(visibleStartBeat, visibleEndBeat, visibleStart, visibleEnd, time)
+                : beatAtTime(visibleStartBeat, visibleEndBeat, time, projectBeat);
             appendEvent(events, {
                 type: 'linear',
                 timeSeconds: time - regionStartSeconds,
