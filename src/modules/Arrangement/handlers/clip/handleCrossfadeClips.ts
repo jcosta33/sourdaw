@@ -3,12 +3,9 @@ import { createHandler } from '#/utils/createHandler';
 import { type Clip } from '../../models/Track';
 import { captureClipAudioSource, type ClipAudioSourceFields } from '../../useCases/clipEditing/clipAudioSourceFields';
 import { consumedStretchFactor } from '../../useCases/clipEditing/consumedStretchFactor';
-import {
-    crossfadeClipBLoopOriginEntry,
-    crossfadeClips,
-    DEFAULT_CROSSFADE_BEATS,
-    resolveCrossfadeClipB,
-} from '../../useCases/clipEditing/crossfadeClips';
+import { crossfadeClipBLoopOriginEntry } from '../../useCases/clipEditing/crossfadeClipBLoopOriginEntry';
+import { crossfadeClips, DEFAULT_CROSSFADE_BEATS } from '../../useCases/clipEditing/crossfadeClips';
+import { resolveCrossfadeClipB } from '../../useCases/clipEditing/resolveCrossfadeClipB';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { liveTempoTimeline } from '../../useCases/liveTempoTimeline';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';

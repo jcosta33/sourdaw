@@ -755,7 +755,7 @@ describe('crossfade recorded leading silence through command history', () => {
     describe('canonical clip B source entry', () => {
         afterEach(() => {
             tempoMapStore.set({ changes: [] });
-            transportStore.set({ ...defaultTransportState });
+            transportStore.set(defaultTransportState);
         });
 
         function readerSourceSecondsAt(clip: Clip, beat: number): number {

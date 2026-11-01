@@ -120,8 +120,9 @@ export function restoreCrossfadeClips({ clipAId, clipBId, replacement }: Restore
             }
             if (clip.id === clipBId) {
                 const sourced = clipBAudioSource ? replaceClipAudioSource(clip, clipBAudioSource) : clip;
+                const base = sourced ?? clip;
                 const updated = {
-                    ...(sourced ?? clip),
+                    ...base,
                     startBeat: replacement.clipBStartBeat,
                     fadeInBeats: replacement.clipBFadeInBeats,
                     // The captured anchor rides only in entries recorded after

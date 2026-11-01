@@ -72,6 +72,6 @@ describe('isSameClipAudioSource', () => {
     });
 
     it('matches equal clocks', () => {
-        expect(isSameClipAudioSource(fullClock, { ...fullClock })).toBe(true);
+        expect(isSameClipAudioSource(fullClock, structuredClone(fullClock))).toBe(true);
     });
 });
