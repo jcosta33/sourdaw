@@ -176,6 +176,24 @@ describe('transformMidiGlobalTimeState', () => {
         ]);
     });
 
+    it('keeps loop pass 0 on the split right half, the first take being falsy', () => {
+        const prepared = state({
+            notesByClipId: {
+                source: [{ id: 'first', pitch: 60, startBeat: 0, duration: 4, velocity: 100, recordingPassIndex: 0 }],
+                right: [],
+            },
+        });
+
+        const result = transformMidiGlobalTimeState({
+            state: prepared,
+            commands: [{ type: 'split-notes', sourceClipId: 'source', targetClipId: 'right', splitBeat: 2 }],
+            targetNoteIds: ['first-right'],
+        });
+
+        expect(result.status).toBe('ready');
+        expect(result.state.notesByClipId.right?.[0]).toMatchObject({ recordingPassIndex: 0 });
+    });
+
     it('leaves the split right half without a pass index when the source note has none', () => {
         const prepared = state({
             notesByClipId: {
@@ -290,6 +308,23 @@ describe('transformMidiGlobalTimeState', () => {
                 recordingPassIndex: 1,
             },
         ]);
+    });
+
+    it('keeps loop pass 0 on a duplicate, the first take being falsy', () => {
+        const prepared = state({
+            notesByClipId: {
+                source: [{ id: 'first', pitch: 60, startBeat: 1, duration: 1, velocity: 100, recordingPassIndex: 0 }],
+                target: [],
+            },
+        });
+
+        const result = transformMidiGlobalTimeState({
+            state: prepared,
+            commands: [{ type: 'copy-notes', sourceClipId: 'source', targetClipId: 'target' }],
+            targetNoteIds: ['first-copy'],
+        });
+
+        expect(result.state.notesByClipId.target?.[0]).toMatchObject({ recordingPassIndex: 0 });
     });
 
     it('leaves a duplicate without a pass index when the source note has none', () => {
