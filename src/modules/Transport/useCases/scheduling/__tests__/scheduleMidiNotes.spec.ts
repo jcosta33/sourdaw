@@ -583,6 +583,55 @@ describe('scheduleMidiNotes', () => {
         expect(noteOff.mock.calls[0]).toEqual([62, 18000, 0]);
     });
 
+    // A window can open behind the clock: a late wrap or a jump opens at its
+    // destination, and a tick a main-thread stall held back opens where the
+    // last one ended. The worklet is told frames, and a frame already rendered
+    // is not one it can still play at.
+    it('posts no worklet note the clock has passed and starts one still sounding on the clock frame', async () => {
+        const noteOn = vi.fn();
+        const noteOff = vi.fn();
+        const track = midiTrack({
+            clips: [midiClip()],
+            devices: [{ id: 'crumbs-1', type: 'builtin-crumbs' }],
+        });
+        (trackStore as { value: unknown }).value = { tracks: [track] };
+        (midiStore as { value: unknown }).value = {
+            notesByClipId: {
+                'clip-1': [
+                    { id: 'n-over', pitch: 60, startBeat: 0.25, duration: 0.5, velocity: 96 },
+                    { id: 'n-sounding', pitch: 62, startBeat: 1.5, duration: 1, velocity: 96 },
+                    { id: 'n-ahead', pitch: 64, startBeat: 3, duration: 0.5, velocity: 96 },
+                ],
+            },
+        };
+        vi.mocked(ensureTrackStrip).mockReturnValue({
+            gainNode: {},
+            preFaderTap: { connect: vi.fn() },
+            deviceNodes: [
+                {
+                    deviceId: 'crumbs-1',
+                    type: 'builtin-crumbs',
+                    crumbsControls: { ready: true, noteOn, noteOff },
+                },
+            ],
+        } as never);
+        // The clock stands at 10 s (frame 480000), at beat 2 of the window [0, 4).
+        vi.mocked(getCurrentTime).mockReturnValue(10);
+
+        await scheduleMidiNotes(0, 4, 2, new Set<string>(), [], defaultTransportState, 120);
+
+        // At 120 bpm a beat is 24000 frames: beat 2.5 ends the sounding note at
+        // 492000, and beat 3 starts the one ahead at 504000.
+        expect(noteOn.mock.calls).toEqual([
+            [62, 96, 480_000, 0],
+            [64, 96, 504_000, 0],
+        ]);
+        expect(noteOff.mock.calls).toEqual([
+            [62, 492_000, 0],
+            [64, 516_000, 0],
+        ]);
+    });
+
     describe('a device the build withholds', () => {
         beforeEach(() => {
             injectedWithheldDeviceTypes.add('grand-boule');

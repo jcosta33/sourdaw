@@ -1272,6 +1272,32 @@ export async function scheduleMidiNotes(
                             if (durationSamples <= 0) {
                                 continue;
                             }
+                            // A window that opens behind the clock (a late wrap,
+                            // a jump, an edit's re-emit, or a tick a stall held
+                            // back) reaches notes the clock has already passed:
+                            // `accumulatedPosition` is the beat the clock stands
+                            // at, the same floor a Yeast segment is admitted
+                            // against. A note released by then is over and is
+                            // not posted, since its release would cut the next
+                            // note of its pitch. One still sounding then starts
+                            // on the clock's frame, as the tail of a note whose
+                            // head a cut took off, and keeps its own release.
+                            const clockFrame = placeSamplesOnClock({
+                                startSamples: accumulatedSamples,
+                                accumulatedSamples,
+                                sampleRate: sr,
+                                compensation,
+                                currentTime: initialSchedulingAnchor,
+                            }).sampleFrame;
+                            if (endSampleFrame <= clockFrame) {
+                                continue;
+                            }
+                            const joinsSounding = sampleFrame < clockFrame;
+                            const onFrame = joinsSounding ? clockFrame : sampleFrame;
+                            const expressionStartBeat = joinsSounding ? accumulatedPosition : noteStartBeat;
+                            const beatsIntoNote = joinsSounding
+                                ? (projectedNote.beatsIntoNote ?? 0) + accumulatedPosition - noteStartBeat
+                                : projectedNote.beatsIntoNote;
                             const rawVel = projectedNote.velocity;
                             const vel = workletSynthEntry.velocityTransform
                                 ? workletSynthEntry.velocityTransform(rawVel)
@@ -1289,18 +1315,12 @@ export async function scheduleMidiNotes(
                             // window the note came from.
                             if (workletSynthDevice?.type === 'levain' && workletSynthNode?.levainControls) {
                                 const levainControls = workletSynthNode.levainControls;
-                                posts.add('on', sampleFrame, () =>
-                                    levainControls.noteOn(
-                                        pitch,
-                                        vel,
-                                        sampleFrame,
-                                        noteChannel,
-                                        articulationId ?? undefined
-                                    )
+                                posts.add('on', onFrame, () =>
+                                    levainControls.noteOn(pitch, vel, onFrame, noteChannel, articulationId ?? undefined)
                                 );
                             } else {
-                                posts.add('on', sampleFrame, () =>
-                                    workletSynthControls.noteOn(pitch, vel, sampleFrame, noteChannel)
+                                posts.add('on', onFrame, () =>
+                                    workletSynthControls.noteOn(pitch, vel, onFrame, noteChannel)
                                 );
                             }
                             // The depth the bend was recorded at, and only when
@@ -1339,8 +1359,8 @@ export async function scheduleMidiNotes(
                                     ? startNoteExpression({
                                           note,
                                           channelBend: trackBend,
-                                          startBeat: noteStartBeat,
-                                          beatsIntoNote: projectedNote.beatsIntoNote,
+                                          startBeat: expressionStartBeat,
+                                          beatsIntoNote,
                                           recordedOwnBendBeat: note.recordedOwnBendBeat,
                                           releaseFrame: endSampleFrame,
                                           frameAtBeat: (beat) =>
@@ -1362,7 +1382,7 @@ export async function scheduleMidiNotes(
                                 trackId: track.id,
                                 pitch,
                                 channel: noteChannel,
-                                sampleFrame,
+                                sampleFrame: onFrame,
                                 expression: expression?.atStart ?? mpe,
                             });
                             if (expression) {

@@ -493,9 +493,12 @@ export function startPlayheadScheduler(
         // played through that stall on the audio clock; advancing less would put
         // every later emission behind them, and a clip ending at a loop seam
         // would leave the shortfall as silence before the next pass. The window
-        // still opens at `lastScheduledBeat`, so what the stall kept from being
-        // scheduled is emitted now: an audio clip joins mid-buffer at its own
-        // position, and a click or note sounds late by the overrun.
+        // still opens at `lastScheduledBeat`, behind the clock, so what the stall
+        // kept from being scheduled is emitted now against where the clock
+        // stands: an audio clip joins mid-buffer at its own position; a worklet
+        // note the clock has passed is dropped, and one still sounding starts on
+        // the clock's frame with its own release; a click, and a note on any
+        // other voice path, is still posted at the instant it was due, now past.
         const deltaSec = initial ? 0 : Math.max(0, now - schedulerSession.lastTickTime);
         schedulerSession.lastTickTime = now;
 
