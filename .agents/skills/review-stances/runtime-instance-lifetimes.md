@@ -1,8 +1,9 @@
 # Standing probes: strip, device, engine and settlement lifetimes
 
 Defects where a strip, device, engine graph, preview source, credential session or settled task is replaced, reset,
-disposed or cancelled while a continuation, callback or cached reference still acts for the outgoing instance. Split out
-of `session-lifecycle.md`.
+disposed or cancelled while a continuation, callback or cached reference still acts for the outgoing instance, and
+where a lifecycle control reads its label and its action from different states or cancels to a fixed state instead
+of the one the cancelled operation replaced. Split out of `session-lifecycle.md`.
 Each probe names the failure mode, the input or state to drive and the check that must go red, and names the
 mutation that must fail it where its source lesson established one. Controlled ports (media, graph, scheduler,
 wall-clock) prove ordering, ownership and cleanup; they never establish physical hardware audibility.
@@ -109,3 +110,23 @@ wall-clock) prove ordering, ownership and cleanup; they never establish physical
     temporary run assets or confirmation resources, and must not report success while cleanup is pending. Repeat
     without temporary assets: an already-terminal no-op cannot prove persistence. A mocked cancellation helper misses
     the live-store-before-storage seam.
+11. **A lifecycle control's label and action read different states (#5912; `b4da902197`).** The track menu labelled
+    its freeze item `Update Freeze` from `freezeState.status === 'stale'` while its action branched on `track.frozen`;
+    a stale track keeps `frozen: true`, so Update Freeze dispatched `unfreezeTrack` and discarded the take the user
+    asked to refresh, and the Inspector did the same when `frozen || stale`. A refresh also keeps `frozen: true`
+    while rendering, so a label chosen from `frozen` offered Unfreeze mid-render and the unstopped render re-froze
+    the track. The menu spec asserted only the stale label; the Inspector spec asserted `unfreezeTrack`, encoding the
+    defect. List every reachable pair of the coarse flag and the lifecycle status, including transient states an
+    operation writes before it settles (`freezing` with either flag, `error` with either flag); for each pair assert
+    the label and the dispatched action in every control that offers them (track menu and Inspector are separate
+    routes), deriving each expected action from what the label promises, never from current behavior. Narrow each
+    routing branch to a single status (for example `frozen && !stale` to `status === 'frozen'`): some per-state case
+    must fail.
+12. **A cancel restores the state the cancelled operation replaced (#5912).** Cancelling a refresh wrote status
+    `unfrozen` and left `frozen` and the old buffer in place; Unfreeze then returned early on that status, so no
+    control could leave the state. Cancel an operation that replaced a settled state at each await it crosses and
+    assert the full prior state returns: flag, status and every field the status carries. Regression guards for the
+    repair: cancel the first run from an initial state and assert the flag as well as the status (catches a restore
+    that sets the flag unconditionally); cancel during the last await while the awaited call still resolves and prove
+    through the registered action pipeline that the aborted transaction restores the prior state (a unit test with a
+    mocked repository cannot show the rollback).

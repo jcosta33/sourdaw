@@ -15,8 +15,8 @@ probe only for a failure mode none of these names; retire one only when a named 
 
 Split out by defect class (a stance matching one carries that file, not this one): timing, deadlines, fixture state
 and interleaving in `test-timing-and-isolation.md`; single-place observation and replaced boundaries in
-`test-observation-scope.md`; maintained end-to-end specs in `maintained-e2e-specs.md`; release and provenance drift
-in `release-provenance-drift.md`.
+`test-observation-scope.md`; maintained end-to-end specs and their serving setup in `maintained-e2e-specs.md`;
+release and provenance drift in `release-provenance-drift.md`.
 
 ## Standing probes
 
@@ -142,7 +142,7 @@ in `release-provenance-drift.md`.
 
 ## Retired lessons
 
-Relocated, not retired: linked automation followers reaching the sampler (#931, #4392) in `saved-control-projection.md`; billed usage and provider-wire level fields (#4407, #2648, #4393, #4392) in `provider-egress.md`; recovery receipts and lock release (#5111, #3342) in `review-authorization.md`; canvas fresh paint (#5780, #5247) in `rendered-ui-layout.md`; the optimizer-reload HMR fence (#5874) in `e2e-server-provenance.md`; App import reattempt (#3356) in `startup-entry-availability.md`; rewrite destination ancestry (#4271) in `git-notes-preimage.md`.
+Relocated, not retired: linked automation followers reaching the sampler (#931, #4392) in `command-entry-and-state-oracles.md` probe 3; billed usage and provider-wire level fields (#4407, #2648, #4393, #4392) in `provider-egress.md` probes 5 and 6; recovery receipts and lock release (#5111, #3342) in `review-authorization.md` probes 7 and 8; canvas fresh paint (#5780, #5247) in `rendered-ui-layout.md` probe 4; the optimizer-reload HMR fence (#5874) in `maintained-e2e-specs.md` probe 8; App import reattempt (#3356) in `startup-entry-availability.md` probe 4; rewrite destination ancestry (#4271) in `trusted-script-delivery.md` probe 6.
 
 - Listing `vi.mock` barrel factories break when a diff adds a barrel export or import → enforced by `pnpm test:barrel-mocks` (`scripts/checkBarrelMockCoverage.ts`), Validation › Types and contracts › Barrel mock coverage
 - A Vitest-green spec is not type evidence → enforced by `pnpm typecheck:test`, `pnpm typecheck:scripts` and `pnpm typecheck:e2e` in Validation › Types and contracts

@@ -74,7 +74,7 @@ For transport, scheduling and automation, assert frame or sample positions and p
 
 **Why:** wall-clock time varies by machine; the sample on which a change takes effect is the contract.
 
-**Enforced by:** the `audio-param-frame-timing` reviewer stance, `.agents/skills/review-stances/audio-param-frame-timing.md`.
+**Enforced by:** review only (probes 5 to 7: `.agents/skills/review-stances/audio-timing-format-laws.md`).
 
 ### 9. Run through the wrapper and the guard
 
@@ -105,7 +105,7 @@ When a MIDI transform or filter stores a Note On decision for a later Note Off, 
 
 **Why:** a FIFO fallback and true instance correlation agree on single notes; only overlapping equal-pitch holds tell them apart.
 
-**Enforced by:** review only (probe: `review-stances/midi-note-correlation.md`).
+**Enforced by:** review only (probe 8: `review-stances/audio-timing-format-laws.md`).
 
 ### 12. Prefix-dependent inverses need real grouped replay
 
@@ -121,4 +121,4 @@ For any recording-admission change, hold worker readiness through the real recor
 
 **Why:** a returned boolean, worker-ready message, main-thread callback time, or pre-resolved recorder mock cannot establish capture-clock alignment.
 
-**Enforced by:** review only (probe: `review-stances/recording-session-ownership.md`); the nearest existing specs are `src/modules/AudioEngine/repositories/audioRecorder/__tests__/recordingCapturePlacement.integration.spec.ts` and `src/modules/AudioEngine/worklets/__tests__/recordingProcessor.spec.ts`.
+**Enforced by:** review only (probe 10: `review-stances/input-monitoring-ownership.md`); the nearest existing specs are `src/modules/AudioEngine/repositories/audioRecorder/__tests__/recordingCapturePlacement.integration.spec.ts` and `src/modules/AudioEngine/worklets/__tests__/recordingProcessor.spec.ts`.

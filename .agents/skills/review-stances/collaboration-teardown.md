@@ -2,14 +2,12 @@
 
 Defects where a collaboration session's teardown, staged backup, asset handoff or receive-side sync acts on a runtime
 other than the one that began it, or reports progress that was never durable or transported. Split out of
-`session-lifecycle.md`.
+`session-lifecycle.md`; probes moved from the `crdt-collaboration` skill.
 Each probe names the failure mode, the input or state to drive and the check that must go red, and names the
 mutation that must fail it where its source lesson established one. Controlled ports (media, graph, scheduler,
 wall-clock) prove ordering, ownership and cleanup; they never establish physical hardware audibility.
 
 ## Standing probes
-
-Moved from the `crdt-collaboration` skill.
 
 1. **Teardown and callbacks stay bound to their installed runtime.** A buffered leave-message drain followed by
    global session cleanup after an await closed whichever session was installed by then, and stale join

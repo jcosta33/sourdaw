@@ -12,7 +12,7 @@ companions to `project-integrity.md` live here and in `input-monitoring-ownershi
 Scope here: transport start, stop, seek, punch and recording-take lifetimes. Split out by defect class (a stance
 matching one carries that file, not this one): strip, device, engine and settlement lifetimes in
 `runtime-instance-lifetimes.md`; collaboration teardown and receive-side sync in `collaboration-teardown.md`;
-recording first frame, rings, stop fence and artifact identity in `recording-session-ownership.md`.
+recording first frame, rings, stop fence and artifact identity in `input-monitoring-ownership.md`.
 
 ## Standing probes
 
