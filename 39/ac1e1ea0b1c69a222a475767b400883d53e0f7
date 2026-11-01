@@ -1,0 +1,57 @@
+src/modules/Arrangement/handlers/track/__tests__/handleRemoveAllTracks.spec.ts
+  s_ba80576e6f5cb5::t_6d06e461e7bb70 188
+src/modules/Arrangement/handlers/track/__tests__/handleRemoveAllTracks.undoRouting.spec.ts
+  s_55244eb93b97d1::t_5559c4af0a56bb 1-158
+src/modules/Arrangement/handlers/track/__tests__/handleRemoveTrack.spec.ts
+  s_ba80576e6f5cb5::t_d303c9d9bd6910 261
+src/modules/Arrangement/handlers/track/handleRemoveAllTracks.ts
+  s_ba80576e6f5cb5::t_02e34b3b0b3149 6-7,26-80,160-165
+src/modules/Arrangement/models/Track.ts
+  s_dde1671ba022b8::t_3ed2f717504cb7 333-335
+src/modules/Arrangement/models/__tests__/Track.spec.ts
+  s_dde1671ba022b8::t_048b91c9f9854a 79-86
+src/modules/Arrangement/services/reconcileRoutingAfterRemovingTracks.ts
+  s_b6d960d6f9ffc4::t_61db88828f376a 1-34
+src/modules/Arrangement/stores/__tests__/storedMasterArmed.spec.ts
+  s_dde1671ba022b8::t_7e6b0c95628d7f 1-30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "39ac1e1ea0b1c69a222a475767b400883d53e0f7",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b6d960d6f9ffc4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cae2256a-e9f4-4e6e-9cf5-89aa54178786",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_dde1671ba022b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e4c42ac-51ff-45eb-b81f-f43601ed01dc",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
