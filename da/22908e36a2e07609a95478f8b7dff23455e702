@@ -1,0 +1,34 @@
+src/modules/TimelineEditor/presentations/hooks/usePianoRollRenderer.ts
+  s_fec7059b7a251c::t_cabe487eb23f14 349
+  s_0314bb17e5dee3::t_73640c0ff983d3 73,371
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollRenderer.spec.ts
+  s_fec7059b7a251c::t_d8b4f8dfc025f9 4,217-236
+src/modules/TimelineEditor/presentations/hooks/usePianoRollInteractions.ts
+  s_fec7059b7a251c::t_513cdfc8c3f41b 64,666,861,964,993,996,1505
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollKeyRailGeometry.spec.tsx
+  s_fec7059b7a251c::t_3508285397f2bb 2-9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "da22908e36a2e07609a95478f8b7dff23455e702",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
