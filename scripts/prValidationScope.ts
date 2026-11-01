@@ -6,11 +6,13 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { assertCollectedBrowserInventory } from './e2eCollectorInventory.ts';
 import { partitionByDuration, readSpecDurations, type SpecDurations } from './e2eShardPartition.ts';
-import { readCheckoutDiff } from './prValidationScopeCheckout.ts';
+import { parseChangedPaths, parseChangedRecords, readCheckoutDiff } from './prValidationScopeCheckout.ts';
 import { isPlaywrightCollected, isVitestCollected } from './vitestCollectionPatterns.ts';
 
 import type { AffectedSelection, RuntimeGraph } from './e2eAffectedGraph.ts';
-import type { ChangedProductPath, CoverageSelection } from './e2eCoverageSelection.ts';
+import type { CoverageSelection } from './e2eCoverageSelection.ts';
+
+export { parseChangedPaths } from './prValidationScopeCheckout.ts';
 
 export const SMOKE_SPEC = 'tests/e2e/smoke.spec.ts';
 
@@ -227,37 +229,6 @@ function isRegularFile(path: string): boolean {
     } catch {
         return false;
     }
-}
-
-/** Every path of a NUL-terminated `--name-status -z` diff with the status of its record. */
-export function parseChangedRecords(diff: string): ChangedProductPath[] {
-    if (diff === '') {
-        throw new Error('Changed-path diff is empty');
-    }
-    const fields = diff.split('\0');
-    if (fields.pop() !== '') {
-        throw new Error('Changed-path diff must be NUL terminated');
-    }
-    const records: ChangedProductPath[] = [];
-    for (let index = 0; index < fields.length;) {
-        const status = fields[index++];
-        if (status === undefined || !/^(?:[AMDUT]|[RC]\d+)$/.test(status)) {
-            throw new Error(`Unsupported diff status: ${status}`);
-        }
-        const count = /^[RC]/.test(status) ? 2 : 1;
-        for (let offset = 0; offset < count; offset++) {
-            const path = fields[index++];
-            if (!path || path.startsWith('/') || path.split('/').includes('..')) {
-                throw new Error('Invalid changed path');
-            }
-            records.push({ path, status });
-        }
-    }
-    return records;
-}
-
-export function parseChangedPaths(diff: string): string[] {
-    return [...new Set(parseChangedRecords(diff).map((record) => record.path))].sort();
 }
 
 function packageHasModifiedStatus(diff: string): boolean {
