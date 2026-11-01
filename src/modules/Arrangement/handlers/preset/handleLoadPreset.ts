@@ -1,4 +1,9 @@
-import { getTrackStrip, initializeTrackStripFromSnapshot, updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import {
+    deactivateTrackStrip,
+    getTrackStrip,
+    initializeTrackStripFromSnapshot,
+    updateDeviceParam,
+} from '#/modules/AudioEngine/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { orderDeviceParametersForReplay } from '#/utils/devicePatchPrecedence';
@@ -115,17 +120,48 @@ function initializeMissingLiveStrip(target: Track): RuntimeDeviceDeltaResult {
     return initializeTrackStripFromSnapshot(snapshot);
 }
 
+/**
+ * A replacement that leaves the track without a live strip (a restore that
+ * empties a Toaster folder) tears down the strip the old chain needed, as
+ * device removal does. A later action in the same commit that removed the
+ * track, or made it live again, owns the strip instead.
+ */
+function deactivateStripNoLongerLive(trackId: string): void {
+    if (!getTrackStrip(trackId) || !hasLiveProjectHostTrack(trackId)) {
+        return;
+    }
+    const authoritativeTrack = findUniqueTrack(trackId);
+    if (!authoritativeTrack || shouldCreateLiveTrackStrip(authoritativeTrack)) {
+        return;
+    }
+    try {
+        deactivateTrackStrip(trackId);
+    } catch (error) {
+        throw new Error(
+            `Runtime strip removal failed for track ${trackId}: ${String(error)}; manual repair is required`,
+            {
+                cause: error,
+            }
+        );
+    }
+}
+
 function createPostCommitRuntimeEffect(
     before: Track,
     after: Track,
     batchContext?: Pick<HandlerValidationContext, 'actions' | 'actionIndex'>
 ): () => void {
     let failure: RuntimeDeviceDeltaPostCommitError | undefined;
+    let stripTeardownFinalized = !shouldCreateLiveTrackStrip(before);
     return () => {
         if (failure) {
             throw failure;
         }
         if (!shouldCreateLiveTrackStrip(after)) {
+            if (!stripTeardownFinalized) {
+                deactivateStripNoLongerLive(after.id);
+                stripTeardownFinalized = true;
+            }
             return;
         }
         // This effect runs after the whole batch commits, so a later action in

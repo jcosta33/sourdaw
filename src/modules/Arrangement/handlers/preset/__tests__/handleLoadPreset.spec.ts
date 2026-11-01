@@ -17,6 +17,7 @@ import { handleLoadPreset, handleRestorePresetDeviceChain } from '../handleLoadP
 const mocks = vi.hoisted(() => ({
     applyDeviceChainRuntimeDelta: vi.fn<typeof applyDeviceChainRuntimeDelta>(),
     captureProjectRevision: vi.fn(() => 'project-1'),
+    deactivateTrackStrip: vi.fn(),
     findPresetById: vi.fn(),
     getTrackStrip: vi.fn<() => unknown>(() => ({})),
     hasLiveProjectHostTrack: vi.fn(() => true),
@@ -29,6 +30,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     createRuntimeGraphTopologyFingerprint: (node: unknown) => JSON.stringify(node),
+    deactivateTrackStrip: mocks.deactivateTrackStrip,
     getRuntimeGraphRevision: vi.fn(() => 4),
     getTrackStrip: mocks.getTrackStrip,
     initializeTrackStripFromSnapshot: mocks.initializeTrackStripFromSnapshot,
@@ -133,6 +135,7 @@ describe('handleLoadPreset', () => {
         clearUndoHistory();
         mocks.captureProjectRevision.mockReturnValue('project-1');
         mocks.getTrackStrip.mockReturnValue({});
+        mocks.hasLiveProjectHostTrack.mockReturnValue(true);
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }],
         });
@@ -394,6 +397,85 @@ describe('handleLoadPreset', () => {
             })
         );
         expect(mocks.updateDeviceParam).toHaveBeenCalledWith('toaster-folder', 'toaster-device', 'masterGain', 1.2);
+    });
+
+    describe('restoring a Toaster folder to an empty chain', () => {
+        const toasterDevice: DeviceSnapshot = {
+            id: 'toaster-device',
+            name: 'Toaster',
+            type: 'toaster',
+            bypassed: false,
+            parameterValues: { masterGain: 1.2 },
+        };
+        const restore = {
+            type: 'restorePresetDeviceChain' as const,
+            payload: {
+                trackId: 'toaster-folder',
+                expectedBefore: {
+                    id: 'toaster-folder',
+                    kind: 'folder' as const,
+                    devices: [{ id: 'toaster-device', type: 'toaster', parameterIds: ['masterGain'] }],
+                },
+                expectedFrozen: false,
+                replacementDevices: [],
+            },
+        };
+
+        async function commitRestore(committedTracks: unknown[]): Promise<void> {
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 'toaster-folder', kind: 'folder', frozen: false, devices: [toasterDevice] }],
+            });
+            const result = await handleRestorePresetDeviceChain.execute(restore, {
+                actions: [restore],
+                actionIndex: 0,
+            });
+            if (!result || result.status !== 'written' || !result.afterCommit) {
+                throw new Error('The restore did not schedule its post-commit runtime effect');
+            }
+            mocks.getTrackStoreState.mockReturnValue({ tracks: committedTracks });
+            await result.afterCommit();
+        }
+
+        it('tears down the live Toaster strip the folder no longer needs', async () => {
+            await commitRestore([{ id: 'toaster-folder', kind: 'folder', frozen: false, devices: [] }]);
+
+            expect(mocks.deactivateTrackStrip).toHaveBeenCalledExactlyOnceWith('toaster-folder');
+            expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
+            expect(mocks.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
+            expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+        });
+
+        it('leaves the strip to the action that removed the folder in the same commit', async () => {
+            mocks.hasLiveProjectHostTrack.mockReturnValue(false);
+
+            await commitRestore([]);
+
+            expect(mocks.deactivateTrackStrip).not.toHaveBeenCalled();
+        });
+
+        it('leaves the strip to the action that made the folder live again in the same commit', async () => {
+            await commitRestore([{ id: 'toaster-folder', kind: 'folder', frozen: false, devices: [toasterDevice] }]);
+
+            expect(mocks.deactivateTrackStrip).not.toHaveBeenCalled();
+        });
+
+        it('has nothing to tear down when the folder has no live strip', async () => {
+            mocks.getTrackStrip.mockReturnValue(undefined);
+
+            await commitRestore([{ id: 'toaster-folder', kind: 'folder', frozen: false, devices: [] }]);
+
+            expect(mocks.deactivateTrackStrip).not.toHaveBeenCalled();
+        });
+
+        it('reports a failed strip teardown as needing repair', async () => {
+            mocks.deactivateTrackStrip.mockImplementationOnce(() => {
+                throw new Error('engine closed');
+            });
+
+            await expect(
+                commitRestore([{ id: 'toaster-folder', kind: 'folder', frozen: false, devices: [] }])
+            ).rejects.toThrow(/Runtime strip removal failed for track toaster-folder: Error: engine closed/);
+        });
     });
 
     it('rejects a stale collaborator revision before the project write or runtime effect', async () => {
