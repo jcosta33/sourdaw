@@ -1,11 +1,8 @@
 import { createHandler } from '#/utils/createHandler';
 
-import {
-    captureClipAudioSource,
-    type ClipAudioSourceFields,
-    isSameClipAudioSource,
-} from '../../models/ClipAudioSource';
 import { type Clip } from '../../models/Track';
+import { captureClipAudioSource, type ClipAudioSourceFields } from '../../useCases/clipEditing/clipAudioSourceFields';
+import { isSameClipAudioSource } from '../../useCases/clipEditing/isSameClipAudioSource';
 import { restoreCrossfadeClips } from '../../useCases/clipEditing/restoreCrossfadeClips';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';

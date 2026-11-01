@@ -3,8 +3,8 @@ import { captureClipPitchAnalysis } from '#/modules/Knead/useCases';
 import { readTempoAtBeat } from '#/modules/Transport/stores';
 import { createHandler } from '#/utils/createHandler';
 
-import { captureClipAudioSource } from '../../models/ClipAudioSource';
 import { type Clip } from '../../models/Track';
+import { captureClipAudioSource } from '../../useCases/clipEditing/clipAudioSourceFields';
 import { reverseClip } from '../../useCases/clipEditing/reverseClip';
 import { reversedClipAudioOffsetBeats } from '../../useCases/clipEditing/reversedClipAudioOffsetBeats';
 import { reversedClipAudioSource } from '../../useCases/clipEditing/reversedClipAudioSource';

@@ -1,9 +1,10 @@
 import { restoreClipPitchAnalysis } from '#/modules/Knead/useCases';
 import { createHandler } from '#/utils/createHandler';
 
-import { type ClipAudioSourceFields, replaceClipAudioSource } from '../../models/ClipAudioSource';
 import { type Clip } from '../../models/Track';
 import { updateClipInStore } from '../../stores/updateClipInStore';
+import { type ClipAudioSourceFields } from '../../useCases/clipEditing/clipAudioSourceFields';
+import { replaceClipAudioSource } from '../../useCases/clipEditing/replaceClipAudioSource';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 
 function findClip(clipId: string) {

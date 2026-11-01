@@ -1,7 +1,7 @@
 import { createHandler } from '#/utils/createHandler';
 
-import { captureClipAudioSource, type ClipAudioSourceFields } from '../../models/ClipAudioSource';
 import { type Clip } from '../../models/Track';
+import { captureClipAudioSource, type ClipAudioSourceFields } from '../../useCases/clipEditing/clipAudioSourceFields';
 import { consumedStretchFactor } from '../../useCases/clipEditing/consumedStretchFactor';
 import { crossfadeClipBLoopOriginEntry } from '../../useCases/clipEditing/crossfadeClipBLoopOriginEntry';
 import { crossfadeClips, DEFAULT_CROSSFADE_BEATS } from '../../useCases/clipEditing/crossfadeClips';

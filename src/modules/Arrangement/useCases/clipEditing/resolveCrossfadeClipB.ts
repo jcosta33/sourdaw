@@ -5,10 +5,10 @@ import {
 } from '#/utils/audioSourceTime';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
-import { captureClipAudioSource, type ClipAudioSourceFields } from '../../models/ClipAudioSource';
 import { type TempoTimeline } from '../../models/TempoTimeline';
 import { type Clip } from '../../models/Track';
 
+import { captureClipAudioSource, type ClipAudioSourceFields } from './clipAudioSourceFields';
 import { consumedStretchFactor } from './consumedStretchFactor';
 
 /**

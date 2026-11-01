@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { ClipDummy } from '../../__tests__/ClipDummy';
-import { captureClipAudioSource, isSameClipAudioSource, replaceClipAudioSource } from '../ClipAudioSource';
+import { ClipDummy } from '../../../__tests__/ClipDummy';
+import { captureClipAudioSource } from '../clipAudioSourceFields';
+import { isSameClipAudioSource } from '../isSameClipAudioSource';
+import { replaceClipAudioSource } from '../replaceClipAudioSource';
 
 // Every field distinct from the entry and from each other; the pass origin is
 // off the clip start, so no field equals a default a reader would derive.
