@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import {
@@ -36,7 +36,7 @@ import {
     githubAuthorizationGitEnv,
     type authenticateRole,
 } from '../githubAppIdentity.ts';
-import { laneIsActive } from '../laneActivity.ts';
+import { CENSUS_ATTEMPTS, laneIsActive } from '../laneActivity.ts';
 import { guardFailureReceiptPath, type GuardFailureReceipt } from '../prContract.ts';
 import { shellPort, type PullRequest, type ShellRunner } from '../removeLane.ts';
 import { writeGuardFailureReceipt } from '../resourceGuard.ts';
@@ -591,7 +591,7 @@ describe('automatic lane cleanup', () => {
         }
     });
 
-    it('counts consecutive attempts that did not end in a safety refusal', () => {
+    it('resets the attempt count to zero when an attempt ends in a safety refusal', () => {
         const f = fixture();
         try {
             f.pr.state = 'OPEN';
@@ -599,6 +599,29 @@ describe('automatic lane cleanup', () => {
             cleanupLanes(f.port);
             expect(readCleanupRecords(f.root)[0]?.status).toBe('protected');
             expect(readCleanupRecords(f.root)[0]?.attempts).toBe(0);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('schedules a safety refusal one backoff step out even after a generic failure', () => {
+        const f = fixture();
+        try {
+            const pullRequests = f.port.removal.pullRequests;
+            f.port.removal.pullRequests = () => {
+                throw new Error('GitHub unavailable');
+            };
+            cleanupLanes(f.port);
+            expect(readCleanupRecords(f.root)[0]?.attempts).toBe(1);
+            f.advance();
+            f.port.removal.pullRequests = pullRequests;
+            f.pr.state = 'OPEN';
+            f.pr.mergedAt = null;
+            cleanupLanes(f.port);
+            const record = readCleanupRecords(f.root)[0];
+            expect(record?.status).toBe('protected');
+            expect(record?.attempts).toBe(0);
+            expect(record?.nextAttemptAt).toBe(f.port.now() + cleanupBackoff(1));
         } finally {
             f.dispose();
         }
@@ -1243,6 +1266,69 @@ describe('complete lane activity proof', () => {
                     command === 'ps' ? capture(command) : `${catalog}f7\0tREG\0n/repo/lane/held\0\n`,
             })
         ).toBe(true);
+    });
+    describe('retries a census made inconclusive by host churn', () => {
+        const live = `${process.pid} ${uid}\n${process.ppid} ${uid}`;
+        const self = catalog;
+        const parent = `p${process.ppid}\0\nfcwd\0tDIR\0n/repo\0\n`;
+        const held = `${self}f7\0tREG\0n/repo/lane/held\0\n`;
+        const replay = (catalogs: string[], processes: (sample: number) => string = () => live) => {
+            let lsofCalls = 0;
+            let psCalls = 0;
+            const shell = {
+                capture: (command: string) => {
+                    if (command === 'ps') {
+                        return processes(psCalls++);
+                    }
+                    return catalogs[lsofCalls++ % catalogs.length] ?? '';
+                },
+            };
+            return { shell, lsofCalls: () => lsofCalls };
+        };
+
+        it('returns the first conclusive absence after an attempt omitted a live process', () => {
+            const census = replay([self, `${self}${parent}`]);
+            expect(laneIsActive('/repo/lane', census.shell)).toBe(false);
+            expect(census.lsofCalls()).toBe(2);
+        });
+        it('returns a lane reference observed by a later attempt', () => {
+            const census = replay([self, held]);
+            expect(laneIsActive('/repo/lane', census.shell)).toBe(true);
+            expect(census.lsofCalls()).toBe(2);
+        });
+        it('vetoes on a lane reference in an incomplete first catalog without retrying', () => {
+            const census = replay([`${held}f8\0nmissing-type\0\n`, `${self}${parent}`]);
+            expect(laneIsActive('/repo/lane', census.shell)).toBe(true);
+            expect(census.lsofCalls()).toBe(1);
+        });
+        it('never merges attempts whose union would cover every live process', () => {
+            const census = replay([self, parent]);
+            expect(() => laneIsActive('/repo/lane', census.shell)).toThrow(
+                /^open-file inspection omitted a live process$/
+            );
+            expect(census.lsofCalls()).toBe(CENSUS_ATTEMPTS);
+        });
+        it('throws the incomplete-catalog refusal unchanged after the bound', () => {
+            const census = replay(['p1']);
+            expect(() => laneIsActive('/repo/lane', census.shell)).toThrow(/^open-file inspection was incomplete$/);
+            expect(census.lsofCalls()).toBe(CENSUS_ATTEMPTS);
+        });
+        it('throws the uncovered-successor refusal unchanged after the bound', () => {
+            const gone = spawnSync(process.execPath, ['-e', '']).pid;
+            const withGone = `${process.pid} ${uid}\n${gone} ${uid}`;
+            const census = replay([self], (sample) => (sample % 3 === 2 ? live : withGone));
+            expect(() => laneIsActive('/repo/lane', census.shell)).toThrow(
+                /^open-file inspection has an uncovered successor process$/
+            );
+            expect(census.lsofCalls()).toBe(CENSUS_ATTEMPTS);
+        });
+        it('does not retry an unreadable process sample', () => {
+            const census = replay([self], () => 'unreadable');
+            expect(() => laneIsActive('/repo/lane', census.shell)).toThrow(
+                /^open-file process inspection was incomplete$/
+            );
+            expect(census.lsofCalls()).toBe(0);
+        });
     });
     it.skipIf(process.platform !== 'darwin')(
         'observes a real holder whose working directory is outside the temporary worktree',
