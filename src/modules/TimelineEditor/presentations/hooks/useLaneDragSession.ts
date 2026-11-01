@@ -1,13 +1,14 @@
 /**
  * useLaneDragSession — the pointer-capture drag machinery shared by every automation lane
- * in the piano roll (`NotePropertyLane`, `CCLane`, `PitchBendLane`).
+ * in the piano roll (`NotePropertyLane`, `CCLane`, `PitchBendLane`) and by the arrangement's
+ * chord track lane (`ChordTrackLane`).
  *
  * The hook owns *how* a gesture lives and dies; each lane owns *what* the gesture does.
  * A lane calls `beginDrag` once per drag path it has — `NotePropertyLane` has three
- * (canvas paint, shift+drag ramp, the two ramp end-handles), `CCLane` and `PitchBendLane`
- * have one each — and the hook is identical for all of them because everything that varies
- * travels inside the session's own `move` / `commit` / `cancel` closures. There is no lane
- * parameter and no per-lane option, so a one-path caller carries no configuration it does not use.
+ * (canvas paint, shift+drag ramp, the two ramp end-handles), the other callers have one each —
+ * and the hook is identical for all of them because everything that varies travels inside the
+ * session's own `move` / `commit` / `cancel` closures. There is no lane parameter and no
+ * per-lane option, so a one-path caller carries no configuration it does not use.
  *
  * An armed gesture is also an Escape owner, like every other drag in the app: it marks itself
  * with `beginDragGesture()` so the global Escape chain and the virtual keyboard yield the key,
@@ -15,7 +16,7 @@
  */
 import { type PointerEvent as ReactPointerEvent, type RefObject, useRef, useEffect } from 'react';
 
-import { beginDragGesture } from '#/utils/UI/activeDragGesture';
+import { beginDragGesture, isPlainEscapePress } from '#/utils/UI/activeDragGesture';
 
 export type LanePointerPosition = {
     clientX: number;
@@ -45,9 +46,6 @@ type ArmedLaneDrag = {
     session: LaneDragSession;
     disarm: () => void;
 };
-
-const isUnmodifiedEscape = (event: KeyboardEvent): boolean =>
-    event.key === 'Escape' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey;
 
 /**
  * Take the armed gesture out of the ref and drop its Escape ownership — the drag mark and the
@@ -233,9 +231,7 @@ export const useLaneDragSession = (): UseLaneDragSessionOutput => {
         session.captureTarget.setPointerCapture(session.pointerId);
         const endDragGesture = beginDragGesture();
         const handleEscape = (event: KeyboardEvent): void => {
-            // A held Escape's auto-repeat is ignored, as the global shortcut layer ignores it, so
-            // a drag begun while the key is still down survives.
-            if (event.repeat || !isUnmodifiedEscape(event)) {
+            if (!isPlainEscapePress(event)) {
                 return;
             }
             cancelArmedDrag();

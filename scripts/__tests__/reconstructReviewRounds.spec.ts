@@ -329,13 +329,6 @@ describe('reconstruct review rounds', () => {
             }),
         },
         {
-            label: 'path',
-            change: (record: ReviewRepairRecord): ReviewRepairRecord => ({
-                ...record,
-                finding: { ...record.finding, path: 'scripts/other.ts' },
-            }),
-        },
-        {
             label: 'side',
             change: (record: ReviewRepairRecord): ReviewRepairRecord => ({
                 ...record,
@@ -361,6 +354,44 @@ describe('reconstruct review rounds', () => {
                 comments
             )
         ).toThrow(/does not bind pull request 42 and root finding 100/u);
+    });
+
+    it('binds a repair and its confirmation by comment id after GitHub renames the root path', () => {
+        const record = repairRecord(100, head);
+        const renamed: PublicReviewComment = { ...rootComment(100, 10), path: 'scripts/models/target.ts' };
+        const comments: PublicReviewComment[] = [
+            renamed,
+            {
+                ...renamed,
+                id: 101,
+                actorNodeId: AUTHOR_BOT_NODE_ID,
+                inReplyToId: 100,
+                body: renderReviewRepairReply(record),
+            },
+            {
+                ...renamed,
+                id: 102,
+                inReplyToId: 100,
+                body: renderReviewRepairConfirmationMarker(record, head),
+            },
+        ];
+        const reconstruction = reconstructReviewRounds(
+            42,
+            { state: 'OPEN', head },
+            [reviewerReview(10, head, 'CHANGES_REQUESTED')],
+            comments
+        );
+        const finding = reconstruction.rounds[0]?.findings[0];
+        expect(record.finding.path).toBe('scripts/target.ts');
+        expect(finding?.path).toBe('scripts/models/target.ts');
+        expect(finding?.repairs).toEqual([record]);
+        expect(finding?.confirmations).toEqual([
+            {
+                format: 'repair-confirmation-v1',
+                recordDigest: reviewRepairRecordDigest(record),
+                confirmationHead: head,
+            },
+        ]);
     });
 
     it.each([AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID])(
@@ -609,6 +640,33 @@ describe('shadow comparison', () => {
             expect(shadowCompareDossier(reconstruction, head, dossier).mismatches).toEqual([]);
         }
     );
+
+    it('records zero mismatches when GitHub renames the public comment path after publication', () => {
+        const reconstruction = reconstructReviewRounds(
+            42,
+            { state: 'OPEN', head },
+            [reviewerReview(99, head, 'CHANGES_REQUESTED')],
+            [{ ...rootComment(100, 99), path: 'scripts/models/target.ts' }]
+        );
+        const dossier = dossierWithPublication([{ path: 'scripts/target.ts', line: 5, side: 'RIGHT' }], 99);
+        expect(shadowCompareDossier(reconstruction, head, dossier).mismatches).toEqual([]);
+    });
+
+    it.each([
+        { label: 'original line', change: { line: 6 }, publicly: 'scripts/target.ts:6:RIGHT' },
+        { label: 'side', change: { side: 'LEFT' as const }, publicly: 'scripts/target.ts:5:LEFT' },
+    ])('records a mismatch when the public $label disagrees with the accepted finding', ({ change, publicly }) => {
+        const reconstruction = reconstructReviewRounds(
+            42,
+            { state: 'OPEN', head },
+            [reviewerReview(99, head, 'CHANGES_REQUESTED')],
+            [{ ...rootComment(100, 99), ...change }]
+        );
+        const dossier = dossierWithPublication([{ path: 'scripts/target.ts', line: 5, side: 'RIGHT' }], 99);
+        expect(shadowCompareDossier(reconstruction, head, dossier).mismatches).toEqual([
+            `finding comment-0 targets scripts/target.ts:5:RIGHT, publicly ${publicly}`,
+        ]);
+    });
 
     it('records a mismatch when the recorded publication stands in no public round', () => {
         const reconstruction = reconstructReviewRounds(

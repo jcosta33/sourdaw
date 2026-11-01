@@ -28,7 +28,8 @@ the separate hardware admission job; an unowned browser-AI proof stays selected 
 Direct edits to a collected E2E spec select that spec, alongside any browser work selected for other
 changed paths. Documentation and recognized review tooling keep their existing no-browser route.
 Every other path under `scripts/` (including `scripts/__tests__/`), `.agents/`, top-level
-`release/*.json`, and Markdown outside `src/`, `public/`, and `tests/` selects no browser suite but
+`release/*.json`, Markdown outside `src/`, `public/`, and `tests/`, and per-vendor agent guidance
+(`AGENTS.md` and its vendor copies) under `src/` and `tests/` selects no browser suite but
 keeps the broad non-browser profile, so its unit, type, Rust, and WASM checks still run. Generator and
 build scripts reach the browser only through their outputs, which land under `src/` or `public/` and
 select browser coverage there; a harness helper the browser imports from `scripts/` is proved by the

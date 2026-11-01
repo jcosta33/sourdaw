@@ -66,7 +66,7 @@ test.describe('Instrument Panels — Synths & Samplers', () => {
 
     test('Browser Effects tab is accessible', async ({ page }) => {
         const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        await browser.getByRole('button', { name: 'Effects', exact: true }).click();
+        await browser.getByRole('tab', { name: 'Effects', exact: true }).click();
         await page.waitForTimeout(500);
         await expect(browser).toBeVisible();
         await expect(browser.getByRole('button').first()).toBeVisible();

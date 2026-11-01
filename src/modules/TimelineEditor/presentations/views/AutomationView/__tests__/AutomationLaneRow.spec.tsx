@@ -15,9 +15,16 @@ import {
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
+import { isDragGestureActive } from '#/utils/UI/activeDragGesture';
 
 import { type AutomationLane, type AutomationPoint } from '../../../../models/AutomationViewTypes';
-import { onDrawMouseDown, onRubberBandStart, applyCurveSelect } from '../../../helpers/automationDrag';
+import {
+    onDrawMouseDown,
+    onPointMouseDown,
+    onRubberBandStart,
+    applyCurveSelect,
+} from '../../../helpers/automationDrag';
+import { startMouseDrag } from '../../../helpers/mouseDrag';
 import { AutomationLaneRow } from '../AutomationLaneRow';
 
 const { mockWorkspaceStoreRef, mockTransportStoreRef, mockWorkspaceState, mockTransportState } = vi.hoisted(() => ({
@@ -469,6 +476,126 @@ describe('AutomationLaneRow', () => {
         fireEvent.keyDown(laneDiv, { key: 'a', ctrlKey: true });
         fireEvent.keyDown(laneDiv, { key: 'Delete' });
         expect(deleteSelectedPoints).toHaveBeenCalledWith('lane-1', [0, 4]);
+    });
+
+    describe('Escape and the point selection', () => {
+        const laneWithPoints: AutomationLane = {
+            ...defaultProps.lane,
+            points: [
+                { beat: 0, value: 0.2, curve: 'linear', tension: 0 },
+                { beat: 4, value: 0.6, curve: 'linear', tension: 0 },
+            ],
+        };
+
+        // A drag the case left running would keep the drag mark set and mask the no-drag cases.
+        afterEach(() => {
+            fireEvent.mouseUp(window);
+            expect(isDragGestureActive()).toBe(false);
+        });
+
+        const hasSelection = (laneDiv: HTMLElement): boolean => {
+            vi.mocked(deleteSelectedPoints).mockClear();
+            fireEvent.keyDown(laneDiv, { key: 'Delete' });
+            return vi.mocked(deleteSelectedPoints).mock.calls.length > 0;
+        };
+
+        it('clears the selection on Escape when no drag is live', () => {
+            const { container } = render(<AutomationLaneRow {...defaultProps} lane={laneWithPoints} />);
+            const laneDiv = container.firstChild as HTMLElement;
+
+            fireEvent.keyDown(laneDiv, { key: 'a', ctrlKey: true });
+            fireEvent.keyDown(laneDiv, { key: 'Escape' });
+
+            expect(hasSelection(laneDiv)).toBe(false);
+        });
+
+        it('cancels a live point drag on Escape and keeps the selection being dragged', () => {
+            const onCancel = vi.fn();
+            const onUp = vi.fn();
+            vi.mocked(onPointMouseDown).mockImplementation(() => startMouseDrag(vi.fn(), onUp, onCancel));
+            const { container } = render(<AutomationLaneRow {...defaultProps} lane={laneWithPoints} />);
+            const laneDiv = container.firstChild as HTMLElement;
+
+            fireEvent.keyDown(laneDiv, { key: 'a', ctrlKey: true });
+            const captureCircle = container.querySelector('[data-auto-point] circle')!;
+            fireEvent.mouseDown(captureCircle, { button: 0 });
+
+            fireEvent.keyDown(laneDiv, { key: 'Escape' });
+
+            expect(onCancel).toHaveBeenCalledTimes(1);
+            expect(onUp).not.toHaveBeenCalled();
+            expect(hasSelection(laneDiv)).toBe(true);
+        });
+
+        it('keeps the selection when a held Escape auto-repeats after it cancelled the drag', () => {
+            const onCancel = vi.fn();
+            vi.mocked(onPointMouseDown).mockImplementation(() => startMouseDrag(vi.fn(), vi.fn(), onCancel));
+            const { container } = render(<AutomationLaneRow {...defaultProps} lane={laneWithPoints} />);
+            const laneDiv = container.firstChild as HTMLElement;
+
+            fireEvent.keyDown(laneDiv, { key: 'a', ctrlKey: true });
+            fireEvent.mouseDown(container.querySelector('[data-auto-point] circle')!, { button: 0 });
+
+            fireEvent.keyDown(laneDiv, { key: 'Escape' });
+            fireEvent.keyDown(laneDiv, { key: 'Escape', repeat: true });
+
+            expect(onCancel).toHaveBeenCalledTimes(1);
+            expect(hasSelection(laneDiv)).toBe(true);
+        });
+
+        it.each([['shiftKey'], ['ctrlKey'], ['altKey'], ['metaKey']] as const)(
+            'keeps the selection and the drag when Escape is pressed with %s during a live drag',
+            (modifier) => {
+                const onCancel = vi.fn();
+                vi.mocked(onPointMouseDown).mockImplementation(() => startMouseDrag(vi.fn(), vi.fn(), onCancel));
+                const { container } = render(<AutomationLaneRow {...defaultProps} lane={laneWithPoints} />);
+                const laneDiv = container.firstChild as HTMLElement;
+
+                fireEvent.keyDown(laneDiv, { key: 'a', ctrlKey: true });
+                fireEvent.mouseDown(container.querySelector('[data-auto-point] circle')!, { button: 0 });
+
+                fireEvent.keyDown(laneDiv, { key: 'Escape', [modifier]: true });
+
+                expect(onCancel).not.toHaveBeenCalled();
+                expect(hasSelection(laneDiv)).toBe(true);
+            }
+        );
+
+        it('keeps the selection on a repeating Escape when no drag is live', () => {
+            const { container } = render(<AutomationLaneRow {...defaultProps} lane={laneWithPoints} />);
+            const laneDiv = container.firstChild as HTMLElement;
+
+            fireEvent.keyDown(laneDiv, { key: 'a', ctrlKey: true });
+            fireEvent.keyDown(laneDiv, { key: 'Escape', repeat: true });
+
+            expect(hasSelection(laneDiv)).toBe(true);
+        });
+
+        it.each([['shiftKey'], ['ctrlKey'], ['altKey'], ['metaKey']] as const)(
+            'keeps the selection on Escape pressed with %s when no drag is live',
+            (modifier) => {
+                const { container } = render(<AutomationLaneRow {...defaultProps} lane={laneWithPoints} />);
+                const laneDiv = container.firstChild as HTMLElement;
+
+                fireEvent.keyDown(laneDiv, { key: 'a', ctrlKey: true });
+                fireEvent.keyDown(laneDiv, { key: 'Escape', [modifier]: true });
+
+                expect(hasSelection(laneDiv)).toBe(true);
+            }
+        );
+
+        it('clears the selection again on an Escape pressed after the drag ended', () => {
+            vi.mocked(onPointMouseDown).mockImplementation(() => startMouseDrag(vi.fn(), vi.fn(), vi.fn()));
+            const { container } = render(<AutomationLaneRow {...defaultProps} lane={laneWithPoints} />);
+            const laneDiv = container.firstChild as HTMLElement;
+
+            fireEvent.keyDown(laneDiv, { key: 'a', ctrlKey: true });
+            fireEvent.mouseDown(container.querySelector('[data-auto-point] circle')!, { button: 0 });
+            fireEvent.mouseUp(window);
+            fireEvent.keyDown(laneDiv, { key: 'Escape' });
+
+            expect(hasSelection(laneDiv)).toBe(false);
+        });
     });
 
     it('should adjust Y zoom on alt+wheel and ignore plain wheel scrolling', () => {

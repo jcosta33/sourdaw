@@ -562,14 +562,14 @@ module.exports = {
             name: 'worklets-no-module-runtime-imports',
             severity: 'error',
             comment:
-                'AudioWorklet files must remain isolated from business, repository, engine, runtime, and presentation code.',
+                'AudioWorklet files must remain isolated from business, repository, engine, runtime, Worker, and presentation code.',
             from: {
                 path: '^' + MODULE_ROOT.slice(1) + 'worklets/.+' + SOURCE_FILE_RE,
             },
             to: {
                 path:
                     'src/modules/[^/]+/' +
-                    '(useCases|repositories|stores|services|validators|events|handlers|engine|runtime|presentations)/.+' +
+                    '(useCases|repositories|stores|services|validators|events|handlers|engine|runtime|workers|presentations)/.+' +
                     SOURCE_FILE_RE,
             },
         },

@@ -53,6 +53,7 @@ import {
 } from '../../../models/RecordingRingProtocol';
 import { audioBufferCache } from '../../../stores/audioBufferCache';
 import { audioRecordingStore } from '../../../stores/audioRecordingStore';
+import { importWorkletProcessor } from '../../../testing/importWorkletProcessor';
 import { nativeLiveGraphSession } from '../../../useCases/livePlayback/nativeLiveGraphSessionState';
 import { nativeRecordingCaptureClockState } from '../../../useCases/livePlayback/nativeRecordingCaptureClock';
 import { startAudioRecording } from '../recording';
@@ -290,7 +291,7 @@ describe('real recorder first-frame capture placement', () => {
             processorConstructor = Constructor;
         });
         vi.stubGlobal('currentFrame', 0);
-        await import('../../../services/recordingProcessor');
+        await importWorkletProcessor('recording-processor');
         if (!processorConstructor) {
             throw new Error('Recording processor was not registered');
         }

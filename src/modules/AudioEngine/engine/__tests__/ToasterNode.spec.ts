@@ -24,7 +24,7 @@ vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
     })),
 }));
 
-vi.mock('../../services/toasterProcessor.ts?worker&url', () => ({ default: 'toaster-processor-url' }));
+vi.mock('../../worklets/toasterProcessor.ts?worker&url', () => ({ default: 'toaster-processor-url' }));
 
 describe('isToasterDevice', () => {
     it('should return true only for the toaster device type string', () => {

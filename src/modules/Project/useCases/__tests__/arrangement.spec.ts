@@ -37,6 +37,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     // `#/modules/AudioEngine/useCases`; nothing this suite exercises reads it,
     // so `false` is the value with no behaviour behind it.
     nativeLiveGraphSessionOffered: vi.fn(() => false),
+    openCachedAudioBufferHold: vi.fn(() => ({ retain: vi.fn(), release: vi.fn() })),
     soundsNativeNotes: vi.fn(() => false),
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),

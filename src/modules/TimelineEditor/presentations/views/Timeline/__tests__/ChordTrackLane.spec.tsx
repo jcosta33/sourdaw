@@ -1,5 +1,5 @@
 import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { createAppActionCommittedError } from '#/modules/Command/useCases';
 
@@ -53,6 +53,10 @@ describe('ChordTrackLane', () => {
         vi.clearAllMocks();
         executeAppAction.mockReturnValue(new Promise<void>(() => {}));
         mockChordState = { enabled: false, events: [] };
+    });
+
+    afterEach(() => {
+        document.documentElement.removeAttribute('data-drag-gesture-active');
     });
 
     it('shows the empty-state hint and hides the clear button when there are no chords', () => {
@@ -191,7 +195,7 @@ describe('ChordTrackLane', () => {
         expectAction({ type: 'moveChordEvent', payload: { eventId: 'c1', beat: 6 } });
     });
 
-    it('cancels a pointer-cancel drag without committing', () => {
+    it('commits the previewed beat once when the pointer is cancelled mid-drag', () => {
         renderChordLane();
         const block = getChordBlock();
 
@@ -199,11 +203,14 @@ describe('ChordTrackLane', () => {
         fireEvent.pointerMove(block, { clientX: 96, pointerId: 9 });
         fireEvent.pointerCancel(block, { pointerId: 9 });
 
-        expect(block).toHaveStyle({ left: '64px' });
-        expect(executeAppAction).not.toHaveBeenCalled();
+        expect(executeAppAction).toHaveBeenCalledTimes(1);
+        expectAction({ type: 'moveChordEvent', payload: { eventId: 'c1', beat: 6 } });
+
+        fireEvent.pointerUp(block, { clientX: 96, pointerId: 9 });
+        expect(executeAppAction).toHaveBeenCalledTimes(1);
     });
 
-    it('resets a lost-capture preview and prevents a later commit', () => {
+    it('commits the previewed beat once when pointer capture is lost mid-drag', () => {
         renderChordLane();
         const block = getChordBlock();
 
@@ -212,10 +219,90 @@ describe('ChordTrackLane', () => {
         fireEvent.pointerMove(block, { clientX: 96, pointerId: 10 });
         expect(block).toHaveStyle({ left: '96px' });
         fireEvent.lostPointerCapture(block, { pointerId: 10 });
-        expect(block).toHaveStyle({ left: '64px' });
-        fireEvent.pointerUp(block, { clientX: 96, pointerId: 10 });
 
+        expect(executeAppAction).toHaveBeenCalledTimes(1);
+        expectAction({ type: 'moveChordEvent', payload: { eventId: 'c1', beat: 6 } });
+
+        fireEvent.pointerUp(block, { clientX: 96, pointerId: 10 });
+        expect(executeAppAction).toHaveBeenCalledTimes(1);
+    });
+
+    it('commits the previewed beat once when the window blurs mid-drag', () => {
+        renderChordLane();
+        const block = getChordBlock();
+
+        fireEvent.pointerDown(block, { button: 0, clientX: 64, pointerId: 17 });
+        fireEvent.pointerMove(block, { clientX: 96, pointerId: 17 });
+        fireEvent.blur(window);
+
+        expect(executeAppAction).toHaveBeenCalledTimes(1);
+        expectAction({ type: 'moveChordEvent', payload: { eventId: 'c1', beat: 6 } });
+
+        fireEvent.pointerUp(block, { clientX: 96, pointerId: 17 });
+        expect(executeAppAction).toHaveBeenCalledTimes(1);
+    });
+
+    it('converts pointer travel at the zoom in effect when the pointer moves', () => {
+        const { rerender } = renderChordLane();
+        const block = getChordBlock();
+
+        fireEvent.pointerDown(block, { button: 0, clientX: 64, pointerId: 22 });
+        rerender(<ChordTrackLane pixelsPerBeat={32} scrollX={0} viewportWidth={1000} />);
+        fireEvent.pointerMove(block, { clientX: 96, pointerId: 22 });
+        expect(block).toHaveStyle({ left: '160px' });
+        fireEvent.pointerUp(block, { clientX: 96, pointerId: 22 });
+
+        expect(executeAppAction).toHaveBeenCalledTimes(1);
+        expectAction({ type: 'moveChordEvent', payload: { eventId: 'c1', beat: 5 } });
+    });
+
+    it('abandons the drag on Escape: the preview snaps back and nothing is dispatched', () => {
+        renderChordLane();
+        const block = getChordBlock();
+
+        fireEvent.pointerDown(block, { button: 0, clientX: 64, pointerId: 18 });
+        fireEvent.pointerMove(block, { clientX: 96, pointerId: 18 });
+        expect(block).toHaveStyle({ left: '96px' });
+        fireEvent.keyDown(window, { key: 'Escape' });
+        expect(block).toHaveStyle({ left: '64px' });
+        fireEvent.pointerUp(block, { clientX: 96, pointerId: 18 });
+
+        expect(block).toHaveStyle({ left: '64px' });
         expect(executeAppAction).not.toHaveBeenCalled();
+    });
+
+    it('marks the drag for other Escape owners from pointerdown until it ends', () => {
+        renderChordLane();
+        const block = getChordBlock();
+        const mark = 'data-drag-gesture-active';
+
+        fireEvent.pointerDown(block, { button: 0, clientX: 64, pointerId: 19 });
+        expect(document.documentElement).toHaveAttribute(mark);
+        fireEvent.pointerUp(block, { clientX: 64, pointerId: 19 });
+        expect(document.documentElement).not.toHaveAttribute(mark);
+
+        fireEvent.pointerDown(block, { button: 0, clientX: 64, pointerId: 20 });
+        expect(document.documentElement).toHaveAttribute(mark);
+        fireEvent.keyDown(window, { key: 'Escape' });
+        expect(document.documentElement).not.toHaveAttribute(mark);
+    });
+
+    it.each([
+        ['an auto-repeat Escape', { key: 'Escape', repeat: true }],
+        ['Shift+Escape', { key: 'Escape', shiftKey: true }],
+    ])('keeps the drag alive through %s and commits the previewed beat on release', (_name, keyInit) => {
+        renderChordLane();
+        const block = getChordBlock();
+
+        fireEvent.pointerDown(block, { button: 0, clientX: 64, pointerId: 21 });
+        fireEvent.pointerMove(block, { clientX: 96, pointerId: 21 });
+        fireEvent.keyDown(window, keyInit);
+        expect(block).toHaveStyle({ left: '96px' });
+        expect(executeAppAction).not.toHaveBeenCalled();
+        fireEvent.pointerUp(block, { clientX: 96, pointerId: 21 });
+
+        expect(executeAppAction).toHaveBeenCalledTimes(1);
+        expectAction({ type: 'moveChordEvent', payload: { eventId: 'c1', beat: 6 } });
     });
 
     it('starts capture before an unmount and never commits the abandoned drag', () => {

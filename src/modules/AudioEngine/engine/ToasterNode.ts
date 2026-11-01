@@ -13,7 +13,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
 import { TOASTER_AUTOMATION_PARAM_IDS } from '../models/ToasterAutomationParams';
 import { TOASTER_PAD_PARAM_IDS } from '../models/ToasterPadParamIds';
-import toasterProcessorUrl from '../services/toasterProcessor.ts?worker&url';
+import toasterProcessorUrl from '../worklets/toasterProcessor.ts?worker&url';
 
 import {
     createTelemetryReader,
@@ -61,7 +61,7 @@ type OfflineAutomationSegment = {
 };
 /**
  * The schedule law shared with the worklet's own copy in
- * `services/toasterProcessor.ts` — keep the two identical. Segments chain
+ * `worklets/toasterProcessor.ts` — keep the two identical. Segments chain
  * from the first one, whose opening frame may sit anywhere at or past 0
  * (#4744): a clip-scoped lane on a clip that starts after the export region
  * start compiles to a stream opening mid-render, and the parameter holds its

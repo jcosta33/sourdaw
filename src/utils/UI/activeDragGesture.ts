@@ -28,3 +28,16 @@ export const beginDragGesture = (): (() => void) => {
 };
 
 export const isDragGestureActive = (): boolean => readActiveDragCount() > 0;
+
+/**
+ * Whether a keydown is the one Escape press every Escape owner around a drag acts on: unmodified
+ * and not an auto-repeat. A drag cancels on it; an owner that yields to a live drag (selection
+ * clear, dismissal) acts on it once none is live. A held key's repeat must not kill a drag begun
+ * while it is still down, nor act on the next press's behalf once the drag it cancelled is gone,
+ * and Shift/Ctrl/Alt/Meta + Escape belongs to other shortcuts. The global shortcut layer ignores
+ * repeat for the same reason, so every owner shares this one rule.
+ */
+export const isPlainEscapePress = (
+    event: Pick<KeyboardEvent, 'key' | 'repeat' | 'shiftKey' | 'ctrlKey' | 'altKey' | 'metaKey'>
+): boolean =>
+    event.key === 'Escape' && !event.repeat && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey;
