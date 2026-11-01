@@ -4638,7 +4638,7 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
         15_000
     );
 
-    it.each(['REG', 'DIR'])(
+    it.each(['REG', 'DIR', 'LINK'])(
         'keeps diagnostic words in absolute Darwin $type paths as storage references',
         async (type) => {
             const root = fixture();
@@ -4672,6 +4672,8 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
         { type: 'REG', name: 'vnode: Permission denied', match: 'permission-denied', kind: 'text' },
         { type: 'REG', name: 'vnode: Operation not permitted', match: 'operation-not-permitted', kind: 'text' },
         { type: 'unix', name: 'no info', match: 'no-info', kind: 'text' },
+        { type: 'LINK', name: 'vnode: Permission denied', match: 'permission-denied', kind: 'text' },
+        { type: 'LINK', name: '/private/held (readlink: Permission denied)', match: 'readlink', kind: 'absolute-path' },
         { type: undefined, name: 'vnode: Permission denied', match: 'permission-denied', kind: 'text' },
         { type: 'REG', name: '/private/held (stat: Permission denied)', match: 'stat', kind: 'absolute-path' },
         { type: 'REG', name: '/private/held (readlink: Permission denied)', match: 'readlink', kind: 'absolute-path' },
