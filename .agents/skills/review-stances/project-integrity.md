@@ -24,7 +24,9 @@ Runtime-monitor companions live in `session-lifecycle.md`.
   flushes pending writes before reading identity, revision or receipts. Replace the same asset ID while settlement is
   held, and keep a decoded buffer across a metadata-only project load after a failed write of PCM B: no old receipt,
   witness or completion certifies the replacement, and cold reopen yields B. Restoring the old success path fails the
-  import/Save/clear/restore case; collector protection also covers finalized recovery storage.
+  import/Save/clear/restore case; collector protection also covers finalized recovery storage. The serializer's revision
+  travels with its data and the build is rejected if it changes across a serializer await; repeat the retained-buffer
+  case with a held success.
 
 ### 2. Cold-cache consumers rebuild every durable reference and report owner results (#187, #4496)
 
@@ -43,12 +45,15 @@ Runtime-monitor companions live in `session-lifecycle.md`.
   every route (top-level and saved-arrangement take lanes): reject anchor-only, depth-only, negative or nonfinite
   placement, malformed offset, a missing required capture; keep JSON-roundtripped legacy takes. For saved clip inverses
   seed real gain/warp envelopes and two automation lanes, corrupt one nested field of the persisted capture (string
-  `gainDb`, point value, curve, negative beat, empty id, stair steps, duplicate note IDs, malformed CC/bend, nonfinite
-  number), hydrate fresh handlers and run real Undo: the entry is dropped before any write, raw, projections and
-  history unchanged. Partial move captures (`id`, `trackId`, `points`) use Automation's point contract, not the
-  full-lane one. Revert the admission hunk and the rejection cases fail; array-only or sanitizer-only assertions cannot
-  carry the claim. Keep valid null, present-empty and legacy-alias controls, and keep restore validation with the owner:
-  admitting a forward action to the session mirror must not add it to executable action discovery.
+  `gainDb`, point value, unsupported curve, negative beat, empty id, negative stair steps, duplicate note IDs, malformed
+  CC/bend, nonfinite number), hydrate fresh handlers and run real Undo: the entry is dropped before any write, raw,
+  projections and history unchanged. Corrupt the inverse and the redo leg separately (also the paired point shapes of a
+  move; swap a clip identity, placement or split snapshot; change a Delete Time plan's scope or make its replay legs
+  disagree: a neutral generated schema can be narrower than the time-operation snapshot). Partial move captures (`id`,
+  `trackId`, `points`) use Automation's point contract, not the full-lane one. Revert the admission hunk and the
+  rejection cases fail; array-only or sanitizer-only assertions cannot carry the claim. Keep valid null, present-empty
+  and legacy-alias controls, and keep restore validation with the owner: admitting a forward action to the session
+  mirror must not add it to executable action discovery.
 
 ### 4. Saved replay binds relationships between individually valid rows (#5064, #3328, #4108, #4519)
 
@@ -59,8 +64,7 @@ Runtime-monitor companions live in `session-lifecycle.md`.
   pointed at another track's lane, a split's right-fragment automation or satellite owner, the inverse or redo operation
   type (a valid `setTrackGain` inside `setDeviceParameter`, with and without optional metadata), or one side of a
   mirrored pair. Save/reload and hydrate fresh handlers: the whole entry or group is rejected before any write. Keep
-  rich fractional, empty, historical and same-operation controls; enforce the relation in the owner, not by global type
-  equality.
+  rich fractional, empty, historical and same-operation controls; enforce it in the owner, not by type equality.
 
 ### 5. Replay preflights every owner it will write, against live state, before any write (#2169, #3809, #4564, #5613)
 
@@ -76,7 +80,13 @@ Runtime-monitor companions live in `session-lifecycle.md`.
   zero owner writes, unchanged raw/heads/projections and complete history pending, an earlier group member never
   executed, and peer material surviving valid replay. Guarded restores declare safe reapplication so
   `executeAppActionBatch(..., { requireCompensation: true })` accepts them; removing the guard fails the atomic case.
-  Group preflight projects earlier members in order. A green round trip with no peer owner proves no protection.
+  Group preflight projects earlier members in order (lanes restored by a non-ripple removal included) and rejects a
+  duplicate restored lane ID against that prefix; a live-only guard falsely refuses the genuine group. Initial missing,
+  ambiguous, locked or frozen topology rejects direct and atomic execution alike (the direct dispatcher skips handler
+  validation). Retired-take restore drops a captured region on any live overlap, returns disjoint ones, and restores a
+  selection with no live lane. Redo's fresh producer capture must reach the retained inverse (authenticating the first
+  gesture after a later real Redo is stale): run Undo, Redo, a peer change, Undo. A round trip with no peer owner proves
+  no protection.
 
 ### 6. Guards and repairs are probed on the real persisted shape (#4111, #2169, #860, #645, #4292, #5495, #5578)
 
@@ -90,7 +100,7 @@ Runtime-monitor companions live in `session-lifecycle.md`.
   `tracks` map and list, run the registered repair, save/reload bytes, then edit. For coordinate captures hydrate both
   history directions (`moving-coordinate-inverses.md#fractional-row-coordinates-and-reciprocal-history-captures`,
   `#fresh-macro-commands-must-discard-inverse-restoration-hints`) and inject a pre-commit storage failure: document,
-  projections, both captures, history, tree and mirror unchanged.
+  projections, both captures, history, tree and mirror unchanged. A retained handle refuses once clip geometry changed.
 
 ### 7. A refusal or post-commit fault must reach its consumer as an outcome (#2035, #3982, #2597, #5578, #5565)
 
@@ -102,24 +112,30 @@ Runtime-monitor companions live in `session-lifecycle.md`.
   future, tree and mirror unchanged, admission observed after a held snapshot wait, grouped replay refusing an unproven
   prefix before sibling writes. An AI group revert whose older member conflicts after a newer one applied commits
   nothing and writes no engine value (mutation-owner authorization captured before the first await). A failed Freeze
-  settles its diagnostic through a separate non-undoable action and a stale attempt cannot erase its successor.
+  settles its diagnostic through a separate non-undoable action; withdraw task, cancellation, root, revision or
+  expected-aggregate authority before admission and after settlement stages its replacement, and a stale attempt cannot
+  erase its successor while real rollback, cleanup and storage failures stay observable. Missing-capture MIDI inverses
+  refuse in any mode; saved audio stays replayable; history snapshots keep callback identity. Pair the group revert with
+  an unrelated later musician edit and real Redo, from panel and thread callers.
 
 ### 8. Identity namespaces are declared, scoped by path, and fail closed (#5157, #4036, #1857, #5570)
 
-- Failure: the global ID walk marks a valid project repair-required (blocking Save and Undo), or copied subtrees reuse
-  IDs that collide after reload.
+- Failure: the ID walk marks a valid project repair-required (blocking Save, Undo), or copied subtrees collide.
 - Probe: load each shipped demo and template, save, reload: repair gate stays clear. A split before surviving identified
   automation points (dyadic and non-dyadic cut), a rich audio split with clip-local gain-point IDs, and a chord track
   whose `migrationBase` copies live IDs survive binary reload and repeated Undo/Redo with a full global census.
   Pre-occupy the preferred generated ID under an unrelated owner, and let a peer claim a captured ID after Undo:
   zero-write refusal, no reminting. Duplicates within one envelope, global entity collisions and an undeclared copying
   slot stay repair-required. Scopes (`INDEPENDENT_ID_SCOPES`) are keyed by path from the namespace root, never object
-  identity, and each has a case inside a real `change(from(doc))`, where list reads return fresh proxies.
+  identity, and each has a case inside a real `change(from(doc))`, where list reads return fresh proxies. For a
+  batch-admitted restored clip that precedes a split, compare the IDs captured at preflight with the committed IDs
+  before reload and replay twice: a live execution that remints a preflight capture is not replay-stable. Draw is
+  singleton-only, so a rejected draw/split batch proves admission, not prefix execution.
 
 ### 9. Transaction terminals and queued writes honor current authority (#576, #806, #229, #4071, #1949)
 
-- Failure: a scope, flush or listener re-enters after commit, a terminal installs an older value, an optimistic trim
-  outlives abort, or a null-journal write supersedes newer scoped truth.
+- Failure: a scope or listener re-enters after commit, a terminal installs an older value, a trim outlives abort, or a
+  null-journal write supersedes newer scoped truth.
 - Probe: atomic port that publishes document A then calls a listener: supplied and captured scopes refuse inside their
   callbacks, document B, cache and pending count stay unchanged after a later flush, and `set`/`clear` in an entered
   scope mutate nothing. Re-enter hydrate with and without a nested flush: one original-owner mutation, identical
@@ -127,12 +143,17 @@ Runtime-monitor companions live in `session-lifecycle.md`.
   bounded history, stage eviction through the public storage transaction, abort: the oldest replay capability returns.
   Hold a scoped write, queue an unscoped one, advance the scope, flush the older: `null` captures lose to the newer
   commit, every nonnull journal (including `[]`) keeps owner semantics. Fail only `Storage.setItem` of a run, then
-  cancel: the terminal revision reaches storage before any cleanup.
+  cancel: the terminal revision reaches storage before any cleanup. Every callback in the terminal read path can
+  itself accept newer same-slot authority, so fence the whole read, decode, guard and local-field projection sequence
+  with a document-authority epoch: land a same-slot write inside a decoder or validator callback (nested commits
+  authored before the outer write too), reset projection during preparation and terminal projection, and throw from
+  trailing reads after one document publishes. A stale continuation settles against the retained newer baseline
+  (publication order, not author revision order); the old identity stays inert and claims release.
 
 ### 10. Captured root and project identity must survive every wait (#5517, #5556, #5849, #5091, #5789, #5780)
 
-- Failure: an await, queue, held transaction or deferred effect resumes against a replacement project reusing IDs, or
-  trusts the optimistic projection instead of the committed root.
+- Failure: an await, queue or deferred effect resumes against a replacement project reusing IDs, or trusts the
+  optimistic projection over the committed root.
 - Probe: capture the root at entry, hold the real snapshot wait, queue, effect or permission, replace the root with a
   same-ID successor through production repository and projection (or restore, or clear Undo), then release: no write,
   history entry, discard, strip or capture request reaches the successor, refusal is visible, its Redo/past/tree are
@@ -140,10 +161,12 @@ Runtime-monitor companions live in `session-lifecycle.md`.
   post-wait guard fails. Covers gesture queues, Stop and audio terminals, fork vs switch, deferred replay effects
   (finalize once at the publication boundary with the original entry objects; a no-publication no-op also rechecks
   mutation authority and the Undo snapshot), restoration effects after deletion Undo (rearm only the committed,
-  still-present owner; pending permission never blocks Undo history), and Crumbs sample publications (own metadata
-  commit and knob edits keep authority, replaced root/device or fresh sample leaf revokes). Runtime ownership follows
-  committed intent: hold a removal projecting absence, commit a replacement input, observe raw root, projection and
-  runtime together; abort keeps committed On (`session-lifecycle.md`).
+  still-present owner; pending permission never blocks Undo history; published-but-throwing commits and a denied device
+  never turn restored truth or Undo into a failure), and Crumbs sample publications (own metadata commit and knob edits
+  keep authority, replaced root/device or fresh sample leaf revokes). Runtime ownership follows committed intent: hold
+  a removal projecting absence, commit a replacement input, observe raw root, projection and runtime together; abort
+  keeps committed On (`session-lifecycle.md`). Stop: land one sibling before replacing the root and refuse another
+  afterward (landed entry plus exactly one settled gesture kept); removing dispatch-option forwarding fails the case.
 
 ### 11. Authority tokens ignore the guarded action's own writes yet revoke on foreign ones (#5573, #2747, #5677, #5681)
 
@@ -168,20 +191,25 @@ Runtime-monitor companions live in `session-lifecycle.md`.
   moves and private previews count zero. A rejected bundle merge publishes its installed prefix to the real owning
   stores once on worker and synchronous routes, original error kept, nothing for stale results. Multi-track,
   multi-command and absolute-continuation priors expose partial or wrong-group Undo. Compiled inspection entries
-  resolve the same live singletons as the real App; an export census is not proof.
+  resolve the same live singletons as the real App; an export census is not proof. Removing only a child keeps root
+  identity stable, removing the root moves both identity and epoch, and an already empty map keeps all identities
+  stable. Compare Undo with pre-commit values only for oracle-authorized fields atop pre-Undo truth, and score
+  persisted transitions against authorized prefixes so a write followed by restoration cannot disappear.
 
 ### 13. Every user mutation enters Command and reaches every authority (#1049, #5789, #474, #4506, #5247)
 
-- Failure: a panel, inspector or generator calls the use case or parameter bridge directly, or half-applies, leaving no
-  history or earlier items after a later refusal.
+- Failure: a panel, inspector or generator bypasses Command, or half-applies, leaving no history or partial items.
 - Probe: the rendered control through the registered handler on a CRDT-backed root: raw group/member IDs, projection,
   one history and Undo entry, exact Undo/Redo, locked/frozen refusal preserving raw, history and engine writes;
   reverting the component dispatch to the direct call fails. Discrete choices (filter type/model) restore an absent
-  leaf on first-selection Undo and an old queued direct parameter frame cannot overwrite the newer choice. A generator
+  leaf on first-selection Undo, a hidden non-SVF Type stays stored, Model and Type each own pending authority by
+  device and parameter, and an old queued direct parameter frame cannot overwrite the newer choice. A generator
   spanning pads or lanes submits one compensated batch bound to project and document identity: fail a later lane after
   an earlier is valid, raw, stores and Undo unchanged; one Undo removes all. Follower-point refusal through
   `executeAppAction` and singleton `executeAppActionBatch` leaves document, links and history unchanged. A mounted
-  reader (ruler basis after Insert Time) repaints after Undo and Redo.
+  reader (ruler basis after Insert Time) repaints after Undo and Redo: capture raw and projected figures around the real
+  Command and require a fresh drawing per history transition (a matching earlier frame is not a fresh read); replacing
+  its map subscription with an imperative read must fail the stopped map-change and history paint checks.
 
 ### 14. Regeneration and interval edits keep everything outside their footprint (#5515, #645)
 
@@ -190,8 +218,10 @@ Runtime-monitor companions live in `session-lifecycle.md`.
   another sensitivity keep exact ID, original/warped beat, lock and confidence in raw and projection, suppress near-hit
   detections, and unlocking makes the row replaceable. A comp selection over `[start, end)` keeps both complements at
   each beat; guarded semantic Undo/Redo applies to current state without touching other lanes or selections outside
-  the footprint. Selected-range deletion: add peer facets afterward and only fragment-owned facets retire, exactly
-  recovered after a later publication failure.
+  the footprint; a source-count assertion does not prove the resolved playback keeps the selected source phase, so
+  verify source timing separately. Selected-range deletion: add peer facets afterward and only fragment-owned facets
+  retire, recovered exactly after a later publication failure. Dropping locked-row retention or near-hit suppression
+  fails.
 
 ## Standing probes: CRDT undo, imports, checkpoints and branch recovery
 
