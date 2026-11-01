@@ -1,0 +1,21 @@
+evidence/agent-campaign/manifest.json
+  s_f22706bc226400::t_707e56eca3b55e 820
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  s_f22706bc226400::t_308067f4e04068 3204,3249-3254,3260-3264
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8adc313257575e9a579cee825fb06133ad1cdd5a",
+  "prompts": {},
+  "sessions": {
+    "s_f22706bc226400": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_f22706bc226400",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
