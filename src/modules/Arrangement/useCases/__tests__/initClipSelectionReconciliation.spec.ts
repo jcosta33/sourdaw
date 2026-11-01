@@ -44,14 +44,14 @@ describe('initClipSelectionReconciliation', () => {
 
     beforeEach(() => {
         trackStore.set({ tracks: [], selectedTrackId: null });
-        clipSelectionStore.set({ ...defaultClipSelectionState });
+        clipSelectionStore.set(defaultClipSelectionState);
         stop = initClipSelectionReconciliation();
     });
 
     afterEach(() => {
         stop();
         trackStore.set({ tracks: [], selectedTrackId: null });
-        clipSelectionStore.set({ ...defaultClipSelectionState });
+        clipSelectionStore.set(defaultClipSelectionState);
     });
 
     it('drops a removed clip and makes the survivor of a two-clip selection the primary', () => {
@@ -175,6 +175,39 @@ describe('initClipSelectionReconciliation', () => {
         expect(clipSelectionStore.value?.selectedClipIds).toEqual(['a', 'ghost-1']);
 
         setProject({ tracks: [makeTrack('t1', ['a'])], ghostClips: [] });
+        expect(clipSelectionStore.value?.selectedClipIds).toEqual(['a']);
+        expect(clipSelectionStore.value?.selectedClipId).toBe('a');
+    });
+
+    it('keeps a selected clip of an inactive alternative, which its variation lane draws', () => {
+        const base = makeTrack('t1', ['a']);
+        const withLanes: Track = {
+            ...base,
+            alternatives: [
+                { id: base.activeAlternativeId, name: 'Alternative 1', clips: [] },
+                { id: 't1-alt-2', name: 'Alternative 2', clips: [makeClip('lane-1', 't1')] },
+            ],
+        };
+        setProject({ tracks: [withLanes] });
+        clipSelectionStore.set({ selectedClipId: null, selectedClipIds: ['lane-1', 'a'], marqueeSelection: null });
+
+        setProject({ tracks: [withLanes], selectedTrackId: 't1' });
+
+        expect(clipSelectionStore.value?.selectedClipIds).toEqual(['lane-1', 'a']);
+    });
+
+    it("drops a removed clip that only the active alternative's stored copy still holds", () => {
+        const base = makeTrack('t1', ['a', 'b']);
+        const staleActiveCopy: Track = {
+            ...base,
+            clips: [makeClip('a', 't1')],
+            alternatives: [{ id: base.activeAlternativeId, name: 'Alternative 1', clips: base.clips }],
+        };
+        setProject({ tracks: [base] });
+        clipSelectionStore.set({ selectedClipId: null, selectedClipIds: ['a', 'b'], marqueeSelection: null });
+
+        setProject({ tracks: [staleActiveCopy] });
+
         expect(clipSelectionStore.value?.selectedClipIds).toEqual(['a']);
         expect(clipSelectionStore.value?.selectedClipId).toBe('a');
     });

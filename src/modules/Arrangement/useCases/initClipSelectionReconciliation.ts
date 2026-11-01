@@ -9,6 +9,17 @@ function collectExistingClipIds(state: TrackStoreState | null): Set<string> {
         for (const clip of track.clips) {
             ids.add(clip.id);
         }
+        // Inactive alternatives' clips are drawn and clickable in their variation lanes. The
+        // active alternative's stored copy is only refreshed on a switch, so its clips are read
+        // from the track itself above.
+        for (const alternative of track.alternatives) {
+            if (alternative.id === track.activeAlternativeId) {
+                continue;
+            }
+            for (const clip of alternative.clips) {
+                ids.add(clip.id);
+            }
+        }
     }
     // Ghost clips are selectable (Alt+] cycles through them) but live beside the tracks.
     for (const ghost of state?.ghostClips ?? []) {
