@@ -1,0 +1,386 @@
+.agents/decisions/0051-wasm-bank-commit-retires-instead-of-releasing-off-thread.md
+  h_beb54bf43b47b7 13
+.agents/decisions/0052-a-disposed-wasm-engine-drains-in-paced-steps-before-it-is-freed.md
+  h_beb54bf43b47b7 12
+.dependency-cruiser.cjs
+  h_beb54bf43b47b7 565,572
+.github/workflows/heavy-gates.yml
+  h_beb54bf43b47b7 155-157,194
+.oxlintrc.json
+  h_beb54bf43b47b7 373-374
+crates/daw-engine/src/scheduler.rs
+  h_beb54bf43b47b7 3614,3974,27939
+crates/sourdaw-native/src/commands/engine_transport.rs
+  h_beb54bf43b47b7 50-51,117-151,200-201,208,215-217,1396-1427
+crates/sourdaw-native/src/commands/levain.rs
+  h_beb54bf43b47b7 18,50,1262
+docs/06-testing.md
+  h_beb54bf43b47b7 461-462,468,481,485-486,489
+docs/architecture/06-crdt-collaboration.md
+  h_beb54bf43b47b7 41
+docs/architecture/07-wasm-dsp-pipeline.md
+  h_beb54bf43b47b7 26
+eslint.config.mjs
+  h_beb54bf43b47b7 244,2715,2769-2770,2773
+eslint.size-baseline.mjs
+  h_beb54bf43b47b7 250-259
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 623
+oxlint.craft-baseline.mjs
+  h_beb54bf43b47b7 1155-1156
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1213-1214
+scripts/__tests__/check-dependency-boundaries.spec.ts
+  h_beb54bf43b47b7 336-339
+scripts/__tests__/confirmReviewRepairs.spec.ts
+  h_beb54bf43b47b7 298,300,321,338,360,1305-1307,1399-1450
+scripts/__tests__/e2eServerIdentityWiring.spec.ts
+  h_beb54bf43b47b7 222,241,243,249,328,330,346-347,381,391-392,486,523-595
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  h_beb54bf43b47b7 495,537
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  h_beb54bf43b47b7 16,160-167,184,4692-4696
+scripts/__tests__/reconstructReviewRounds.spec.ts
+  h_beb54bf43b47b7 359-396,644-670
+scripts/__tests__/reviewRepair.spec.ts
+  h_beb54bf43b47b7 350-354,395-399,542-546,549-564,967,982
+scripts/confirmReviewRepairs.ts
+  h_beb54bf43b47b7 331-333
+scripts/desktopAgentWorkspaceDrive.ts
+  h_beb54bf43b47b7 301
+scripts/desktopLatencyLaunch.ts
+  h_beb54bf43b47b7 32,124,138,141,143,149,156,158,161,174,177,179,184,198-199,209,218,222
+scripts/reconstructReviewRounds.ts
+  h_beb54bf43b47b7 300-302,377-378
+scripts/reviewRepair.ts
+  h_beb54bf43b47b7 537-541
+src/app/__tests__/main.spec.tsx
+  h_beb54bf43b47b7 11-12,120-123,285,313,462-463,489-512
+src/app/main.tsx
+  h_beb54bf43b47b7 1-2,100-105
+src/components/daw/DawTabStrip.tsx
+  h_beb54bf43b47b7 1-11,16,20-25,28-33,36-37,40,43-50,53-91,99,102-109,112-114,118-119,122,124-144,146-211,214,218-224,226,228,237-246
+src/components/daw/__tests__/DawTabStrip.spec.tsx
+  h_beb54bf43b47b7 1-2,4,6-9,12-14,16-50,52-56,59-67,70-74,77-83,86-91,94-117,121-192,196-251,254-263,267-311
+src/infra/audioWorklet/levainSampleChunk.ts
+  h_beb54bf43b47b7 9
+src/infra/audioWorklet/levainZoneTableChunk.ts
+  h_beb54bf43b47b7 11
+src/infra/audioWorklet/workletPortMessages.ts
+  h_beb54bf43b47b7 10
+src/modules/Arrangement/models/PluginDescriptors/LevainDescriptorGuidance.ts
+  h_beb54bf43b47b7 10
+src/modules/Arrangement/models/PluginDescriptors/__tests__/descriptorEngineParamWeld.spec.ts
+  h_beb54bf43b47b7 206,216,232-233,241
+src/modules/Arrangement/useCases/clipSelection/__tests__/clipSelection.spec.ts
+  h_beb54bf43b47b7 65-75,77-123
+src/modules/Arrangement/useCases/clipSelection/resolvePrimaryClip.ts
+  h_beb54bf43b47b7 1-12
+src/modules/Arrangement/useCases/clipSelection/selectAllClips.ts
+  h_beb54bf43b47b7 3-4,7-13
+src/modules/Arrangement/useCases/clipSelection/toggleClipInSelection.ts
+  h_beb54bf43b47b7 4-5,33-36
+src/modules/AudioEngine/engine/BacteriaNode.ts
+  h_beb54bf43b47b7 17
+src/modules/AudioEngine/engine/CrumbsNode.ts
+  h_beb54bf43b47b7 19
+src/modules/AudioEngine/engine/CrustNode.ts
+  h_beb54bf43b47b7 21
+src/modules/AudioEngine/engine/FermenterNode.ts
+  h_beb54bf43b47b7 19
+src/modules/AudioEngine/engine/GlutenNode.ts
+  h_beb54bf43b47b7 19
+src/modules/AudioEngine/engine/GrinderNode.ts
+  h_beb54bf43b47b7 14
+src/modules/AudioEngine/engine/KneadNode.ts
+  h_beb54bf43b47b7 11
+src/modules/AudioEngine/engine/LevainNode.ts
+  h_beb54bf43b47b7 14
+src/modules/AudioEngine/engine/ProofChamberNode.ts
+  h_beb54bf43b47b7 11
+src/modules/AudioEngine/engine/ProofNode.ts
+  h_beb54bf43b47b7 18
+src/modules/AudioEngine/engine/ScoringNode.ts
+  h_beb54bf43b47b7 13
+src/modules/AudioEngine/engine/ToasterNode.ts
+  h_beb54bf43b47b7 16,64
+src/modules/AudioEngine/engine/TrackNode.ts
+  h_beb54bf43b47b7 500
+src/modules/AudioEngine/engine/TransientShaperNode.ts
+  h_beb54bf43b47b7 4
+src/modules/AudioEngine/engine/__tests__/BacteriaNode.spec.ts
+  h_beb54bf43b47b7 35
+src/modules/AudioEngine/engine/__tests__/CrumbsNode.spec.ts
+  h_beb54bf43b47b7 23
+src/modules/AudioEngine/engine/__tests__/CrustNode.spec.ts
+  h_beb54bf43b47b7 23
+src/modules/AudioEngine/engine/__tests__/FermenterNode.spec.ts
+  h_beb54bf43b47b7 51
+src/modules/AudioEngine/engine/__tests__/GlutenNode.spec.ts
+  h_beb54bf43b47b7 33
+src/modules/AudioEngine/engine/__tests__/GrinderNode.spec.ts
+  h_beb54bf43b47b7 37
+src/modules/AudioEngine/engine/__tests__/KneadNode.spec.ts
+  h_beb54bf43b47b7 22
+src/modules/AudioEngine/engine/__tests__/LevainNode.spec.ts
+  h_beb54bf43b47b7 32
+src/modules/AudioEngine/engine/__tests__/ProofChamberNode.spec.ts
+  h_beb54bf43b47b7 48
+src/modules/AudioEngine/engine/__tests__/ProofNode.spec.ts
+  h_beb54bf43b47b7 41
+src/modules/AudioEngine/engine/__tests__/ProofNodeCreate.spec.ts
+  h_beb54bf43b47b7 48
+src/modules/AudioEngine/engine/__tests__/ScoringNode.spec.ts
+  h_beb54bf43b47b7 33
+src/modules/AudioEngine/engine/__tests__/ToasterNode.spec.ts
+  h_beb54bf43b47b7 27
+src/modules/AudioEngine/engine/__tests__/TransientShaperNode.spec.ts
+  h_beb54bf43b47b7 17
+src/modules/AudioEngine/engine/__tests__/grinderControlRateParams.spec.ts
+  h_beb54bf43b47b7 27
+src/modules/AudioEngine/engine/telemetryAllocator.ts
+  h_beb54bf43b47b7 166,219
+src/modules/AudioEngine/engine/workletProcessorUrls.ts
+  h_beb54bf43b47b7 1-10
+src/modules/AudioEngine/models/CrustDspParamNames.ts
+  h_beb54bf43b47b7 8
+src/modules/AudioEngine/models/EngineTransportPosition.ts
+  h_beb54bf43b47b7 61-62
+src/modules/AudioEngine/models/FermenterAutomationParams.ts
+  h_beb54bf43b47b7 29
+src/modules/AudioEngine/models/GlutenDspParamNames.ts
+  h_beb54bf43b47b7 8
+src/modules/AudioEngine/models/NativeSampleBank.ts
+  h_beb54bf43b47b7 9
+src/modules/AudioEngine/models/ProofChamberAutomationParams.ts
+  h_beb54bf43b47b7 10
+src/modules/AudioEngine/models/ToasterAutomationParams.ts
+  h_beb54bf43b47b7 14
+src/modules/AudioEngine/models/ToasterKitParamNames.ts
+  h_beb54bf43b47b7 7
+src/modules/AudioEngine/models/ToasterPadParamIds.ts
+  h_beb54bf43b47b7 21
+src/modules/AudioEngine/repositories/__tests__/createWebAudioEngine.spec.ts
+  h_beb54bf43b47b7 2482,2569
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/recordingCapturePlacement.integration.spec.ts
+  h_beb54bf43b47b7 56,294
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  h_beb54bf43b47b7 24-28,1960
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/grinderOfflineStartup.integration.spec.ts
+  h_beb54bf43b47b7 9
+src/modules/AudioEngine/repositories/deviceStrategy/__tests__/grinderOfflineTargetAdmission.integration.spec.ts
+  h_beb54bf43b47b7 13
+src/modules/AudioEngine/repositories/devices/toneShaping/__tests__/bitcrusherRateReduction.spec.ts
+  h_beb54bf43b47b7 4,85
+src/modules/AudioEngine/repositories/devices/toneShaping/prepareOfflineBitcrusherRate.ts
+  h_beb54bf43b47b7 1
+src/modules/AudioEngine/repositories/engineTransport/__tests__/getEngineTransportPosition.spec.ts
+  h_beb54bf43b47b7 338-401
+src/modules/AudioEngine/repositories/engineTransport/getEngineTransportPosition.ts
+  h_beb54bf43b47b7 19-39,49-51,260
+src/modules/AudioEngine/testing/grinderProcessorTestHarness.ts
+  h_beb54bf43b47b7 3,165,173
+src/modules/AudioEngine/testing/importWorkletProcessor.ts
+  h_beb54bf43b47b7 1-19
+src/modules/AudioEngine/useCases/offlineRender/__tests__/levainMultiInstancePcm.spec.ts
+  h_beb54bf43b47b7 11-12,261
+src/modules/AudioEngine/useCases/offlineRender/__tests__/liveOfflineNullTest.spec.ts
+  h_beb54bf43b47b7 182,215
+src/modules/AudioEngine/useCases/offlineRender/__tests__/offlineNoteScheduleTiming.spec.ts
+  h_beb54bf43b47b7 9,17,161
+src/modules/AudioEngine/workers/__tests__/grandBouleEngineWorker.noteTiming.spec.ts
+  h_beb54bf43b47b7 10
+src/modules/AudioEngine/workers/__tests__/recordingWorker.spec.ts
+  h_beb54bf43b47b7 160,163
+src/modules/AudioEngine/worklets/__tests__/bacteriaProcessor.spec.ts
+  h_beb54bf43b47b7 10
+src/modules/AudioEngine/worklets/__tests__/bacteriaProcessorWasmViews.spec.ts
+  h_beb54bf43b47b7 13
+src/modules/AudioEngine/worklets/__tests__/crumbsProcessor.spec.ts
+  h_beb54bf43b47b7 10
+src/modules/AudioEngine/worklets/__tests__/crumbsProcessorStopQueue.spec.ts
+  h_beb54bf43b47b7 10
+src/modules/AudioEngine/worklets/__tests__/crustProcessor.spec.ts
+  h_beb54bf43b47b7 3
+src/modules/AudioEngine/worklets/__tests__/fermenterProcessor.spec.ts
+  h_beb54bf43b47b7 11
+src/modules/AudioEngine/worklets/__tests__/fermenterProcessorEventOffsets.spec.ts
+  h_beb54bf43b47b7 10
+src/modules/AudioEngine/worklets/__tests__/fermenterProcessorTelemetry.spec.ts
+  h_beb54bf43b47b7 11
+src/modules/AudioEngine/worklets/__tests__/fermenterProcessorWasmViews.spec.ts
+  h_beb54bf43b47b7 13
+src/modules/AudioEngine/worklets/__tests__/glutenProcessor.spec.ts
+  h_beb54bf43b47b7 10
+src/modules/AudioEngine/worklets/__tests__/glutenProcessorWasmViews.spec.ts
+  h_beb54bf43b47b7 12
+src/modules/AudioEngine/worklets/__tests__/grinderAudioParamAutomationRamp.spec.ts
+  h_beb54bf43b47b7 3,11
+src/modules/AudioEngine/worklets/__tests__/grinderAudioParamDescriptors.spec.ts
+  h_beb54bf43b47b7 3
+src/modules/AudioEngine/worklets/__tests__/grinderAudioParamKRate.spec.ts
+  h_beb54bf43b47b7 10
+src/modules/AudioEngine/worklets/__tests__/grinderAudioParamRtSafety.spec.ts
+  h_beb54bf43b47b7 12
+src/modules/AudioEngine/worklets/__tests__/grinderProcessorControlProtocol.spec.ts
+  h_beb54bf43b47b7 9
+src/modules/AudioEngine/worklets/__tests__/grinderProcessorNeuralPatch.spec.ts
+  h_beb54bf43b47b7 10,288
+src/modules/AudioEngine/worklets/__tests__/grinderProcessorNeuralPatchProtocol.spec.ts
+  h_beb54bf43b47b7 7
+src/modules/AudioEngine/worklets/__tests__/grinderProcessorProcessPaths.spec.ts
+  h_beb54bf43b47b7 7
+src/modules/AudioEngine/worklets/__tests__/grinderProcessorWasmViews.spec.ts
+  h_beb54bf43b47b7 12
+src/modules/AudioEngine/worklets/__tests__/levainProcessor.spec.ts
+  h_beb54bf43b47b7 10
+src/modules/AudioEngine/worklets/__tests__/levainProcessorDisposalRelease.spec.ts
+  h_beb54bf43b47b7 6-7
+src/modules/AudioEngine/worklets/__tests__/levainProcessorEndedAnswers.spec.ts
+  h_beb54bf43b47b7 6
+src/modules/AudioEngine/worklets/__tests__/levainProcessorSampleUpload.spec.ts
+  h_beb54bf43b47b7 8-9
+src/modules/AudioEngine/worklets/__tests__/levainProcessorShippedBankRetirement.spec.ts
+  h_beb54bf43b47b7 6-7
+src/modules/AudioEngine/worklets/__tests__/levainProcessorStopQueue.spec.ts
+  h_beb54bf43b47b7 10
+src/modules/AudioEngine/worklets/__tests__/levainProcessorWasmViews.spec.ts
+  h_beb54bf43b47b7 12
+src/modules/AudioEngine/worklets/__tests__/levainProcessorZoneTables.spec.ts
+  h_beb54bf43b47b7 8
+src/modules/AudioEngine/worklets/__tests__/proofChamberAutomationOrdinals.spec.ts
+  h_beb54bf43b47b7 19,43
+src/modules/AudioEngine/worklets/__tests__/proofChamberProcessor.spec.ts
+  h_beb54bf43b47b7 15-22,34
+src/modules/AudioEngine/worklets/__tests__/proofChamberProcessorShippedMalloc.spec.ts
+  h_beb54bf43b47b7 6
+src/modules/AudioEngine/worklets/__tests__/proofChamberProcessorWasmViews.spec.ts
+  h_beb54bf43b47b7 12
+src/modules/AudioEngine/worklets/__tests__/recordingProcessor.spec.ts
+  h_beb54bf43b47b7 14
+src/modules/AudioEngine/worklets/__tests__/scoringProcessor.spec.ts
+  h_beb54bf43b47b7 10
+src/modules/AudioEngine/worklets/__tests__/scoringProcessorShippedMalloc.spec.ts
+  h_beb54bf43b47b7 6
+src/modules/AudioEngine/worklets/__tests__/scoringProcessorWasmViews.spec.ts
+  h_beb54bf43b47b7 12
+src/modules/AudioEngine/worklets/__tests__/telemetrySeqlockWriters.spec.ts
+  h_beb54bf43b47b7 3
+src/modules/AudioEngine/worklets/__tests__/toasterProcessorShippedMalloc.spec.ts
+  h_beb54bf43b47b7 7
+src/modules/AudioEngine/worklets/__tests__/transientShaperProcessor.spec.ts
+  h_beb54bf43b47b7 8
+src/modules/AudioEngine/worklets/__tests__/workletBundleHarness.ts
+  h_beb54bf43b47b7 38,69,186
+src/modules/AudioEngine/worklets/__tests__/workletPortMessageParity.spec.ts
+  h_beb54bf43b47b7 10,27
+src/modules/AudioEngine/worklets/grandBouleEngineCore.ts
+  h_beb54bf43b47b7 196,207
+src/modules/AudioEngine/worklets/grinderProcessor.ts
+  h_beb54bf43b47b7 11
+src/modules/ContentBrowser/AGENTS.md
+  h_beb54bf43b47b7 11
+src/modules/ContentBrowser/presentations/views/Sidebar.tsx
+  h_beb54bf43b47b7 6,52-69,84,226-228,230,232,234,263-265,267-268,270,272,284-286
+src/modules/ContentBrowser/presentations/views/__tests__/Sidebar.spec.tsx
+  h_beb54bf43b47b7 1,117-160
+src/modules/Levain/useCases/getLevainEngineParameterName.ts
+  h_beb54bf43b47b7 33
+src/modules/Metering/presentations/views/LevelMeter.tsx
+  h_beb54bf43b47b7 21-22,147-154,156-157,164
+src/modules/Metering/presentations/views/__tests__/LevelMeter.spec.tsx
+  h_beb54bf43b47b7 107-157
+src/modules/MixerConsole/presentations/views/Mixer/MixerLevelReadout.tsx
+  h_beb54bf43b47b7 28-34,77
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MixerLevelReadout.spec.tsx
+  h_beb54bf43b47b7 191-205
+src/modules/TimelineEditor/presentations/hooks/useLaneDragSession.ts
+  h_beb54bf43b47b7 3-4,8-11
+src/modules/TimelineEditor/presentations/views/Timeline/ChordTrackLane.tsx
+  h_beb54bf43b47b7 33-34,142-146,210-213,281-282,284,288-289,291-295,297-299,301-309,311-320,541
+src/modules/TimelineEditor/presentations/views/Timeline/__tests__/ChordTrackLane.spec.tsx
+  h_beb54bf43b47b7 2,58-61,198,206-210,213,222-225,227-268,270,274-307
+src/modules/Toaster/useCases/projectToasterKitToNativePatch.ts
+  h_beb54bf43b47b7 29
+src/modules/Toaster/useCases/toasterPadEngineParamName.ts
+  h_beb54bf43b47b7 6
+src/modules/Toaster/useCases/toasterParamBridge/__tests__/setToasterPadParam.spec.ts
+  h_beb54bf43b47b7 159
+src/modules/WorkspaceShell/AGENTS.md
+  h_beb54bf43b47b7 33
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useStatusBarMetrics.spec.ts
+  h_beb54bf43b47b7 759-820
+src/modules/WorkspaceShell/presentations/hooks/useStatusBarMetrics.ts
+  h_beb54bf43b47b7 73-87,534
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  h_beb54bf43b47b7 15,192-239,682-689,691,1024-1033,1048
+src/modules/WorkspaceShell/presentations/views/VirtualKeyboard.tsx
+  h_beb54bf43b47b7 48,300-313,320
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  h_beb54bf43b47b7 1,707-756
+src/modules/WorkspaceShell/presentations/views/__tests__/VirtualKeyboard.spec.tsx
+  h_beb54bf43b47b7 1279-1335
+tests/e2e/browserAiWebGpuAdmission.playwright.config.ts
+  h_beb54bf43b47b7 5-6,8-12,29-32
+tests/e2e/browserAndDeviceDeep.spec.ts
+  h_beb54bf43b47b7 28,34
+tests/e2e/browserInstrumentsTestId.spec.ts
+  h_beb54bf43b47b7 31,34
+tests/e2e/coldFirstPaintBudget.ts
+  h_beb54bf43b47b7 1-19
+tests/e2e/e2eUtils.ts
+  h_beb54bf43b47b7 225
+tests/e2e/e2eWorkflow.spec.ts
+  h_beb54bf43b47b7 107
+tests/e2e/finalBatch.spec.ts
+  h_beb54bf43b47b7 145
+tests/e2e/firstPaintWarmup.ts
+  h_beb54bf43b47b7 8
+tests/e2e/grooveAssignRenameDelete.spec.ts
+  h_beb54bf43b47b7 53
+tests/e2e/grooveExtractionCommit.spec.ts
+  h_beb54bf43b47b7 56
+tests/e2e/instrumentPanels.spec.ts
+  h_beb54bf43b47b7 69
+tests/e2e/instrumentPanelsTestId.spec.ts
+  h_beb54bf43b47b7 18
+tests/e2e/levainArticulationTestId.spec.ts
+  h_beb54bf43b47b7 7
+tests/e2e/levainEngineStatusTestId.spec.ts
+  h_beb54bf43b47b7 7
+tests/e2e/levainFamilyFilterTestId.spec.ts
+  h_beb54bf43b47b7 7
+tests/e2e/levainSearchFilterTestId.spec.ts
+  h_beb54bf43b47b7 7
+tests/e2e/library.spec.ts
+  h_beb54bf43b47b7 30-31
+tests/e2e/macrosPanelRecordingTestId.spec.ts
+  h_beb54bf43b47b7 19
+tests/e2e/panelDeepCoverage.spec.ts
+  h_beb54bf43b47b7 165,168
+tests/e2e/railTabBarScrollTestId.spec.ts
+  h_beb54bf43b47b7 30,34,55,92,96
+tests/e2e/recordEditPlayback.spec.ts
+  h_beb54bf43b47b7 139
+tests/e2e/remainingCoverage.spec.ts
+  h_beb54bf43b47b7 152
+tests/e2e/sampleLibraryFavoritesTestId.spec.ts
+  h_beb54bf43b47b7 25,28,103,149
+tests/e2e/yeast.spec.ts
+  h_beb54bf43b47b7 19
+tests/e2e/yeastMidiFxDeepTestId.spec.ts
+  h_beb54bf43b47b7 18
+tests/e2e/yeastParamMatrix.spec.ts
+  h_beb54bf43b47b7 12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cab8329733d21d5024b24a4f14d6835ffec8cff7",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
