@@ -1,10 +1,12 @@
 /**
- * The key rail's labels must sit beside the canvas rows they name. The canvas
- * draws and hit-tests row `r` at `getPianoRollRowTop(r)` (jsdom has no layout,
- * so the rail is asserted on the geometry the component sets, from the same
- * function the canvas uses). Runs against the real `pianoRollConstants`: the
- * sibling PianoRoll specs replace it with probe values and could not observe a
- * label drifting off the real row grid.
+ * The key rail's labels must sit beside the note rows they name. The rail
+ * labels and the canvas click hit-test both derive row positions from
+ * `getPianoRollRowTop` / `getPianoRollRowAtY`, and the canvas places its row
+ * origin at `getPianoRollRowTop(0)` (asserted in usePianoRollRenderer.spec.ts).
+ * jsdom has no layout, so the rail is asserted on the top/height values the
+ * component sets. Runs against the real `pianoRollConstants`: the sibling
+ * PianoRoll specs replace it with probe values and could not observe a label
+ * drifting off the real row grid.
  *
  * Regression: the rail was a flex column of height-only labels. Stretched to a
  * dock shorter than the roll, flex shrank the ruler header to its border and
