@@ -1,0 +1,56 @@
+crates/daw-dsp/src/grinder/nam/mod.rs
+  s_ba80576e6f5cb5::t_b9bf5f5b0e3b7e 18
+  s_ba80576e6f5cb5::t_be5436b0dff2f5 228
+  s_ba80576e6f5cb5::t_984a71dd74e161 226-227
+  s_ba80576e6f5cb5::t_2ef4f816dea661 513,515-516
+crates/daw-dsp/src/grinder/nam/native_admission.rs
+  s_ba80576e6f5cb5::t_9875978ef227ec 8
+  s_ba80576e6f5cb5::t_11dde5724b62df 4-7,43-45,50,56-59,62
+  s_ba80576e6f5cb5::t_d308d3f0245e61 257
+crates/daw-dsp/src/grinder/nam/admission_plan.rs
+  s_ba80576e6f5cb5::t_9470c46a372bd6 222
+  s_ba80576e6f5cb5::t_ddb046bac7d169 301-306,311-313,315-445
+  s_ba80576e6f5cb5::t_ef6f71cd24a77f 75,85-87
+  s_ba80576e6f5cb5::t_57d42cc5ab7e8a 17,20,23
+  s_ba80576e6f5cb5::t_02c6b6170edb46 686
+  s_ba80576e6f5cb5::t_b1f291800fcf59 1-16,18-19,21-22,24-74,76-84,88-91,93-221,223-292,294-300,307-310,314,446-685,687-811
+  s_ba80576e6f5cb5::t_f905a9f3384a75 293
+  s_ba80576e6f5cb5::t_0d149eaef4d21d 92
+src/modules/Grinder/services/validateGrinderNamModel.ts
+  s_ba80576e6f5cb5::t_3a02ce47e3937c 263,270-273
+  s_ba80576e6f5cb5::t_37f83a72488659 12
+src/modules/Grinder/services/waveNetAdmissionBudget.ts
+  s_ba80576e6f5cb5::t_32d1c5b596e39a 310
+  s_ba80576e6f5cb5::t_a2f5907ef31efb 1-153,155-177,181-233,238-258,262-267,271-286,288-309,311-331,335-354,356-359
+  s_ba80576e6f5cb5::t_9875978ef227ec 178-180,234-237,259-261,268-270,332-334,355
+  s_ba80576e6f5cb5::t_c7ea7125c379c6 287
+  s_ba80576e6f5cb5::t_6a16c14b876bee 154
+src/modules/Grinder/services/__tests__/waveNetAdmissionBudget.spec.ts
+  s_ba80576e6f5cb5::t_99ac7b26ca3b04 1-31,39-105,113-116,118-127,129-140,144-189,196-219
+  s_ba80576e6f5cb5::t_9875978ef227ec 106-112,141-143,190
+  s_ba80576e6f5cb5::t_7dc568cef92641 117
+  s_ba80576e6f5cb5::t_a852176112c63a 32-38
+  s_ba80576e6f5cb5::t_1dda55a29916da 128
+  s_ba80576e6f5cb5::t_79ce4c3ba34042 191-195
+crates/daw-dsp/tests/grinder_wavenet_scratch_width_rejection.rs
+  s_ba80576e6f5cb5::t_ecfee42857e6e8 4-12,15-55,59-60,62,65,90-117,125-172,179,192,208-209,213-249,275,280,301,315,325,330,340-345,381-387,391,396,401,406-411,416-421,426,431,436,441,446,453,460,469,471-477,479,491-540,542-550,561-589,593-619,624-636,638-691,694-697,699-702,705-750,755-776
+  s_ba80576e6f5cb5::t_a9708c8c37bfdd 703-704
+  s_ba80576e6f5cb5::t_098f678b41cf7b 637
+  s_ba80576e6f5cb5::t_9875978ef227ec 541,551-560,590-592,620-623,692-693,698,751-754
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7187b27164ede603f802f5aed24acc04c4829a48",
+  "prompts": {},
+  "sessions": {
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
