@@ -106,6 +106,7 @@ function deviceWrites(): number[] {
 
 describe('applyAutomation clip-scoped lane override (#4736)', () => {
     beforeEach(() => {
+        schedulerSession.generation += 1;
         vi.clearAllMocks();
         vi.mocked(isRecordingAutomation).mockReturnValue(false);
         schedulerSession.discontinuityEpoch = 7;

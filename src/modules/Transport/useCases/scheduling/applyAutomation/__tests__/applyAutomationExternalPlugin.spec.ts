@@ -6,6 +6,7 @@ import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation, resolveAutoMatchValue } from '#/modules/Automation/useCases';
 import { externalPluginParameterStore } from '#/modules/PluginHost/stores';
 
+import { schedulerSession } from '../../../playheadScheduler/schedulerSession';
 import { applyAutomation } from '../applyAutomation';
 
 /**
@@ -109,6 +110,7 @@ function seedPluginLane(laneParameterId: string, parameterValues: Record<string,
 
 describe('applyAutomation on an external plugin device', () => {
     beforeEach(() => {
+        schedulerSession.generation += 1;
         vi.clearAllMocks();
         vi.mocked(getCurrentTime).mockReturnValue(5);
         vi.mocked(getCompensationDelay).mockReturnValue(0);

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { deriveVcaMultiplier, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
+import * as Arrangement from '#/modules/Arrangement/useCases';
 import {
     getCompensationDelay,
     getCurrentTime,
@@ -209,6 +210,7 @@ function seedTwoLanesOnOneDevice(device: SeedDevice): void {
 
 describe('applyAutomation', () => {
     beforeEach(() => {
+        schedulerSession.generation += 1;
         vi.clearAllMocks();
         // Re-arm the mocked value-at-beat after clearAllMocks resets it.
         vi.mocked(getAutomationValueAtBeat).mockReturnValue(0.75);
@@ -226,6 +228,17 @@ describe('applyAutomation', () => {
         // next case's compensated reads (#4784).
         transportStore.set(null);
         schedulerSession.lastLoopSeamAudioTime = null;
+    });
+
+    it('keeps the existing internal-key law conjunctive with descriptor membership', () => {
+        seedDeviceLane({ devices: [EQ_A], laneParameterId: `${EQ_A.id}:eq-low-gain` });
+        const law = vi.spyOn(Arrangement, 'isDeviceParameterAutomatable').mockReturnValue(false);
+        try {
+            applyAutomation(0);
+            expect(updateDeviceParam).not.toHaveBeenCalled();
+        } finally {
+            law.mockRestore();
+        }
     });
 
     it('should export applyAutomation', () => {
@@ -1262,8 +1275,8 @@ describe('applyAutomation', () => {
         // without letting the value reach the engine.
         it('holds a carried built-in’s Web Audio fallback on a moving tick instead of writing the engine', () => {
             seedDeviceLane({
-                devices: [{ id: 'device-k1', type: 'knead', parameterValues: { shift_semitones: 0 } }],
-                laneParameterId: 'device-k1:shift_semitones',
+                devices: [{ id: 'device-k1', type: 'bacteria', parameterValues: { mix: 0 } }],
+                laneParameterId: 'device-k1:mix',
             });
             vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
 
@@ -1275,12 +1288,12 @@ describe('applyAutomation', () => {
             // Two fallback holds: the scope-entry tick (#4741) at the curve's
             // own opening value, then the moving tick one glide later.
             expect(holdWebFallbackDeviceParam).toHaveBeenCalledTimes(2);
-            expect(holdWebFallbackDeviceParam).toHaveBeenNthCalledWith(1, 'track-1', 'device-k1', 'shift_semitones', 0);
+            expect(holdWebFallbackDeviceParam).toHaveBeenNthCalledWith(1, 'track-1', 'device-k1', 'mix', 0);
             expect(holdWebFallbackDeviceParam).toHaveBeenNthCalledWith(
                 2,
                 'track-1',
                 'device-k1',
-                'shift_semitones',
+                'mix',
                 slewStep(0, 0.75, AUTOMATION_SLEW_ALPHA)
             );
         });
@@ -1288,11 +1301,11 @@ describe('applyAutomation', () => {
         it('restates a carried built-in through the full door on release from bypass, not the fallback hold', () => {
             const device: SeedDevice = {
                 id: 'device-k1',
-                type: 'knead',
-                parameterValues: { shift_semitones: 0 },
+                type: 'bacteria',
+                parameterValues: { mix: 0 },
                 bypassed: true,
             };
-            seedDeviceLane({ devices: [device], laneParameterId: 'device-k1:shift_semitones' });
+            seedDeviceLane({ devices: [device], laneParameterId: 'device-k1:mix' });
             vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
             vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0.2).mockReturnValue(0.8);
 
@@ -1300,18 +1313,18 @@ describe('applyAutomation', () => {
             commitBypass(device.id, false);
             applyAutomation(1);
 
-            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-k1', 'shift_semitones', 0.8);
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-k1', 'mix', 0.8);
             // The release went through the full door. The only fallback hold
             // is the pre-release scope-entry tick (#4741) at 0.2, on the node
             // the engine is not driving.
             expect(holdWebFallbackDeviceParam).toHaveBeenCalledTimes(1);
-            expect(holdWebFallbackDeviceParam).toHaveBeenCalledWith('track-1', 'device-k1', 'shift_semitones', 0.2);
+            expect(holdWebFallbackDeviceParam).toHaveBeenCalledWith('track-1', 'device-k1', 'mix', 0.2);
         });
 
         it('writes an uncarried built-in through the full door and holds nothing', () => {
             seedDeviceLane({
-                devices: [{ id: 'device-k1', type: 'knead', parameterValues: { shift_semitones: 0 } }],
-                laneParameterId: 'device-k1:shift_semitones',
+                devices: [{ id: 'device-k1', type: 'bacteria', parameterValues: { mix: 0 } }],
+                laneParameterId: 'device-k1:mix',
             });
 
             vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
@@ -1321,7 +1334,7 @@ describe('applyAutomation', () => {
             expect(updateDeviceParam).toHaveBeenCalledWith(
                 'track-1',
                 'device-k1',
-                'shift_semitones',
+                'mix',
                 slewStep(0, 0.75, AUTOMATION_SLEW_ALPHA)
             );
             expect(holdWebFallbackDeviceParam).not.toHaveBeenCalled();
@@ -1514,7 +1527,13 @@ describe('applyAutomation', () => {
         }
 
         function setAutomationMode(mode: string): void {
-            (mutableTrackStore.value.tracks as GateTrack[])[0]!.automationMode = mode;
+            mutableTrackStore.value = {
+                ...mutableTrackStore.value,
+                tracks: (mutableTrackStore.value.tracks as GateTrack[]).map((track) => ({
+                    ...track,
+                    automationMode: mode,
+                })),
+            };
         }
 
         it('writes the device parameter back to its persisted value when the mode goes off', () => {
