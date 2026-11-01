@@ -267,7 +267,10 @@ function readSuggestionTrack(
  * whose own canonical role gives no recipe role. An argued role over the track's own would offer one role's
  * recipe for another role's track.
  */
-function servesTrackRole(role: RecipeDiscoveryReceiptData['role'], track: SuggestionTrack): boolean {
+function servesTrackRole(
+    role: RecipeDiscoveryReceiptData['role'],
+    track: SuggestionTrack
+): role is RecipeDiscoveryReceiptData['role'] & { source: AnswerSuggestion['roleSource'] } {
     if (role.source !== 'argument') {
         return role.source === 'target';
     }
@@ -301,13 +304,13 @@ function readAnswerSuggestion(
     const discovery = read.source.value;
     const candidate = discovery.candidates.find((entry) => entry.id === statement.recipeId);
     const track = readSuggestionTrack(discovery.target?.id, intake.authority);
-    const { recipeRole, source } = discovery.role;
+    const { role } = discovery;
     if (
         candidate === undefined ||
         track === undefined ||
-        recipeRole === null ||
-        !servesTrackRole(discovery.role, track) ||
-        !candidate.roles.includes(recipeRole)
+        role.recipeRole === null ||
+        !servesTrackRole(role, track) ||
+        !candidate.roles.includes(role.recipeRole)
     ) {
         return null;
     }
@@ -316,8 +319,8 @@ function readAnswerSuggestion(
         recipeTitle: candidate.title,
         targetId: track.id,
         targetName: track.name,
-        recipeRole,
-        roleSource: source,
+        recipeRole: role.recipeRole,
+        roleSource: role.source,
     };
 }
 
@@ -552,6 +555,19 @@ function readAnswerLimitation(
     return null;
 }
 
+/** The document's statements composed in order, or the one limitation that answers in place of them all. */
+function composeStatements(
+    statements: readonly AnswerStatement[],
+    intake: AdmittedAnswerIntake,
+    reads: ReadonlyMap<string, AdmittedAnswerRead>,
+    limitation: keyof typeof LIMITATIONS | null
+): Array<StatementText | null> {
+    if (limitation !== null) {
+        return [{ text: LIMITATIONS[limitation], callIds: [] }];
+    }
+    return statements.map((statement) => composeStatement(statement, intake, reads));
+}
+
 /** Every factual clause and calculation is application-owned; provider input selects finite references only. */
 export function composeMeasuredAnswer(input: {
     document: AnswerRespondArguments;
@@ -585,10 +601,7 @@ export function composeMeasuredAnswer(input: {
         return rejection;
     }
     const limitation = readAnswerLimitation(authority, completeMeasurement, unsupportedTiming);
-    const statements: Array<StatementText | null> =
-        limitation === null
-            ? document.statements.map((statement) => composeStatement(statement, intake, reads))
-            : [{ text: LIMITATIONS[limitation], callIds: [] }];
+    const statements = composeStatements(document.statements, intake, reads, limitation);
     if (statements.some((statement) => statement === null)) {
         return rejection;
     }
