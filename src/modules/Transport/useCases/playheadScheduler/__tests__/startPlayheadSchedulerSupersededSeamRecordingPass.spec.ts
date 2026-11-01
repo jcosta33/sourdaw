@@ -4,6 +4,8 @@ import { activeRecordingRef } from '#/modules/Arrangement/stores';
 import { type stageRecordingTake } from '#/modules/Arrangement/useCases';
 
 import { defaultTransportState } from '../../../models/TransportState';
+import { captureGestureClock } from '../../../stores/captureGestureBeat';
+import { setGestureClockSource } from '../../../stores/gestureClockSource';
 import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
 import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
 import { schedulerSession } from '../schedulerSession';
@@ -481,5 +483,55 @@ describe('superseded loop seam during MIDI loop recording', () => {
         expect(closedPasses()[0]!.endBeat).toBe(LOOP_BEATS);
         expect(openTake().recordingPassIndex).toBe(2);
         expect(notePass()).toBe(2);
+    });
+
+    it('counts the pending seam a late wrap supersedes and stages the pass after it', async () => {
+        setGestureClockSource({ getAudioTimeSeconds: () => ctxTime.now, readNativeCursorBeats: () => null });
+        /** The pass a gesture captured now lands in: counted wraps plus the seams the projection crossed. */
+        const gesturePass = () => notePass() + captureGestureClock().seamsCrossed;
+        await advanceUntil(() => schedulerSession.pendingSeam !== null);
+        const plannedSeam = schedulerSession.pendingSeam!.seamAudioTime;
+        expect(closedPasses()).toEqual([expect.objectContaining({ recordingPassIndex: 0, endBeat: LOOP_BEATS })]);
+
+        // The main thread stalls past the planned seam and through the whole
+        // next pass (2 s): the audio crosses the planned seam and the one after
+        // it, and stands 0.3 s into the third pass when the next tick runs.
+        ctxTime.now = plannedSeam + 2.3;
+        const beforeTick = captureGestureClock();
+        const passBeforeTick = gesturePass();
+        await tick(0);
+
+        expect(schedulerSession.pendingSeam).toBeNull();
+        expect(notePass()).toBe(2);
+        expect(captureGestureClock().beat).toBeCloseTo(beforeTick.beat, 9);
+        expect(gesturePass()).toBe(passBeforeTick);
+        expect(passBeforeTick).toBe(2);
+        expect(closedPasses().map((take) => take.recordingPassIndex)).toEqual([0, 1]);
+        expect(closedPasses().map((take) => take.endBeat)).toEqual([LOOP_BEATS, LOOP_BEATS]);
+        expect(openTake().recordingPassIndex).toBe(2);
+    });
+
+    it('counts the pending seam a newly scheduled seam supersedes and gives the pass after it its own take', async () => {
+        setGestureClockSource({ getAudioTimeSeconds: () => ctxTime.now, readNativeCursorBeats: () => null });
+        const gesturePass = () => notePass() + captureGestureClock().seamsCrossed;
+        await advanceUntil(() => schedulerSession.pendingSeam !== null);
+        const plannedSeam = schedulerSession.pendingSeam!.seamAudioTime;
+        expect(closedPasses()).toEqual([expect.objectContaining({ recordingPassIndex: 0, endBeat: LOOP_BEATS })]);
+
+        // The main thread stalls past the planned seam to 50 ms short of the
+        // next one: the playhead stands at beat 3.9 of the pass the planned
+        // seam opened, short of the loop end, so the tick schedules the next
+        // seam rather than wrapping late, and replaces the one that sounded.
+        ctxTime.now = plannedSeam + 2 - 0.05;
+        const passBeforeTick = gesturePass();
+        await tick(0);
+
+        expect(schedulerSession.pendingSeam?.seamAudioTime).toBeCloseTo(plannedSeam + 2, 9);
+        expect(notePass()).toBe(1);
+        expect(passBeforeTick).toBe(1);
+        expect(gesturePass()).toBe(passBeforeTick);
+        expect(closedPasses().map((take) => take.recordingPassIndex)).toEqual([0, 1]);
+        expect(closedPasses().map((take) => take.endBeat)).toEqual([LOOP_BEATS, LOOP_BEATS]);
+        expect(openTake().recordingPassIndex).toBe(2);
     });
 });

@@ -1213,6 +1213,22 @@ describe('VirtualKeyboard', () => {
             }
         );
 
+        it('closes only after the Collaborate panel, which the global Escape chain dismisses first', () => {
+            const onClose = vi.fn();
+            render(<VirtualKeyboard onClose={onClose} />);
+            const panel = document.createElement('div');
+            panel.setAttribute('role', 'dialog');
+            panel.setAttribute('aria-label', 'Collaborate');
+            document.body.append(panel);
+
+            fireEvent.keyDown(document.body, { code: 'Escape', key: 'Escape' });
+            expect(onClose).not.toHaveBeenCalled();
+
+            panel.remove();
+            fireEvent.keyDown(document.body, { code: 'Escape', key: 'Escape' });
+            expect(onClose).toHaveBeenCalledTimes(1);
+        });
+
         it('lets an open context menu close itself instead of the keyboard', () => {
             const onClose = vi.fn();
             render(<VirtualKeyboard onClose={onClose} />);
