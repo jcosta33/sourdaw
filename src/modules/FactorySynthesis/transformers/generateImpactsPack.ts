@@ -1,4 +1,5 @@
-import { createMono, createStereo, toAudioBufferStereo } from '../services/bufferCreation';
+import { type RenderedFactorySample } from '../models/RenderedFactorySample';
+import { createMono, createStereo, stereoPcm } from '../services/bufferCreation';
 import { SAMPLE_RATE } from '../services/constants';
 import { normalizeStereo, softClipStereo } from '../services/dynamics';
 import { feedbackDelay } from '../services/effects';
@@ -6,8 +7,6 @@ import { applyEnvelope, renderEnvelope } from '../services/envelopes';
 import { biquad } from '../services/filters';
 import { mixMono, mixMonoIntoStereo } from '../services/mixing';
 import { renderNoise, renderSine, renderTriangle } from '../services/oscillators';
-
-import { type FactorySample } from './types';
 
 function renderSubDrop(): [Float32Array, Float32Array] {
     const dur = 3;
@@ -100,7 +99,7 @@ function renderGlitchStutter(): [Float32Array, Float32Array] {
     return out;
 }
 
-export function generateImpactsPack(ctx: AudioContext): FactorySample[] {
+export function generateImpactsPack(): RenderedFactorySample[] {
     const base = 'factory-fx-impact';
     const tags = ['fx', 'impact', 'cinematic'];
     return [
@@ -113,6 +112,6 @@ export function generateImpactsPack(ctx: AudioContext): FactorySample[] {
         name: s.name,
         category: 'fx' as const,
         tags: [...tags, ...s.extra],
-        buffer: toAudioBufferStereo(ctx, s.render()),
+        ...stereoPcm(s.render()),
     }));
 }

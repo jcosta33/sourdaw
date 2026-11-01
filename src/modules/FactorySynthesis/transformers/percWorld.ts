@@ -1,12 +1,11 @@
-import { createMono, toAudioBufferMono } from '../services/bufferCreation';
+import { type RenderedFactorySample } from '../models/RenderedFactorySample';
+import { createMono, monoPcm } from '../services/bufferCreation';
 import { SAMPLE_RATE } from '../services/constants';
 import { normalize } from '../services/dynamics';
 import { applyEnvelope, renderEnvelope } from '../services/envelopes';
 import { biquad } from '../services/filters';
 import { mixMono } from '../services/mixing';
 import { renderFmOscillator, renderNoise, renderSine, renderTriangle } from '../services/oscillators';
-
-import { type FactorySample } from './types';
 
 function renderTabla(): Float32Array {
     const dur = 0.35;
@@ -164,7 +163,7 @@ function renderTriangleBell(): Float32Array {
     return out;
 }
 
-export function generateWorldPerc(ctx: AudioContext): FactorySample[] {
+export function generateWorldPerc(): RenderedFactorySample[] {
     const base = 'factory-world-perc';
     const tags = ['world', 'percussion', 'acoustic'];
     return [
@@ -181,6 +180,6 @@ export function generateWorldPerc(ctx: AudioContext): FactorySample[] {
         name: s.name,
         category: 'drums' as const,
         tags: [...tags, ...s.extra],
-        buffer: toAudioBufferMono(ctx, s.render()),
+        ...monoPcm(s.render()),
     }));
 }
