@@ -707,6 +707,51 @@ describe('crossfade recorded leading silence through command history', () => {
         }
     );
 
+    it('shifts a beat-only stretched clip B anchor forward, back on undo and forward again on redo', async () => {
+        // Stretch 2: the start retreats half a beat while the offset retreats a
+        // whole one, so the anchor moves by -0.5 - (-1) = +0.5 to keep the region.
+        const track = TrackDummy.create({
+            id: 'track-1',
+            clips: [
+                ClipDummy.create({ id: 'c1', startBeat: 0, endBeat: 4 }),
+                ClipDummy.create({
+                    id: 'c2',
+                    startBeat: 4,
+                    endBeat: 8,
+                    audioOffsetBeats: 2,
+                    stretchMode: 'timestretch',
+                    stretchRatio: 2,
+                    loopEnabled: true,
+                    loopLength: 4,
+                    loopOriginBeat: 4,
+                }),
+            ],
+        });
+        trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+        flushAutomergeStorageWrites();
+        const clipB = () => {
+            flushAutomergeStorageWrites();
+            const projected = trackStore.value!.tracks[0]!.clips;
+            expect(getCrdtDoc<{ tracks: TrackStoreState }>('root')?.tracks.tracks[0]?.clips).toEqual(projected);
+            return projected[1]!;
+        };
+
+        await executeAppAction({
+            type: 'crossfadeClips',
+            payload: { clipAId: 'c1', clipBId: 'c2', durationBeats: 1 },
+        });
+        expect(clipB()).toMatchObject({ startBeat: 3.5, audioOffsetBeats: 1, loopOriginBeat: 4.5 });
+        expect(Object.hasOwn(clipB(), 'audioOffsetSeconds')).toBe(false);
+
+        expect((await undo()).headConsumed).toBe(true);
+        expect(notifications).toEqual([]);
+        expect(clipB()).toMatchObject({ startBeat: 4, audioOffsetBeats: 2, loopOriginBeat: 4 });
+
+        await redo();
+        expect(notifications).toEqual([]);
+        expect(clipB()).toMatchObject({ startBeat: 3.5, audioOffsetBeats: 1, loopOriginBeat: 4.5 });
+    });
+
     describe('canonical clip B source entry', () => {
         afterEach(() => {
             tempoMapStore.set({ changes: [] });
