@@ -1,0 +1,19 @@
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/NotePropertyLane.spec.tsx
+  s_7c28d7e2eddcde::t_073cc87b688fea 532-533,560,572,574-577
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "31dd8eeb7075541ecdbabca9f684f353a5a1654f",
+  "prompts": {},
+  "sessions": {
+    "s_7c28d7e2eddcde": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_7c28d7e2eddcde",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
