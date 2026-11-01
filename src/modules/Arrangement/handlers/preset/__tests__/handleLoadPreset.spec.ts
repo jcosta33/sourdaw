@@ -67,6 +67,11 @@ vi.mock('../../../useCases/updateTrack', () => ({
 }));
 
 type LoadPresetAction = Extract<AppAction, { type: 'loadPreset' }>;
+type PresetChainAction = Extract<AppAction, { type: 'loadPreset' | 'restorePresetDeviceChain' }>;
+
+function isPresetChainAction(candidate: AppAction): candidate is PresetChainAction {
+    return candidate.type === 'loadPreset' || candidate.type === 'restorePresetDeviceChain';
+}
 
 /**
  * What the delta reports once its host track left project truth mid-commit.
@@ -478,13 +483,12 @@ describe('handleLoadPreset', () => {
             // mutation in its batch composes straight to final project truth.
             let liveChain = 'toaster-device';
             mocks.applyDeviceChainRuntimeDelta.mockImplementation(({ before, after, batchContext }) => {
-                const committed = folder([nextToasterDevice]).tracks[0]!;
-                const composes =
-                    deviceIds(after) !== deviceIds(committed) &&
-                    (batchContext?.actions
-                        .slice(batchContext.actionIndex + 1)
-                        .some((later) => 'trackId' in later.payload && later.payload.trackId === after.id) ??
-                        false);
+                const committed = { id: 'toaster-folder', devices: [nextToasterDevice] };
+                const laterChainTrackIds = (batchContext?.actions ?? [])
+                    .slice((batchContext?.actionIndex ?? 0) + 1)
+                    .filter(isPresetChainAction)
+                    .map((later) => later.payload.trackId);
+                const composes = deviceIds(after) !== deviceIds(committed) && laterChainTrackIds.includes(after.id);
                 const target = deviceIds(after) === deviceIds(committed) || composes ? committed : undefined;
                 if (target && deviceIds(target) === liveChain) {
                     return dischargedPresetDelta;
