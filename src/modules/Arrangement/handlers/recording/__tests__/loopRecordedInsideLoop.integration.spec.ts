@@ -622,7 +622,7 @@ describe('MIDI loop recordings', () => {
             }
         });
 
-        describe('frozen by a split, against live comp playback', () => {
+        describe('frozen by a split, read through the frozen take helpers', () => {
             /**
              * Recorded from 6 in loop [8, 12) with one wrap, stopped at 9.5:
              * pass 0 strikes 6.5 in its run-up and 9 inside the loop, pass 1
@@ -668,9 +668,12 @@ describe('MIDI loop recordings', () => {
             }
 
             /**
-             * Every note-on the track sounds in [fromBeat, toBeat), with its
-             * pitch: a live fragment through its clip's rows at its media
-             * offset, a frozen one through each repeat of its captured source.
+             * Every note-on the track holds in [fromBeat, toBeat), with its
+             * pitch: a live fragment read by hand from its clip's rows at its
+             * media offset, a frozen one through the frozen take helpers over
+             * each repeat of its captured source. The production readers'
+             * parity, live against frozen, is projectLiveMidiProgramme's and
+             * the schedulers' own suites.
              */
             function heardNotes(fromBeat: number, toBeat: number): [beat: number, pitch: number][] {
                 const notes = resolveClipsWithComping(TRACK_ID, recordedClips()).flatMap(
@@ -721,7 +724,7 @@ describe('MIDI loop recordings', () => {
                 });
             }
 
-            it('plays a comped first pass’s run-up after the split, as live comp playback does', async () => {
+            it('plays a comped first pass’s run-up after the split on the beats it was struck', async () => {
                 await recordWithRunUp();
                 await compOver('Pass 0', 6, 12);
                 const live = heardOnsets(6, 12);
@@ -820,7 +823,7 @@ describe('MIDI loop recordings', () => {
                 expect(heardNotes(0, 32).map(([, pitch]) => pitch)).not.toContain(80);
             });
 
-            it('plays a later pass comped from before its take start, untagged rows included, as live does', async () => {
+            it('plays a later pass comped from before its take start, untagged rows included', async () => {
                 await recordWithRunUp();
                 await compOver('Take 1', 6, 12);
                 const live = heardOnsets(6, 12);
