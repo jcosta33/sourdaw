@@ -344,6 +344,30 @@ describe('MasterGainControl', () => {
         expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
 
+    it.each(['Reset to Default', 'Copy Value', 'Paste Value'])(
+        'keeps a %s click from reaching the enclosing master strip',
+        (name) => {
+            const onStripClick = vi.fn();
+            render(
+                // The master strip selects its track on click; the menu sits inside it in the React tree.
+                <div role="presentation" onClick={onStripClick}>
+                    <MasterGainControl
+                        value={0.8}
+                        onChange={vi.fn()}
+                        onEnterValue={vi.fn()}
+                        onResetToDefault={vi.fn()}
+                        {...menuActions()}
+                    />
+                </div>
+            );
+            fireEvent.contextMenu(screen.getByRole('slider', { name: 'Master gain' }));
+
+            fireEvent.click(screen.getByRole('menuitem', { name }));
+
+            expect(onStripClick).not.toHaveBeenCalled();
+        }
+    );
+
     it.each([
         { key: 'ContextMenu', shiftKey: false },
         { key: 'F10', shiftKey: true },

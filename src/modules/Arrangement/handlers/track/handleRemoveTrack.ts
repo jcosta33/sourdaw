@@ -26,6 +26,10 @@ function currentStateMatches(action: RemoveTrackAction): boolean {
     if (!currentTrack) {
         return !hasStateGuard;
     }
+    // The master track is the project's one output bus; it is never removable.
+    if (currentTrack.kind === 'master') {
+        return false;
+    }
     if (action.payload.expectedKind !== undefined && currentTrack.kind !== action.payload.expectedKind) {
         return false;
     }

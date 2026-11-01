@@ -253,6 +253,17 @@ describe('handleRemoveTrack', () => {
             expect(mocks.finalizeRuntimeRemoval).not.toHaveBeenCalled();
         });
 
+        it('refuses to remove the master track at validation and execution', async () => {
+            const master = TrackDummy.create({ id: 'master', kind: 'master' });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [master], selectedTrackId: 'master' });
+            const action = { type: 'removeTrack', payload: { trackId: 'master' } } as const;
+
+            expect(handleRemoveTrack.validate?.(action, [])).toBe(false);
+            expect(await handleRemoveTrack.execute(action)).toEqual({ status: 'conflict' });
+            expect(mocks.removeTrack).not.toHaveBeenCalled();
+            expect(mocks.removeTrackModulationReferences).not.toHaveBeenCalled();
+        });
+
         it('removes the track and publishes only after commit', async () => {
             const result = await handleRemoveTrack.execute({
                 type: 'removeTrack',

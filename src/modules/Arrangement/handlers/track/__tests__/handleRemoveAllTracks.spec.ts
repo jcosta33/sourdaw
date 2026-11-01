@@ -181,6 +181,26 @@ describe('handleRemoveAllTracks', () => {
             expect(desc.redoAction).toBe(action);
         });
 
+        it('leaves the master track out of the undo snapshot and treats a master-only project as a no-op', () => {
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [
+                    { id: 't1', kind: 'audio' },
+                    { id: 'master', kind: 'master' },
+                ],
+            });
+            const snapshotT1 = createSnapshot('t1', 0);
+            mocks.captureTrackRemovalSnapshot.mockReturnValue(snapshotT1);
+
+            handleRemoveAllTracks.describe({ type: 'removeAllTracks', payload: undefined });
+
+            expect(mocks.captureTrackRemovalSnapshot).toHaveBeenCalledOnce();
+            expect(mocks.captureTrackRemovalSnapshot).toHaveBeenCalledWith('t1');
+            expect(handleRemoveAllTracks.isNoop?.({ type: 'removeAllTracks', payload: undefined })).toBe(false);
+
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 'master', kind: 'master' }] });
+            expect(handleRemoveAllTracks.isNoop?.({ type: 'removeAllTracks', payload: undefined })).toBe(true);
+        });
+
         it('omits a track whose removal snapshot cannot be captured', () => {
             mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1' }, { id: 't2' }] });
             const snapshotT2 = createSnapshot('t2', 1);

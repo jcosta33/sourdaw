@@ -45,7 +45,7 @@ export const removeTrack = inject({ eventBus: ArrangementEventBus })(
             }
 
             const track = getTrackById(trackId);
-            if (!track) {
+            if (!track || track.kind === 'master') {
                 return { removed: false };
             }
             const removedTrack = track;

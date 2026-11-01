@@ -11,6 +11,12 @@ import { publishTrackRemoved } from '../../useCases/publishTrackRemoved';
 import { removeTrack } from '../../useCases/removeTrack';
 import { removeTrackModulationReferences } from '../../useCases/removeTrackModulationReferences';
 
+// `removeTrack` refuses the master bus, so "all tracks" never includes it and
+// its undo must not try to put the surviving master back.
+function getRemovableTracks() {
+    return (getTrackStoreState()?.tracks ?? []).filter((track) => track.kind !== 'master');
+}
+
 function isRestoreSnapshot(value: RestoreTrackPayloadSnapshot | null): value is RestoreTrackPayloadSnapshot {
     return value !== null;
 }
@@ -90,7 +96,7 @@ export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
     describe: (alpha) => {
         // Capture every live track before execute deletes them, in track order, so the
         // whole arrangement comes back as one undo unit rather than N separate undos.
-        const tracks = getTrackStoreState()?.tracks ?? [];
+        const tracks = getRemovableTracks();
         if (tracks.length === 0) {
             return { label: 'Remove all tracks', inverseAction: null };
         }
@@ -101,7 +107,7 @@ export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({
             redoAction: alpha,
         };
     },
-    isNoop: () => (getTrackStoreState()?.tracks.length ?? 0) === 0,
+    isNoop: () => getRemovableTracks().length === 0,
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,
     undoable: true,

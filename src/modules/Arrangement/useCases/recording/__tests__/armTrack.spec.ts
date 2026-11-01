@@ -83,6 +83,16 @@ describe('armTrack', () => {
         expect(didWrite).toBe(false);
     });
 
+    it('rejects arming the master track without a project or MIDI-routing write', () => {
+        mocks.getTrackById.mockReturnValue({ id: 'master', kind: 'master', armed: false });
+
+        const didWrite = armTrack('master', true);
+
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+        expect(mocks.setMidiInputTrack).not.toHaveBeenCalled();
+        expect(didWrite).toBe(false);
+    });
+
     it('permits dormant VCA disarm cleanup and conditionally clears its stale MIDI routing', () => {
         mocks.getTrackById.mockReturnValue({ id: 'vca-1', kind: 'vca', armed: true });
         mocks.getMidiInputTrack.mockReturnValue('vca-1');
