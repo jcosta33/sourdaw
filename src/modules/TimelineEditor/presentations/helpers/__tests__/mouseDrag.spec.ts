@@ -112,6 +112,39 @@ describe('startMouseDrag', () => {
         expect(onMove).toHaveBeenCalledTimes(1);
     });
 
+    it('ignores the auto-repeat of an Escape held down since before the drag began', () => {
+        const onMove = vi.fn();
+        const onUp = vi.fn();
+        const onCancel = vi.fn();
+
+        startMouseDrag(onMove, onUp, onCancel);
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', repeat: true }));
+
+        expect(onCancel).not.toHaveBeenCalled();
+        expect(isDragGestureActive()).toBe(true);
+
+        window.dispatchEvent(new MouseEvent('mouseup'));
+        expect(onUp).toHaveBeenCalledTimes(1);
+        expect(onCancel).not.toHaveBeenCalled();
+    });
+
+    it.each([['shiftKey'], ['ctrlKey'], ['altKey'], ['metaKey']] as const)(
+        'ignores Escape pressed with %s so a modified chord does not abort the drag',
+        (modifier) => {
+            const onUp = vi.fn();
+            const onCancel = vi.fn();
+
+            startMouseDrag(vi.fn(), onUp, onCancel);
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', [modifier]: true }));
+
+            expect(onCancel).not.toHaveBeenCalled();
+            expect(isDragGestureActive()).toBe(true);
+
+            window.dispatchEvent(new MouseEvent('mouseup'));
+            expect(onUp).toHaveBeenCalledTimes(1);
+        }
+    );
+
     it('returns a teardown that is idempotent and callable before any release', () => {
         const onMove = vi.fn();
         const onUp = vi.fn();
