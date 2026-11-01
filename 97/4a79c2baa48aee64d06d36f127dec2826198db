@@ -1,0 +1,57 @@
+src/modules/Arrangement/useCases/index.ts
+  s_fec7059b7a251c::t_237fe57abb92de 266
+src/modules/Arrangement/AGENTS.md
+  s_fec7059b7a251c::t_d3a5f36c0f2478 24
+src/modules/Arrangement/useCases/duplicateTrack.ts
+  s_fec7059b7a251c::t_3323a8828bbbe4 59
+  s_0314bb17e5dee3::t_5ac8235965b038 8
+src/modules/Arrangement/useCases/getAlternativeClips.ts
+  s_fec7059b7a251c::t_338719357ddb74 1
+src/modules/TimelineEditor/presentations/views/Inspector/TrackAlternativesSection.tsx
+  s_fec7059b7a251c::t_ad04b656b82569 68
+  s_0314bb17e5dee3::t_2853dbab96800e 10,67,69
+src/modules/Arrangement/models/TrackAlternativeClips.ts
+  s_55244eb93b97d1::t_2b199d6eec131d 1-14
+src/modules/Arrangement/models/__tests__/TrackAlternativeClips.spec.ts
+  s_55244eb93b97d1::t_5f3c7bde8e1652 1-23
+src/modules/Arrangement/useCases/__tests__/duplicateTrack.spec.ts
+  s_55244eb93b97d1::t_164304a01a0203 376,446-475,485,610,720,723,725,782
+src/modules/Arrangement/useCases/__tests__/buildTimelineRenderModel.spec.ts
+  s_55244eb93b97d1::t_8c8b2d56545cf9 13,1174-1225
+src/modules/Arrangement/useCases/buildTimelineRenderModel.ts
+  s_55244eb93b97d1::t_5a14e9b9773d81 28,395
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackAlternativesSection.spec.tsx
+  s_55244eb93b97d1::t_767240010ebb61 9,25-41,138-158
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "974a79c2baa48aee64d06d36f127dec2826198db",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
