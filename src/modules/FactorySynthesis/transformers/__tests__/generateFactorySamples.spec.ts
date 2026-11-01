@@ -2,35 +2,9 @@ import { describe, it, expect } from 'vitest';
 
 import { generateFactorySamples } from '../generateFactorySamples';
 
-type MutableBuffer = {
-    numberOfChannels: number;
-    length: number;
-    sampleRate: number;
-    duration: number;
-    channels: Float32Array[];
-    getChannelData: (idx: number) => Float32Array;
-};
-
-function createMockAudioContext(): AudioContext {
-    return {
-        createBuffer: (channels: number, length: number, sampleRate: number): MutableBuffer => {
-            const chans: Float32Array[] = Array.from({ length: channels }, () => new Float32Array(length));
-            return {
-                numberOfChannels: channels,
-                length,
-                sampleRate,
-                duration: length / sampleRate,
-                channels: chans,
-                getChannelData: (idx: number) => chans[idx]!,
-            };
-        },
-    } as unknown as AudioContext;
-}
-
 describe('generateFactorySamples', () => {
     it('produces at least 60 samples across drums, bass, keys and fx categories', () => {
-        const ctx = createMockAudioContext();
-        const samples = generateFactorySamples(ctx);
+        const samples = generateFactorySamples();
 
         expect(samples.length).toBeGreaterThanOrEqual(60);
 
@@ -42,17 +16,15 @@ describe('generateFactorySamples', () => {
     });
 
     it('gives every sample a unique stable id', () => {
-        const ctx = createMockAudioContext();
-        const samples = generateFactorySamples(ctx);
+        const samples = generateFactorySamples();
         const ids = new Set(samples.map((s) => s.id));
         expect(ids.size).toBe(samples.length);
     });
 
-    it('fills each buffer with non-silent audio data', () => {
-        const ctx = createMockAudioContext();
-        const samples = generateFactorySamples(ctx);
+    it('fills each sample with non-silent audio data', () => {
+        const samples = generateFactorySamples();
         for (const sample of samples) {
-            const data = sample.buffer.getChannelData(0);
+            const data = sample.channels[0]!;
             let peak = 0;
             for (let i = 0; i < data.length; i++) {
                 const a = Math.abs(data[i]!);
@@ -64,9 +36,18 @@ describe('generateFactorySamples', () => {
         }
     });
 
+    it('renders mono packs as one channel and fx packs as two equal-length channels at 44.1 kHz', () => {
+        for (const sample of generateFactorySamples()) {
+            expect(sample.sampleRate).toBe(44100);
+            expect(sample.channels).toHaveLength(sample.category === 'fx' ? 2 : 1);
+            for (const channel of sample.channels) {
+                expect(channel.length).toBe(sample.channels[0]!.length);
+            }
+        }
+    });
+
     it('marks factory bass samples at MIDI pitch 24 (C1)', () => {
-        const ctx = createMockAudioContext();
-        const bass = generateFactorySamples(ctx).filter((s) => s.category === 'bass');
+        const bass = generateFactorySamples().filter((s) => s.category === 'bass');
         expect(bass.length).toBeGreaterThan(0);
         for (const b of bass) {
             expect(b.pitch).toBe(24);
@@ -74,8 +55,7 @@ describe('generateFactorySamples', () => {
     });
 
     it('marks factory keys samples at MIDI pitch 48 (C3)', () => {
-        const ctx = createMockAudioContext();
-        const keys = generateFactorySamples(ctx).filter((s) => s.category === 'keys');
+        const keys = generateFactorySamples().filter((s) => s.category === 'keys');
         expect(keys.length).toBeGreaterThan(0);
         for (const k of keys) {
             expect(k.pitch).toBe(48);

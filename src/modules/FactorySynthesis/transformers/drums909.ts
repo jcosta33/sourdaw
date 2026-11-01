@@ -1,12 +1,11 @@
-import { createMono, toAudioBufferMono } from '../services/bufferCreation';
+import { type RenderedFactorySample } from '../models/RenderedFactorySample';
+import { createMono, monoPcm } from '../services/bufferCreation';
 import { SAMPLE_RATE } from '../services/constants';
 import { normalize, softClip } from '../services/dynamics';
 import { applyEnvelope, renderEnvelope } from '../services/envelopes';
 import { biquad } from '../services/filters';
 import { mixMono } from '../services/mixing';
 import { renderNoise, renderSine, renderTriangle } from '../services/oscillators';
-
-import { type FactorySample } from './types';
 
 // 909 kicks need a fast pitch sweep on the first ~60 ms — without that "clack"
 // they collapse into a pure sub sine tone, which doesn't cut through a mix.
@@ -201,7 +200,7 @@ function render909Tom(): Float32Array {
     return out;
 }
 
-export function generate909Kit(ctx: AudioContext): FactorySample[] {
+export function generate909Kit(): RenderedFactorySample[] {
     const base = 'factory-909';
     const tags = ['909', 'analog', 'drum-machine', 'electronic'];
     const specs: { id: string; name: string; render: () => Float32Array; extra: string[] }[] = [
@@ -219,6 +218,6 @@ export function generate909Kit(ctx: AudioContext): FactorySample[] {
         name: s.name,
         category: 'drums' as const,
         tags: [...tags, ...s.extra],
-        buffer: toAudioBufferMono(ctx, s.render()),
+        ...monoPcm(s.render()),
     }));
 }

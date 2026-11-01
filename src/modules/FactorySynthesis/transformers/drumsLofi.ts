@@ -1,4 +1,5 @@
-import { createMono, toAudioBufferMono } from '../services/bufferCreation';
+import { type RenderedFactorySample } from '../models/RenderedFactorySample';
+import { createMono, monoPcm } from '../services/bufferCreation';
 import { SAMPLE_RATE } from '../services/constants';
 import { normalize, softClip } from '../services/dynamics';
 import { bitcrush } from '../services/effects';
@@ -6,8 +7,6 @@ import { applyEnvelope, renderEnvelope } from '../services/envelopes';
 import { biquad } from '../services/filters';
 import { mixMono } from '../services/mixing';
 import { renderNoise, renderSine } from '../services/oscillators';
-
-import { type FactorySample } from './types';
 
 // Lo-fi aesthetic = LPF around 2 kHz, mild bitcrush, and dusty noise bed.
 function renderLofiKick(): Float32Array {
@@ -159,65 +158,65 @@ function renderLofiShaker(): Float32Array {
     return out;
 }
 
-export function generateLofiKit(ctx: AudioContext): FactorySample[] {
+export function generateLofiKit(): RenderedFactorySample[] {
     const base = 'factory-lofi';
     const tags = ['lo-fi', 'lofi', 'dusty', 'vintage', 'drum'];
-    const samples: FactorySample[] = [
+    const samples: RenderedFactorySample[] = [
         {
             id: `${base}-kick`,
             name: 'Lo-fi Kick',
             category: 'drums',
             tags: [...tags, 'kick'],
-            buffer: toAudioBufferMono(ctx, renderLofiKick()),
+            ...monoPcm(renderLofiKick()),
         },
         {
             id: `${base}-snare`,
             name: 'Lo-fi Dusty Snare',
             category: 'drums',
             tags: [...tags, 'snare'],
-            buffer: toAudioBufferMono(ctx, renderLofiSnare()),
+            ...monoPcm(renderLofiSnare()),
         },
         {
             id: `${base}-hat`,
             name: 'Lo-fi Muffled Hat',
             category: 'drums',
             tags: [...tags, 'hat'],
-            buffer: toAudioBufferMono(ctx, renderMuffledHat()),
+            ...monoPcm(renderMuffledHat()),
         },
         {
             id: `${base}-vinyl-swirl`,
             name: 'Lo-fi Vinyl Swirl',
             category: 'drums',
             tags: [...tags, 'vinyl', 'texture'],
-            buffer: toAudioBufferMono(ctx, renderVinylSwirl()),
+            ...monoPcm(renderVinylSwirl()),
         },
         {
             id: `${base}-wobble-perc`,
             name: 'Lo-fi Wobble Perc',
             category: 'drums',
             tags: [...tags, 'perc', 'wobble'],
-            buffer: toAudioBufferMono(ctx, renderWobblePerc()),
+            ...monoPcm(renderWobblePerc()),
         },
         {
             id: `${base}-kick-ghost`,
             name: 'Lo-fi Ghost Kick',
             category: 'drums',
             tags: [...tags, 'kick', 'ghost'],
-            buffer: toAudioBufferMono(ctx, renderKickGhost()),
+            ...monoPcm(renderKickGhost()),
         },
         {
             id: `${base}-clap`,
             name: 'Lo-fi Clap',
             category: 'drums',
             tags: [...tags, 'clap'],
-            buffer: toAudioBufferMono(ctx, renderLofiClap()),
+            ...monoPcm(renderLofiClap()),
         },
         {
             id: `${base}-shaker`,
             name: 'Lo-fi Shaker',
             category: 'drums',
             tags: [...tags, 'shaker'],
-            buffer: toAudioBufferMono(ctx, renderLofiShaker()),
+            ...monoPcm(renderLofiShaker()),
         },
     ];
     return samples;
