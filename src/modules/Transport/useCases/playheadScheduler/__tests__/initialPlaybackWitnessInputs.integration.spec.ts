@@ -44,6 +44,8 @@ import {
 
 import { disposePlayheadScheduler } from '../../playheadScheduler/disposePlayheadScheduler';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
+import { schedulerTimingDiagnostics } from '../../playheadScheduler/schedulerTimingDiagnostics';
+import { prepareInitialMidiWindow } from '../../scheduling/prepareInitialMidiWindow';
 import { scheduleAudioClips } from '../../scheduling/scheduleAudioClips';
 import { executePlayheadSeek } from '../../transportControls/executePlayheadSeek';
 import { pausePlayback } from '../../transportControls/pausePlayback';
@@ -60,6 +62,10 @@ import { startPlayback } from '../../transportControls/startPlayback';
 const AUDIO_TRACK_ID = 'track-audio';
 const YEAST_TRACK_ID = 'track-yeast';
 const YEAST_CLIP_ID = 'clip-yeast';
+const SECOND_YEAST_TRACK_ID = 'track-yeast-second';
+const SECOND_YEAST_CLIP_ID = 'clip-yeast-second';
+const BUS_TRACK_ID = 'track-bus';
+const PLAIN_TRACK_ID = 'track-plain';
 const SESSION_KEY = 'sourdaw-undo-session';
 const PREPARATION_REFUSAL = 'Playback changed while preparing. Press Play again.';
 const testAudioDatabase = new IDBFactory();
@@ -158,6 +164,11 @@ vi.mock('#/modules/Yeast/useCases', async (importOriginal) => ({
     yeastPanic: vi.fn(() => Promise.resolve()),
 }));
 vi.mock('../../scheduling/scheduleAudioClips', () => ({ scheduleAudioClips: vi.fn() }));
+// Passed through, so a case can await the window preparation it started.
+vi.mock('../../scheduling/prepareInitialMidiWindow', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../scheduling/prepareInitialMidiWindow')>();
+    return { prepareInitialMidiWindow: vi.fn(actual.prepareInitialMidiWindow) };
+});
 vi.mock('../../scheduling/scheduleMidiNotes', () => ({ scheduleMidiNotes: vi.fn(async () => undefined) }));
 vi.mock('../../scheduling/scheduleMetronome', () => ({ scheduleMetronome: vi.fn() }));
 vi.mock('../../scheduling/applyAutomation/applyAutomation', () => ({
@@ -175,10 +186,10 @@ vi.mock('../../evaluateFollowActions', () => ({
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 
-function track(id: string, kind: 'audio' | 'midi', fields: Partial<Track>): Track {
+function track(id: string, kind: Track['kind'], fields: Partial<Track>): Track {
     return {
         id,
-        name: kind === 'audio' ? 'Audio' : 'Yeast',
+        name: id,
         kind,
         muted: false,
         soloed: false,
@@ -213,10 +224,10 @@ function track(id: string, kind: 'audio' | 'midi', fields: Partial<Track>): Trac
     };
 }
 
-function yeastClip(): Clip {
+function yeastClip(id = YEAST_CLIP_ID, trackId = YEAST_TRACK_ID): Clip {
     return {
-        id: YEAST_CLIP_ID,
-        trackId: YEAST_TRACK_ID,
+        id,
+        trackId,
         name: 'Arpeggio',
         type: 'midi',
         startBeat: 0,
@@ -235,16 +246,18 @@ function yeastNote(pitch: number): MidiNote {
     return { id: `note-${pitch}`, pitch, startBeat: 0, duration: 0.5, velocity: 100 };
 }
 
+function yeastTrack(id: string, clip: Clip, fields: Partial<Track> = {}): Track {
+    return track(id, 'midi', {
+        devices: [{ id: `${id}-rack`, name: 'Yeast', type: 'yeast', bypassed: false, parameterValues: {} }],
+        clips: [clip],
+        ...fields,
+    });
+}
+
 /** An armed audio track beside a Yeast MIDI track whose clip sounds from beat 0. */
 function seedProject(): void {
     trackStore.set({
-        tracks: [
-            track(AUDIO_TRACK_ID, 'audio', { armed: true }),
-            track(YEAST_TRACK_ID, 'midi', {
-                devices: [{ id: 'yeast-rack', name: 'Yeast', type: 'yeast', bypassed: false, parameterValues: {} }],
-                clips: [yeastClip()],
-            }),
-        ],
+        tracks: [track(AUDIO_TRACK_ID, 'audio', { armed: true }), yeastTrack(YEAST_TRACK_ID, yeastClip())],
         selectedTrackId: AUDIO_TRACK_ID,
         ghostClips: [],
     });
@@ -290,6 +303,41 @@ function pcm(value: number): AudioBuffer {
     buffer.getChannelData(0).set([value, -value]);
     buffer.getChannelData(1).set([-value, value]);
     return buffer;
+}
+
+function editTracks(edit: (tracks: Track[]) => Track[]): void {
+    const state = trackStore.value;
+    if (!state) {
+        throw new Error('Expected track state');
+    }
+    trackStore.set({ ...state, tracks: edit(state.tracks) });
+}
+
+function moveClip(clipId: string): void {
+    editTracks((tracks) =>
+        tracks.map((candidate) => ({
+            ...candidate,
+            clips: candidate.clips.map((clip) => (clip.id === clipId ? { ...clip, startBeat: 0.25 } : clip)),
+        }))
+    );
+}
+
+function editMidi(edit: (midi: NonNullable<typeof midiStore.value>) => NonNullable<typeof midiStore.value>): void {
+    const midi = midiStore.value;
+    if (!midi) {
+        throw new Error('Expected MIDI state');
+    }
+    midiStore.set(edit(midi));
+}
+
+/** One take lane on the Yeast track whose comp plays its clip's take up to `compEndBeat`. */
+function yeastTakeLane(compEndBeat: number) {
+    return {
+        id: 'lane-yeast',
+        trackId: YEAST_TRACK_ID,
+        takes: [{ id: 'take-yeast', clipId: YEAST_CLIP_ID, name: 'Take 1', startBeat: 0, endBeat: 4, selected: true }],
+        activeCompRegions: [{ startBeat: 0, endBeat: compEndBeat, takeId: 'take-yeast' }],
+    };
 }
 
 function audioClip(clipId: string | undefined) {
@@ -532,21 +580,132 @@ describe('initial playback witness reads only the prepared inputs (#6012)', () =
         expect(emittedGains, 'the initial emission read the edited clip').toEqual([0.5]);
     });
 
-    // Tempo is pinned by 'retires a refused first-window start when the initial
-    // emission goes stale' (punchPausePlayCommand.integration.spec.ts); the
-    // meter is read only by the Yeast preparation and has no other pin.
-    it('still refuses Play when the meter changes while Yeast prepares', async () => {
+    /** Play from beat 0 with the Yeast round trip held, land the edit, then release it. */
+    async function expectRefusalWhenEditedWhileYeastPrepares(edit: () => void): Promise<void> {
         transportStore.set({ ...defaultTransportState, tempo: 120, isPlaying: false, playheadPosition: 0 });
         flushAutomergeStorageWrites();
         const yeast = holdYeastPreparation();
         const playing = startPlayback();
         await vi.waitFor(() => expect(yeast.started()).toBe(true));
 
-        timeSignatureMapStore.set({ changes: [{ id: 'meter', beat: 0, numerator: 3, denominator: 4 }] });
+        edit();
         yeast.release();
         await playing;
 
         expect(mocks.notifyUser).toHaveBeenCalledWith(PREPARATION_REFUSAL, 'warning');
         expect(transportStore.value?.isPlaying).toBe(false);
+    }
+
+    // Tempo is pinned by 'retires a refused first-window start when the initial
+    // emission goes stale' (punchPausePlayCommand.integration.spec.ts); the
+    // meter is read only by the Yeast preparation and has no other pin.
+    it('still refuses Play when the meter changes while Yeast prepares', async () => {
+        await expectRefusalWhenEditedWhileYeastPrepares(() =>
+            timeSignatureMapStore.set({ changes: [{ id: 'meter', beat: 0, numerator: 3, denominator: 4 }] })
+        );
+    });
+
+    // The comp is read through `resolveClipsWithComping` while the window resolves.
+    it('still refuses Play when the Yeast track’s take-lane comp changes while it prepares', async () => {
+        takeLaneStore.set({ lanes: [yeastTakeLane(4)] });
+        await expectRefusalWhenEditedWhileYeastPrepares(() => takeLaneStore.set({ lanes: [yeastTakeLane(2)] }));
+    });
+
+    // A muted track prepares only while a pre-fader send reaches an existing
+    // bus, so the bus set is an input even though the Yeast track is unchanged.
+    it('still refuses Play when the bus a muted Yeast track’s pre-fader send feeds is removed while it prepares', async () => {
+        editTracks((tracks) => [
+            ...tracks.map((candidate) =>
+                candidate.id === YEAST_TRACK_ID
+                    ? { ...candidate, muted: true, sends: [{ busId: BUS_TRACK_ID, level: 1, preFader: true }] }
+                    : candidate
+            ),
+            track(BUS_TRACK_ID, 'bus', {}),
+        ]);
+        await expectRefusalWhenEditedWhileYeastPrepares(() =>
+            editTracks((tracks) => tracks.filter((candidate) => candidate.id !== BUS_TRACK_ID))
+        );
+    });
+
+    it('still refuses Play when only the probability seed changes while Yeast prepares', async () => {
+        await expectRefusalWhenEditedWhileYeastPrepares(() =>
+            editMidi((midi) => ({ ...midi, probabilitySeed: midi.probabilitySeed + 1 }))
+        );
+    });
+
+    // The witness re-projects each time its store moves and always compares
+    // with what it captured: an unrelated write it has already seen and
+    // admitted must not hide a later edit to a prepared input of the same store.
+    it('still refuses a prepared edit landing after the witness admitted the earlier take’s commit', async () => {
+        editTracks((tracks) => [
+            ...tracks,
+            yeastTrack(SECOND_YEAST_TRACK_ID, yeastClip(SECOND_YEAST_CLIP_ID, SECOND_YEAST_TRACK_ID)),
+        ]);
+        editMidi((midi) => ({
+            ...midi,
+            notesByClipId: { ...midi.notesByClipId, [SECOND_YEAST_CLIP_ID]: [yeastNote(67)] },
+        }));
+        await pauseHeldPunch();
+        await executePlayheadSeek(0);
+        const first = holdYeastPreparation();
+        const second = holdYeastPreparation();
+        const playing = startPlayback();
+        await vi.waitFor(() => expect(first.started()).toBe(true));
+        mocks.release(pcm(0.25));
+        await vi.waitFor(() => expect(commits()).toBe(1));
+
+        // The first track's round trip settles and the preparation checks the
+        // witness against the committed take before it asks for the second.
+        first.release();
+        await vi.waitFor(() => expect(second.started()).toBe(true));
+        moveClip(YEAST_CLIP_ID);
+        second.release();
+        await playing;
+
+        expect(mocks.notifyUser).toHaveBeenCalledWith(PREPARATION_REFUSAL, 'warning');
+        expect(transportStore.value?.isPlaying).toBe(false);
+        expect(commits(), 'the earlier take is still kept').toBe(1);
+    });
+    // The scheduler polls the witness once more when the initial emission
+    // settles. A witness that adopted the projection it last saw would read the
+    // edit the emission refused as the new baseline, admit the unrelated write
+    // after it, and start the roll with no initial emission.
+    it('still refuses when an unrelated write follows the prepared edit the emission refused', async () => {
+        editTracks((tracks) => [...tracks, track(PLAIN_TRACK_ID, 'audio', {})]);
+        flushAutomergeStorageWrites();
+        await pauseHeldPunch();
+        const admitStart = mocks.startAudioRecording.getMockImplementation();
+        if (!admitStart) {
+            throw new Error('Expected the recorder fake admission');
+        }
+        const admission = Promise.withResolvers<void>();
+        mocks.startAudioRecording.mockImplementationOnce(async (trackId, callback) => {
+            await admission.promise;
+            return admitStart(trackId, callback);
+        });
+        await executePlayheadSeek(6);
+        const preparations = vi.mocked(prepareInitialMidiWindow).mock.results.length;
+        const playing = startPlayback();
+        // Play inside the region waits for the closing take, then punches in.
+        mocks.release(pcm(0.25));
+        await vi.waitFor(() => expect(mocks.startAudioRecording).toHaveBeenCalledTimes(2));
+        await vi.waitFor(() => expect(vi.mocked(prepareInitialMidiWindow).mock.results.length).toBe(preparations + 1));
+        await vi.mocked(prepareInitialMidiWindow).mock.results[preparations]?.value;
+
+        moveClip(YEAST_CLIP_ID);
+        vi.spyOn(schedulerTimingDiagnostics, 'recordTickSettled').mockImplementationOnce(() =>
+            editTracks((tracks) =>
+                tracks.map((candidate) => (candidate.id === PLAIN_TRACK_ID ? { ...candidate, gain: 0.5 } : candidate))
+            )
+        );
+        admission.resolve();
+        // The refusal stops the transport, which flushes the punch it admitted.
+        await vi.waitFor(() => expect(mocks.pendingCount()).toBe(1));
+        mocks.release(pcm(0.5));
+        await playing;
+
+        expect(mocks.notifyUser).toHaveBeenCalledWith(PREPARATION_REFUSAL, 'warning');
+        expect(transportStore.value?.isPlaying).toBe(false);
+        expect(schedulerSession.worker).toBeNull();
     });
 });
