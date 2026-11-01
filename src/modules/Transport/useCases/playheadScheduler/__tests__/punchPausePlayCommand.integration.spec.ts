@@ -636,6 +636,49 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         await vi.waitFor(() => expect(commits()).toBe(2));
     });
 
+    it('leaves the new owner arrangement alone when a refused punch-in start arrives after root replacement', async () => {
+        const old = await openFirst();
+        pausePlayback();
+        expect(mocks.pendingCount()).toBe(1);
+        await executePlayheadSeek(3.95);
+        await startPlayback();
+        mocks.audioClock.currentTime += 0.1;
+        await tick(2);
+        const successor = activeRecordingRef.current[0];
+        expect(successor).toBeTruthy();
+        expect(successor).not.toBe(old);
+        pausePlayback();
+        flushAutomergeStorageWrites();
+        const root = getCrdtDoc(DOC_PREFIX_ROOT);
+        if (!root) {
+            throw new Error('Expected outgoing project root');
+        }
+        replaceCrdtDoc({ id: DOC_PREFIX_ROOT, doc: cloneAutomergeDoc(root) });
+        projectCrdtToStores({ resetProjections: true });
+        flushAutomergeStorageWrites();
+        const successorRoot = getCrdtDoc(DOC_PREFIX_ROOT);
+        if (!successorRoot) {
+            throw new Error('Expected successor project root');
+        }
+        const before = structuredClone(toJS(successorRoot));
+        const beforeProjection = captured();
+        // The new owner holds a clip with the refused start's id.
+        expect(beforeProjection.tracks?.tracks[0]?.clips.some((clip) => clip.id === successor)).toBe(true);
+
+        mocks.release(pcm(0.125));
+        await vi.waitFor(() => expect(mocks.refusedStarts()).toBe(1));
+        await recordingLifecycle.waitForCommits();
+        await recordingLifecycle.waitForClosing();
+        flushAutomergeStorageWrites();
+        const after = getCrdtDoc(DOC_PREFIX_ROOT);
+        if (!after) {
+            throw new Error('Expected successor project root after the refusal');
+        }
+        expect(captured()).toEqual(beforeProjection);
+        expect(toJS(after)).toEqual(before);
+        expect(commits()).toBe(0);
+    });
+
     it('refuses an old terminal after root replacement without changing its successor', async () => {
         await openFirst();
         pausePlayback();
