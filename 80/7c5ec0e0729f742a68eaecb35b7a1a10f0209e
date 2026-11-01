@@ -1,0 +1,19 @@
+.agents/skills/test-design/SKILL.md
+  s_d70df518678a49::t_9eda6fb9122661 29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "807c5ec0e0729f742a68eaecb35b7a1a10f0209e",
+  "prompts": {},
+  "sessions": {
+    "s_d70df518678a49": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_d70df518678a49",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
