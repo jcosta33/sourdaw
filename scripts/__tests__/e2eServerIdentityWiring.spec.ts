@@ -520,6 +520,79 @@ describe('cold first-paint warmup', () => {
         expect(warmupMocks.close).toHaveBeenCalledOnce();
     });
 
+    it('gives the marker wait only the budget left after navigation and overlay', async () => {
+        // Navigation and the overlay spend 55 s, so the boot marker may wait
+        // for the 245 s that remain, not the whole 300 s allowance.
+        warmupMocks.on.mockImplementation(() => {});
+        warmupMocks.goto.mockImplementation(async () => {
+            clock.now += 35_000;
+            return null;
+        });
+        warmupMocks.waitFor.mockImplementation(async () => {
+            clock.now += 20_000;
+        });
+        vi.spyOn(console, 'log').mockImplementation(() => {});
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        try {
+            const warming = warmFirstPaint(config);
+            // Flush the navigation and overlay so the marker wait is polling,
+            // then move past both the 245 s and the 300 s bounds. The rejection
+            // expectation attaches before the timers advance.
+            await vi.advanceTimersByTimeAsync(0);
+            clock.now = 400_000;
+            const refusal = expect(warming).rejects.toThrow('never logged "[capabilities]" within 245000ms');
+            await vi.advanceTimersByTimeAsync(100);
+            await refusal;
+        } finally {
+            vi.useRealTimers();
+        }
+        expect(warmupMocks.waitFor).toHaveBeenCalledWith({ state: 'visible', timeout: 265_000 });
+        expect(warmupMocks.close).toHaveBeenCalledOnce();
+    });
+
+    it('logs the boot cost measured after the overlay, not the overlay time', async () => {
+        // The marker lands 10 s after the overlay. It is delivered from a fake
+        // timer scheduled by the overlay mock: a microtask would run before the
+        // warmup reads the clock for the overlay figure and skew it to 65 s.
+        const consoleListeners: Array<(message: { text: () => string }) => void> = [];
+        warmupMocks.on.mockImplementation((_event: string, handler: (message: { text: () => string }) => void) => {
+            consoleListeners.push(handler);
+        });
+        warmupMocks.goto.mockImplementation(async () => {
+            clock.now += 35_000;
+            return null;
+        });
+        warmupMocks.waitFor.mockImplementation(async () => {
+            clock.now += 20_000;
+            setTimeout(() => {
+                clock.now += 10_000;
+                for (const listener of consoleListeners) {
+                    listener({ text: () => '[DEV][INFO] [capabilities] {"isDesktopRuntime":false}' });
+                }
+            }, 0);
+        });
+        const warmupLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+        const warmupError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        try {
+            const warming = warmFirstPaint(config);
+            // The first advance fires the marker timer once the overlay has
+            // been read; the second lets the marker poll observe the marker.
+            await vi.advanceTimersByTimeAsync(100);
+            await warming;
+        } finally {
+            vi.useRealTimers();
+        }
+        expect(warmupLog).toHaveBeenCalledWith(
+            expect.stringMatching(
+                /\[first-paint warmup\] launch overlay after 55\.0s, boot capabilities after 65\.0s; 235\.0s of the 300s cold allowance remains/
+            )
+        );
+        expect(warmupError).not.toHaveBeenCalled();
+        expect(warmupMocks.close).toHaveBeenCalledOnce();
+    });
+
     it('rejects a different serving checkout before launching or navigating', async () => {
         warmupMocks.assertIdentity.mockRejectedValue(new Error('wrong serving checkout'));
 
