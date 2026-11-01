@@ -194,3 +194,231 @@ fn a_nested_head_multi_array_capture_loads_exactly_when_native_admits_it() {
     );
     assert!(!engine.has_loaded_neural_model());
 }
+
+fn edit(capture: &str, change: impl FnOnce(&mut serde_json::Value)) -> String {
+    let mut capture: serde_json::Value = serde_json::from_str(capture).expect("capture JSON");
+    change(&mut capture);
+    capture.to_string()
+}
+
+fn resize_weights(capture: &mut serde_json::Value, delta: isize) {
+    let weights = capture["weights"].as_array_mut().expect("weights");
+    let count = weights
+        .len()
+        .checked_add_signed(delta)
+        .expect("weight count");
+    weights.resize(count, serde_json::json!(0.125));
+}
+
+fn assert_admitted_everywhere(label: &str, capture: &str) {
+    if let Err(error) = NativeNamPlan::inspect(capture, 48_000.0) {
+        panic!("{label}: native admission must accept this shape: {error}");
+    }
+    let (mut engine, result) = load(capture);
+    if let Err(error) = result {
+        panic!("{label}: a shape native admits must load: {error}");
+    }
+    engine.set_param("engineMode", 1.0);
+    let mut left = [0.1_f32; 128];
+    let mut right = left;
+    engine.process_block(&mut left, &mut right);
+    assert!(left.iter().all(|sample| sample.is_finite()), "{label}");
+}
+
+fn assert_refused_everywhere(label: &str, capture: &str, wasm_reason: &str) {
+    assert!(
+        NativeNamPlan::inspect(capture, 48_000.0).is_err(),
+        "{label}: native admission must refuse this shape"
+    );
+    let (engine, result) = load(capture);
+    match result {
+        Ok(()) => panic!("{label}: a shape native refuses must not load"),
+        Err(error) => assert!(error.contains(wasm_reason), "{label}: {error}"),
+    }
+    assert!(!engine.has_loaded_neural_model(), "{label}");
+}
+
+#[test]
+fn a_first_array_wider_than_the_mono_input_is_refused_before_prewarm() {
+    let capture = wavenet_capture(&[(2, 2, 1)]);
+    assert!(NativeNamPlan::inspect(&capture, 48_000.0)
+        .unwrap_err()
+        .contains(NATIVE_REFUSAL));
+    assert_refused_everywhere(
+        "array 0 input_size 2",
+        &capture,
+        "layer array 0: input_size must be 1",
+    );
+}
+
+#[test]
+fn a_capture_whose_output_is_not_mono_is_refused_before_prewarm() {
+    let wide_head = wavenet_capture(&[(1, 2, 2)]);
+    // No post-stack head: the last array's two-channel head is the output.
+    let headless = edit(&wide_head, |capture| {
+        capture["config"]["head"] = serde_json::Value::Null;
+        resize_weights(capture, -3);
+    });
+    assert_refused_everywhere(
+        "last head 2, no post-stack head",
+        &headless,
+        "multi-channel WaveNet output (2 channels)",
+    );
+    // A two-channel post-stack head output: one conv of 2 -> 2 with bias.
+    let stereo_head = edit(&wide_head, |capture| {
+        capture["config"]["head"]["out_channels"] = serde_json::json!(2);
+        resize_weights(capture, 3);
+    });
+    assert_refused_everywhere(
+        "post-stack head out_channels 2",
+        &stereo_head,
+        "multi-channel WaveNet output (2 channels)",
+    );
+    let stereo_root = edit(&wavenet_capture(&[(1, 2, 1)]), |capture| {
+        capture["config"]["out_channels"] = serde_json::json!(2);
+    });
+    assert_refused_everywhere(
+        "root out_channels 2",
+        &stereo_root,
+        "multi-channel WaveNet (1 -> 2 channels)",
+    );
+}
+
+#[test]
+fn a_gating_mode_decides_over_the_legacy_gated_flag() {
+    let capture = edit(&wavenet_capture(&[(1, 2, 1)]), |capture| {
+        capture["config"]["layers"][0]["gating_mode"] = serde_json::json!("none");
+        capture["config"]["layers"][0]["gated"] = serde_json::json!(true);
+    });
+    assert_admitted_everywhere("gating_mode none over gated true", &capture);
+}
+
+#[test]
+fn the_channel_chain_reads_head_size_before_a_nested_head() {
+    // Array 1's three channels match array 0's head_size; its head1x1
+    // narrows the accumulation to array 0's nested head width of two.
+    let weights: Vec<f32> = (0..64)
+        .map(|index| ((index + 1) as f32).sin() * 0.25)
+        .collect();
+    let capture = serde_json::json!({
+        "version": "0.5.4",
+        "architecture": "WaveNet",
+        "sample_rate": 48_000,
+        "config": { "head": null, "head_scale": 0.02, "layers": [
+            { "input_size": 1, "condition_size": 1, "channels": 2, "head_size": 3,
+              "head": { "out_channels": 2, "kernel_size": 1, "bias": false },
+              "head_bias": false, "kernel_size": 1, "dilations": [1],
+              "activation": "Tanh", "gated": false },
+            { "input_size": 2, "condition_size": 1, "channels": 3, "head_size": 1,
+              "head1x1": { "active": true, "out_channels": 2 },
+              "head_bias": false, "kernel_size": 1, "dilations": [1],
+              "activation": "Tanh", "gated": false }
+        ]},
+        "weights": weights,
+    })
+    .to_string();
+    assert_admitted_everywhere("head_size 3 beside a nested head of 2", &capture);
+}
+
+#[test]
+fn every_wavenet_rule_native_admission_enforces_refuses_the_wasm_parser_too() {
+    let base = wavenet_capture(&[(1, 2, 1)]);
+    let array = |change: fn(&mut serde_json::Value)| {
+        edit(&base, |capture| change(&mut capture["config"]["layers"][0]))
+    };
+    let refused = [
+        (
+            "boolean FiLM key",
+            array(|array| array["conv_pre_film"] = serde_json::json!(true)),
+            "FiLM modulation (\"conv_pre_film\")",
+        ),
+        (
+            "null FiLM key",
+            array(|array| array["conv_pre_film"] = serde_json::Value::Null),
+            "FiLM modulation (\"conv_pre_film\")",
+        ),
+        (
+            "unlisted FiLM key",
+            array(|array| array["custom_film"] = serde_json::json!({ "active": true })),
+            "FiLM modulation (\"custom_film\")",
+        ),
+        (
+            "grouped inactive head1x1",
+            array(|array| array["head1x1"] = serde_json::json!({ "active": false, "groups": 2 })),
+            "grouped head1x1 convolutions",
+        ),
+        (
+            "non-integer groups_input",
+            array(|array| array["groups_input"] = serde_json::json!("1")),
+            "grouped WaveNet convolutions (groups_input",
+        ),
+        (
+            "non-boolean gated",
+            array(|array| array["gated"] = serde_json::json!("yes")),
+            "WaveNet gated must be a boolean",
+        ),
+        (
+            "non-boolean layer1x1 active",
+            array(|array| array["layer1x1"] = serde_json::json!({ "active": "no" })),
+            "WaveNet active must be a boolean",
+        ),
+        (
+            "active head1x1 without out_channels",
+            array(|array| array["head1x1"] = serde_json::json!({ "active": true })),
+            "WaveNet layer array requires out_channels",
+        ),
+        (
+            "non-integer bottleneck",
+            array(|array| array["bottleneck"] = serde_json::json!("x")),
+            "WaveNet layer array requires bottleneck",
+        ),
+        (
+            "zero dilation",
+            array(|array| array["dilations"] = serde_json::json!([0])),
+            "WaveNet dilations must be positive integers",
+        ),
+        (
+            "non-integer root in_channels",
+            edit(&base, |capture| {
+                capture["config"]["in_channels"] = serde_json::json!("1")
+            }),
+            "WaveNet layer array requires in_channels",
+        ),
+        (
+            "zero nested head dilation",
+            edit(&with_nested_heads(&base), |capture| {
+                capture["config"]["layers"][0]["head"]["head_dilation"] = serde_json::json!(0)
+            }),
+            "WaveNet head_dilation must be a positive integer",
+        ),
+        (
+            "zero kernel size",
+            edit(&base, |capture| {
+                capture["config"]["layers"][0]["kernel_sizes"] = serde_json::json!([0]);
+                // The dilated conv loses its 2 x 2 taps.
+                resize_weights(capture, -4);
+            }),
+            "WaveNet kernel_sizes must be positive integers",
+        ),
+    ];
+    for (label, capture, wasm_reason) in &refused {
+        assert_refused_everywhere(label, capture, wasm_reason);
+    }
+
+    let admitted = [
+        (
+            "inactive FiLM keys",
+            array(|array| {
+                array["conv_pre_film"] = serde_json::json!(false);
+                array["conv_post_film"] = serde_json::json!({ "active": false });
+            }),
+        ),
+        (
+            "ungrouped inactive head1x1",
+            array(|array| array["head1x1"] = serde_json::json!({ "active": false, "groups": 1 })),
+        ),
+    ];
+    for (label, capture) in &admitted {
+        assert_admitted_everywhere(label, capture);
+    }
+}

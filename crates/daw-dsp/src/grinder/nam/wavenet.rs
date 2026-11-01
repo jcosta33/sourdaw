@@ -15,20 +15,6 @@ use super::conv::Conv1d;
 use super::conv::Conv1x1;
 use super::NamModelError;
 
-/// Config keys that would activate FiLM modulation. NAMCore treats a present,
-/// non-false key as active by default, so presence with any non-false value is
-/// rejected rather than approximated.
-const FILM_KEYS: [&str; 8] = [
-    "conv_pre_film",
-    "conv_post_film",
-    "input_mixin_pre_film",
-    "input_mixin_post_film",
-    "activation_pre_film",
-    "activation_post_film",
-    "layer1x1_post_film",
-    "head1x1_post_film",
-];
-
 #[derive(Clone, Copy, PartialEq)]
 enum GatingMode {
     None,
@@ -36,12 +22,50 @@ enum GatingMode {
     Blended,
 }
 
+/// A required dimension: a positive integer, as native admission reads it.
 fn read_usize(config: &Value, key: &str) -> Result<usize, NamModelError> {
-    config
-        .get(key)
-        .and_then(Value::as_u64)
-        .map(|value| value as usize)
-        .ok_or_else(|| NamModelError::InvalidConfig(format!("WaveNet layer array requires {key}")))
+    match config.get(key).and_then(Value::as_u64) {
+        None => Err(NamModelError::InvalidConfig(format!(
+            "WaveNet layer array requires {key}"
+        ))),
+        Some(0) => Err(NamModelError::InvalidConfig(format!(
+            "WaveNet {key} must be a positive integer"
+        ))),
+        Some(value) => Ok(value as usize),
+    }
+}
+
+/// An optional dimension: `default` when absent, else a positive integer.
+fn read_optional_usize(config: &Value, key: &str, default: usize) -> Result<usize, NamModelError> {
+    match config.get(key) {
+        None => Ok(default),
+        Some(_) => read_usize(config, key),
+    }
+}
+
+/// An optional flag: `default` when absent, else a boolean.
+fn read_optional_bool(config: &Value, key: &str, default: bool) -> Result<bool, NamModelError> {
+    match config.get(key) {
+        None => Ok(default),
+        Some(value) => value.as_bool().ok_or_else(|| {
+            NamModelError::InvalidConfig(format!("WaveNet {key} must be a boolean"))
+        }),
+    }
+}
+
+/// One entry of a dilation or kernel-size list: a positive integer.
+fn read_positive_entry(value: &Value, list: &str) -> Result<usize, NamModelError> {
+    match value.as_u64() {
+        Some(entry) if entry >= 1 => Ok(entry as usize),
+        _ => Err(NamModelError::InvalidConfig(format!(
+            "WaveNet {list} must be positive integers"
+        ))),
+    }
+}
+
+/// A nested 1x1 config (`layer1x1`, `head1x1`); absent reads as an empty one.
+fn sub_config<'a>(array_config: &'a Value, key: &str) -> &'a Value {
+    array_config.get(key).unwrap_or(&Value::Null)
 }
 
 fn read_bool(config: &Value, key: &str) -> Result<bool, NamModelError> {
@@ -70,43 +94,39 @@ fn chained_head_size(array_config: &Value) -> Option<u64> {
 /// FiLM modulation are real .nam features this runtime does not implement, so
 /// naming them beats silently dropping them.
 fn reject_unsupported_features(array_config: &Value) -> Result<(), NamModelError> {
+    // A present groups count must be exactly 1; native admission reads it
+    // whether or not the 1x1 it belongs to is active.
     for key in ["groups_input", "groups_input_mixin"] {
         if let Some(groups) = array_config.get(key) {
-            let groups = groups.as_u64().unwrap_or(1);
-            if groups != 1 {
+            if groups.as_u64() != Some(1) {
                 return Err(NamModelError::InvalidConfig(format!(
                     "grouped WaveNet convolutions ({key} = {groups}) are not supported"
                 )));
             }
         }
     }
-    if let Some(layer1x1) = array_config.get("layer1x1") {
-        let groups = layer1x1.get("groups").and_then(Value::as_u64).unwrap_or(1);
-        if groups != 1 {
-            return Err(NamModelError::InvalidConfig(
-                "grouped layer1x1 convolutions are not supported".into(),
-            ));
+    for key in ["layer1x1", "head1x1"] {
+        if sub_config(array_config, key)
+            .get("groups")
+            .is_some_and(|groups| groups.as_u64() != Some(1))
+        {
+            return Err(NamModelError::InvalidConfig(format!(
+                "grouped {key} convolutions are not supported"
+            )));
         }
     }
-    if let Some(head1x1) = array_config.get("head1x1") {
-        let active = head1x1
-            .get("active")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        let groups = head1x1.get("groups").and_then(Value::as_u64).unwrap_or(1);
-        if active && groups != 1 {
-            return Err(NamModelError::InvalidConfig(
-                "grouped head1x1 convolutions are not supported".into(),
-            ));
-        }
-    }
-    for key in FILM_KEYS {
-        if let Some(film) = array_config.get(key) {
-            if !film.is_boolean() && film.get("active").and_then(Value::as_bool).unwrap_or(true) {
-                return Err(NamModelError::InvalidConfig(format!(
-                    "FiLM modulation (\"{key}\") is not supported"
-                )));
-            }
+    // Any key naming FiLM is active unless it is `false` or an object whose
+    // `active` is `false`.
+    let keys = array_config.as_object().ok_or_else(|| {
+        NamModelError::InvalidConfig("WaveNet layer arrays must be objects".into())
+    })?;
+    for (key, film) in keys {
+        let inactive = film.as_bool() == Some(false)
+            || film.get("active").and_then(Value::as_bool) == Some(false);
+        if key.contains("film") && !inactive {
+            return Err(NamModelError::InvalidConfig(format!(
+                "FiLM modulation (\"{key}\") is not supported"
+            )));
         }
     }
     Ok(())
@@ -145,15 +165,7 @@ impl WavenetLayer {
         condition_size: usize,
         weights: &mut &[f32],
     ) -> Result<WavenetLayer, NamModelError> {
-        let bottleneck = array_config
-            .get("bottleneck")
-            .and_then(Value::as_u64)
-            .map(|value| value as usize)
-            .unwrap_or(channels);
-        let gated = array_config
-            .get("gated")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
+        let bottleneck = read_optional_usize(array_config, "bottleneck", channels)?;
         let gating = match array_config.get("gating_mode").and_then(Value::as_str) {
             Some("gated") => GatingMode::Gated,
             Some("blended") => GatingMode::Blended,
@@ -163,7 +175,8 @@ impl WavenetLayer {
                     "unknown gating_mode \"{other}\""
                 )));
             }
-            None if gated => GatingMode::Gated,
+            // The legacy flag decides only when no gating_mode string does.
+            None if read_optional_bool(array_config, "gated", false)? => GatingMode::Gated,
             None => GatingMode::None,
         };
         let out2 = if gating == GatingMode::None {
@@ -172,28 +185,20 @@ impl WavenetLayer {
             2 * bottleneck
         };
 
-        let layer1x1_active = array_config
-            .get("layer1x1")
-            .and_then(|value| value.get("active"))
-            .and_then(Value::as_bool)
-            // NAMCore defaults layer1x1 to active.
-            .unwrap_or(true);
+        // NAMCore defaults layer1x1 to active and head1x1 to inactive.
+        let layer1x1_active =
+            read_optional_bool(sub_config(array_config, "layer1x1"), "active", true)?;
         if !layer1x1_active && bottleneck != channels {
             return Err(NamModelError::InvalidConfig(
                 "layer1x1 inactive requires bottleneck == channels".into(),
             ));
         }
-        let head1x1_out = array_config
-            .get("head1x1")
-            .filter(|value| {
-                value
-                    .get("active")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false)
-            })
-            .and_then(|value| value.get("out_channels"))
-            .and_then(Value::as_u64)
-            .map(|value| value as usize);
+        let head1x1 = sub_config(array_config, "head1x1");
+        let head1x1_out = if read_optional_bool(head1x1, "active", false)? {
+            Some(read_usize(head1x1, "out_channels")?)
+        } else {
+            None
+        };
 
         let activation =
             Activation::from_json(array_config.get("activation").ok_or_else(|| {
@@ -346,13 +351,7 @@ impl WavenetLayerArray {
                 NamModelError::InvalidConfig("WaveNet layer array requires dilations".into())
             })?
             .iter()
-            .map(|value| {
-                value.as_u64().map(|value| value as usize).ok_or_else(|| {
-                    NamModelError::InvalidConfig(
-                        "WaveNet dilations must be positive integers".into(),
-                    )
-                })
-            })
+            .map(|value| read_positive_entry(value, "dilations"))
             .collect::<Result<Vec<_>, _>>()?;
         if dilations.is_empty() {
             return Err(NamModelError::InvalidConfig(
@@ -374,13 +373,7 @@ impl WavenetLayerArray {
                 }
                 values
                     .iter()
-                    .map(|value| {
-                        value.as_u64().map(|value| value as usize).ok_or_else(|| {
-                            NamModelError::InvalidConfig(
-                                "WaveNet kernel_sizes must be integers".into(),
-                            )
-                        })
-                    })
+                    .map(|value| read_positive_entry(value, "kernel_sizes"))
                     .collect::<Result<Vec<_>, _>>()?
             }
             None => {
@@ -395,30 +388,9 @@ impl WavenetLayerArray {
         let (head_size, head_kernel_size, head_dilation, head_bias) = match array_config.get("head")
         {
             Some(head_config) if !head_config.is_null() => {
-                let head_size = head_config
-                    .get("out_channels")
-                    .and_then(Value::as_u64)
-                    .map(|value| value as usize)
-                    .ok_or_else(|| {
-                        NamModelError::InvalidConfig("WaveNet head requires out_channels".into())
-                    })?;
-                let kernel_size = head_config
-                    .get("kernel_size")
-                    .and_then(Value::as_u64)
-                    .map(|value| value as usize)
-                    .ok_or_else(|| {
-                        NamModelError::InvalidConfig("WaveNet head requires kernel_size".into())
-                    })?;
-                if kernel_size < 1 {
-                    return Err(NamModelError::InvalidConfig(
-                        "WaveNet head kernel_size must be >= 1".into(),
-                    ));
-                }
-                let dilation = head_config
-                    .get("head_dilation")
-                    .and_then(Value::as_u64)
-                    .map(|value| value as usize)
-                    .unwrap_or(1);
+                let head_size = read_usize(head_config, "out_channels")?;
+                let kernel_size = read_usize(head_config, "kernel_size")?;
+                let dilation = read_optional_usize(head_config, "head_dilation", 1)?;
                 let bias = head_config
                     .get("bias")
                     .and_then(Value::as_bool)
@@ -533,18 +505,13 @@ impl PostStackHead {
         in_channels: usize,
         weights: &mut &[f32],
     ) -> Result<PostStackHead, NamModelError> {
-        let channels = head_config
-            .get("channels")
-            .and_then(Value::as_u64)
-            .map(|value| value as usize)
-            .ok_or_else(|| NamModelError::InvalidConfig("WaveNet head requires channels".into()))?;
-        let out_channels = head_config
-            .get("out_channels")
-            .and_then(Value::as_u64)
-            .map(|value| value as usize)
-            .ok_or_else(|| {
-                NamModelError::InvalidConfig("WaveNet head requires out_channels".into())
-            })?;
+        let channels = read_usize(head_config, "channels")?;
+        let out_channels = read_usize(head_config, "out_channels")?;
+        if out_channels != 1 {
+            return Err(NamModelError::InvalidConfig(format!(
+                "multi-channel WaveNet output ({out_channels} channels) is not supported; Grinder captures are mono"
+            )));
+        }
         let kernel_sizes: Vec<usize> = head_config
             .get("kernel_sizes")
             .and_then(Value::as_array)
@@ -552,13 +519,7 @@ impl PostStackHead {
                 NamModelError::InvalidConfig("WaveNet head requires kernel_sizes".into())
             })?
             .iter()
-            .map(|value| {
-                value.as_u64().map(|value| value as usize).ok_or_else(|| {
-                    NamModelError::InvalidConfig(
-                        "WaveNet head kernel_sizes must be integers".into(),
-                    )
-                })
-            })
+            .map(|value| read_positive_entry(value, "head kernel_sizes"))
             .collect::<Result<Vec<_>, _>>()?;
         if kernel_sizes.is_empty() {
             return Err(NamModelError::InvalidConfig(
@@ -671,15 +632,18 @@ impl WavenetModel {
                 "WaveNet config requires at least one layer array".into(),
             ));
         }
-        let in_channels = config
-            .get("in_channels")
-            .and_then(Value::as_u64)
-            .map(|value| value as usize)
-            .unwrap_or(1);
-        if in_channels != 1 {
+        let in_channels = read_optional_usize(config, "in_channels", 1)?;
+        let out_channels = read_optional_usize(config, "out_channels", 1)?;
+        if in_channels != 1 || out_channels != 1 {
             return Err(NamModelError::InvalidConfig(format!(
-                "multi-channel WaveNet input ({in_channels} channels) is not supported; Grinder captures are mono"
+                "multi-channel WaveNet ({in_channels} -> {out_channels} channels) is not supported; Grinder captures are mono"
             )));
+        }
+        // The first array reads the one-sample mono input.
+        if layers[0].get("input_size").and_then(Value::as_u64) != Some(1) {
+            return Err(NamModelError::InvalidConfig(
+                "layer array 0: input_size must be 1 (the mono input)".into(),
+            ));
         }
 
         // NAMCore validates channels[i] == head_size[i-1] in the constructor
@@ -734,6 +698,17 @@ impl WavenetModel {
         } else {
             None
         };
+        // Without a post-stack head the last array's head is the output, and
+        // only its first channel would ever be played.
+        let last_head_size = layer_arrays
+            .last()
+            .map(|array| array.head_output.len())
+            .unwrap_or(1);
+        if post_head.is_none() && last_head_size != 1 {
+            return Err(NamModelError::InvalidConfig(format!(
+                "multi-channel WaveNet output ({last_head_size} channels) is not supported; a last array head_size other than 1 needs a post-stack head"
+            )));
+        }
 
         // The chain feeding each array's head accumulation is structural:
         // array i's head inputs carry the previous array's head output, read
@@ -785,10 +760,6 @@ impl WavenetModel {
             }
         }
 
-        let last_head_size = layer_arrays
-            .last()
-            .map(|array| array.head_output.len())
-            .unwrap_or(1);
         let first_channels = layer_arrays
             .first()
             .map(|array| array.layer_output.len())
