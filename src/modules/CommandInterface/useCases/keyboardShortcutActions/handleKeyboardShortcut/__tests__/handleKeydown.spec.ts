@@ -20,7 +20,9 @@ import { executeUserAppAction, pushUndoEntry, redo, undo } from '#/modules/Comma
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { stopAllSlots, triggerPad } from '#/modules/SessionLauncher/useCases';
 import { seekPlayhead, setLoopRegion } from '#/modules/Transport/useCases';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import {
+    closeCollaborationPanel,
     cycleAutomationVisibility,
     openExportDialog,
     openPreferencesDialog,
@@ -137,10 +139,13 @@ vi.mock('#/modules/Transport/useCases', () => ({
 }));
 
 vi.mock('#/modules/WorkspaceShell/stores', () => ({
-    workspaceStore: { value: { activeTool: 'select', selectedClipIds: [], selectedClipId: null } },
+    workspaceStore: {
+        value: { activeTool: 'select', selectedClipIds: [], selectedClipId: null, collaborationPanelOpen: false },
+    },
 }));
 
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({
+    closeCollaborationPanel: vi.fn(),
     cycleAutomationVisibility: vi.fn(),
     openExportDialog: vi.fn(),
     openPreferencesDialog: vi.fn(),
@@ -381,6 +386,67 @@ describe('handleKeydown', () => {
             expect(cancelActiveTimelineGesture).toHaveBeenCalledTimes(1);
             expect(vi.mocked(clearClipSelection)).not.toHaveBeenCalled();
             expect(stopPlaybackMock).not.toHaveBeenCalled();
+        });
+
+        describe('with the Collaborate panel open', () => {
+            beforeEach(() => {
+                workspaceStore.value!.collaborationPanelOpen = true;
+            });
+
+            afterEach(() => {
+                workspaceStore.value!.collaborationPanelOpen = false;
+            });
+
+            it('closes the panel and leaves transport and the clip selection alone', () => {
+                bindEscape();
+                clipSelectionStoreMock.value = {
+                    selectedClipId: 'clip-1',
+                    selectedClipIds: ['clip-1'],
+                    marqueeSelection: null,
+                };
+
+                const prevent = handleKeydown(descriptor({ key: 'Escape' }));
+
+                expect(prevent).toBe(true);
+                expect(closeCollaborationPanel).toHaveBeenCalledTimes(1);
+                expect(stopPlaybackMock).not.toHaveBeenCalled();
+                expect(vi.mocked(clearClipSelection)).not.toHaveBeenCalled();
+            });
+
+            it('cancels an active timeline gesture first and keeps the panel open', () => {
+                bindEscape();
+                vi.mocked(cancelActiveTimelineGesture).mockReturnValueOnce(true);
+
+                const prevent = handleKeydown(descriptor({ key: 'Escape' }));
+
+                expect(prevent).toBe(true);
+                expect(cancelActiveTimelineGesture).toHaveBeenCalledTimes(1);
+                expect(closeCollaborationPanel).not.toHaveBeenCalled();
+            });
+
+            it('runs the MIDI panic on shift+Escape and keeps the panel open', () => {
+                shortcutStoreMock.value.definitions = [
+                    callbackDefinition({
+                        id: 'transport.panicAllNotes',
+                        key: 'shift+Escape',
+                        callbackId: 'panicAllNotes',
+                    }),
+                    callbackDefinition({ id: 'transport.stopPlayback', key: 'Escape', callbackId: 'stopPlayback' }),
+                ];
+
+                handleKeydown(descriptor({ key: 'Escape', shift: true }));
+
+                expect(panicAllNotesMock).toHaveBeenCalledTimes(1);
+                expect(closeCollaborationPanel).not.toHaveBeenCalled();
+            });
+
+            it('does not close the panel from a text field', () => {
+                bindEscape();
+
+                handleKeydown(descriptor({ key: 'Escape', isInput: true }));
+
+                expect(closeCollaborationPanel).not.toHaveBeenCalled();
+            });
         });
 
         it('clears an active marquee (time-range) selection before the clip selection', () => {

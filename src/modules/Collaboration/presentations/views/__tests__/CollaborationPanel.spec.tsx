@@ -1,8 +1,6 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { beginDragGesture } from '#/utils/UI/activeDragGesture';
-
 import { type CollaborationState } from '../../../useCases/collaborationQueries';
 import { CollaborationPanel } from '../CollaborationPanel';
 
@@ -107,93 +105,13 @@ describe('CollaborationPanel', () => {
         expect(mocks.closeCollaborationPanel).toHaveBeenCalledTimes(1);
     });
 
-    describe('Escape from outside the panel', () => {
-        const pressEscape = (target: EventTarget = document.body): KeyboardEvent => {
-            const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
-            act(() => {
-                target.dispatchEvent(event);
-            });
-            return event;
-        };
+    it('closes when Escape is pressed in one of its text fields, which the global handler skips', () => {
+        mocks.useStore.mockReturnValue({ collaborationPanelOpen: true });
+        render(<CollaborationPanel />);
 
-        beforeEach(() => {
-            mocks.useStore.mockReturnValue({ collaborationPanelOpen: true });
-        });
+        fireEvent.keyDown(screen.getAllByPlaceholderText('Your name')[0]!, { key: 'Escape' });
 
-        it('closes the panel and keeps the key from the global handler, such as transport stop', () => {
-            const globalHandler = vi.fn();
-            window.addEventListener('keydown', globalHandler);
-            render(<CollaborationPanel />);
-
-            const event = pressEscape();
-
-            window.removeEventListener('keydown', globalHandler);
-            expect(mocks.closeCollaborationPanel).toHaveBeenCalledTimes(1);
-            expect(globalHandler).not.toHaveBeenCalled();
-            expect(event.defaultPrevented).toBe(true);
-        });
-
-        it('leaves Escape to an open dialog above it', () => {
-            const globalHandler = vi.fn();
-            window.addEventListener('keydown', globalHandler);
-            render(
-                <>
-                    <CollaborationPanel />
-                    <div role="dialog" aria-label="Export" />
-                </>
-            );
-
-            pressEscape();
-
-            window.removeEventListener('keydown', globalHandler);
-            expect(mocks.closeCollaborationPanel).not.toHaveBeenCalled();
-            expect(globalHandler).toHaveBeenCalledTimes(1);
-        });
-
-        it('leaves Escape to an open menu above it', () => {
-            render(
-                <>
-                    <CollaborationPanel />
-                    <div role="menu" aria-label="Track menu" />
-                </>
-            );
-
-            pressEscape();
-
-            expect(mocks.closeCollaborationPanel).not.toHaveBeenCalled();
-        });
-
-        it('leaves Escape to a text field outside the panel that cancels its own edit', () => {
-            render(
-                <>
-                    <CollaborationPanel />
-                    <input aria-label="Track name" />
-                </>
-            );
-
-            pressEscape(screen.getByRole('textbox', { name: 'Track name' }));
-
-            expect(mocks.closeCollaborationPanel).not.toHaveBeenCalled();
-        });
-
-        it('leaves Escape to a drag in progress', () => {
-            render(<CollaborationPanel />);
-            const endDrag = beginDragGesture();
-
-            pressEscape();
-            endDrag();
-
-            expect(mocks.closeCollaborationPanel).not.toHaveBeenCalled();
-        });
-
-        it('stops listening once the panel unmounts', () => {
-            const { unmount } = render(<CollaborationPanel />);
-            unmount();
-
-            pressEscape();
-
-            expect(mocks.closeCollaborationPanel).not.toHaveBeenCalled();
-        });
+        expect(mocks.closeCollaborationPanel).toHaveBeenCalledTimes(1);
     });
 
     it('does not close on other keys', () => {

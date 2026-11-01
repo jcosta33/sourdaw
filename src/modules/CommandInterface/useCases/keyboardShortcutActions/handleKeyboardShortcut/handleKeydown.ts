@@ -18,8 +18,9 @@ import { CommandEventBus, executeUserAppAction, pushUndoEntry, redo, undo } from
 import { loopStationStore } from '#/modules/SessionLauncher/stores';
 import { stopAllSlots, triggerPad } from '#/modules/SessionLauncher/useCases';
 import { panicAllNotes, stopPlayback, seekPlayhead, setLoopRegion } from '#/modules/Transport/useCases';
-import { type EditingTool } from '#/modules/WorkspaceShell/stores';
+import { type EditingTool, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import {
+    closeCollaborationPanel,
     cycleAutomationVisibility,
     openExportDialog,
     openPreferencesDialog,
@@ -238,6 +239,13 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                     // the gesture discards its preview (no history entry) and
                     // the key does not fall through to transport stop.
                     if (cancelActiveTimelineGesture()) {
+                        return true;
+                    }
+                    // The Collaborate panel is a non-modal floating surface, so it is
+                    // dismissed here, below a gesture cancel and above the selection
+                    // and transport steps, wherever focus is.
+                    if (workspaceStore.value?.collaborationPanelOpen) {
+                        closeCollaborationPanel();
                         return true;
                     }
                     // R-E1.2: Escape dismisses selected ghost clip first

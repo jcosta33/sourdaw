@@ -40,6 +40,7 @@ vi.mock('#/modules/WorkspaceShell/stores', async (importOriginal) => {
 });
 
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({
+    closeCollaborationPanel: vi.fn(),
     cycleAutomationVisibility: vi.fn(),
     toggleCommandPalette: vi.fn(),
     toggleWorkspaceMode: vi.fn(),
