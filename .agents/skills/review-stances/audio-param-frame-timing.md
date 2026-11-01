@@ -36,3 +36,16 @@ probe that would have caught it runs real Chromium: suspend, resume and suspend 
 suspended frame sits above its integer frame, make the write, resume, and capture the first
 rendered quantum; or suspend an `OfflineAudioContext` at every quantum and write through the
 AudioParam alone, which shows where the clamp moves the event.
+
+### 2026-11-01 — an exclusive audition heard the programme's first resumed sample (introduced by PR #5914)
+
+PR #5914 (`0a341aef22`) closed the live programme for a measured audition with a gain gate written
+at raw `currentTime`, made while the context was still suspended before resume. On a resume frame
+whose quotient sits above its integer frame the gate closed one sample late, and the browser case
+read a nonzero programme sample on the first resumed frame about one run in five. Its browser case
+asserted the gate's event time equal to `currentTime`, which pinned the defect, and its unit
+fixtures applied every gain write at once. The repair gates by the edge instead: a disconnect or
+connect is a control message the rendering loop runs before the next quantum it renders, so it
+holds from that quantum's first frame, suspended or running. A probe that would have caught it
+renders from such a frame through a fixture applying Chromium's step rule (a time clamped up to
+`currentTime`, taking effect on the first frame at or after it) and asserts the first sample.

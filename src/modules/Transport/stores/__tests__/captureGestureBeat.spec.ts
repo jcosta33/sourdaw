@@ -166,15 +166,50 @@ describe('captureGestureBeat', () => {
         expect(captureGestureBeat()).toBe(2);
     });
 
-    it('caps the projection at one scheduler grain when the audio clock leaps', () => {
-        // A suspended/resumed context leaps `currentTime` by the whole gap; the
-        // scheduler refuses to advance through it, and so must the capture.
+    it('projects over the whole audio time a main-thread stall left since the anchor', () => {
+        // No tick ran for 0.5 s while the audio kept playing: the gesture
+        // happened 1 beat past the anchor at 120 BPM, where the next tick will
+        // put the playhead, not one grain past it.
         mocks.source = {
-            getAudioTimeSeconds: () => 1000,
+            getAudioTimeSeconds: () => 10.5,
             readNativeCursorBeats: () => null,
         };
 
-        expect(captureGestureBeat()).toBeCloseTo(2.2, 9);
+        expect(captureGestureBeat()).toBeCloseTo(3, 9);
+    });
+
+    it('folds a stall that crossed an unwitnessed loop seam onto the pass the audio is in', () => {
+        // Loop [0, 4) at 120 BPM, anchor beat 3 at 10 s and no seam emitted.
+        // 0.8 s later the transport crossed loopEnd at 10.5 s and stands 0.3 s
+        // into the next pass; 2.8 s later it crossed a second seam at 12.5 s.
+        transportStore.set({ ...transportStore.value!, isLooping: true, loopStart: 0, loopEnd: 4 });
+        playheadClockRef.beat = 3;
+        mocks.source = { getAudioTimeSeconds: () => 10.8, readNativeCursorBeats: () => null };
+        expect(captureGestureClock()).toMatchObject({ beat: expect.closeTo(0.6, 9), seamsCrossed: 1 });
+
+        mocks.source = { getAudioTimeSeconds: () => 12.8, readNativeCursorBeats: () => null };
+        expect(captureGestureClock()).toMatchObject({ beat: expect.closeTo(0.6, 9), seamsCrossed: 2 });
+    });
+
+    it('does not fold a roll that started past the loop end', () => {
+        transportStore.set({ ...transportStore.value!, isLooping: true, loopStart: 0, loopEnd: 2 });
+        mocks.source = { getAudioTimeSeconds: () => 10.5, readNativeCursorBeats: () => null };
+        expect(captureGestureClock()).toMatchObject({ beat: expect.closeTo(3, 9), seamsCrossed: 0 });
+    });
+
+    it('projects a stall across a tempo change at the tempo the map gives past it', () => {
+        // 120 BPM to beat 4, 60 BPM after: from 3.9, 0.05 s reaches beat 4 and
+        // the remaining 1.95 s travel 1.95 beats, as the next tick integrates.
+        tempoMapStore.set({
+            changes: [
+                { id: 'tempo-0', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'tempo-1', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        playheadClockRef.beat = 3.9;
+        mocks.source = { getAudioTimeSeconds: () => 12, readNativeCursorBeats: () => null };
+
+        expect(captureGestureBeat()).toBeCloseTo(5.95, 9);
     });
 
     it('prefers the native engine cursor while that engine is the audible transport', () => {

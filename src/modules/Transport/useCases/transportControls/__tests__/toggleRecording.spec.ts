@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
+
 import { secondsBetweenBeats, type TempoChange } from '../../../models/TempoMap';
 import { type TimeSignatureChange } from '../../../models/TimeSignatureMap';
 import { defaultTransportState } from '../../../models/TransportState';
@@ -969,6 +971,72 @@ describe('toggleRecording', () => {
         expect(mocks.startRecording).not.toHaveBeenCalled();
         expect(updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
         expect(mocks.startPlayback).not.toHaveBeenCalled();
+    });
+
+    it('says the input failed and stops cleanly when an audio recorder start rejects', async () => {
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            isRecording: false,
+            countInEnabled: false,
+            punchInEnabled: false,
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
+        });
+        mocks.startAudioRecording.mockRejectedValueOnce(new Error('microphone permission denied'));
+
+        toggleRecording();
+
+        await vi.waitFor(() => {
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                'Unable to start recording. Check the selected audio input.',
+                'error'
+            );
+        });
+        expect(mocks.notifyUser).toHaveBeenCalledOnce();
+        expect(mocks.stopAudioRecording).toHaveBeenCalledOnce();
+        expect(mocks.startRecording).not.toHaveBeenCalled();
+        expect(updateTransportState).not.toHaveBeenCalledWith({ isRecording: true });
+        expect(mocks.startPlayback).not.toHaveBeenCalled();
+    });
+
+    it('stays quiet when a superseded recorder start rejects after recording is toggled again', async () => {
+        const start = Promise.withResolvers<boolean>();
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            isRecording: false,
+            countInEnabled: false,
+            punchInEnabled: false,
+        });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'track-audio', kind: 'audio', armed: true }],
+        });
+        mocks.startAudioRecording.mockReturnValueOnce(start.promise);
+
+        toggleRecording();
+        await vi.waitFor(() => expect(mocks.startAudioRecording).toHaveBeenCalledOnce());
+        toggleRecording();
+        expect(mocks.stopActiveRecording).toHaveBeenCalledOnce();
+
+        const loggedErrors = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        try {
+            start.reject(new Error('microphone permission denied'));
+            // The failure is logged once the start settles; the superseded
+            // admission then returns before any notice or cleanup.
+            await vi.waitFor(() =>
+                expect(loggedErrors).toHaveBeenCalledWith(
+                    expect.objectContaining({ message: 'Audio recording failed to start' })
+                )
+            );
+        } finally {
+            loggedErrors.mockRestore();
+        }
+
+        expect(mocks.startRecording).not.toHaveBeenCalled();
+        expect(mocks.stopAudioRecording).not.toHaveBeenCalled();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 
     it('cancels a pending recorder start when recording is toggled again', async () => {
