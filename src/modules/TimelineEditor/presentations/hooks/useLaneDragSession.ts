@@ -15,7 +15,7 @@
  */
 import { type PointerEvent as ReactPointerEvent, type RefObject, useRef, useEffect } from 'react';
 
-import { beginDragGesture, isDragCancelEscape } from '#/utils/UI/activeDragGesture';
+import { beginDragGesture, isPlainEscapePress } from '#/utils/UI/activeDragGesture';
 
 export type LanePointerPosition = {
     clientX: number;
@@ -230,7 +230,7 @@ export const useLaneDragSession = (): UseLaneDragSessionOutput => {
         session.captureTarget.setPointerCapture(session.pointerId);
         const endDragGesture = beginDragGesture();
         const handleEscape = (event: KeyboardEvent): void => {
-            if (!isDragCancelEscape(event)) {
+            if (!isPlainEscapePress(event)) {
                 return;
             }
             cancelArmedDrag();
