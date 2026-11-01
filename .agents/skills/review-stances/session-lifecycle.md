@@ -368,6 +368,23 @@ resolve it and check that no deleted strip or edge is recreated. Abort and commi
 bulk commands separately: the abort must retain every edge and stream, while the commit releases
 only owners whose IDs are absent from committed project truth.
 
+### Paused punch ownership must not outlive its roll (#5272)
+
+PR #305 (`b077ef6d34c`) fenced asynchronous pause teardown, but did not retire the old
+punch owner when Play arrived during recorder flush. Historical review prompts are unknown.
+Drive real Pause and Play with a held recorder terminal, a recorder fake that keeps the
+repository's same-track admission (a start behind a flushing session waits for it and is refused
+after any later stop), and production Command/CRDT. Pause, seek before the punch-in, Play, then
+either release the old flush before a later tick punches in, or punch in on that tick and release
+the flush while the successor's start waits. Require the successor flag, clip and scheduler to
+survive the late pause continuation, each completed capture to own its PCM, saved take and one
+history entry, and Undo/Redo to preserve its peer. Removing synchronous punch retirement must
+prevent the successor's punch-in; clearing the flag from, or dropping the `isPlaying` guard of, the
+late pause continuation must fail both orderings; admitting the start at once, or resolving the old
+terminal's clip from `activeRecordingRef`, must fail the waiting one. Both orderings that
+were blocked by #5998 and #5999 are now proved in `punchPausePlayCommand.integration.spec.ts`: the
+first-window punch Play that waits for the closing take, and the refused start behind a held flush.
+
 ### 2026-10-09 — admitted interests and optimistic deletion cross the monitor owner (PR #5011)
 
 PR #5011 added the subscribed Auto owner. Its removal sweep read the visible track store, so an
@@ -680,3 +697,35 @@ restart and stop controls, and keep the receiver's timestamp and generation guar
 Removing only the early-callback guard must fail the named worker spec. Controlled clock
 inputs prove this producer contract; they do not attribute the separately observed #5889
 browser stall, whose raw worker messages were not retained.
+
+### 2026-11-01 — a new refusal outcome left each caller's provisional writes behind (#5999)
+
+Commit `c8f18d184c` made the recorder's `startAudioRecording` resolve `false` when a stop moves
+`startGeneration` during a same-track wait. The automatic punch-in admission in
+`startPlayheadScheduler.ts` answered `false` by removing only its capture clock; the provisional
+clip and take stayed on the track with no audio and no history entry. #6010 repaired it.
+
+When a repository gains a refusal outcome, enumerate every caller and what each has already written
+before awaiting it. A refused or failed start must retire those writes, quietly when a stop caused
+the refusal. Drive each caller through the refusal and require the clip, take and history to match
+the state before the start.
+
+The repair review found a second class. On Play's initial window the cleanup ran while the
+initial-playback programme witness, which compares store references, was pending. Play aborted with
+"Playback changed while preparing", and on a loop seam the cleanup retired the pass timing the initial
+finalize check needed. A cleanup write belongs after the preparation that witnesses the stores it
+touches, so defer it until no initial emission is preparing.
+
+### 2026-11-01 — an await inside a preparation witness did not name the writers that land in it (#5998)
+
+PR #5729 made Play's initial window await the punch-in recorder admission while the witness was live.
+The previous take's commit, and later a previous scheduler session's deferred cleanup, could land
+inside that await and refuse the Play. #6013 fixed it: a Play whose first window punches in waits
+for the closing take first (`opensPunchIn` is shared with the scheduler), and refused-start cleanup
+is held across scheduler sessions.
+
+For every await taken while a store-identity witness is live, list which other gestures' writes can
+land in it. Each must be ordered before the witness, or shown not to reach the compared stores.
+Genuine edits during the await must still refuse the Play. Pin both sides: the earlier take and the
+earlier session's cleanup landing mid-await, and an unrelated edit landing mid-await. The
+non-punch Play with Yeast preparation is left behind in #6012.

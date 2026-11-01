@@ -7,6 +7,7 @@
  * both directions.
  */
 export const devServerOnlySpecs: readonly string[] = [
+    'tests/e2e/agentMixingRequest.spec.ts',
     'tests/e2e/agentWorkspace.spec.ts',
     'tests/e2e/applicationModuleRecovery.spec.ts',
     'tests/e2e/aiConfirmApplyUndo.spec.ts',
@@ -20,6 +21,7 @@ export const devServerOnlySpecs: readonly string[] = [
     'tests/e2e/crdtPersistence.native.spec.ts',
     'tests/e2e/grinderOfflineNumericParity.spec.ts',
     'tests/e2e/grinderStackedLstmAdmission.spec.ts',
+    'tests/e2e/metricGoalAdmission.spec.ts',
     'tests/e2e/modulationHaloInteraction.spec.ts',
     'tests/e2e/monoModulationInput.spec.ts',
     'tests/e2e/midiCycleTakeAcceptance.spec.ts',

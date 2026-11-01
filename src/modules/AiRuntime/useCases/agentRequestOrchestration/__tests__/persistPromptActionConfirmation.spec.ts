@@ -9,6 +9,7 @@ import {
 } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { type agentRunLifecycle } from '../../agentRunLifecycle';
 import { persistPromptActionConfirmation } from '../persistPromptActionConfirmation';
 
 const COMMAND_ID = '11111111-1111-4111-8111-111111111111';
@@ -17,6 +18,7 @@ const REMOVE_COMMAND_ID = '22222222-2222-4222-8222-222222222222';
 const mocks = vi.hoisted(() => ({
     createResourceLease: vi.fn(),
     getConfirmation: vi.fn(),
+    getRun: vi.fn<typeof agentRunLifecycle.get>(),
     settleResource: vi.fn(),
     updateStatus: vi.fn(),
     describeRisk: vi.fn(),
@@ -54,6 +56,7 @@ vi.mock('../../agentReference/createStemImportConfirmationResourceLease', () => 
 
 vi.mock('../../agentRunLifecycle', () => ({
     agentRunLifecycle: {
+        get: mocks.getRun,
         recordError: mocks.recordError,
         transitionPhase: mocks.transitionPhase,
         updateBatchStatus: mocks.updateBatchStatus,
@@ -184,6 +187,7 @@ const gainHandler = {
 describe('persistPromptActionConfirmation', () => {
     beforeEach(() => {
         vi.resetAllMocks();
+        mocks.getRun.mockReturnValue(null);
         mocks.describeRisk.mockReturnValue('Risk approval required.');
         mocks.createResourceLease.mockReturnValue({ bytes: 64 });
         clearHandlerRegistry();

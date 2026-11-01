@@ -27,7 +27,14 @@ vi.mock('../../../repositories/audioRecorder/isTrackInputMonitored', () => ({
 }));
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
-    audioEngine: { setTransportInfo: vi.fn() },
+    audioEngine: {
+        beginAudioPreviewIntent: () => ({
+            signal: new AbortController().signal,
+            isCurrent: () => true,
+            release: vi.fn(),
+        }),
+        setTransportInfo: vi.fn(),
+    },
     getAudioContext: vi.fn(() => ({ currentTime: 1, sampleRate: 48000 })),
     stopAllScheduled: vi.fn(),
     stopAudioRecording: vi.fn(() => Promise.resolve()),

@@ -704,6 +704,12 @@ beforeEach(async () => {
     nativeLiveGraphSession.backend = null;
     nativeLiveGraphSession.orphanedBackend = null;
     nativeLiveGraphSession.audibleCarrier = false;
+    nativeLiveGraphSession.programmeCarrier = false;
+    nativeLiveGraphSession.auditionOwner = null;
+    nativeLiveGraphSession.auditionRestorationOwner = null;
+    nativeLiveGraphSession.auditionOutputSuppressed = false;
+    nativeLiveGraphSession.auditionEpoch = 0;
+    nativeLiveGraphSession.auditionInvalidation = null;
     nativeLiveGraphSession.monitorShadowed = true;
     nativeLiveGraphSession.rolling = false;
     nativeLiveGraphSession.loopRegion = null;
@@ -1045,6 +1051,34 @@ describe('startNativeLiveGraphSession', () => {
     // a batch names every Crumbs instance it found the engine holding, so every
     // Play after the first reports one the projection already bound. Counting
     // instead would send a second `replaceTopology` batch on every Play.
+    it('composes a newer audition output gate into initial topology and the actual attach re-send', async () => {
+        const owner = Symbol('newer-audition');
+        mocks.onProbe.mockImplementationOnce(() => {
+            nativeLiveGraphSession.auditionOwner = owner;
+        });
+        mocks.programmeOverride = PLAYING_PROGRAMME;
+        trackStore.set({
+            tracks: [createTrack({ id: 'audio-1', devices: [crumbsDevice('d-crumbs')] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        mocks.applyGraphCommands.mockResolvedValueOnce({
+            ...APPLIED,
+            attachedPlugins: [],
+            attachedCrumbs: [{ instanceId: 'd-crumbs' }],
+        });
+        await startHeldSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+        expect(topologyBatches()).toHaveLength(2);
+        for (const batch of topologyBatches()) {
+            expect(batch.commands[0]).toEqual({ kind: 'set-monitor-shadow', shadowed: true });
+        }
+        expect(nativeLiveGraphSession.auditionOwner).toBe(owner);
+        expect(nativeLiveGraphSession.monitorShadowed).toBe(false);
+        expect(nativeLiveGraphSession.programmeCarrier).toBe(true);
+        expect(nativeLiveGraphSession.audibleCarrier).toBe(false);
+        expect(nativeLiveGraphSession.rolling).toBe(true);
+    });
+
     it('sends the topology once when the batch reports only instances the projection held', async () => {
         mocks.programmeOverride = PLAYING_PROGRAMME;
         markCrumbsEngineAttached({ instanceId: 'd-held' });

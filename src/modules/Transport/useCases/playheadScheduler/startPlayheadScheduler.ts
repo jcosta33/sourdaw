@@ -53,7 +53,9 @@ import { advanceSchedulerDiscontinuityEpoch } from './advanceSchedulerDiscontinu
 import { beatAtSecondsFromAnchor } from './beatAtSecondsFromAnchor';
 import { createNativeRecordingPassClock } from './createNativeRecordingPassClock';
 import { disposePlayheadScheduler } from './disposePlayheadScheduler';
+import { initialEmissionRetirements } from './initialEmissionRetirements';
 import { nativeRecordingEntry } from './nativeRecordingEntry';
+import { opensPunchIn } from './opensPunchIn';
 import { type PreparedInitialBrowserPlayback } from './prepareInitialBrowserPlayback';
 import {
     INITIAL_HIGH_WATER_OFFSET_BEATS,
@@ -1139,7 +1141,6 @@ export function startPlayheadScheduler(
         const recordingAdmissions: Promise<unknown>[] = [];
         const initialRecordingAnchors: Array<{ contextSeconds: number; songSeconds: number }> = [];
         let openedRecording = false;
-        const hasArmedTracks = trackStore.value?.tracks.some((time) => time.armed) ?? false;
         // On a scheduled-seam tick the audible transport is still finishing the
         // dying pass, so the punch checks scan its position — the same window a
         // non-seam tick would scan — rather than the incoming pass's
@@ -1166,20 +1167,7 @@ export function startPlayheadScheduler(
         // when the tick began, so a punch-in opened this tick is never
         // finalized empty.
         const punchOutDueAtWrap = lateWrap && recordingOpenAtTickStart && current.punchOutBeat <= current.loopEnd;
-        if (
-            current.punchInEnabled &&
-            !current.isRecording &&
-            !schedulerSession.punchRecordingActive &&
-            hasArmedTracks &&
-            current.punchInBeat < current.punchOutBeat &&
-            punchScanBeat >= current.punchInBeat &&
-            // Upper bound. Without it, starting playback past the region fires
-            // punch-in and punch-out on the same tick: a full-width clip and
-            // take are stamped across [punchInBeat, punchOutBeat) and captured
-            // nothing. Punching in only makes sense while the region is still
-            // ahead of the tick's end.
-            punchScanBeat < current.punchOutBeat
-        ) {
+        if (opensPunchIn(current, punchScanBeat)) {
             openedRecording = true;
             schedulerSession.punchRecordingActive = true;
             // Anchor the punched clip where capture actually begins. The tick is
@@ -1389,13 +1377,35 @@ export function startPlayheadScheduler(
                         )
                     )
                         .then((started) => {
-                            if (!started) {
-                                captureClocks.remove(track.id);
+                            if (started) {
+                                return;
                             }
+                            // A refused start never runs the terminal, so its
+                            // provisional clip and take would be left with no
+                            // buffer and no history entry (#4265). The recorder's
+                            // `false` covers both a Pause or Stop during the
+                            // same-track wait and an input that failed to open;
+                            // the stop-caused refusal must stay quiet, so no
+                            // notice is posted until #6009 tells them apart.
+                            captureClocks.remove(track.id);
+                            initialEmissionRetirements.defer(() => {
+                                if (recClip && ownsCapture()) {
+                                    discardRecording(recClip.id);
+                                }
+                            });
                         })
                         .catch((error: unknown) => {
                             captureClocks.remove(track.id);
                             logger.error(new Error('Punch-in audio recording failed to start', { cause: error }));
+                            initialEmissionRetirements.defer(() => {
+                                if (!ownsCapture()) {
+                                    return;
+                                }
+                                notifyUser('Punch-in recording failed to start — the take was discarded.', 'error');
+                                if (recClip) {
+                                    discardRecording(recClip.id);
+                                }
+                            });
                         });
                     if (initial) {
                         recordingAdmissions.push(admission);
@@ -1801,20 +1811,26 @@ export function startPlayheadScheduler(
             stopAllScheduled();
         }
     };
+    // Opened just before the emission so nothing between can strand it open.
+    const closeInitialEmission = initialEmissionRetirements.open();
+    const settleInitialEmission = () => {
+        initialEmissionPending = false;
+        closeInitialEmission();
+    };
     return tick(true).then(
         () => {
             if (!preparedMidi?.isCurrent() || !cancellation.isCurrent()) {
                 cancelInitialEmission();
-                initialEmissionPending = false;
+                settleInitialEmission();
                 return false;
             }
-            initialEmissionPending = false;
+            settleInitialEmission();
             startWorker();
             return true;
         },
         (error: unknown) => {
             cancelInitialEmission();
-            initialEmissionPending = false;
+            settleInitialEmission();
             logger.error(new Error('Initial playback emission failed', { cause: error }));
             return false;
         }

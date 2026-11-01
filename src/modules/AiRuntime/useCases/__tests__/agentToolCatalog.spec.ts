@@ -23,6 +23,8 @@ import { APPLICATION_OWNED_TOOL_SCHEMAS, runApplicationOwnedToolLoop } from '../
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 
+import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
+
 const { mockBridgeGroundedLlmToolCalls } = vi.hoisted(() => ({
     mockBridgeGroundedLlmToolCalls: vi.fn(),
 }));
@@ -424,6 +426,10 @@ describe('agent tool catalog', () => {
         ]);
 
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(async (_system, userMessage, schemas) => ({
+                status: 'complete',
+                toolCalls: literalMetricIntakeTurn(userMessage, schemas),
+            }))
             .mockResolvedValueOnce({
                 status: 'complete',
                 toolCalls: [
@@ -467,7 +473,7 @@ describe('agent tool catalog', () => {
         expect(
             firstTurnSchemas.some((schema: ToolSchema) => schema.function.name === 'analysis.compareReference')
         ).toBe(false);
-        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[1]?.[1]).toContain('catalog-1');
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[2]?.[1]).toContain('catalog-1');
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 128 } }]);
     });
 
@@ -590,10 +596,15 @@ describe('agent tool catalog', () => {
     });
 
     it('rejects a direct primitive provider call before grounding when it did not enter through a catalog proposal', async () => {
-        vi.mocked(generateToolPlanningOutcome).mockResolvedValue({
-            status: 'complete',
-            toolCalls: [{ id: 'direct-set-tempo', name: 'setTempo', arguments: { bpm: 128 } }],
-        });
+        vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(async (_system, userMessage, schemas) => ({
+                status: 'complete',
+                toolCalls: literalMetricIntakeTurn(userMessage, schemas),
+            }))
+            .mockResolvedValue({
+                status: 'complete',
+                toolCalls: [{ id: 'direct-set-tempo', name: 'setTempo', arguments: { bpm: 128 } }],
+            });
         mockBridgeGroundedLlmToolCalls.mockReturnValue({
             actions: [{ type: 'setTempo', payload: { bpm: 128 } }],
             rejections: [],
@@ -613,18 +624,23 @@ describe('agent tool catalog', () => {
     });
 
     it('rejects a forged command batch proposal before grounding when this loop never disclosed its primitive', async () => {
-        vi.mocked(generateToolPlanningOutcome).mockResolvedValue({
-            status: 'complete',
-            toolCalls: [
-                {
-                    id: 'forged-proposal',
-                    name: 'command.batch.propose',
-                    arguments: {
-                        commands: [{ name: 'setTempo', arguments: { bpm: 128 } }],
+        vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(async (_system, userMessage, schemas) => ({
+                status: 'complete',
+                toolCalls: literalMetricIntakeTurn(userMessage, schemas),
+            }))
+            .mockResolvedValue({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'forged-proposal',
+                        name: 'command.batch.propose',
+                        arguments: {
+                            commands: [{ name: 'setTempo', arguments: { bpm: 128 } }],
+                        },
                     },
-                },
-            ],
-        });
+                ],
+            });
         mockBridgeGroundedLlmToolCalls.mockReturnValue({
             actions: [{ type: 'setTempo', payload: { bpm: 128 } }],
             rejections: [],

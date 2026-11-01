@@ -15,6 +15,7 @@ import {
     type AnswerStatement,
 } from './answerContractTypes';
 import { type RecipeDiscoveryReceiptData } from './discoverMixRecipes';
+import { objectiveMetricProjection, OBJECTIVE_METRIC_LABELS } from './objectiveMetricProjection';
 
 export type AnswerReadSource =
     | { kind: 'measurement'; value: AnswerMeasurement }
@@ -34,38 +35,6 @@ type Metric = {
     confidence: string;
 };
 
-const METRIC_LABELS: Record<AnswerMetricId, string> = {
-    integratedLoudness: 'integrated loudness',
-    shortTermLoudnessMax: 'maximum short-term loudness',
-    momentaryLoudnessMax: 'maximum momentary loudness',
-    truePeak: 'true peak',
-    rms: 'RMS level',
-    crestFactor: 'crest factor',
-    dynamicRangeEstimate: 'estimated dynamic range',
-    spectralCentroid: 'spectral centroid',
-    frequencyBandEnergy: 'frequency-band energy',
-    stereoCorrelation: 'stereo correlation',
-    sideEnergyFraction: 'side energy fraction',
-    lowFrequencyStereoContent: 'low-frequency stereo content',
-    transientDensity: 'transient density',
-    onsetCount: 'onset count',
-};
-const METRIC_UNITS: Record<AnswerMetricId, string> = {
-    integratedLoudness: 'LUFS',
-    shortTermLoudnessMax: 'LUFS',
-    momentaryLoudnessMax: 'LUFS',
-    truePeak: 'dBTP',
-    rms: 'dBFS',
-    crestFactor: 'dB',
-    dynamicRangeEstimate: 'dB',
-    spectralCentroid: 'hertz',
-    frequencyBandEnergy: 'ratio',
-    stereoCorrelation: 'correlation',
-    sideEnergyFraction: 'ratio',
-    lowFrequencyStereoContent: 'ratio',
-    transientDensity: 'per-second',
-    onsetCount: 'count',
-};
 const LIMITATIONS = {
     'measurement-unavailable':
         'A successful measurement covering the interpreted subject, range and metrics is unavailable. I cannot report audio figures for this question.',
@@ -174,29 +143,22 @@ function resolveMetricReference(
     const measurement = read.source.value;
     const target = measurement.targets.find((entry) => entry.targetId === reference.targetId);
     const entry = target?.measurements[reference.metricId];
-    if (target === undefined || entry?.status !== 'measured' || entry.unit !== METRIC_UNITS[reference.metricId]) {
+    if (target === undefined || entry?.status !== 'measured') {
         return null;
     }
-    let value: unknown = entry.value;
-    if (reference.band !== undefined) {
-        value = undefined;
-        if (
-            typeof entry.value === 'object' &&
-            !Array.isArray(entry.value) &&
-            entry.value !== null &&
-            Object.hasOwn(entry.value, reference.band)
-        ) {
-            value = (entry.value as Readonly<Record<string, number>>)[reference.band];
-        }
-    }
-    if (
-        typeof value !== 'number' ||
-        !Number.isFinite(value) ||
-        (reference.metricId === 'frequencyBandEnergy' && reference.band === undefined)
-    ) {
+    const scalar = objectiveMetricProjection(reference.metricId, entry, reference.band ?? null);
+    if (scalar === null) {
         return null;
     }
-    return { reference, measurement, target, entry, value, unit: entry.unit, confidence: entry.confidence };
+    return {
+        reference,
+        measurement,
+        target,
+        entry,
+        value: scalar.value,
+        unit: scalar.unit,
+        confidence: entry.confidence,
+    };
 }
 /** Project renders report physical units; coverage already validates each target's render route. */
 function areComparableMetrics(left: Metric, right: Metric): boolean {
@@ -210,7 +172,9 @@ function areComparableMetrics(left: Metric, right: Metric): boolean {
     );
 }
 function metricLabel(ref: AnswerMetricReference): string {
-    return METRIC_LABELS[ref.metricId] + (ref.band === undefined ? '' : ` in band ${quoteSourceData(ref.band)}`);
+    return (
+        OBJECTIVE_METRIC_LABELS[ref.metricId] + (ref.band === undefined ? '' : ` in band ${quoteSourceData(ref.band)}`)
+    );
 }
 function displayUnit(unit: string): string {
     if (unit === 'hertz') {

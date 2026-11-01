@@ -1,33 +1,23 @@
 import { type describeAction } from '#/modules/Command/useCases';
 
-import { PRESET_ACTIONS } from '../../models/PresetActions/Registry';
+import { type PresetContext } from '../../models/PresetActions/Registry';
 import { getProjectContext } from '../getProjectContext';
 import { materializeActionStateGuards } from '../materializeActionStateGuards';
 
+import { resolveRawPresetActions } from './resolveRawPresetActions';
+
 type ResolvePresetActionsInput = {
     presetId: string;
-    context: {
-        selectedTrackId: string | undefined;
-        selectedClipId: string | undefined;
-        selectedClipType: 'audio' | 'midi' | undefined;
-        trackCount: number;
-    };
+    context: PresetContext;
 };
 
 type ResolvePresetActionsOutput = Array<Parameters<typeof describeAction>[0]>;
 
-export function resolvePresetActions({ presetId, context }: ResolvePresetActionsInput): ResolvePresetActionsOutput {
-    const preset = PRESET_ACTIONS.find((candidate) => candidate.id === presetId);
-    if (!preset) {
+export function resolvePresetActions(input: ResolvePresetActionsInput): ResolvePresetActionsOutput {
+    const resolved = resolveRawPresetActions(input);
+    if (resolved === null) {
         return [];
     }
-
-    const actionResult = preset.buildAction(context);
-    if (actionResult === null) {
-        return [];
-    }
-
-    const actions = Array.isArray(actionResult) ? actionResult : [actionResult];
-    const materialized = materializeActionStateGuards(actions, getProjectContext());
+    const materialized = materializeActionStateGuards(resolved.actions, getProjectContext());
     return materialized.status === 'accepted' ? materialized.actions : [];
 }

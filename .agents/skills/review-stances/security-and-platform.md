@@ -140,6 +140,22 @@ scan scope and the hosted PR summary with actual uploads. Before any authorized 
 alert continuity and the documented deletion and historical-data consequences. Mutate or omit the
 PR category and require the independent contract to fail after re-recording the workflow snapshot.
 
+### 2026-10-28 — a documented Darwin symbolic-link descriptor invalidated the file census (PR #5274)
+
+PR #5274 (`40baa0716b`) omitted lsof's documented `LINK` vnode type from its file-census
+parser. A fresh same-UID capture observed an absolute `LINK` outside guarded storage; the
+parser refused the whole catalog as `unknown-file-type`. This capture is not the original
+failed guard's field record. Historical reviewer prompts, models and tiers are unknown;
+the missing probe was a documented path-bearing descriptor outside the owned payload.
+
+Open a private symlink with Darwin `O_SYMLINK` and observe its installed lsof record. Require
+a complete catalog containing an outside `LINK` to remain usable, and drive an owned `LINK`
+through file-use proof and release/recovery, including a moved claim, spaces, long paths and
+the deleted suffix. Its path must veto deletion. Missing, relative, malformed, diagnostic or
+unknown-type evidence must still retain storage. Reverting type admission must fail the
+outside case; discarding its path must fail the live-holder case. Adding a known type without
+following its path to the deletion veto is insufficient.
+
 ### 2026-10-28 — desktop fallback filenames lost the selected File authority (issue #5767)
 
 Commit `4f410257b212` introduced a native-dialog rejection fallback that returned browser
@@ -522,6 +538,24 @@ exact ESRCH before settling or restoring source, retain unchanged escalation/con
 and reject persistent uncertainty with typed diagnostics. Inject EPERM then ESRCH around a real
 owned child, persistent EPERM through the deadline, and termination EPERM followed by absence;
 require only the first case to recover, with no extra group signals or loss of prior fatal evidence.
+
+### Control receipt admission must precede semantic authority (introduced by PR #4128)
+
+PR #4128 (`1d1471216e55823296bf84abcb4d2933ab0e3bee`) advanced interpretation after
+bounding its receipt without checking whether bounding had replaced success with failure. The
+parser's staged authority could then survive an unadmitted control. Historical private reviewer
+prompts, models and tiers are unknown. The missed boundary was receipt admission through actual
+authority consumption, beyond schema-valid selector arguments.
+
+Promote authority only after the actual bounded success receipt passes every carrier and byte
+admission. A compacted carrier, failed receipt or oversized raw control cannot substitute for that
+witness: discard unadmitted staged intent and keep effectful schemas and calls closed. Exercise an
+otherwise-valid control selected from the actual published catalog, followed by effectful use
+through the real parser and correction route. Require no continuation, escaped authority or
+proposal, preserving the correlated failure. Keep genuine in-budget local and hosted controls that
+restore the full effectful contracts. In a committed isolated probe, remove only the responsible
+discard/admission edge and require `does not let the actual parser carry failed control authority
+into a following proposal` in `metricIntent.spec.ts` to fail independently of manifest pins.
 
 ### 2026-10-29 — a declared Body choice never entered the worklet schema (PR #5254)
 

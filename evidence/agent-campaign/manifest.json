@@ -247,7 +247,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentRiskApproval.spec.ts",
-                    "digest": "d802d953c2f5cddc1b8615bb5dc0f4e37ae09d9b676f050d707e083dde5b4b9a"
+                    "digest": "1c5a1af41938d7887e7c575c4bcb39ff7cf570153ab3c542f63b78de413057c9"
                 }
             ]
         },
@@ -371,7 +371,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts",
-                    "digest": "a5a29e18ccd0d606ab99b8088d59fbe644a1b8385470d4829681074a2736b317"
+                    "digest": "5cc185d41649136fbae9aaf85c9c4a97b079ec525eef140cd1f92ee263d99f23"
                 }
             ]
         },
@@ -524,7 +524,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts",
-                    "digest": "143665a848b2083292c6c3c67438606df7dca8af849583bb7f7d8c991865ef6e"
+                    "digest": "5b4a12244170c96653dc2f8f0229a8542de10bee066f8dd8af19c87f7a21fd7f"
                 }
             ]
         },
@@ -548,7 +548,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/planAgentRun.spec.ts",
-                    "digest": "e0e61b256a11cb849f8a56258d2e8fc96f67ea89714b76b905383fc3d3bcfb9b"
+                    "digest": "23433fc3229b6fccb94ccbf46c70910220c04a85c62fa1f6ba23e5c217dcc5e7"
                 }
             ]
         },
@@ -680,7 +680,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/vibeMixingControlLoop.spec.ts",
-                    "digest": "8a14eed7a82e940a90c5ab4086cd80dcd3cff47a0dd34f47101de502ef787a7d"
+                    "digest": "9aee9c66dbeb41c941833b456791627496d795e7af2fbdbe7b6c6967bcb3435a"
                 }
             ]
         },
@@ -692,7 +692,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts",
-                    "digest": "af018699f4ac1aa91fdd83631f5b2023d6c3648bd5d7ac07aa6fab1904896f38"
+                    "digest": "7b292050bf3791b582a92b34048dd93207ed15ed6aacd064ab0aa3a98658b2be"
                 }
             ]
         },
@@ -745,7 +745,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx",
-                    "digest": "ef4f4a75fbf29d1f81de5adeba8f7ada8fc7125c1d8676de49b938ebd87c7442"
+                    "digest": "d491c9e9d94f399afa69484ff1eeac2a5b5c0e137b9390b61e11120e62cc404b"
                 },
                 {
                     "path": "tests/e2e/agentWorkspace.spec.ts",
@@ -797,7 +797,7 @@
             "fixtures": [
                 {
                     "path": "evidence/agent-campaign/corpora/development.json",
-                    "digest": "046b590136d3fe07052322a1cc75943b6a629a1e8a859c72e3f49ad1a14d6f70"
+                    "digest": "29799c911a66e3c3a317741be14b5326f613387792652fb9e7e4ebf3cf34dfff"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/fixture-project.json",
@@ -805,15 +805,19 @@
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/held-out.json",
-                    "digest": "31242f745fb05a6eddac209f48c2bc44dd0d7d504a01f437bfccd604cd56e901"
+                    "digest": "b7b69685efd34cee568034bf007805f7152bc6d9dbee77c33f488348c6629cd2"
                 },
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",
                     "digest": "8e40d11c3bf650b9d380ad7e80bbf4dd4763614273969c23548475087b9ddc94"
                 },
                 {
+                    "path": "src/modules/AiRuntime/__tests__/acceptanceFixtureLifetime.ts",
+                    "digest": "7f4773abe87c3038d285386dd973f6fbeab326581fbdb226171a2330b30f60ca"
+                },
+                {
                     "path": "src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts",
-                    "digest": "2065fc43a478f8b340df11781502cc86d887210b76d5c9e4fc899e9f0fb4e07e"
+                    "digest": "aa94b2ac85018490a9b8c9297f85817b71c2dfb4bc465adf48ee83e2447b2dd0"
                 }
             ]
         },
@@ -907,7 +911,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentDomainPreviewAdapters.spec.ts",
-                    "digest": "088dfbb6c6716027482ce0eceddbf878b9f558c2642c32090740d62ddd0a70c9"
+                    "digest": "254a6d69d7855b2789236d79c779c8af016f8d47401577d9ac79a19221a9050b"
                 }
             ]
         },

@@ -1,5 +1,11 @@
 # Lesson library: test and evidence validity
 
+### 2026-10-30 — prepared-scope fixtures hid missing Prompt Bar budget admission (introduced by PR #2648)
+
+PR #1986 made `prepareStemImport` reject absent local-work admission, then PR #2648 introduced the Prompt Bar submission route without forwarding one. PR #4479 kept that path. The existing recovery fixture supplied raw import actions and mocked `planPromptActions`, so it could test receipt settlement while never reaching the file-preparation gate. Public #2648 review text covers recovery and terminal behavior; exact private prompts and tiers are unknown.
+
+Pair a real planner and real `prepareStemImport` with two selected files and mocked boundary ports. The positive case must reach an approved card and one committed import. The over-budget case must fail before decode or staging with no partial stem reservation. Preserve legacy recovery fixtures as separate historical cases. Removing the Prompt Bar callback must fail the positive case at the original budget refusal.
+
 ### 2026-10-30 — a forced-GC ownership bound counted the JIT's references (#5924, introduced by #5829)
 
 PR #5829's stem-export ownership case samples every observed buffer still live after `gc()` and
@@ -164,6 +170,22 @@ three-batch, protection, newest-receipt and one-undo assertions at the existing 
 Run the whole affected file so the changed setup is exercised with its normal hooks. Direct store
 seeding, fewer tracks, moving work to hooks, or a timeout increase does not prove the fixture is
 both realistic and bounded.
+
+### 2026-11-01 — full-metric renders consumed the receipt-bound case's deadline (PR #6011)
+
+PR #6011 (`57af0ac45e163d83d6a857e9ef866e00a86708c4`) added the per-call receipt-bound case in
+`previewMeasurement.spec.ts`: two measurements over a four-track scope, eight renders each, every
+render a two-second buffer measured for every metric. Locally it took about 1.2 s; a later Gate on
+an unrelated head timed it out at 5,067 ms against the 5,000 ms default. A CPU profile attributes
+the case to true-peak oversampling, FFT and integrated loudness over the synthetic audio, not to
+the planning loop. Review checked that the receipt exceeded the bound but not how long its
+fixture audio cost to measure on a loaded runner.
+
+Measure a new analysis-heavy case's local duration and require headroom against the default
+deadline. Shorten case-local render length while keeping the scope, the metric set and the direct
+assertion that the raw receipt exceeds `maxReceiptBytesPerCall`. Fewer metrics or tracks drop the
+receipt below the bound and stop observing it; a timeout increase hides the cost instead of
+bounding it.
 
 ### 2026-10-30 — source-clock fixtures must match hydrated project state (PR #2169)
 
@@ -2165,6 +2187,54 @@ selected-take and comp-region retention after real owner hydration. Removing onl
 placement admission must redden the rejection case; testing a store sanitizer
 alone cannot observe the file admission gap.
 
+### A failed control receipt must invalidate the authority it staged (introduced by PR #4128)
+
+PR #4128 (`1d1471216e55823296bf84abcb4d2933ab0e3bee`) checked receipt bounding and
+interpretation admission separately, allowing a failed bounded control to leave staged semantic
+authority usable. An assertion about the failure receipt alone cannot observe that escape.
+Historical private reviewer prompts, models and tiers are unknown.
+
+Use an otherwise-valid selector built from actual published enum members whose genuine receipt
+exceeds the unchanged bound, then attempt an effectful proposal through the real parser and
+correction orchestrator. Require the correlated failure, no further provider turn, no escaped
+authority or metric state, and no proposal or writes; effectful schemas and calls stay closed.
+Compacted or replacement text must not stand in for an admitted raw success witness. Preserve
+`does not let the actual parser carry failed control authority into a following proposal` and its
+correction-orchestrator counterpart in `metricIntent.spec.ts`, plus the successful in-budget local
+and hosted controls that restore effectful planning. In a committed isolated probe, mutate only
+the discard/admission edge and require the named behavioral negative to fail without relying on a
+manifest digest failure. A fabricated failed receipt or mocked callback refusal is insufficient.
+
+### Catalog mutation candidates must respect resolved protection polarity (introduced by PR #4128)
+
+PR #4128 (`1d1471216e`) collected positive mutation targets from the entire request and fell back to contextual selection without excluding resolved protection spans; PRs #4132 and #4298 retained that behavior. The observed defect was incorrect published candidates and refusal scope, not a proven unauthorized persisted write. The missed baseline was catalog candidate semantics and source binding; historical private review prompts and tiers are unknown.
+
+Probe the actual catalog through admission and the bridge: request an edit to Drums while leaving Bass alone, protect a selected object's descendants, and combine a Vocal fader-only protection with permitted Vocal processing. Derive positive mutation candidates from completely consumed resolved spans and exact whole-object, control and clip restrictions. Unknown or ambiguous protected objects must clarify without selection fallback. Independently retain protected objects in read and measurement scopes. Reverting the polarity filtering must fail these producer-to-consumer checks.
+
+### Required per-request insertion anchors precede optional-field omission (introduced by PR #1650)
+
+PR #1650 (`a295c8b501e0834f4031934935be26161ad0b132`) admitted omitted optional target fields before checking request-bound device insertion order; PR #2811 retained the skip above its anchor comparison. A compressor requested after EQ could therefore append after a following device when `afterDeviceId` was omitted. The older PR #2712 unanchored negative refused earlier in its historical intake route and did not prove the anchor comparison. Historical private review prompts, models and tiers are unknown.
+
+Probe genuine whole-request intake through local and hosted planning, both eligible target chains, the exact resolved EQ identity and a later non-EQ device. Require missing and wrong anchors to refuse with no confirmation, document/runtime/revision or Undo writes; require the correct EQ to insert immediately after it. Keep the anchorless append control and existing supplied-unrequested-anchor refusal. In an isolated committed probe, restore only the optional-field skip before the mandatory comparison and require the original unanchored integration negative to fail at the anchor obligation, rather than at an earlier intake or schema failure.
+
+### Timed-out test callbacks can outlive shared fixture ownership (PRs #4390 and #5646)
+
+PR #4390 (`14e2e25647`) introduced whole-corpus sealed scoring; PR #5646 (`69d14317c9`) added real shared refinement fixtures and the aggregate deadline. A controlled deadline showed the runner advancing while the callback remained active: its later fixture close removed a successor's real pending confirmation. The historical CI interleaving remains unproved, and private reviewer prompts, stances and tiers are unknown.
+
+Probe a real timed-out callback held inside the shared fixture and separately hold its cleanup and spy restoration. Assert that a following test cannot open the project, reset its provider or lose its card until all old work and cleanup settle, then that its actual confirmation executes. An admission hook that itself times out must still prevent later bodies and stale nested teardown. Require every frozen case and all aggregate thresholds and safety counters even when a case fails, times out or is filtered; a late callback must not publish success. In a committed isolated probe, remove the lifetime barrier and require the ordered real-fixture regression to fail.
+
+### Unrelated census errors cannot prove an injected writer was caught (PR #2927)
+
+PR #2927 (`34c99cb1da`) used a generic `/sink census changed/` assertion for the device-write census's injected-writer cases. When PR #5852 added unclassified pure Command compiler references, the production census failed on five earlier paths while all twelve injected-writer cases still passed on that unrelated error. The scheduler case, which required its own path and count, failed and exposed the mismatch. The missed stance was test validity: a broad failure string did not prove the injected path was observed. Historical private reviewer prompts, models and tiers are unavailable.
+
+First require the unmodified production census to pass. For every injected writer, require the resulting diagnostic to name the injected path; a failure from another path must leave that case red. Keep the scheduler's exact path and count assertion. In a committed isolated probe, make the injected writer undetectable while leaving an unrelated census mismatch, and require the named case to fail. Audit new lexical matches, including imports, module-path strings and type projections, before updating exact counts; do not exclude paths or rename a compiler to silence the census.
+
+### Multi-request setup and timed-out fixture ownership (PR #5852)
+
+The pending-refinement integration case runs two real chat requests to establish its committed and pending state before the request it assesses. Its original five-second body charged all three requests to one deadline; CI timed out without identifying which awaited phase stalled. Keep the real preconditions bounded separately from the unchanged refinement deadline and assertions.
+
+Probe the actual fixture hooks with setup, body, and cleanup held past their deadlines. A successor whose admission times out must leave the prior project, provider and stores untouched, including after the held work settles; its teardown must not clear an unowned fixture. Require the actual cleanup to settle before later admission. In a committed isolated probe remove the essential lifetime barrier and require these caller-level controls to fail. A passing isolated run does not explain a historical CI timeout.
+
 ### 2026-10-28 — dirty-work retention was mistaken for busy-pump delivery (introduced by PR #5461)
 
 The native live automation real-store test held an apply, changed a store, settled the apply, and then explicitly pumped again. It proved that the dirty revision survived, but could not fail when the in-flight pump dropped the only next-frame request. The issue's remaining one-invocation qualification required backend submission after that held request. Historical private reviewer prompts and tiers are unknown.
@@ -2487,3 +2557,34 @@ file once #5917 merged. A spec must not read refs, history or remotes that a CI 
 does not fetch. Grep changed specs for `origin/`, `HEAD~` and `merge-base`, then compare against
 the checkout depth of every job that collects them: `unit` uses `fetch-depth: 0`, while
 `tooling-unit` uses the default shallow checkout.
+
+### Process-catalog fixtures must carry the production transport boundary (#5331)
+
+PR #5331 (`4781fe4e1e`) introduced a controlled process monitor whose nested
+`execFileSync` calls retained Node's smaller default output buffer while the real
+monitor allowed a bounded larger catalog. A valid catalog above that fixture
+limit failed before readiness and hid the actual error behind ignored supervisor
+output and a later wait timeout. Historical private reviewer prompts and tiers
+are unknown; the mechanical gap was an untested nested transport boundary.
+
+Exercise the actual generated monitor with a synthetic valid catalog above the
+old default and below the production ceiling through both forwarding routes.
+Require exact complete bytes, and make the old-default mutation fail. Reject
+over-ceiling output without forwarding partial bytes; reject opaque catalog
+rows before admission. Keep production monitoring unavailable on incomplete
+input. When readiness fails, capture the supervisor's actual error, exit and
+private readiness records before teardown; a later pass does not explain the
+original failure. Use synthetic process data in durable evidence rather than
+publishing real process environment values.
+
+### 2026-11-01 — a parametrised case looped heavy renders inside its body (#6000, fixed in #6014)
+
+PR #6000 added an `it.each` in `cropHistoryFromRenderedBuffer.spec.ts` whose body looped two sample
+rates and four tails, eight renders of up to millions of frames per case. On a loaded CI shard the
+case exceeded the 5 s timeout and failed the Gate of an unrelated pull request. #6014 split it into
+one row per combination.
+
+A parametrised case must not loop heavy work inside its body. Put the product in the table, so each
+case's cost fits the timeout and a failure names its combination. When reviewing an `it.each`, look
+for `for` loops, `forEach` or nested tables in the case body that multiply its renders, decodes or
+fixtures.

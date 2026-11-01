@@ -842,6 +842,59 @@ describe('audioBufferCache conversions', () => {
         expect(audioBufferCache.get(ids[64]!)).toBeDefined();
     });
 
+    it('keeps a buffer the open arrangement references resident while unreferenced writes fill the LRU', async () => {
+        installFakeIndexedDb();
+        const { setLiveAudioBufferReferenceReader } = await import('../liveAudioBufferReferences');
+        let referencedIds = ['session-take'];
+        setLiveAudioBufferReferenceReader(() => referencedIds);
+        try {
+            // A take recorded in this session is referenced by a clip but was
+            // never pinned by a project load; the first-launch factory seed then
+            // caches more buffers than the cap holds.
+            audioBufferCache.set('session-take', createAudioBuffer({ length: 1, sampleRate: 48_000 }));
+            for (let index = 0; index < 64; index++) {
+                audioBufferCache.set(`library-${index}`, createAudioBuffer({ length: 1, sampleRate: 48_000 }));
+            }
+
+            expect(audioBufferCache.has('session-take')).toBe(true);
+            expect(audioBufferCache.has('library-0')).toBe(false);
+            expect(audioBufferCache.has('library-63')).toBe(true);
+
+            referencedIds = [];
+            audioBufferCache.set('library-64', createAudioBuffer({ length: 1, sampleRate: 48_000 }));
+            expect(audioBufferCache.has('session-take')).toBe(false);
+        } finally {
+            setLiveAudioBufferReferenceReader(null);
+        }
+    });
+
+    it('keeps a referenced buffer through the trim that follows a project pin change', async () => {
+        installFakeIndexedDb();
+        const { setLiveAudioBufferReferenceReader } = await import('../liveAudioBufferReferences');
+        const exported = { sampleRate: 48_000, numberOfChannels: 1, channelData: [encodeFloat32([0.25])] };
+        const ids = Array.from({ length: 66 }, (_, index) => `active-${index}`);
+        const buffers = Object.fromEntries(ids.map((id) => [id, exported]));
+        const context = {
+            createBuffer: vi.fn(() => ({ getChannelData: () => new Float32Array(1) })),
+        } as unknown as BaseAudioContext;
+        const prepared = audioBufferCache.importBuffers({ context, buffers, cacheIds: ids });
+        prepared?.publish();
+        await expect(prepared?.persist()).resolves.toBe(true);
+
+        setLiveAudioBufferReferenceReader(() => ['active-0']);
+        try {
+            const emptyProject = audioBufferCache.importBuffers({ context, buffers: {}, cacheIds: [] });
+            emptyProject?.publish();
+            await expect(emptyProject?.persist()).resolves.toBe(true);
+
+            expect(audioBufferCache.has('active-0')).toBe(true);
+            expect(audioBufferCache.has('active-1')).toBe(false);
+            expect(audioBufferCache.has('active-65')).toBe(true);
+        } finally {
+            setLiveAudioBufferReferenceReader(null);
+        }
+    });
+
     it('authenticates an exact resident publication and changes on same-object republish', () => {
         const buffer = createAudioBuffer({ length: 4, sampleRate: 48_000 });
         audioBufferCache.set('native-version', buffer);

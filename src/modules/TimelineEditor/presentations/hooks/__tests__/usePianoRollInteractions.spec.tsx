@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => {
     let idCounter = 0;
     return {
         nextId: (): string => `gen-${++idCounter}`,
+        previewEngine: null as typeof import('#/modules/AudioEngine/useCases').audioEngine | null,
         playAuditionNote: vi.fn(),
         auditionStop: vi.fn(),
         pushUndoEntry: vi.fn(),
@@ -55,7 +56,8 @@ const mocks = vi.hoisted(() => {
     };
 });
 
-vi.mock('#/modules/Arrangement/stores', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     trackStore: {
         get value() {
             return mocks.trackState;
@@ -63,16 +65,30 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     },
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    playAuditionNote: mocks.playAuditionNote,
-}));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    mocks.previewEngine = actual.audioEngine;
+    return {
+        audioEngine: {
+            beginAudioPreviewIntent: () => {
+                if (mocks.previewEngine === null) {
+                    throw new Error('Missing actual hover registry.');
+                }
+                return mocks.previewEngine.beginAudioPreviewIntent();
+            },
+        },
+        playAuditionNote: mocks.playAuditionNote,
+    };
+});
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeUserAppAction: vi.fn(),
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 
-vi.mock('#/modules/MIDI/stores', () => ({
+vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
     isFrozenMidiTakeSource: vi.fn(() => {
         throw new Error('Frozen MIDI take source is outside this piano roll fixture');
     }),
@@ -265,6 +281,7 @@ describe('usePianoRollInteractions', () => {
             })
         );
         mocks.getNotesForClip.mockReturnValue([]);
+        mocks.previewEngine?.resetGraph();
         mocks.playAuditionNote.mockReturnValue(mocks.auditionStop);
         mocks.getTransportState.mockReturnValue({ playheadPosition: 2.5 });
         mocks.stepRecordState = { currentPitch: 62 };
@@ -1014,12 +1031,25 @@ describe('usePianoRollInteractions', () => {
             act(() => {
                 vi.advanceTimersByTime(200);
             });
-            expect(mocks.playAuditionNote).toHaveBeenCalledWith('track-1', 60, 100);
+            const group = mocks.playAuditionNote.mock.calls[0]?.[3];
+            expect(group?.isCurrent()).toBe(true);
+            expect(mocks.playAuditionNote).toHaveBeenCalledWith('track-1', 60, 100, group);
 
             act(() => {
                 vi.advanceTimersByTime(500);
             });
             expect(mocks.auditionStop).toHaveBeenCalledTimes(1);
+        });
+
+        it('a newer exclusive gesture retires the armed hover before its timer can dispatch a note', () => {
+            vi.useFakeTimers();
+            const { canvas } = renderRoll({ notePreviewEnabled: true });
+            fireEvent.mouseMove(canvas, { clientX: 100, clientY: yForPitch(60) });
+            const exclusive = mocks.previewEngine?.beginExclusiveAudioPreviewIntent();
+            expect(exclusive?.isCurrent()).toBe(true);
+            act(() => vi.advanceTimersByTime(1_000));
+            expect(mocks.playAuditionNote).not.toHaveBeenCalled();
+            expect(exclusive?.isCurrent()).toBe(true);
         });
 
         it('moving off the note before the debounce fires cancels the preview', () => {
@@ -1635,7 +1665,9 @@ describe('usePianoRollInteractions', () => {
                 vi.advanceTimersByTime(200);
             });
 
-            expect(mocks.playAuditionNote).toHaveBeenCalledWith('track-2', 65, 80);
+            const group = mocks.playAuditionNote.mock.calls[0]?.[3];
+            expect(group?.isCurrent()).toBe(true);
+            expect(mocks.playAuditionNote).toHaveBeenCalledWith('track-2', 65, 80, group);
         });
     });
 

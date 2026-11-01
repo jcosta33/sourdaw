@@ -30,6 +30,7 @@ import {
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { type ToolSchema } from '../../models/ToolDefinitions';
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -48,6 +49,7 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 
 const PROMPT = 'Lower every vocal send to the Hall by 3 dB only in verse two.';
 
@@ -125,6 +127,21 @@ const noActionHistoryMetadataPort = {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isToolSchema(value: unknown): value is ToolSchema {
+    if (!isRecord(value) || value.type !== 'function' || !isRecord(value.function)) {
+        return false;
+    }
+    const parameters = value.function.parameters;
+    return (
+        typeof value.function.name === 'string' &&
+        typeof value.function.description === 'string' &&
+        isRecord(parameters) &&
+        parameters.type === 'object' &&
+        isRecord(parameters.properties) &&
+        Array.isArray(parameters.required)
+    );
 }
 
 function isUnknownArray(value: unknown): value is unknown[] {
@@ -231,6 +248,20 @@ function getApplicationToolReceipts(userMessage: string): unknown[] {
     return parsed.receipts;
 }
 
+function getHostedUserMessage(body: string): string {
+    const request: unknown = JSON.parse(body);
+    if (!isRecord(request) || !Array.isArray(request.messages)) {
+        throw new TypeError('Expected hosted provider messages');
+    }
+    const message = request.messages.find(
+        (entry) => isRecord(entry) && entry.role === 'user' && typeof entry.content === 'string'
+    );
+    if (!isRecord(message) || typeof message.content !== 'string') {
+        throw new TypeError('Expected hosted provider user message');
+    }
+    return message.content;
+}
+
 /** The receipts a hosted turn replays natively, one `tool` message per receipt, in wire order. */
 function getReplayedToolReceipts(requestBody: string): unknown[] {
     const request: unknown = JSON.parse(requestBody);
@@ -253,7 +284,7 @@ function assertDiscoveredCommandSchema(receipts: readonly unknown[]): void {
     if (
         !isRecord(discoveryReceipt) ||
         discoveryReceipt.status !== 'success' ||
-        discoveryReceipt.turn !== 1 ||
+        discoveryReceipt.turn !== 2 ||
         !isRecord(discoveryReceipt.data) ||
         discoveryReceipt.data.schema !== 'sourdaw.agent-tool-catalog' ||
         discoveryReceipt.data.schemaVersion !== 1 ||
@@ -279,12 +310,15 @@ function createTurnTrackedWebLlmResponder(
     buildPlan: (userMessage: string) => ProviderCall[] = () => providerPlan
 ): (systemPrompt: string, userMessage: string) => Promise<string> {
     let turn = 0;
-    return (_systemPrompt, userMessage) => {
+    return (systemPrompt, userMessage) => {
         turn += 1;
-        if (turn > 2) {
-            throw new Error('Expected exactly two WebLLM provider turns');
+        if (turn > 3) {
+            throw new Error('Expected exactly three WebLLM provider turns');
         }
         if (turn === 1) {
+            return Promise.resolve(JSON.stringify(literalMetricIntakeTurn(userMessage, systemPrompt)));
+        }
+        if (turn === 2) {
             return Promise.resolve(JSON.stringify(catalogDiscoveryPlan()));
         }
         assertDiscoveredCommandSchema(getApplicationToolReceipts(userMessage));
@@ -317,10 +351,19 @@ function createTurnTrackedHostedResponder(): (...args: Parameters<typeof fetch>)
             throw new TypeError('Expected hosted provider request body');
         }
         turn += 1;
-        if (turn > 2) {
-            throw new Error('Expected exactly two hosted provider turns');
+        if (turn > 3) {
+            throw new Error('Expected exactly three hosted provider turns');
         }
         if (turn === 1) {
+            const request: unknown = JSON.parse(init.body);
+            if (!isRecord(request) || !Array.isArray(request.tools) || !request.tools.every(isToolSchema)) {
+                throw new TypeError('Expected the live hosted tool schemas');
+            }
+            return Promise.resolve(
+                toolCallsResponse(literalMetricIntakeTurn(getHostedUserMessage(init.body), request.tools))
+            );
+        }
+        if (turn === 2) {
             return Promise.resolve(toolCallsResponse(catalogDiscoveryPlan()));
         }
         assertDiscoveredCommandSchema(getReplayedToolReceipts(init.body));
@@ -636,7 +679,9 @@ describe('verse Hall send automation workflow', () => {
             },
         });
 
-        await confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' });
+        await expect(confirmPendingChatActions({ confirmationId: confirmation?.id ?? '' })).resolves.toEqual({
+            status: 'executed',
+        });
 
         expectExactAutomation();
         const receipt = chatStore.value?.messages.find(

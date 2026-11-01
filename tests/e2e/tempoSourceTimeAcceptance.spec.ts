@@ -458,7 +458,8 @@ async function createComp(page: Page, snapshot: Snapshot): Promise<Snapshot> {
     expect(lane?.activeCompRegions[0]?.takeId).toBe(lane?.takes[0]?.id);
     expect(lane?.activeCompRegions[0]?.startBeat).toBeGreaterThan(1.72);
     expect(lane?.activeCompRegions[0]?.startBeat).toBeLessThan(1.78);
-    expect(lane?.activeCompRegions[0]?.endBeat).toBeGreaterThan(2);
+    // The swipe overshoots the clip end; the committed region is clamped to the part that can sound.
+    expect(lane?.activeCompRegions[0]?.endBeat).toBe(onlyClip(snapshot).endBeat);
     return after;
 }
 
@@ -1334,9 +1335,9 @@ test('slips canonical media and manual comp snapshots from authoritative seconds
     expect(state.raw.lane?.takes).toEqual(takeFields);
     expect(state.raw.lane?.activeCompRegions[0]?.audioSource).toMatchObject({
         startBeat: compStart,
-        audioOffsetSeconds: 0.65 + compStart,
-        audioLoopStartSeconds: 0.65 + compStart,
-        audioLoopPassEntrySeconds: 0.65 + compStart,
+        audioOffsetSeconds: expect.closeTo(0.65 + compStart, 10),
+        audioLoopStartSeconds: expect.closeTo(0.65 + compStart, 10),
+        audioLoopPassEntrySeconds: expect.closeTo(0.65 + compStart, 10),
         audioLoopPassOriginBeat: compStart,
         loopOriginBeat: compStart,
         loopLength: 2 - compStart,
