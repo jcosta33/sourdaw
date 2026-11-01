@@ -108,6 +108,24 @@ describe('e2e uncached dev-server responses', () => {
         }
     );
 
+    // Vite's public-file server passes these only as writeHead arguments, never through setHeader.
+    it('keeps the entity headers Vite passes to writeHead for a public file, whole or ranged', async () => {
+        const origin = await serveWithPlugin('e2e');
+
+        const whole = await fetch(`${origin}${PUBLIC_PATH}`);
+        expect(whole.status).toBe(200);
+        expect(whole.headers.get('content-type')).toBe('text/plain');
+        expect(whole.headers.get('content-length')).toBe(String('asset\n'.length));
+        expect(await whole.text()).toBe('asset\n');
+
+        const ranged = await fetch(`${origin}${PUBLIC_PATH}`, { headers: { Range: 'bytes=0-2' } });
+        expect(ranged.status).toBe(206);
+        expect(ranged.headers.get('content-range')).toBe(`bytes 0-2/${'asset\n'.length}`);
+        expect(ranged.headers.get('accept-ranges')).toBe('bytes');
+        expect(ranged.headers.get('cache-control')).toBe('no-store');
+        expect(await ranged.text()).toBe('ass');
+    });
+
     it('leaves Vite caching untouched outside e2e mode', async () => {
         const origin = await serveWithPlugin('development');
         const plain = await requestCacheHeaders(`${origin}${MODULE_PATH}`);
