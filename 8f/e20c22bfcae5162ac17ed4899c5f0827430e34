@@ -1,0 +1,28 @@
+.agents/skills/review-stances/correctness.md
+  s_0314bb17e5dee3::t_c7b7015477d886 5-7
+  s_0314bb17e5dee3::t_490ee742701172 15
+  s_0314bb17e5dee3::t_3e0ac33e5b645e 151
+  s_0314bb17e5dee3::t_2e614853dc6ee9 255
+  s_0314bb17e5dee3::t_afb1b528d94847 30-31
+  s_0314bb17e5dee3::t_85009747603e6b 34-36
+  s_0314bb17e5dee3::t_3bebacfbd5d83e 58
+  s_0314bb17e5dee3::t_f826e420b362b8 242
+  s_0314bb17e5dee3::t_b767beb763ce57 244-245
+  s_0314bb17e5dee3::t_7cabc42f1f8499 186-187
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8fe20c22bfcae5162ac17ed4899c5f0827430e34",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
