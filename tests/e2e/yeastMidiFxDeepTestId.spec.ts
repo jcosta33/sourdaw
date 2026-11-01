@@ -15,7 +15,7 @@ async function openYeast(page: import('@playwright/test').Page): Promise<void> {
         await page.getByTestId('toggle-browser').click();
         await page.waitForTimeout(500);
     }
-    const effectsTab = page.getByRole('button', { name: 'Effects', exact: true }).first();
+    const effectsTab = page.getByRole('tab', { name: 'Effects', exact: true }).first();
     if (await effectsTab.isVisible().catch(() => false)) {
         await effectsTab.click();
         await page.waitForTimeout(400);
