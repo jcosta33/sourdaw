@@ -3,7 +3,7 @@
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { existsSync, lstatSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, relative, resolve } from 'node:path';
+import { dirname, posix, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
@@ -13,6 +13,7 @@ const {
     MODEL_SUPPORT_BARREL_PATH,
     MODEL_TEST_SUPPORT_PATH,
     SOURCE_FILE_RE,
+    SPEC_FILE_RE,
 } = require('../.dependency-cruiser.shared.cjs');
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -32,6 +33,10 @@ const gates = {
     },
     contractReexports: {
         baseline: '.dependency-cruiser-known-violations-contract-reexports.json',
+        static: true,
+    },
+    moduleTiers: {
+        baseline: '.dependency-cruiser-known-violations-module-tiers.json',
         static: true,
     },
     reachability: {
@@ -107,6 +112,9 @@ function canonicalRow(row) {
         },
     };
 
+    if (row.members) {
+        normalized.members = [...row.members].sort();
+    }
     if (row.cycle) {
         normalized.cycle = row.cycle.map(canonicalStep).sort((left, right) => left.name.localeCompare(right.name));
     }
@@ -1725,8 +1733,248 @@ export function findContractReexportFindings(repositoryRoot = root) {
     );
 }
 
-// One walk and one type program feed both the hard static refusal findings and the
-// contract-folder re-export register, so `main()` never builds the program twice.
+// Module tiers: `.dependency-cruiser.module-tiers.cjs` places every module in a tier and says which
+// tiers it may depend on. File-level `no-circular` cannot see a cycle that runs through many modules,
+// so this gate aggregates imports to module pairs and checks the pairs, not the files.
+//
+// The edge set is every import, re-export, dynamic `import()` and `import()` type from production
+// code of one module into another. Type-only edges stay in: the issue that introduced this gate
+// (#6059) measured that value-only edges give the same cycle, and a type edge still couples the
+// modules' languages. Presentation code on either end is excluded because a presentation projection
+// is a layer allowed to read widely, and tests, `testing/` helpers and specs are not shipped.
+const moduleTierManifestPath = '.dependency-cruiser.module-tiers.cjs';
+const moduleFilePath = /^src\/modules\/([^/]+)(?:\/(.*))?$/;
+const specFilePath = new RegExp(SPEC_FILE_RE, 'i');
+const nonProductionModuleSegment = /(?:^|\/)(?:__tests__|testing|presentations)\//;
+const presentationModuleSegment = /(?:^|\/)presentations(?:\/|$)/;
+
+function moduleLocation(repoPath) {
+    const match = moduleFilePath.exec(repoPath);
+    return match ? { module: match[1], innerPath: match[2] ?? '' } : null;
+}
+
+function isModuleEdgeOrigin(repoPath) {
+    const location = moduleLocation(repoPath);
+    return (
+        location !== null &&
+        sourceFilePath.test(repoPath) &&
+        !specFilePath.test(repoPath) &&
+        !nonProductionModuleSegment.test(location.innerPath)
+    );
+}
+
+function moduleSpecifierRepoPath(moduleSpecifier, fromRepoPath) {
+    if (moduleSpecifier.startsWith('#/')) {
+        return `src/${moduleSpecifier.slice(2)}`;
+    }
+    if (moduleSpecifier.startsWith('.')) {
+        return posix.normalize(posix.join(posix.dirname(fromRepoPath), moduleSpecifier));
+    }
+    return null;
+}
+
+function collectModuleSpecifiers(sourceFile) {
+    const specifiers = [];
+    const add = (literal) => {
+        const text = moduleSpecifierText(literal);
+        if (text !== null) {
+            const { line } = sourceFile.getLineAndCharacterOfPosition(literal.getStart(sourceFile));
+            specifiers.push({ text, line: line + 1 });
+        }
+    };
+    const visit = (node) => {
+        if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+            add(node.moduleSpecifier);
+        } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
+            add(node.moduleReference.expression);
+        } else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+            add(node.arguments[0]);
+        } else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument)) {
+            add(node.argument.literal);
+        }
+        ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+    return specifiers;
+}
+
+// Returns one `{ from, to, example }` per module pair; the example is the first `file:line`
+// in path order, which keeps failure messages stable between runs.
+function collectModuleEdges({ files, sourceFileFor }) {
+    const edgesByKey = new Map();
+    for (const { absolutePath, repoPath } of files) {
+        if (!isModuleEdgeOrigin(repoPath)) {
+            continue;
+        }
+        const sourceFile = sourceFileFor(absolutePath);
+        if (!sourceFile) {
+            continue;
+        }
+        const from = moduleLocation(repoPath).module;
+        for (const { text, line } of collectModuleSpecifiers(sourceFile)) {
+            const targetPath = moduleSpecifierRepoPath(text, repoPath);
+            const target = targetPath ? moduleLocation(targetPath) : null;
+            if (!target || target.module === from || presentationModuleSegment.test(target.innerPath)) {
+                continue;
+            }
+            const key = `${from}\u0000${target.module}`;
+            if (!edgesByKey.has(key)) {
+                edgesByKey.set(key, { from, to: target.module, example: `${repoPath}:${line}` });
+            }
+        }
+    }
+    return [...edgesByKey.values()];
+}
+
+function findModuleManifestFindings({ moduleNames, manifest }) {
+    const tierNames = new Set(manifest.tiers.map((tier) => tier.name));
+    const findings = [];
+    for (const tier of manifest.tiers) {
+        for (const allowed of tier.mayDependOn) {
+            if (!tierNames.has(allowed)) {
+                findings.push(`tier "${tier.name}" may depend on unknown tier "${allowed}"`);
+            }
+        }
+    }
+    for (const [name, entry] of Object.entries(manifest.modules)) {
+        if (!moduleNames.includes(name)) {
+            findings.push(`module ${name} has a tier but no src/modules/${name} directory`);
+        } else if (!tierNames.has(entry.tier)) {
+            findings.push(`module ${name} names unknown tier "${entry.tier}"`);
+        }
+    }
+    for (const name of moduleNames) {
+        if (!Object.hasOwn(manifest.modules, name)) {
+            findings.push(`module ${name} has no tier`);
+        }
+    }
+    return findings.map((reason) => ({ file: moduleTierManifestPath, line: 1, reason }));
+}
+
+function isTierEdgeAllowed(manifest, from, to) {
+    const fromTier = manifest.modules[from]?.tier;
+    const toTier = manifest.modules[to]?.tier;
+    if (fromTier === toTier) {
+        return true;
+    }
+    const tier = manifest.tiers.find((candidate) => candidate.name === fromTier);
+    return tier?.mayDependOn.includes(toTier) ?? false;
+}
+
+// Tarjan's algorithm. Recursion depth is bounded by the module count.
+function findStronglyConnectedComponents(nodes, successorsOf) {
+    const indexOf = new Map();
+    const lowLinkOf = new Map();
+    const stack = [];
+    const onStack = new Set();
+    const components = [];
+
+    const connect = (node) => {
+        indexOf.set(node, indexOf.size);
+        lowLinkOf.set(node, indexOf.get(node));
+        stack.push(node);
+        onStack.add(node);
+        for (const successor of successorsOf(node)) {
+            if (!indexOf.has(successor)) {
+                connect(successor);
+                lowLinkOf.set(node, Math.min(lowLinkOf.get(node), lowLinkOf.get(successor)));
+            } else if (onStack.has(successor)) {
+                lowLinkOf.set(node, Math.min(lowLinkOf.get(node), indexOf.get(successor)));
+            }
+        }
+        if (lowLinkOf.get(node) !== indexOf.get(node)) {
+            return;
+        }
+        const component = [];
+        let member;
+        do {
+            member = stack.pop();
+            onStack.delete(member);
+            component.push(member);
+        } while (member !== node);
+        components.push(component);
+    };
+
+    for (const node of nodes) {
+        if (!indexOf.has(node)) {
+            connect(node);
+        }
+    }
+    return components;
+}
+
+// Rows carry no file or line, so moving an import never stales the baseline; the example
+// edge travels separately in `details`, keyed like the rows, for the failure message only.
+export function computeModuleTierRows({ edges, manifest }) {
+    const details = new Map();
+    const tierRows = edges
+        .filter(({ from, to }) => !isTierEdgeAllowed(manifest, from, to))
+        .map(({ from, to, example }) => {
+            const row = { type: 'module-tier', from, to };
+            const fromTier = manifest.modules[from]?.tier;
+            const toTier = manifest.modules[to]?.tier;
+            details.set(keyOf(row), `${fromTier} may not depend on ${toTier}; e.g. ${example}`);
+            return row;
+        });
+
+    const successors = new Map();
+    for (const { from, to } of edges) {
+        successors.set(from, [...(successors.get(from) ?? []), to]);
+        successors.set(to, successors.get(to) ?? []);
+    }
+    const nodes = [...successors.keys()].sort(comparePaths);
+    const cycleRows = findStronglyConnectedComponents(nodes, (node) => successors.get(node))
+        .filter((component) => component.length > 1)
+        .map((component) => ({ type: 'module-cycle', members: [...component].sort(comparePaths) }));
+
+    return { rows: sortRows([...tierRows, ...cycleRows]), details };
+}
+
+function collectModuleTierState({ repositoryRoot, files, sourceFileFor, manifest }) {
+    const moduleNames = readdirSync(resolve(repositoryRoot, 'src/modules'), { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name)
+        .sort(comparePaths);
+    const findings = findModuleManifestFindings({ moduleNames, manifest });
+    const edges = collectModuleEdges({ files, sourceFileFor });
+    return { findings, ...computeModuleTierRows({ edges, manifest }) };
+}
+
+function loadModuleTierManifest(repositoryRoot) {
+    return require(resolve(repositoryRoot, moduleTierManifestPath));
+}
+
+function scriptKindFor(fileName) {
+    if (/\.tsx$/i.test(fileName)) {
+        return ts.ScriptKind.TSX;
+    }
+    if (/\.jsx$/i.test(fileName)) {
+        return ts.ScriptKind.JSX;
+    }
+    if (/\.[mc]?js$/i.test(fileName)) {
+        return ts.ScriptKind.JS;
+    }
+    return ts.ScriptKind.TS;
+}
+
+export function findModuleTierState(repositoryRoot = root, manifest = loadModuleTierManifest(repositoryRoot)) {
+    const files = walkFiles(resolve(repositoryRoot, 'src/modules')).map((absolutePath) => ({
+        absolutePath,
+        repoPath: toPosixPath(relative(repositoryRoot, absolutePath)),
+    }));
+    const sourceFileFor = (absolutePath) =>
+        ts.createSourceFile(
+            absolutePath,
+            readFileSync(absolutePath, 'utf8'),
+            ts.ScriptTarget.Latest,
+            true,
+            scriptKindFor(absolutePath)
+        );
+    return collectModuleTierState({ repositoryRoot, files, sourceFileFor, manifest });
+}
+
+// One walk and one type program feed the hard static refusal findings, the contract-folder
+// re-export register and the module tier scan, so `main()` never builds the program twice.
 function buildStaticGuardState(repositoryRoot) {
     const symlinkPaths = [];
     const allSourcePaths = walkFiles(resolve(repositoryRoot, 'src'), symlinkPaths);
@@ -1813,7 +2061,8 @@ function buildStaticGuardState(repositoryRoot) {
             (left.line ?? 0) - (right.line ?? 0) ||
             comparePaths(left.reason, right.reason)
     );
-    return { findings, contractReexportRows };
+    const sourceFileFor = (absolutePath) => sourceFilesByPath.get(normalizeFileName(absolutePath));
+    return { findings, contractReexportRows, files, sourceFileFor };
 }
 
 export function findStaticGuardFindings(repositoryRoot = root) {
@@ -1862,19 +2111,28 @@ function readBaseline(gate) {
     return existsSync(baselinePath) ? JSON.parse(readFileSync(baselinePath, 'utf8')) : [];
 }
 
-function printRows(label, rows) {
+function describeRow(row, rowDetails) {
+    if (row.type === 'module-cycle') {
+        return `module cycle {${row.members.join(', ')}}`;
+    }
+    const description = `${row.from} → ${row.to} (${row.rule?.name ?? row.rule ?? row.type})`;
+    const detail = rowDetails.get(keyOf(row));
+    return detail ? `${description}: ${detail}` : description;
+}
+
+function printRows(label, rows, rowDetails) {
     for (const row of rows) {
-        console.error(`  ${label}: ${row.from} → ${row.to} (${row.rule?.name ?? row.rule})`);
+        console.error(`  ${label}: ${describeRow(row, rowDetails)}`);
     }
 }
 
-function validateGate(name, gate, cruise) {
+function validateGate(name, gate, cruise, rowDetails) {
     const current = currentRows(gate, cruise);
     const known = readBaseline(gate);
     const { novel, stale } = compareRows({ current, known });
     if (novel.length > 0 || stale.length > 0) {
-        printRows('NEW', novel);
-        printRows('STALE', stale);
+        printRows('NEW', novel, rowDetails);
+        printRows('STALE', stale, rowDetails);
         return false;
     }
 
@@ -1891,7 +2149,16 @@ function writeBaseline(name, gate, cruise) {
 }
 
 function main() {
-    const { findings: staticFindings, contractReexportRows } = buildStaticGuardState(root);
+    const { findings: guardFindings, contractReexportRows, files, sourceFileFor } = buildStaticGuardState(root);
+    const moduleTierState = collectModuleTierState({
+        repositoryRoot: root,
+        files,
+        sourceFileFor,
+        manifest: loadModuleTierManifest(root),
+    });
+    const staticFindings = [...guardFindings, ...moduleTierState.findings];
+    const staticRows = { contractReexports: contractReexportRows, moduleTiers: moduleTierState.rows };
+    const rowDetails = moduleTierState.details;
     if (staticFindings.length > 0) {
         for (const finding of staticFindings) {
             console.error(`${finding.file}:${finding.line}: ${finding.reason}`);
@@ -1907,14 +2174,14 @@ function main() {
             console.error(`Choose one baseline: ${Object.keys(gates).join(', ')}`);
             process.exit(1);
         }
-        writeBaseline(name, gate, gate.static ? contractReexportRows : runCruise(gate));
+        writeBaseline(name, gate, gate.static ? staticRows[name] : runCruise(gate));
         return;
     }
 
     let valid = true;
     for (const [name, gate] of Object.entries(gates)) {
-        const cruise = gate.static ? contractReexportRows : runCruise(gate);
-        valid = validateGate(name, gate, cruise) && valid;
+        const cruise = gate.static ? staticRows[name] : runCruise(gate);
+        valid = validateGate(name, gate, cruise, rowDetails) && valid;
     }
     if (!valid) {
         console.error('\nRefresh only after an intentional debt decision:');
