@@ -102,3 +102,38 @@ timestamp, older reviewer reviews after it with later timestamps, and require th
 `databaseId` to decide the state. Pair it with the inverse — an older APPROVE listed last behind a
 newer CHANGES_REQUESTED must not read as approved — and require a null or duplicate reviewer id to
 refuse instead of guessing.
+
+## Escape: delivery authority came from an earlier PR state (PR #4586, extended by #5032)
+
+PR #4586 first appended `delivery-authorized` after reading review state without a final PR state and head
+read. Its recorded stances attacked wrong digest or head binding and unsolicited or duplicate authorization,
+but did not admit a late PR state transition. PR #5032 extended that binder to recovered publications; its
+recovery-authority stance and moved-head probe covered a head already moved at inspection, not a merge, close,
+or move after both inspections (2026-10-09).
+
+Probe that would have caught it: hold the landed review exact across both inspections, change the PR state or
+head before the final authorization read, and require a publication-only dossier with zero review POSTs. Keep
+an open, unchanged PR as the positive authorization control.
+
+## Escape: an old receipt bypassed publication authority checks (issue #5111)
+
+Receipt shape and exact owner alone did not prove that a modern dossier could adopt a landed publication. The
+absent-lock replay branch exited before authenticating the reviewer, serializing the write, and comparing the
+retained payload with stable live evidence.
+
+Probe that would have caught it: present a foreign lock, a live original owner, and a changed actor, head, body,
+or payload one at a time to the production recovery route. Require no dossier mutation or review POST. Permit
+exact adoption only under the native lock, and require a merged historical approval to remain without delivery
+authorization.
+
+## Escape: the reviewer confirm token could not perform its own mutation (PR #4411, 2026-09-19)
+
+`review:confirm` resolved threads through a reviewer installation token minted `contents: read`; GitHub gates
+`resolveReviewThread` on repository write access, so every confirm failed with "Resource not accessible by
+integration" and every lane silently fell back to author-side `Done`, so the public record never showed a
+reviewer-resolved thread. Review verified the flow's records and idempotence but never executed the identity's
+own GitHub mutation, and the universal author-side fallback masked the mismatch from every later session.
+
+Probe that would have caught it: for every GitHub mutation a shipped script performs, prove the minted
+permission set admits that mutation class: resolve or create one real thread under the minted identity in a
+fixture repository and require the mutation to succeed before the flow lands.
