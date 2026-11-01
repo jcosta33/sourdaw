@@ -1,0 +1,23 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_cffddf71b5ee39::t_2221bf4c046a0b 3109-3158
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_cffddf71b5ee39::t_e9ccf31e937219 119,198-200,513,1384-1456
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_cffddf71b5ee39::t_8b85c90d9f0e5b 203-204,284-288,1534-1535,1537,1542-1553
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ca8873c0b71b40bc69ae2388dcc633f8df5a537a",
+  "prompts": {},
+  "sessions": {
+    "s_cffddf71b5ee39": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_cffddf71b5ee39",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
