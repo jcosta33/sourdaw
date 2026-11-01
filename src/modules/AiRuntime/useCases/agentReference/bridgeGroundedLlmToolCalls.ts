@@ -109,6 +109,7 @@ import {
     getSyncopatedArpeggioPromptScope,
     type SyncopatedArpeggioRequestScope,
 } from './getSyncopatedArpeggioPromptScope';
+import { getUnresolvedClipProtectionMembers } from './getUnresolvedClipProtectionMembers';
 import { getWholeProjectVibeMixScope } from './getWholeProjectVibeMixScope';
 import {
     bindDecibelFiguresToReferences,
@@ -160,6 +161,7 @@ import { isBatchLocalDeviceParameterTarget } from './isBatchLocalDeviceParameter
 import { projectBatchLocalCreation } from './projectBatchLocalCreation';
 import { proposalCommandShape } from './proposalCommandShape';
 import { proposalProtection } from './proposalProtection';
+import { protectionObjectForms } from './protectionObjectForms';
 import { readExplicitProtections } from './readExplicitProtections';
 import { readStoredCardRemoval } from './readStoredCardRemoval';
 import { refinementCardCommands } from './refinementCardCommands';
@@ -7146,6 +7148,19 @@ function refuseWhenProtectionIsUnresolved(
             `Protection names ${references}, which resolves to no track, clip, device or group, so the request is refused`
         );
     }
+    // A protection binding any clip is a clip protection, so every member it lists must name an object.
+    // Without clip evidence the track reader alone decides, since a bare name there may be a quality.
+    const clipProtection = readClipProtection(input.prompt, context, protections);
+    const unnamedMembers =
+        clipProtection.clips.length > 0
+            ? findUnnamedClipProtectionMembers(input.prompt, clipProtection.read, context)
+            : [];
+    if (unnamedMembers.length > 0) {
+        const references = unnamedMembers.map((member) => `"${member}"`).join(', ');
+        return refuseProtectedRequest(
+            `Protection names ${references}, which resolves to no track, clip, device or group, so the request is refused`
+        );
+    }
     const wholeTracks = context.tracks.filter((track) => protections.protectedTrackIds.includes(track.id));
     const recordedControls = (input.protectionFacts?.protectedControls ?? []).map(
         ({ trackId, operations, exceptOperations }) => ({
@@ -7157,12 +7172,58 @@ function refuseWhenProtectionIsUnresolved(
     const changedTrack =
         findChangedObject(
             grounded.actions,
-            [...wholeTracks, ...(input.protectionFacts?.protectedUnchanged ?? [])],
+            [...wholeTracks, ...clipProtection.clips, ...(input.protectionFacts?.protectedUnchanged ?? [])],
             context
         ) ?? findChangedControl(grounded.actions, [...protections.protectedControls, ...recordedControls], context);
     return changedTrack === null
         ? grounded
         : refuseProtectedRequest(`Request changes "${changedTrack.name}", which a protection in it leaves alone`);
+}
+
+/**
+ * The clips a request's explicit protections and exclusions keep, whether every member resolved, and
+ * the text that reading was taken from. A resolved track clause is blanked and the request read again
+ * only when the whole request does not parse completely, since removing a following track clause can
+ * extend an earlier exclusion; the blanked text keeps every offset of the request.
+ */
+function readClipProtection(
+    prompt: string,
+    context: ProjectContext,
+    trackProtections: ReturnType<typeof readExplicitProtections>
+): ReturnType<typeof getExplicitClipProtection> & { read: string } {
+    const clipProtection = getExplicitClipProtection(prompt, context);
+    if (clipProtection.complete) {
+        return { ...clipProtection, read: prompt };
+    }
+    const clipPrompt = trackProtections.resolvedTrackClauses.reduce(
+        (text, { start, end }) => `${text.slice(0, start)}${' '.repeat(end - start)}${text.slice(end)}`,
+        prompt
+    );
+    return { ...getExplicitClipProtection(clipPrompt, context), read: clipPrompt };
+}
+
+/**
+ * The clip protection list members, read from `read`, that name nothing: no clip, track, device,
+ * parameter or group the reference masking hides, nor the project's conventional routing, and written
+ * as a name ("Omega" beside a missing clip, never "the loop"). A quoted member names an object only
+ * when that object's name is its whole quoted text.
+ */
+function findUnnamedClipProtectionMembers(prompt: string, read: string, context: ProjectContext): string[] {
+    const masked = scanPromptQuotedText(prompt).maskedText;
+    const candidates = refinementRequestReading.candidates(context);
+    return getUnresolvedClipProtectionMembers(read, context).flatMap((member) => {
+        const tokens = protectionObjectForms.readTokens(prompt, masked, member);
+        if (!protectionObjectForms.writesUnboundName(tokens)) {
+            return [];
+        }
+        const quoted = tokens.some((token) => token.quoted);
+        const named = quoted ? member.text.replaceAll(/^["'“”‘’]+|["'“”‘’]+$/gu, '') : member.text;
+        const references = refinementRequestReading.references(named, candidates);
+        const namesObject = quoted
+            ? references.some((reference) => reference.start === 0 && reference.end === named.length)
+            : references.length > 0;
+        return namesObject ? [] : [named];
+    });
 }
 
 function refuseProtectedRequest(reason: string): BridgeGroundedLlmToolCallsResult {
@@ -7248,16 +7309,7 @@ function bridgeUnrefinedLlmToolCalls(
                     `Protection names ${references}, which resolves to no track, clip, device or group, so the request is refused`
                 );
             }
-            let clipProtection = getExplicitClipProtection(prompt, context);
-            if (!clipProtection.complete) {
-                // Removing a following track clause can extend an earlier exclusion, so keep any complete source parse.
-                const clipPrompt = trackProtections.resolvedTrackClauses.reduce(
-                    (text, { start, end }) => `${text.slice(0, start)}${' '.repeat(end - start)}${text.slice(end)}`,
-                    prompt
-                );
-                clipProtection = getExplicitClipProtection(clipPrompt, context);
-            }
-            complete = clipProtection.complete;
+            complete = readClipProtection(prompt, context, trackProtections).complete;
             protectedObjects = getApplicationProtectedObjects({ actions: [], context, prompt });
         }
         const protectedIds = new Set(protectedObjects?.map((object) => object.id));

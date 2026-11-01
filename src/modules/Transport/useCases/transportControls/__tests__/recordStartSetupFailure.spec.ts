@@ -71,6 +71,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     },
     stopAudioRecording: fixture.stopAudioRecording,
     cacheAudioBuffer: vi.fn(),
+    openCachedAudioBufferHold: () => ({ retain: vi.fn(), release: vi.fn() }),
     ensureCachedAudioBuffersDurable: vi.fn(),
     scheduleClick: vi.fn(),
 }));

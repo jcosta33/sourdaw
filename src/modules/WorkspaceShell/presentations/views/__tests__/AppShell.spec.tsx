@@ -39,6 +39,10 @@ const activeDevicePanelStateMock = vi.hoisted(() => ({
 }));
 const elasticEditorPanelMock = vi.hoisted(() => vi.fn());
 const dismissAlphaNoticeMock = vi.hoisted(() => vi.fn());
+const revealDeviceInInspectorMock = vi.hoisted(() => vi.fn());
+const sidebarPanelActions = vi.hoisted(() => ({
+    current: null as { revealDevice: (deviceId: string) => void } | null,
+}));
 const arrangementMinimumHeightMock = vi.hoisted(() => ({ value: 0 }));
 
 // Mock external dependencies
@@ -85,11 +89,20 @@ vi.mock('../AgentWorkspace', () => ({
 // never touched it. See #1393.
 vi.mock('#/modules/ContentBrowser/presentations/views', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/ContentBrowser/presentations/views')>()),
-    Sidebar: ({ style }: { style?: React.CSSProperties }) => (
-        <div data-testid="sidebar" style={style}>
-            Sidebar
-        </div>
-    ),
+    Sidebar: ({
+        style,
+        panelActions,
+    }: {
+        style?: React.CSSProperties;
+        panelActions?: { revealDevice: (deviceId: string) => void };
+    }) => {
+        sidebarPanelActions.current = panelActions ?? null;
+        return (
+            <div data-testid="sidebar" style={style}>
+                Sidebar
+            </div>
+        );
+    },
 }));
 
 vi.mock('#/modules/MixerConsole/presentations/views', async (importOriginal) => ({
@@ -236,6 +249,10 @@ vi.mock('../../components/AlphaNoticeDialog', () => ({
             </div>
         );
     },
+}));
+
+vi.mock('../../../useCases/panels/revealDeviceInInspector', () => ({
+    revealDeviceInInspector: revealDeviceInInspectorMock,
 }));
 
 vi.mock('../../../useCases/dismissAlphaNotice', () => ({
@@ -457,6 +474,14 @@ describe('AppShell', () => {
         render(<AppShell>Content</AppShell>);
         expect(screen.getByTestId('app-shell')).toBeInTheDocument();
         expect(screen.getByTestId('sidebar')).toBeInTheDocument();
+    });
+
+    it('gives the sidebar a revealDevice action that shows the device in the inspector', () => {
+        render(<AppShell>Content</AppShell>);
+
+        sidebarPanelActions.current?.revealDevice('device-1');
+
+        expect(revealDeviceInInspectorMock).toHaveBeenCalledExactlyOnceWith('device-1');
     });
 
     it('preserves falsy defaults for unlisted stores', () => {

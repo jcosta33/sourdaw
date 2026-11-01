@@ -38,7 +38,7 @@ When the subject is built with the project’s inject/container pattern, swap de
 ### 6. Hard gate: run the targeted spec and see it pass
 
 ```bash
-pnpm test:run path/to/__tests__/file.spec.ts
+pnpm guard --profile focused -- pnpm test:run path/to/__tests__/file.spec.ts
 ```
 
 An unrun test is not a test.

@@ -59,6 +59,7 @@ import {
     failedAgentAcceptanceThresholds,
     scoreAgentAcceptanceCase,
 } from '../services/agentAcceptanceScorer';
+import { formatAnswerNumber, quoteSourceData } from '../services/answerSourceFormat';
 import { clearAiHistory } from '../stores/aiActionHistoryStore';
 import { chatStore } from '../stores/chatStore';
 import {
@@ -3197,16 +3198,78 @@ type AnswerOracle = {
 };
 
 /**
- * Whether the answer text states the value as a whole token: a number never inside a longer number
- * (1 is not in 16, 8 is not in 0.8, 3 is not in -3), a word never inside a longer word.
+ * Whether the text states the value as a whole token: a number never inside a longer number or a
+ * fraction (1 is not in 16, 8 is not in 0.8, 3 is not in -3, 4 is not in 3/4), a word never inside
+ * a longer word.
  */
 function textStatesValue(text: string, value: Fact): boolean {
     const escaped = String(value).replaceAll(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-    const wordBefore = typeof value === 'number' ? '(?<![\\p{L}\\p{N}_-])' : '(?<![\\p{L}\\p{N}_])';
+    const wordBefore = typeof value === 'number' ? '(?<![\\p{L}\\p{N}_/-])' : '(?<![\\p{L}\\p{N}_])';
     const decimalBefore = '(?<!\\p{N}[.,])';
-    const wordAfter = '(?![\\p{L}\\p{N}_])';
+    const wordAfter = typeof value === 'number' ? '(?![\\p{L}\\p{N}_/])' : '(?![\\p{L}\\p{N}_])';
     const decimalAfter = '(?![.,]\\p{N})';
     return new RegExp(`${wordBefore}${decimalBefore}${escaped}${wordAfter}${decimalAfter}`, 'u').test(text);
+}
+
+/**
+ * Whether the text states the fact in the form the composer renders it: numbers rounded as
+ * formatAnswerNumber does, strings as the escaped quoted source data or, in prose, a bare word.
+ */
+function textStatesFact(text: string, fact: Fact): boolean {
+    if (typeof fact === 'number') {
+        return textStatesValue(text, Number(formatAnswerNumber(fact)));
+    }
+    if (typeof fact === 'string') {
+        return text.includes(quoteSourceData(fact)) || textStatesValue(text, fact);
+    }
+    return textStatesValue(text, fact);
+}
+
+/**
+ * Where the clause after a subject's name ends: at a semicolon, a sentence-final period, a newline,
+ * or the next quoted name outside parentheses, which opens a sibling subject's statement. Quoted
+ * values in parentheses, such as a track kind, stay in the clause; an escaped character is quoted
+ * data, never punctuation.
+ */
+function clauseEnd(text: string, start: number): number {
+    let depth = 0;
+    for (let index = start; index < text.length; index += 1) {
+        const character = text[index];
+        if (character === '\\') {
+            index += 1;
+        } else if (character === '(') {
+            depth += 1;
+        } else if (character === ')') {
+            depth = Math.max(0, depth - 1);
+        } else if (character === ';' || character === '\r' || character === '\n') {
+            return index;
+        } else if (character === '.' && /\s/u.test(text[index + 1] ?? ' ')) {
+            return index;
+        } else if (character === '“' && depth === 0) {
+            return index;
+        }
+    }
+    return text.length;
+}
+
+/**
+ * The text of each clause that follows the subject's quoted name, up to the next clause boundary.
+ * The name itself is left out, so its own digits or words never state one of its facts.
+ */
+function clausesOfSubject(text: string, quotedName: string): string[] {
+    const clauses: string[] = [];
+    let from = text.indexOf(quotedName);
+    while (from !== -1) {
+        const afterName = from + quotedName.length;
+        clauses.push(text.slice(afterName, clauseEnd(text, afterName)));
+        from = text.indexOf(quotedName, afterName);
+    }
+    return clauses;
+}
+
+/** The query-page sentence the composer writes: "... out of <total> matching item(s)." */
+function pageSentenceStatesTotal(text: string, total: number): boolean {
+    return [...text.matchAll(/ out of (\d+) matching item\(s\)\./gu)].some((match) => match[1] === String(total));
 }
 
 /** Reject a hollow oracle rather than manufacturing default answer or query facts. */
@@ -3245,17 +3308,41 @@ function parseAnswerOracle(value: unknown): AnswerOracle {
     if (total !== undefined && (typeof total !== 'number' || !Number.isInteger(total) || total <= 0)) {
         throw new TypeError('Answer oracle total must be a positive integer.');
     }
-    // Identity facts (id, kind) locate the cited item; every other fact is a claim the answer makes.
+    // Identity facts (id, kind) locate the cited item; every other fact is a claim the answer makes
+    // about it. A named subject binds its claims to its own clause, so a value stated elsewhere
+    // (a "0 folder(s)" count for a pan of 0) or about a longer name (“Bass DI” for “Bass”) never counts.
     const stated: Record<string, Fact> = Object.fromEntries(
         Object.entries(facts).filter(([key]) => key !== 'id' && key !== 'kind')
     );
-    if (total !== undefined) {
-        stated.total = total;
-    }
-    for (const [key, fact] of Object.entries(stated)) {
-        if (!textStatesValue(value.text, fact)) {
-            throw new TypeError(`Answer oracle text does not state the ${key} fact ${JSON.stringify(fact)}.`);
+    const { name, ...claims } = stated;
+    if (typeof name === 'string') {
+        const quotedName = quoteSourceData(name);
+        const clauses = clausesOfSubject(value.text, quotedName);
+        if (clauses.length === 0) {
+            throw new TypeError(
+                `Answer oracle text does not state the name fact ${JSON.stringify(name)} as ${quotedName}.`
+            );
         }
+        for (const [key, fact] of Object.entries(claims)) {
+            if (!clauses.some((clause) => textStatesFact(clause, fact))) {
+                throw new TypeError(
+                    `Answer oracle text does not state the ${key} fact ${JSON.stringify(fact)} in the clause for ${quotedName}.`
+                );
+            }
+        }
+        // One clause must carry every claim, not each claim from a different occurrence of the name.
+        if (!clauses.some((clause) => Object.values(claims).every((fact) => textStatesFact(clause, fact)))) {
+            throw new TypeError(`Answer oracle text spreads the facts of ${quotedName} across separate clauses.`);
+        }
+    } else {
+        for (const [key, fact] of Object.entries(stated)) {
+            if (!textStatesFact(value.text, fact)) {
+                throw new TypeError(`Answer oracle text does not state the ${key} fact ${JSON.stringify(fact)}.`);
+            }
+        }
+    }
+    if (total !== undefined && !pageSentenceStatesTotal(value.text, total)) {
+        throw new TypeError(`Answer oracle text does not state the total ${String(total)} in its query-page sentence.`);
     }
     const query: AnswerOracle['query'] = { type: value.query.type, facts };
     if (total !== undefined) {
@@ -3353,7 +3440,8 @@ function answerMatchesOracle(input: {
     return matchedQuery;
 }
 
-const ANSWER_FIXTURE_TEXT = 'Song runs at 120 BPM across 2 sections.';
+const ANSWER_FIXTURE_TEXT =
+    'The project “Song” runs at 120 BPM across 2 sections.\n\nThe “project-summary” query returned 1 item(s) on this page out of 2 matching item(s).';
 
 function answerOracleFixture(
     oracle: unknown = {
@@ -3550,16 +3638,18 @@ describe('answer acceptance oracle', () => {
         input.outcome.evidence = [secondCitation];
         expect(answerMatchesOracle(input)).toBe(false);
     });
+    const PINNED_TOTAL_TEXT =
+        'Song runs at 120 BPM across 3 sections.\n\nThe “project-summary” query returned 1 item(s) on this page out of 3 matching item(s).';
     it('refuses a receipt total the oracle does not pin, even when the answer text matches', () => {
         const input = answerOracleFixture({
             kind: 'answer',
-            text: 'Song runs at 120 BPM across 3 sections.',
+            text: PINNED_TOTAL_TEXT,
             query: { type: 'project-summary', facts: { tempo: 120 }, total: 3 },
         });
         if (input.outcome.kind !== 'answer') {
             throw new Error('Expected answer');
         }
-        input.outcome.text = 'Song runs at 120 BPM across 3 sections.';
+        input.outcome.text = PINNED_TOTAL_TEXT;
         expect(answerMatchesOracle(input)).toBe(false);
     });
     it.each([
@@ -3595,6 +3685,117 @@ describe('answer acceptance oracle', () => {
                 query: { type: 'project-summary', facts: { tempo: 120 } },
             })
         ).toThrow('Answer oracle text does not state the tempo fact 120.');
+    });
+    const COUNTS_TEXT =
+        'The project has 10 audio/MIDI track(s), 2 bus(es), and 0 folder(s). Master output is separate.\n\n' +
+        'Project tracks: “Kick” (“audio”, 0 captured clip(s)); “Bass DI” (“audio”, 0 captured clip(s)); “Drum Bus” (“bus”, 0 captured clip(s)).\n\n' +
+        'The “object” query returned 3 item(s) on this page out of 16 matching item(s).';
+    it.each([
+        [
+            'a value stated only outside the subject clause',
+            'Project fader settings: “Kick” 1; “Drum Bus” 0.5. The project has 0 folder(s).',
+            { name: 'Drum Bus', pan: 0 },
+            undefined,
+            'Answer oracle text does not state the pan fact 0 in the clause for “Drum Bus”.',
+        ],
+        [
+            'a name that is only a prefix of a longer quoted name',
+            COUNTS_TEXT,
+            { name: 'Bass', trackKind: 'audio' },
+            undefined,
+            'Answer oracle text does not state the name fact "Bass" as “Bass”.',
+        ],
+        [
+            'a number prefixing a decimal in the subject clause',
+            'Project fader settings: “Kick” 1.5; “Snare” 1.',
+            { name: 'Kick', gain: 1 },
+            undefined,
+            'Answer oracle text does not state the gain fact 1 in the clause for “Kick”.',
+        ],
+        [
+            'a number prefixing a decimal with no subject',
+            'Master is at 1.5.',
+            { gain: 1 },
+            undefined,
+            'Answer oracle text does not state the gain fact 1.',
+        ],
+        [
+            "a sibling subject's value later in the same clause",
+            'Project fader settings: “Kick” 1, “Snare” 0.8.',
+            { name: 'Kick', gain: 0.8 },
+            undefined,
+            'Answer oracle text does not state the gain fact 0.8 in the clause for “Kick”.',
+        ],
+        [
+            "a value stated only by the subject's own name",
+            'Fader: “Track 1” 0.5.',
+            { name: 'Track 1', gain: 1 },
+            undefined,
+            'Answer oracle text does not state the gain fact 1 in the clause for “Track 1”.',
+        ],
+        [
+            'a number that is part of a fraction',
+            '“Song” is in 3/4 time.',
+            { name: 'Song', beats: 4 },
+            undefined,
+            'Answer oracle text does not state the beats fact 4 in the clause for “Song”.',
+        ],
+        [
+            'facts spread over separate clauses of one name',
+            '“Kick” 1; “Kick” (“midi”).',
+            { name: 'Kick', gain: 1, trackKind: 'midi' },
+            undefined,
+            'Answer oracle text spreads the facts of “Kick” across separate clauses.',
+        ],
+        [
+            'a total stated only outside the query-page sentence for a named subject',
+            'The project has 16 track(s). “Song” runs at 120 BPM. The “object” query returned 3 item(s) on this page out of 4 matching item(s).',
+            { name: 'Song', tempo: 120 },
+            16,
+            'Answer oracle text does not state the total 16 in its query-page sentence.',
+        ],
+        [
+            'a total stated only outside the query-page sentence for a nameless subject',
+            'Tempo is 120 BPM across 16 sections. The “tempo” query returned 1 item(s) on this page out of 1 matching item(s).',
+            { tempo: 120 },
+            16,
+            'Answer oracle text does not state the total 16 in its query-page sentence.',
+        ],
+    ])('refuses %s with the check that fired', (_label, text, facts, total, message) => {
+        expect(() =>
+            parseAnswerOracle({ kind: 'answer', text, query: { type: 'project-summary', facts, total } })
+        ).toThrow(message);
+    });
+    it.each([
+        [
+            'a name the composer escapes',
+            'Project fader settings: “Bass\\_DI” 1; “Kick” 1.',
+            { name: 'Bass_DI', gain: 1 },
+            undefined,
+        ],
+        [
+            'a name with escaped parentheses',
+            'Project fader settings: “Snare \\(top\\)” 0.8; “Kick” 1.',
+            { name: 'Snare (top)', gain: 0.8 },
+            undefined,
+        ],
+        [
+            'a value the composer rounds',
+            'Project fader settings: “Kick” 0.13; “Snare” 1.',
+            { name: 'Kick', gain: 0.125 },
+            undefined,
+        ],
+        ['a string fact in its quoted form', COUNTS_TEXT, { name: 'Drum Bus', trackKind: 'bus' }, 16],
+        [
+            'a name that also occurs in a clause without the facts',
+            '“Kick” (“midi”); “Kick” 1.',
+            { name: 'Kick', gain: 1 },
+            undefined,
+        ],
+    ])('accepts %s', (_label, text, facts, total) => {
+        expect(() =>
+            parseAnswerOracle({ kind: 'answer', text, query: { type: 'project-summary', facts, total } })
+        ).not.toThrow();
     });
     it.each([
         ['a number stated between punctuation', 'Fader: “Kick” 1; master 0.8.', { gain: 1 }],

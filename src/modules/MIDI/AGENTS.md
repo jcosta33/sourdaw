@@ -33,5 +33,5 @@ Owns MIDI note data, CC/pitch-bend/articulation events, note transform algorithm
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
 ```bash
-pnpm test:run <changed-spec>
+pnpm guard --profile focused -- pnpm test:run <changed-spec>
 ```

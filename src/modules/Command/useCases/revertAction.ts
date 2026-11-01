@@ -13,6 +13,7 @@ import {
 
 import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
 import { executeAppAction } from './executeAppAction';
+import { runPreparedUndoReplay } from './undoReplayPreparationPort';
 
 type ActionReplayClaim = NonNullable<ReturnType<typeof claimActionReplayCapability>>;
 
@@ -90,11 +91,13 @@ export async function revertAction(entryId: string): RevertActionOutput {
     }
 
     try {
-        await executeAppAction(claim.inverseAction, {
-            undoEntryId: entryId,
-            source: entry.source,
-            groupLabel: `Reverted: ${entry.label}`,
-        });
+        await runPreparedUndoReplay({ actions: [claim.inverseAction] }, () =>
+            executeAppAction(claim.inverseAction, {
+                undoEntryId: entryId,
+                source: entry.source,
+                groupLabel: `Reverted: ${entry.label}`,
+            })
+        );
     } catch (error) {
         if (error instanceof AppActionConflictError) {
             restoreActionReplayCapability({ entryId, claim });

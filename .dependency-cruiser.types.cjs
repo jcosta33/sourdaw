@@ -49,7 +49,6 @@ const TYPE_ONLY_RULE_NAMES = new Set([
     'react-dom-only-in-presentation',
     'desktop-ipc-only-in-repositories',
     'app-to-modules-public-surface-only',
-    'shared-no-module-imports',
     'helpers-no-module-imports',
     'utils-no-module-imports',
     'infra-no-module-imports',

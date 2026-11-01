@@ -146,9 +146,13 @@ presentations/stores/
 presentations/context/
 presentations/components/
 presentations/renderers/
+presentations/helpers/
 engine/
 worklets/
+workers/
+wasm/
 runtime/
+testing/
 ```
 
 `handlers/` holds `AppAction` → `ActionHandler` maps; it is **never** importable cross-module (see §4.5). Access cross-module only via **`get<Module>Handlers`** use cases.
@@ -438,12 +442,12 @@ What a use case file **must never** export, under any circumstance:
 
 Acceptable type exports from a module's public surface:
 
-| Type origin                                                                                                | Cross-module export?                                                                                                                                                                                                                                                                                                                                     |
-| ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `events/` event payloads                                                                                   | **Yes.** Re-export via the `events/index.ts` barrel as `export type { FooEvent } from './...'`. This is the canonical shared-type surface across modules.                                                                                                                                                                                                |
-| `stores/` store value types                                                                                | **Yes.** A `Store<T>` instance is part of the public contract; the `T` shape is naturally part of that. Re-export the store's value type via the `stores/index.ts` barrel if needed.                                                                                                                                                                     |
+| Type origin                                                                                                | Cross-module export?                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `events/` event payloads                                                                                   | **Yes.** Re-export via the `events/index.ts` barrel as `export type { FooEvent } from './...'`. This is the canonical shared-type surface across modules.                                                                                                                                                                                                                                                                                                      |
+| `stores/` store value types                                                                                | **Yes.** A `Store<T>` instance is part of the public contract; the `T` shape is naturally part of that. Re-export the store's value type via the `stores/index.ts` barrel if needed.                                                                                                                                                                                                                                                                           |
 | `useCases/` local types                                                                                    | **Intra-module only.** The `useCases/index.ts` barrel re-exports functions and constants only — never `export type` (`no-usecase-type-exports-on-index`). Other modules use `ReturnType<typeof fn>` / `Parameters<typeof fn>` or define a local shape. If a use-case input/output type genuinely must be shared cross-module, model it as a typed payload in `events/` (exported via `events/index.ts`) — never a deep import of `#/modules/<X>/useCases/...`. |
-| `models/`, `repositories/`, `services/`, `validators/`, `transformers/`, `engine/`, `errors/`, `handlers/` | **Never.** Not from any contract barrel, not from a use case file, not from anywhere.                                                                                                                                                                                                                                                                    |
+| `models/`, `repositories/`, `services/`, `validators/`, `transformers/`, `engine/`, `errors/`, `handlers/` | **Never.** Not from any contract barrel, not from a use case file, not from anywhere.                                                                                                                                                                                                                                                                                                                                                                          |
 
 The hard rule: **cross-module type consumption goes through `events/index.ts` (typed payloads), or through `ReturnType` / `Parameters` / a local shape on the consumer — or it does not happen.** A use case file is allowed to declare and export types that describe its own contract, but it is never a back door for promoting model, repository, or other private types to a cross-module surface, and `useCases/index.ts` never re-exports them.
 
@@ -716,17 +720,17 @@ Classes resolve to their registered instance in the container. Injectables resol
 
 ### What to wrap with `inject()`
 
-| Layer                                  | Wrap?   | Why                                                                      |
-| -------------------------------------- | ------- | ------------------------------------------------------------------------ |
-| Use cases                              | **Yes** | Orchestrate repos/services, need to be mockable                          |
-| Event subscribers                      | **Yes** | Need the EventBus + a service chain                                      |
-| Repositories with service dependencies | **Yes** | Logger, EventBus, desktop bridge shims                                   |
-| Pure transformers                      | No      | Pure functions need nothing from the container                           |
-| Validators / services (no I/O)         | No      | Pure functions                                                           |
-| Models                                 | No      | Data                                                                     |
+| Layer                                  | Wrap?   | Why                                                                                 |
+| -------------------------------------- | ------- | ----------------------------------------------------------------------------------- |
+| Use cases                              | **Yes** | Orchestrate repos/services, need to be mockable                                     |
+| Event subscribers                      | **Yes** | Need the EventBus + a service chain                                                 |
+| Repositories with service dependencies | **Yes** | Logger, EventBus, desktop bridge shims                                              |
+| Pure transformers                      | No      | Pure functions need nothing from the container                                      |
+| Validators / services (no I/O)         | No      | Pure functions                                                                      |
+| Models                                 | No      | Data                                                                                |
 | React hooks / views                    | No      | Stay in presentation; hooks/views may read store barrels; leaf components get props |
-| Engine classes (`TrackNode`, etc.)     | No      | Constructor-injected (pass `AudioContext` as an arg)                     |
-| Audio-thread / hot-path code           | **No**  | The resolution + cached invocation has a cost; hot paths must not pay it |
+| Engine classes (`TrackNode`, etc.)     | No      | Constructor-injected (pass `AudioContext` as an arg)                                |
+| Audio-thread / hot-path code           | **No**  | The resolution + cached invocation has a cost; hot paths must not pay it            |
 
 If a function has no outbound side-effect dependencies, it does not need `inject()`. Wrapping pure code adds ceremony without benefit.
 
@@ -763,6 +767,7 @@ presentations/
   context/
   components/
   renderers/
+  helpers/
   views/
 ```
 
@@ -859,6 +864,102 @@ Use them for:
 They should receive precomputed data and draw it.
 They should not become business logic containers.
 
+### `presentations/helpers/`
+
+Plain functions and constants, neither components nor hooks, that views, hooks, and renderers share: pointer-gesture arithmetic, display constants, and view-model shaping that is too UI-specific for a use case.
+
+- They are presentation code, so the presentation rules apply to them (`presentation-no-direct-services-validators-transformers`, `presentation-no-direct-repositories`, `presentation-no-direct-handlers`, `presentation-no-engine-runtime-imports`). They reach business logic through use cases and store barrels, like hooks.
+- They are private (`cross-module-index-only`).
+- A helper that decides a business rule belongs in `useCases/` or `services/`. A helper is not a shortcut around them.
+
+## 4.13 Runtime folders: `engine/`, `worklets/`, `workers/`, `wasm/`
+
+These folders hold code that runs outside the plain request/response flow of use cases: live runtime objects and code that executes on another thread.
+
+### `engine/`
+
+The code that builds and drives live runtime objects: graph nodes, WASM-backed device hosts, note schedulers, and worker clients. Runtime handles (`AudioNode`, WASM instances, `MessagePort`) belong here and in the repositories that wrap platform APIs; models and stores stay handle-free (§4.1, §4.6).
+
+- Use cases and repositories create and drive engine objects; presentation never imports them (`presentation-no-engine-runtime-imports`).
+- Engine code does not import `repositories/` (`usecases-only-write-boundary-to-repositories`).
+- Worklets and workers never import it (`worklets-no-module-runtime-imports`, `workers-no-module-runtime-imports`).
+- `runtime/` is a reserved name that the presentation, worklet, worker, model, event, and layer-purity rules list beside `engine/`. New runtime code goes in `engine/`.
+
+### `worklets/`
+
+Code that executes on the audio rendering thread inside an `AudioWorkletGlobalScope`.
+
+- A worklet must not import `useCases/`, `repositories/`, `stores/`, `services/`, `validators/`, `events/`, `handlers/`, `engine/`, `runtime/`, or `presentations/` (`worklets-no-module-runtime-imports`), nor `src/helpers/` or the desktop bridge (`worklets-no-app-helper-or-desktop-ipc`). `models/`, `transformers/`, `errors/`, and `wasm/` are not on that list, so worklet code may use them.
+- Use cases, repositories, stores, handlers, and presentation never import a worklet module (`module-runtime-no-worklet-imports`). It is loaded by URL through `audioWorklet.addModule`, and the host talks to it through its `AudioWorkletNode` port.
+- The audio thread must not allocate, lock, or block (see `DAW System Architecture`).
+
+### `workers/`
+
+Code that executes in a dedicated `Worker`.
+
+- The same lists apply as for worklets (`workers-no-module-runtime-imports`, `workers-no-app-helper-or-desktop-ipc`): the forbidden layers are identical, and `models/`, `transformers/`, `errors/`, and `wasm/` stay allowed.
+- Use cases, repositories, stores, handlers, and presentation do not `import` worker files (`module-runtime-no-worker-imports`). They start one with `new Worker(new URL('…', import.meta.url))`, which is a URL reference, not an import edge, and talk to it by message.
+
+### `wasm/`
+
+Generated wasm-bindgen glue for the Rust crates, committed beside the module that hosts it.
+
+- Never hand-edit it; regenerate it with the owning crate's `wasm:*` script (`docs/architecture/07-wasm-dsp-pipeline.md`).
+- It is private like every folder outside the four contract barrels (`cross-module-index-only`).
+
+---
+
+## 4.14 `testing/`
+
+Test-support code that production code does not load: deterministic fakes and fixtures that a module's specs share.
+
+- It may import dev-only packages: `not-to-dev-dep` exempts `/testing/`, and `no-orphans` does not flag its unreferenced files.
+- Production code must not import it. Convention, not enforced by a rule.
+- Specs themselves stay in `__tests__/` beside the code they cover (`testing-file-layout`). Reserve `testing/` for support code that several specs reuse.
+
+---
+
+## 4.15 Late binding: `*Port`, `configure*`, `init*`, `*ProjectAccess`
+
+A module sometimes needs a collaborator it cannot import: the import would close a cycle (`no-circular`), drag a heavy module graph into every consumer, or reach a foreign module that is not its to read. The composition root can import both sides (`app-to-modules-public-surface-only`), so it supplies the dependency at startup and the module holds only an empty slot.
+
+| Piece                 | Where                                   | Role                                                                                                                                                       |
+| --------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<name>Port.ts`       | `useCases/` of the module that needs it | An object that holds the supplied provider. It defines its unconfigured behavior and has a setter (`setProvider`).                                         |
+| `<name>ProjectAccess` | slot in `stores/`                       | The same idea for committed-project reads: the store file holds the slot; the module never imports the document owner.                                     |
+| `configure<Name>`     | `useCases/`                             | The public entry that installs a provider into the slot. Some return a disposer and some accept `null` to detach; others do neither.                       |
+| `init<Name>`          | `src/app/` or a module use case         | Startup wiring called from `src/app/bootstrap.ts`: it builds the provider and calls `configure*`, or it installs subscriptions and returns their disposer. |
+
+Rules:
+
+- The slot exists so the module need not import the provider's module; the app does the binding.
+- An unconfigured slot must have a defined behavior: an inert default, a sentinel the caller can test (`isConfigured()`), or a refusal, never an unhandled `null`.
+- Install a provider through the port's setter or the `configure*` entry; calling code reads the slot through the port.
+- `init*` is the naming convention for startup wiring (some unrelated use cases also use the prefix for plain initialization). A use case may also own an `init*` subscription so the wiring a test installs is the wiring production runs (`initProjectDirtyTracking`). No rule enforces any of these names.
+
+---
+
+## 4.16 `<device>ParamBridge/`
+
+A subfolder of `useCases/` in a device module (`glutenParamBridge/`, `fermenterParamBridge/`). It carries one device's parameters between its panel, the audio engine, and project truth.
+
+- It typically separates a transient gesture from a committed value. In Gluten's bridge a knob sweep updates the engine on every frame and writes nothing to the document; the settled value is committed once, as one undo entry.
+- It typically maps the device's patch and parameter ids to the DSP's parameter ids, and batches or throttles engine updates.
+- It is ordinary `useCases/` code with no rule of its own. It may take its collaborators as a typed bundle (`BridgeDeps`) so specs can replace them.
+- Why: a panel emits parameter changes at pointer rate. Persisting each would put a document transaction in history per frame (`docs/architecture/08-device-authoring.md` §2).
+
+---
+
+## 4.17 Projections
+
+A **projection** is a derived, disposable read view of project truth. It is not authoritative, and it is rebuilt from its source rather than patched (`docs/architecture/06-crdt-collaboration.md` §5).
+
+- **Logic belongs in `useCases/`**, with no single file-naming convention. A projection is behavior that reads truth and returns or publishes a view, so it follows the use-case rules; a pure computation inside it may be extracted to `services/` or `transformers/`.
+- **Its shape is a model** when it is a stable data type (`models/`).
+- **Its output is read through the module's `stores/` barrel or a use case.** Consumers never patch a projected store by hand; they rebuild it from truth.
+- The document-to-store projection bridge lives in `CrdtDocument/useCases/projection/` because the document is what it reads.
+- There is no `projections/` folder. A projection is not a separate layer.
+
 ---
 
 ## 5. Public vs private folders
@@ -894,10 +995,14 @@ presentations/stores/
 presentations/context/
 presentations/components/
 presentations/renderers/
+presentations/helpers/
 presentations/views/   ← use the owning module's presentations/views barrel instead
 engine/
 runtime/
 worklets/
+workers/
+wasm/
+testing/
 ```
 
 If a type must be shared cross-module, prefer **`events/`** (payload types) or consumers’ **local types**. Do not re-export types from `useCases/` on its barrel (`no-usecase-type-exports-on-index`). Keep value and type exports in separate declarations: mixed `export { fn, type Input }` syntax hides the type edge from dependency-cruiser and is rejected by the architecture checker. Views that are part of the public contract are re-exported from the `presentations/views/index.ts` barrel as above.
@@ -1119,19 +1224,25 @@ Example: `MixerConsole` is often presentation-only if it reads from Arrangement 
 
 ## 9. What goes where: quick lookup table
 
-| Problem                                         | Put it in                  |
-| ----------------------------------------------- | -------------------------- |
-| Shape of a clip, track, marker, plugin instance | `models/`                  |
-| “This clip cannot overlap another”              | `validators/`              |
-| “Calculate automation interpolation”            | `services/`                |
-| “Save this to localStorage”                     | `repositories/`            |
-| “Map Track to engine config”                    | `transformers/`            |
-| “Move clip and emit event”                      | `useCases/`                |
-| “Shared app-visible transport state”            | `stores/`                  |
-| “Selected clip in one view subtree”             | `presentations/context/`   |
-| “User zoom preference”                          | `presentations/stores/`    |
-| “Waveform canvas drawing”                       | `presentations/renderers/` |
-| “Composable UI entry point”                     | `presentations/views/`     |
+| Problem                                         | Put it in                      |
+| ----------------------------------------------- | ------------------------------ |
+| Shape of a clip, track, marker, plugin instance | `models/`                      |
+| “This clip cannot overlap another”              | `validators/`                  |
+| “Calculate automation interpolation”            | `services/`                    |
+| “Save this to localStorage”                     | `repositories/`                |
+| “Map Track to engine config”                    | `transformers/`                |
+| “Move clip and emit event”                      | `useCases/`                    |
+| “Shared app-visible transport state”            | `stores/`                      |
+| “Selected clip in one view subtree”             | `presentations/context/`       |
+| “User zoom preference”                          | `presentations/stores/`        |
+| “Waveform canvas drawing”                       | `presentations/renderers/`     |
+| “Composable UI entry point”                     | `presentations/views/`         |
+| “Pointer-gesture math shared by view code”      | `presentations/helpers/`       |
+| “Audio node or WASM device host”                | `engine/`                      |
+| “Code that runs on the audio thread”            | `worklets/`                    |
+| “Code that runs in a Worker”                    | `workers/`                     |
+| “Dependency this module cannot import”          | `*Port` + `configure*` (§4.15) |
+| “Derived read view of project truth”            | `useCases/` (§4.17)            |
 
 ---
 
@@ -1356,18 +1467,18 @@ They are the public UI surface for the module.
 
 ## 15. Anti-patterns
 
-| Anti-pattern                                                | Why it is bad                             | Preferred fix                                   |
-| ----------------------------------------------------------- | ----------------------------------------- | ----------------------------------------------- |
-| class-based domain models owning logic and runtime concerns | mixes truth and behavior awkwardly        | use plain types + functions                     |
+| Anti-pattern                                                | Why it is bad                             | Preferred fix                                                                       |
+| ----------------------------------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------- |
+| class-based domain models owning logic and runtime concerns | mixes truth and behavior awkwardly        | use plain types + functions                                                         |
 | repository emits domain events or multi-step orchestration  | I/O layer becomes business layer          | move orchestration to use case; thin store get/set for owned state may stay in-repo |
-| use case directly calls browser/desktop APIs everywhere     | write boundary leaks I/O details          | isolate I/O in repositories                     |
-| presentation hook owns validation + persistence + runtime   | UI becomes business layer                 | thin hook, explicit use case                    |
-| presentation store imported cross-module                    | private UI state becomes contract surface | move to business `stores/` only if truly shared |
-| renderer mutates truth during draw                          | hot path becomes hidden write layer       | route writes through useCases                   |
-| giant `trackActions.ts` file                                | hidden coupling, hard review              | one function per file                           |
-| `src/helpers` absorbs module-specific logic                 | shadow architecture                       | keep module-owned logic in module               |
-| event used for every field change                           | event noise                               | emit only meaningful events                     |
-| module exports everything “just in case”                    | weak encapsulation                        | minimal public surface                          |
+| use case directly calls browser/desktop APIs everywhere     | write boundary leaks I/O details          | isolate I/O in repositories                                                         |
+| presentation hook owns validation + persistence + runtime   | UI becomes business layer                 | thin hook, explicit use case                                                        |
+| presentation store imported cross-module                    | private UI state becomes contract surface | move to business `stores/` only if truly shared                                     |
+| renderer mutates truth during draw                          | hot path becomes hidden write layer       | route writes through useCases                                                       |
+| giant `trackActions.ts` file                                | hidden coupling, hard review              | one function per file                                                               |
+| `src/helpers` absorbs module-specific logic                 | shadow architecture                       | keep module-owned logic in module                                                   |
+| event used for every field change                           | event noise                               | emit only meaningful events                                                         |
+| module exports everything “just in case”                    | weak encapsulation                        | minimal public surface                                                              |
 
 ---
 
