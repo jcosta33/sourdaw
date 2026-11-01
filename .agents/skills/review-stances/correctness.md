@@ -11,6 +11,15 @@ have caught it. Keep each lesson short enough to paste into a dispatch. A behavi
 matching no more specific file carries this file; a stance with a more specific match never
 carries it in addition.
 
+### 2026-11-01 — clip-protection completeness held on one grounding route (#4929, introduced by PR #3905)
+
+PR #3905 introduced the clip protection reader's completeness verdict; PR #4881 refused on it only
+for transform compilation, and PR #5698's ordinary-route refusal read track protections alone. A
+direct edit beside an incomplete clip exclusion, or one changing the excluded clip, was admitted.
+The historical review stances, prompts and tiers are unestablished. When a protection is enforced
+on one route, list every route that returns actions (direct, coordinated, atomic, compiled,
+refined) and drive each with the same request; a route that never reads the verdict is the finding.
+
 ### 2026-10-29 — enabling a bypassed gate skipped detector acquisition
 
 Grinder's initial gate (`bc017e1b06b6521a7ee4258a10b9fd871e72b057`) enabled with an empty

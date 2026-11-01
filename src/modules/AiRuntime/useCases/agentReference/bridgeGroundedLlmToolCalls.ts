@@ -7146,6 +7146,15 @@ function refuseWhenProtectionIsUnresolved(
             `Protection names ${references}, which resolves to no track, clip, device or group, so the request is refused`
         );
     }
+    // A protection binding any clip is a clip protection, so every member must resolve. Without clip
+    // evidence the track reader alone decides, since a bare name there may be a quality, not an object.
+    const clipProtection = readClipProtection(input.prompt, context, protections);
+    if (!clipProtection.complete && clipProtection.clips.length > 0) {
+        const clips = clipProtection.clips.map((clip) => `"${clip.name}"`).join(', ');
+        return refuseProtectedRequest(
+            `Protection of ${clips} lists a member that resolves to no clip or track, so the request is refused`
+        );
+    }
     const wholeTracks = context.tracks.filter((track) => protections.protectedTrackIds.includes(track.id));
     const recordedControls = (input.protectionFacts?.protectedControls ?? []).map(
         ({ trackId, operations, exceptOperations }) => ({
@@ -7157,12 +7166,33 @@ function refuseWhenProtectionIsUnresolved(
     const changedTrack =
         findChangedObject(
             grounded.actions,
-            [...wholeTracks, ...(input.protectionFacts?.protectedUnchanged ?? [])],
+            [...wholeTracks, ...clipProtection.clips, ...(input.protectionFacts?.protectedUnchanged ?? [])],
             context
         ) ?? findChangedControl(grounded.actions, [...protections.protectedControls, ...recordedControls], context);
     return changedTrack === null
         ? grounded
         : refuseProtectedRequest(`Request changes "${changedTrack.name}", which a protection in it leaves alone`);
+}
+
+/**
+ * The clips a request's explicit protections and exclusions keep, and whether every member resolved.
+ * A resolved track clause is blanked and the request read again only when the whole request does not
+ * parse completely, since removing a following track clause can extend an earlier exclusion.
+ */
+function readClipProtection(
+    prompt: string,
+    context: ProjectContext,
+    trackProtections: ReturnType<typeof readExplicitProtections>
+): ReturnType<typeof getExplicitClipProtection> {
+    const clipProtection = getExplicitClipProtection(prompt, context);
+    if (clipProtection.complete) {
+        return clipProtection;
+    }
+    const clipPrompt = trackProtections.resolvedTrackClauses.reduce(
+        (text, { start, end }) => `${text.slice(0, start)}${' '.repeat(end - start)}${text.slice(end)}`,
+        prompt
+    );
+    return getExplicitClipProtection(clipPrompt, context);
 }
 
 function refuseProtectedRequest(reason: string): BridgeGroundedLlmToolCallsResult {
@@ -7248,16 +7278,7 @@ function bridgeUnrefinedLlmToolCalls(
                     `Protection names ${references}, which resolves to no track, clip, device or group, so the request is refused`
                 );
             }
-            let clipProtection = getExplicitClipProtection(prompt, context);
-            if (!clipProtection.complete) {
-                // Removing a following track clause can extend an earlier exclusion, so keep any complete source parse.
-                const clipPrompt = trackProtections.resolvedTrackClauses.reduce(
-                    (text, { start, end }) => `${text.slice(0, start)}${' '.repeat(end - start)}${text.slice(end)}`,
-                    prompt
-                );
-                clipProtection = getExplicitClipProtection(clipPrompt, context);
-            }
-            complete = clipProtection.complete;
+            complete = readClipProtection(prompt, context, trackProtections).complete;
             protectedObjects = getApplicationProtectedObjects({ actions: [], context, prompt });
         }
         const protectedIds = new Set(protectedObjects?.map((object) => object.id));

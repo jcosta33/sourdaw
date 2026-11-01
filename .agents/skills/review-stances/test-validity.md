@@ -1,5 +1,20 @@
 # Lesson library: test and evidence validity
 
+### 2026-11-01 — a pinned clip-protection verdict no ordinary caller read (#4929, introduced by PR #3905)
+
+PR #3905 (`7af5520405`) added the clip protection reader with a `complete` flag, and its spec pinned
+`excluding Alpha and Omega` as incomplete when only the whole-name clip exists. Only the protected
+clips reached the proposal scope; no caller refused on the flag. PR #4881 (`a20f8c6cda`) consumed it
+inside the transform-compile branch alone, and PR #5698 (`237dd9616b`) added the ordinary-route
+refusal reading only track protections, so a direct `setAllVelocities` beside that exclusion was
+admitted. The historical review stances, prompts and tiers are unestablished.
+
+A reader verdict pinned in its own spec proves nothing about admission. For every flag a protection
+reader returns, drive the ordinary bridge with a provider call and the same request: the
+unresolved list, an unquoted whole-name collision, a quoted literal name and an edit of the
+protected clip itself. Assert empty actions and the refusal reason. Remove the final consumer of
+the flag on that route; the bridge case must fail.
+
 ### 2026-10-30 — prepared-scope fixtures hid missing Prompt Bar budget admission (introduced by PR #2648)
 
 PR #1986 made `prepareStemImport` reject absent local-work admission, then PR #2648 introduced the Prompt Bar submission route without forwarding one. PR #4479 kept that path. The existing recovery fixture supplied raw import actions and mocked `planPromptActions`, so it could test receipt settlement while never reaching the file-preparation gate. Public #2648 review text covers recovery and terminal behavior; exact private prompts and tiers are unknown.
