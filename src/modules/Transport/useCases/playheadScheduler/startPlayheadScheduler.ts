@@ -283,9 +283,10 @@ function stageLoopWrapTakes(
             const countedPasses = playheadWrapCountRef.current - activeRecordingRef.startWrapCount;
             // A tick that crossed several boundaries counted them all at once;
             // each closes the pass that many boundaries before the last.
-            const closedPassIndex = boundary.planned
-                ? countedPasses
-                : countedPasses - 1 - (boundary.laterPassEnds ?? 0);
+            let closedPassIndex = countedPasses - 1 - (boundary.laterPassEnds ?? 0);
+            if (boundary.planned) {
+                closedPassIndex = countedPasses;
+            }
             const stagedPassTake = lane?.takes.find(
                 (take) =>
                     take.clipId === recordingClip.id &&
@@ -1542,7 +1543,7 @@ export function startPlayheadScheduler(
             capturedJumpBoundary === null &&
             capturedEditBoundary === null
         ) {
-            lateWrapPassEnds.forEach((passEnd, index) => {
+            for (const [index, passEnd] of lateWrapPassEnds.entries()) {
                 stageLoopWrapTakes(
                     current,
                     passEnd.contextSeconds,
@@ -1553,7 +1554,7 @@ export function startPlayheadScheduler(
                     },
                     browserCaptureKinds
                 );
-            });
+            }
         }
         if (seam) {
             // Staged here rather than in the detection branch, after the punch
