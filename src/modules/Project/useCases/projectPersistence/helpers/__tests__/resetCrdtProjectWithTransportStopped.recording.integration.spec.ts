@@ -403,7 +403,7 @@ describe('replacing a project while a take is recording or closing (issue #5500)
     it('saves a take that lands after the pre-save and during the read before a recent-project load switches', async () => {
         const release = pauseWhileTheCommitIsHeld();
 
-        await expect(saveProjectBeforeReplacement()).resolves.toBe(true);
+        await expect(saveProjectBeforeReplacement()).resolves.toBe('save-closed-takes');
         await readWhileTheTakeLands(release);
         await expect(replace()).resolves.toMatchObject({ status: 'replaced' });
 
@@ -478,7 +478,7 @@ describe('replacing a project while a take is recording or closing (issue #5500)
             return saved;
         });
 
-        await expect(saveProjectBeforeReplacement()).resolves.toBe(true);
+        await expect(saveProjectBeforeReplacement()).resolves.toBe('save-closed-takes');
 
         expect(mocks.saveProject).toHaveBeenCalledOnce();
         expect(transportStore.value?.isPlaying).toBe(true);

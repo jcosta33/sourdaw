@@ -51,14 +51,22 @@ const isCanvasEditorCommand = (action: NativeMenuIntent['action']): action is Ca
 const allClipIds = (): string[] =>
     trackStore.value?.tracks.flatMap((track) => track.clips.map((clip) => clip.id)) ?? [];
 
-const saveProjectIfClean = async (): Promise<boolean> =>
-    // The shared guard refuses a failed save and one that resolved with the
-    // project still dirty (issue #3694). The close flow additionally refuses
-    // while an identity transition is still publishing: `newProject` and
-    // `replaceProjectData` set the flag mid-transition and only a successful
-    // save's receipt clears it, so a true here means a transition raced this
-    // save's tail.
-    (await saveProjectBeforeReplacement()) && projectStore.value?.identityPersistencePending !== true;
+type OutgoingProjectChoice = Awaited<ReturnType<typeof saveProjectBeforeReplacement>>;
+
+const settleOutgoingProject = async (): Promise<OutgoingProjectChoice> => {
+    // The shared guard asks whether to leave without saving after a failed
+    // save or one that resolved with the project still dirty (issue #3694).
+    // A clean save additionally stays while an identity transition is still
+    // publishing: `newProject` and `replaceProjectData` set the flag
+    // mid-transition and only a successful save's receipt clears it, so a
+    // pending flag after a clean save means a transition raced this save's
+    // tail. Don't Save drops the open project whatever its save left behind.
+    const outgoingProject = await saveProjectBeforeReplacement();
+    if (outgoingProject === 'save-closed-takes' && projectStore.value?.identityPersistencePending === true) {
+        return 'stay';
+    }
+    return outgoingProject;
+};
 
 /** Created-at named keys stay stable while legacy projects migrate to canonical ids. */
 const nativeProjectKey = (project: Pick<ProjectStoreState, 'createdAt'>): string =>
@@ -80,7 +88,7 @@ const reportCloseResult = async (
     });
 };
 
-/** Choosing the open project withdraws a pending replacement; any other project opens after a clean save. */
+/** Choosing the open project withdraws a pending replacement; any other project opens after a clean save or Don't Save. */
 const openRecentProject = async (recentKey: string): Promise<void> => {
     // Reopening the open project would hydrate a read taken before a closing take's save (#5536).
     if (isOpenProjectKey(recentKey)) {
@@ -88,16 +96,18 @@ const openRecentProject = async (recentKey: string): Promise<void> => {
         return;
     }
     const isStillChosen = pendingProjectReplacements.capture();
-    if ((await saveProjectIfClean()) && isStillChosen()) {
-        await loadRecentProject(recentKey, { shouldProceed: isStillChosen });
+    const outgoingProject = await settleOutgoingProject();
+    if (outgoingProject !== 'stay' && isStillChosen()) {
+        await loadRecentProject(recentKey, { outgoingProject, shouldProceed: isStillChosen });
     }
 };
 
-/** A new project starts after a clean save unless the open project is chosen meanwhile. */
+/** A new project starts after a clean save or Don't Save unless the open project is chosen meanwhile. */
 const createNewProject = async (): Promise<void> => {
     const isStillChosen = pendingProjectReplacements.capture();
-    if ((await saveProjectIfClean()) && isStillChosen()) {
-        await newProject(undefined, { shouldProceed: isStillChosen });
+    const outgoingProject = await settleOutgoingProject();
+    if (outgoingProject !== 'stay' && isStillChosen()) {
+        await newProject(undefined, { outgoingProject, shouldProceed: isStillChosen });
     }
 };
 
