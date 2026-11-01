@@ -1,0 +1,23 @@
+release/open-source-inventory.json
+  s_52f9d233d7e271::t_adcc6019dc6d3b 2269-2273
+scripts/prValidationScope.ts
+  s_52f9d233d7e271::t_637aa8495afa78 9,13-15
+scripts/prValidationScopeCheckout.ts
+  s_52f9d233d7e271::t_2f29aaf348278d 3-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "884b2e1899c6c80d0b73a2c288ae85e4175d1a3d",
+  "prompts": {},
+  "sessions": {
+    "s_52f9d233d7e271": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_52f9d233d7e271",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
