@@ -62,11 +62,65 @@ describe('clip selection use cases', () => {
         expect(clipSelectionStore.value?.selectedClipIds).toEqual([]);
     });
 
-    it('selectAllClips selects every clip id and drops the single focus', () => {
-        selectAllClips(() => ['a', 'b']);
+    it.each([
+        ['leaves a many-clip selection unfocused even when the primary is in the set', 'b', ['a', 'b', 'c'], null],
+        ['leaves a many-clip selection unfocused when the primary is not in the set', 'x', ['a', 'b', 'c'], null],
+        ['leaves a many-clip selection unfocused when there is no primary', null, ['a', 'b', 'c'], null],
+        ['focuses the clip of a one-clip project', null, ['a'], 'a'],
+        ['focuses the clip of a one-clip project whatever the old primary was', 'x', ['a'], 'a'],
+        ['selects nothing in an empty project', 'x', [], null],
+    ])('selectAllClips %s', (_name, currentPrimary, allIds, expectedPrimary) => {
+        clipSelectionStore.set({ selectedClipId: currentPrimary, selectedClipIds: ['x'], marqueeSelection: null });
 
-        expect(clipSelectionStore.value?.selectedClipId).toBeNull();
-        expect(clipSelectionStore.value?.selectedClipIds).toEqual(['a', 'b']);
+        selectAllClips(() => allIds);
+
+        expect(clipSelectionStore.value).toEqual({
+            selectedClipId: expectedPrimary,
+            selectedClipIds: allIds,
+            marqueeSelection: null,
+        });
+    });
+
+    it('selectAllClips then toggling clips out leaves the last remaining clip as the primary', () => {
+        selectAllClips(() => ['a', 'b', 'c']);
+
+        toggleClipInSelection('b');
+        expect(clipSelectionStore.value).toEqual({
+            selectedClipId: null,
+            selectedClipIds: ['a', 'c'],
+            marqueeSelection: null,
+        });
+
+        toggleClipInSelection('c');
+        expect(clipSelectionStore.value).toEqual({
+            selectedClipId: 'a',
+            selectedClipIds: ['a'],
+            marqueeSelection: null,
+        });
+    });
+
+    it('toggleClipInSelection keeps a many-clip selection unfocused when a non-primary clip leaves it', () => {
+        clipSelectionStore.set({ selectedClipId: null, selectedClipIds: ['a', 'b', 'c'], marqueeSelection: null });
+
+        toggleClipInSelection('b');
+
+        expect(clipSelectionStore.value).toEqual({
+            selectedClipId: null,
+            selectedClipIds: ['a', 'c'],
+            marqueeSelection: null,
+        });
+    });
+
+    it('toggleClipInSelection hands a removed primary to the last remaining clip', () => {
+        clipSelectionStore.set({ selectedClipId: 'c', selectedClipIds: ['b', 'a', 'c'], marqueeSelection: null });
+
+        toggleClipInSelection('c');
+
+        expect(clipSelectionStore.value).toEqual({
+            selectedClipId: 'a',
+            selectedClipIds: ['b', 'a'],
+            marqueeSelection: null,
+        });
     });
 
     it('clearClipSelection clears the focused clip and the whole selection', () => {
