@@ -1,0 +1,19 @@
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_7a2b5227f3b2e8::t_dbdb45feb90a03 286-289,1546,1557
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b0e35f1c70e60e03a2eec3b94308b9c24b7b03c3",
+  "prompts": {},
+  "sessions": {
+    "s_7a2b5227f3b2e8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_7a2b5227f3b2e8",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
