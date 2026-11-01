@@ -137,6 +137,23 @@ describe('crossfadeClips', () => {
             expect(after.audioOffsetSeconds).toBeGreaterThanOrEqual(0);
         });
 
+        it('bounds a stretched retreat by the pre-roll the stretched readers consume', () => {
+            // 0.5 s of media before the entry at ratio 2 lasts 0.25 s of song
+            // time, a quarter beat at 60 BPM, though the crossfade asks for one.
+            const before = makeClip('b', 10, 14, {
+                audioOffsetSeconds: 0.5,
+                stretchMode: 'timestretch',
+                stretchRatio: 2,
+            });
+
+            const after = crossfadeB(before, 10, 2);
+
+            expect(after.startBeat).toBe(9.75);
+            expect(after.audioOffsetSeconds).toBeCloseTo(0, 12);
+            expect(after.audioOffsetSeconds).toBeGreaterThanOrEqual(0);
+            expect(readerSourceSecondsAt(after, 10)).toBeCloseTo(0.5, 12);
+        });
+
         it('keeps a signed leading-silence entry and its start in place', () => {
             const after = crossfadeB(makeClip('b', 10, 14, { audioOffsetBeats: 1, audioOffsetSeconds: -0.5 }), 10, 2);
 
