@@ -1,0 +1,169 @@
+src/modules/FactorySynthesis/repositories/factorySynthesisWorkerClient.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-135
+src/modules/AiRuntime/useCases/__tests__/creativeInterpretationExecution.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 56,424-434,471-480,520-553,555-562,564-566,569-573,623-633,701-716,950-968,1109-1116
+src/modules/FactorySynthesis/transformers/keys.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-179
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 20,33-37,118,169,210-235,239-240,258,1365-1374,1382,1395,1405,1841-1873,1896-1986,2014-2115,2136-2137,2176-2177,2183-2378,2389-2410,2451-2459,2462,2477-2521,2804-2823,2843,2862,2871,2873-2876,2890,2913-2956,2980,3043-3050,3055,3058-3075,3099-3112
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/hostedToolPlan.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 31-32,34-36
+src/modules/AudioEngine/useCases/offlineRender/__tests__/cropHistoryFromRenderedBuffer.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 122,128-145
+src/modules/FactorySynthesis/useCases/index.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1
+src/modules/FactorySynthesis/workers/__tests__/factorySynthesisWorkerRuntime.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-49
+src/modules/FactorySynthesis/transformers/__tests__/generateFactorySamples.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-64
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchPausePlayCommand.integration.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 48,521-681,696-737
+  s_55244eb93b97d1::t_8f6e60aa3a8c19 738
+src/modules/AiRuntime/AGENTS.md
+  s_55244eb93b97d1::t_ee918e8dbdcd30 58-59
+src/modules/FactorySynthesis/transformers/bass.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-152
+src/modules/FactorySynthesis/transformers/percElectronic.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-139
+src/modules/FactorySynthesis/transformers/percWorld.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-185
+src/modules/AiRuntime/useCases/planAgentRun.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-2,12-17,19,54,148-275,290-292,391-398,454
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateAnthropicToolCalls.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 14,167-201
+  s_55244eb93b97d1::t_85f24c738a0da1 202-203
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateAnthropicToolCalls.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 65-72,74-75,77
+src/modules/FactorySynthesis/AGENTS.md
+  s_55244eb93b97d1::t_ee918e8dbdcd30 7,12-14,18-22
+src/modules/AudioEngine/useCases/audioRecorder/startAudioRecording.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1,25-31
+src/modules/FactorySynthesis/transformers/__tests__/drumsAcoustic.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-69
+src/modules/AiRuntime/useCases/__tests__/comparativeRequests.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 158,217-228,254-267
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 702-703,706-707,709-720,724,757,763-764,771-780,4376-4382
+src/modules/AiRuntime/useCases/__tests__/previewMeasurement.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 7,37,50,71-72,114,196,198,318-323,325-331,335-343,353,358-360,484-485,495,513,597,1059-1060,1109,1111,1127-1130,1580-2443
+  s_55244eb93b97d1::t_91b786aa8ccd31 2444
+src/modules/FactorySynthesis/transformers/generateRisersPack.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-115
+src/modules/FactorySynthesis/transformers/drums808.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-205
+src/modules/AiRuntime/useCases/__tests__/toolChoiceDirectives.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 6,151-1166
+  s_55244eb93b97d1::t_4361e983cfdca2 1167
+release/open-source-inventory.json
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1563-1564,2512,2539
+src/modules/AudioEngine/useCases/audioRecorder/__tests__/startAudioRecording.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 11-15,127-138
+  s_55244eb93b97d1::t_c1190f76a0c4ad 139-140
+src/modules/FactorySynthesis/services/__tests__/bufferCreation.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 3,83-98,103,107,115,118-126
+src/modules/FactorySynthesis/transformers/generateImpactsPack.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-117
+src/modules/AiRuntime/models/IntentResult.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 37-38
+src/modules/FactorySynthesis/workers/__tests__/factorySynthesisWorker.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-36
+src/modules/FactorySynthesis/workers/factorySynthesisWorkerRuntime.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-35
+src/modules/SampleLibrary/useCases/__tests__/seedFactoryLibrary.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 83-89,91,95,97-103,105-114,117-118,120-121,128-129,135,137,140-141,145,148-150,152-153,155-157,159,162-172,176-177,182-185,187-216,232,235,239
+src/modules/AiRuntime/models/AgentRun.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 68
+src/modules/FactorySynthesis/transformers/drumsLofi.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-223
+src/modules/FactorySynthesis/useCases/renderFactorySamples.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-40
+src/modules/FactorySynthesis/transformers/__tests__/additionalPacks.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-53
+src/modules/FactorySynthesis/models/FactorySynthesisWorker.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-10
+src/modules/FactorySynthesis/useCases/types.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1,3
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1021,2015,2026,2048
+src/modules/FactorySynthesis/services/bufferCreation.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-2,7-8,18-23,26-34
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiCompatibleToolCalls.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 164-179,182-189,191-198,200-211,213
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiResponsesToolCalls.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 254-279
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/anthropicThinkingWithTools.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 298-348
+src/modules/FactorySynthesis/models/RenderedFactorySample.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-13
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 339-356,1348-1349,1351-1363,1368-1376,1780,1783,1789
+src/modules/AiRuntime/useCases/agentRequestOrchestration/proposeNextScheduledBatch.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 141
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentExecution.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 366-372
+src/modules/FactorySynthesis/repositories/__tests__/factorySynthesisWorkerClient.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-130
+src/modules/AiRuntime/useCases/agentRequestOrchestration/materializePromptCommandPlan.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 201,298
+src/modules/FactorySynthesis/services/__tests__/mixingBuffers.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 3,93,108
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 4,677-680,971-989,1312-1318
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 39,1532-1537
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateOpenAiResponsesToolCalls.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 183,195,198
+src/modules/FactorySynthesis/transformers/drumsAcoustic.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-239
+src/modules/AiRuntime/repositories/providerAdapterRegistry.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 33-36
+src/modules/FactorySynthesis/workers/factorySynthesisWorker.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-21
+src/modules/AiRuntime/models/ApplicationOwnedTool.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 2-19
+src/modules/AiRuntime/useCases/__tests__/sharedVocalFxBusesWorkflow.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 645,648-649,654-663,1160-1166
+src/modules/AiRuntime/useCases/__tests__/planPromptActionsCorrectionEvidence.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 222,225,250-261,308-309
+src/modules/FactorySynthesis/transformers/generateFactorySamples.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-27
+evidence/agent-campaign/manifest.json
+  s_55244eb93b97d1::t_ee918e8dbdcd30 374,551,695
+src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 34,38,50,52,385-386,396-412,415,429-431,441,456-470,724,738-741,749-853,870-937,1054
+src/modules/SampleLibrary/useCases/seedFactoryLibrary.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 5,15,101
+src/modules/AiRuntime/useCases/__tests__/planAgentRun.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 4,28-74
+src/modules/FactorySynthesis/transformers/__tests__/factoryKits.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-60
+src/modules/AiRuntime/useCases/__tests__/bulkSetCommands.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1933-1954
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 54,632-649,655-662,841-891,913-919
+src/modules/FactorySynthesis/transformers/drums909.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-223
+tests/e2e/metricGoalAdmission.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 205-216,281-284,336
+src/modules/FactorySynthesis/useCases/__tests__/renderFactorySamples.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 1-98
+src/modules/AiRuntime/stores/__tests__/agentRunStore.spec.ts
+  s_55244eb93b97d1::t_ee918e8dbdcd30 8,141-158
+  s_55244eb93b97d1::t_3302f9dc8ec555 159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c6c7c326fac94a270bc216b839d5b1170dc2a1da",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
