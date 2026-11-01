@@ -1,0 +1,40 @@
+.agents/skills/review-stances/project-integrity.md
+  s_0314bb17e5dee3::t_03a7e80a040ad4 201
+  s_0314bb17e5dee3::t_aaea8c95f8c424 164-169
+  s_0314bb17e5dee3::t_20fa9363eb6822 205-206
+  s_0314bb17e5dee3::t_7bd08dca00c331 130-132
+  s_0314bb17e5dee3::t_7ce851169b85c1 148-151
+  s_0314bb17e5dee3::t_92f04e1d902b1a 155-156
+  s_0314bb17e5dee3::t_34c47848d3911b 28-29
+  s_0314bb17e5dee3::t_f7877646e64dd0 27
+  s_0314bb17e5dee3::t_c57569321b4231 133
+  s_0314bb17e5dee3::t_a74af616ff7dde 115-119
+  s_0314bb17e5dee3::t_ce43df31a24817 123
+  s_0314bb17e5dee3::t_8e1a13f99045e1 211-212
+  s_0314bb17e5dee3::t_7f2b08586c0a30 221-222
+  s_0314bb17e5dee3::t_a7cd847d2d022b 223-224
+  s_0314bb17e5dee3::t_754d30491a12ec 210
+  s_0314bb17e5dee3::t_4528e388e9148c 67
+  s_0314bb17e5dee3::t_aee2876d059d73 103
+  s_0314bb17e5dee3::t_d44f6f8247dfac 83-89
+  s_0314bb17e5dee3::t_e6ff67a2dab043 146-147
+  s_0314bb17e5dee3::t_4c42d6104c70d0 137-138
+  s_0314bb17e5dee3::t_7e7c97a7a4fa46 194-197
+  s_0314bb17e5dee3::t_4c1c3e83777084 48-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3009e36b68bd4429ce7dc502f163e5a9e8f57268",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
