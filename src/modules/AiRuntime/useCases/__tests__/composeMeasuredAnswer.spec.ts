@@ -15,6 +15,7 @@ import { getProjectContext } from '../getProjectContext';
 const VOCAL_ID = 'track-lead-vocal';
 const BUS_ID = 'track-vocal-bus';
 const BASS_ID = 'track-bass';
+const UNTITLED_ID = 'track-untitled';
 const RECIPE: AnswerStatement = { kind: 'recipe', callId: 'recipe', recipeId: 'vocal-warm' };
 const PERCEPTION: AnswerStatement = { kind: 'limitation', code: 'perception-not-inferred' };
 const PERCEPTION_TEXT = 'These objective measurements do not establish perceived sound quality or its cause.';
@@ -47,7 +48,7 @@ function intakeOf(overrides: Partial<AnswerRequestAuthority> = {}): AdmittedAnsw
         selection: getCreativeSelectionSnapshot(context),
         kind: 'catalog-knowledge',
         topics: [],
-        scopes: [],
+        scopes: [trackScope(VOCAL_ID, 'Lead Vocal')],
         scopeCandidateIds: [],
         range: null,
         requiredMetrics: [],
@@ -101,6 +102,7 @@ beforeEach(() => {
             createTrack({ id: VOCAL_ID, name: 'Lead Vocal', kind: 'audio' }),
             createTrack({ id: BUS_ID, name: 'Vocal Bus', kind: 'bus' }),
             createTrack({ id: BASS_ID, name: 'Bass', kind: 'audio' }),
+            createTrack({ id: UNTITLED_ID, name: 'Audio 1', kind: 'audio' }),
         ],
         selectedTrackId: null,
         ghostClips: [],
@@ -212,6 +214,38 @@ describe('an offer is made only about what the question asked, and never at the 
 
         expect(answer.suggestion).toBeUndefined();
         expect(answer.text).not.toContain('Propose this');
+    });
+
+    it('offers nothing when the interpretation names no subject, leaving the target to discovery alone', () => {
+        const answer = accepted(compose([RECIPE], [discoveryRead('recipe', VOCAL_ID)], intakeOf({ scopes: [] })));
+
+        expect(answer.suggestion).toBeUndefined();
+        expect(answer.text).not.toContain('Propose this');
+    });
+
+    it('offers nothing when the discovery role argument differs from the role the track itself gives', () => {
+        const answer = accepted(
+            compose(
+                [RECIPE],
+                [discoveryRead('recipe', BASS_ID, 'vocal')],
+                intakeOf({ scopes: [trackScope(BASS_ID, 'Bass')] })
+            )
+        );
+
+        expect(answer.suggestion).toBeUndefined();
+        expect(answer.text).not.toContain('Propose this');
+    });
+
+    it('offers an argued role for a track whose own canonical role gives none', () => {
+        const answer = accepted(
+            compose(
+                [RECIPE],
+                [discoveryRead('recipe', UNTITLED_ID, 'vocal')],
+                intakeOf({ scopes: [trackScope(UNTITLED_ID, 'Audio 1')] })
+            )
+        );
+
+        expect(answer.suggestion).toMatchObject({ targetId: UNTITLED_ID, recipeRole: 'vocal', roleSource: 'argument' });
     });
 
     it('offers the change for a discovered track among the tracks the question named', () => {

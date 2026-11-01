@@ -16,6 +16,7 @@ import {
     type AnswerRespondArguments,
     type AnswerStatement,
 } from './answerContractTypes';
+import { CANONICAL_ROLE_OPTIONS, CANONICAL_ROLE_TO_RECIPE_ROLE } from './canonicalRoleFamilies';
 import { type RecipeDiscoveryReceiptData } from './discoverMixRecipes';
 import { objectiveMetricProjection, OBJECTIVE_METRIC_LABELS } from './objectiveMetricProjection';
 
@@ -243,20 +244,36 @@ type StatementText = { text: string; callIds: string[] };
 /** A recipe is applied to one track's own chain; a bus, folder or the master is not offered as a proposal. */
 const SUGGESTION_TRACK_KINDS: ReadonlySet<string> = new Set(['audio', 'midi']);
 
+type SuggestionTrack = AnswerRequestAuthority['context']['tracks'][number];
+
 /**
- * The discovered track an offer may change: one audio or MIDI track the frozen read holds and, when the
- * question named its subjects, one of them, so an answer never offers to change a track it was not asked about.
+ * The discovered track an offer may change: one audio or MIDI track the frozen read holds, inside the
+ * subjects the frozen interpretation names. A discovery target alone is the provider's choice, so an
+ * interpretation naming no subject offers nothing and an answer never offers a track it was not asked about.
  */
 function readSuggestionTrack(
     targetId: string | undefined,
     authority: AnswerRequestAuthority
-): AnswerRequestAuthority['context']['tracks'][number] | undefined {
+): SuggestionTrack | undefined {
     const track = authority.context.tracks.find((entry) => entry.id === targetId);
     if (track === undefined || !SUGGESTION_TRACK_KINDS.has(track.kind)) {
         return undefined;
     }
-    const scoped = interpretedTargetIds(authority);
-    return scoped.length === 0 || scoped.includes(track.id) ? track : undefined;
+    return interpretedTargetIds(authority).includes(track.id) ? track : undefined;
+}
+
+/**
+ * Whether the discovery's role is one the track serves: read from the track itself, or argued for a track
+ * whose own canonical role gives no recipe role. An argued role over the track's own would offer one role's
+ * recipe for another role's track.
+ */
+function servesTrackRole(role: RecipeDiscoveryReceiptData['role'], track: SuggestionTrack): boolean {
+    if (role.source !== 'argument') {
+        return role.source === 'target';
+    }
+    const canonicalRole = CANONICAL_ROLE_OPTIONS.find((option) => option === track.canonicalRole?.role);
+    const ownRole = canonicalRole === undefined ? null : CANONICAL_ROLE_TO_RECIPE_ROLE[canonicalRole];
+    return ownRole === null || ownRole === role.recipeRole;
 }
 
 /**
@@ -289,7 +306,7 @@ function readAnswerSuggestion(
         candidate === undefined ||
         track === undefined ||
         recipeRole === null ||
-        source === 'none' ||
+        !servesTrackRole(discovery.role, track) ||
         !candidate.roles.includes(recipeRole)
     ) {
         return null;

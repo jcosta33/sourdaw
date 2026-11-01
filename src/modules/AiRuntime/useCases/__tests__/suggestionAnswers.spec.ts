@@ -43,7 +43,7 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
-import { advertisedAnswerIntake } from './answerWireFixture';
+import { advertisedAnswerCandidateId, advertisedAnswerIntake } from './answerWireFixture';
 
 const provider = vi.fn<(params: Record<string, unknown>) => Promise<unknown>>();
 const VOCAL_ID = 'track-lead-vocal';
@@ -61,10 +61,18 @@ function respond(statements: Array<Record<string, unknown>>): ToolCallResult {
 function response(calls: ToolCallResult[]) {
     return { choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(calls) } }] };
 }
-/** The provider's scripted turns: a catalog-knowledge intake read from what was advertised, then each turn. */
+/**
+ * The provider's scripted turns: a catalog-knowledge intake about the lead vocal, read from what was
+ * advertised, then each turn.
+ */
 function script(turns: ToolCallResult[][]): void {
     provider.mockImplementationOnce(async (params) =>
-        response([advertisedAnswerIntake(params, { kind: 'catalog-knowledge' })])
+        response([
+            advertisedAnswerIntake(params, {
+                kind: 'catalog-knowledge',
+                scopeCandidateIds: [advertisedAnswerCandidateId(params, VOCAL_ID)],
+            }),
+        ])
     );
     for (const calls of turns) {
         provider.mockResolvedValueOnce(response(calls));
