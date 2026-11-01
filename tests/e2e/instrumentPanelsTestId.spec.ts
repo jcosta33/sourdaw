@@ -15,7 +15,7 @@ async function openInstrumentPanel(
     panel: (typeof INSTRUMENTS)[number]['panel']
 ): Promise<void> {
     const browser = page.getByRole('complementary', { name: 'Browser panel' });
-    await browser.getByRole('button', { name: 'Instruments', exact: true }).click();
+    await browser.getByRole('tab', { name: 'Instruments', exact: true }).click();
     await browser.getByRole('button', { name: new RegExp(`^${card}`) }).click();
     await expect(page.getByRole('button', { name: `Close ${panel}` })).toBeVisible({
         timeout: PANEL_OPEN_TIMEOUT_MS,

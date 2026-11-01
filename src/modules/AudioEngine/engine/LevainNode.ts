@@ -11,7 +11,7 @@ import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '
 import { logger } from '#/infra/logger/appLogger';
 
 import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
-import levainProcessorUrl from '../services/levainProcessor.ts?worker&url';
+import levainProcessorUrl from '../worklets/levainProcessor.ts?worker&url';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 

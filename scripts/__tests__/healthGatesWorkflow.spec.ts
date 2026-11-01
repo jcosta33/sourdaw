@@ -13,6 +13,7 @@ import {
     requireBrowserWebGpuHardware,
 } from '../../tests/e2e/browserAiHardware';
 import browserAiWebGpuAdmissionConfig from '../../tests/e2e/browserAiWebGpuAdmission.playwright.config';
+import { COLD_FIRST_PAINT_TIMEOUT_MS } from '../../tests/e2e/coldFirstPaintBudget';
 import { ADMITTED_CONDITION, assertApprovalGatedRequiredCheck } from '../approvalGatedWorkflowContract';
 import { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } from '../deployWebWorkflowContract';
 import {
@@ -156,9 +157,14 @@ const BROWSER_AI_WEBGPU_RUNNER = 'macos-15';
 const BROWSER_AI_WEBGPU_SCRIPT_NAME = 'test:e2e:browser-ai-webgpu-admission';
 const BROWSER_AI_WEBGPU_COMMAND = 'pnpm test:e2e:browser-ai-webgpu-admission';
 const BROWSER_AI_WEBGPU_LOG = 'browser-ai-webgpu-admission.log';
-const BROWSER_AI_WEBGPU_GLOBAL_TIMEOUT_MS = 17 * 60_000;
-const BROWSER_AI_WEBGPU_STEP_TIMEOUT_MINUTES = 18;
-const BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES = 40;
+const BROWSER_AI_WEBGPU_GLOBAL_TIMEOUT_MS = 19 * 60_000;
+const BROWSER_AI_WEBGPU_STEP_TIMEOUT_MINUTES = 20;
+const BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES = 42;
+// Four admission tests run serially, each bounded at 180 seconds.
+const BROWSER_AI_WEBGPU_TESTS_MS = 4 * 180_000;
+// Dev-server start, two browser launches and teardown need this much beyond
+// the cold warmup and the tests.
+const BROWSER_AI_WEBGPU_RUN_OVERHEAD_MS = 2 * 60_000;
 const BROWSER_AI_WEBGPU_DIAGNOSTIC_PATHS = [
     BROWSER_AI_WEBGPU_LOG,
     'test-results/**/trace.zip',
@@ -175,7 +181,7 @@ const BROWSER_AI_WEBGPU_STEP_CAPS = new Map([
     ['Set up Node', 3],
     ['Install dependencies', 2],
     ['Install Chromium', 2],
-    ['Run Browser AI WebGPU admission', 18],
+    ['Run Browser AI WebGPU admission', 20],
     ['Upload Browser AI WebGPU diagnostics', 2],
 ]);
 const BROWSER_AI_WEBGPU_PACKAGE_SCRIPT =
@@ -4683,6 +4689,11 @@ describe('health gates workflow contract', () => {
         expect(() => assertBrowserAiWebGpuJob(heavyWorkflow)).not.toThrow();
         expect(() => assertNightlyBrowserAiWebGpuJob(nightly)).not.toThrow();
         expect(() => assertBrowserAiWebGpuProofChain(packageManifest, browserAiWebGpuConfig)).not.toThrow();
+        // The whole-run limit must still fit the tests' own bounds after the
+        // cold warmup has spent all of its allowance.
+        expect(
+            BROWSER_AI_WEBGPU_GLOBAL_TIMEOUT_MS - COLD_FIRST_PAINT_TIMEOUT_MS - BROWSER_AI_WEBGPU_TESTS_MS
+        ).toBeGreaterThanOrEqual(BROWSER_AI_WEBGPU_RUN_OVERHEAD_MS);
         expect(BROWSER_AI_WEBGPU_GLOBAL_TIMEOUT_MS / 60_000).toBeLessThan(BROWSER_AI_WEBGPU_STEP_TIMEOUT_MINUTES);
         expect(BROWSER_AI_WEBGPU_STEP_TIMEOUT_MINUTES).toBeLessThan(BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES);
 

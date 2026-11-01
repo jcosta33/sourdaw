@@ -21,6 +21,11 @@ import {
     TrackNode,
     type TrackNodeRuntimeGraphMutation,
 } from '../engine/TrackNode';
+import {
+    bitcrusherRateProcessorUrl,
+    meteringProcessorUrl,
+    recordingProcessorUrl,
+} from '../engine/workletProcessorUrls';
 import { type AudioPreviewIntent } from '../models/AudioPreviewIntent';
 import {
     type RuntimeGraphDelta,
@@ -32,11 +37,8 @@ import {
     type RuntimeGraphTopologyValidator,
 } from '../models/RuntimeGraphDelta';
 import { createAudioPreviewIntents } from '../services/audioPreview/createAudioPreviewIntents';
-import bitcrusherRateProcessorUrl from '../services/bitcrusherRateProcessor.ts?worker&url';
 import { compileRuntimeGraphDelta } from '../services/compileRuntimeGraphDelta';
 import { matchesRuntimeDeviceChainTopology } from '../services/matchesRuntimeDeviceChainTopology';
-import meteringProcessorUrl from '../services/meteringProcessor.ts?worker&url';
-import recordingProcessorUrl from '../services/recordingProcessor.ts?worker&url';
 
 import { stopInputMonitoring } from './audioRecorder/stopInputMonitoring';
 
@@ -1955,7 +1957,7 @@ class AudioEngineImpl implements AudioEngine {
         }
         // Read-and-reset of a single f32, deliberately without Atomics (audit
         // RT-9) — same scalar-meter exception as TrackNode.getPeakLevel.
-        // Rationale in the module header of services/meteringProcessor.ts.
+        // Rationale in the module header of worklets/meteringProcessor.ts.
         const peak = this.masterMeterBuffer[0]!;
         this.masterMeterBuffer[0] = 0;
         return peak;

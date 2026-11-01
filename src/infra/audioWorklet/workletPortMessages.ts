@@ -7,7 +7,7 @@
  * drifted discriminant silently drops messages, because neither side errors.
  * The processors themselves run in the isolated worklet realm and restate
  * these values with pointer comments back to this file; a parity spec
- * (`AudioEngine/services/__tests__/workletPortMessageParity.spec.ts`) pins the
+ * (`AudioEngine/worklets/__tests__/workletPortMessageParity.spec.ts`) pins the
  * copies equal.
  */
 
