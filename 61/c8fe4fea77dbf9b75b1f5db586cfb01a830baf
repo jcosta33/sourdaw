@@ -1,0 +1,21 @@
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRollContextMenu.tsx
+  s_66964e590cb4f0::t_41d30afa0960c8 207-218
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.noteIdentityUndo.spec.tsx
+  s_66964e590cb4f0::t_1e74f79e9d168f 5-6,9,151-209
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "61c8fe4fea77dbf9b75b1f5db586cfb01a830baf",
+  "prompts": {},
+  "sessions": {
+    "s_66964e590cb4f0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_66964e590cb4f0",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
