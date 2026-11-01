@@ -1,0 +1,27 @@
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_0314bb17e5dee3::t_4a099671c70ee6 1006
+  s_0314bb17e5dee3::t_1dfb359597059c 1067
+  s_0314bb17e5dee3::t_e7418979474ba7 13,18
+scripts/__tests__/engineDirectionRule.spec.ts
+  s_0314bb17e5dee3::t_1cf6c9de62b9ac 28
+src/modules/AiRuntime/useCases/__tests__/metricGoalAdmission.spec.ts
+  s_0314bb17e5dee3::t_ed7227464420c0 14
+  s_0314bb17e5dee3::t_0a9420a0782c70 156
+  s_0314bb17e5dee3::t_143082277eae20 121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "24694f0efd51dda98c24fdef521fae98b7015266",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
