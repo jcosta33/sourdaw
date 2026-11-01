@@ -1,0 +1,23 @@
+src/modules/Arrangement/useCases/clipSelection/__tests__/clipSelection.spec.ts
+  s_ca4617c7d95148::t_ef6ca64cb95a06 83-118
+src/modules/Arrangement/useCases/clipSelection/toggleClipInSelection.ts
+  s_ca4617c7d95148::t_ac186e331e8398 3-13,20,22-23,25-31
+src/modules/WorkspaceShell/presentations/views/__tests__/StatusBar.spec.tsx
+  s_ca4617c7d95148::t_4a4c6a19f80f5a 108-109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "75f581ab3bf7c0c184c24bd6b0639263c55ef2a9",
+  "prompts": {},
+  "sessions": {
+    "s_ca4617c7d95148": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_ca4617c7d95148",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
