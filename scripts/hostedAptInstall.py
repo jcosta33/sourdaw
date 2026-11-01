@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run one hosted root package install until its entire systemd cgroup drains."""
 
+import errno
 import os
 from pathlib import Path
 import re
@@ -65,6 +66,12 @@ def observe(unit, description, invocation=None):
     return fields
 
 
+def cgroup_removed(error):
+    if isinstance(error, FileNotFoundError):
+        return True
+    return isinstance(error, OSError) and error.errno == errno.ENODEV
+
+
 def drained(fields, unit):
     group = fields.get("ControlGroup")
     if group == "":
@@ -74,11 +81,12 @@ def drained(fields, unit):
     events = Path("/sys/fs/cgroup") / group.lstrip("/") / "cgroup.events"
     try:
         values = dict(line.split(" ", 1) for line in events.read_text().splitlines())
-    except FileNotFoundError:
-        # systemd may remove the cgroup after show returned its old path.
-        # Re-observe the bound invocation before accepting a drain witness.
-        return None
     except (OSError, ValueError) as error:
+        if cgroup_removed(error):
+            # systemd may remove the cgroup after show returned its old path:
+            # ENOENT once it is gone, ENODEV while kernfs is removing it mid-read.
+            # Re-observe the bound invocation before accepting a drain witness.
+            return None
         raise Unproven(f"owned cgroup status unavailable: {error}") from error
     if values.get("populated") == "0":
         return "populated=0"

@@ -1,5 +1,6 @@
 """Exercise the controller's fresh manager observation after a cgroup read race."""
 
+import errno
 import importlib.util
 from pathlib import Path
 import subprocess
@@ -88,6 +89,49 @@ class ObservationTest(unittest.TestCase):
 
     def test_unreadable_cgroup_fails_closed(self):
         outcome, _, actions = self.run_controller({}, [FileNotFoundError(), PermissionError('denied')])
+        self.assertIn('cgroup status unavailable', outcome)
+        self.assertNotIn('stop', actions)
+
+    def test_device_gone_mid_read_needs_fresh_positive_witness(self):
+        gone = OSError(errno.ENODEV, 'No such device')
+        outcome, shows, actions = self.run_controller({'ControlGroup': ''}, [gone])
+        self.assertEqual(outcome, 0)
+        self.assertGreaterEqual(len(shows), 2)
+        self.assertEqual(shows[0]['InvocationID'], shows[1]['InvocationID'])
+        self.assertIn('stop', actions)
+
+    def test_fresh_empty_cgroup_after_device_gone_is_also_a_witness(self):
+        gone = OSError(errno.ENODEV, 'No such device')
+        outcome, shows, actions = self.run_controller({}, [gone, 'populated 0\n'])
+        self.assertEqual(outcome, 0)
+        self.assertGreaterEqual(len(shows), 2)
+        self.assertEqual(shows[0]['InvocationID'], shows[1]['InvocationID'])
+        self.assertIn('stop', actions)
+
+    def test_device_gone_alone_never_proves_drain(self):
+        def gone():
+            raise OSError(errno.ENODEV, 'No such device')
+
+        outcome, shows, actions = self.run_controller({}, gone)
+        self.assertIn('bounded observation limit', outcome)
+        self.assertGreater(len(shows), 1)
+        self.assertNotIn('stop', actions)
+
+    def test_changed_invocation_after_device_gone_fails_closed(self):
+        gone = OSError(errno.ENODEV, 'No such device')
+        outcome, _, actions = self.run_controller({'InvocationID': 'b' * 32}, [gone])
+        self.assertIn('invocation changed or disappeared', outcome)
+        self.assertNotIn('stop', actions)
+
+    def test_other_errno_fails_closed(self):
+        denied = OSError(errno.EACCES, 'Permission denied')
+        outcome, _, actions = self.run_controller({}, [denied])
+        self.assertIn('owned cgroup status unavailable', outcome)
+        self.assertNotIn('stop', actions)
+
+    def test_unreadable_cgroup_after_device_gone_fails_closed(self):
+        gone = OSError(errno.ENODEV, 'No such device')
+        outcome, _, actions = self.run_controller({}, [gone, OSError(errno.EIO, 'Input/output error')])
         self.assertIn('cgroup status unavailable', outcome)
         self.assertNotIn('stop', actions)
 
