@@ -178,6 +178,11 @@ function contextFixture() {
     return { context, engine, sources, gate };
 }
 
+/** The programme gate is its one edge into the listening output, never its gain. */
+function programmeOpen(gate: ControlNode): boolean {
+    return gate.connections.length > 0;
+}
+
 function buffer(): AudioBuffer {
     const pcm = new Float32Array([0.125, -0.25, 0.375, -0.5]);
     return {
@@ -243,11 +248,11 @@ describe('exclusive retained buffer listening lifetime', () => {
         fixture.engine = null;
     });
 
-    it('sets the real programme gate0 before suspended-context resume and starts only after resume settles', async () => {
+    it('closes the real programme gate before suspended-context resume and starts only after resume settles', async () => {
         const resume = Promise.withResolvers<void>();
         driven.context.state = 'suspended';
         driven.context.resume.mockImplementation(() => {
-            expect(driven.gate.gain.value).toBe(0);
+            expect(programmeOpen(driven.gate)).toBe(false);
             return resume.promise;
         });
         const exact = buffer();
@@ -265,7 +270,7 @@ describe('exclusive retained buffer listening lifetime', () => {
         expect(driven.sources[0]?.buffer).toBe(exact);
         expect(driven.sources[0]?.start).toHaveBeenCalledTimes(1);
         await playback.stop();
-        expect(driven.gate.gain.value).toBe(1);
+        expect(programmeOpen(driven.gate)).toBe(true);
     });
 
     it('a newer ordinary gesture stops the retained side and waits actual programme restoration', async () => {
@@ -286,7 +291,7 @@ describe('exclusive retained buffer listening lifetime', () => {
         expect(driven.sources[1]?.start).not.toHaveBeenCalled();
         await ordinary.ready;
         expect(driven.sources[1]?.start).toHaveBeenCalledTimes(1);
-        expect(driven.gate.gain.value).toBe(1);
+        expect(programmeOpen(driven.gate)).toBe(true);
         ordinary.stop();
     });
 
@@ -340,11 +345,11 @@ describe('exclusive retained buffer listening lifetime', () => {
         const stopping = playback.stop();
         await vi.waitFor(() => expect(apply).toHaveBeenCalledTimes(2));
         expect(reentrant).toBe(stopping);
-        expect(driven.gate.gain.value).toBe(0);
+        expect(programmeOpen(driven.gate)).toBe(false);
         expect(driven.sources[0]?.stop).toHaveBeenCalledTimes(1);
         restore.reject(new Error('native restoration rejected'));
         await expect(stopping).rejects.toThrow('native restoration rejected');
-        expect(driven.gate.gain.value).toBe(0);
+        expect(programmeOpen(driven.gate)).toBe(false);
     });
     it('reopens the Web programme when an abandon leaves a playing audition no native programme', async () => {
         vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(true);
@@ -369,14 +374,14 @@ describe('exclusive retained buffer listening lifetime', () => {
             onEnded: vi.fn(),
         });
         await playback.ready;
-        expect(driven.gate.gain.value).toBe(0);
+        expect(programmeOpen(driven.gate)).toBe(false);
         abandonNativeLiveGraphSession('stalled');
         expect(nativeLiveGraphSession.orphanedBackend).not.toBeNull();
         // The abandon itself retires the audition: no Stop is needed to reopen the programme.
-        await vi.waitFor(() => expect(driven.gate.gain.value).toBe(1));
+        await vi.waitFor(() => expect(programmeOpen(driven.gate)).toBe(true));
         expect(driven.sources[0]?.stop).toHaveBeenCalledTimes(1);
         await playback.stop();
-        expect(driven.gate.gain.value).toBe(1);
+        expect(programmeOpen(driven.gate)).toBe(true);
         // The stalled engine is not addressed again: there is no native programme to restore into.
         expect(apply).toHaveBeenCalledTimes(1);
         const ordinary = playAudioBufferPreview({
@@ -424,11 +429,11 @@ describe('exclusive retained buffer listening lifetime', () => {
             onEnded: vi.fn(),
         });
         await playback.ready;
-        expect(driven.gate.gain.value).toBe(0);
+        expect(programmeOpen(driven.gate)).toBe(false);
         const start = startNativeLiveGraphSession(START);
         expect(driven.sources[0]?.stop).toHaveBeenCalledTimes(1);
         await expect(start).resolves.toMatchObject({ outcome: 'started' });
-        await vi.waitFor(() => expect(driven.gate.gain.value).toBe(1));
+        await vi.waitFor(() => expect(programmeOpen(driven.gate)).toBe(true));
         // The queue wait behind the start spends none of the release's window.
         expect(readinessTimeouts(warn)).toHaveLength(0);
         warn.mockRestore();
@@ -460,13 +465,13 @@ describe('exclusive retained buffer listening lifetime', () => {
             onEnded: vi.fn(),
         });
         await playback.ready;
-        expect(driven.gate.gain.value).toBe(0);
+        expect(programmeOpen(driven.gate)).toBe(false);
         const first = startNativeLiveGraphSession(START);
         await new Promise((resolve) => setTimeout(resolve, 3_200));
         const second = startNativeLiveGraphSession(START);
         await expect(first).resolves.toMatchObject({ outcome: 'started' });
         await expect(second).resolves.toMatchObject({ outcome: 'started' });
-        await vi.waitFor(() => expect(driven.gate.gain.value).toBe(1));
+        await vi.waitFor(() => expect(programmeOpen(driven.gate)).toBe(true));
         expect(readinessTimeouts(warn)).toHaveLength(0);
         warn.mockRestore();
     }, 15_000);
@@ -519,11 +524,11 @@ describe('exclusive retained buffer listening lifetime', () => {
             for (let attempt = 1; attempt <= refusals; attempt += 1) {
                 await idle();
                 expect(apply).toHaveBeenCalledTimes(1 + attempt);
-                expect(driven.gate.gain.value).toBe(0);
+                expect(programmeOpen(driven.gate)).toBe(false);
                 await sessionCommand();
                 await vi.waitFor(() => expect(apply).toHaveBeenCalledTimes(2 + attempt));
             }
-            await vi.waitFor(() => expect(driven.gate.gain.value).toBe(1));
+            await vi.waitFor(() => expect(programmeOpen(driven.gate)).toBe(true));
             await sessionCommand();
             await idle();
             expect(apply).toHaveBeenCalledTimes(2 + refusals);
@@ -543,10 +548,10 @@ describe('exclusive retained buffer listening lifetime', () => {
         expect(apply).toHaveBeenCalledTimes(3);
         expect(successor).not.toBeNull();
         expect(nativeLiveGraphSession.auditionOwner).toBe(successor);
-        expect(driven.gate.gain.value).toBe(0);
+        expect(programmeOpen(driven.gate)).toBe(false);
         expect(driven.sources[1]?.stop).not.toHaveBeenCalled();
         await second.stop();
-        expect(driven.gate.gain.value).toBe(1);
+        expect(programmeOpen(driven.gate)).toBe(true);
     });
 
     it('stops recovering once the output context is unsafe', async () => {
@@ -573,7 +578,7 @@ describe('exclusive retained buffer listening lifetime', () => {
         );
         expect(unsafeRefusals).toHaveLength(1);
         expect(apply).toHaveBeenCalledTimes(3);
-        expect(driven.gate.gain.value).toBe(0);
+        expect(programmeOpen(driven.gate)).toBe(false);
         warn.mockRestore();
     });
 
@@ -593,13 +598,13 @@ describe('exclusive retained buffer listening lifetime', () => {
         const playback = audition();
         await expect(playback.ready).rejects.toThrow('did not witness an empty output slot');
         expect(driven.sources).toHaveLength(0);
-        await vi.waitFor(() => expect(driven.gate.gain.value).toBe(1));
+        await vi.waitFor(() => expect(programmeOpen(driven.gate)).toBe(true));
         // Only the acquisition read the engine: the release touches nothing native.
         expect(getEngineTransportPosition).toHaveBeenCalledOnce();
         await sessionCommand();
         await idle();
         expect(getEngineTransportPosition).toHaveBeenCalledOnce();
-        expect(driven.gate.gain.value).toBe(1);
+        expect(programmeOpen(driven.gate)).toBe(true);
     });
 
     it('reopens the programme on Stop when a declined start boots an engine during the audition', async () => {
@@ -610,11 +615,11 @@ describe('exclusive retained buffer listening lifetime', () => {
         });
         const playback = audition();
         await playback.ready;
-        expect(driven.gate.gain.value).toBe(0);
+        expect(programmeOpen(driven.gate)).toBe(false);
         expect(driven.sources[0]?.start).toHaveBeenCalledOnce();
         bootedWithoutBackend();
         await playback.stop();
-        expect(driven.gate.gain.value).toBe(1);
+        expect(programmeOpen(driven.gate)).toBe(true);
         expect(getEngineTransportPosition).toHaveBeenCalledOnce();
     });
 
@@ -627,9 +632,9 @@ describe('exclusive retained buffer listening lifetime', () => {
         await expect(playback.stop()).rejects.toThrow('native output gate refused');
         await idle();
         expect(apply).toHaveBeenCalledTimes(3);
-        expect(driven.gate.gain.value).toBe(0);
+        expect(programmeOpen(driven.gate)).toBe(false);
         await sessionCommand();
-        await vi.waitFor(() => expect(driven.gate.gain.value).toBe(1));
+        await vi.waitFor(() => expect(programmeOpen(driven.gate)).toBe(true));
         expect(apply).toHaveBeenCalledTimes(4);
         await sessionCommand();
         await idle();
@@ -682,7 +687,7 @@ describe('exclusive retained buffer listening lifetime', () => {
             // The stale attempt reaches the head first and gives up; the recovery the blocker's
             // settlement starts is the only one that addresses the engine.
             await vi.advanceTimersByTimeAsync(100);
-            await vi.waitFor(() => expect(driven.gate.gain.value).toBe(1));
+            await vi.waitFor(() => expect(programmeOpen(driven.gate)).toBe(true));
         } finally {
             vi.useRealTimers();
         }
@@ -711,11 +716,11 @@ describe('exclusive retained buffer listening lifetime', () => {
         await first.stop();
         expect(successor).not.toBeNull();
         expect(nativeLiveGraphSession.auditionOwner).toBe(successor);
-        expect(driven.gate.gain.value).toBe(0);
+        expect(programmeOpen(driven.gate)).toBe(false);
         expect(driven.sources[1]?.start).toHaveBeenCalledOnce();
         expect(driven.sources[1]?.stop).not.toHaveBeenCalled();
         await second.stop();
-        expect(driven.gate.gain.value).toBe(1);
+        expect(programmeOpen(driven.gate)).toBe(true);
     });
 
     it('still refuses an audition start while an abandoned native programme is unsettled', async () => {
@@ -756,7 +761,7 @@ describe('exclusive retained buffer listening lifetime', () => {
             isCurrent: () => true,
             onEnded: vi.fn(),
         });
-        expect(driven.gate.gain.value).toBe(0);
+        expect(programmeOpen(driven.gate)).toBe(false);
         topology.resolve(applied(1));
         await expect(start).resolves.toMatchObject({ outcome: 'started' });
         await playback.ready;
@@ -766,7 +771,7 @@ describe('exclusive retained buffer listening lifetime', () => {
             commands: [{ kind: 'set-monitor-shadow', shadowed: true }],
         });
         await playback.stop();
-        expect(driven.gate.gain.value).toBe(1);
+        expect(programmeOpen(driven.gate)).toBe(true);
     });
 
     it('a newer native start cancels an A/B still acquiring before that start reaches its queue', async () => {
@@ -868,7 +873,7 @@ describe('exclusive retained buffer listening lifetime', () => {
         });
         await expect(start).resolves.toMatchObject({ outcome: 'started' });
         await release.catch(() => undefined);
-        expect(driven.gate.gain.value).toBe(1);
+        expect(programmeOpen(driven.gate)).toBe(true);
     });
 
     it('a delayed old release cannot open over a successor acquisition followed by its own failed Stop', async () => {
@@ -926,7 +931,7 @@ describe('exclusive retained buffer listening lifetime', () => {
         secondRestore.reject(new Error('latest restoration rejected'));
         await expect(latestRelease).rejects.toThrow('latest restoration rejected');
         await expect(oldRelease).rejects.toThrow('request changed');
-        expect(driven.gate.gain.value).toBe(0);
+        expect(programmeOpen(driven.gate)).toBe(false);
         expect(driven.sources).toHaveLength(1);
     });
 });

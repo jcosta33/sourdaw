@@ -352,7 +352,16 @@ class AudioEngineImpl implements AudioEngine {
      */
     private monitorMonoNode!: GainNode;
     private monitorDimNode!: GainNode;
+    /**
+     * The programme reaches the listening output through this edge, and its
+     * connection is the exclusive-preview gate. A gain write made now cannot
+     * reach the frame `currentTime` names when its quotient sits above that
+     * frame (Chromium clamps it to `currentTime` and applies it a sample late),
+     * whereas a disconnect or connect takes effect from the first frame of the
+     * next render quantum, suspended or running.
+     */
     private previewProgrammeGate!: GainNode;
+    private previewProgrammeOpen = true;
     private previewRestoration: Promise<void> | null = null;
     /**
      * Silent (gain 0) sink the stereo tap analysers connect through to the
@@ -2673,12 +2682,19 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public setAudioPreviewProgrammeSuppressed(suppressed: boolean): void {
-        if (this.disposed || (!suppressed && this.previewIntents.hasExclusive())) {
+        if (this.disposed || this.fallbackMode || (!suppressed && this.previewIntents.hasExclusive())) {
             return;
         }
-        const now = this.context.currentTime;
-        this.previewProgrammeGate.gain.cancelScheduledValues(now);
-        this.previewProgrammeGate.gain.setValueAtTime(suppressed ? 0 : 1, now);
+        const open = !suppressed;
+        if (this.previewProgrammeOpen === open) {
+            return;
+        }
+        if (open) {
+            this.previewProgrammeGate.connect(this.monitorMonoNode);
+        } else {
+            this.previewProgrammeGate.disconnect(this.monitorMonoNode);
+        }
+        this.previewProgrammeOpen = open;
     }
 
     /**
