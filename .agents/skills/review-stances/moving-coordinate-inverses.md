@@ -1,139 +1,76 @@
 # Lesson library: moving coordinate inverses
 
-## 2026-10-25 — a trim inverse recomputed against a different loop length
+Defects where an edit changes the basis used to wrap, clamp, normalize or number coordinates (a duration-derived loop
+length, a loop origin, a partial bar) and its recorded inverse, Redo, macro replay or live reader is computed against a
+different basis than the one that produced the forward figures. Drive the real recorded Command inverse composed
+with surrounding edits, on both inferred and explicitly configured bases, and assert raw stored figures (offsets,
+every note, controller and pitch-bend beat) rather than audible relatives. A fixture that always configures the
+normalization basis cannot cover a moving basis. Each probe names the input, the check that must go red and the
+mutation that must fail it.
 
-PR #5022 (`abee0c2e8e936c3d06182554a82824d3669a14fc`) introduced start-trim offset
-wrapping against the post-trim loop length and translated stored MIDI notes by the wrap
-distance. Its loop fixtures explicitly configured `loopLength: 8`, keeping the wrap basis
-constant. An inferred loop length comes from clip duration, which the trim changes. Replaying
-the opposite trim therefore normalizes against a different basis and can leave the stored
-offset and rows displaced. A surrounding slip inverse that restores its captured offset
-does not reverse that displacement. Issue #5512 records the escaped composition.
+## Standing probes
 
-The published approval attacked forward phase, window and scheduler admission, plus barrel
-mocks. The historical reviewer prompts and tiers are unknown; that prose does not establish
-that a duration-derived inverse composition was reviewed.
-
-When an edit changes the basis used to wrap, clamp or normalize coordinates, compose its
-real recorded inverse with the surrounding edits on both inferred and explicitly configured
-bases. For a duration-derived loop, slip left one beat, trim the start across a wrap boundary,
-then undo the trim and the slip. Assert the captured raw offset and every note, controller
-and pitch-bend beat at the intermediate inverse boundary and after the complete undo/redo
-chain. Preserve unrelated rows, clip geometry and configured-loop behavior. Check scheduler
-admission as well: matching audible relatives alone cannot prove exact stored restoration.
-
-The discriminating probe removes the inverse's captured offset, or reverses the restoring
-row translation. The inferred-basis case must fail on its raw figures; the explicit-basis
-control must still describe its own preserved behavior. A fixture that always configures the
-normalization basis cannot cover a moving basis.
-
-## 2026-10-25 — finite captures overflowed their derived row translation
-
-Review of PR #5578 caught a captured trim inverse whose finite current and captured offsets
-produced an infinite restoring displacement. A finite displacement could also overflow a
-finite note, controller or pitch-bend beat. MIDI sanitization then removed those rows while
-the trim reported a write. Checking only the incoming capture did not protect the derived
-coordinates.
-
-Preflight the displacement and every translated row before either owner writes. Probe opposite
-finite extremes, then overflow each row type separately with a finite displacement. Require
-owner refusal, handler `conflict`, and unchanged clip and all row types; exercise raw-document
-and history preservation through the real command wherever the fixture codec admits the input.
-Keep ordinary and zero captures, the configured-loop control and keyless replay behavior intact.
-
-## Legacy inverse admission after a coordinate-capture repair
-
-PR #5022 introduced the moving loop basis described above. PR #5578 captures the old
-offset for new trims, but historical trim inverses produced before that repair carry no
-`midiOffsetBeats`. A loop phase cannot recover the discarded quotient or the original row
-displacement. Replaying the opposite trim can therefore consume Undo while restoring the
-wrong offset and rows. Historical review prompts and model tiers are unverified.
-
-Produce the old inverse with the real historical Command handler, preserve its original
-document and session-history bytes, then hydrate through the current production reader.
-Require an unauthenticated MIDI inverse to leave the document, rows and pending history
-unchanged, with a warning. Zero distance is not proof of preservation: slip to an
-unnormalized whole-loop offset while looping is off, enable looping, then trim at the
-unchanged start. The forward trim can normalize the offset and translate every row;
-its present normalized phase cannot authenticate the original figures. Refuse both
-normalized and unnormalized legacy zero-distance inverses without a capture.
-The current loop mode cannot authenticate the old mode: a peer can disable looping
-after a trim has already wrapped its coordinates. Disable looping on the genuinely
-saved duration-derived case, then require the same refusal with the peer state intact.
-Keep the original loop-disabled MIDI fixture as a conservative refusal control.
-Preserve audio and current capture-bearing zero-distance Undo/Redo controls, including
-zero captures and whole-loop captures. Removing replay admission must fail the unsafe
-historical case; deleting a capture field from a modern fixture cannot establish
-historical compatibility.
-
-## Fresh macro commands must discard inverse restoration hints
-
-PR #5495 (`0f1e87dc8`) introduced the slip inverse's `rowLiftBeats` and the trim
-inverse's `loopOriginBeat`; PR #5578 (`e930f16eb`) added the trim inverse's
-`midiOffsetBeats`. Public action-history reversion can record those inverse
-requests into a macro. Replaying the saved request verbatim applies the old
-restoration basis instead of a fresh command's current wrap and anchor laws.
-Historical private reviewer prompts and tiers are unverified; the missing probe
-compared macro playback with independent fresh commands after that basis changed.
-
-Record a real slip or trim and public history reversal, serialize the macro, then
-change an eight-beat loop to four beats. Compare the full clip and every row with
-fresh public requests executed from the identical prestate. Repeat on the same
-basis, with looping disabled, and on audio. Include zero-valued restoration keys
-and an anchorless recording whose inverse carries `null`, followed by a current
-anchor. A fresh macro copy discards every documented restoration-only hint while
-preserving public request fields and stored macro bytes. Its own executed history
-must still restore each before-figure exactly through saved Undo and Redo; fresh
-macro arithmetic is not dynamic Undo or a byte-exact net-zero promise.
-
-Leave coordinate captures stripped but restore scalar-hint forwarding as the
-mutation. The unchanged fresh-producer comparisons must fail. An expected value
-computed from the old inverse displacement merely repeats the defect.
-
-## Fractional row coordinates and reciprocal history captures
-
-PR #5495 (`0f1e87dc8`) introduced the slip's arithmetic row-lift inverse; PR #5578
-(`e930f16eb`) retained arithmetic translation when restoring trim offsets. Integer
-fixtures established the displacement law but missed floating-point loss: `0.1 + 8 - 8`
-is not the stored `0.1`. The original reviewer prompts and tiers are unverified.
-
-Require exact raw note, controller and pitch-bend figures through the real Command
-boundary on both configured and duration-derived loops. Capture each executed translation
-by row identity. Restore a saved number only while its current coordinate still equals
-the captured post-value; translate current peer-moved and added rows, retain their current
-properties, and never recreate deleted rows. Plan every lane and finite displacement before
-either owner writes. A refused replay must conflict without consuming history.
-
-Undo must refresh the actual redo capture and Redo the actual inverse capture, including
-peer edits before either direction. Persist and hydrate from both past and future, then
-repeat the cycle. JSON does not preserve object aliases: independently serialized captures
-need an owner-validated pair relationship. Replay's discarded description must not detach
-that relationship. Failed commit compensation and owner abort rollback must preserve the
-prior document, projections, history, tree and mirror; committed bookkeeping errors retain
-the capture matching the committed product.
-
-Mutate the exact-restoration branch, actual-counterpart refresh, hydration pair binding,
-and abort metadata restoration independently. The corresponding connected fractional,
-peer-edit, saved-history and failed-commit cases must fail. A pure planner round trip or
-an integer-only fixture cannot establish any of those runtime obligations.
-
-### 2026-10-30 — partial-bar carries change the mounted ruler's basis (#5247)
-
-Insert 2 at 4 in 4/4 produces physical bar pieces at 0, 4, 6 and 10; the pieces
-at 4 and 6 both read as bar 2. A distinct-bar inverse therefore cannot enumerate
-the physical ruler, and a flat `bar * numerator` reader leaves bar 3 at 8 after
-its clip moves to 10. Reuse the meter model's segment origins and metrical walk;
-retain each physical piece and its canonical number instead of numbering paint rows.
-
-Compose the actual recorded Command inverse and Redo with complete raw/projected
-map and clip snapshots and the same mounted reader. Require fresh post-operation
-paint figures in both directions, including a downstream meter change and non-quarter
-denominators. A correct initial mount alone cannot prove later coordinate-basis changes.
-The flat-query and removed-subscription probes must independently break geometry and
-freshness; they are prescribed probes, not completed execution claims.
-
-The earliest tracked flat ruler is `e415a55cc406ba264dffbc229f4ac86f3e5caaab`.
-Its introducing PR, historical review prompts and tiers are unverified. The earlier
-missing-carry lineage predates #5440, but its earliest musician-facing introducer is
-unestablished; #5440's next-downbeat intermediate was corrected before merge. The missed
-stance connected the producer's moving grid basis to its live reader and history.
+1. **A trim inverse recomputed against a different loop length (#5022 `abee0c2e8e`, #5512).** #5022 wrapped the
+   start-trim offset against the post-trim loop length and translated stored MIDI notes by the wrap distance; its
+   fixtures configured `loopLength: 8`, but an inferred loop length comes from clip duration, which the trim
+   changes, so the opposite trim normalized against another basis and a surrounding slip inverse could not reverse
+   the displacement. For a duration-derived loop, slip left one beat, trim the start across a wrap boundary, then
+   undo the trim and the slip; assert the captured raw offset and every note, controller and pitch-bend beat at the
+   intermediate inverse boundary and after the complete undo/redo chain. Preserve unrelated rows, clip geometry and
+   configured-loop behavior, and check scheduler admission too. Removing the inverse's captured offset, or reversing
+   the restoring row translation, must fail the inferred-basis case on its raw figures while the explicit-basis
+   control still describes its own preserved behavior.
+2. **Finite captures overflow their derived row translation (#5578, pre-merge).** Finite current and captured
+   offsets produced an infinite restoring displacement, and a finite displacement could overflow a finite note,
+   controller or pitch-bend beat; sanitization then removed rows while the trim reported a write. Preflight the
+   displacement and every translated row before either owner writes. Probe opposite finite extremes, then overflow
+   each row type separately with a finite displacement: owner refusal, handler `conflict`, unchanged clip and all
+   row types, with raw-document and history preservation through the real command wherever the fixture codec admits
+   the input. Keep ordinary and zero captures, the configured-loop control and keyless replay intact.
+3. **A legacy inverse without a coordinate capture is refused, not replayed (#5022, #5578).** Trim inverses produced
+   before #5578 carry no `midiOffsetBeats`, and a loop phase cannot recover the discarded quotient or row
+   displacement. Produce the old inverse with the real historical Command handler, keep its original document and
+   session-history bytes, and hydrate through the current production reader: an unauthenticated MIDI inverse leaves
+   the document, rows and pending history unchanged, with a warning. Zero distance is not proof: slip to an
+   unnormalized whole-loop offset while looping is off, enable looping, then trim at the unchanged start (the
+   forward trim can normalize the offset and translate every row); refuse both normalized and unnormalized legacy
+   zero-distance inverses without a capture. The current loop mode cannot authenticate the old one: disable looping
+   on the genuinely saved duration-derived case and require the same refusal with the peer state intact. Keep the
+   original loop-disabled MIDI fixture as a conservative refusal control and audio plus current capture-bearing
+   zero-distance Undo/Redo controls (zero and whole-loop captures). Removing replay admission must fail the unsafe
+   historical case; deleting a capture field from a modern fixture cannot establish historical compatibility.
+4. **A fresh macro command discards inverse restoration hints (#5495 `0f1e87dc8`, #5578 `e930f16eb`).** Public
+   action-history reversion can record the slip inverse's `rowLiftBeats`, the trim inverse's `loopOriginBeat` and
+   `midiOffsetBeats` into a macro, and verbatim playback applies the old restoration basis instead of a fresh
+   command's current wrap and anchor laws. Record a real slip or trim and public history reversal, serialize the
+   macro, then change an eight-beat loop to four beats; compare the full clip and every row with fresh public
+   requests executed from the identical prestate. Repeat on the same basis, with looping disabled and on audio;
+   include zero-valued restoration keys and an anchorless recording whose inverse carries `null`, followed by a
+   current anchor. A fresh macro copy discards every restoration-only hint while preserving public request fields
+   and stored macro bytes, and its own executed history still restores each before-figure exactly through saved Undo
+   and Redo (fresh macro arithmetic is not dynamic Undo or a byte-exact net-zero promise). Leave coordinate captures
+   stripped but restore scalar-hint forwarding: the unchanged fresh-producer comparisons must fail; an expected
+   value computed from the old inverse displacement merely repeats the defect.
+5. **Fractional row coordinates and reciprocal history captures restore exactly (#5495, #5578).** Integer fixtures
+   missed floating-point loss: `0.1 + 8 - 8` is not the stored `0.1`. Require exact raw note, controller and
+   pitch-bend figures through the real Command boundary on configured and duration-derived loops. Capture each
+   executed translation by row identity; restore a saved number only while the current coordinate still equals the
+   captured post-value; translate peer-moved and added rows keeping their current properties, and never recreate
+   deleted rows. Plan every lane and finite displacement before either owner writes; a refused replay conflicts
+   without consuming history. Undo refreshes the actual redo capture and Redo the actual inverse capture, peer edits
+   before either direction included; persist and hydrate from both past and future, then repeat the cycle.
+   Independently serialized captures need an owner-validated pair relationship (JSON keeps no aliases) that
+   replay's discarded description must not detach. Failed commit compensation and owner abort rollback preserve the
+   prior document, projections, history, tree and mirror; committed bookkeeping errors keep the capture matching the
+   committed product. Mutate the exact-restoration branch, actual-counterpart refresh, hydration pair binding and
+   abort metadata restoration independently: the connected fractional, peer-edit, saved-history and failed-commit
+   cases must each fail; a pure planner round trip or integer-only fixture cannot.
+6. **Partial-bar carries change the mounted ruler's basis (#5247; flat ruler `e415a55cc4`; carry lineage before
+   #5440).** Insert 2 at 4 in 4/4 produces physical bar pieces at 0, 4, 6 and 10, the pieces at 4 and 6 both reading
+   as bar 2; a distinct-bar inverse cannot enumerate the physical ruler, and a flat `bar * numerator` reader leaves
+   bar 3 at 8 after its clip moves to 10. Reuse the meter model's segment origins and metrical walk, retaining each
+   physical piece and its canonical number. Compose the actual recorded Command inverse and Redo with complete
+   raw/projected map and clip snapshots and the same mounted reader: fresh post-operation paint figures in both
+   directions, a downstream meter change and non-quarter denominators included. A correct initial mount cannot prove
+   later basis changes; the flat-query and removed-subscription mutations must independently break geometry and
+   freshness.

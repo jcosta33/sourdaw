@@ -55,7 +55,7 @@ Use design tokens and project-standard primitives, tuned for dark-UI legibility 
 
 **Why:** fragmented styling is unmaintainable at DAW density.
 
-**Enforced by:** review only (contrast probe: `review-stances/rendered-contrast.md`).
+**Enforced by:** review only (contrast probe 6: `review-stances/rendered-ui-layout.md`).
 
 ### 6. No happy-path-only coding
 

@@ -1,14 +1,15 @@
-# Standing probes: input capture, monitor and recording-owner lifetimes
+# Standing probes: input capture, monitor, recording-session and recording-owner lifetimes
 
 Defects where input capture, monitor edges and streams, or recording owners cross a commit, Undo, deletion, graph
-repair or root replacement. Monitor edges and streams are owned per track and per input key, admitted through grants
-that settle later, and released by track removal, Off, selector change, root replacement and graph reset. Each probe
-names the failure mode, the input or state to drive and the check that must go red, and names the mutation that must
-fail it where its source lesson established one. Observe actual source edges and MediaStreamTrack stops at the
-monitor outputs, never forwarded identifiers or owner keys alone. Capability comes from Arrangement's
-`getTrackEligibility(...).acceptsMonitoring`, not a recorder-owned kind list. Controlled media and graph ports prove
-ownership and cleanup, never physical hardware audibility. Lifecycle companions for the runtime session live in
-`session-lifecycle.md`.
+repair or root replacement, and where a recording session's first frame, ring publication, stop fence or artifact
+identity is decided by a signal that does not prove the captured audio (worker readiness, a cursor check, an
+acknowledgment or the wall clock). Monitor edges and streams are owned per track and per input key, admitted through
+grants that settle later, and released by track removal, Off, selector change, root replacement and graph reset.
+Observe actual source edges and MediaStreamTrack stops at the monitor outputs, never forwarded identifiers or owner
+keys alone; capability comes from Arrangement's `getTrackEligibility(...).acceptsMonitoring`, not a recorder-owned
+kind list. Each probe names the input or state, the check that must go red and the mutation that must fail it.
+Controlled media, graph, scheduler and wall-clock ports prove ordering, ownership and cleanup, never physical
+hardware audibility. Runtime-session companions live in `session-lifecycle.md`.
 
 ## Standing probes
 
@@ -132,6 +133,28 @@ ownership and cleanup, never physical hardware audibility. Lifecycle companions 
    keeps committed owners while pending, and a successful retry finalizes only its removed owner. Abort and replace
    the project root with a reused track ID: observe observer retirement, then publish a later removal to prove the
    outgoing finalizer cannot tear down the recreated strip.
+
+10. **Worker-ready recording admission reaches the real first-frame seam.** Capture started from a worker-ready
+    continuation while the command already returned success before the worklet captured input. Hold worker readiness
+    through the real recorder-to-transport route and drive the first nonempty processor block at a known
+    `AudioWorkletGlobalScope.currentFrame`. No successful-start observable and no uncaptured transport interval may
+    exist before the actual sample-zero receipt, and exactly one start follows it. A returned boolean, the
+    worker-ready message, main-thread callback time or a pre-resolved recorder mock cannot establish capture-clock
+    alignment; resolving the start on worker readiness must fail the case.
+11. **Recording ring publication brackets every copy.** A pre-copy cursor check can admit mixed PCM, and a signed or
+    low-word rollover can make a full ring turn look empty. Drive real 128-frame writes across signed and unsigned word
+    rollover, at capacity minus one, exact and plus one, and with a writer paused inside the consumer copy. The worker
+    copies only an interval bracketed by the same stable sequence and cumulative count, retries an in-progress or
+    changed copy, and abandons a lapped interval rather than write substituted PCM. Publishing a signed 32-bit cursor
+    as the history contract, or the count before the odd sequence, must fail a case.
+12. **The recording stop fence keeps its deadline through acknowledgment.** Clearing the stop deadline on the producer
+    acknowledgment let a stalled final drain retain the input session indefinitely. Accept only the captured
+    session's producer-stop acknowledgment, make one final worker drain against that count, and keep the original
+    flush deadline armed through acknowledgment. A missing acknowledgment or flush cleans that exact captured session
+    without touching a successor for the same track; clearing the deadline on acknowledgment must fail.
+13. **Recording artifact identity is independent of wall-clock time.** Generate one cryptographically unique temp-file
+    name at worker initialization. Run two isolated workers sharing a filename-keyed staged OPFS at one timestamp:
+    each delivered WAV keeps its own PCM, and removing one staging entry does not remove the other's.
 
 ## Retired lessons
 

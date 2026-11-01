@@ -1,69 +1,48 @@
 # Lesson library: asynchronous file imports
 
-## Escape: Prompt Bar stem preparation had no local-work budget admission
-
-PR #1986 (`e36b9589c2`) made stem preparation refuse a missing work-budget callback before decode or staging. PR #2648 (`7b41fd731c`) introduced `submitAdmittedPromptRequest` without passing that callback to `planPromptActions`; PR #4479 retained the route. The public #2648 approval covered run and recovery settlement, but its described checks did not establish a real Prompt Bar file-preparation admission. The missed stance was route parity at the picker-to-budget-to-decode boundary.
-
-Submit a two-file stem import through the real Prompt Bar planner with only picker, decode and storage ports replaced. An admitted budget must produce one confirmable card and commit once; an exceeded storage limit must preserve the exact refusal, reserve none of the three stem categories, and reach neither decode nor staging. Keep cancelled and invalid selections at the same boundary. A mocked planner or prepared-scope result cannot prove this route carries the callback. Historical private review prompts and tiers are unknown.
-
-For file requests that read or parse asynchronously before changing an open project, distinguish
-the project's lifetime from the user's latest request within that lifetime. A matching project
-alone does not authorize an older request to publish its result.
+Defects where a file request that reads, decodes or parses asynchronously publishes into an open project without the
+authority that admitted it: an older request inside the same project, a replaced project, a missing local-work budget,
+or a completed import that never reaches storage and autosave. A matching project alone does not authorize an older
+request; distinguish the project's lifetime from the user's latest request within it. Each probe names the awaits to
+hold, the observable to read (stored state and notices, never parser calls or promise completion) and the mutation
+that must fail the case.
 
 ## Standing probes
 
-- Hold import A at the picker, file read, and parser independently. Start import B in the same
-  project, complete B first, then resolve or reject A. Only B may change the tuning or report
-  success; A's structured errors, rejected promises, and console errors must stay silent.
-- Repeat with a prepared project replacement and with an activated replacement reusing the
-  project ID. Neither outgoing request may write or notify in the successor. Pair those refusals
-  with a current successful import, current failures, and ordinary edits during the wait, which
-  the accepted import must preserve.
-- Exercise browser selection and native selected-file reads through their real boundaries.
-  Removing the request-identity conjunct must fail the same-project inverse-completion case;
-  removing the project-lifetime conjunct must fail the replacement case. Observe the stored
-  tuning and notices, rather than only parser calls or the promise's completion.
-- Run a successful import against the real normalized project store, CRDT adapter, and installed
-  dirty tracker. Flush the actual write and require both the imported table and dirty state;
-  prove the tracker is active with its normal positive control. Cancellation, malformed input,
-  supersession, and project replacement must leave a clean current project clean. Preserve the
-  loading guard and recheck request ownership before bookkeeping and after synchronous dirty
-  subscribers, before publishing success. A mocked store cannot prove autosave admission.
-
-## Crumbs waveform publication outlived its accepted sample
-
-Commit `c8c1257477838ab15d98b5ea6b38e821ddb4ad57` introduced the sampler's unfenced
-post-peaks continuation; no associated public PR is established. PR #5041 later guarded
-decode completion, leaving telemetry and peaks as separate stale-publication windows (#5780).
-Historical private prompts and reviewer tiers are unknown.
-
-Hold each await independently against the real session store. Complete B before releasing A,
-and separately leave B decoding: require B's exact metadata/vector and pending flag. Replace
-the accepted sample without starting another load. Check project/device lifetime and the
-actual accepted leaf after each await and synchronous subscriber, while ordinary edits and
-the accepted sample's own persistence round trip remain valid. Removing either post-await
-check must redden its corresponding case; a decode-only inverse-completion test cannot.
-
-## Escape: a project-lifetime fence did not order Scala imports
-
-PR #5397 (`2dc50d1388dd27a72a1661a26a79571f28c3a3a9`) brought project-lifetime
-checks into Scala import on `main`, but two imports inside the unchanged project retained equal
-authority. A's delayed completion could overwrite B's completed choice. PR #5516's review at
-`49ce4baa3cf3add68ab05f5bb0050153e30c5bb1` identified this surviving same-project race;
-`0951d30904df4e4c557a0ad35e5f716dcc585847` added latest-request authority across the
-picker, read, parse, write, and notice routes. The missed stance was inverse completion within
-one project, independently of project replacement. Historical private prompts and reviewer tiers
-are unknown; the public finding does not establish them.
-
-## Escape: a stored Scala import remained ineligible for autosave
-
-The Scala import added in `0960a493392c6c94697401d3c4a4ebea10b68e51` wrote project
-tuning without calling `markDirty`; no associated PR was found. PR #4883 removed the false
-instrument-retuning claim, and #5397 added lifetime checks, but both retained this omission.
-PR #5761's review at `2c845ad3e0d2f5b1f36127e1e79f9eba0a13e24e` found that a valid
-browser import reached the real store and CRDT while leaving `dirty: false`. The installed
-tracker watches tracks and tempo, so their positive controls do not prove import bookkeeping;
-autosave admits only dirty projects. The missed stance was the completed file import's real
-storage and autosave-admission boundary. Mocked tuning-write and notice assertions missed it.
-Historical private prompts and tiers are unknown. This source and controlled-state evidence
-does not establish a live save/reopen loss.
+1. **A file-preparation route skips the local-work budget (#1986 `e36b9589c2`, #2648 `7b41fd731c`, #4479).** #1986
+   made stem preparation refuse a missing work-budget callback before decode or staging; #2648's
+   `submitAdmittedPromptRequest` never passed that callback to `planPromptActions`, and #4479 kept the route. Submit a
+   two-file stem import through the real Prompt Bar planner with only picker, decode and storage ports replaced: an
+   admitted budget produces one confirmable card and commits once; an exceeded storage limit keeps the exact
+   refusal, reserves none of the three stem categories and reaches neither decode nor staging. Keep cancelled and
+   invalid selections at the same boundary. A mocked planner or prepared-scope result cannot prove the route carries
+   the callback.
+2. **Inverse completion inside one project (#5397 `2dc50d1388`; caught at #5516 review `49ce4baa3c`, fixed
+   `0951d30904`).** #5397 brought project-lifetime checks into Scala import, but two imports in the unchanged
+   project kept equal authority and A's delayed completion overwrote B's choice. Hold import A at the picker, file
+   read and parser independently, start import B in the same project, complete B first, then resolve or reject A:
+   only B changes the tuning or reports success, and A's structured errors, rejected promises and console errors
+   stay silent. Exercise browser selection and native selected-file reads through their real boundaries across the
+   picker, read, parse, write and notice routes. Removing the request-identity conjunct must fail this case.
+3. **A replaced project receives an outgoing import.** Repeat probe 2 with a prepared project replacement and with
+   an activated replacement reusing the project ID: neither outgoing request writes or notifies in the successor.
+   Pair those refusals with a current successful import, current failures and ordinary edits during the wait, which
+   the accepted import must preserve. Removing the project-lifetime conjunct must fail the replacement case.
+4. **A completed import never reaches storage or autosave admission (Scala import `0960a49339`; #4883, #5397 kept it;
+   found at #5761 review `2c845ad3e0`).** The Scala import wrote project tuning without calling `markDirty`, so a
+   valid browser import reached the real store and CRDT while leaving `dirty: false`; the installed tracker watches
+   tracks and tempo, so their positive controls do not prove import bookkeeping, and autosave admits only dirty
+   projects. Run a successful import against the real normalized project store, CRDT adapter and installed dirty
+   tracker; flush the actual write and require both the imported table and dirty state, proving the tracker active
+   with its normal positive control; writing the tuning without `markDirty` must fail that dirty-state assertion.
+   Cancellation, malformed input, supersession and project replacement leave a clean current project clean. Keep the
+   loading guard and recheck request ownership before bookkeeping and after synchronous dirty subscribers, before
+   publishing success. A mocked store or mocked tuning-write and notice assertions cannot prove autosave admission;
+   this evidence does not establish a live save/reopen loss.
+5. **Every await after decode re-checks the accepted sample (Crumbs: `c8c1257477` unfenced continuation; #5041
+   guarded only decode; #5780).** Telemetry and peaks stayed separate stale-publication windows. Hold each await
+   independently against the real session store. Complete B before releasing A, and separately leave B decoding:
+   require B's exact metadata/vector and pending flag. Replace the accepted sample without starting another load.
+   Check project/device lifetime and the actual accepted leaf after each await and synchronous subscriber, while
+   ordinary edits and the accepted sample's own persistence round trip remain valid. Removing either post-await
+   check must redden its corresponding case; a decode-only inverse-completion test cannot.

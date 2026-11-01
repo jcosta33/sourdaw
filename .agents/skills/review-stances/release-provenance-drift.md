@@ -21,17 +21,28 @@ earlier head or a retry discharges nothing, and a missing restamp is the reviewe
    refuses until the source change is committed.
    (#5568)
 
-2. **A script, literal or name edit changes a provenance input.**
-   Probe: every `package.json` edit moves the Cargo source pin in `scripts/dependencyLicenseReport.ts`,
-   so the dependency restamp artifacts must move with it. Every new URL literal needs an
-   external-reference assignment whose removal exposes the exact missing reference. Every new device
-   type or registry name the mark census reports needs classification.
-   (#5642, #5625, #3127, #5846)
+2. **A `package.json` edit moves the Cargo source pin.**
+   Probe: every `package.json` edit moves the Cargo source pin in `scripts/dependencyLicenseReport.ts`, so the
+   dependency restamp artifacts must move with it in the same diff.
+   (#5642)
 
-3. **A merge or exception edit drops curated provenance.**
-   Probe: when resolving shared inventory, keep the union of curated external-reference assignments and
-   check the census against both sides of the merge. For a scanner ignore, run the pinned scanner on the
-   exact original commit: a finding without the ignore, none with the audited fingerprint, one with a
-   wrong fingerprint. Keep synthetic credential controls and evaluate every byte-exact reader of the
-   configuration (`scripts/test-health-gate-scripts.sh`) unchanged.
-   (#5851, #5746, #5748, #5846)
+3. **A new URL literal lacks its external-reference assignment.**
+   Probe: every new URL literal needs an external-reference assignment whose removal exposes the exact missing
+   reference.
+   (#5625, #3127)
+
+4. **A new device type or registry name escapes the mark census.**
+   Probe: every new device type or registry name the mark census reports needs classification.
+   (#5846)
+
+5. **A merge resolution drops curated provenance.**
+   Probe: when resolving shared inventory, keep the union of curated external-reference assignments and check the
+   census against both sides of the merge.
+   (#5851, #5846)
+
+6. **A scanner exception admits more than its audited finding.**
+   Probe: for a scanner ignore, run the pinned scanner on the exact original commit: a finding without the ignore,
+   none with the audited fingerprint, one with a wrong fingerprint. Keep synthetic credential controls and evaluate
+   every byte-exact reader of the configuration (`scripts/test-health-gate-scripts.sh`) unchanged. The full-history
+   scan lesson for the same fixture is `security-and-platform.md` probe 10.
+   (#5746, #5748)
