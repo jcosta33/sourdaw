@@ -25,8 +25,8 @@ function isRestoreSnapshot(value: RestoreTrackPayloadSnapshot | null): value is 
 
 type RoutingPatch = RestoreTrackPayloadSnapshot['routingPatches'][number];
 
-function hasSameRouting(first: Track, second: Track): boolean {
-    return first.outputId === second.outputId && JSON.stringify(first.sends) === JSON.stringify(second.sends);
+function referencesRemovedTrack(track: Track, removedIds: ReadonlySet<string>): boolean {
+    return removedIds.has(track.outputId) || track.sends.some((send) => removedIds.has(send.busId));
 }
 
 /**
@@ -56,7 +56,7 @@ function restoreSurvivorRoutingOnce(
     );
     const survivorPatches: RoutingPatch[] = survivors.flatMap((survivor) => {
         const reconciled = reconciledById.get(survivor.id);
-        if (!reconciled || hasSameRouting(survivor, reconciled)) {
+        if (!reconciled || !referencesRemovedTrack(survivor, removedIds)) {
             return [];
         }
         return [
