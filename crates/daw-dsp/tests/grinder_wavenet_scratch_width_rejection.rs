@@ -373,7 +373,9 @@ fn the_channel_chain_reads_head_size_before_a_nested_head() {
 }
 
 #[test]
-fn every_wavenet_rule_native_admission_enforces_refuses_the_wasm_parser_too() {
+/// Each rule lives once, in the shared plan both doors run, so a shape it
+/// refuses never reaches the WASM parser's builders.
+fn every_wavenet_rule_of_the_shared_plan_refuses_both_doors() {
     let base = wavenet_capture(&[(1, 2, 1)]);
     let array = |change: fn(&mut serde_json::Value)| {
         edit(&base, |capture| change(&mut capture["config"]["layers"][0]))
@@ -458,6 +460,20 @@ fn every_wavenet_rule_native_admission_enforces_refuses_the_wasm_parser_too() {
                 capture["config"]["layers"][0]["head"]["head_dilation"] = serde_json::json!(0)
             }),
             "head_dilation",
+        ),
+        (
+            "zero head_size beside a nested head",
+            edit(&with_nested_heads(&base), |capture| {
+                capture["config"]["layers"][0]["head_size"] = serde_json::json!(0)
+            }),
+            "head_size",
+        ),
+        (
+            "string head_size beside a nested head",
+            edit(&with_nested_heads(&base), |capture| {
+                capture["config"]["layers"][0]["head_size"] = serde_json::json!("1")
+            }),
+            "head_size",
         ),
         (
             "zero kernel size",
@@ -584,6 +600,11 @@ fn every_size_cap_refuses_both_doors_just_over_its_ceiling() {
             "out_channels",
         ),
         (
+            "head_size 65 beside a nested head",
+            with_head_size(&with_nested_heads(&base), 65),
+            "head_size",
+        ),
+        (
             "head1x1 out_channels 65",
             // head1x1 2 -> 65 with bias, and the head reads 65 not 2.
             array(
@@ -649,41 +670,143 @@ fn every_size_cap_refuses_both_doors_just_over_its_ceiling() {
         ),
         ("32 layers across arrays", spread(16, 16)),
         (
+            "32 dilations in one array",
+            capture_of(&[with_dilations(vec![1; 32], 1)]),
+        ),
+        (
             "dilation 32768",
             capture_of(&[with_dilations(vec![32_768], 1)]),
         ),
+        (
+            "head_dilation 32768",
+            edit(&with_nested_heads(&base), |capture| {
+                capture["config"]["layers"][0]["head"]["head_dilation"] = serde_json::json!(32_768)
+            }),
+        ),
+        (
+            "bottleneck 64",
+            array(|array| array["bottleneck"] = serde_json::json!(64), 434),
+        ),
+        (
+            "gated width 64",
+            array(
+                |array| {
+                    array["gated"] = serde_json::json!(true);
+                    array["bottleneck"] = serde_json::json!(32);
+                },
+                338,
+            ),
+        ),
+        ("head_size 64", wavenet_capture(&[(1, 2, 64)])),
+        (
+            "nested head out_channels 64",
+            with_nested_heads(&wavenet_capture(&[(1, 2, 64)])),
+        ),
+        (
+            "head_size 64 beside a nested head",
+            with_head_size(&with_nested_heads(&base), 64),
+        ),
+        (
+            "head1x1 out_channels 64",
+            array(
+                |array| {
+                    array["head1x1"] = serde_json::json!({ "active": true, "out_channels": 64 })
+                },
+                254,
+            ),
+        ),
         ("kernel_size 9", capture_of(&[with_dilations(vec![1], 9)])),
+        (
+            "kernel_sizes entry 9",
+            array(|array| array["kernel_sizes"] = serde_json::json!([9]), 32),
+        ),
+        (
+            "post-stack head kernel 9",
+            post_head(|head| head["kernel_sizes"] = serde_json::json!([9]), 16),
+        ),
+        (
+            "post-stack head with 8 kernels",
+            post_head(
+                |head| head["kernel_sizes"] = serde_json::json!(vec![1; 8]),
+                14,
+            ),
+        ),
+        (
+            "post-stack head channels 64",
+            post_head(|head| head["channels"] = serde_json::json!(64), 0),
+        ),
+        (
+            "PReLU with 64 slopes",
+            array(
+                |array| {
+                    array["activation"] =
+                        serde_json::json!({ "type": "PReLU", "negative_slopes": vec![0.25; 64] })
+                },
+                0,
+            ),
+        ),
     ] {
         assert_admitted_everywhere(label, &capture);
     }
+    // A 64-channel array passes native's per-sample work ceiling, and only an
+    // array reading 64 channels can take input_size 64.
+    assert_admitted_in_the_browser_only("channels 64", &wavenet_capture(&[(1, 64, 1)]));
+    assert_admitted_in_the_browser_only(
+        "input_size 64",
+        &wavenet_capture(&[(1, 64, 2), (64, 2, 1)]),
+    );
+}
+
+/// A `head_size` beside the nested head: the width the next array's channels
+/// chain to, bounded like every other width.
+fn with_head_size(capture: &str, head_size: u64) -> String {
+    edit(capture, |capture| {
+        capture["config"]["layers"][0]["head_size"] = serde_json::json!(head_size)
+    })
 }
 
 #[test]
 fn the_memory_envelope_refuses_both_doors_just_over_its_ceiling() {
-    let wide = |dilation: u64| {
+    let single = |channels: usize, kernel: usize, dilation: u64| {
         capture_of(&[Array {
-            channels: 32,
-            ..with_dilations(vec![dilation], 3)
+            channels,
+            ..with_dilations(vec![dilation], kernel)
         }])
     };
-    let narrow = |dilation: u64| {
-        capture_of(&[Array {
-            channels: 1,
-            ..with_dilations(vec![dilation], 3)
-        }])
+    // ReLU adds no transcendental work, so the 32-channel kernel-2 history
+    // reaches the resident ceiling before the warm-up work ceiling.
+    let resident = |dilation: u64| {
+        edit(&single(32, 2, dilation), |capture| {
+            capture["config"]["layers"][0]["activation"] = serde_json::json!("ReLU")
+        })
     };
     assert_all_refused_everywhere(&[
-        // One 32-channel tap history of 32769 frames plus the head's 32.
-        ("state 1_048_640", wide(16_384), MEMORY_POLICY),
-        // State sits exactly at its ceiling; its floats alone fill 8 MiB.
-        ("resident over 8 MiB", wide(16_383), MEMORY_POLICY),
+        // The resident charge reaches 8_388_768 bytes, 160 past 8 MiB.
+        ("resident over 8 MiB", resident(32_597), MEMORY_POLICY),
+        // The prewarm rounded up to 64 frames times the per-sample work
+        // passes 2^28.
+        (
+            "warm-up work over 2^28",
+            single(16, 3, 32_000),
+            MEMORY_POLICY,
+        ),
         // A lookback of 65536 frames rounds the prewarm up to 65600.
-        ("prewarm 65600", narrow(32_768), MEMORY_POLICY),
+        ("prewarm 65600", single(1, 3, 32_768), MEMORY_POLICY),
     ]);
-    // A lookback of 65534 frames rounds the prewarm up to exactly 65536.
-    assert_admitted_everywhere("prewarm 65536", &narrow(32_767));
-    // The transient preparation envelope has no case of its own: with every
-    // other cap held it peaks near 21 MiB of its 32 MiB ceiling.
+    for (label, capture) in [
+        // 8_388_512 bytes, the last dilation under the ceiling.
+        ("resident under 8 MiB", resident(32_596)),
+        ("warm-up work under 2^28", single(16, 3, 31_999)),
+        // A lookback of 65534 frames rounds the prewarm up to exactly 65536.
+        ("prewarm 65536", single(1, 3, 32_767)),
+    ] {
+        assert_admitted_everywhere(label, &capture);
+    }
+    // Neither the state ceiling nor the transient preparation envelope has a
+    // case of its own. Every state float is also a resident float charged 8
+    // bytes, so state past 1_048_576 floats is already past 8 MiB resident;
+    // and with every other cap held the transient peaks near 21 MiB of its
+    // 32 MiB ceiling.
 }
 
 #[test]
@@ -700,38 +823,60 @@ fn the_text_scan_limits_refuse_both_doors_just_over_their_ceiling() {
         assert!(base.contains(from), "{from}");
         base.replacen(from, to, 1)
     };
-    // 0.02 followed by 61 zeros: a 65-character token for the same value.
-    let long_number = format!("\"head_scale\":0.02{}", "0".repeat(61));
+    // 0.02 followed by zeros: a 64- or 65-character token for the same value.
+    let number_of = |characters: usize| {
+        format!(
+            "\"head_scale\":0.02{}",
+            "0".repeat(characters - "0.02".len())
+        )
+    };
+    // Each root metadata entry is charged its `"key":value` text plus one
+    // byte: 16 three-character keys over 4087-byte strings charge exactly
+    // 64 KiB.
+    let metadata = |last: usize| {
+        edit(&base, |capture| {
+            for index in 0..16 {
+                let bytes = if index == 15 { last } else { 4087 };
+                capture[format!("m{index:02}")] = serde_json::Value::String("x".repeat(bytes));
+            }
+        })
+    };
+    // Three full notes and a fourth sized so the config text is `bytes` long.
+    let config_of = |bytes: usize| {
+        let with_notes = |last: usize| {
+            edit(&base, |capture| {
+                for index in 0..4 {
+                    let note = if index == 3 { last } else { 4096 };
+                    capture["config"][format!("notes{index}")] =
+                        serde_json::Value::String("x".repeat(note));
+                }
+            })
+        };
+        let config_bytes = |capture: &str| {
+            let capture: serde_json::Value = serde_json::from_str(capture).expect("capture JSON");
+            capture["config"].to_string().len()
+        };
+        let unpadded = config_bytes(&with_notes(0));
+        let capture = with_notes(bytes - unpadded);
+        assert_eq!(config_bytes(&capture), bytes);
+        capture
+    };
     assert_all_refused_everywhere(&[
         ("model text over 1 MiB", padded(1_048_577), "model byte"),
         (
-            "root metadata over 64 KiB",
-            edit(&base, |capture| {
-                for index in 0..17 {
-                    capture[format!("metadata{index}")] =
-                        serde_json::Value::String("x".repeat(4096));
-                }
-            }),
+            "root metadata one byte over 64 KiB",
+            metadata(4088),
             "JSON/metadata limit",
         ),
         (
-            "config over 16 KiB",
-            config(|config| {
-                for index in 0..4 {
-                    config[format!("notes{index}")] = serde_json::Value::String("x".repeat(4096));
-                }
-            }),
+            "config one byte over 16 KiB",
+            config_of(16_385),
             "config byte limit",
         ),
         (
-            "65537 weights",
-            edit(&base, |capture| resize_weights(capture, 65_537 - 19)),
-            "weight limit",
-        ),
-        (
-            "over 4096 JSON values",
-            config(|config| config["pad"] = serde_json::json!(vec![0; 4096])),
-            "JSON depth/node limit",
+            "4097 JSON values",
+            weights_first_with_nodes(&base, 4097),
+            "node limit",
         ),
         // The config sits at depth 1, `pad` at 2, so 31 wrappers put the
         // innermost value at depth 33.
@@ -761,18 +906,126 @@ fn the_text_scan_limits_refuse_both_doors_just_over_their_ceiling() {
         ),
         (
             "a 65-character number",
-            replaced("\"head_scale\":0.02", &long_number),
+            replaced("\"head_scale\":0.02", &number_of(65)),
             "numeric token limit",
         ),
     ]);
     for (label, capture) in [
         ("model text of exactly 1 MiB", padded(1_048_576)),
+        ("root metadata of exactly 64 KiB", metadata(4087)),
+        ("config of exactly 16 KiB", config_of(16_384)),
+        ("4096 JSON values", weights_first_with_nodes(&base, 4096)),
         ("nesting depth 32", deep(30)),
         (
             "a 4096-byte string",
             config(|config| config["note"] = serde_json::Value::String("x".repeat(4096))),
         ),
+        (
+            "a 64-character number",
+            replaced("\"head_scale\":0.02", &number_of(64)),
+        ),
+        (
+            "the largest finite f32",
+            config(|config| config["pad"] = serde_json::json!(f64::from(f32::MAX))),
+        ),
     ] {
         assert_admitted_everywhere(label, &capture);
     }
+}
+
+fn json_values(value: &serde_json::Value) -> usize {
+    1 + match value {
+        serde_json::Value::Array(entries) => entries.iter().map(json_values).sum(),
+        serde_json::Value::Object(entries) => entries.values().map(json_values).sum(),
+        _ => 0,
+    }
+}
+
+/// The capture with `weights` written first, its config padded so the scan
+/// counts exactly `total` JSON values: the root, the weights array (whose
+/// numbers the scan does not count), three root scalars and the config tree.
+/// Weights first, the config's last value is the one the general value
+/// count admits or refuses.
+fn weights_first_with_nodes(capture: &str, total: usize) -> String {
+    let mut capture: serde_json::Value = serde_json::from_str(capture).expect("capture JSON");
+    let config = &mut capture["config"];
+    let pad = total - 5 - json_values(config) - 1;
+    config["pad"] = serde_json::json!(vec![0; pad]);
+    format!(
+        "{{\"weights\":{},\"architecture\":{},\"version\":{},\"sample_rate\":{},\"config\":{}}}",
+        capture["weights"],
+        capture["architecture"],
+        capture["version"],
+        capture["sample_rate"],
+        capture["config"],
+    )
+}
+
+#[test]
+fn the_weight_ceiling_admits_exactly_65536_weights_in_the_browser() {
+    // 28 kernel-6 layers of 18 channels and a 25-wide biased head declare
+    // exactly 65536 weights; 20 kernel-7 layers of 20 channels and a 15-wide
+    // head declare 65537. Short weight text keeps both under 1 MiB.
+    let short_weights = |capture: String| {
+        edit(&capture, |capture| {
+            for weight in capture["weights"].as_array_mut().expect("weights") {
+                *weight = serde_json::json!(0.125);
+            }
+        })
+    };
+    let at_ceiling = short_weights(capture_of(&[Array {
+        input: 1,
+        channels: 18,
+        head: 25,
+        kernel: 6,
+        dilations: vec![1; 28],
+        head_bias: true,
+    }]));
+    let over = short_weights(capture_of(&[Array {
+        input: 1,
+        channels: 20,
+        head: 15,
+        kernel: 7,
+        dilations: vec![1; 20],
+        head_bias: false,
+    }]));
+    for (capture, weights) in [(&at_ceiling, 65_536), (&over, 65_537)] {
+        let capture: serde_json::Value = serde_json::from_str(capture).expect("capture JSON");
+        assert_eq!(capture["weights"].as_array().map(Vec::len), Some(weights));
+    }
+    // Native refuses the 65536-weight shape for its per-sample work alone.
+    assert_admitted_in_the_browser_only("65536 weights", &at_ceiling);
+    assert_refused_everywhere("65537 weights", &over, "weight limit");
+}
+
+/// The browser loads a shape native refuses only for its per-sample work
+/// ceilings, which feed the desktop instance ledger.
+fn assert_admitted_in_the_browser_only(label: &str, capture: &str) {
+    let error = NativeNamPlan::inspect(capture, 48_000.0)
+        .expect_err(&format!("{label}: native must refuse this shape's work"));
+    assert!(error.contains(MEMORY_POLICY), "{label}: native: {error}");
+    let (mut engine, result) = load(capture);
+    if let Err(error) = result {
+        panic!("{label}: must load in the browser: {error}");
+    }
+    render(label, &mut engine);
+}
+
+#[test]
+fn a_capture_without_config_head_scale_loads_and_still_needs_its_trailing_weight() {
+    // Both runtimes take the head scale from the trailing weight and never
+    // read config.head_scale.
+    let without = edit(&wavenet_capture(&[(1, 2, 1)]), |capture| {
+        capture["config"]
+            .as_object_mut()
+            .expect("config object")
+            .remove("head_scale");
+    });
+    assert_admitted_everywhere("no config.head_scale", &without);
+    let short = edit(&without, |capture| resize_weights(capture, -1));
+    assert_refused_everywhere(
+        "no config.head_scale, trailing weight missing",
+        &short,
+        "exact weight count",
+    );
 }

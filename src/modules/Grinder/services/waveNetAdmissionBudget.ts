@@ -53,11 +53,24 @@ function byteLength(text: string): number {
     return utf8.encode(text).length;
 }
 
-function capped(value: number, max: number, name: string): number {
-    if (value > max) {
-        throw new Error(`Unsupported NAM model: WaveNet ${name} (${value}) exceeds the runtime limit of ${max}`);
+/** A dimension as the runtime's `dimension()` reads it: a positive integer
+ * no larger than `max`. Every size, count and list length goes through here. */
+function dimension(value: unknown, max: number, name: string): number {
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > max) {
+        throw new Error(
+            `Unsupported NAM model: WaveNet ${name} (${JSON.stringify(value)}) must be a positive integer within the runtime limit of ${max}`
+        );
     }
     return value;
+}
+
+/** An optional dimension, as `optional_dimension()` reads it: `fallback` when
+ * the key is absent, else a dimension. */
+function optionalDimension(record: UnknownRecord, key: string, fallback: number, max: number): number {
+    if (record[key] === undefined) {
+        return fallback;
+    }
+    return dimension(record[key], max, key);
 }
 
 function buffer(plan: Plan, floats: number): void {
@@ -107,10 +120,16 @@ function activation(plan: Plan, value: unknown, channels: number): void {
     }
     plan.touches += channels;
     if (name === 'PReLU' && isRecord(value)) {
-        const slopes = value.negative_slope === undefined ? (value.negative_slopes as unknown[]).length : 1;
-        buffer(plan, capped(slopes, MAX_WIDTH, 'PReLU negative_slopes'));
+        buffer(plan, preluSlopeCount(value));
         plan.allocations += 1;
     }
+}
+
+function preluSlopeCount(value: UnknownRecord): number {
+    if (value.negative_slope !== undefined) {
+        return 1;
+    }
+    return dimension((value.negative_slopes as unknown[]).length, MAX_WIDTH, 'PReLU negative_slopes count');
 }
 
 function subConfig(layer: UnknownRecord, key: string): UnknownRecord {
@@ -125,9 +144,9 @@ function nestedHead(layer: UnknownRecord): UnknownRecord | null {
 function arrayHeadSize(layer: UnknownRecord): number {
     const head = nestedHead(layer);
     if (head !== null) {
-        return capped(head.out_channels as number, MAX_WIDTH, 'head out_channels');
+        return dimension(head.out_channels, MAX_WIDTH, 'head out_channels');
     }
-    return capped(layer.head_size as number, MAX_WIDTH, 'head_size');
+    return dimension(layer.head_size, MAX_WIDTH, 'head_size');
 }
 
 function isGated(layer: UnknownRecord): boolean {
@@ -141,17 +160,23 @@ type ArrayCarry = {
     head: number;
 };
 
+function layerKernel(layer: UnknownRecord, index: number): number {
+    if (Array.isArray(layer.kernel_sizes)) {
+        return dimension(layer.kernel_sizes[index], MAX_KERNEL, 'kernel_sizes entry');
+    }
+    return dimension(layer.kernel_size, MAX_KERNEL, 'kernel_size');
+}
+
 function planLayers(plan: Plan, layer: UnknownRecord, channels: number, head_input: number): void {
-    const bottleneck = capped((layer.bottleneck as number | undefined) ?? channels, MAX_WIDTH, 'bottleneck');
+    const bottleneck = optionalDimension(layer, 'bottleneck', channels, MAX_WIDTH);
     const gated = isGated(layer);
-    const output = capped(gated ? 2 * bottleneck : bottleneck, MAX_WIDTH, 'gated width');
+    const output = dimension(gated ? 2 * bottleneck : bottleneck, MAX_WIDTH, 'gated width');
     const layer_active = subConfig(layer, 'layer1x1').active !== false;
     const head_active = subConfig(layer, 'head1x1').active === true;
-    const dilations = layer.dilations as number[];
-    const kernel_sizes = layer.kernel_sizes as number[] | undefined;
+    const dilations = layer.dilations as unknown[];
     for (const [index, raw_dilation] of dilations.entries()) {
-        const kernel = capped(kernel_sizes?.[index] ?? (layer.kernel_size as number), MAX_KERNEL, 'kernel size');
-        const dilation = capped(raw_dilation, MAX_DILATION, 'dilation');
+        const kernel = layerKernel(layer, index);
+        const dilation = dimension(raw_dilation, MAX_DILATION, 'dilation');
         convolution(plan, { input: channels, output, kernel, dilation, bias: true, history: true });
         pointwise(plan, 1, output, false);
         if (layer_active) {
@@ -169,30 +194,42 @@ function planLayers(plan: Plan, layer: UnknownRecord, channels: number, head_inp
     }
 }
 
-function planArray(plan: Plan, layer: UnknownRecord): ArrayCarry {
-    const input = capped(layer.input_size as number, MAX_WIDTH, 'input_size');
-    const channels = capped(layer.channels as number, MAX_WIDTH, 'channels');
-    const bottleneck = (layer.bottleneck as number | undefined) ?? channels;
+function headInputWidth(layer: UnknownRecord, bottleneck: number): number {
     const head1x1 = subConfig(layer, 'head1x1');
-    const head_input =
-        head1x1.active === true
-            ? capped(head1x1.out_channels as number, MAX_WIDTH, 'head1x1 out_channels')
-            : bottleneck;
+    if (head1x1.active !== true) {
+        return bottleneck;
+    }
+    return dimension(head1x1.out_channels, MAX_WIDTH, 'head1x1 out_channels');
+}
+
+function headConvolution(layer: UnknownRecord): { kernel: number; dilation: number; bias: boolean } {
+    const nested = nestedHead(layer);
+    if (nested === null) {
+        return { kernel: 1, dilation: 1, bias: layer.head_bias === true };
+    }
+    return {
+        kernel: dimension(nested.kernel_size, MAX_KERNEL, 'head kernel_size'),
+        dilation: optionalDimension(nested, 'head_dilation', 1, MAX_DILATION),
+        bias: nested.bias === true,
+    };
+}
+
+function planArray(plan: Plan, layer: UnknownRecord): ArrayCarry {
+    const input = dimension(layer.input_size, MAX_WIDTH, 'input_size');
+    dimension(layer.condition_size, 1, 'condition_size');
+    const channels = dimension(layer.channels, MAX_WIDTH, 'channels');
+    const bottleneck = optionalDimension(layer, 'bottleneck', channels, MAX_WIDTH);
+    const head_input = headInputWidth(layer, bottleneck);
     pointwise(plan, input, channels, false);
     planLayers(plan, layer, channels, head_input);
 
-    const nested = nestedHead(layer);
     const head = arrayHeadSize(layer);
-    const kernel = nested === null ? 1 : capped(nested.kernel_size as number, MAX_KERNEL, 'head kernel_size');
-    const dilation =
-        nested === null ? 1 : capped((nested.head_dilation as number | undefined) ?? 1, MAX_DILATION, 'head_dilation');
-    const bias = nested === null ? layer.head_bias === true : nested.bias === true;
-    convolution(plan, { input: head_input, output: head, kernel, dilation, bias, history: true });
+    convolution(plan, { ...headConvolution(layer), input: head_input, output: head, history: true });
     buffer(plan, head + head_input + 2 * channels);
     plan.allocations += 4;
-    if (layer.head_size !== undefined) {
-        capped(layer.head_size as number, MAX_WIDTH, 'head_size');
-    }
+    // Native reads a present head_size even beside a nested head: it is the
+    // width the next array's channels chain to.
+    optionalDimension(layer, 'head_size', head, MAX_WIDTH);
     return { head };
 }
 
@@ -200,15 +237,16 @@ function planPostStackHead(plan: Plan, raw_head: unknown, input_size: number): v
     if (!isRecord(raw_head)) {
         return;
     }
-    const channels = capped(raw_head.channels as number, MAX_WIDTH, 'post-stack head channels');
-    const kernel_sizes = raw_head.kernel_sizes as number[];
-    capped(kernel_sizes.length, MAX_POST_HEAD_KERNELS, 'post-stack head kernel count');
+    const channels = dimension(raw_head.channels, MAX_WIDTH, 'post-stack head channels');
+    dimension(raw_head.out_channels, 1, 'post-stack head out_channels');
+    const kernel_sizes = raw_head.kernel_sizes as unknown[];
+    dimension(kernel_sizes.length, MAX_POST_HEAD_KERNELS, 'post-stack head kernel count');
     let input = input_size;
     let widest = Math.max(input, channels);
     for (const [index, raw_kernel] of kernel_sizes.entries()) {
         const output = index + 1 === kernel_sizes.length ? 1 : channels;
         activation(plan, raw_head.activation, input);
-        const kernel = capped(raw_kernel, MAX_KERNEL, 'post-stack head kernel size');
+        const kernel = dimension(raw_kernel, MAX_KERNEL, 'post-stack head kernel size');
         convolution(plan, { input, output, kernel, dilation: 1, bias: true, history: true });
         widest = Math.max(widest, output);
         input = output;
@@ -228,16 +266,15 @@ function planWaveNet(config: UnknownRecord): Plan {
         nonlinear: 0,
         touches: 0,
     };
+    optionalDimension(config, 'in_channels', 1, 1);
+    optionalDimension(config, 'out_channels', 1, 1);
     const layers = config.layers as UnknownRecord[];
-    capped(layers.length, MAX_ARRAYS, 'layer array count');
-    capped(
-        layers.reduce(
-            (total, layer) => total + capped((layer.dilations as number[]).length, MAX_LAYERS, 'dilations per array'),
-            0
-        ),
-        MAX_LAYERS,
-        'layer count'
+    dimension(layers.length, MAX_ARRAYS, 'layer array count');
+    const layer_count = layers.reduce(
+        (total, layer) => total + dimension((layer.dilations as unknown[]).length, MAX_LAYERS, 'dilations per array'),
+        0
     );
+    dimension(layer_count, MAX_LAYERS, 'layer count');
     const widest_head = Math.max(...layers.map(arrayHeadSize));
     let last_head = 1;
     for (const layer of layers) {

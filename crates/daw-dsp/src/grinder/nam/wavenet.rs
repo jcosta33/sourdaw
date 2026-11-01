@@ -22,20 +22,19 @@ enum GatingMode {
     Blended,
 }
 
-/// A required dimension: a positive integer, as native admission reads it.
+// The shared admission plan (`admission_plan.rs`) runs before this parser and
+// refuses every structural shape and size this runtime cannot build, so the
+// readers here only extract what it has already bounded.
+
 fn read_usize(config: &Value, key: &str) -> Result<usize, NamModelError> {
-    match config.get(key).and_then(Value::as_u64) {
-        None => Err(NamModelError::InvalidConfig(format!(
-            "WaveNet layer array requires {key}"
-        ))),
-        Some(0) => Err(NamModelError::InvalidConfig(format!(
-            "WaveNet {key} must be a positive integer"
-        ))),
-        Some(value) => Ok(value as usize),
-    }
+    config
+        .get(key)
+        .and_then(Value::as_u64)
+        .map(|value| value as usize)
+        .ok_or_else(|| NamModelError::InvalidConfig(format!("WaveNet layer array requires {key}")))
 }
 
-/// An optional dimension: `default` when absent, else a positive integer.
+/// An optional dimension: `default` when absent, else an integer.
 fn read_optional_usize(config: &Value, key: &str, default: usize) -> Result<usize, NamModelError> {
     match config.get(key) {
         None => Ok(default),
@@ -53,14 +52,12 @@ fn read_optional_bool(config: &Value, key: &str, default: bool) -> Result<bool, 
     }
 }
 
-/// One entry of a dilation or kernel-size list: a positive integer.
-fn read_positive_entry(value: &Value, list: &str) -> Result<usize, NamModelError> {
-    match value.as_u64() {
-        Some(entry) if entry >= 1 => Ok(entry as usize),
-        _ => Err(NamModelError::InvalidConfig(format!(
-            "WaveNet {list} must be positive integers"
-        ))),
-    }
+/// One entry of a dilation or kernel-size list.
+fn read_list_entry(value: &Value, list: &str) -> Result<usize, NamModelError> {
+    value
+        .as_u64()
+        .map(|entry| entry as usize)
+        .ok_or_else(|| NamModelError::InvalidConfig(format!("WaveNet {list} must be integers")))
 }
 
 /// A nested 1x1 config (`layer1x1`, `head1x1`); absent reads as an empty one.
@@ -88,48 +85,6 @@ fn chained_head_size(array_config: &Value) -> Option<u64> {
                 .and_then(|head| head.get("out_channels"))
                 .and_then(Value::as_u64)
         })
-}
-
-/// Reject unsupported config features explicitly: grouped convolutions and
-/// FiLM modulation are real .nam features this runtime does not implement, so
-/// naming them beats silently dropping them.
-fn reject_unsupported_features(array_config: &Value) -> Result<(), NamModelError> {
-    // A present groups count must be exactly 1; native admission reads it
-    // whether or not the 1x1 it belongs to is active.
-    for key in ["groups_input", "groups_input_mixin"] {
-        if let Some(groups) = array_config.get(key) {
-            if groups.as_u64() != Some(1) {
-                return Err(NamModelError::InvalidConfig(format!(
-                    "grouped WaveNet convolutions ({key} = {groups}) are not supported"
-                )));
-            }
-        }
-    }
-    for key in ["layer1x1", "head1x1"] {
-        if sub_config(array_config, key)
-            .get("groups")
-            .is_some_and(|groups| groups.as_u64() != Some(1))
-        {
-            return Err(NamModelError::InvalidConfig(format!(
-                "grouped {key} convolutions are not supported"
-            )));
-        }
-    }
-    // Any key naming FiLM is active unless it is `false` or an object whose
-    // `active` is `false`.
-    let keys = array_config.as_object().ok_or_else(|| {
-        NamModelError::InvalidConfig("WaveNet layer arrays must be objects".into())
-    })?;
-    for (key, film) in keys {
-        let inactive = film.as_bool() == Some(false)
-            || film.get("active").and_then(Value::as_bool) == Some(false);
-        if key.contains("film") && !inactive {
-            return Err(NamModelError::InvalidConfig(format!(
-                "FiLM modulation (\"{key}\") is not supported"
-            )));
-        }
-    }
-    Ok(())
 }
 
 struct WavenetLayer {
@@ -339,7 +294,6 @@ impl WavenetLayerArray {
         array_config: &Value,
         weights: &mut &[f32],
     ) -> Result<WavenetLayerArray, NamModelError> {
-        reject_unsupported_features(array_config)?;
         let input_size = read_usize(array_config, "input_size")?;
         let condition_size = read_usize(array_config, "condition_size")?;
         let channels = read_usize(array_config, "channels")?;
@@ -351,7 +305,7 @@ impl WavenetLayerArray {
                 NamModelError::InvalidConfig("WaveNet layer array requires dilations".into())
             })?
             .iter()
-            .map(|value| read_positive_entry(value, "dilations"))
+            .map(|value| read_list_entry(value, "dilations"))
             .collect::<Result<Vec<_>, _>>()?;
         if dilations.is_empty() {
             return Err(NamModelError::InvalidConfig(
@@ -373,7 +327,7 @@ impl WavenetLayerArray {
                 }
                 values
                     .iter()
-                    .map(|value| read_positive_entry(value, "kernel_sizes"))
+                    .map(|value| read_list_entry(value, "kernel_sizes"))
                     .collect::<Result<Vec<_>, _>>()?
             }
             None => {
@@ -507,11 +461,6 @@ impl PostStackHead {
     ) -> Result<PostStackHead, NamModelError> {
         let channels = read_usize(head_config, "channels")?;
         let out_channels = read_usize(head_config, "out_channels")?;
-        if out_channels != 1 {
-            return Err(NamModelError::InvalidConfig(format!(
-                "multi-channel WaveNet output ({out_channels} channels) is not supported; Grinder captures are mono"
-            )));
-        }
         let kernel_sizes: Vec<usize> = head_config
             .get("kernel_sizes")
             .and_then(Value::as_array)
@@ -519,7 +468,7 @@ impl PostStackHead {
                 NamModelError::InvalidConfig("WaveNet head requires kernel_sizes".into())
             })?
             .iter()
-            .map(|value| read_positive_entry(value, "head kernel_sizes"))
+            .map(|value| read_list_entry(value, "head kernel_sizes"))
             .collect::<Result<Vec<_>, _>>()?;
         if kernel_sizes.is_empty() {
             return Err(NamModelError::InvalidConfig(
@@ -632,18 +581,15 @@ impl WavenetModel {
                 "WaveNet config requires at least one layer array".into(),
             ));
         }
-        let in_channels = read_optional_usize(config, "in_channels", 1)?;
-        let out_channels = read_optional_usize(config, "out_channels", 1)?;
-        if in_channels != 1 || out_channels != 1 {
+        let in_channels = config
+            .get("in_channels")
+            .and_then(Value::as_u64)
+            .map(|value| value as usize)
+            .unwrap_or(1);
+        if in_channels != 1 {
             return Err(NamModelError::InvalidConfig(format!(
-                "multi-channel WaveNet ({in_channels} -> {out_channels} channels) is not supported; Grinder captures are mono"
+                "multi-channel WaveNet input ({in_channels} channels) is not supported; Grinder captures are mono"
             )));
-        }
-        // The first array reads the one-sample mono input.
-        if layers[0].get("input_size").and_then(Value::as_u64) != Some(1) {
-            return Err(NamModelError::InvalidConfig(
-                "layer array 0: input_size must be 1 (the mono input)".into(),
-            ));
         }
 
         // NAMCore validates channels[i] == head_size[i-1] in the constructor
@@ -665,19 +611,6 @@ impl WavenetModel {
                 )));
             }
         }
-        // One scratch span sized from the first array carries each array's
-        // output into the next, so every array that feeds another must keep
-        // that width; only the final array, whose output nothing reads, may
-        // differ. Native admission refuses the same shape.
-        let first_channels = layers[0].get("channels").and_then(Value::as_u64);
-        for (index, array) in layers.iter().enumerate().take(layers.len() - 1).skip(1) {
-            if array.get("channels").and_then(Value::as_u64) != first_channels {
-                return Err(NamModelError::InvalidConfig(format!(
-                    "layer array {index}: channels must equal the first array's channels; only the final array may differ"
-                )));
-            }
-        }
-
         let mut layer_arrays = Vec::with_capacity(layers.len());
         for array_config in layers {
             layer_arrays.push(WavenetLayerArray::from_config(array_config, weights)?);
@@ -698,37 +631,14 @@ impl WavenetModel {
         } else {
             None
         };
-        // Without a post-stack head the last array's head is the output, and
-        // only its first channel would ever be played.
-        let last_head_size = layer_arrays
-            .last()
-            .map(|array| array.head_output.len())
-            .unwrap_or(1);
-        if post_head.is_none() && last_head_size != 1 {
-            return Err(NamModelError::InvalidConfig(format!(
-                "multi-channel WaveNet output ({last_head_size} channels) is not supported; a last array head_size other than 1 needs a post-stack head"
-            )));
-        }
-
         // The chain feeding each array's head accumulation is structural:
-        // array i's head inputs carry the previous array's head output, read
-        // whole from one scratch span sized to the widest head of any array.
-        let head_size = layer_arrays
-            .iter()
-            .map(|array| array.head_output.len())
-            .max()
-            .unwrap_or(1);
+        // array i's head inputs carry the previous array's head output.
         for index in 1..layer_arrays.len() {
             let previous_head_size = layer_arrays[index - 1].head_output.len();
             let head_input_size = layer_arrays[index].head_input_size;
             if head_input_size != previous_head_size {
                 return Err(NamModelError::InvalidConfig(format!(
                     "layer array {index}: head input size ({head_input_size}) must equal the preceding array's head_size ({previous_head_size})"
-                )));
-            }
-            if head_input_size != head_size {
-                return Err(NamModelError::InvalidConfig(format!(
-                    "layer array {index}: head input size ({head_input_size}) must equal the widest array head_size ({head_size})"
                 )));
             }
         }
@@ -760,6 +670,15 @@ impl WavenetModel {
             }
         }
 
+        let head_size = layer_arrays
+            .iter()
+            .map(|array| array.head_output.len())
+            .max()
+            .unwrap_or(1);
+        let last_head_size = layer_arrays
+            .last()
+            .map(|array| array.head_output.len())
+            .unwrap_or(1);
         let first_channels = layer_arrays
             .first()
             .map(|array| array.layer_output.len())

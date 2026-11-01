@@ -10,10 +10,10 @@ import {
 } from './namConfigReaders';
 
 /**
- * WaveNet weight-count derivation and shape admission, rule for rule with
- * native admission (`crates/daw-dsp/src/grinder/nam/native_admission.rs`) and
- * the WASM parser (`crates/daw-dsp/src/grinder/nam/wavenet.rs`): a shape
- * either constructs and renders in both runtimes or is refused here by name.
+ * WaveNet weight-count derivation and shape admission, rule for rule with the
+ * admission plan native admission and the WASM parser share
+ * (`crates/daw-dsp/src/grinder/nam/admission_plan.rs`): a shape either
+ * constructs and renders in both runtimes or is refused here by name.
  */
 
 function rejectUnsupportedWaveNetFeatures(layer: UnknownRecord): void {
@@ -244,12 +244,13 @@ function rejectWaveNetScratchWidthChanges(layers: readonly UnknownRecord[]): voi
  * array reads the one-sample input. */
 function rejectNonMonoWaveNetInput(config: UnknownRecord, layers: readonly unknown[]): void {
     for (const key of ['in_channels', 'out_channels'] as const) {
-        if (
-            config[key] !== undefined &&
-            requirePositiveInt(config, key, `Invalid NAM model: ${key} must be a positive integer`) !== 1
-        ) {
+        if (config[key] === undefined) {
+            continue;
+        }
+        const channels = requirePositiveInt(config, key, `Invalid NAM model: ${key} must be a positive integer`);
+        if (channels !== 1) {
             throw new Error(
-                `Invalid NAM model: multi-channel WaveNet (${key} = ${String(config[key])}) is not supported; Grinder captures are mono`
+                `Invalid NAM model: multi-channel WaveNet (${key} = ${channels}) is not supported; Grinder captures are mono`
             );
         }
     }
@@ -330,9 +331,8 @@ export function waveNetWeightCount(config: UnknownRecord): number {
         last_head_size = readWaveNetArrayHead(layer_record).head_size;
     }
 
-    if (typeof config.head_scale !== 'number' || !Number.isFinite(config.head_scale)) {
-        throw new TypeError('Invalid NAM model: WaveNet config requires head_scale');
-    }
     // Post-stack head convolutions, then the single trailing head-scale weight.
+    // The runtimes take the scale from that weight and never read
+    // config.head_scale, so it is not required here either.
     return count + waveNetOutputHeadWeightCount(config.head, last_head_size) + 1;
 }
