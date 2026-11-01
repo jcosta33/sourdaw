@@ -1,0 +1,98 @@
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_fec7059b7a251c::t_d9c1273b7557ca 109
+  s_3bb122e91d89a5::t_425e6425847eb4 1151
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts
+  s_fec7059b7a251c::t_d407818d05fd88 21
+  s_a1143ebcb2d07b::t_7b4ac28bff402c 25,553-554,580,648-649,657
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydownToolKeys.spec.ts
+  s_fec7059b7a251c::t_f00ac3f30645e8 1-3,6-16,43-51,53-64,65-72,83-92,96-100,106-116,118-133,135-144,167
+  s_0314bb17e5dee3::t_cbcc54eb47146e 17-42,52,93-95,101-105,134
+  s_a1143ebcb2d07b::t_4da1a864f73bc7 4-5,73-82,117,145-166
+src/modules/WorkspaceShell/presentations/helpers/__tests__/formatShortcutCombo.spec.ts
+  s_fec7059b7a251c::t_230fae0bce9634 1-18
+src/modules/WorkspaceShell/presentations/helpers/formatShortcutCombo.ts
+  s_3bb122e91d89a5::t_2a13797bb90407 1-18
+src/modules/WorkspaceShell/presentations/views/ShortcutHelp.tsx
+  s_3bb122e91d89a5::t_3bbb9a5cba4444 1-34
+src/modules/WorkspaceShell/models/EditingTool.ts
+  s_fec7059b7a251c::t_3eb28ce24d0eee 12-34,47-51,53-58
+src/modules/WorkspaceShell/models/__tests__/EditingTool.spec.ts
+  s_fec7059b7a251c::t_2dd93177a7aa1c 3-9,20,26-68
+src/modules/WorkspaceShell/presentations/components/ShortcutCheatSheet.tsx
+  s_fec7059b7a251c::t_749b3c1c558fe4 11-14,17-26,32-34,48-49,117-122,143-146,197-200,233
+  s_a1143ebcb2d07b::t_527f87a0b1724e 29-31
+src/modules/WorkspaceShell/presentations/components/__tests__/ShortcutCheatSheet.spec.tsx
+  s_fec7059b7a251c::t_fac1b1933f81bc 4,7-16,94-110,123-135,140-141
+  s_0314bb17e5dee3::t_6ec8ef0d6660b1 111-122
+  s_a1143ebcb2d07b::t_2992b386f696df 17-21,136-139
+src/modules/WorkspaceShell/presentations/views/__tests__/ShortcutHelp.spec.tsx
+  s_fec7059b7a251c::t_d2624aee75aea1 1-23,37-55,65-83
+  s_a1143ebcb2d07b::t_f7095609e6c6fb 24-36,56-64
+src/modules/WorkspaceShell/AGENTS.md
+  s_fec7059b7a251c::t_6486d8cb95a063 7,24
+  s_a1143ebcb2d07b::t_d38abe466c70d3 25
+src/modules/CommandInterface/useCases/commands/ViewCommands.ts
+  s_a1143ebcb2d07b::t_44844b647c863c 12,201,209,217,225,233
+src/modules/CommandInterface/useCases/commands/__tests__/ViewCommands.spec.ts
+  s_a1143ebcb2d07b::t_1de365591ea5cb 37
+src/modules/CommandInterface/useCases/keyboardShortcutActions/__tests__/handleKeyboardShortcut.spec.ts
+  s_a1143ebcb2d07b::t_16a5e22e373eaf 56
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydown.spec.ts
+  s_a1143ebcb2d07b::t_1e59a4cbb84b92 161
+src/modules/WorkspaceShell/useCases/__tests__/getToolForKeyPress.spec.ts
+  s_a1143ebcb2d07b::t_34c146f9eee388 1-43
+src/modules/WorkspaceShell/useCases/__tests__/getToolShortcutHint.spec.ts
+  s_a1143ebcb2d07b::t_19011d9c080c47 1-16
+src/modules/WorkspaceShell/useCases/getToolForKeyPress.ts
+  s_a1143ebcb2d07b::t_6c1125e6a2b546 1-19
+src/modules/WorkspaceShell/useCases/getToolShortcutHint.ts
+  s_a1143ebcb2d07b::t_9dff6fe6206cfe 1-6
+src/modules/WorkspaceShell/useCases/index.ts
+  s_a1143ebcb2d07b::t_6f8c7ce01485af 18-19
+src/modules/WorkspaceShell/useCases/setEditingTool.ts
+  s_a1143ebcb2d07b::t_c4692dd68e310c 1
+src/modules/WorkspaceShell/useCases/workspaceQueries/__tests__/helpers.spec.ts
+  s_a1143ebcb2d07b::t_5774d97007fed0 3
+src/modules/WorkspaceShell/useCases/workspaceQueries/helpers.ts
+  s_a1143ebcb2d07b::t_675a9ab4c0e0de 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d4afdec405e4c10877959886672830e262ba2267",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_a1143ebcb2d07b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_a1143ebcb2d07b",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
