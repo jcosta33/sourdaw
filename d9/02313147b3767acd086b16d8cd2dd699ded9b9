@@ -1,0 +1,43 @@
+src/modules/AiRuntime/useCases/__tests__/suggestionAnswers.spec.ts
+  s_55244eb93b97d1::t_a41cf9c346100f 36
+src/modules/AiRuntime/AGENTS.md
+  s_55244eb93b97d1::t_2697e8b32f3751 37
+src/modules/AiRuntime/useCases/composeMeasuredAnswer.ts
+  s_55244eb93b97d1::t_b37eccdb057b26 253
+  s_55244eb93b97d1::t_200f9d766d559a 259
+  s_55244eb93b97d1::t_47f419bdd57afb 523-537
+  s_55244eb93b97d1::t_048f5816cefbfd 570-574
+  s_55244eb93b97d1::t_5b98bb1864687f 589
+  s_55244eb93b97d1::t_e3dd0671cfeeda 247-252,254-258,260-261
+  s_55244eb93b97d1::t_00df6147ea625b 286
+  s_55244eb93b97d1::t_bcfef9918f2927 328
+  s_55244eb93b97d1::t_f2aa9e3bbc94d0 588,590-591,594
+  s_55244eb93b97d1::t_3ab8230c2754fd 246,307-327,329-330
+src/modules/AiRuntime/useCases/__tests__/composeMeasuredAnswer.spec.ts
+  s_55244eb93b97d1::t_4b263e6dd47ef7 55,60-61
+  s_55244eb93b97d1::t_e0f823f741c4f9 76
+  s_55244eb93b97d1::t_c26cc31e2da15d 103
+  s_55244eb93b97d1::t_70c2db21163cb3 206-285
+  s_55244eb93b97d1::t_fb589362ebda6a 7
+  s_55244eb93b97d1::t_47537f87b8c914 40
+  s_55244eb93b97d1::t_a5d3817b2a09e3 17-20
+  s_55244eb93b97d1::t_48e841a3b4b959 62-63
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_55244eb93b97d1::t_6fcf2e0606dccc 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d902313147b3767acd086b16d8cd2dd699ded9b9",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
