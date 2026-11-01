@@ -14,6 +14,7 @@ async function closeActiveRecording(stillOwns?: () => boolean, gestureEnding?: M
     if (stillOwns?.() === false) {
         return;
     }
+    recordingLifecycle.noteRecordingStop();
     recordingLifecycle.cancelPendingRecordingStart();
     const ending = gestureEnding ?? captureManualRecordingEnd();
     recordingLifecycle.endRecording();

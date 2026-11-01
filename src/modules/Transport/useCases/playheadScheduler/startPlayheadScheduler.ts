@@ -1263,6 +1263,26 @@ export function startPlayheadScheduler(
                     if (initial && browserCapture && captureAnchor) {
                         initialRecordingAnchors.push(captureAnchor);
                     }
+                    // A start that never opened retires its provisional clip.
+                    // When that leaves this punch pass with no live capture,
+                    // REC goes dark so Record arms again instead of stopping.
+                    // `punchRecordingActive` stays set, so later ticks inside
+                    // the region do not reopen the punch (and ask for the
+                    // input again); the punch-out retires it as before. A
+                    // pass a stop, seek or punch-out already closed has no
+                    // active clips left, and its REC is not this start's to
+                    // touch.
+                    const retireUnstartedCapture = (): void => {
+                        if (!recClip) {
+                            return;
+                        }
+                        const passStillOpen = activeRecordingRef.current.includes(recClip.id);
+                        discardRecording(recClip.id);
+                        if (passStillOpen && activeRecordingRef.current.length === 0) {
+                            updateTransportState({ isRecording: false });
+                        }
+                    };
+                    const recordingStopsAtAdmission = recordingLifecycle.recordingStopCount;
                     const admission = Promise.resolve(
                         startAudioRecording(
                             track.id,
@@ -1382,29 +1402,40 @@ export function startPlayheadScheduler(
                             }
                             // A refused start never runs the terminal, so its
                             // provisional clip and take would be left with no
-                            // buffer and no history entry (#4265). The recorder's
-                            // `false` covers both a Pause or Stop during the
-                            // same-track wait and an input that failed to open;
-                            // the stop-caused refusal must stay quiet, so no
-                            // notice is posted until #6009 tells them apart.
+                            // buffer and no history entry (#4265). The recorder
+                            // resolves `false` only when a stop moved its start
+                            // generation or the track is already recording; an
+                            // input that failed to open rejects into the `.catch`
+                            // below (#6009).
                             captureClocks.remove(track.id);
                             initialEmissionRetirements.defer(() => {
-                                if (recClip && ownsCapture()) {
-                                    discardRecording(recClip.id);
+                                if (ownsCapture()) {
+                                    retireUnstartedCapture();
                                 }
                             });
                         })
                         .catch((error: unknown) => {
                             captureClocks.remove(track.id);
                             logger.error(new Error('Punch-in audio recording failed to start', { cause: error }));
+                            // Decided when the failure arrives: a start whose
+                            // recording a stop gesture closed after it was
+                            // admitted (Pause, Stop, Record off, or a seek while
+                            // recording) stays quiet, even once the musician is
+                            // rolling again. A punch-out, a loop wrap or a
+                            // runtime repair closes nothing through that route,
+                            // so the musician is told. After a seek, only a
+                            // pass the seek lands inside opens a start that can
+                            // report.
+                            const stoppedByMusician =
+                                recordingLifecycle.recordingStopCount !== recordingStopsAtAdmission;
                             initialEmissionRetirements.defer(() => {
                                 if (!ownsCapture()) {
                                     return;
                                 }
-                                notifyUser('Punch-in recording failed to start — the take was discarded.', 'error');
-                                if (recClip) {
-                                    discardRecording(recClip.id);
+                                if (!stoppedByMusician) {
+                                    notifyUser('Punch-in recording failed to start — the take was discarded.', 'error');
                                 }
+                                retireUnstartedCapture();
                             });
                         });
                     if (initial) {
