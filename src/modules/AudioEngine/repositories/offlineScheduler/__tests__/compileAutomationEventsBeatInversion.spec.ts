@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { projectPpqEndpoints } from '#/modules/Transport/useCases';
+import { projectPpqEndpoints, secondsBetweenBeats } from '#/modules/Transport/useCases';
 import { evaluateAutomationCurve } from '#/utils/automationCurve';
 
 import { type AutomationPoint } from '../../../models/AutomationViewTypes';
@@ -268,5 +268,68 @@ describe('compileAutomationEvents — beat inversion on a ramp or across a tempo
         // The full-range bisection spent at least forty-two projections on each sample.
         expect(events.length).toBeGreaterThan(500);
         expect(counter.count()).toBeLessThan(20 * events.length);
+    });
+});
+
+/** The beat in `[first, second]` where a strictly monotone curve segment takes `value`, by deep bisection. */
+function beatWithValue(first: AutomationPoint, second: AutomationPoint, value: number): number {
+    const valueAt = (beat: number) => evaluateAutomationCurve({ firstPoint: first, secondPoint: second, beat });
+    const rising = valueAt(second.beat) > valueAt(first.beat);
+    let lower = first.beat;
+    let upper = second.beat;
+    for (let iteration = 0; iteration < 80; iteration++) {
+        const middle = (lower + upper) / 2;
+        if (valueAt(middle) < value === rising) {
+            lower = middle;
+        } else {
+            upper = middle;
+        }
+    }
+    return (lower + upper) / 2;
+}
+
+describe('compileAutomationEvents — a gently curved ramp stretch taken as straight', () => {
+    // Nebula Drift's map. Short stretches of its ramp pass the straightness test and are
+    // interpolated along their chord, which strays from the curve by up to that test's bound.
+    const changes: TempoChange[] = [
+        { id: 'base', beat: 0, tempo: BASE_TEMPO, curve: 'instant' },
+        { id: 'peak', beat: 4, tempo: 78, curve: 'linear' },
+        { id: 'breakdown', beat: 12, tempo: BASE_TEMPO, curve: 'linear' },
+    ];
+    const projectBeat = renderProjector(changes);
+
+    /** How far, in seconds, each sample's beat projects from its grid time on the exact, unquantised map. */
+    function sampleTimeDeviations(beats: readonly number[], regionStart: number, duration: number): number[] {
+        // An exponential curve is strictly monotone, so each emitted value names the beat it was taken at.
+        const points: AutomationPoint[] = beats.map((beat, index) => ({
+            beat,
+            value: [0.1, 0.85, 0.2, 0.6][index]!,
+            curve: 'exponential',
+            tension: 0.3,
+        }));
+        const events = compileAutomationEvents(points, duration, [...changes], regionStart, projectBeat).filter(
+            (event) => event.type === 'linear'
+        );
+        const pointTimes = points.map((point) => projectBeat(point.beat));
+        return events.map((event) => {
+            const gridTime = event.timeSeconds + regionStart;
+            const segment = pointTimes.findIndex(
+                (time, index) => time < gridTime && gridTime <= pointTimes[index + 1]!
+            );
+            const beat = beatWithValue(points[segment]!, points[segment + 1]!, event.value);
+            return Math.abs(secondsBetweenBeats(changes, 0, beat, BASE_TEMPO) - gridTime);
+        });
+    }
+
+    it('keeps every sample within the 0.1 ms straightness tolerance of its grid time', () => {
+        // The review's window, opening on the ramp.
+        const cropped = sampleTimeDeviations([0, 5, 11, 14.25], 0.3 * projectBeat(15), 4.704175);
+        // A 0.8-beat segment on the ramp: its chord strays about 0.2 ms, so only a bound kept
+        // at 0.1 ms sends it to the bisection.
+        const shortStretch = sampleTimeDeviations([5, 5.8], 0, 30);
+
+        expect(cropped.length).toBeGreaterThan(400);
+        expect(shortStretch.length).toBeGreaterThan(50);
+        expect(Math.max(...cropped, ...shortStretch)).toBeLessThan(1e-4);
     });
 });

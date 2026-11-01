@@ -167,14 +167,22 @@ type BeatPiece = {
  *
  * The projection is quantised to whole samples, so `beatAtTime`'s full-range
  * bisection converges on the edge of a one-sample rounding step, not on a truer
- * beat, and spends over forty projections on every sample. A straight piece is
- * interpolated along its line; a piece on a ramp is bisected from the previous
- * sample's bracket, down to a small fraction of one grid step. Both land within
- * one sample's worth of beats of the full-range bisection.
+ * beat, and spends over forty projections on every sample. A piece that passes
+ * the straightness test is interpolated along its chord, so a sample's beat
+ * projects within that test's tolerance (0.1 ms, about five samples at 48 kHz)
+ * of its grid time: a short, gently curved stretch of a ramp can pass it. A
+ * piece that fails it is bisected from the previous sample's bracket down to a
+ * small fraction of one grid step, within one sample of the full-range bisection.
  */
 type SampledPiece =
     (BeatPiece & { kind: 'straight' }) | (BeatPiece & { kind: 'ramp'; startProjection: number; endProjection: number });
 
+/**
+ * How far, in seconds, the projection may stray from a piece's chord at its
+ * quarter and half points for the piece to count as straight. The same bound
+ * the linear-curve single-step shortcut has always accepted.
+ */
+const STRAIGHTNESS_TOLERANCE_SECONDS = 1e-4;
 /** Bisection stops once its bracket is this fraction of one grid step's beats — far inside one sample. */
 const RAMP_BRACKET_FRACTION = 2 ** -12;
 /** The full-range bisection's own depth, kept as a ceiling on the warm-started one. */
@@ -184,8 +192,8 @@ function projectsStraight({ startBeat, endBeat, startTime, endTime }: BeatPiece,
     const beatSpan = endBeat - startBeat;
     const timeSpan = endTime - startTime;
     return (
-        Math.abs(projectBeat(startBeat + beatSpan / 4) - (startTime + timeSpan / 4)) < 1e-4 &&
-        Math.abs(projectBeat(startBeat + beatSpan / 2) - (startTime + timeSpan / 2)) < 1e-4
+        Math.abs(projectBeat(startBeat + beatSpan / 4) - (startTime + timeSpan / 4)) < STRAIGHTNESS_TOLERANCE_SECONDS &&
+        Math.abs(projectBeat(startBeat + beatSpan / 2) - (startTime + timeSpan / 2)) < STRAIGHTNESS_TOLERANCE_SECONDS
     );
 }
 
