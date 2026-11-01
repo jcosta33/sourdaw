@@ -592,6 +592,18 @@ test('auditions one genuine retained measured request before Confirm without pro
                     arguments: { category: 'command', names: ['setDeviceParameter'] },
                 },
             ];
+        if (turn === 3) {
+            // The held comparative proposal's measurement step offers the measurement tool alone. A
+            // live master read witnesses the step without proving the unapplied preview.
+            expect(request.tools.map((tool) => tool.function.name)).toEqual(['analysis_measure']);
+            return [
+                {
+                    id: 'audition-step-measurement',
+                    name: 'analysis_measure',
+                    arguments: { scope: { kind: 'master' }, range: { startBeat: 0, endBeat: 4 } },
+                },
+            ];
+        }
         expect(turn).toBe(2);
         return [
             {
@@ -848,7 +860,10 @@ test('auditions one genuine retained measured request before Confirm without pro
         await expect.poll(levels).toEqual([0, 0]);
         expect((await projectTruth(page)).pcm).toEqual(beforeAudition.pcm);
         expect(provider.failures).toEqual([]);
-        expect(provider.requests).toHaveLength(3);
+        expect(provider.requests).toHaveLength(4);
+        expect(JSON.parse(provider.completionRequests[3] ?? 'null') as unknown).toMatchObject({
+            tool_choice: 'required',
+        });
         expect(egress).toEqual([]);
         expect(JSON.stringify(provider.requests)).not.toMatch(
             /channelData|baselineIntegratedLoudness|previewIntegratedLoudness/
