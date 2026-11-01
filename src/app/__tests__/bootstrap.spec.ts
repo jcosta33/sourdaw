@@ -194,8 +194,7 @@ const {
     setCrumbsEventBusMock,
     initCrumbsModePushMock,
     initDeviceStateReconciliationMock,
-    initTimelineScrollClampMock,
-    initClipSelectionReconciliationMock,
+    initTimelineViewReconciliationMock,
     initAudioBufferCacheAccessMock,
     initInputMonitoringProjectAccessMock,
     initLevainDeviceStateProjectAccessMock,
@@ -299,8 +298,7 @@ const {
         setCrumbsEventBusMock: vi.fn(),
         initCrumbsModePushMock: vi.fn(),
         initDeviceStateReconciliationMock: vi.fn(),
-        initTimelineScrollClampMock: vi.fn(),
-        initClipSelectionReconciliationMock: vi.fn(),
+        initTimelineViewReconciliationMock: vi.fn(),
         initAudioBufferCacheAccessMock: vi.fn(),
         initInputMonitoringProjectAccessMock: vi.fn(),
         initLevainDeviceStateProjectAccessMock: vi.fn(),
@@ -413,8 +411,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     setDeviceParameter: noop,
     getArrangementHandlers: sentinelHandlers('Arrangement'),
     initStalenessDetection: noop,
-    initTimelineScrollClamp: initTimelineScrollClampMock,
-    initClipSelectionReconciliation: initClipSelectionReconciliationMock,
+    initTimelineViewReconciliation: initTimelineViewReconciliationMock,
     setArrangementEventBus: setArrangementEventBusMock,
     setOfflineRenderDependencies: noop,
     setTimeOperationDependencies: setTimeOperationDependenciesMock,
@@ -1521,18 +1518,12 @@ describe('bootstrap', () => {
         expect(initDeviceStateReconciliationMock).toHaveBeenCalledExactlyOnceWith();
     });
 
-    it('registers the timeline scroll clamp as an explicit boot step', () => {
+    it('registers the timeline view reconciliation as an explicit boot step', () => {
         // Deleting a track or collapsing a folder shrinks the timeline's
-        // content; without this registration the scroll offset stays past the
-        // last row and leaves blank canvas until the next wheel event.
-        expect(initTimelineScrollClampMock).toHaveBeenCalledExactlyOnceWith();
-    });
-
-    it('registers the clip selection reconciliation as an explicit boot step', () => {
-        // A clip can leave the project by undo, a collaborator's delete, a track
-        // delete or a project load without touching the selection; without this
-        // registration the selection keeps ids that resolve to no clip.
-        expect(initClipSelectionReconciliationMock).toHaveBeenCalledExactlyOnceWith();
+        // content, and a clip can leave the project by undo, a collaborator's
+        // delete or a project load; without this registration the scroll offset
+        // stays past the last row and the selection keeps ids of missing clips.
+        expect(initTimelineViewReconciliationMock).toHaveBeenCalledExactlyOnceWith();
     });
 
     it('wires the Crumbs mode push to the shared event bus', () => {

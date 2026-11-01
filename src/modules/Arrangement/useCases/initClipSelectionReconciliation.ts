@@ -1,7 +1,21 @@
+import { showsVariationLanes } from '../models/TimelineTrackExtent';
+import { type Track } from '../models/Track';
 import { clipSelectionStore } from '../stores/clipSelectionStore';
 import { trackStore, type TrackStoreState } from '../stores/trackStore';
 
 import { resolvePrimaryClip } from './clipSelection/resolvePrimaryClip';
+
+// Inactive alternatives' clips are drawn and clickable only while the track shows its variation
+// lanes. The active alternative's stored copy is refreshed only on a switch, so its clips are read
+// from the track itself.
+function collectLaneClipIds(track: Track): string[] {
+    if (!showsVariationLanes(track)) {
+        return [];
+    }
+    return track.alternatives
+        .filter((alternative) => alternative.id !== track.activeAlternativeId)
+        .flatMap((alternative) => alternative.clips.map((clip) => clip.id));
+}
 
 function collectExistingClipIds(state: TrackStoreState | null): Set<string> {
     const ids = new Set<string>();
@@ -9,16 +23,8 @@ function collectExistingClipIds(state: TrackStoreState | null): Set<string> {
         for (const clip of track.clips) {
             ids.add(clip.id);
         }
-        // Inactive alternatives' clips are drawn and clickable in their variation lanes. The
-        // active alternative's stored copy is only refreshed on a switch, so its clips are read
-        // from the track itself above.
-        for (const alternative of track.alternatives) {
-            if (alternative.id === track.activeAlternativeId) {
-                continue;
-            }
-            for (const clip of alternative.clips) {
-                ids.add(clip.id);
-            }
+        for (const laneClipId of collectLaneClipIds(track)) {
+            ids.add(laneClipId);
         }
     }
     // Ghost clips are selectable (Alt+] cycles through them) but live beside the tracks.

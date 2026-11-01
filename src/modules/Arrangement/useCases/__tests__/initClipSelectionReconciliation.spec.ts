@@ -179,15 +179,20 @@ describe('initClipSelectionReconciliation', () => {
         expect(clipSelectionStore.value?.selectedClipId).toBe('a');
     });
 
-    it('keeps a selected clip of an inactive alternative, which its variation lane draws', () => {
+    function makeTrackWithLaneClip(showVariationLanes: boolean): Track {
         const base = makeTrack('t1', ['a']);
-        const withLanes: Track = {
+        return {
             ...base,
+            showVariationLanes,
             alternatives: [
                 { id: base.activeAlternativeId, name: 'Alternative 1', clips: [] },
                 { id: 't1-alt-2', name: 'Alternative 2', clips: [makeClip('lane-1', 't1')] },
             ],
         };
+    }
+
+    it('keeps a selected clip of an inactive alternative while its variation lane is shown', () => {
+        const withLanes = makeTrackWithLaneClip(true);
         setProject({ tracks: [withLanes] });
         clipSelectionStore.set({ selectedClipId: null, selectedClipIds: ['lane-1', 'a'], marqueeSelection: null });
 
@@ -196,8 +201,18 @@ describe('initClipSelectionReconciliation', () => {
         expect(clipSelectionStore.value?.selectedClipIds).toEqual(['lane-1', 'a']);
     });
 
+    it("drops an inactive alternative's clip once the track hides its variation lanes", () => {
+        setProject({ tracks: [makeTrackWithLaneClip(true)] });
+        clipSelectionStore.set({ selectedClipId: null, selectedClipIds: ['lane-1', 'a'], marqueeSelection: null });
+
+        setProject({ tracks: [makeTrackWithLaneClip(false)] });
+
+        expect(clipSelectionStore.value?.selectedClipIds).toEqual(['a']);
+        expect(clipSelectionStore.value?.selectedClipId).toBe('a');
+    });
+
     it("drops a removed clip that only the active alternative's stored copy still holds", () => {
-        const base = makeTrack('t1', ['a', 'b']);
+        const base = { ...makeTrack('t1', ['a', 'b']), showVariationLanes: true };
         const staleActiveCopy: Track = {
             ...base,
             clips: [makeClip('a', 't1')],
