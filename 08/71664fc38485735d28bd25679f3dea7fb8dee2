@@ -1,0 +1,62 @@
+src/modules/AudioRendering/repositories/audioExport/streamExportToNative.ts
+  s_9091c7fb2989db::t_67ac30f67ce90b 12-13
+  s_9091c7fb2989db::t_5c94e983a73352 45,51
+src/modules/AudioRendering/repositories/audioExport/wavReportPairLedger.ts
+  s_9091c7fb2989db::t_f2ba2525175d1f 1-40,42-44
+  s_9091c7fb2989db::t_885926c6b6d5dd 41
+src/modules/AudioRendering/repositories/audioExport/__tests__/streamExportToNative.spec.ts
+  s_9091c7fb2989db::t_f2ff39f5c3c0c8 7-8
+  s_9091c7fb2989db::t_0c9cb1707aba2e 209-277,281-290
+  s_9091c7fb2989db::t_d78afd80dc0726 63-79
+  s_9091c7fb2989db::t_a4f4d77d86ed36 278-280
+src/modules/AudioRendering/useCases/audioExport/streamExport.ts
+  s_9091c7fb2989db::t_986830869c939d 169,171-211,213-231
+  s_9091c7fb2989db::t_8bcd834c513bed 250
+  s_9091c7fb2989db::t_e73e0272aaed2e 291,293,295-300,303-305
+  s_9091c7fb2989db::t_a4f4d77d86ed36 170
+  s_9091c7fb2989db::t_7ce36b1e52cbc0 212
+src/modules/AudioRendering/useCases/audioExport/__tests__/wavReportFixtures.ts
+  s_9091c7fb2989db::t_e345c49e74bb66 1-73
+src/modules/AudioRendering/repositories/audioExport/streamExportToBrowser.ts
+  s_9091c7fb2989db::t_6ff33b23d7503f 267,270-271
+  s_9091c7fb2989db::t_f43f4447358493 195
+  s_9091c7fb2989db::t_cbb53fb8d3f75c 153-166
+  s_9091c7fb2989db::t_0643c656b7a87f 201
+  s_9091c7fb2989db::t_71b7ce787138fc 241
+  s_9091c7fb2989db::t_e646f611eb1a1b 5-6
+  s_9091c7fb2989db::t_f7ec3777aafdbd 254
+  s_9091c7fb2989db::t_015ed9f6daebf5 167-187
+  s_9091c7fb2989db::t_e4c965dd1b1942 235
+  s_9091c7fb2989db::t_194da140f8a773 232
+  s_9091c7fb2989db::t_42530c8f8e6050 260,263
+src/modules/AudioRendering/useCases/audioExport/__tests__/streamExport.spec.ts
+  s_9091c7fb2989db::t_360d9d5064a1f1 23
+  s_9091c7fb2989db::t_483ba7d98f508f 599
+  s_55244eb93b97d1::t_d71e0dc393736d 24
+src/modules/AudioRendering/useCases/audioExport/__tests__/streamExport.nativeReports.spec.ts
+  s_9091c7fb2989db::t_d8a04ba568bef3 1-172
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0871664fc38485735d28bd25679f3dea7fb8dee2",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9091c7fb2989db": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3cde0d3-cad6-4d0d-93a9-91700b2ed782",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
