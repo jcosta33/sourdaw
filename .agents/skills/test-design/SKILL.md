@@ -26,7 +26,7 @@ Name the mutation that turns the case red: revert the behavioural hunk or apply 
 
 ### 2. Assert the observable the claim names
 
-Assert the output value, the emitted event, the written document state or the rendered text, and not an intermediate the subject could skip. A call on a double is the observable only when the claim is that call to a doubled external system (an engine node's `connect` in `docs/06-testing.md` §6.3, an `eventBus.emit` in §7.2); then prefer asserting its arguments over its mere occurrence. A scheduled parameter call's time argument follows rule 8, not the raw `currentTime`. Assert ownership and non-effects (a stale completion must not revive retired state) when they are part of the claim.
+Assert the output value, the emitted event, the written document state or the rendered text, and not an intermediate the subject could skip. A call on a double is the observable only when the claim is that call across the subject's boundary (an engine node's `connect` in `docs/06-testing.md` §6.3, an injected `eventBus.emit` in §5); then prefer asserting its arguments over its mere occurrence. A scheduled parameter call's time argument follows rule 8, not the raw `currentTime`. Assert ownership and non-effects (a stale completion must not revive retired state) when they are part of the claim.
 
 **Why:** a bare call-count assertion stays green when the subject is rewired to a different route that produces the wrong result.
 
@@ -56,9 +56,9 @@ Choose inputs that a plausible wrong implementation fails. Use unsorted distinct
 
 **Enforced by:** review only; the mutation probe of rule 1 exposes a non-discriminating fixture.
 
-### 6. Double only external systems
+### 6. Double at the subject's boundary, never inside it
 
-Replace hardware, OS I/O, hosted services and the desktop bridge. Keep the real collaborators the asserted behaviour depends on: action routing, Automerge authority, history, store projection, real event and `AppError` values. A mocked `AudioContext` proves requested parameters, not rendered sound or latency.
+Replace hardware, OS I/O, hosted services, the desktop bridge and an injectable's injected dependencies (`spy` and `injectDependencies`, §5). Keep the real collaborators the asserted behaviour depends on: action routing, Automerge authority, history, store projection, real event and `AppError` values. A mocked `AudioContext` proves requested parameters, not rendered sound or latency.
 
 **Why:** a double of the thing under test asserts the double.
 
