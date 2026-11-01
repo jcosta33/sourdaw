@@ -1,0 +1,23 @@
+src/modules/Arrangement/useCases/recording/stageRecordingTake.ts
+  s_ba80576e6f5cb5::t_1b3f9c59487a2e 32-39,48-54
+src/modules/Arrangement/useCases/comping/__tests__/prepareMidiTakeSourceCapture.spec.ts
+  s_ba80576e6f5cb5::t_34a5d81c74197e 119-139
+src/modules/Arrangement/handlers/recording/__tests__/loopRecordedInsideLoop.integration.spec.ts
+  s_ba80576e6f5cb5::t_a34b9f20b459a3 40,44,48,62-73,604-640,646-647,653-654
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "42ca450ab2f578bde3ff48eca265cd59df7cd052",
+  "prompts": {},
+  "sessions": {
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
