@@ -529,6 +529,8 @@ describe('NotePropertyLane', () => {
             it('drops the values buffered for a frozen occurrence instead of committing them later', () => {
                 const sourceRow = makeNote('original', 5.5, 90);
                 const viewNote = makeNote('view-first', 2, 90);
+                const plainNote = makeNote('plain', 0, 70);
+                seedNotes([plainNote]);
                 const setFrozenValue = vi.fn();
                 const projection = {
                     notes: [viewNote],
@@ -555,7 +557,7 @@ describe('NotePropertyLane', () => {
                 render(
                     <NotePropertyLane
                         {...defaultProps}
-                        primaryClipNotes={[viewNote]}
+                        primaryClipNotes={[plainNote, viewNote]}
                         takeProjections={new Map([['clip-1', projection]])}
                         setFrozenValue={setFrozenValue}
                         setValue={liveSetValue}
@@ -567,11 +569,12 @@ describe('NotePropertyLane', () => {
                 pressEscape();
                 expect(setFrozenValue).not.toHaveBeenCalled();
 
-                // The next gesture commits only its own value, never the abandoned one.
+                // The next gesture, on another note, commits only its own value, never the abandoned one.
                 // clientY 66 → (1 - 64/127) * 127 = 63
-                fireEvent.pointerDown(canvas, { pointerId: 2, clientX: 90, clientY: 66 });
-                fireEvent.pointerUp(canvas, { pointerId: 2, clientX: 90, clientY: 66 });
-                expect(setFrozenValue.mock.calls).toEqual([[viewNote.id, 63]]);
+                fireEvent.pointerDown(canvas, { pointerId: 2, clientX: 10, clientY: 66 });
+                fireEvent.pointerUp(canvas, { pointerId: 2, clientX: 10, clientY: 66 });
+                expect(liveSetValue).toHaveBeenLastCalledWith('clip-1', 'plain', 63);
+                expect(setFrozenValue).not.toHaveBeenCalled();
             });
         });
 
