@@ -350,7 +350,7 @@ Provenance: Apple M4 Pro (`Mac16,11`), macOS 26.6, Chrome **151.0.7922.76** head
 20 000 timed quanta per row, load average 2.26 → 2.22, **zero clock stalls and no non-stationary row
 in this run**, every automation row verifying a 100% write ratio with no schedule exhausted. An
 immediately preceding run reproduced every row within 1 µs. Reproduce with
-`node crates/daw-dsp/benches/wasm/run.mjs --devices fermenter,fermenter_automation_16,fermenter_automation_90,fermenter_automation_105,fermenter_automation_1050`.
+`pnpm guard --profile broad -- node crates/daw-dsp/benches/wasm/run.mjs --devices fermenter,fermenter_automation_16,fermenter_automation_90,fermenter_automation_105,fermenter_automation_1050`.
 
 ### Why there is a 1050 row
 
