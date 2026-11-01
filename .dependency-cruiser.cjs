@@ -591,7 +591,7 @@ module.exports = {
         {
             name: 'worklets-no-app-helper-or-desktop-ipc',
             severity: 'error',
-            comment: 'Worklets must not depend on src/helpers/, or desktop IPC.',
+            comment: 'Worklets must not depend on src/helpers/ or desktop IPC.',
             from: {
                 path: '^' + MODULE_ROOT.slice(1) + 'worklets/.+' + SOURCE_FILE_RE,
             },
@@ -633,7 +633,7 @@ module.exports = {
         {
             name: 'workers-no-app-helper-or-desktop-ipc',
             severity: 'error',
-            comment: 'Dedicated Workers must not depend on src/helpers/, or desktop IPC.',
+            comment: 'Dedicated Workers must not depend on src/helpers/ or desktop IPC.',
             from: {
                 path: '^' + MODULE_ROOT.slice(1) + 'workers/.+' + SOURCE_FILE_RE,
             },
