@@ -75,6 +75,9 @@ vi.mock('#/modules/Transport/stores', () => ({
             defaultTempo: mocks.transportTempo,
         }),
     readSecondsAtBeat: ({ beat }: { beat: number }) => integratedSecondsAtBeat(beat),
+    readBeatAtSamples: () => {
+        throw new Error('reverse never maps source seconds back to beats');
+    },
 }));
 
 /** Song seconds at a beat through the mocked instant-step tempo map. */

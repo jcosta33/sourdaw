@@ -1,16 +1,15 @@
 import { loopOriginEntry } from '#/utils/clipLoopOrigin';
 
-import { type Clip } from '../../models/Track';
-import { getTrackState } from '../../repositories/track/getTrackState';
-import { mapAllTracks } from '../../repositories/track/mapAllTracks';
-import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
-
 import {
     captureClipAudioSource,
     type ClipAudioSourceFields,
     isSameClipAudioSource,
     replaceClipAudioSource,
-} from './clipAudioSourceFields';
+} from '../../models/ClipAudioSource';
+import { type Clip } from '../../models/Track';
+import { getTrackState } from '../../repositories/track/getTrackState';
+import { mapAllTracks } from '../../repositories/track/mapAllTracks';
+import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 
 type CrossfadeClipsSnapshot = {
     clipAEndBeat: number;

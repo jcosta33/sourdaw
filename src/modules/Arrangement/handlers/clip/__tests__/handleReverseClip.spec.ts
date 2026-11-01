@@ -42,6 +42,9 @@ vi.mock('#/modules/Transport/stores', () => ({
     readTempoAtBeat: ({ beat }: { beat: number }) => mocks.readTempoAtBeat({ beat }),
     // A flat map at the transport tempo.
     readSecondsAtBeat: ({ beat }: { beat: number }) => (beat * 60) / mocks.transportTempo,
+    readBeatAtSamples: () => {
+        throw new Error('reverse never maps source seconds back to beats');
+    },
 }));
 vi.mock('../../../stores/updateClipInStore', () => ({
     updateClipInStore: mocks.updateClipInStore,

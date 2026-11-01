@@ -1,6 +1,6 @@
 import { hasExactAudioSourceFields } from '#/utils/hasExactAudioSourceFields';
 
-import { type Clip } from '../../models/Track';
+import { type Clip } from './Track';
 
 export type ClipAudioSourceFields = Pick<
     Clip,
