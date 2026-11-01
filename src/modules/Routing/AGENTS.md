@@ -8,11 +8,7 @@ Owns auxiliary send routing, bus strips, sidechain routes, sidechain capability 
 
 ## Public Contract Surface
 
-- **`useCases`**: `ensureBusStrip`, `setBusGain`, `setSend`, `removeSend`, `hydrateSidechainRoutes`, `addSidechainRoute`, `addSidechainRouteSnapshot`, `removeSidechainRoute`, `removeSidechainRouteSnapshot`, `restoreSidechainRoutes`, `getSidechainRoutesForTrack`, `getAllSidechainRoutes`, `getSidechainTargetCapability`, `setSidechainRoutes`, `wireSidechainRoutes`, `getNodeViewHandlers`.
-- **`stores`**: `sidechainStore` (`defaultSidechainStoreState`, type `SidechainStoreState`).
-- **`presentations/views`**: `RoutingMatrix`, `RoutingGraph`.
-- **`events`**: None.
-- **Handler maps**: `getNodeViewHandlers` (`handleToggleNodeView`).
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 
