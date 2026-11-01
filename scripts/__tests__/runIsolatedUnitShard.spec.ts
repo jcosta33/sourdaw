@@ -714,6 +714,34 @@ describe('checkout directory ownership', () => {
         expect(close.mock.calls).toEqual([[2], [1]]);
     });
 
+    it('owns a child directory whose name merely begins with two dots', () => {
+        const { ports, own, close, open } = directoryPorts();
+        ports.children = (fd) => (fd === 1 ? [{ name: '..cache', directory: true, symlink: false }] : []);
+        ports.physicalPath = (fd) => (fd === 1 ? root : `${root}/..cache`);
+        open.mockImplementation((path) => {
+            if (path === root) {
+                return 1;
+            }
+            if (path === '/proc/self/fd/1/..cache') {
+                return 2;
+            }
+            throw new Error('unexpected file or symlink traversal');
+        });
+        ownCheckoutDirectories({ ...context, workspace: root }, ports);
+        expect(own.mock.calls).toEqual([
+            [1, 20000, 20000],
+            [2, 20000, 20000],
+        ]);
+        expect(close.mock.calls).toEqual([[2], [1]]);
+    });
+
+    it.each(['/', '/checkout-sibling', '/outside'])('does not own a child whose physical path is %s', (physical) => {
+        const { ports, own } = directoryPorts();
+        ports.physicalPath = (fd) => (fd === 1 ? root : physical);
+        expect(() => ownCheckoutDirectories({ ...context, workspace: root }, ports)).toThrow('boundary');
+        expect(own.mock.calls).toEqual([[1, 20000, 20000]]);
+    });
+
     it.each(['outside', 'device', 'file', 'unlinked', 'deadline'])(
         'does not own a child when its %s proof fails',
         (failure) => {

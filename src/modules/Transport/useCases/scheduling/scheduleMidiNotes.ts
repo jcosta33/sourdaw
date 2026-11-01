@@ -533,8 +533,15 @@ export async function scheduleMidiNotes(
     // drops the far-behind wraps. `BEAT_EPSILON` absorbs the wrap re-anchor's
     // modulo round-trip noise — ulp-scale, orders below any musical distance —
     // so a landing at the clock reads as due, not stale.
+    //
+    // A continuing window the scheduler admitted overdue — its tick late by
+    // less than one look-ahead — opens behind the clock, and plays what it owns
+    // late as every other note kind does; only content landing behind the
+    // window start is stale there. A relocation opens at its destination, so
+    // the clock alone decides.
+    const clockFloorBeat = opensAtRelocation ? accumulatedPosition : Math.min(accumulatedPosition, fromBeat);
     const admittedSegmentFloorBeat =
-        Math.max(fromBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS, accumulatedPosition) - BEAT_EPSILON;
+        Math.max(fromBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS, clockFloorBeat) - BEAT_EPSILON;
     // #4591 — the MIDI twin of scheduleAudioClips' cue-send rule: the strip's
     // mute sits downstream of the pre-fader tap, so a muted MIDI track still
     // feeds its pre-fader (cue) sends, and the offline mixdown schedules those

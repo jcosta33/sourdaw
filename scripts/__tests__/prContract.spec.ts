@@ -3422,6 +3422,13 @@ describe('canonicalPath and containsPath', () => {
             expect(containsPath('/repo/sub', '/other/repo/sub')).toBe(false);
             expect(containsPath('/repo/sub/deep', '/repo/sub')).toBe(false);
         });
+
+        it('contains a child whose name merely begins with two dots', () => {
+            expect(containsPath('/repo/lane', '/repo/lane/..cache/f')).toBe(true);
+            expect(containsPath('/repo/lane', '/repo/lane/..')).toBe(false);
+            expect(containsPath('/repo/lane', '/repo/lane/../x')).toBe(false);
+            expect(containsPath('/repo/lane', '/repo/lane2/x')).toBe(false);
+        });
     });
 
     describe('canonicalPath', () => {

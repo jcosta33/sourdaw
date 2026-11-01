@@ -12,14 +12,15 @@ export async function pickAndImportDawProject(): Promise<boolean> {
     }
     // Choosing the open project's Recent entry from here on withdraws the import.
     const isStillChosen = pendingProjectReplacements.capture();
-    // The import replaces the open project: pre-save it first (audit #568 F2)
-    // and refuse a failed save or one that resolved with the project still
-    // dirty — a plugin capture rejected before commit keeps that edit
-    // uncaptured; both refusal surfaces already notified.
-    if (!(await saveProjectBeforeReplacement()) || !isStillChosen()) {
+    // The import replaces the open project: pre-save it first (audit #568 F2).
+    // A failed save, or one that resolved with the project still dirty (a
+    // plugin capture rejected before commit keeps that edit uncaptured), asks
+    // whether to leave without saving; Cancel keeps the project open.
+    const outgoingProject = await saveProjectBeforeReplacement();
+    if (outgoingProject === 'stay' || !isStillChosen()) {
         return false;
     }
     const file = files[0]!;
     const buffer = await file.arrayBuffer();
-    return (await importDawProject({ buffer, fileName: file.name, shouldProceed: isStillChosen })).ok;
+    return (await importDawProject({ buffer, fileName: file.name, outgoingProject, shouldProceed: isStillChosen })).ok;
 }
