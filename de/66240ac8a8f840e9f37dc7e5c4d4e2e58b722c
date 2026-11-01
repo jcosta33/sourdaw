@@ -1,0 +1,21 @@
+src/modules/Arrangement/useCases/clipSelection/__tests__/clipSelection.spec.ts
+  s_4d70c955b00771::t_15d8ebd861999d 17-18,24-36,105,109-110,123,125,127-160,210
+src/modules/Arrangement/useCases/clipSelection/selectClip.ts
+  s_4d70c955b00771::t_e02b65a14a78b2 5-9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "de66240ac8a8f840e9f37dc7e5c4d4e2e58b722c",
+  "prompts": {},
+  "sessions": {
+    "s_4d70c955b00771": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_4d70c955b00771",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
