@@ -13,7 +13,7 @@
  * with `beginDragGesture()` so the global Escape chain and the virtual keyboard yield the key,
  * and unmodified Escape abandons it through the session's `cancel`.
  */
-import { type PointerEvent, type RefObject, useRef, useEffect } from 'react';
+import { type PointerEvent as ReactPointerEvent, type RefObject, useRef, useEffect } from 'react';
 
 import { beginDragGesture } from '#/utils/UI/activeDragGesture';
 
@@ -46,39 +46,98 @@ type ArmedLaneDrag = {
     disarm: () => void;
 };
 
-type LaneDragOutcome = 'commit' | 'cancel';
-
 const isUnmodifiedEscape = (event: KeyboardEvent): boolean =>
     event.key === 'Escape' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey;
 
 /**
- * End the in-flight gesture exactly once, by commit or by cancel. What guarantees that is the clear
+ * Take the armed gesture out of the ref and drop its Escape ownership — the drag mark and the
+ * Escape listener — in one step, so whichever exit runs first ends the gesture and every later
+ * one finds nothing. Null when no gesture is armed.
+ */
+const takeArmedDrag = (armedRef: RefObject<ArmedLaneDrag | null>): ArmedLaneDrag | null => {
+    const armed = armedRef.current;
+    if (!armed) {
+        return null;
+    }
+    armedRef.current = null;
+    armed.disarm();
+    return armed;
+};
+
+/**
+ * End the in-flight gesture exactly once by committing it. What guarantees that is the clear
  * happening *at all*, synchronously, before this returns: the trailing `pointerup`/`lostpointercapture`
- * the browser still delivers — after an Escape cancel too — then finds no gesture to commit, and the
- * drag mark and Escape listener go with the same clear. Placing the clear ahead of `commit()` is cheap
+ * the browser still delivers then finds no gesture to finalize. Placing the clear ahead of `commit()` is cheap
  * insurance against a future re-entrant commit only — `releasePointerCapture()` merely nulls the
  * pending capture target, and `lostpointercapture` fires from the process-pending-pointer-capture
  * steps before the next pointer event rather than synchronously here (Blink matches the spec), so
  * no current path re-enters and no test can red the ordering. See M16 on PR #1262.
  */
-const finishLaneDrag = (armedRef: RefObject<ArmedLaneDrag | null>, outcome: LaneDragOutcome): void => {
-    const armed = armedRef.current;
+const commitLaneDrag = (armedRef: RefObject<ArmedLaneDrag | null>): void => {
+    const armed = takeArmedDrag(armedRef);
     if (!armed) {
         return;
     }
-    armedRef.current = null;
-    armed.disarm();
     const { session } = armed;
     try {
         session.captureTarget.releasePointerCapture(session.pointerId);
     } catch {
         // The browser releases capture itself on pointercancel and on element removal.
     }
-    if (outcome === 'cancel') {
-        session.cancel();
-        return;
-    }
     session.commit();
+};
+
+/**
+ * Escape cancels while the button is still down, so the press is not over: its pointerup and the
+ * click after it are still to come. Capture is kept for them. The browser releases it implicitly
+ * right after the pointer's own pointerup or pointercancel (Pointer Events, "Implicit release of
+ * pointer capture"), and until then the trailing events stay on the capture target, where no
+ * session remains to commit. Releasing early instead would send the release's click to the
+ * nearest common ancestor of the press and release targets (UI Events click targeting) — over
+ * empty lane, the lane container, whose click handler adds a point.
+ *
+ * The press's one click is swallowed as well, because capture can still be lost before the
+ * release (the pressed handle unmounting). The swallower is a window capture-phase listener so
+ * it runs ahead of every lane. It ends after its click, after the pointerup's task (the click is
+ * dispatched in that same task), on the pointer's pointercancel (no click follows one), on the
+ * next pointerdown, and when the lane unmounts, so it can never eat a later, real click.
+ */
+const swallowCancelledPressClick = (pointerId: number): (() => void) => {
+    let releaseTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const end = (): void => {
+        clearTimeout(releaseTimer);
+        window.removeEventListener('click', swallowClick, true);
+        window.removeEventListener('pointerup', handlePointerUp, true);
+        window.removeEventListener('pointercancel', handlePointerCancel, true);
+        window.removeEventListener('pointerdown', end, true);
+    };
+
+    const swallowClick = (event: MouseEvent): void => {
+        event.preventDefault();
+        event.stopPropagation();
+        end();
+    };
+
+    const handlePointerUp = (event: PointerEvent): void => {
+        if (event.pointerId !== pointerId) {
+            return;
+        }
+        releaseTimer = setTimeout(end, 0);
+    };
+
+    const handlePointerCancel = (event: PointerEvent): void => {
+        if (event.pointerId !== pointerId) {
+            return;
+        }
+        end();
+    };
+
+    window.addEventListener('click', swallowClick, true);
+    window.addEventListener('pointerup', handlePointerUp, true);
+    window.addEventListener('pointercancel', handlePointerCancel, true);
+    window.addEventListener('pointerdown', end, true);
+    return end;
 };
 
 /**
@@ -87,10 +146,10 @@ const finishLaneDrag = (armedRef: RefObject<ArmedLaneDrag | null>, outcome: Lane
  * alive when the pressed handle unmounts mid-drag.
  */
 type LaneDragHandlers = {
-    onPointerMove: (event: PointerEvent<Element>) => void;
-    onPointerUp: (event: PointerEvent<Element>) => void;
-    onPointerCancel: (event: PointerEvent<Element>) => void;
-    onLostPointerCapture: (event: PointerEvent<Element>) => void;
+    onPointerMove: (event: ReactPointerEvent<Element>) => void;
+    onPointerUp: (event: ReactPointerEvent<Element>) => void;
+    onPointerCancel: (event: ReactPointerEvent<Element>) => void;
+    onLostPointerCapture: (event: ReactPointerEvent<Element>) => void;
 };
 
 type UseLaneDragSessionOutput = {
@@ -103,14 +162,30 @@ type UseLaneDragSessionOutput = {
 
 export const useLaneDragSession = (): UseLaneDragSessionOutput => {
     const armedDragRef = useRef<ArmedLaneDrag | null>(null);
+    const endCancelledPressRef = useRef<(() => void) | null>(null);
+
+    const endCancelledPress = (): void => {
+        endCancelledPressRef.current?.();
+        endCancelledPressRef.current = null;
+    };
+
+    const cancelArmedDrag = (): void => {
+        const armed = takeArmedDrag(armedDragRef);
+        if (!armed) {
+            return;
+        }
+        endCancelledPress();
+        endCancelledPressRef.current = swallowCancelledPressClick(armed.session.pointerId);
+        armed.session.cancel();
+    };
 
     useEffect(() => {
         const handleWindowBlur = (): void => {
-            finishLaneDrag(armedDragRef, 'commit');
+            commitLaneDrag(armedDragRef);
         };
         const handleVisibilityChange = (): void => {
             if (document.visibilityState === 'hidden') {
-                finishLaneDrag(armedDragRef, 'commit');
+                commitLaneDrag(armedDragRef);
             }
         };
 
@@ -124,7 +199,9 @@ export const useLaneDragSession = (): UseLaneDragSessionOutput => {
 
     useEffect(() => {
         return () => {
-            finishLaneDrag(armedDragRef, 'commit');
+            commitLaneDrag(armedDragRef);
+            endCancelledPressRef.current?.();
+            endCancelledPressRef.current = null;
         };
     }, []);
 
@@ -155,7 +232,7 @@ export const useLaneDragSession = (): UseLaneDragSessionOutput => {
             if (!isUnmodifiedEscape(event)) {
                 return;
             }
-            finishLaneDrag(armedDragRef, 'cancel');
+            cancelArmedDrag();
         };
         window.addEventListener('keydown', handleEscape);
         armedDragRef.current = {
@@ -167,7 +244,7 @@ export const useLaneDragSession = (): UseLaneDragSessionOutput => {
         };
     };
 
-    const handleDragMove = (event: PointerEvent<Element>): void => {
+    const handleDragMove = (event: ReactPointerEvent<Element>): void => {
         const session = armedDragRef.current?.session;
         if (!session || session.pointerId !== event.pointerId) {
             return;
@@ -175,12 +252,12 @@ export const useLaneDragSession = (): UseLaneDragSessionOutput => {
         session.move({ clientX: event.clientX, clientY: event.clientY });
     };
 
-    const handleDragEnd = (event: PointerEvent<Element>): void => {
+    const handleDragEnd = (event: ReactPointerEvent<Element>): void => {
         const session = armedDragRef.current?.session;
         if (!session || session.pointerId !== event.pointerId) {
             return;
         }
-        finishLaneDrag(armedDragRef, 'commit');
+        commitLaneDrag(armedDragRef);
     };
 
     return {

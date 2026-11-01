@@ -890,6 +890,26 @@ describe('CCLane', () => {
                 expect(pushUndoEntry).toHaveBeenCalledWith('Move CC point', expect.any(Function), expect.any(Function));
             });
 
+            it('releasing over empty lane after an Escape cancel adds no point', () => {
+                seedPoint();
+                const { container } = render(<CCLane {...defaultProps} />);
+                const point = getPoint(container);
+                const lane = screen.getByRole('group');
+
+                fireEvent.pointerDown(point, { pointerId: 2, button: 0, clientX: 8, clientY: 76 });
+                fireEvent.pointerMove(point, { pointerId: 2, clientX: 88, clientY: 20 });
+                fireEvent.keyDown(window, { key: 'Escape' });
+
+                // The release lands on empty lane, so its click targets the lane container.
+                fireEvent.pointerUp(lane, { pointerId: 2, button: 0, clientX: 300, clientY: 40 });
+                fireEvent.click(lane, { button: 0, clientX: 300, clientY: 40 });
+
+                expect(laneMocks.midiState.ccByClipId['clip-1']).toEqual([
+                    { id: 'cc-a', controller: 1, value: 20, beat: 0, channel: 0 },
+                ]);
+                expect(pushUndoEntry).not.toHaveBeenCalled();
+            });
+
             it('Escape mid-drag puts the point back where it was pressed and records no undo entry', () => {
                 seedPoint();
                 const { container } = render(<CCLane {...defaultProps} />);

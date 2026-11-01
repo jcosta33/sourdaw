@@ -10,6 +10,8 @@ type SessionCallbacks = {
     move: ReturnType<typeof vi.fn>;
     commit: ReturnType<typeof vi.fn>;
     cancel: ReturnType<typeof vi.fn>;
+    /** Clicks that reach the lane host, the ancestor a release's click lands on without capture. */
+    click: ReturnType<typeof vi.fn>;
 };
 
 /** The smallest lane: one handle that arms a session on press, inside a host carrying the handlers. */
@@ -28,18 +30,38 @@ const LaneHarness = ({ callbacks }: { callbacks: SessionCallbacks }): ReactEleme
         });
     };
     return (
-        <div data-testid="host" {...dragHandlers}>
+        <div data-testid="host" onClick={callbacks.click} {...dragHandlers}>
             <div data-testid="handle" onPointerDown={handlePointerDown} />
         </div>
     );
 };
 
-const renderArmedLane = (): { callbacks: SessionCallbacks; handle: HTMLElement; unmount: () => void } => {
-    const callbacks: SessionCallbacks = { move: vi.fn(), commit: vi.fn(), cancel: vi.fn() };
+type ArmedLane = { callbacks: SessionCallbacks; handle: HTMLElement; host: HTMLElement; unmount: () => void };
+
+const makeCallbacks = (): SessionCallbacks => ({ move: vi.fn(), commit: vi.fn(), cancel: vi.fn(), click: vi.fn() });
+
+const renderArmedLane = (): ArmedLane => {
+    const callbacks = makeCallbacks();
     const view = render(<LaneHarness callbacks={callbacks} />);
     const handle = within(view.container).getByTestId('handle');
+    const host = within(view.container).getByTestId('host');
     fireEvent.pointerDown(handle, { pointerId: 3, button: 0, clientX: 10, clientY: 10 });
-    return { callbacks, handle, unmount: view.unmount };
+    return { callbacks, handle, host, unmount: view.unmount };
+};
+
+/**
+ * Counts the window `keydown` listeners added and not yet removed since this was called — the
+ * Escape listeners an armed drag still holds. Spies call through, so listeners still work.
+ */
+const trackWindowKeydownListeners = (): (() => number) => {
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
+    const keydownHandlers = (calls: unknown[][]): unknown[] =>
+        calls.filter((call) => call[0] === 'keydown').map((call) => call[1]);
+    return () => {
+        const removed = keydownHandlers(removeSpy.mock.calls);
+        return keydownHandlers(addSpy.mock.calls).filter((handler) => !removed.includes(handler)).length;
+    };
 };
 
 const pressEscape = (init: KeyboardEventInit = {}): void => {
@@ -61,14 +83,15 @@ describe('useLaneDragSession', () => {
             expect(callbacks.commit).not.toHaveBeenCalled();
         });
 
-        it('releases capture and stops forwarding moves once cancelled', () => {
+        it('keeps capture for the held press and stops forwarding moves once cancelled', () => {
             const { callbacks, handle } = renderArmedLane();
             const release = vi.spyOn(handle, 'releasePointerCapture');
 
             pressEscape();
             fireEvent.pointerMove(handle, { pointerId: 3, clientX: 90, clientY: 40 });
 
-            expect(release).toHaveBeenCalledWith(3);
+            // The browser releases capture itself after the press's own pointerup.
+            expect(release).not.toHaveBeenCalled();
             expect(callbacks.move).not.toHaveBeenCalled();
         });
 
@@ -156,6 +179,173 @@ describe('useLaneDragSession', () => {
         });
     });
 
+    describe('the click after a cancelled press', () => {
+        it.each([
+            ['the capture target', (lane: ArmedLane): HTMLElement => lane.handle],
+            ['its ancestor', (lane: ArmedLane): HTMLElement => lane.host],
+        ])('is swallowed once on %s, and the next click goes through', (_where, clickTarget) => {
+            const lane = renderArmedLane();
+            const target = clickTarget(lane);
+
+            pressEscape();
+            fireEvent.pointerUp(target, { pointerId: 3 });
+            const swallowed = fireEvent.click(target);
+
+            expect(lane.callbacks.click).not.toHaveBeenCalled();
+            expect(swallowed).toBe(false);
+
+            fireEvent.click(target);
+            expect(lane.callbacks.click).toHaveBeenCalledTimes(1);
+        });
+
+        it('is swallowed when the release lands before capture would have retargeted it', () => {
+            const lane = renderArmedLane();
+
+            pressEscape();
+            fireEvent.lostPointerCapture(lane.handle, { pointerId: 3 });
+            fireEvent.pointerUp(lane.host, { pointerId: 3 });
+            fireEvent.click(lane.host);
+
+            expect(lane.callbacks.click).not.toHaveBeenCalled();
+            expect(lane.callbacks.commit).not.toHaveBeenCalled();
+        });
+
+        it.each([
+            [
+                'the next pointerdown',
+                (lane: ArmedLane): void => {
+                    fireEvent.pointerDown(lane.host, { pointerId: 5, button: 0 });
+                },
+            ],
+            [
+                'the pressed pointer cancelling',
+                (lane: ArmedLane): void => {
+                    fireEvent.pointerCancel(lane.handle, { pointerId: 3 });
+                },
+            ],
+        ])('is no longer swallowed after %s', (_end, end) => {
+            const lane = renderArmedLane();
+
+            pressEscape();
+            end(lane);
+            fireEvent.click(lane.host);
+
+            expect(lane.callbacks.click).toHaveBeenCalledTimes(1);
+        });
+
+        it('is no longer swallowed once the release task has ended without a click', () => {
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+            try {
+                const lane = renderArmedLane();
+
+                pressEscape();
+                fireEvent.pointerUp(lane.handle, { pointerId: 3 });
+                vi.runAllTimers();
+                fireEvent.click(lane.host);
+
+                expect(lane.callbacks.click).toHaveBeenCalledTimes(1);
+            } finally {
+                vi.useRealTimers();
+            }
+        });
+
+        it('is no longer swallowed after the lane unmounts', () => {
+            const lane = renderArmedLane();
+            const outside = vi.fn();
+            document.body.addEventListener('click', outside);
+            try {
+                pressEscape();
+                lane.unmount();
+                fireEvent.click(document.body);
+            } finally {
+                document.body.removeEventListener('click', outside);
+            }
+
+            expect(outside).toHaveBeenCalledTimes(1);
+        });
+
+        it('ignores another pointer releasing', () => {
+            const lane = renderArmedLane();
+
+            pressEscape();
+            fireEvent.pointerCancel(lane.host, { pointerId: 8 });
+            fireEvent.pointerUp(lane.handle, { pointerId: 3 });
+            fireEvent.click(lane.handle);
+
+            expect(lane.callbacks.click).not.toHaveBeenCalled();
+        });
+
+        it('leaves the click after a committed drag alone', () => {
+            const lane = renderArmedLane();
+
+            fireEvent.pointerUp(lane.handle, { pointerId: 3 });
+            fireEvent.click(lane.handle);
+
+            expect(lane.callbacks.commit).toHaveBeenCalledTimes(1);
+            expect(lane.callbacks.click).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('Escape listener teardown', () => {
+        it.each([
+            [
+                'commit on pointerup',
+                (lane: ArmedLane): void => {
+                    fireEvent.pointerUp(lane.handle, { pointerId: 3 });
+                },
+            ],
+            [
+                'Escape cancel',
+                (): void => {
+                    pressEscape();
+                },
+            ],
+            [
+                'window blur',
+                (): void => {
+                    fireEvent(window, new Event('blur'));
+                },
+            ],
+            [
+                'the tab hiding',
+                (): void => {
+                    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+                    try {
+                        fireEvent(document, new Event('visibilitychange'));
+                    } finally {
+                        Reflect.deleteProperty(document, 'visibilityState');
+                    }
+                },
+            ],
+            [
+                'unmount',
+                (lane: ArmedLane): void => {
+                    lane.unmount();
+                },
+            ],
+            [
+                'pointercancel',
+                (lane: ArmedLane): void => {
+                    fireEvent.pointerCancel(lane.handle, { pointerId: 3 });
+                },
+            ],
+            [
+                'lostpointercapture',
+                (lane: ArmedLane): void => {
+                    fireEvent.lostPointerCapture(lane.handle, { pointerId: 3 });
+                },
+            ],
+        ])('leaves no Escape listener on window after %s', (_exit, end) => {
+            const liveKeydownListeners = trackWindowKeydownListeners();
+            const lane = renderArmedLane();
+            expect(liveKeydownListeners()).toBe(1);
+
+            end(lane);
+
+            expect(liveKeydownListeners()).toBe(0);
+        });
+    });
+
     describe('drag mark', () => {
         it('is set while armed', () => {
             renderArmedLane();
@@ -164,7 +354,7 @@ describe('useLaneDragSession', () => {
         });
 
         it('is not set when taking capture fails', () => {
-            const callbacks: SessionCallbacks = { move: vi.fn(), commit: vi.fn(), cancel: vi.fn() };
+            const callbacks = makeCallbacks();
             render(<LaneHarness callbacks={callbacks} />);
             const handle = screen.getByTestId('handle');
             vi.spyOn(handle, 'setPointerCapture').mockImplementation(() => {
