@@ -1,0 +1,35 @@
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/automationScheduling.spec.ts
+  s_3bb122e91d89a5::t_6ed01f633f5c09 240-241
+src/modules/AudioEngine/repositories/offlineScheduler/compileAutomationEvents.ts
+  s_3bb122e91d89a5::t_50a2284285a834 585-591,595,599-600
+  s_3bb122e91d89a5::t_b6462b74b802e8 562-563,565-572
+  s_3bb122e91d89a5::t_65297e58a1f432 157-164,166,168-173,175,177-182,184-192,194-239,241-246,257-282,284-298
+  s_3bb122e91d89a5::t_d2d97ea7f7ad4c 240
+  s_3bb122e91d89a5::t_bcd7cf9deaa54c 601-602
+  s_3bb122e91d89a5::t_a522efc59797fa 176,183,564,573
+  s_3bb122e91d89a5::t_9efc08577460b9 193
+  s_3bb122e91d89a5::t_1344182610ec74 603
+  s_3bb122e91d89a5::t_547a658921adf4 283
+  s_3bb122e91d89a5::t_770c19b7f4f93b 583-584,592-594,596-598
+  s_3bb122e91d89a5::t_cf784f2cc3130f 299
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/compileAutomationEventsBeatInversion.spec.ts
+  s_3bb122e91d89a5::t_af3920ae9c464e 234
+  s_3bb122e91d89a5::t_24413acb74a970 207-233,235-254
+  s_3bb122e91d89a5::t_d754a22e2b3fa5 10-18,28,60-74,86,121-156,162-164,167-169,171,173,178-180,186-201,203-206,255-262
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "11e0e78b86a908773542faf7fec18b34b2aef260",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
