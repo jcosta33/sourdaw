@@ -2,7 +2,14 @@ import { resolve } from 'node:path';
 
 import { defineConfig, devices } from '@playwright/test';
 
+import { COLD_FIRST_PAINT_TIMEOUT_MS } from './coldFirstPaintBudget';
+
 const WEBGPU_ADMISSION_PORT = 5188;
+// The admission specs run four tests serially, each bounded at 180 seconds.
+const ADMISSION_TESTS_MS = 4 * 180_000;
+// Dev-server start (Playwright's 60-second webServer default), the headless
+// warmup and headed test browser launches, and teardown.
+const RUN_OVERHEAD_MS = 2 * 60_000;
 const WEBGPU_ADMISSION_ORIGIN = `http://localhost:${WEBGPU_ADMISSION_PORT}`;
 
 // This proof must exercise this checkout. Reusing the shared default Vite port
@@ -19,9 +26,10 @@ export default defineConfig({
     // Warm this config's own isolated server before the admission specs start
     // observing their first-paint bounds. See ./firstPaintWarmup.ts.
     globalSetup: './firstPaintWarmup.ts',
-    // Bound setup, the four 180-second tests, and teardown before the CI step's
-    // 18-minute limit so a stalled phase can still leave a diagnostic artifact.
-    globalTimeout: 17 * 60_000,
+    // Bound the cold warmup, the four tests, and teardown before the CI step's
+    // 20-minute limit so a stalled phase can still leave a diagnostic artifact.
+    // Derived from the warmup bound so raising it cannot leave the tests no room.
+    globalTimeout: COLD_FIRST_PAINT_TIMEOUT_MS + ADMISSION_TESTS_MS + RUN_OVERHEAD_MS,
     timeout: 60_000,
     fullyParallel: false,
     forbidOnly: true,
