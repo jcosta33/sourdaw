@@ -4,9 +4,9 @@ Defects in anything that starts, stops, parks, replaces or disposes a long-lived
 a user-facing mode: the native live graph session, the playhead scheduler and feed, a recording session, the
 input-monitoring capture, a plugin host instance, a collaboration transport. A lifecycle stance carries this file.
 Each probe names the failure mode, the input or state to drive and the check that must go red, and names the
-mutation that must fail it where its source lesson established one. Controlled ports (media, graph, scheduler, wall-clock) prove ordering, ownership and cleanup; they
-never establish physical hardware audibility. Runtime-monitor companions to `project-integrity.md` live here and in
-`input-monitoring-ownership.md`.
+mutation that must fail it where its source lesson established one. Controlled ports (media, graph, scheduler,
+wall-clock) prove ordering, ownership and cleanup; they never establish physical hardware audibility. Runtime-monitor
+companions to `project-integrity.md` live here and in `input-monitoring-ownership.md`.
 
 ## Standing probes
 
