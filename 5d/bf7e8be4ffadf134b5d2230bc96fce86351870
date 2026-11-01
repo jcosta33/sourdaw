@@ -1,0 +1,40 @@
+src/app/bootstrap.ts
+  s_fec7059b7a251c::t_e754a1b52b7b49 729
+  s_fec7059b7a251c::t_ca109857af9fb6 36
+src/modules/Arrangement/useCases/__tests__/initTimelineViewReconciliation.spec.ts
+  s_fec7059b7a251c::t_d569c7ce1aebb6 1-41
+src/modules/Arrangement/AGENTS.md
+  s_fec7059b7a251c::t_ff01984a487d72 28
+src/app/__tests__/bootstrap.spec.ts
+  s_fec7059b7a251c::t_38a5e81bbb807c 1521,1523-1526
+  s_fec7059b7a251c::t_f7485b5d6714bc 301
+  s_fec7059b7a251c::t_b9c6aa1d101ab3 197
+  s_fec7059b7a251c::t_41b9721f5b4dba 414
+src/modules/Arrangement/useCases/initClipSelectionReconciliation.ts
+  s_fec7059b7a251c::t_b5d1774566f3df 1
+  s_fec7059b7a251c::t_75f325ca782331 2
+  s_fec7059b7a251c::t_0a042d638f36ab 8-11,13-19,26-27
+  s_fec7059b7a251c::t_f25f99bec9ed3e 12
+src/modules/Arrangement/useCases/index.ts
+  s_fec7059b7a251c::t_b68e19d1f1e2fe 263
+src/modules/Arrangement/useCases/__tests__/initClipSelectionReconciliation.spec.ts
+  s_fec7059b7a251c::t_3bb137d038cd56 182,184,186,192-195,204-213,215
+src/modules/Arrangement/useCases/initTimelineViewReconciliation.ts
+  s_fec7059b7a251c::t_a3a19e0988dc47 1-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5dbf7e8be4ffadf134b5d2230bc96fce86351870",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
