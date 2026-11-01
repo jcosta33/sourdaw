@@ -19,7 +19,7 @@ import {
 import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { type AiBackendPreference, type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { type ModelProviderName } from '../../models/ModelProviderProtocol';
-import { type PlanningOutcome } from '../../models/PlanningOutcome';
+import { type AnswerSuggestion, type PlanningOutcome } from '../../models/PlanningOutcome';
 import { guardReadonlyPlanningResult } from '../../models/PlanningProfile';
 import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProviderInfo';
 import { getActiveModelId } from '../../repositories/webLlm/getActiveModelId';
@@ -58,6 +58,8 @@ type PromptChatRequestOptions = {
     resume?: AgentRunDecisionResume;
     onResumedRunAdmitted?: (runId: string) => void;
     onResumedPlanAccepted?: () => void;
+    /** An earlier answer's suggestion the user asked to see proposed; the planner compiles it without a provider. */
+    suggestion?: AnswerSuggestion;
 };
 
 type PromptChatRequestInput = {
@@ -415,7 +417,10 @@ async function completeAnsweredRun(input: {
         throw new AiProposalInvalidatedError();
     }
     agentRunLifecycle.transitionPhase({ runId: admission.runId, phase: 'completed' });
-    appendAnswerChatMessages(request.userText, outcome);
+    appendAnswerChatMessages(request.userText, outcome, {
+        projectIdentity: captureProjectIdentity(),
+        projectRevision,
+    });
 }
 
 /**
@@ -949,6 +954,8 @@ export async function orchestratePromptChatRequest(
         setActiveAborter(null);
     };
     const profileOptions = input.interactionMode === 'explain' ? { profile: 'readonly-answer' as const } : {};
+    const suggestion = input.options?.suggestion;
+    const suggestionOptions = suggestion === undefined ? {} : { suggestion };
     try {
         const { context, result, projectRevision } = await planPromptActions({
             prompt: input.userText,
@@ -983,6 +990,7 @@ export async function orchestratePromptChatRequest(
             providerPlanning: admission.providerPlanning ? 'enabled' : 'disabled',
             // Read before this request joins the thread, so the thread holds only its earlier turns.
             thread: readChatThreadContext(),
+            ...suggestionOptions,
         });
         if (!settleCompletedPlanning(admission, input.userText)) {
             return undefined;

@@ -25,6 +25,7 @@ import {
 import { pendingActionConfirmationStore } from '../../stores/pendingActionConfirmationStore';
 import { selectAgentRunPendingEffectRecoveries } from '../../stores/selectAgentRunPendingEffectRecoveries';
 import { selectPreparedStemImportManualRepairs } from '../../stores/selectPreparedStemImportManualRepairs';
+import { proposeAnswerSuggestion } from '../../useCases/aiPanelActions/proposeAnswerSuggestion';
 import { toggleChat } from '../../useCases/aiPanelActions/toggleChat';
 import { cancelPendingChatActions } from '../../useCases/cancelPendingChatActions';
 import { confirmPendingChatActions } from '../../useCases/confirmPendingChatActions';
@@ -98,14 +99,18 @@ const ReasoningBlock = ({ reasoning, isStreaming }: { reasoning: string; isStrea
 
 type ChatMessageItemProps = {
     msg: ChatMessage;
+    isGenerating: boolean;
     onConfirmPendingActions: (confirmationId: string) => void;
     onCancelPendingActions: (confirmationId: string) => void;
+    onProposeSuggestion: (messageId: string) => void;
 };
 
 const ChatMessageItem = ({
     msg,
+    isGenerating,
     onConfirmPendingActions,
     onCancelPendingActions,
+    onProposeSuggestion,
 }: ChatMessageItemProps): ReactElement => {
     let msgIcon = <User className="size-3" />;
     if (msg.isCommandAction) {
@@ -169,6 +174,20 @@ const ChatMessageItem = ({
                     <span className="whitespace-pre-wrap break-words">{msg.content}</span>
                 )}
                 {msg.answerEvidence ? <AnswerEvidenceDisclosure evidence={msg.answerEvidence} /> : null}
+                {msg.answerSuggestion ? (
+                    <Row gap={2} className="mt-2">
+                        <Button
+                            size="xs"
+                            variant="secondary"
+                            onClick={() => onProposeSuggestion(msg.id)}
+                            aria-label={`Propose ${msg.answerSuggestion.recipeTitle} for ${msg.answerSuggestion.targetName}`}
+                            disabled={isGenerating}
+                            className="h-7 gap-1.5 text-[11px]"
+                        >
+                            Propose this
+                        </Button>
+                    </Row>
+                ) : null}
                 {approval === null ? null : (
                     <div aria-label="Metric goal verification">
                         <p>{`Objective verification: ${approval.metricGoals.status}`}</p>
@@ -326,6 +345,19 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
         }, 10);
     };
 
+    const handleProposeSuggestion = (messageId: string): void => {
+        void proposeAnswerSuggestion(messageId).catch((error: unknown) => {
+            const reason = error instanceof Error ? error.message : 'The suggestion could not be proposed.';
+            appendChatMessage({
+                id: `msg-${crypto.randomUUID()}`,
+                role: 'assistant',
+                content: reason,
+                timestamp: Date.now(),
+                error: reason,
+            });
+        });
+    };
+
     const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
         if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault();
@@ -396,8 +428,10 @@ export const ChatPanel = ({ style }: ChatPanelProps): ReactElement => {
                     <ChatMessageItem
                         key={msg.id}
                         msg={msg}
+                        isGenerating={chatState.isGenerating}
                         onConfirmPendingActions={handleConfirmPendingActions}
                         onCancelPendingActions={handleCancelPendingActions}
+                        onProposeSuggestion={handleProposeSuggestion}
                     />
                 ))}
                 {pendingEffectContinuations.map((continuation) => {
