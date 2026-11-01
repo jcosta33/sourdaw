@@ -4,10 +4,7 @@ Multi-topology compressor audio effect (VCA, Opto, FET, Diode models with Thrust
 
 ## Public Contract Surface
 
-- **Stores** (`stores/index.ts`): `glutenStore`, `glutenMeterStore`, `updateGlutenMeters`, `deleteGlutenMeters`, `GlutenMeterValues`.
-- **Views** (`presentations/views/index.ts`): `GlutenPanel`.
-- **Use Cases** (`useCases/index.ts`): No public cross-module use cases; internal param bridge and presets are consumed locally by `GlutenPanel`.
-- **Events** (`events/index.ts`): No public events.
+Public surface: `stores/index.ts`, `presentations/views/index.ts`. The module has no public cross-module use cases; its param bridge and presets are consumed locally by `GlutenPanel`.
 
 ## Key Subsystems
 

@@ -73,7 +73,7 @@ module.exports = {
             to: {
                 path: '^src/modules/',
                 pathNot: [
-                    '^$1$2', // same module may import its own internals freely
+                    '^$1$2/', // same module may import its own internals freely
                     '^src/modules/[^/]+/(useCases|events|stores|presentations/views)/index(?:\\.ts)?$',
                     '^src/helpers/',
                 ],
@@ -90,7 +90,7 @@ module.exports = {
             },
             to: {
                 path: '^src/modules/',
-                pathNot: '^$1$2',
+                pathNot: '^$1$2/',
                 dependencyTypes: ['local'],
                 dependencyTypesNot: ['aliased', 'aliased-tsconfig', 'aliased-tsconfig-paths'],
             },

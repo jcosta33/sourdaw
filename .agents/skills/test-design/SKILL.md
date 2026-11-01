@@ -98,3 +98,27 @@ Read what the run executed, not its exit code. A `cargo test <filter>` that matc
 **Why:** each of these reports green while observing nothing.
 
 **Enforced by:** `scripts/runVitestZeroTestGuard.ts` for Vitest only; review only for cargo, shell and linter checks.
+
+### 11. MIDI note-correlation regressions prove the rack boundary
+
+When a MIDI transform or filter stores a Note On decision for a later Note Off, test supplied `noteInstanceId` values through `MidiRack`. Attack one equal-pitch note, change the deciding parameter while it remains held, then attack and release a second identity before the first. Assert the emitted identity and the transformed pitch or suppression, and make the fixture fail if instance correlation is replaced by channel/pitch FIFO. Keep identityless FIFO coverage separate.
+
+**Why:** a FIFO fallback and true instance correlation agree on single notes; only overlapping equal-pitch holds tell them apart.
+
+**Enforced by:** review only (probe: `review-stances/correctness.md`).
+
+### 12. Prefix-dependent inverses need real grouped replay
+
+When one batch member snapshots state produced by an earlier member, inspect the real history entry and replay the group (undo and redo) against both raw CRDT authority and its store projection.
+
+**Why:** a correct forward final state cannot prove the inverse was composed from the batch prefix.
+
+**Enforced by:** review only (probe: `review-stances/project-integrity.md`).
+
+### 13. Recording admission needs the real first-frame seam
+
+For any recording-admission change, hold worker readiness through the real recorder-to-transport route and drive the first nonempty processor block at a known `AudioWorkletGlobalScope.currentFrame`. Prove that no successful-start observable or uncaptured transport interval exists before the actual sample-zero receipt, then prove exactly one start after it.
+
+**Why:** a returned boolean, worker-ready message, main-thread callback time, or pre-resolved recorder mock cannot establish capture-clock alignment.
+
+**Enforced by:** review only (probe: `review-stances/session-lifecycle.md`); the nearest existing specs are `src/modules/AudioEngine/repositories/audioRecorder/__tests__/recordingCapturePlacement.integration.spec.ts` and `src/modules/AudioEngine/worklets/__tests__/recordingProcessor.spec.ts`.

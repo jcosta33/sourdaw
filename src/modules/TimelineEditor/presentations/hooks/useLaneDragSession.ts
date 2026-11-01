@@ -13,6 +13,16 @@
  * An armed gesture is also an Escape owner, like every other drag in the app: it marks itself
  * with `beginDragGesture()` so the global Escape chain and the virtual keyboard yield the key,
  * and unmodified Escape abandons it through the session's `cancel`.
+ *
+ * A gesture ends in exactly one of these ways, and the first to run wins:
+ *
+ * - `pointerup` / `pointercancel` / `lostpointercapture` reaching the lane container: commit.
+ * - `lostpointercapture` targeted at the Document: commit. This is the release of a capture target
+ *   that left the page mid-drag (the dragged chord deleted while the button is still down). The
+ *   browser then fires the event at the Document, not at the removed element, so no handler on the
+ *   lane container, React's root included, ever sees it; only a Document listener can.
+ * - Window blur, the tab hiding, or the lane unmounting: commit.
+ * - Unmodified Escape: cancel.
  */
 import { type PointerEvent as ReactPointerEvent, type RefObject, useRef, useEffect } from 'react';
 
@@ -226,6 +236,9 @@ export const useLaneDragSession = (): UseLaneDragSessionOutput => {
      * The global shortcut layer registers its window keydown listener at app start, so it runs
      * first and still sees the drag mark; the virtual keyboard listens in the capture phase, ahead
      * of both. Clearing the mark from a capture listener would let either one take the key.
+     *
+     * The `lostpointercapture` listener is registered and removed with the Escape listener, so
+     * every exit tears both down in the one `disarm`.
      */
     const beginDrag = (session: LaneDragSession): void => {
         session.captureTarget.setPointerCapture(session.pointerId);
@@ -236,11 +249,23 @@ export const useLaneDragSession = (): UseLaneDragSessionOutput => {
             }
             cancelArmedDrag();
         };
+        // A capture target removed from the page loses capture with the event fired at the
+        // Document, which the lane container's handlers never see. Only that Document-targeted
+        // event is taken here: one from a still-connected target reaches the lane's own handler,
+        // and a stale one from an earlier drag must not end a newer drag that reuses the pointer id.
+        const handleLostPointerCapture = (event: PointerEvent): void => {
+            if (event.target !== document || event.pointerId !== session.pointerId) {
+                return;
+            }
+            commitLaneDrag(armedDragRef);
+        };
         window.addEventListener('keydown', handleEscape);
+        document.addEventListener('lostpointercapture', handleLostPointerCapture, true);
         armedDragRef.current = {
             session,
             disarm: () => {
                 window.removeEventListener('keydown', handleEscape);
+                document.removeEventListener('lostpointercapture', handleLostPointerCapture, true);
                 endDragGesture();
             },
         };

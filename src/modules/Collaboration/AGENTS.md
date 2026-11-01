@@ -4,10 +4,7 @@ Real-time P2P and LAN collaboration sessions over Automerge CRDTs, owning networ
 
 ## Public Contract Surface
 
-- `stores`: `collaborationStore`.
-- `useCases`: `createSession`, `generateInvite`, `joinSession`, `acceptAnswer`, `leaveSession`, `broadcastPresence`, `onPresence`, `getAssetTransfer`, `canMutateBranchMetadata`, `canExecuteCommandBatch`, `getCollaborationHandlers`.
-- `presentations/views`: `CollaborationPanel`, `PresenceOverlay`.
-- Handlers: `getCollaborationHandlers` (`createCollabSession`, `joinCollabSession`, `leaveCollabSession`).
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 

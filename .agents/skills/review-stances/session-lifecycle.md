@@ -729,3 +729,92 @@ land in it. Each must be ordered before the witness, or shown not to reach the c
 Genuine edits during the await must still refuse the Play. Pin both sides: the earlier take and the
 earlier session's cleanup landing mid-await, and an unrelated edit landing mid-await. The
 non-punch Play with Yeast preparation is left behind in #6012.
+
+## Standing probes: collaboration teardown and receive-side sync
+
+Moved from the `crdt-collaboration` skill.
+
+### Session teardown and callbacks stay bound to their installed runtime
+
+A buffered leave-message drain followed by global session cleanup after an await closed whichever
+session was installed by then, and stale join continuations were invalidated without binding
+cleanup to the runtime that began it. Pause an outgoing leave at its transport await, install a
+successor session, and prove the outgoing cleanup cannot close or reset the successor. Retain old
+manager, sync, asset, timer, branch-transition and decode callbacks and invoke or settle them after
+replacement: they must neither read successor state nor write project, runtime or panel state,
+while current-owner callbacks stay effective.
+
+### Teardown durability must be driven through the registered actions
+
+Drive the registered create, join and leave actions through both `executeAppAction` and singleton
+`executeAppActionBatch`. Hold and reject the underlying lifecycle promise, prove command completion
+waits for it, and prove the runtime route never opens a project storage transaction. Exercise
+no-op root persistence, changed-root persistence and handoff, and generic document persistence,
+since each route can swallow its own error before a drain-only tail observes it. Include a
+repository commit followed by an exact-head rejection, partial session initialization, and a second
+explicit lifecycle attempt that retries the retained work after the installed owner was cleared. A
+successful promise tail, a committed write without fresh exact authority, or a configuration-object
+assertion does not establish durable teardown.
+
+### A staged session backup survives repeated removal failure (#1581)
+
+Non-throwing local-storage writes advanced their cache after failure. When a durable session backup
+is consumed in stages, reject repeated removal failures until a fresh durable read proves the backup
+is gone. Write newer branch state while removal remains refused, then prove retry does not replay the
+stale backup and a later successful removal settles it. Refuse both backup and branch-state reads
+after initialization, then prove recovery keeps the earliest durable witness: a failed `trySet`
+notification cannot authorize deletion, while a directly observed successful adapter write must
+protect the newer branch state even if reads remain blocked.
+
+### A prepared asset-handoff commit must queue behind accepted owner operations (#4248)
+
+Prepared commit closures could bypass the durable owner operation queue. Prepare the handoff, then
+admit and hold a source staging operation before invoking the returned commit. The commit must not
+reach any owner repository until that already-accepted operation settles, and both results must stay
+recoverable from fresh repository instances.
+
+### Receive-side sync progress must be real, fenced transport work
+
+Suppressing repository change notifications while applying a remote document left no protocol reply
+or fan-out at the accepted receive boundary. A fixture that fabricated a local change notification
+after every receive, and one that hid empty rounds behind three deliveries, masked it; treat the
+first change as the defect and such fixtures as masking. Use isolated production endpoints, actual
+transport messages, and one shared initialized genesis before separate offline edits. Settle each
+send before delivering its response so the sender records the generated SyncState first, and prove a
+sanitizer sees an edit-bearing payload before asserting rollback. Fixed delivery counts are never
+convergence proof. After a successful accepted receive, the reply to its connected source and the
+changed-content fan-out go through the existing per-peer queue, deferred only behind completed
+owner and persistence work, with scheduling and queued execution both fenced against stop or source
+disconnect. A stopped or disconnected runtime must never revive a queue, while a live host still
+relays accepted content to its other connected peers.
+
+### Worker-ready recording admission must reach the real first-frame seam
+
+Recording capture started from a worker-ready continuation while the command already returned success
+before the worklet captured input. For any recording-admission change, hold worker readiness through
+the real recorder-to-transport route and drive the first nonempty processor block at a known
+`AudioWorkletGlobalScope.currentFrame`. No successful-start observable and no uncaptured transport
+interval may exist before the actual sample-zero receipt, and exactly one start must follow it. A
+returned boolean, the worker-ready message, main-thread callback time or a pre-resolved recorder mock
+cannot establish capture-clock alignment; resolving the start on worker readiness must fail the case.
+
+## Standing probes: recording rings, stop fence and artifact identity
+
+Moved from the `web-audio-engine` skill. A pre-copy cursor check can admit mixed PCM, a signed or
+low-word rollover can make a full ring turn look empty, and clearing the stop deadline on the
+producer acknowledgment lets a stalled final drain retain the input session indefinitely.
+
+- **Ring publication.** Drive real 128-frame writes across signed and unsigned word rollover, at
+  capacity minus one, exact and plus one, and with a writer paused inside the consumer copy. The
+  worker may copy only an interval bracketed by the same stable sequence and cumulative count, must
+  retry an in-progress or changed copy, and must abandon a lapped interval rather than write
+  substituted PCM. Publishing a signed 32-bit cursor as the history contract, or the count before the
+  odd sequence, must fail a case.
+- **Stop fence.** Accept only the captured session's producer-stop acknowledgment, make one final
+  worker drain against that count, and keep the original flush deadline armed through
+  acknowledgment. A missing acknowledgment or flush must clean that exact captured session without
+  touching a successor for the same track; clearing the deadline on acknowledgment must fail.
+- **Artifact identity.** Recording artifacts need identity independent of wall-clock time: one
+  cryptographically unique temp-file name generated at worker initialization. Run two isolated
+  workers sharing a filename-keyed staged OPFS at one timestamp: each delivered WAV must retain its
+  own PCM, and removing one staging entry must not remove the other's.

@@ -347,6 +347,86 @@ describe('useLaneDragSession', () => {
         });
     });
 
+    describe('capture released by removing the captured element', () => {
+        // The browser reports that release at the Document, never at the removed element, so no
+        // handler on the lane container ever sees it (Pointer Events, "Implicit release of pointer
+        // capture").
+        it('commits the drag once, clears the mark and the Escape owner, and frees the lane', () => {
+            const { callbacks, handle } = renderArmedLane();
+            fireEvent.pointerMove(handle, { pointerId: 3, clientX: 40, clientY: 10 });
+
+            fireEvent.lostPointerCapture(document, { pointerId: 3 });
+
+            expect(callbacks.commit).toHaveBeenCalledTimes(1);
+            expect(isDragGestureActive()).toBe(false);
+
+            pressEscape();
+            expect(callbacks.cancel).not.toHaveBeenCalled();
+            expect(callbacks.commit).toHaveBeenCalledTimes(1);
+
+            fireEvent.pointerDown(handle, { pointerId: 4, button: 0, clientX: 10, clientY: 10 });
+            fireEvent.pointerMove(handle, { pointerId: 4, clientX: 50, clientY: 20 });
+            expect(callbacks.move).toHaveBeenLastCalledWith({ clientX: 50, clientY: 20 });
+            expect(isDragGestureActive()).toBe(true);
+        });
+
+        it('is not ended by another pointer losing its capture', () => {
+            const { callbacks, handle } = renderArmedLane();
+
+            fireEvent.lostPointerCapture(document, { pointerId: 8 });
+            fireEvent.pointerMove(handle, { pointerId: 3, clientX: 90, clientY: 40 });
+
+            expect(callbacks.commit).not.toHaveBeenCalled();
+            expect(isDragGestureActive()).toBe(true);
+            expect(callbacks.move).toHaveBeenCalledWith({ clientX: 90, clientY: 40 });
+        });
+
+        // A listener left behind by an ended drag would still answer its old pointer and end
+        // whichever drag the lane holds next.
+        it.each([
+            [
+                'pointerup',
+                (lane: ArmedLane): void => {
+                    fireEvent.pointerUp(lane.handle, { pointerId: 3 });
+                },
+            ],
+            [
+                'pointercancel',
+                (lane: ArmedLane): void => {
+                    fireEvent.pointerCancel(lane.handle, { pointerId: 3 });
+                },
+            ],
+            [
+                'lostpointercapture on the lane',
+                (lane: ArmedLane): void => {
+                    fireEvent.lostPointerCapture(lane.handle, { pointerId: 3 });
+                },
+            ],
+            [
+                'window blur',
+                (): void => {
+                    fireEvent(window, new Event('blur'));
+                },
+            ],
+            [
+                'Escape cancel',
+                (): void => {
+                    pressEscape();
+                },
+            ],
+        ])("leaves no listener that ends the next drag on the old pointer's release after %s", (_exit, end) => {
+            const lane = renderArmedLane();
+            end(lane);
+            const commitsBefore = lane.callbacks.commit.mock.calls.length;
+            fireEvent.pointerDown(lane.handle, { pointerId: 4, button: 0, clientX: 10, clientY: 10 });
+
+            fireEvent.lostPointerCapture(document, { pointerId: 3 });
+
+            expect(lane.callbacks.commit).toHaveBeenCalledTimes(commitsBefore);
+            expect(isDragGestureActive()).toBe(true);
+        });
+    });
+
     describe('Escape listener teardown', () => {
         it.each([
             [
