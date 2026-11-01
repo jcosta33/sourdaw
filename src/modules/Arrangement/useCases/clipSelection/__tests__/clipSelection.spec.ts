@@ -80,6 +80,42 @@ describe('clip selection use cases', () => {
         expect(clipSelectionStore.value?.selectedClipIds).toEqual(['clip-2']);
     });
 
+    it('toggleClipInSelection makes a clip added to a populated selection the primary', () => {
+        clipSelectionStore.set({ selectedClipId: 'a', selectedClipIds: ['a', 'b'], marqueeSelection: null });
+
+        toggleClipInSelection('c');
+
+        expect(clipSelectionStore.value?.selectedClipId).toBe('c');
+        expect(clipSelectionStore.value?.selectedClipIds).toEqual(['a', 'b', 'c']);
+    });
+
+    it('toggleClipInSelection hands the primary to the last remaining clip when the primary is removed', () => {
+        clipSelectionStore.set({ selectedClipId: 'b', selectedClipIds: ['a', 'b', 'c'], marqueeSelection: null });
+
+        toggleClipInSelection('b');
+
+        expect(clipSelectionStore.value?.selectedClipId).toBe('c');
+        expect(clipSelectionStore.value?.selectedClipIds).toEqual(['a', 'c']);
+    });
+
+    it('toggleClipInSelection clears the primary when the only selected clip is removed', () => {
+        clipSelectionStore.set({ selectedClipId: 'a', selectedClipIds: ['a'], marqueeSelection: null });
+
+        toggleClipInSelection('a');
+
+        expect(clipSelectionStore.value?.selectedClipId).toBeNull();
+        expect(clipSelectionStore.value?.selectedClipIds).toEqual([]);
+    });
+
+    it('toggleClipInSelection keeps the primary when a different clip is removed', () => {
+        clipSelectionStore.set({ selectedClipId: 'c', selectedClipIds: ['a', 'b', 'c'], marqueeSelection: null });
+
+        toggleClipInSelection('a');
+
+        expect(clipSelectionStore.value?.selectedClipId).toBe('c');
+        expect(clipSelectionStore.value?.selectedClipIds).toEqual(['b', 'c']);
+    });
+
     it('setMarqueeSelection stores the marquee range and preserves clip selection', () => {
         clipSelectionStore.set({ selectedClipId: 'c', selectedClipIds: ['c'], marqueeSelection: null });
 
