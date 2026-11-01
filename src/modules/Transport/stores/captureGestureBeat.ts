@@ -39,11 +39,11 @@ import { tempoMapStore } from './tempoMapStore';
 import { transportStore } from './transportStore';
 
 /**
- * Upper bound on the elapsed audio time a capture will integrate, matching the
- * scheduler's own per-tick clamp (`MAX_DELTA_SECONDS`). A suspended AudioContext
- * leaps `currentTime` forward by the whole gap; an unclamped projection would
- * claim beats the scheduler deliberately declines to advance through, so the
- * capture stays bounded to the same grain window the next tick will admit.
+ * Upper bound on the elapsed audio time a capture will integrate past the
+ * scheduler's last committed tick: one look-ahead, the most an ordinary tick
+ * interval spans. The scheduler itself advances by the whole audio-clock span
+ * however late a tick runs, so a capture taken inside a main-thread stall longer
+ * than this reads short of the clock until the next tick commits the position.
  */
 export const MAX_PROJECTION_SECONDS = 0.1;
 

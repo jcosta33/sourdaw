@@ -179,19 +179,6 @@ function isSchedulerWorkerTick(value: unknown, receivedAtMs: number): value is S
 const REEMIT_EPSILON_BEATS = 0.0001;
 
 /**
- * Upper bound on a single tick's elapsed real time before we advance the
- * playhead. If the AudioContext is suspended and later resumed (tab
- * backgrounded, OS sleep, device unplugged) `ctx.currentTime` leaps forward by
- * the whole gap; an unclamped `deltaSec` would jump `accumulatedPosition` past
- * an entire span of beats the look-ahead never scheduled, dropping every
- * metronome click, MIDI note, and audio clip in between. Clamping to one grain
- * window keeps advancement bounded so the next ticks re-schedule normally
- * instead of skipping. The clock leap itself is absorbed (the playhead simply
- * does not race ahead), which is the correct behaviour for a paused context.
- */
-const MAX_DELTA_SECONDS = SCHEDULE_AHEAD_SECONDS;
-
-/**
  * Stage the wrap take for every armed track with a clip that is actively
  * recording. Both loop-wrap paths share it — the late wrap (playhead crossed
  * loopEnd this tick) and the scheduled seam (#4656, one look-ahead earlier) —
@@ -488,10 +475,17 @@ export function startPlayheadScheduler(
         // after the edit fired one grain early and the loop wrapped one grain
         // early.
         const previousTickTime = schedulerSession.lastTickTime;
-        // Clamp the per-tick advance: a suspended/resumed context leaps `now`
-        // forward by the whole gap, which would skip every event in between.
-        const rawDeltaSec = initial ? 0 : now - schedulerSession.lastTickTime;
-        const deltaSec = Math.max(0, Math.min(rawDeltaSec, MAX_DELTA_SECONDS));
+        // The position follows the audio clock by the whole span, however late
+        // this tick is. `currentTime` counts rendered frames, so it stands still
+        // while the context is suspended and only outruns the grain when the main
+        // thread stalled while audio kept rendering. The sources already started
+        // played through that stall on the audio clock; advancing less would put
+        // every later emission behind them, and a clip ending at a loop seam
+        // would leave the shortfall as silence before the next pass. The window
+        // still opens at `lastScheduledBeat`, so what the stall kept from being
+        // scheduled is emitted now: an audio clip joins mid-buffer at its own
+        // position, and a click or note sounds late by the overrun.
+        const deltaSec = initial ? 0 : Math.max(0, now - schedulerSession.lastTickTime);
         schedulerSession.lastTickTime = now;
 
         // Read the live tempo-map reference (stable across ticks unless the store
