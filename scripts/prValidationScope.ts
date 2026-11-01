@@ -452,7 +452,8 @@ export function selectedSpecArguments(value: unknown, root: string): string[] {
     });
 }
 
-function listSpecs(root: string): string[] {
+/** Every collected browser spec under tests/e2e, as repository paths. */
+export function listSpecs(root: string): string[] {
     const specs: string[] = [];
     for (const entry of readdirSync(resolve(root, 'tests/e2e'), { recursive: true, withFileTypes: true })) {
         const path = relative(root, resolve(entry.parentPath, entry.name));

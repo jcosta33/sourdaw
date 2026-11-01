@@ -49,3 +49,28 @@ describes the value of a fast selected presubmit plus later, broader testing. Pl
 own [changed-test selection](https://playwright.dev/docs/ci#fail-fast) heuristic and recommends a
 subsequent full run. Here, explicit suite inputs, conservative widening, and nightly full coverage
 provide that broader check.
+
+## Coverage map
+
+Nightly also records which app source files each browser spec executes, the data test impact
+analysis needs. The app loads nearly every module at boot, so a loaded file says nothing about a
+spec; a file counts as executed only when a function other than its top-level module body ran.
+The `e2e-coverage` job collects it with Chromium JS coverage through the fixture in
+`tests/e2e/e2eTest.ts`, which is active only when `SOURDAW_E2E_COVERAGE_DIR` is set and writes one
+record per test. It runs apart from the gating `e2e` train because coverage slows the browser and
+could push timing-bounded specs over budget; test failures there gate nothing, but a shard that
+writes no record fails.
+
+A test's record is complete only when the test used the fixture page, that page's coverage was
+collected, and no other page ran while the test did. Coverage reaches neither other pages nor
+workers and worklets, so a consumer must treat code that runs there as unmapped. Every record is
+written before the test body as incomplete, so a test whose teardown never runs leaves that record
+behind.
+
+`scripts/e2eCoverageMap.ts` folds the records into `e2e-coverage-map.json` (format
+`e2e-coverage-map-v1`) for one commit: the sorted spec inventory, `alwaysSelect`, and for each
+executed file its Git blob at that commit and the indices of the specs that executed it. Only
+complete, passed records contribute files. A spec with any incomplete, failed, timed-out,
+interrupted, or skipped record, and every inventoried spec without a record, is in `alwaysSelect`,
+so a consumer never narrows on evidence that was not collected. The blob lets a consumer detect a
+file that changed since the map was built. Pull-request planning does not read the map yet.
