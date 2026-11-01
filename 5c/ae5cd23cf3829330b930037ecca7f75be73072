@@ -1,0 +1,43 @@
+src/modules/Transport/models/__tests__/TempoMapIntegration.property.spec.ts
+  s_3bb122e91d89a5::t_36126f2350542f 1-332
+src/modules/Transport/models/TempoMap.ts
+  s_3bb122e91d89a5::t_4ecef82b089c70 159,169-170,172,274-279,288,291-351,355-417,419,421,424
+  s_3bb122e91d89a5::t_0a58c1d8e0fb43 352-354
+  s_3bb122e91d89a5::t_d81041d1efb22a 425
+  s_3bb122e91d89a5::t_f35fc04e42330e 200-202
+  s_3bb122e91d89a5::t_bc2c31709bbe58 67-69
+  s_3bb122e91d89a5::t_95f9d37ffd951d 171
+  s_3bb122e91d89a5::t_f2cca28ee2f155 203
+  s_3bb122e91d89a5::t_d564f7ac309285 61-66,70-72,80-86,90-95,97-104,166
+  s_3bb122e91d89a5::t_129ed1176540d8 418
+  s_3bb122e91d89a5::t_c277407d81f895 130-131,133-135,153-158
+  s_3bb122e91d89a5::t_ce182debe93ad6 204
+  s_3bb122e91d89a5::t_725a7882caefc8 96
+  s_3bb122e91d89a5::t_b5ff75d0ce7867 132
+  s_3bb122e91d89a5::t_6e72df9f51a48c 199,205
+  s_dde1671ba022b8::t_f8783dfbfb7cfd 160-165,167-168,173
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5cae5cd23cf3829330b930037ecca7f75be73072",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_dde1671ba022b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e4c42ac-51ff-45eb-b81f-f43601ed01dc",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
