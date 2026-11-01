@@ -1,0 +1,43 @@
+scripts/__tests__/e2eServerIdentityWiring.spec.ts
+  s_fec7059b7a251c::t_dc4846872bbd1d 249
+  s_fec7059b7a251c::t_7fea61b9831782 241,328,330,347,392
+  s_fec7059b7a251c::t_9fe5c63a39f656 222
+  s_fec7059b7a251c::t_4ca6b039d281f5 486
+  s_fec7059b7a251c::t_47784606700a1a 243,346,391
+  s_fec7059b7a251c::t_4d7389d64f6278 381
+tests/e2e/firstPaintWarmup.ts
+  s_fec7059b7a251c::t_40e2a721d78eac 8
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_fec7059b7a251c::t_f26ab0199deb0d 495,537
+.github/workflows/heavy-gates.yml
+  s_fec7059b7a251c::t_a8fe65519af17b 194
+  s_fec7059b7a251c::t_b35ceb11da130a 155-157
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_fec7059b7a251c::t_d0c1078cb3ab26 4692-4696
+  s_fec7059b7a251c::t_dee1d314516924 160-167
+  s_fec7059b7a251c::t_3590ff094f252a 16
+  s_fec7059b7a251c::t_0926a8926b03d9 184
+tests/e2e/coldFirstPaintBudget.ts
+  s_fec7059b7a251c::t_88516ab3cb9a7d 1-18
+  s_fec7059b7a251c::t_c552372d3551ad 19
+tests/e2e/browserAiWebGpuAdmission.playwright.config.ts
+  s_fec7059b7a251c::t_939a0672482f78 32
+  s_fec7059b7a251c::t_79bcefdb32548d 5-6,8-12
+  s_fec7059b7a251c::t_cd1639f2b87508 29-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e5c44a106bd9b1cae6bbeedcb3b0c09e82ea10f7",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
