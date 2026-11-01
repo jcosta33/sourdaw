@@ -787,6 +787,60 @@ describe('crossfade recorded leading silence through command history', () => {
             expectReadsHeld(trackStore.value!.tracks[0]!.clips[1]!);
         });
 
+        it('restores every provenance field of a looped clip B exactly through undo then redo', async () => {
+            transportStore.set({ ...defaultTransportState, tempo: 60 });
+            const clock = {
+                audioOffsetSeconds: 2,
+                audioUnwrappedOffsetSeconds: 1.5,
+                audioLoopStartSeconds: 0.5,
+                audioLoopPassEntrySeconds: 1,
+                audioLoopPassOriginBeat: 3,
+            };
+            const track = TrackDummy.create({
+                id: 'track-1',
+                clips: [
+                    ClipDummy.create({ id: 'c1', startBeat: 0, endBeat: 4 }),
+                    ClipDummy.create({
+                        id: 'c2',
+                        startBeat: 4,
+                        endBeat: 8,
+                        loopEnabled: true,
+                        loopLength: 2,
+                        loopOriginBeat: 3,
+                        audioOffsetBeats: 2,
+                        ...clock,
+                    }),
+                ],
+            });
+            trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+            flushAutomergeStorageWrites();
+            const before = structuredClone(trackStore.value!.tracks[0]!.clips);
+
+            await executeAppAction({
+                type: 'crossfadeClips',
+                payload: { clipAId: 'c1', clipBId: 'c2', durationBeats: 1 },
+            });
+            const after = structuredClone(trackStore.value!.tracks[0]!.clips);
+            // The entry continues half a beat back; the grid fields hold.
+            expect(after[1]).toMatchObject({
+                startBeat: 3.5,
+                loopOriginBeat: 3,
+                audioLoopStartSeconds: 0.5,
+                audioLoopPassEntrySeconds: 1,
+                audioLoopPassOriginBeat: 3,
+            });
+            expect(after[1]!.audioOffsetSeconds).toBeCloseTo(1.5, 12);
+            expect(after[1]!.audioUnwrappedOffsetSeconds).toBeCloseTo(1, 12);
+
+            expect((await undo()).headConsumed).toBe(true);
+            expect(notifications).toEqual([]);
+            expect(trackStore.value!.tracks[0]!.clips).toEqual(before);
+
+            await redo();
+            expect(notifications).toEqual([]);
+            expect(trackStore.value!.tracks[0]!.clips).toEqual(after);
+        });
+
         it('keeps clip B material on its beats across a tempo change through crossfade, undo and redo', async () => {
             // 120 BPM to beat 8, then 60. Clip B retreats from 8.25 to 7.75,
             // spanning 0.125 s + 0.25 s of song time.
