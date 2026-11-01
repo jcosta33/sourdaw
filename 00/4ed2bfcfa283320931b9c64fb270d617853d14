@@ -1,0 +1,53 @@
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollKeyRailGeometry.spec.tsx
+  s_fec7059b7a251c::t_35935090dfe7bb 143
+  s_fec7059b7a251c::t_1ee89fda374d1e 140-142
+  s_fec7059b7a251c::t_240e2c1a519fa0 144-146
+  s_fec7059b7a251c::t_ce71204174d573 1,10-139,147-191
+  s_fec7059b7a251c::t_3508285397f2bb 2-9
+src/modules/TimelineEditor/presentations/helpers/pianoRollConstants.ts
+  s_fec7059b7a251c::t_f8edb87772720e 30-34,41-52
+  s_fec7059b7a251c::t_b1e10df04af248 35-40
+src/modules/TimelineEditor/presentations/hooks/usePianoRollInteractions.ts
+  s_fec7059b7a251c::t_c41f9467518f5e 63,765-766
+  s_fec7059b7a251c::t_513cdfc8c3f41b 64,666,861,964,993,996,1505
+src/modules/TimelineEditor/presentations/hooks/usePianoRollRenderer.ts
+  s_fec7059b7a251c::t_a4ce03a22e26a6 72,237
+  s_fec7059b7a251c::t_cabe487eb23f14 349
+  s_0314bb17e5dee3::t_73640c0ff983d3 73,371
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRoll.spec.tsx
+  s_fec7059b7a251c::t_622cbed5e08a32 179-180
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollExpressionLaneReach.spec.tsx
+  s_fec7059b7a251c::t_60455fdbecf3a2 198-199
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollMpeExpressionLanes.spec.tsx
+  s_fec7059b7a251c::t_489fdebd582f16 156-157
+src/modules/TimelineEditor/presentations/helpers/__tests__/pianoRollConstants.spec.ts
+  s_fec7059b7a251c::t_513a7a7ec67144 10-14,176-196
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx
+  s_fec7059b7a251c::t_0073062b43e114 56-57,527-531,540,546
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollRenderer.spec.ts
+  s_fec7059b7a251c::t_d8b4f8dfc025f9 4,217-236
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "004ed2bfcfa283320931b9c64fb270d617853d14",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
