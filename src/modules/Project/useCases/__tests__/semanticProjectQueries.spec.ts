@@ -209,6 +209,46 @@ describe('semantic project queries', () => {
         vi.unstubAllGlobals();
     });
 
+    it('indexes each clip a track holds once, leaving out the active alternative stored copy of a deleted clip', () => {
+        const track = createTrack({ id: 'takes-track', name: 'Takes', kind: 'audio' });
+        const clipNamed = (id: string) => ({
+            id,
+            trackId: track.id,
+            name: id,
+            type: 'audio' as const,
+            startBeat: 0,
+            endBeat: 4,
+            muted: false,
+            locked: false,
+            color: '',
+            gain: 1,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+        });
+        setTrackStoreState({
+            ...structuredClone(defaultTrackState),
+            tracks: [
+                {
+                    ...track,
+                    clips: [clipNamed('clip-live')],
+                    activeAlternativeId: 'alt-main',
+                    alternatives: [
+                        {
+                            id: 'alt-main',
+                            name: 'Alternative 1',
+                            clips: [clipNamed('clip-live'), clipNamed('clip-deleted')],
+                        },
+                        { id: 'alt-parked', name: 'Alternative 2', clips: [clipNamed('clip-parked')] },
+                    ],
+                },
+            ],
+        });
+
+        const ids = querySemanticProject({ type: 'object', filters: { kind: 'clip' } }).items.map((item) => item.id);
+
+        expect(ids.toSorted()).toEqual(['clip-live', 'clip-parked']);
+    });
+
     it('signs note-only role changes, keeps role source in the same captured receipt, and never emits notes', () => {
         const track = createTrack({ id: 'notes-track', name: 'Track 1', kind: 'midi' });
         track.devices = [

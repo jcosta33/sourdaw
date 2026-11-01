@@ -919,6 +919,43 @@ describe('production brief', () => {
             ).toBe(true);
         });
 
+        it('owns the live and parked clips under a track lock, not the clip deleted from the track', () => {
+            const current = projectStore.value!;
+            projectStore.set({
+                ...current,
+                productionBrief: {
+                    ...current.productionBrief,
+                    locks: [
+                        {
+                            id: 'lock-takes',
+                            scope: { kind: 'track', trackId: 'track-takes' },
+                            statement: 'Keep the takes track fixed',
+                            createdAt: 111,
+                        },
+                    ],
+                },
+            });
+            setTrackStoreState({
+                ...structuredClone(defaultTrackState),
+                tracks: [
+                    {
+                        ...createTrack({ id: 'track-takes', name: 'Takes', kind: 'audio' }),
+                        clips: [chorusClip('clip-live')],
+                        activeAlternativeId: 'alt-main',
+                        alternatives: [
+                            { id: 'alt-main', name: 'Alternative 1', clips: [chorusClip('clip-deleted')] },
+                            { id: 'alt-parked', name: 'Alternative 2', clips: [chorusClip('clip-parked')] },
+                        ],
+                    },
+                ],
+            });
+            const removeClip = (clipId: string): AppAction => ({ type: 'removeClip', payload: { clipId } });
+
+            expect(doesProductionBriefAllowActionBatch([removeClip('clip-live')])).toBe(false);
+            expect(doesProductionBriefAllowActionBatch([removeClip('clip-parked')])).toBe(false);
+            expect(doesProductionBriefAllowActionBatch([removeClip('clip-deleted')])).toBe(true);
+        });
+
         it('still refuses removing or duplicating the track while a live clip sits in the locked range', () => {
             lockChorusRange();
             seedTakesTrack(['clip-live']);

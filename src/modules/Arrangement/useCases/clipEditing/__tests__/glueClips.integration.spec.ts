@@ -8,6 +8,7 @@ import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { handleRestoreClipGlueState } from '../../../handlers/clip/handleRestoreClipGlueState';
 import { isGeneratedMidiStateCurrent } from '../../../handlers/isGeneratedMidiStateCurrent';
+import { type Clip } from '../../../models/Track';
 import { __resetGainEnvelopesForTest, getEnvelope, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
@@ -140,6 +141,59 @@ describe('glueClips MIDI state integration', () => {
         expect(getGlueEligibleClipPairs()).toEqual([['clip-a', 'clip-b']]);
     });
 
+    describe('on a track that created an alternative and switched back', () => {
+        // Switching back leaves the active alternative's stored copy mirroring the main row.
+        const setSwitchedBackTrack = (input: { activeStored: Clip[]; inactiveStored?: Clip[] }) => {
+            const track = trackStore.value!.tracks[0]!;
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: [
+                    {
+                        ...track,
+                        activeAlternativeId: 'alt-1',
+                        alternatives: [
+                            { id: 'alt-1', name: 'Alternative 1', clips: input.activeStored },
+                            { id: 'alt-2', name: 'Alternative 2', clips: input.inactiveStored ?? [] },
+                        ],
+                    },
+                ],
+            });
+        };
+
+        it('still projects the adjacent pair, whose ids the stale mirror repeats', () => {
+            setSwitchedBackTrack({ activeStored: trackStore.value!.tracks[0]!.clips });
+
+            expect(getGlueEligibleClipPairs()).toEqual([['clip-a', 'clip-b']]);
+        });
+
+        it('does not let a child clip deleted from the main row block the glue from the stale mirror', () => {
+            const deletedChild = ClipDummy.create({
+                id: 'clip-deleted-child',
+                trackId: 'track-midi',
+                type: 'midi',
+                parentClipId: 'clip-a',
+            });
+            setSwitchedBackTrack({ activeStored: [...trackStore.value!.tracks[0]!.clips, deletedChild] });
+
+            expect(hasClipGlueDependencies(['clip-a', 'clip-b'])).toBe(false);
+        });
+
+        it('still refuses a pair whose id an inactive alternative holds, and a child kept there', () => {
+            const clips = trackStore.value!.tracks[0]!.clips;
+            setSwitchedBackTrack({ activeStored: clips, inactiveStored: [clips[0]!] });
+            expect(getGlueEligibleClipPairs()).toEqual([]);
+
+            const parkedChild = ClipDummy.create({
+                id: 'clip-parked-child',
+                trackId: 'track-midi',
+                type: 'midi',
+                parentClipId: 'clip-a',
+            });
+            setSwitchedBackTrack({ activeStored: clips, inactiveStored: [parkedChild] });
+            expect(hasClipGlueDependencies(['clip-a', 'clip-b'])).toBe(true);
+        });
+    });
+
     it('projects an adjacent source pair across an unrelated overlapping clip', () => {
         const overlapping = ClipDummy.create({
             id: 'clip-overlap',
@@ -195,9 +249,7 @@ describe('glueClips MIDI state integration', () => {
                 }
                 return {
                     ...track,
-                    alternatives: track.alternatives.map((alternative, index) =>
-                        index === 0 ? { ...alternative, clips: [source] } : alternative
-                    ),
+                    alternatives: [...track.alternatives, { id: 'alt-hidden', name: 'Hidden', clips: [source] }],
                 };
             });
             const ghostClips =

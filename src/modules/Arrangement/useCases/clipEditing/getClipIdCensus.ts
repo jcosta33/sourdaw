@@ -26,6 +26,10 @@ export function getClipIdCensus({ clipIds, state }: GetClipIdCensusInput): Map<s
             record(clip, 'active', track.id);
         }
         for (const alternative of track.alternatives) {
+            // The active alternative is already counted from `track.clips`; its stored copy is a stale mirror.
+            if (alternative.id === track.activeAlternativeId) {
+                continue;
+            }
             for (const clip of alternative.clips) {
                 record(clip, 'alternative', track.id);
             }
