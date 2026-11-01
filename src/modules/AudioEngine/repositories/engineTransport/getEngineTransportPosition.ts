@@ -19,10 +19,16 @@ function readNumber(payload: Record<string, unknown>, key: keyof EngineTransport
  * A linear peak as itself, and `null` for anything else.
  *
  * `+Infinity` is a peak: an output that blew up is a measurement, and reading
- * it as silence would hide the very fault a meter exists to show. NaN, a
- * negative, `-Infinity` and a non-number are not peaks.
+ * it as silence would hide the very fault a meter exists to show. JSON cannot
+ * carry an infinite number (the native bridge would write `null`), so the
+ * native payload sends the exact string `"Infinity"` for one; a raw `Infinity`
+ * number from an in-process caller is read the same way. NaN, a negative,
+ * `-Infinity`, any other string and a non-number are not peaks.
  */
 function peakLevel(value: unknown): number | null {
+    if (value === 'Infinity') {
+        return Number.POSITIVE_INFINITY;
+    }
     return typeof value === 'number' && value >= 0 ? value : null;
 }
 

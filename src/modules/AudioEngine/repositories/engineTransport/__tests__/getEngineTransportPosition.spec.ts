@@ -349,11 +349,27 @@ describe('getEngineTransportPosition', () => {
         expect(position.stripPeaks).toEqual({ 'strip-a': Number.POSITIVE_INFINITY, 'strip-b': 0.5 });
     });
 
+    it('reads the native "Infinity" token as an infinite peak', async () => {
+        vi.mocked(desktopInvoke).mockResolvedValue({
+            running: true,
+            playing: true,
+            masterPeak: 'Infinity',
+            stripPeaks: { 'strip-a': 'Infinity', 'strip-b': 0.5 },
+        });
+
+        const position = await getEngineTransportPosition();
+
+        expect(position.masterPeak).toBe(Number.POSITIVE_INFINITY);
+        expect(position.stripPeaks).toEqual({ 'strip-a': Number.POSITIVE_INFINITY, 'strip-b': 0.5 });
+    });
+
     it.each([
         { label: 'NaN', peak: Number.NaN },
         { label: 'negative', peak: -1 },
         { label: 'negative infinity', peak: Number.NEGATIVE_INFINITY },
-        { label: 'string', peak: '0.5' },
+        { label: 'numeric string', peak: '0.5' },
+        { label: 'inf token', peak: 'inf' },
+        { label: 'negative infinity token', peak: '-Infinity' },
         { label: 'null', peak: null },
     ])('rejects a $label peak: master reads zero and the strip entry is dropped', async ({ peak }) => {
         vi.mocked(desktopInvoke).mockResolvedValue({
