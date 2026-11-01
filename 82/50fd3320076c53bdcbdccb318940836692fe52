@@ -1,0 +1,27 @@
+src/modules/AiRuntime/AGENTS.md
+  s_6ba193a2386901::t_f7ecc1c132cb08 48
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_6ba193a2386901::t_6bc6a6979f58f3 8980,8982,8985,8995-9003,9008-9009,9015,9018-9027,9030,9034-9035,9037-9042,9050-9078,9084
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_6ba193a2386901::t_9b2b7a307b4ba4 101,162,7150-7151,7153-7158,7160,7183-7186,7192,7195,7201-7225
+src/modules/AiRuntime/useCases/agentReference/getExplicitlyProtectedClips.ts
+  s_6ba193a2386901::t_a41e1e221b024c 7,38-39,42,44,62-70,77,83-84,90-91,105-106,127-128,149,246-249,253,275-285,294,297-309
+src/modules/AiRuntime/useCases/agentReference/protectionObjectForms.ts
+  s_6ba193a2386901::t_929e20390e3b44 123-132,168-169,204
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8250fd3320076c53bdcbdccb318940836692fe52",
+  "prompts": {},
+  "sessions": {
+    "s_6ba193a2386901": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_6ba193a2386901",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
