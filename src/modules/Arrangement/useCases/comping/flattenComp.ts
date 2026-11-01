@@ -12,6 +12,7 @@ import { readClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { readClipScopedAutomationLanes } from '../clip/readClipScopedAutomationLanes';
 import { restoreClipGlueState } from '../clipEditing/restoreClipGlueState';
+import { collectAudioBufferIdFields } from '../collectAudioBufferIdFields';
 import { resolveClipsWithComping } from '../resolveComping';
 
 import { insertTakeLane } from './insertTakeLane';
@@ -214,7 +215,10 @@ export function flattenComp(trackId: string): boolean {
             // wedge every redoable entry behind it (`splitClipWithUndo`
             // precedent).
             return REDO_NOT_APPLIED;
-        }
+        },
+        // Undo puts back every source clip, including takes the comp left
+        // unheard, whose buffers no fragment references any more.
+        { restoresBufferIds: collectAudioBufferIdFields([plan.previous, plan.next]) }
     );
     return true;
 }

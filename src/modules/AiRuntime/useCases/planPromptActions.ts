@@ -1,3 +1,4 @@
+import { openCachedAudioBufferHold } from '#/modules/AudioEngine/useCases';
 import { captureProjectRevision, settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
 import { canonicalJson } from '#/utils/canonicalDigest';
 
@@ -293,28 +294,34 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
             result = guardReadonlyPlanningResult(result);
         }
         if (input.profile !== 'readonly-answer' && result.preparationRequest === 'stem-import') {
-            const preparedStemImport = await prepareStemImport(input.signal, input.onLocalWorkAttempt);
-            if (preparedStemImport.status === 'cancelled') {
-                await settleAutoCreatedRun('completed');
-                input.signal?.removeEventListener('abort', onAbort);
-                return {
-                    context,
-                    result: {
-                        actions: [],
-                        rawText: input.prompt,
-                        requiresConfirmation: false,
-                        planningOutcome: { kind: 'no-match' as const },
-                    },
-                    projectRevision,
-                };
-            }
-            stemImportScope = createStemImportPromptScope(preparedStemImport, projectRevision);
-            if (streamIdentity !== undefined) {
-                preparedStemImportResources.register({
-                    runId: streamIdentity.runId,
-                    stems: stemImportScope.actionSeed.stems,
-                });
-                stemImportResourcesRegistered = true;
+            // The decoded stems stay resident until the run's registration owns them.
+            const stemHold = openCachedAudioBufferHold();
+            try {
+                const preparedStemImport = await prepareStemImport(input.signal, input.onLocalWorkAttempt, stemHold);
+                if (preparedStemImport.status === 'cancelled') {
+                    await settleAutoCreatedRun('completed');
+                    input.signal?.removeEventListener('abort', onAbort);
+                    return {
+                        context,
+                        result: {
+                            actions: [],
+                            rawText: input.prompt,
+                            requiresConfirmation: false,
+                            planningOutcome: { kind: 'no-match' as const },
+                        },
+                        projectRevision,
+                    };
+                }
+                stemImportScope = createStemImportPromptScope(preparedStemImport, projectRevision);
+                if (streamIdentity !== undefined) {
+                    preparedStemImportResources.register({
+                        runId: streamIdentity.runId,
+                        stems: stemImportScope.actionSeed.stems,
+                    });
+                    stemImportResourcesRegistered = true;
+                }
+            } finally {
+                stemHold.release();
             }
             result = await parsePromptToActions({
                 prompt: input.prompt,
