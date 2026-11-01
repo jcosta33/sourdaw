@@ -1,0 +1,21 @@
+scripts/__tests__/orchestratorReviewState.spec.ts
+  s_55244eb93b97d1::t_13c0b72f2069e2 121-139
+scripts/__tests__/deliverPullRequest.spec.ts
+  s_55244eb93b97d1::t_13c0b72f2069e2 12912-12934,12936-12957,12959-12969,12971-12981
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4f1ee2c3af22ec1d5aae9c18663477d2d2d50608",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
