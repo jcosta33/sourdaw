@@ -282,7 +282,7 @@ locally at other lanes' expense.
 | Focused Rust tests                                                                       | `pnpm guard --profile focused -- pnpm cargo:test --package <crate> <filter>` |
 | Focused Rust format                                                                      | `pnpm cargo:fmt --package <crate>`                                           |
 | Broad unit/Rust suites, lint, types, builds, boundaries, barrel mocks, release inventory | Pull request CI                                                              |
-| Generate one affected WASM package                                                       | that package's own `wasm:*` script                                           |
+| Generate one affected WASM package                                                       | `pnpm guard --profile broad -- pnpm <that package's wasm:* script>`          |
 | Rewrite WASM manifest after generation                                                   | `pnpm wasm:manifest`                                                         |
 | Verify generated WASM surface                                                            | `pnpm wasm:verify` after generation                                          |
 | Restamp the wasm surface                                                                 | `pnpm release:restamp:wasm`                                                  |

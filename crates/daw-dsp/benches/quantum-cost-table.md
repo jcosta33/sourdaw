@@ -487,16 +487,16 @@ invalidate the DSP crate's committed artifacts.
 
 ```text
 # wasm — Chrome, in a real AudioWorkletGlobalScope; writes the primary record
-node crates/daw-dsp/benches/wasm/run.mjs --json crates/daw-dsp/benches/quantum-cost-table.json
+pnpm guard --profile broad -- node crates/daw-dsp/benches/wasm/run.mjs --json crates/daw-dsp/benches/quantum-cost-table.json
 node crates/daw-dsp/benches/wasm/renderTable.mjs
 
 # native — daw-dsp devices, plus the cross-check criterion groups
-CARGO_PROFILE_BENCH_LTO=false cargo bench -p daw-dsp --bench quantum
+pnpm guard --profile extended -- env CARGO_PROFILE_BENCH_LTO=false cargo bench -p daw-dsp --bench quantum
 
 # native — the two sibling crates
-CARGO_PROFILE_RELEASE_LTO=false \
+pnpm guard --profile broad -- env CARGO_PROFILE_RELEASE_LTO=false \
   cargo test -p proof-chamber --release --test quantum_cost -- --ignored --nocapture
-CARGO_PROFILE_RELEASE_LTO=false \
+pnpm guard --profile broad -- env CARGO_PROFILE_RELEASE_LTO=false \
   cargo test -p scoring --release --test quantum_cost -- --ignored --nocapture
 ```
 
