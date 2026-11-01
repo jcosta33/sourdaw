@@ -12,6 +12,14 @@ import { PROOF_CHAMBER_AUTOMATION_PARAM_IDS } from '../../models/ProofChamberAut
 import { NativeDspDeviceStrategy } from '../../repositories/deviceStrategy/NativeDspDeviceStrategy';
 import { constantTempoProjector } from '../../repositories/offlineScheduler/__tests__/constantTempoProjector';
 import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
+import {
+    RealFloat32Array,
+    installWorkletGlobals,
+    makeChannels,
+    type GrowableMemory,
+    createGrowableMemory,
+    resetGrowableMemory,
+} from '../../testing/wasmViewGrowthHarness';
 
 vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
     ensureWorkletRegistered: vi.fn().mockResolvedValue(undefined),
@@ -27,15 +35,6 @@ vi.mock('../../worklets/proofChamberProcessor.ts?worker&url', () => ({ default: 
 
 /** Ordinals the shared table declares, ascending — never a list written here. */
 const declaredProofChamberOrdinals = Object.values(PROOF_CHAMBER_AUTOMATION_PARAM_IDS).sort((a, b) => a - b);
-
-import {
-    RealFloat32Array,
-    installWorkletGlobals,
-    makeChannels,
-    type GrowableMemory,
-    createGrowableMemory,
-    resetGrowableMemory,
-} from '../../testing/wasmViewGrowthHarness';
 
 // ProofChamberProcessor message handling, automation scheduling, and process
 // passthrough/guard paths. The existing proofChamberProcessorWasmViews spec

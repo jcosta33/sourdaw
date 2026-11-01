@@ -8,10 +8,10 @@
  */
 
 import { SET_FALLBACK_PARAM_COMMAND } from '../models/RuntimeDeviceControl';
+import grinderAudioParamContract from '../services/grinderAudioParamContract.json';
 import { resolveProcessorWasmModule } from '../transformers/resolveProcessorWasmModule';
 import { initSync, GrinderInstance } from '../wasm/daw_dsp.js';
 
-import grinderAudioParamContract from '../services/grinderAudioParamContract.json';
 import { beginTelemetryPublish, endTelemetryPublish } from './telemetrySeqlock';
 
 /**

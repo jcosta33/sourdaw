@@ -2766,9 +2766,11 @@ export default defineConfig(
             '**/*.spec.{ts,tsx}',
             '**/*.test.{ts,tsx}',
             '**/setupTests.ts',
-            // Non-.spec test scaffolding: mock factories and __tests__ helpers.
+            // Non-.spec test scaffolding: mock factories, __tests__ helpers and
+            // shared test-support folders (docs/architecture/03-typescript-module.md §4.14).
             '**/*.mock.ts',
             '**/__tests__/**/*.{ts,tsx}',
+            'src/**/testing/**/*.{ts,tsx}',
         ],
         rules: {
             '@eslint-react/no-unnecessary-use-prefix': 'off',
