@@ -4,10 +4,7 @@
 
 ## Public Contract Surface
 
-- **Views** (`presentations/views/index.ts`): `ProofChamberPanel`.
-- **Stores**: `chamberStore` (`stores/chamberStore.ts`).
-- **Use Cases**: Internal use cases (`decodeImpulseResponse`, `hydrateChamberStateFromProject`, `updateChamberEngine`, `registerChamberInstance`).
-- **Events**: No public events.
+Public surface: `presentations/views/index.ts`. The store lives in `stores/chamberStore.ts` and the use cases are internal.
 
 ## Key Subsystems
 

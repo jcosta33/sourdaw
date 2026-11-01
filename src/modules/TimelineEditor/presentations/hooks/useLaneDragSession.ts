@@ -1,13 +1,14 @@
 /**
  * useLaneDragSession — the pointer-capture drag machinery shared by every automation lane
- * in the piano roll (`NotePropertyLane`, `CCLane`, `PitchBendLane`).
+ * in the piano roll (`NotePropertyLane`, `CCLane`, `PitchBendLane`) and by the arrangement's
+ * chord track lane (`ChordTrackLane`).
  *
  * The hook owns *how* a gesture lives and dies; each lane owns *what* the gesture does.
  * A lane calls `beginDrag` once per drag path it has — `NotePropertyLane` has three
- * (canvas paint, shift+drag ramp, the two ramp end-handles), `CCLane` and `PitchBendLane`
- * have one each — and the hook is identical for all of them because everything that varies
- * travels inside the session's own `move` / `commit` / `cancel` closures. There is no lane
- * parameter and no per-lane option, so a one-path caller carries no configuration it does not use.
+ * (canvas paint, shift+drag ramp, the two ramp end-handles), the other callers have one each —
+ * and the hook is identical for all of them because everything that varies travels inside the
+ * session's own `move` / `commit` / `cancel` closures. There is no lane parameter and no
+ * per-lane option, so a one-path caller carries no configuration it does not use.
  *
  * An armed gesture is also an Escape owner, like every other drag in the app: it marks itself
  * with `beginDragGesture()` so the global Escape chain and the virtual keyboard yield the key,

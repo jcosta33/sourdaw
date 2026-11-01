@@ -4,14 +4,12 @@ First-time user tour progression, step navigation, spotlight UI target highlight
 
 ## Public Contract Surface
 
-- `stores`: `onboardingStore`, `defaultOnboardingState`, `OnboardingState`.
-- `useCases`: `startOnboardingTour`, `advanceOnboardingStep`, `regressOnboardingStep`, `dismissOnboardingTour`, `isOnboardingCompleted`.
-- `presentations/views`: `OnboardingTour`.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 
 - **Tour State Store**: Manages current active step index, total steps, spotlight targets, and tour visibility (`stores/onboardingStore.ts`).
-- **Step Transitions**: `useCases/` (`startOnboardingTour`, `advanceOnboardingStep`, `regressOnboardingStep`, `dismissOnboardingTour`, `isOnboardingCompleted`).
+- **Step Transitions**: `useCases/` starts, advances, regresses and dismisses the tour and answers whether it was completed.
 - **Tour Presentation**: Modal/popover overlay displaying guided workflow tooltips anchored to workspace elements (`presentations/views/OnboardingTour.tsx`).
 
 ## Invariants & Traps

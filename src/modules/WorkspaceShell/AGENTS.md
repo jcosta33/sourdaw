@@ -4,17 +4,7 @@ Top-level DAW application shell layout, dockable and collapsible panels, workspa
 
 ## Public Contract Surface
 
-- `useCases`:
-    - **Panels & Visibility**: `toggleMixer`, `toggleInspector`, `toggleSidebar`, `toggleTrackList`, `toggleChatPanel`, `toggleBranchManager`, `toggleAutomationPanel`, `toggleVirtualKeyboard`, `toggleWorkspaceMode`, `setWorkspaceMode`, `openInspector`, `closeCommandPalette`, `closeCollaborationPanel`, `closeUndoHistory`, `closeScratchPad`, `setSoloMode`, `setVirtualKeyboardOctave`, `setVirtualKeyboardVelocity`, `cycleChannelStripWidth`, `setSessionViewWidth`, `setTrackListWidth`, `showAutomationPanel`, `showDevicePanelForType`.
-    - **Zoom & Navigation**: `zoomToFit`, `zoomToSelection`, `cycleAutomationVisibility`, `onZoomToFit`, `onZoomToSelection`, `onScrollToPlayhead`.
-    - **Editing Tools & Shell State**: `setEditingTool`, `startToolSwap`, `finishToolSwap`, `toggleRippleEditing`, `updateWorkspaceState`, `dismissAlphaNotice`, `TOOL_SHORTCUTS`.
-    - **Dialogs & Window Chrome**: `openExportDialog`, `openPreferencesDialog`, `windowChromeControls`, `setWorkspaceEventBus`.
-    - **Handlers**: `getWorkspaceHandlers`, `getScratchPadHandlers`.
-- `stores`: `workspaceStore` (`WorkspaceState`, `EditingTool`, `defaultWorkspaceState`), `toolSwapStore`, `alphaNoticeStore`.
-- `presentations/views`: `AgentWorkspace`, `AppShell`, `WorkspaceAppBoundary`, `WorkspaceMobileGate`, `WorkspaceProjectLoadingFallback`, `WorkspaceRouteView`.
-- Shell-private presentation: `presentations/hooks/useProjectMutationRefusal` (`ProjectMutationRefusal`, `deriveProjectMutationRefusal`) and `presentations/components/ProjectMutationRefusedBanner`. Not exported across modules — the shell is the only surface that renders them.
-- `events`: `ShowDevicePanelGenericPayload`, `NotifyPayload`, `ConfirmPayload`, `PromptPayload`, `ZoomToSelectionPayload`, `ToggleVoiceCommandPayload`, `ImportMidiPayload`, MIDI payload types.
-- Handlers: `getWorkspaceHandlers`, `getScratchPadHandlers`.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `events/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 
@@ -30,7 +20,8 @@ Top-level DAW application shell layout, dockable and collapsible panels, workspa
 - Workspace layout and panel states are client UI session state — never serialize workspace layout directly into project CRDT documents.
 - The mutation-refusal banner is not a dialog: keep it out of `anyDialogOpen` and out of the shell's `inert` condition. Every route out of a refusal — the assistant panel, the production brief, undo, the launch screen — lives inside the workspace it sits above, so covering the workspace would trap the user in the state the banner is explaining.
 - The banner never derives a refusal itself. `deriveProjectMutationRefusal` reads the same repair store the dispatch gate reads and calls `getProjectScopedBriefLock` for the brief gate, so the banner and the gate cannot disagree about why an edit was refused.
-- While mounted, `VirtualKeyboard` owns the computer keyboard through window capture-phase listeners, not panel focus: musical keys play anywhere and every other unmodified key is swallowed before any other listener. Cmd/Ctrl chords (but not AltGr, which Chromium reports as Ctrl+Alt), Tab, text fields, selects and dialogs, menus and open selects pass through, and a focused control, canvas editor or always-mounted listbox keeps the keys it handles natively (a listbox yields only its navigation and activation keys, so musical keys and Esc still work beside it). The keyboard is the lowest Escape owner: Esc closes it only when no dialog, menu, popup or drag is open, because those dismiss first. Do not gate this inside individual shortcut listeners; that splits the lock across modules and leaves other window listeners firing.
+- While mounted, `VirtualKeyboard` owns the computer keyboard through window capture-phase listeners, not panel focus: musical keys play anywhere and every other unmodified key is swallowed before any other listener. Cmd/Ctrl chords (but not AltGr, which Chromium reports as Ctrl+Alt), Tab, text fields, selects and dialogs, menus and open selects pass through, and a focused control, canvas editor or always-mounted listbox keeps the keys it handles natively (a listbox yields only its navigation and activation keys, so musical keys and Esc still work beside it). The keyboard is the lowest Escape owner: Esc closes it only on a plain, non-repeat press and only when no dialog, menu, popup or drag is open, because those dismiss first; a held plain Esc's repeats are consumed without closing, and a modified Esc such as the Shift+Esc MIDI panic, repeat or not, passes through to the global shortcut layer. Do not gate this inside individual shortcut listeners; that splits the lock across modules and leaves other window listeners firing.
+- `useProjectMutationRefusal` and `ProjectMutationRefusedBanner` are shell-private presentation: they are not exported across modules, and the shell is the only surface that renders them.
 
 ## Verification
 

@@ -4,10 +4,7 @@ AI-assisted musical pattern generation (chords, melodies, drum patterns, basslin
 
 ## Public Contract Surface
 
-- `useCases`: `handleAiDenoiseClip`, `handleGenerateMidiPrompt`, `removeTask`, `cancelProcessingTask`, `toggleAiPanel`, `applyChordProgressionToTrack`, `applyDrumPatternToTrack`, `applyMelodyToTrack`, `generateMidiVariations`, `denoiseAudio`, `getAiMidiHandlers`, `getGenerationHandlers`, `MIDI_TRANSFORM_IMPLEMENTATIONS`.
-- `stores`: `aiStore` (`AiTaskType`, `AiTaskStatus`, `AiTaskResult`, `AiState`).
-- `presentations/views`: `PatternBrowser`.
-- Handlers: `getAiMidiHandlers`, `getGenerationHandlers`.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 
