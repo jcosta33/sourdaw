@@ -577,6 +577,93 @@ describe('exclusive retained buffer listening lifetime', () => {
         warn.mockRestore();
     });
 
+    /** A declined desktop start left its engine booted in the slot with no session backend. */
+    function bootedWithoutBackend() {
+        vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(true);
+        vi.mocked(getEngineTransportPosition).mockResolvedValue({
+            ...stoppedEngineTransportPosition,
+            running: true,
+            engineIncarnation: ID,
+            batchesApplied: 1,
+        });
+    }
+
+    it('reopens the programme when an audition fails beside an unowned booted engine', async () => {
+        bootedWithoutBackend();
+        const playback = audition();
+        await expect(playback.ready).rejects.toThrow('did not witness an empty output slot');
+        expect(driven.sources).toHaveLength(0);
+        await vi.waitFor(() => expect(driven.gate.gain.value).toBe(1));
+        // Only the acquisition read the engine: the release touches nothing native.
+        expect(getEngineTransportPosition).toHaveBeenCalledOnce();
+        await sessionCommand();
+        await idle();
+        expect(getEngineTransportPosition).toHaveBeenCalledOnce();
+        expect(driven.gate.gain.value).toBe(1);
+    });
+
+    it('reopens the programme on Stop when a declined start boots an engine during the audition', async () => {
+        vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(true);
+        vi.mocked(getEngineTransportPosition).mockResolvedValue({
+            ...stoppedEngineTransportPosition,
+            engineIncarnation: null,
+        });
+        const playback = audition();
+        await playback.ready;
+        expect(driven.gate.gain.value).toBe(0);
+        expect(driven.sources[0]?.start).toHaveBeenCalledOnce();
+        bootedWithoutBackend();
+        await playback.stop();
+        expect(driven.gate.gain.value).toBe(1);
+        expect(getEngineTransportPosition).toHaveBeenCalledOnce();
+    });
+
+    it('ends recovery when the user presses Stop again', async () => {
+        const apply = refusingSession(2);
+        const playback = audition();
+        await playback.ready;
+        await expect(playback.stop()).rejects.toThrow('native output gate refused');
+        await expect(playback.stop()).rejects.toThrow('native output gate refused');
+        expect(apply).toHaveBeenCalledTimes(3);
+        await sessionCommand();
+        await idle();
+        // The user's Stop owns the retry now: a settled session command starts none.
+        expect(apply).toHaveBeenCalledTimes(3);
+        expect(driven.gate.gain.value).toBe(0);
+        await playback.stop();
+        expect(apply).toHaveBeenCalledTimes(4);
+        expect(driven.gate.gain.value).toBe(1);
+    });
+
+    it('sends nothing native from a release that timed out waiting for the session queue head', async () => {
+        const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+        const apply = refusingSession(0);
+        const playback = audition();
+        await playback.ready;
+        const reopen = vi.spyOn(driven.engine, 'setAudioPreviewProgrammeSuppressed');
+        const blocker = Promise.withResolvers<void>();
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        try {
+            const blocked = queueOnNativeLiveGraphSession(() => blocker.promise);
+            const stopped = playback.stop();
+            await vi.advanceTimersByTimeAsync(10_000);
+            await expect(stopped).rejects.toThrow('readiness timed out');
+            expect(apply).toHaveBeenCalledTimes(1);
+            blocker.resolve();
+            await blocked;
+            // The stale attempt reaches the head first and gives up; the recovery the blocker's
+            // settlement starts is the only one that addresses the engine.
+            await vi.advanceTimersByTimeAsync(100);
+            await vi.waitFor(() => expect(driven.gate.gain.value).toBe(1));
+        } finally {
+            vi.useRealTimers();
+        }
+        await idle();
+        expect(apply).toHaveBeenCalledTimes(2);
+        expect(reopen.mock.calls.filter(([suppressed]) => !suppressed)).toHaveLength(1);
+        warn.mockRestore();
+    });
+
     it('a superseded audition stop leaves its successor owning the output', async () => {
         const first = playExclusiveAudioBufferPreview({
             buffer: buffer(),

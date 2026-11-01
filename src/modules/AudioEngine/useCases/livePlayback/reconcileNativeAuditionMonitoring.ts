@@ -143,14 +143,18 @@ function admitOutputGate(scope: MonitoringScope) {
             if (session.startsPending !== 0) {
                 throw new SessionTransition();
             }
-            if (session.orphanedBackend !== null) {
-                // An abandon already handed the programme to Web Audio and left no
-                // native programme to restore into, so only a release may reopen it.
-                if (scope.input.restoreWebProgramme === undefined || owner !== null) {
+            if (scope.input.restoreWebProgramme !== undefined) {
+                // No owned native programme exists to restore into. An orphan or an unowned engine
+                // left in the slot by a declined start already left Web Audio carrying the
+                // programme, so a release reopens Web output as it was and touches nothing native.
+                if (owner !== null) {
                     throw new Error('A native programme has not settled into an owned listening session.');
                 }
                 scope.input.restoreWebProgramme();
                 return { unchanged, assertUnchanged, incarnation: null, fence: 0 };
+            }
+            if (session.orphanedBackend !== null) {
+                throw new Error('A native programme has not settled into an owned listening session.');
             }
             const position = await getEngineTransportPosition();
             assertUnchanged();
@@ -165,7 +169,6 @@ function admitOutputGate(scope: MonitoringScope) {
             ) {
                 throw new Error('The native engine did not witness an empty output slot.');
             }
-            scope.input.restoreWebProgramme?.();
             return { unchanged, assertUnchanged, incarnation: null, fence: 0 };
         }
         const shadowed = baseShadowed || owner !== null;
