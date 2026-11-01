@@ -78,3 +78,18 @@ The stacked-delivery case supplied `delete_branch_on_merge: true` to the initial
 which returned before the final control; the case stayed green if that control was removed.
 Keep the exact three-field manifest as a positive control, reject unproven variants, and make
 the stack fixture reach the final repository-policy read with zero merge attempts.
+
+## Escape: PR #4069 trusted the reviews connection order
+
+PR #4069 chose the reviewer's latest review as the last reviewer node in the GraphQL reviews
+connection, on the stated premise that connection order is authoritative. GitHub orders that
+connection by `submittedAt`, and on PR #6019 it stamped the reviewer App's newest APPROVE earlier
+than the older CHANGES_REQUESTED and COMMENTED reviews. `deliver` then read the stale
+CHANGES_REQUESTED as the reviewer's latest state and refused an approved head. Every fixture gave
+each review the same `databaseId`, so no case could tell creation order from listed order.
+
+Probe that would have caught it: list the reviewer's newest review first with the earliest
+timestamp, older reviewer reviews after it with later timestamps, and require the newest by
+`databaseId` to decide the state. Pair it with the inverse — an older APPROVE listed last behind a
+newer CHANGES_REQUESTED must not read as approved — and require a null or duplicate reviewer id to
+refuse instead of guessing.

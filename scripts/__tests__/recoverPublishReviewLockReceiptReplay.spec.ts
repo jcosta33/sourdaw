@@ -384,7 +384,9 @@ describe('already recovered landed receipt binds its modern dossier', { timeout:
             const github = remote({ reviewerVisibility });
             const before = readFileSync(join(bundlePath(root), 'dossier.json'), 'utf8');
 
-            await expect(recover(root, ownerOid, github.gh)).rejects.toThrow(/incomplete reviewer approval identity/);
+            await expect(recover(root, ownerOid, github.gh)).rejects.toThrow(
+                /incomplete reviewer (approval|review) identity/
+            );
 
             expect(github.state.reviewStateReads).toBe(2);
             expect(readFileSync(join(bundlePath(root), 'dossier.json'), 'utf8')).toBe(before);

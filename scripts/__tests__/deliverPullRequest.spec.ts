@@ -12839,7 +12839,7 @@ describe('delivery shell boundary', () => {
         const captures: string[][] = [];
         const latestUnrelatedReviews = Array.from({ length: 100 }, (_, index) => ({
             id: `review-unrelated-${index}`,
-            databaseId: 1,
+            databaseId: 100 + index,
             state: 'COMMENTED',
             submittedAt: null,
             author: {
@@ -12910,7 +12910,7 @@ describe('delivery shell boundary', () => {
         { label: 'null', submittedAt: null },
         { label: 'equal', submittedAt: '2026-08-19T00:00:00Z' },
     ])(
-        'uses GitHub connection order for opposite same-head reviewer states with $label timestamps',
+        'uses database id order, not list order, for opposite same-head reviewer states with $label timestamps',
         ({ submittedAt }) => {
             const captures: string[][] = [];
             const shell: ShellRunner = {
@@ -12922,9 +12922,9 @@ describe('delivery shell boundary', () => {
                             {
                                 nodes: [
                                     {
-                                        id: 'review-newest',
+                                        id: 'review-listed-last',
                                         databaseId: 1,
-                                        state: 'CHANGES_REQUESTED',
+                                        state: 'APPROVED',
                                         submittedAt,
                                         author: {
                                             id: REVIEWER_BOT_NODE_ID,
@@ -12945,9 +12945,9 @@ describe('delivery shell boundary', () => {
                             {
                                 nodes: [
                                     {
-                                        id: 'review-older',
-                                        databaseId: 1,
-                                        state: 'APPROVED',
+                                        id: 'review-greatest-id',
+                                        databaseId: 2,
+                                        state: 'CHANGES_REQUESTED',
                                         submittedAt,
                                         author: {
                                             id: REVIEWER_BOT_NODE_ID,
