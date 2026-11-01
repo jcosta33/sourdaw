@@ -1,0 +1,67 @@
+src/modules/Arrangement/useCases/clipEditing/crossfadeClips.ts
+  s_7a8e1107313040::t_4baa21a7eb8d80 3,8,10-11,14-20,22-29,31-56,102,116-119,151-152,169
+src/utils/handlerContract.ts
+  s_7a8e1107313040::t_dd724860b0c834 730-740,2479-2482
+  s_7a8e1107313040::t_cee220310a9436 2569-2575,2585
+src/modules/Arrangement/useCases/clipEditing/__tests__/crossfadeClips.spec.ts
+  s_7a8e1107313040::t_8ba88401049c40 15-17,44-60,65-145
+src/modules/Arrangement/handlers/clip/handleCrossfadeClips.ts
+  s_7a8e1107313040::t_cfcb232acb2003 4,6-11,13,44,46,60-61,63,83,99-102,112,125,127
+  s_7a8e1107313040::t_50d6788509c238 126
+src/modules/Arrangement/useCases/clipEditing/restoreCrossfadeClips.ts
+  s_7a8e1107313040::t_a338f7c8d0a939 3,8-14,23,57,75-80,106-109,122,124
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreCrossfadeClips.spec.ts
+  s_7a8e1107313040::t_47e885b96c119a 258-301
+src/modules/Arrangement/useCases/clipEditing/clipAudioSourceFields.ts
+  s_7a8e1107313040::t_6fc408cddadf0d 1-51
+  s_7a8e1107313040::t_a338f7c8d0a939 52-62
+src/modules/Arrangement/handlers/clip/handleRestoreCrossfadeClips.ts
+  s_7a8e1107313040::t_f245052ca41a87 3-8,15,27,43-46,55-62,74-75
+src/modules/Arrangement/useCases/clipEditing/reversedClipAudioSource.ts
+  s_7a8e1107313040::t_b53b6ef0a68f03 1-77
+src/modules/Arrangement/handlers/clip/__tests__/handleCrossfadeClips.spec.ts
+  s_7a8e1107313040::t_9e9e5850032b08 30-31,41,708-787
+src/modules/Arrangement/useCases/clipEditing/__tests__/reverseClip.spec.ts
+  s_7a8e1107313040::t_df9f01fd003e1a 3-4,77,80-138
+  s_7a8e1107313040::t_d6b6535f461439 898-1059
+  s_7a8e1107313040::t_cc86e6415f8961 139
+src/modules/Knead/useCases/__tests__/syncKneadToEngine.spec.ts
+  s_7a8e1107313040::t_f66b756a67d97f 224-248
+src/modules/Arrangement/useCases/clipEditing/reverseClip.ts
+  s_7a8e1107313040::t_c5d9382cd55846 9,12,40-47,114
+src/modules/Arrangement/handlers/clip/handleReverseClip.ts
+  s_7a8e1107313040::t_f6a7358ca1cc09 25,27,29,32-41,43
+  s_7a8e1107313040::t_cded6e3960055c 42
+  s_7a8e1107313040::t_7ebc52e1cd294a 6-7,10,12,26,61-65,67-68,87,105
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_7a8e1107313040::t_6fd527c877abf0 3908,4137
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_7a8e1107313040::t_e4857bd7c2926f 16,1583-1584,1588,2280-2346
+  s_7a8e1107313040::t_a1fc13e853b8c0 2347
+src/modules/Arrangement/handlers/clip/handleRestoreReversedClip.ts
+  s_7a8e1107313040::t_0b10fc6479e084 4,35,37-38
+  s_7a8e1107313040::t_70b0ea9c0fe3cb 6,19-23,36,40
+src/modules/Arrangement/handlers/clip/__tests__/handleReverseClip.spec.ts
+  s_7a8e1107313040::t_8948e44efad392 3,43-44,546-696
+  s_7a8e1107313040::t_2518cdd17fb76a 697
+src/modules/Knead/useCases/syncKneadToEngine.ts
+  s_7a8e1107313040::t_7e6c624854bb31 4,15-17,54
+src/modules/Arrangement/useCases/clipEditing/__tests__/restoreCrossfadeClips.spec.ts
+  s_7a8e1107313040::t_167f50d3384e56 237-307
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2cdae713e217afe67995983fe15d2c9bb1ad9719",
+  "prompts": {},
+  "sessions": {
+    "s_7a8e1107313040": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54399ae9-2148-45f8-8043-53b64cc39d76",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
