@@ -118,6 +118,11 @@ type LoopSeamEmission = {
     passUpTo: number;
     /** Half-open end of the incoming pass's window, on its own beats. */
     wrappedUpTo: number;
+    /**
+     * The dying pass is the one a late wrap opened at `loopStart` this tick:
+     * its window is a relocation and its punch scan opens at `loopStart`.
+     */
+    afterLateWrap: boolean;
 };
 
 type SchedulerWorkerTick = {
@@ -406,6 +411,11 @@ export function startPlayheadScheduler(
     resetMetronomeBeat(state.playheadPosition);
 
     let previousTempo = state.tempo;
+    // The audio-clock instant a punch-out falls due for a punch recording that
+    // a late-wrap tick opened in a pass it handed over at its own seam: that
+    // tick cannot close it (the capture has only just begun), and the ticks
+    // after it scan the incoming pass, which never reaches the punch-out beat.
+    let lateWrapPunchOutAudioTime: number | null = null;
     const grainMs = state.scheduleGrainMs;
     schedulerTimingDiagnostics.reset(grainMs);
 
@@ -523,6 +533,10 @@ export function startPlayheadScheduler(
         // a tick. Each is a wrap the audio played and a pass the recorder took.
         let lateWrapSeams = 1;
         let lateWrapPassSeconds = 0;
+        // Set by the late wrap proper (not the seam-edit re-anchor): the
+        // playhead re-entered the region this tick, so the window it opens is
+        // projected against the loop end like any other.
+        let lateWrapReenteredRegion = false;
         // A scheduled seam whose instant passed before this tick's late wrap or
         // newly scheduled seam replaced it: the audio wrapped there, and its pass
         // take was staged at detection, so the replacement only counts it. The
@@ -781,6 +795,7 @@ export function startPlayheadScheduler(
                 seamAudioTime += secondsBetweenBeats(changes, newPosition, current.loopEnd, current.tempo);
             }
             lateWrapSeamAudioTime = seamAudioTime;
+            lateWrapReenteredRegion = true;
             // Every pass after the first seam costs the loop's own integrated
             // span, never the map past loopEnd, so the playhead lands where the
             // audio clock is in the current pass and each seam on the way
@@ -881,6 +896,7 @@ export function startPlayheadScheduler(
                 passHighWater: schedulerSession.lastScheduledBeat,
                 passUpTo: current.loopEnd,
                 wrappedUpTo,
+                afterLateWrap: false,
             };
             newPosition = wrappedPositionNow;
         }
@@ -955,6 +971,40 @@ export function startPlayheadScheduler(
             stopActiveSources(schedulerSession.activeAudioSources, ctx);
             schedulerSession.scheduledAudioClips.clear();
             schedulerSession.scheduledFrozenTracks.clear();
+        } else if (lateWrapReenteredRegion) {
+            // The pass a late wrap opened can already reach its own loop end
+            // within one look-ahead. It hands over at that seam as any pass
+            // does: its window stops at loopEnd and the next pass's opening
+            // window continues from the seam instant, ahead of the clock,
+            // instead of one window running on past loopEnd.
+            const nextSeam = projectLoopSeamWindow(
+                current,
+                changes,
+                current.loopStart,
+                newPosition,
+                lookAheadBeats,
+                now
+            );
+            if (nextSeam) {
+                const seamAudioTime = now + nextSeam.secondsToSeam;
+                schedulerSession.pendingSeam = {
+                    seamAudioTime,
+                    destinationBeat: current.loopStart,
+                    destinationSongSeconds: secondsBetweenBeats(changes, 0, current.loopStart, current.tempo),
+                    anchorAudioTime: now,
+                    anchorPosition: newPosition,
+                };
+                schedulerSession.lastLoopSeamAudioTime = seamAudioTime;
+                seam = {
+                    seamAudioTime,
+                    passPosition: newPosition,
+                    passHighWater: schedulerSession.lastScheduledBeat,
+                    passUpTo: current.loopEnd,
+                    wrappedUpTo: nextSeam.wrappedUpTo,
+                    afterLateWrap: true,
+                };
+                newPosition = nextSeam.wrappedPositionNow;
+            }
         }
 
         // Late policy. After a main-thread stall the window's start can be
@@ -1060,6 +1110,15 @@ export function startPlayheadScheduler(
             }
             playheadClockRef.beat = publishedBeat;
             playheadClockRef.audioTimeSeconds = now;
+            // A late wrap (or the seam-edit re-anchor) commits its wrapped position
+            // this tick, so the published beat above is the first wrapped one and
+            // the wrap count moves with it, before a seam the wrapped pass
+            // already reaches is published under the pass after it. A scheduled
+            // seam counts where its instant arrives, or where a later branch
+            // supersedes it — see the pendingSeam clear above.
+            if (lateWrap) {
+                playheadWrapCountRef.current += lateWrapSeams;
+            }
             const pending = schedulerSession.pendingSeam;
             playheadClockRef.pendingLoopSeam = null;
             if (pending) {
@@ -1107,14 +1166,6 @@ export function startPlayheadScheduler(
             // scheduling clock; the rest of the time there is no engine reading and
             // the two are the same number.
             playheadPositionRef.current = nativeCaptureBeat ?? publishedBeat;
-            // A late wrap (or the seam-edit re-anchor) commits its wrapped position
-            // this tick, so the published beat above is the first wrapped one and
-            // the wrap count moves with it. A scheduled seam counts where its
-            // instant arrives, or where a later branch supersedes it — see the
-            // pendingSeam clear above.
-            if (lateWrap) {
-                playheadWrapCountRef.current += lateWrapSeams;
-            }
 
             // Sync to AudioEngine for real-time DSP (SAB-backed).
             //
@@ -1148,7 +1199,10 @@ export function startPlayheadScheduler(
         // dying pass's last look-ahead band, a punch-out the dying pass reaches
         // before the seam instant is due at the seam instant itself.
         const punchScanBeat = seam ? seam.passPosition : newPosition;
-        const punchScanWindowStart = seam ? dyingTickStartPosition : tickStartPosition;
+        let punchScanWindowStart = tickStartPosition;
+        if (seam && !seam.afterLateWrap) {
+            punchScanWindowStart = dyingTickStartPosition;
+        }
         // The punch checks below may open a recording this tick, so read the
         // recording state BEFORE that block runs. A punch-out is due at the seam
         // only for a recording that was already open when the tick began — the
@@ -1167,6 +1221,21 @@ export function startPlayheadScheduler(
         // when the tick began, so a punch-in opened this tick is never
         // finalized empty.
         const punchOutDueAtWrap = lateWrap && recordingOpenAtTickStart && current.punchOutBeat <= current.loopEnd;
+        // A punch recording opened by an earlier late-wrap tick in the pass
+        // that tick handed over is due once the audio clock reaches its
+        // punch-out, as a scan reaching that beat would make it; a relocation
+        // before then moves the playhead away from the punch-out it was due at.
+        const punchOutDueAfterLateWrap =
+            recordingOpenAtTickStart && lateWrapPunchOutAudioTime !== null && now >= lateWrapPunchOutAudioTime;
+        if (
+            !recordingOpenAtTickStart ||
+            punchOutDueAfterLateWrap ||
+            jumpToPosition !== null ||
+            reemitAfterEdit ||
+            lateWrap
+        ) {
+            lateWrapPunchOutAudioTime = null;
+        }
         if (opensPunchIn(current, punchScanBeat)) {
             openedRecording = true;
             schedulerSession.punchRecordingActive = true;
@@ -1445,6 +1514,16 @@ export function startPlayheadScheduler(
             }
         }
 
+        // A late wrap that opened this recording in a pass it hands over at its
+        // own seam leaves the punch-out to a later tick, since no later scan
+        // reaches the dying pass's band: it is due when the audio clock gets
+        // there. The scheduled seam's own incoming scan never takes this path
+        // (its punch-in captures across the seam, see `punchOutDueAtSeam`).
+        if (openedRecording && seam?.afterLateWrap && current.punchOutBeat <= seam.passUpTo) {
+            lateWrapPunchOutAudioTime =
+                now + secondsBetweenBeats(changes, seam.passPosition, current.punchOutBeat, current.tempo);
+        }
+
         // `punchOutDueAtSeam`: the punch-out point sits inside the dying pass's
         // last look-ahead band — above where it stands at the seam tick but at
         // or below where the seam instant lands it. The crossing will happen
@@ -1453,7 +1532,10 @@ export function startPlayheadScheduler(
         if (
             schedulerSession.punchRecordingActive &&
             current.punchInEnabled &&
-            (punchScanBeat >= current.punchOutBeat || punchOutDueAtSeam || punchOutDueAtWrap)
+            (punchScanBeat >= current.punchOutBeat ||
+                punchOutDueAtSeam ||
+                punchOutDueAtWrap ||
+                punchOutDueAfterLateWrap)
         ) {
             // Finalize BEFORE the flush. The flush runs the capture terminal that
             // commits the take, and the commit captures the live clip and takes;
@@ -1549,6 +1631,36 @@ export function startPlayheadScheduler(
         if (capturedEditBoundary !== null) {
             stageLoopWrapTakes(current, now, capturedEditBoundary, browserCaptureKinds);
         }
+        // #4905 — a wrap tick's pass-span takes are staged after the punch
+        // checks above, on the same law as the seam path: a punch-out due at the
+        // wrap finalizes its recording this tick, and a take staged before that
+        // finalization would name the punch clip with a full pass span it never
+        // recorded.
+        function stageLateWrapPassTakes(wrappedPassStartBeat: number): void {
+            if (
+                !current ||
+                !lateWrap ||
+                lateWrapSeamAudioTime === null ||
+                capturedJumpBoundary !== null ||
+                capturedEditBoundary !== null
+            ) {
+                return;
+            }
+            // One take per seam crossed: the recorder kept capturing through
+            // every pass the audio played, and each closes at its own seam.
+            for (let seamIndex = 0; seamIndex < lateWrapSeams; seamIndex++) {
+                stageLoopWrapTakes(
+                    current,
+                    lateWrapSeamAudioTime + seamIndex * lateWrapPassSeconds,
+                    {
+                        endBeat: editPassEndBeat,
+                        nextPassStartBeat: editPassEndBeat === undefined ? undefined : wrappedPassStartBeat,
+                        laterClosedPasses: lateWrapSeams - 1 - seamIndex,
+                    },
+                    browserCaptureKinds
+                );
+            }
+        }
         if (seam) {
             // Staged here rather than in the detection branch, after the punch
             // checks above: a punch-out due at the seam instant finalizes its
@@ -1557,7 +1669,10 @@ export function startPlayheadScheduler(
             // recorded. A recording that continues across the seam — no punch
             // out, or a punch-out past the loop end — still gets its pass-span
             // take here, so the staging moment moves but the staged takes do
-            // not.
+            // not. The passes a late wrap closed this tick come first.
+            if (seam.afterLateWrap) {
+                stageLateWrapPassTakes(seam.passPosition);
+            }
             if (!initial) {
                 stageLoopWrapTakes(current, seam.seamAudioTime, { planned: true }, browserCaptureKinds);
             }
@@ -1580,10 +1695,10 @@ export function startPlayheadScheduler(
                 current,
                 currentTempo,
                 cancellation,
-                // Only an edit's re-emit (it opens where the cut look-ahead
-                // began) or a stall's skip makes this window a relocation; an
-                // ordinary seam tick continues.
-                reemitAfterEdit || skipsStalledSpan,
+                // An edit's re-emit (it opens where the cut look-ahead began), a
+                // stall's skip and a late wrap (it opens at the loop start) make
+                // this window a relocation; an ordinary seam tick continues.
+                reemitAfterEdit || skipsStalledSpan || seam.afterLateWrap,
                 initial ? preparedMidi?.midiWindow(seam.passHighWater, seam.passUpTo) : undefined,
                 initial ? initialSchedulingAnchor : undefined
             );
@@ -1686,33 +1801,7 @@ export function startPlayheadScheduler(
             );
             schedulerSession.lastScheduledBeat = seam.wrappedUpTo;
         } else {
-            // #4905 — a wrap tick's pass-span takes are staged here rather
-            // than in the detection branches, after the punch checks above, on
-            // the same law as the seam path: a punch-out due at the wrap
-            // finalizes its recording this tick, and a take staged before that
-            // finalization would name the punch clip with a full pass span it
-            // never recorded.
-            if (
-                lateWrap &&
-                lateWrapSeamAudioTime !== null &&
-                capturedJumpBoundary === null &&
-                capturedEditBoundary === null
-            ) {
-                // One take per seam crossed: the recorder kept capturing through
-                // every pass the audio played, and each closes at its own seam.
-                for (let seamIndex = 0; seamIndex < lateWrapSeams; seamIndex++) {
-                    stageLoopWrapTakes(
-                        current,
-                        lateWrapSeamAudioTime + seamIndex * lateWrapPassSeconds,
-                        {
-                            endBeat: editPassEndBeat,
-                            nextPassStartBeat: editPassEndBeat === undefined ? undefined : newPosition,
-                            laterClosedPasses: lateWrapSeams - 1 - seamIndex,
-                        },
-                        browserCaptureKinds
-                    );
-                }
-            }
+            stageLateWrapPassTakes(newPosition);
             // The window opens at the committed position — after any follow
             // action relocation — exactly as the pre-seam code emitted it.
             const scheduleUpTo = newPosition + lookAheadBeats;

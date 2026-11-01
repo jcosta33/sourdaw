@@ -330,7 +330,9 @@ export function normalizeTrack(track: Partial<Track> & { id: string; name: strin
         kind: track.kind,
         muted: track.muted ?? false,
         soloed: track.soloed ?? false,
-        armed: track.armed ?? false,
+        // Master cannot be armed: it has no row to hold a take, and stored or
+        // peer state must not be able to arm it past the eligibility refusal.
+        armed: track.kind !== 'master' && (track.armed ?? false),
         gain: track.gain ?? 0.8,
         pan: track.pan ?? 0,
         color: track.color ?? '',

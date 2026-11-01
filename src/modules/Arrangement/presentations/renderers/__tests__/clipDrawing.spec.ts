@@ -158,6 +158,67 @@ describe('drawClip (Coordinate Conventions)', () => {
         expect(noteCall[0]).toBe(200);
     });
 
+    describe('inline MIDI editing', () => {
+        const inlineClip = (overrides: Partial<ClipRenderModel>): ClipRenderModel => ({
+            id: 'c1',
+            startBeat: 8,
+            endBeat: 12,
+            name: 'Inline',
+            type: 'midi',
+            color: '#000',
+            muted: false,
+            midiNotes: [],
+            isInlineEditing: true,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            ...overrides,
+        });
+
+        it('places a note of a clip that starts at beat 8 by its offset and clip-relative beat', () => {
+            const clip = inlineClip({
+                midiOffsetBeats: 1,
+                midiNotes: [{ id: 'n1', startBeat: 1.5, duration: 1, pitch: 60 }],
+            });
+
+            drawClip(mockCtx, clip, create_test_model(), 0, 80);
+
+            // x = 8 * 25 = 200, w = 4 * 25 = 100; relStart = 1.5 - 1 = 0.5 beat => 200 + 0.5 / 4 * 100.
+            const noteCall = mockCtx.roundRect.mock.calls.find((args: number[]) => args[0] === 212.5);
+            expect(noteCall?.[2]).toBe(25);
+        });
+
+        it('draws the pitch grid for an inline clip with no notes', () => {
+            drawClip(mockCtx, inlineClip({}), create_test_model(), 0, 80);
+
+            // The grid backdrop covers the note area (padding 2 inside an 80px track) and the 12 rows of the octave from middle C are ruled by 13 lines.
+            expect(mockCtx.fillRect).toHaveBeenCalledWith(200, 2, 100, 76);
+            expect(mockCtx.moveTo.mock.calls.filter(([x, y]: [number, number]) => x === 200 && y >= 2)).toHaveLength(
+                13
+            );
+        });
+
+        it('draws no pitch grid for a non-inline clip with no notes', () => {
+            drawClip(mockCtx, inlineClip({ isInlineEditing: false }), create_test_model(), 0, 80);
+
+            expect(mockCtx.fillRect).not.toHaveBeenCalledWith(200, 2, 100, 76);
+        });
+
+        it('keeps the preview note placement for a non-inline clip', () => {
+            const clip = inlineClip({
+                isInlineEditing: false,
+                midiOffsetBeats: 1,
+                midiNotes: [{ id: 'n1', startBeat: 1.5, duration: 1, pitch: 60 }],
+            });
+
+            drawClip(mockCtx, clip, create_test_model(), 0, 80);
+
+            // Preview area starts under the 18px header: height 80 - 2 - 18 = 60, split in two rows for a single pitch,
+            // and the note takes the lower one: y = 18 + 60 - 60 / 2 = 48.
+            const noteCall = mockCtx.fillRect.mock.calls.find((args: number[]) => args[0] === 212.5);
+            expect(noteCall).toEqual([212.5, 48, 25, 30]);
+        });
+    });
+
     it('draws the clip name at the shared label geometry, condensed to the clip width', () => {
         const clip = {
             id: 'c1',
