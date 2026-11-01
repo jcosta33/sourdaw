@@ -233,7 +233,6 @@ export const startAudioRecording: StartAudioRecording = inject({ logger })(
 
                 return true;
             } catch (error) {
-                logger.error(new Error(`Failed to start recording on track ${trackId}`, { cause: error }));
                 const sessionWasRegistered =
                     registeredSession !== null && activeSessions.get(trackId) === registeredSession;
                 if (registeredSession) {
@@ -246,7 +245,11 @@ export const startAudioRecording: StartAudioRecording = inject({ logger })(
                     sourceNode?.disconnect();
                     releaseSharedMediaStream(mediaStream);
                 }
-                return false;
+                // Every genuine start failure rejects, even one a stop raced:
+                // the start generation also moves on a punch-out, a seek or a
+                // repair, so it cannot say the musician stopped. The caller
+                // decides whether to tell the musician, and logs it.
+                throw new Error(`Failed to start recording on track ${trackId}`, { cause: error });
             }
         }
 );

@@ -1,6 +1,7 @@
 import { isHydratableProjectData } from '../helpers/isHydratableProjectData';
 import { normalizeLegacyProjectData } from '../helpers/normalizeLegacyProjectData';
 import { replaceProjectData } from '../helpers/replaceProjectData';
+import { type OutgoingProjectDisposition } from '../helpers/resetCrdtProjectWithTransportStopped';
 import { type ProjectLoadTransaction, runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
 
 type ApplyImportedProjectDataInput = {
@@ -9,6 +10,8 @@ type ApplyImportedProjectDataInput = {
      * formats that carry their own audio assets hand the AudioBuffers over
      * directly instead of encoding them into the project snapshot. */
     decodedAudioBuffers?: Record<string, AudioBuffer>;
+    /** `discard` when the user chose to leave the outgoing project without saving. */
+    outgoingProject?: OutgoingProjectDisposition;
     /** The caller keeps this true only while the user still wants this replacement. */
     shouldProceed?: () => boolean;
     transaction?: ProjectLoadTransaction;
@@ -17,6 +20,7 @@ type ApplyImportedProjectDataInput = {
 export async function applyImportedProjectData({
     data,
     decodedAudioBuffers,
+    outgoingProject,
     shouldProceed,
     transaction,
 }: ApplyImportedProjectDataInput): Promise<boolean> {
@@ -29,6 +33,7 @@ export async function applyImportedProjectData({
         context: 'applyImportedProjectData',
         data: normalizedData,
         decodedAudioBuffers,
+        outgoingProject,
         shouldProceed,
         transaction: transaction ?? runProjectLoadTransaction(),
     });

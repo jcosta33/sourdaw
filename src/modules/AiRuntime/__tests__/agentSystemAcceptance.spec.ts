@@ -28,9 +28,10 @@ import {
     resetCrdtProjectAuthority,
     settlePendingProjectWritesAndCaptureRevision,
 } from '#/modules/CrdtDocument/useCases';
-import { projectStore } from '#/modules/Project/stores';
-import { parseSemanticProjectQueryInput } from '#/modules/Project/useCases';
-import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
+import { parseSemanticProjectQueryInput, querySemanticProject } from '#/modules/Project/useCases';
+import { defaultTransportState, transportStore, type TransportState } from '#/modules/Transport/stores';
+import { restoreTransportSnapshot } from '#/modules/Transport/useCases';
 import { clampFaderGain, resolveLevelFields, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
 import { type AppAction } from '#/utils/handlerContract';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
@@ -70,6 +71,7 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from '../useCases/__tests__/aiWorkflowCommandPreflightFixture';
+import { advertisedAnswerIntake } from '../useCases/__tests__/answerWireFixture';
 import {
     assertDiscoveredCommandSchemas,
     declineCall,
@@ -86,6 +88,7 @@ import { literalMetricIntakeTurn } from '../useCases/__tests__/metricGoalWorkflo
 import { GENERATED_BATCH_LOCAL_ID_PREFIXES } from '../useCases/agentReference/batchLocalBindingProducers';
 import { confirmPendingChatActions } from '../useCases/confirmPendingChatActions';
 import { getPlannedActionAffectedIds } from '../useCases/getPlannedActionAffectedIds';
+import { getProjectContext } from '../useCases/getProjectContext';
 import { parsePromptToActions } from '../useCases/parsePromptToActions';
 import { type planPromptActions } from '../useCases/planPromptActions';
 import { readChatThreadContext } from '../useCases/readChatThreadContext';
@@ -159,6 +162,9 @@ const THRESHOLDS_DOC_PATH = 'docs/architecture/agent-release-gates.md';
 /** The file name both corpora must name, so one project answers every case in both of them. */
 const FIXTURE_PROJECT_FILE = 'fixture-project.json';
 
+/** The identity the fixture project is opened under when a question queries it. */
+const FIXTURE_PROJECT_ID = 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa';
+
 /** The outcome classes the `boundary` prompt class exists to hold, each needing a case of its own. */
 const BOUNDARY_OUTCOME_CLASSES: readonly AgentAcceptanceOutcomeClass[] = [
     'clarify-required',
@@ -178,7 +184,7 @@ const MINIMUM_SEALED_CLASS_CASES = 3;
  * generator.
  */
 type CorpusProviderTurn =
-    | { kind: 'intake'; intent: 'literal' }
+    | { kind: 'intake'; intent: 'literal' | 'answer' }
     | { kind: 'search'; intents: string[] }
     | { kind: 'discover'; names: string[] }
     | { kind: 'propose'; items: Record<string, unknown>[]; plan?: AgentPlanProposal }
@@ -398,6 +404,12 @@ function isString(value: unknown): value is string {
 }
 
 /**
+ * A descriptive question's intake: the project-facts answer branch of the interpretation selector the
+ * provider was actually offered, read from its advertised schema rather than restated here.
+ */
+const answerIntakeTurn: ScriptedTurn = (_userMessage, providerView) => [advertisedAnswerIntake(providerView)];
+
+/**
  * Maps one corpus-declared provider turn to the same scripted-turn builders the workflow fixture
  * proves against production. `priorProposalId` reads the card a refinement names in `refines`.
  */
@@ -407,10 +419,13 @@ function toScriptedTurn(
 ): ScriptedTurn {
     switch (turn.kind) {
         case 'intake':
-            if (turn.intent !== 'literal') {
-                throw new TypeError('The corpus intake variant has no configured producer.');
+            if (turn.intent === 'literal') {
+                return literalMetricIntakeTurn;
             }
-            return literalMetricIntakeTurn;
+            if (turn.intent === 'answer') {
+                return answerIntakeTurn;
+            }
+            throw new TypeError('The corpus intake variant has no configured producer.');
         case 'search':
             return () => searchCalls(turn.intents);
         case 'discover':
@@ -862,6 +877,32 @@ async function runCorpusCase(
     if (testCase.promptClass === 'refinement') {
         return runRefinementCase(testCase, barrel);
     }
+    if (testCase.oracle.kind !== 'answer') {
+        return runSingleTurnCase(testCase, barrel, alongside);
+    }
+    // `project.query` reads the open project, so a question is asked of the fixture project loaded
+    // into the real stores and document, under a canonical identity a semantic query can answer for.
+    const projectBefore = projectStore.value;
+    openChatProject();
+    projectStore.set({
+        ...structuredClone(defaultProjectStoreState),
+        projectId: FIXTURE_PROJECT_ID,
+        initialized: true,
+        loading: false,
+    });
+    try {
+        return await runSingleTurnCase(testCase, barrel, alongside);
+    } finally {
+        projectStore.set(projectBefore);
+        closeChatProject();
+    }
+}
+
+async function runSingleTurnCase(
+    testCase: CorpusCase,
+    barrel: BarrelWriteLog,
+    alongside?: () => Promise<void>
+): Promise<CaseRun> {
     const writesBefore = barrel.count();
     const projectBefore = captureProjectTruth();
     const observed = await observeProjectChanges(async () => {
@@ -1011,10 +1052,36 @@ function toStoreTrack(track: ProjectContext['tracks'][number]): Track {
 }
 
 /**
- * Opens the fixture project as the chat sees it — real stores, Command and CRDT document, as the
- * refinement specs drive the chat route — with an empty thread and an empty undo history.
+ * The transport slice of a project context as the transport store holds it. The store keeps master
+ * gain on a 0–100 scale where the context carries linear gain, the inverse of `getProjectContext`.
  */
-function openChatProject(): void {
+function toTransportSnapshot(fixture: ProjectContext): TransportState {
+    return {
+        ...defaultTransportState,
+        tempo: fixture.tempo,
+        timeSignatureNumerator: fixture.timeSignature[0],
+        timeSignatureDenominator: fixture.timeSignature[1],
+        isPlaying: fixture.isPlaying,
+        isRecording: fixture.isRecording,
+        isLooping: fixture.isLooping,
+        loopStart: fixture.loopStart,
+        loopEnd: fixture.loopEnd,
+        punchInEnabled: fixture.punchInEnabled,
+        punchInBeat: fixture.punchInBeat,
+        punchOutBeat: fixture.punchOutBeat,
+        metronomeEnabled: fixture.metronomeEnabled,
+        metronomeVolume: fixture.metronomeVolume,
+        masterGain: fixture.masterGain * 100,
+    };
+}
+
+/**
+ * Opens the fixture project as the chat sees it — real stores, Command and CRDT document, as the
+ * refinement specs drive the chat route — with an empty thread and an empty undo history. Its
+ * transport comes from the fixture through the app's own project-load route, so a query that reads
+ * the transport store answers for the fixture rather than for the store defaults.
+ */
+function openChatProject(fixture: ProjectContext = context): void {
     configureAiWorkflowCommandPreflightFixture();
     configureAutomergeStoragePort(null);
     resetCrdtProjectAuthority('agent acceptance refinement case');
@@ -1035,9 +1102,10 @@ function openChatProject(): void {
     setArrangementEventBus({ emit: () => Promise.resolve() });
     setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
     macroStore.set({ macros: [], recording: false, currentRecording: [] });
-    trackStore.set({ tracks: context.tracks.map(toStoreTrack), selectedTrackId: null, ghostClips: [] });
+    trackStore.set({ tracks: fixture.tracks.map(toStoreTrack), selectedTrackId: null, ghostClips: [] });
     automationStore.set({ lanes: [] });
     transportStore.set(defaultTransportState);
+    restoreTransportSnapshot(toTransportSnapshot(fixture));
     chatStore.set({ messages: [], isGenerating: false, enableReasoning: true, chatMode: 'prompt' });
 }
 
@@ -1712,17 +1780,17 @@ describe('agent acceptance corpora', () => {
             }
         });
 
-        it('declares one positive intake before every scripted mutation within the existing turn ceiling', () => {
+        it('declares one positive intake before every scripted mutation or answer within the existing turn ceiling', () => {
             for (const testCase of corpus.cases) {
                 for (const frame of [testCase, testCase.prior]) {
                     if (frame === undefined) {
                         continue;
                     }
-                    const mutations = frame.providerTurns.some(
-                        (turn) => turn.kind === 'propose' || turn.kind === 'propose-commands'
+                    const interpreted = frame.providerTurns.some(
+                        (turn) => turn.kind === 'propose' || turn.kind === 'propose-commands' || turn.kind === 'answer'
                     );
                     const intakes = frame.providerTurns.filter((turn) => turn.kind === 'intake');
-                    if (mutations) {
+                    if (interpreted) {
                         expect(frame.providerTurns[0]?.kind, `${testCase.id}: ${frame.prompt}`).toBe('intake');
                         expect(frame.providerTurns[0]).toEqual(intakes[0]);
                         expect(intakes).toHaveLength(1);
@@ -3122,7 +3190,24 @@ describe('agent acceptance corpora', () => {
 });
 
 type Fact = string | number | boolean;
-type AnswerOracle = { kind: 'answer'; text: string; query: { type: string; facts: Record<string, Fact> } };
+type AnswerOracle = {
+    kind: 'answer';
+    text: string;
+    query: { type: string; facts: Record<string, Fact>; total?: number };
+};
+
+/**
+ * Whether the answer text states the value as a whole token: a number never inside a longer number
+ * (1 is not in 16, 8 is not in 0.8, 3 is not in -3), a word never inside a longer word.
+ */
+function textStatesValue(text: string, value: Fact): boolean {
+    const escaped = String(value).replaceAll(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+    const wordBefore = typeof value === 'number' ? '(?<![\\p{L}\\p{N}_-])' : '(?<![\\p{L}\\p{N}_])';
+    const decimalBefore = '(?<!\\p{N}[.,])';
+    const wordAfter = '(?![\\p{L}\\p{N}_])';
+    const decimalAfter = '(?![.,]\\p{N})';
+    return new RegExp(`${wordBefore}${decimalBefore}${escaped}${wordAfter}${decimalAfter}`, 'u').test(text);
+}
 
 /** Reject a hollow oracle rather than manufacturing default answer or query facts. */
 function parseAnswerOracle(value: unknown): AnswerOracle {
@@ -3156,7 +3241,27 @@ function parseAnswerOracle(value: unknown): AnswerOracle {
     if (!Object.keys(facts).some((key) => key !== 'id' && key !== 'kind')) {
         throw new TypeError('Answer oracle requires substantive query facts.');
     }
-    return { kind: 'answer', text: value.text, query: { type: value.query.type, facts } };
+    const { total } = value.query;
+    if (total !== undefined && (typeof total !== 'number' || !Number.isInteger(total) || total <= 0)) {
+        throw new TypeError('Answer oracle total must be a positive integer.');
+    }
+    // Identity facts (id, kind) locate the cited item; every other fact is a claim the answer makes.
+    const stated: Record<string, Fact> = Object.fromEntries(
+        Object.entries(facts).filter(([key]) => key !== 'id' && key !== 'kind')
+    );
+    if (total !== undefined) {
+        stated.total = total;
+    }
+    for (const [key, fact] of Object.entries(stated)) {
+        if (!textStatesValue(value.text, fact)) {
+            throw new TypeError(`Answer oracle text does not state the ${key} fact ${JSON.stringify(fact)}.`);
+        }
+    }
+    const query: AnswerOracle['query'] = { type: value.query.type, facts };
+    if (total !== undefined) {
+        query.total = total;
+    }
+    return { kind: 'answer', text: value.text, query };
 }
 
 /** Compare only the cited, successful query from this actual result and its current project. */
@@ -3232,26 +3337,37 @@ function answerMatchesOracle(input: {
         if (data.queryType !== input.oracle.query.type) {
             continue;
         }
-        matchedQuery ||= data.items.some(
-            (item: unknown) =>
-                isRecord(item) &&
-                Object.entries(input.oracle.query.facts).every(([key, value]) => isDeepStrictEqual(item[key], value))
-        );
+        const totalMatches =
+            input.oracle.query.total === undefined ||
+            (isRecord(data.page) && data.page.total === input.oracle.query.total);
+        matchedQuery ||=
+            totalMatches &&
+            data.items.some(
+                (item: unknown) =>
+                    isRecord(item) &&
+                    Object.entries(input.oracle.query.facts).every(([key, value]) =>
+                        isDeepStrictEqual(item[key], value)
+                    )
+            );
     }
     return matchedQuery;
 }
 
-function answerOracleFixture(): Parameters<typeof answerMatchesOracle>[0] {
+const ANSWER_FIXTURE_TEXT = 'Song runs at 120 BPM across 2 sections.';
+
+function answerOracleFixture(
+    oracle: unknown = {
+        kind: 'answer',
+        text: ANSWER_FIXTURE_TEXT,
+        query: { type: 'project-summary', facts: { name: 'Song', tempo: 120 }, total: 2 },
+    }
+): Parameters<typeof answerMatchesOracle>[0] {
     const revision = { documentIdentityEpoch: 1, mutationEpoch: 2, documents: [] };
     return {
-        oracle: parseAnswerOracle({
-            kind: 'answer',
-            text: 'Tempo is 120 BPM.',
-            query: { type: 'project-summary', facts: { tempo: 120 } },
-        }),
+        oracle: parseAnswerOracle(oracle),
         outcome: {
             kind: 'answer',
-            text: 'Tempo is 120 BPM.',
+            text: ANSWER_FIXTURE_TEXT,
             evidence: [{ callId: 'read', toolName: 'project.query', summary: 'project-summary: 1 of 1 item(s)' }],
         },
         actions: [],
@@ -3273,7 +3389,8 @@ function answerOracleFixture(): Parameters<typeof answerMatchesOracle>[0] {
                     revision,
                     revisionToken: 'spq1.token',
                     queryType: 'project-summary',
-                    items: [{ id: 'project-1', kind: 'project-summary', tempo: 120 }],
+                    page: { offset: 0, limit: 50, total: 2 },
+                    items: [{ id: 'project-1', kind: 'project-summary', name: 'Song', tempo: 120 }],
                 },
                 summary: 'project-summary: 1 of 1 item(s)',
                 warnings: [],
@@ -3294,6 +3411,9 @@ describe('answer acceptance oracle', () => {
         'failed receipt',
         'wrong type',
         'wrong fact',
+        'one of two facts wrong',
+        'wrong total',
+        'missing page',
         'missing facts',
         'wrong revision',
         'wrong identity',
@@ -3312,7 +3432,7 @@ describe('answer acceptance oracle', () => {
         const data = receipt.data;
         switch (failure) {
             case 'wrong text':
-                input.outcome.text = 'Tempo is 121 BPM.';
+                input.outcome.text = 'Song runs at 121 BPM across 2 sections.';
                 break;
             case 'empty evidence':
                 input.outcome.evidence = [];
@@ -3327,7 +3447,16 @@ describe('answer acceptance oracle', () => {
                 data.queryType = 'tempo';
                 break;
             case 'wrong fact':
-                data.items = [{ tempo: 121 }];
+                data.items = [{ name: 'Song', tempo: 121 }];
+                break;
+            case 'one of two facts wrong':
+                data.items = [{ id: 'project-1', kind: 'project-summary', name: 'Other', tempo: 120 }];
+                break;
+            case 'wrong total':
+                data.page = { offset: 0, limit: 50, total: 3 };
+                break;
+            case 'missing page':
+                delete data.page;
                 break;
             case 'missing facts':
                 data.items = [];
@@ -3421,6 +3550,18 @@ describe('answer acceptance oracle', () => {
         input.outcome.evidence = [secondCitation];
         expect(answerMatchesOracle(input)).toBe(false);
     });
+    it('refuses a receipt total the oracle does not pin, even when the answer text matches', () => {
+        const input = answerOracleFixture({
+            kind: 'answer',
+            text: 'Song runs at 120 BPM across 3 sections.',
+            query: { type: 'project-summary', facts: { tempo: 120 }, total: 3 },
+        });
+        if (input.outcome.kind !== 'answer') {
+            throw new Error('Expected answer');
+        }
+        input.outcome.text = 'Song runs at 120 BPM across 3 sections.';
+        expect(answerMatchesOracle(input)).toBe(false);
+    });
     it.each([
         { kind: 'answer', text: '', query: { type: 'project-summary', facts: { tempo: 120 } } },
         { kind: 'answer', text: 'x', query: { type: 'project-summary', facts: {} } },
@@ -3429,6 +3570,151 @@ describe('answer acceptance oracle', () => {
         { kind: 'answer', text: 'x', query: { type: 'invented', facts: { tempo: 120 } } },
     ])('rejects malformed or hollow frozen answer oracles', (oracle) => {
         expect(() => parseAnswerOracle(oracle)).toThrow();
+    });
+    it.each([
+        ['a fact value absent from the text', 'Tempo is fast.', { tempo: 120 }, undefined],
+        ['a number inside a longer number', 'The project has 16 tracks.', { gain: 1 }, undefined],
+        ['a decimal fraction read as a whole number', 'Master is at 0.8.', { gain: 8 }, undefined],
+        ['a positive number inside a negative one', 'Gain is -3 dB.', { gain: 3 }, undefined],
+        ['a string inside a longer word', 'The submidi lane is quiet.', { trackKind: 'midi' }, undefined],
+        ['a total absent from the text', 'Tempo is 120 BPM.', { tempo: 120 }, 2],
+        ['a total inside a longer number', 'Tempo is 120 BPM across 12 sections.', { tempo: 120 }, 2],
+        ['a zero total', 'Tempo is 120 BPM across 0 sections.', { tempo: 120 }, 0],
+        ['a fractional total', 'Tempo is 120 BPM across 1.5 sections.', { tempo: 120 }, 1.5],
+        ['a string total', 'Tempo is 120 BPM across 2 sections.', { tempo: 120 }, '2'],
+    ])('refuses an oracle with %s', (_label, text, facts, total) => {
+        expect(() =>
+            parseAnswerOracle({ kind: 'answer', text, query: { type: 'project-summary', facts, total } })
+        ).toThrow(TypeError);
+    });
+    it('names the fact the text does not state', () => {
+        expect(() =>
+            parseAnswerOracle({
+                kind: 'answer',
+                text: 'Tempo is fast.',
+                query: { type: 'project-summary', facts: { tempo: 120 } },
+            })
+        ).toThrow('Answer oracle text does not state the tempo fact 120.');
+    });
+    it.each([
+        ['a number stated between punctuation', 'Fader: “Kick” 1; master 0.8.', { gain: 1 }],
+        ['a decimal', 'Fader: “Kick” 1; master 0.8.', { gain: 0.8 }],
+        ['a word before a parenthesis', 'The project has 2 bus(es).', { trackKind: 'bus' }],
+        ['a quoted name and its number', 'Fader: “Lead Vocal” 1.', { name: 'Lead Vocal', gain: 1 }],
+        ['an identity fact the text does not repeat', 'Tempo is 120 BPM.', { kind: 'project-summary', tempo: 120 }],
+    ])('accepts an oracle with %s', (_label, text, facts) => {
+        expect(() =>
+            parseAnswerOracle({ kind: 'answer', text, query: { type: 'project-summary', facts } })
+        ).not.toThrow();
+    });
+});
+
+describe('fixture transport reaching the chat', () => {
+    const TRANSPORT_FIELDS = [
+        'tempo',
+        'timeSignature',
+        'isLooping',
+        'loopStart',
+        'loopEnd',
+        'punchInEnabled',
+        'punchInBeat',
+        'punchOutBeat',
+        'metronomeEnabled',
+        'metronomeVolume',
+        'masterGain',
+    ] as const satisfies readonly (keyof ProjectContext)[];
+
+    function transportOf(source: ProjectContext): Pick<ProjectContext, (typeof TRANSPORT_FIELDS)[number]> {
+        return {
+            tempo: source.tempo,
+            timeSignature: source.timeSignature,
+            isLooping: source.isLooping,
+            loopStart: source.loopStart,
+            loopEnd: source.loopEnd,
+            punchInEnabled: source.punchInEnabled,
+            punchInBeat: source.punchInBeat,
+            punchOutBeat: source.punchOutBeat,
+            metronomeEnabled: source.metronomeEnabled,
+            metronomeVolume: source.metronomeVolume,
+            masterGain: source.masterGain,
+        };
+    }
+
+    /** Opens the fixture as a chat does, with the canonical identity a semantic query answers for. */
+    function readOpenedFixture<TResult>(fixture: ProjectContext, read: () => TResult): TResult {
+        const projectBefore = projectStore.value;
+        openChatProject(fixture);
+        projectStore.set({
+            ...structuredClone(defaultProjectStoreState),
+            projectId: FIXTURE_PROJECT_ID,
+            initialized: true,
+            loading: false,
+        });
+        try {
+            return read();
+        } finally {
+            projectStore.set(projectBefore);
+            closeChatProject();
+        }
+    }
+
+    const edited: ProjectContext = {
+        ...context,
+        tempo: 121,
+        timeSignature: [7, 8],
+        isLooping: true,
+        loopStart: 4,
+        loopEnd: 12,
+        punchInEnabled: true,
+        punchInBeat: 2,
+        punchOutBeat: 10,
+        metronomeEnabled: true,
+        metronomeVolume: 0.25,
+        masterGain: 0.5,
+    };
+
+    it.each([
+        ['the committed fixture', context],
+        ['an edited fixture', edited],
+    ])('opens %s with the transport it declares', (_label, fixture) => {
+        const read = readOpenedFixture(fixture, () => transportOf(getProjectContext()));
+        expect(read).toEqual(transportOf(fixture));
+    });
+
+    it('answers a tempo question for the edited fixture, so an oracle pinning the old tempo fails', () => {
+        const receipt = readOpenedFixture(edited, () => querySemanticProject({ type: 'tempo' }));
+        const answerFor = (tempo: number): Parameters<typeof answerMatchesOracle>[0] => {
+            const text = `The project tempo setting is ${String(tempo)} BPM.`;
+            const summary = 'tempo: 1 of 1 item(s)';
+            return {
+                oracle: parseAnswerOracle({ kind: 'answer', text, query: { type: 'tempo', facts: { tempo } } }),
+                outcome: {
+                    kind: 'answer',
+                    text,
+                    evidence: [{ callId: 'read', toolName: 'project.query', summary }],
+                },
+                actions: [],
+                projectId: receipt.projectId,
+                projectRevision: JSON.stringify(receipt.revision),
+                receipts: [
+                    {
+                        schema: 'sourdaw.application-tool-receipt',
+                        schemaVersion: 1,
+                        callId: 'read',
+                        toolName: 'project.query',
+                        turn: 1,
+                        status: 'success',
+                        revision: receipt.revisionToken,
+                        data: receipt,
+                        summary,
+                        warnings: [],
+                        error: null,
+                    },
+                ],
+            };
+        };
+        expect(answerMatchesOracle(answerFor(121))).toBe(true);
+        expect(answerMatchesOracle(answerFor(120))).toBe(false);
     });
 });
 
