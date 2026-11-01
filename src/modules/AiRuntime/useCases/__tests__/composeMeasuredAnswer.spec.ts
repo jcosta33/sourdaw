@@ -16,6 +16,7 @@ const VOCAL_ID = 'track-lead-vocal';
 const BUS_ID = 'track-vocal-bus';
 const BASS_ID = 'track-bass';
 const UNTITLED_ID = 'track-untitled';
+const MIDI_ID = 'track-midi';
 const RECIPE: AnswerStatement = { kind: 'recipe', callId: 'recipe', recipeId: 'vocal-warm' };
 const PERCEPTION: AnswerStatement = { kind: 'limitation', code: 'perception-not-inferred' };
 const PERCEPTION_TEXT = 'These objective measurements do not establish perceived sound quality or its cause.';
@@ -103,6 +104,7 @@ beforeEach(() => {
             createTrack({ id: BUS_ID, name: 'Vocal Bus', kind: 'bus' }),
             createTrack({ id: BASS_ID, name: 'Bass', kind: 'audio' }),
             createTrack({ id: UNTITLED_ID, name: 'Audio 1', kind: 'audio' }),
+            createTrack({ id: MIDI_ID, name: 'MIDI 1', kind: 'midi' }),
         ],
         selectedTrackId: null,
         ghostClips: [],
@@ -183,16 +185,31 @@ describe('an answer that describes one recipe for one track offers to propose it
         expect(answer.text).not.toContain('Propose this');
     });
 
-    it('offers nothing for a bus, whose chain is not one track of its own', () => {
+    it('offers nothing for a bus the question named, whose chain is not one track of its own', () => {
         const answer = accepted(
             compose(
-                [{ kind: 'recipe', callId: 'recipe', recipeId: 'vocal-warm' }],
-                [discoveryRead('recipe', BUS_ID, 'vocal')]
+                [{ kind: 'recipe', callId: 'recipe', recipeId: 'bus-warm' }],
+                [discoveryRead('recipe', BUS_ID)],
+                intakeOf({
+                    scopes: [{ candidateId: 'scope-bus', kind: 'buses', objectIds: [BUS_ID], labels: ['Vocal Bus'] }],
+                })
             )
         );
 
         expect(answer.suggestion).toBeUndefined();
         expect(answer.text).not.toContain('Propose this');
+    });
+
+    it('offers the change for a MIDI track the question named', () => {
+        const answer = accepted(
+            compose(
+                [{ kind: 'recipe', callId: 'recipe', recipeId: 'vocal-warm' }],
+                [discoveryRead('recipe', MIDI_ID, 'vocal')],
+                intakeOf({ scopes: [trackScope(MIDI_ID, 'MIDI 1')] })
+            )
+        );
+
+        expect(answer.suggestion).toMatchObject({ targetId: MIDI_ID, targetName: 'MIDI 1' });
     });
 
     it('offers nothing when the frozen read no longer holds the discovered track', () => {
