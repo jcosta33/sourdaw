@@ -57,6 +57,7 @@ export function prepareMidiTakeSourceCapture({
         sourceEndBeat: entry + Math.min(span, period),
         phaseHeadBeat: take.startBeat,
         passLengthBeats: period,
+        occurrenceOriginDepthBeats: take.startBeat - media.sourceStartBeat,
     };
     return isFrozenMidiTakeSource(source) ? source : null;
 }

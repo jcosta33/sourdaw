@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import { frozenMidiTakeRepeatAt, projectFrozenMidiTakeWindow } from '#/modules/MIDI/stores';
 import { type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { createTake } from '../../../models/TakeLane';
 import { type TempoTimeline } from '../../../models/TempoTimeline';
+import { boundMidiTakeSourceAtDeletedSpan } from '../boundMidiTakeSourceAtDeletedSpan';
 import { prepareMidiTakeSourceCapture } from '../prepareMidiTakeSourceCapture';
 import { relocateMidiTakeSource } from '../relocateMidiTakeSource';
 
@@ -44,6 +46,9 @@ describe('prepare MIDI take source capture', () => {
             sourceEndBeat: 9,
             phaseHeadBeat: 0,
             passLengthBeats: 4,
+            // Live counts the pass's occurrences from its media origin, 0 - 4: the clip's own one-beat
+            // offset moves its entry, not where its occurrences count from.
+            occurrenceOriginDepthBeats: 4,
         });
         expect(capture?.rows).not.toBe(rows);
         expect(capture?.rows.controlChanges).toEqual({ present: false, value: [] });
@@ -93,6 +98,7 @@ describe('prepare MIDI take source capture', () => {
             sourceEndBeat: 8,
             phaseHeadBeat: 0,
             passLengthBeats: 4,
+            occurrenceOriginDepthBeats: 4,
         });
     });
 
@@ -135,6 +141,75 @@ describe('prepare MIDI take source capture', () => {
             phaseHeadBeat: 8,
             passLengthBeats: 4,
         });
+    });
+
+    it('keeps the first pass run-up a comp over the clip start plays live', () => {
+        // Recorded from 6 in loop [8, 12): the note struck at 6.5 sits in the run-up before the loop.
+        const clip = ClipDummy.create({ id: 'source', type: 'midi', startBeat: 6, endBeat: 13 });
+        const first = { ...createTake('source', 'First pass', 8, 12, 0), recordingPassIndex: 0 };
+        const runUpRows: MidiClipDataActionSnapshot = {
+            ...rows,
+            notes: {
+                present: true,
+                value: [
+                    { id: 'run-up', pitch: 60, startBeat: 0.5, duration: 0.25, velocity: 100, recordingPassIndex: 0 },
+                ],
+            },
+        };
+        const source = prepareMidiTakeSourceCapture({
+            clip,
+            take: first,
+            siblingTakes: [first],
+            rows: runUpRows,
+            timeline,
+        });
+        if (!source) {
+            throw new Error('Expected the first pass source');
+        }
+
+        const window = projectFrozenMidiTakeWindow({
+            source,
+            fragment: { startBeat: 6, endBeat: 12 },
+            recordingPassIndex: 0,
+            absoluteOccurrenceIndex: 0,
+            fromBeat: 6,
+            toBeat: 12,
+        });
+
+        expect(window?.notes.map((note) => [note.id, note.startBeat])).toEqual([['run-up', 6.5]]);
+    });
+
+    it('reads every pass of a recording begun before the loop from the clip start at its live media offset', () => {
+        const clip = ClipDummy.create({ id: 'source', type: 'midi', startBeat: 6, endBeat: 13 });
+        const first = { ...createTake('source', 'First pass', 8, 12, 0), recordingPassIndex: 0 };
+        const second = { ...createTake('source', 'Second pass', 8, 9, 4), recordingPassIndex: 1 };
+        const siblingTakes = [first, second];
+        const fromClipStart = { startBeat: 6, endBeat: 12 };
+
+        for (const [take, liveOffsetAtClipStart] of [
+            [first, 0],
+            [second, 4],
+        ] as const) {
+            const source = prepareMidiTakeSourceCapture({ clip, take, siblingTakes, rows, timeline });
+            if (!source) {
+                throw new Error(`Expected the ${take.name} source`);
+            }
+            const repeat = frozenMidiTakeRepeatAt(source, fromClipStart, 6);
+            expect(repeat && source.sourceEntryBeat + 6 - repeat.passHeadBeat).toBe(liveOffsetAtClipStart);
+            // Only a Delete Time cut bounds what a source reads.
+            expect(source).not.toHaveProperty('readStartBeat');
+            expect(source).not.toHaveProperty('readEndBeat');
+        }
+    });
+
+    it('captures no run-up for a recording begun inside the loop, whose clip starts after its first take', () => {
+        const clip = ClipDummy.create({ id: 'source', type: 'midi', startBeat: 10, endBeat: 13 });
+        const first = { ...createTake('source', 'First pass', 8, 12, 0), recordingPassIndex: 0 };
+
+        const capture = prepareMidiTakeSourceCapture({ clip, take: first, siblingTakes: [first], rows, timeline });
+
+        expect(capture).toMatchObject({ sourceEntryBeat: -2, phaseHeadBeat: 8 });
+        expect(capture).not.toHaveProperty('readStartBeat');
     });
 
     it('accepts a negative source entry and refuses an incomplete present snapshot', () => {
@@ -186,5 +261,28 @@ describe('prepare MIDI take source capture', () => {
         expect(afterDelete?.sourceEntryBeat).toBe(5);
         expect(afterDelete?.rows).toEqual(rows);
         expect(afterDelete?.phaseHeadBeat).toBe(-2);
+    });
+
+    it('bounds each side of a Delete Time at the deleted span, an earlier cut only narrowing', () => {
+        const clip = ClipDummy.create({ id: 'source', type: 'midi', startBeat: 6, endBeat: 13 });
+        const take = { ...createTake('source', 'First pass', 8, 12, 0), recordingPassIndex: 0 };
+        const captured = prepareMidiTakeSourceCapture({ clip, take, siblingTakes: [take], rows, timeline });
+        if (!captured) {
+            throw new Error('Expected the first pass source');
+        }
+        const span = { deleteStartBeat: 9, deleteEndBeat: 10 };
+
+        expect(
+            boundMidiTakeSourceAtDeletedSpan(captured, { ...span, preImageStartBeat: 8, preImageEndBeat: 9 })
+        ).toEqual({ ...captured, readEndBeat: 3 });
+        expect(
+            boundMidiTakeSourceAtDeletedSpan(captured, { ...span, preImageStartBeat: 10, preImageEndBeat: 12 })
+        ).toEqual({ ...captured, readStartBeat: 4 });
+        expect(
+            boundMidiTakeSourceAtDeletedSpan(
+                { ...captured, readStartBeat: 5 },
+                { ...span, preImageStartBeat: 10, preImageEndBeat: 12 }
+            )
+        ).toEqual({ ...captured, readStartBeat: 5 });
     });
 });

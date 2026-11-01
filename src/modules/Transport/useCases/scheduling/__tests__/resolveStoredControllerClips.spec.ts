@@ -50,7 +50,16 @@ describe('resolveStoredControllerClips', () => {
     it('chases selected frozen controllers from the original pass across a left edit and ignores ordinary rows', () => {
         const clips = resolveStoredControllerClips({
             trackId: TRACK_ID,
-            clips: [midiClip({ startBeat: 1, endBeat: 8, midiTakeSource: selectedSource })],
+            // A looping clip trimmed to 1 restarts the take every loop length from there, as live does.
+            clips: [
+                midiClip({
+                    startBeat: 1,
+                    endBeat: 8,
+                    loopEnabled: true,
+                    loopLength: 4,
+                    midiTakeSource: selectedSource,
+                }),
+            ],
             ccByClipId: { 'clip-1': pedal },
         });
 
@@ -59,8 +68,9 @@ describe('resolveStoredControllerClips', () => {
             ['selected-pedal'],
             ['selected-pedal'],
         ]);
-        expect(clips.map(({ clip }) => clip.startBeat)).toEqual([1, 4]);
-        expect(clips.map(({ controlChanges }) => controlChanges[0]?.beat)).toEqual([1, 4.25]);
+        expect(clips.map(({ clip }) => clip.startBeat)).toEqual([1, 5]);
+        // Each repeat reads source 6 at its head, past the pedal at 5.25, so the pedal carries onto both heads.
+        expect(clips.map(({ controlChanges }) => controlChanges[0]?.beat)).toEqual([1, 5]);
     });
     // The caller holds no note lists: a clip split, copied, duplicated or pasted
     // from a controller-only clip has controller rows and no note list, and a

@@ -69,6 +69,8 @@ import {
     EMPTY_NOTES,
     PITCH_RAIL_WIDTH,
     getVisiblePitches,
+    getPianoRollContentHeight,
+    getPianoRollRowTop,
     colorWithAlpha,
     brightenColor,
 } from '../helpers/pianoRollConstants';
@@ -232,7 +234,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                 pitchToRow.set(visiblePitches[index]!, index);
             }
             const noteAreaHeight = visiblePitches.length * ROW_HEIGHT;
-            const height = noteAreaHeight + RULER_HEIGHT;
+            const height = getPianoRollContentHeight(visiblePitches.length);
 
             // ── Viewport, not content extent ─────────────────────────────
             // The backing store covers what is on screen. The content extent
@@ -344,7 +346,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                     gCtx.translate(-windowStartPx, 0);
                     drawBeatRuler(gCtx, windowStartPx, cacheWidth, bw, gs);
                     gCtx.save();
-                    gCtx.translate(0, RULER_HEIGHT);
+                    gCtx.translate(0, getPianoRollRowTop(0));
                     drawNoteGrid(gCtx, visiblePitches, windowStartPx, cacheWidth, bw, gs, st, sr);
                     gCtx.restore();
                     gridCacheRef.current = offscreen;
@@ -366,7 +368,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
 
                 // Ghost notes + secondary open clips + active notes + overlays
                 ctx.save();
-                ctx.translate(0, RULER_HEIGHT);
+                ctx.translate(0, getPianoRollRowTop(0));
                 if (ghost && tracks) {
                     drawGhostNotes(ctx, pitchToRow, bw, midiState?.notesByClipId ?? null, tracks, tId, cId, view);
                 }

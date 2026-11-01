@@ -11,6 +11,7 @@ import { type Clip } from '../../models/Track';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { liveTempoTimeline } from '../liveTempoTimeline';
 
+import { boundMidiTakeSourceAtDeletedSpan } from './boundMidiTakeSourceAtDeletedSpan';
 import { captureTakeSource } from './captureTakeSource';
 import { prepareMidiTakeSourceCapture } from './prepareMidiTakeSourceCapture';
 import { relocateMidiTakeSource } from './relocateMidiTakeSource';
@@ -133,17 +134,17 @@ function groupWindowsByClipId(windows: readonly TakeReKeyClipWindow[]): Map<stri
 
 /**
  * One take's surviving pieces as fragment takes and the region-mapping view of
- * the same split. The leftmost fragment keeps the take's id — the split
- * convention — so regions naming it keep resolving. A take mints at most one
- * id: its clip contributes at most two windows (its own surviving fragment and
- * the re-keyed right one) and a window at most one piece, so the second piece
- * is the only mint, over a base id the source take's id makes unique. Deriving
- * it from the take id and the deleted span keeps a replayed redo re-minting
- * the same id, exactly like the clip identities it replays. Uniqueness rests
- * on take ids being unique — true for every lane an app route mints, but not
- * enforced by the store's sanitize: two takes sharing an id on corrupt
- * hydrated state would mint colliding fragment ids here, an accepted
- * divergence on state no route produces.
+ * the same split. The leftmost fragment holding the take's own extent keeps the
+ * take's id — the split convention — so regions naming it keep resolving. A
+ * take mints at most one id: its clip contributes at most two windows (its own
+ * surviving fragment and the re-keyed right one) and a window at most one
+ * fragment, so the other fragment is the only mint, over a base id the source
+ * take's id makes unique. Deriving it from the take id and the deleted span
+ * keeps a replayed redo re-minting the same id, exactly like the clip
+ * identities it replays. Uniqueness rests on take ids being unique — true for
+ * every lane an app route mints, but not enforced by the store's sanitize: two
+ * takes sharing an id on corrupt hydrated state would mint colliding fragment
+ * ids here, an accepted divergence on state no route produces.
  */
 
 function captureMidiTakeSource(
@@ -177,35 +178,139 @@ function captureMidiTakeSource(
     return { ...take, midiSource };
 }
 
+/**
+ * One fragment a take survives as: the window the fragment sounds over, and
+ * the take's own extent inside it when the take reaches that window.
+ */
+type FragmentPlan = {
+    soundingPiece: MappedPiece;
+    takePiece: MappedPiece | undefined;
+};
+
+function isRegionOverPiece(region: CompRegion, take: Take, piece: MappedPiece): boolean {
+    return (
+        region.takeId === take.id &&
+        region.startBeat < piece.preImageEndBeat &&
+        region.endBeat > piece.preImageStartBeat
+    );
+}
+
+/**
+ * Where each surviving piece of a take sounds. Live comp playback plays a MIDI
+ * pass take over its whole clip, not its own extent, so a comp over the
+ * take's lead-in or past its end sounds the take's rows. Each surviving window
+ * of that clip the take reaches, or a comp of the take covers, becomes a
+ * fragment that keeps those beats on the take. Any other take sounds only its
+ * own pieces.
+ */
+function planTakeFragments(
+    take: Take,
+    lane: TakeLane,
+    sourceClip: Clip | undefined,
+    pieces: readonly MappedPiece[],
+    takeWindows: readonly TakeReKeyClipWindow[]
+): FragmentPlan[] {
+    if (sourceClip?.type !== 'midi') {
+        return pieces.map((piece) => ({ soundingPiece: piece, takePiece: piece }));
+    }
+    const plans: FragmentPlan[] = [];
+    for (const soundingPiece of mapRangeThroughWindows(sourceClip.startBeat, sourceClip.endBeat, takeWindows)) {
+        const takePiece = pieces.find(
+            (piece) =>
+                piece.targetClipId === soundingPiece.targetClipId &&
+                piece.preImageStartBeat >= soundingPiece.preImageStartBeat &&
+                piece.preImageEndBeat <= soundingPiece.preImageEndBeat
+        );
+        const isComped = lane.activeCompRegions.some((region) => isRegionOverPiece(region, take, soundingPiece));
+        if (takePiece || isComped) {
+            plans.push({ soundingPiece, takePiece });
+        }
+    }
+    return plans;
+}
+
+/** A plan keeps the take as it was when it is the take's only fragment and the take did not move. */
+function isUnmovedTake(take: Take, plans: readonly FragmentPlan[]): boolean {
+    const [plan] = plans;
+    return plans.length === 1 && plan?.takePiece !== undefined && areSameTakeGeometry(take, plan.takePiece);
+}
+
+/** Only a clip the deleted span cuts holds rows the span removed; a clip it merely shifts keeps them all. */
+function isCutByDeletedSpan(clip: Clip | undefined, input: CaptureTakeReKeyTransitionsInput): boolean {
+    return (
+        clip !== undefined &&
+        (input.operationKind ?? 'delete-time') === 'delete-time' &&
+        clip.startBeat < input.deleteEndBeat &&
+        clip.endBeat > input.deleteStartBeat
+    );
+}
+
+function boundFragmentSource(
+    take: Take,
+    piece: MappedPiece,
+    clip: Clip | undefined,
+    input: CaptureTakeReKeyTransitionsInput
+): Take {
+    if (take.midiSource === undefined || !isCutByDeletedSpan(clip, input)) {
+        return take;
+    }
+    const bounded = boundMidiTakeSourceAtDeletedSpan(take.midiSource, {
+        preImageStartBeat: piece.preImageStartBeat,
+        preImageEndBeat: piece.preImageEndBeat,
+        deleteStartBeat: input.deleteStartBeat,
+        deleteEndBeat: input.deleteEndBeat,
+    });
+    if (!bounded) {
+        throw new Error('MIDI take source cannot be bounded at the deleted span');
+    }
+    return { ...take, midiSource: bounded };
+}
+
+/** The fragment that keeps the take's id: the first holding the take's own extent, else the first. */
+function keptFragmentIndex(plans: readonly FragmentPlan[]): number {
+    return Math.max(
+        0,
+        plans.findIndex((plan) => plan.takePiece !== undefined)
+    );
+}
+
 function buildTakeFragments(
     take: Take,
-    pieces: readonly MappedPiece[],
-    deleteStartBeat: number,
-    deleteEndBeat: number
+    plans: readonly FragmentPlan[],
+    clip: Clip | undefined,
+    input: CaptureTakeReKeyTransitionsInput
 ): { fragmentTakes: Take[]; fragments: TakeFragmentMap[] } {
+    const { deleteStartBeat, deleteEndBeat } = input;
     const fragmentTakes: Take[] = [];
     const fragments: TakeFragmentMap[] = [];
-    for (const [pieceIndex, piece] of pieces.entries()) {
+    const keptIndex = keptFragmentIndex(plans);
+    for (const [planIndex, { soundingPiece, takePiece }] of plans.entries()) {
         let fragmentTakeId = take.id;
-        if (pieceIndex !== 0) {
+        if (planIndex !== keptIndex) {
             // For a delete-time operation the span is the deleted range; for a
             // clip transform (#5048) it is the split beat on both sides. Either
             // way the fields are the operation's exact edges, so a replayed redo
             // re-mints the same id.
             fragmentTakeId = `${take.id}:time-delete-right:${deleteStartBeat}:${deleteEndBeat}`;
         }
+        const extent = takePiece ?? soundingPiece;
         const fragmentTake: Take = {
-            ...take,
+            ...boundFragmentSource(take, soundingPiece, clip, input),
             id: fragmentTakeId,
-            clipId: piece.targetClipId,
-            startBeat: piece.startBeat,
-            endBeat: piece.endBeat,
+            clipId: soundingPiece.targetClipId,
+            startBeat: extent.startBeat,
+            endBeat: extent.endBeat,
         };
         if (take.passOriginBeat !== undefined) {
-            fragmentTake.passOriginBeat = take.passOriginBeat + piece.startBeat - piece.preImageStartBeat;
+            fragmentTake.passOriginBeat =
+                take.passOriginBeat + soundingPiece.startBeat - soundingPiece.preImageStartBeat;
         }
-        if (take.midiSource !== undefined) {
-            const moved = relocateMidiTakeSource(take.midiSource, piece.preImageStartBeat, piece.startBeat);
+        if (fragmentTake.midiSource !== undefined) {
+            const moved = relocateMidiTakeSource(
+                fragmentTake.midiSource,
+                soundingPiece.preImageStartBeat,
+                soundingPiece.startBeat
+            );
             if (!moved) {
                 throw new Error('MIDI take source cannot be re-keyed');
             }
@@ -214,10 +319,10 @@ function buildTakeFragments(
         fragmentTakes.push(fragmentTake);
         fragments.push({
             takeId: fragmentTakeId,
-            sourceStartBeat: piece.preImageStartBeat,
-            sourceEndBeat: piece.preImageEndBeat,
-            targetStartBeat: piece.startBeat,
-            targetEndBeat: piece.endBeat,
+            sourceStartBeat: soundingPiece.preImageStartBeat,
+            sourceEndBeat: soundingPiece.preImageEndBeat,
+            targetStartBeat: soundingPiece.startBeat,
+            targetEndBeat: soundingPiece.endBeat,
         });
     }
     return { fragmentTakes, fragments };
@@ -253,19 +358,16 @@ function mapLaneTakes(
             capturedTake = captureTakeSource(take, sourceClip, input.timeline ?? liveTempoTimeline);
         }
         const pieces = mapRangeThroughWindows(take.startBeat, take.endBeat, takeWindows);
-        if (pieces.length === 1 && areSameTakeGeometry(take, pieces[0]!)) {
-            mapping.takesAfter.push(capturedTake);
-            mapping.takesChanged = mapping.takesChanged || !valuesEqual(capturedTake, take);
+        const plans = planTakeFragments(take, lane, sourceClip, pieces, takeWindows);
+        if (isUnmovedTake(take, plans)) {
+            const keptTake = boundFragmentSource(capturedTake, plans[0]!.soundingPiece, sourceClip, input);
+            mapping.takesAfter.push(keptTake);
+            mapping.takesChanged = mapping.takesChanged || !valuesEqual(keptTake, take);
             continue;
         }
 
         mapping.takesChanged = true;
-        const { fragmentTakes, fragments } = buildTakeFragments(
-            capturedTake,
-            pieces,
-            input.deleteStartBeat,
-            input.deleteEndBeat
-        );
+        const { fragmentTakes, fragments } = buildTakeFragments(capturedTake, plans, sourceClip, input);
         mapping.takesAfter.push(...fragmentTakes);
         mapping.fragmentsBySourceTakeId.set(take.id, fragments);
     }

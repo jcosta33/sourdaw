@@ -100,3 +100,40 @@ repeated bootstrap or bus registration. Keep document, URL and retry budget unch
 user explicitly reloads. The HTML surface remains owned by startup until rendering takes over;
 an entry-start marker or capability emission alone never proves that a usable view replaced it.
 Do not retry the whole rendering phase or import a new failure view from the already failing graph.
+
+## Relocated lifecycle probes
+
+Moved from `session-lifecycle.md`; each is a startup-lifetime probe.
+
+### An editor connection must not own the acceptance document lifetime (PR #5748 pin, #5595)
+
+Vite 8.3.5, pinned by #5748, kept an unconditional disconnect/ping/reload branch even with updates disabled,
+so editor WebSocket loss was never separated from healthy application HTTP and pending module ownership.
+With an actual held App import, disconnect only the fixture's established socket while health stays
+available. Require same-document App and CSS completion with HMR off, and an observed CDP reload plus
+successful successor completion under default developer HMR. Keep the transport connected initially and
+retain CSS exports and custom/error delivery. Disabling WebSockets altogether introduces connection errors
+rather than proving isolation.
+
+### Entry recovery must not navigate an already running document (#5595)
+
+A repair that retries every import failure crosses a safety boundary: parallel bootstrap can still be
+pending while a project or recording is live, so a capability marker's absence is not admission. Establish
+entry-body start before any composition or application effects, and prove the entry's static dependency
+closure is pure. Then deliver a late entry-targeted error with a live project and a recording in progress
+and require an unchanged document lifetime, runtime and visible project. Fail an actual child entry
+separately and preserve the host's time origin. Share one per-tab retry budget across host and child and
+never replenish it on successful startup; storage failure requires manual recovery. Removing the phase
+fence or the shared budget must fail its own probe.
+
+### First paint concealed that bootstrap effects had already started (PR #3356, #5876)
+
+PR #3356 painted before the initial App import settled while bootstrap stayed on the parallel startup
+path. The failed reload had already run capability and BrowserAi initialization before App rejected, so
+an empty shell or absent controls did not mean the runtime was pristine. Hold the actual initial App
+import after first paint. Before release, observe the real bootstrap evaluation/effect boundary; if App
+fulfillment owns bootstrap, require effects initiated by bootstrap to stay absent until release. After
+release, require actual App render issuance and bootstrap observation. Do not infer quiescence from
+missing UI or capability markers, fixed microtask counts, or an unrelated hung-import case. The cold
+stylesheet lesson stays in `test-validity.md`. The legacy desktop-test ordering failure during the #5876
+repair was caught before merge.

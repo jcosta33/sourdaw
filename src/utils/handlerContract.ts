@@ -709,6 +709,17 @@ export type MidiTakeSourceSnapshot = {
     readonly sourceEndBeat: number;
     readonly phaseHeadBeat: number;
     readonly passLengthBeats: number;
+    /** The first source beat the take may read: where a Delete Time cut its head. Absent means unbounded. */
+    readonly readStartBeat?: number;
+    /** The exclusive source beat the take may read up to: where a Delete Time cut its tail. Absent means unbounded. */
+    readonly readEndBeat?: number;
+    /**
+     * How far before `phaseHeadBeat` the take's loop occurrences count from:
+     * the pass head less the media origin live comp playback counted the take
+     * from when it was captured. Held relative to the pass head so it moves
+     * with the take. Absent on sources captured before it was recorded.
+     */
+    readonly occurrenceOriginDepthBeats?: number;
 };
 /** A comp region naming a take — structural mirror of Arrangement's `CompRegion`. */
 export type CompRegionSnapshot = {
