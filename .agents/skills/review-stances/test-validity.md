@@ -171,6 +171,22 @@ Run the whole affected file so the changed setup is exercised with its normal ho
 seeding, fewer tracks, moving work to hooks, or a timeout increase does not prove the fixture is
 both realistic and bounded.
 
+### 2026-11-01 — full-metric renders consumed the receipt-bound case's deadline (PR #6011)
+
+PR #6011 (`57af0ac45e163d83d6a857e9ef866e00a86708c4`) added the per-call receipt-bound case in
+`previewMeasurement.spec.ts`: two measurements over a four-track scope, eight renders each, every
+render a two-second buffer measured for every metric. Locally it took about 1.2 s; a later Gate on
+an unrelated head timed it out at 5,067 ms against the 5,000 ms default. A CPU profile attributes
+the case to true-peak oversampling, FFT and integrated loudness over the synthetic audio, not to
+the planning loop. Review checked that the receipt exceeded the bound but not how long its
+fixture audio cost to measure on a loaded runner.
+
+Measure a new analysis-heavy case's local duration and require headroom against the default
+deadline. Shorten case-local render length while keeping the scope, the metric set and the direct
+assertion that the raw receipt exceeds `maxReceiptBytesPerCall`. Fewer metrics or tracks drop the
+receipt below the bound and stop observing it; a timeout increase hides the cost instead of
+bounding it.
+
 ### 2026-10-30 — source-clock fixtures must match hydrated project state (PR #2169)
 
 PR #2169 (`bfbf1dd69b18c2a843472a04815ccab773a4b364`) used a 600 BPM fixture that real publication
