@@ -165,6 +165,7 @@ describe('crossfadeClips', () => {
         it('retreats a stretched entry by the source the stretched readers consume', () => {
             const before = makeClip('b', 10, 14, {
                 audioOffsetSeconds: 3,
+                audioUnwrappedOffsetSeconds: 2,
                 stretchMode: 'timestretch',
                 stretchRatio: 2,
             });
@@ -174,6 +175,9 @@ describe('crossfadeClips', () => {
             expect(after.startBeat).toBe(9.5);
             expect(after.audioOffsetSeconds).toBeCloseTo(2, 12);
             expect(readerSourceSecondsAt(after, 10)).toBeCloseTo(3, 12);
+            // The unwrapped media entry moves by the 0.5 s of song time the
+            // retreat spans, without the rate the audible entry moves by.
+            expect(after.audioUnwrappedOffsetSeconds).toBeCloseTo(1.5, 12);
         });
 
         it('keeps a looped stretched clip B on its loop phase at every beat from its old start', () => {
