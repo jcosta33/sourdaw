@@ -581,6 +581,47 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         expect(commits()).toBe(0);
     });
 
+    async function playIntoRefusedFirstWindowPunch(loop: { loopStart: number; loopEnd: number } | null) {
+        mocks.startAudioRecording.mockResolvedValueOnce(false);
+        trackStore.set({ tracks: [recordingTrack('audio')], selectedTrackId: TRACK_ID, ghostClips: [] });
+        takeLaneStore.set({ lanes: [] });
+        transportStore.set({
+            ...defaultTransportState,
+            tempo: 120,
+            isPlaying: false,
+            isRecording: false,
+            countInEnabled: false,
+            punchInEnabled: true,
+            punchInBeat: 4,
+            punchOutBeat: 8,
+            playheadPosition: loop ? 7.9 : 4,
+            ...(loop ? { isLooping: true, ...loop } : {}),
+        });
+        tempoMapStore.set({ changes: [] });
+        flushAutomergeStorageWrites();
+        await startPlayback();
+        // The punch opened on Play's own first window.
+        expect(mocks.startAudioRecording).toHaveBeenCalledTimes(1);
+        expect(transportStore.value?.isPlaying).toBe(true);
+        expect(schedulerSession.worker).not.toBeNull();
+        expect(schedulerSession.pendingSeam?.destinationBeat).toBe(loop?.loopStart);
+        expect(trackStore.value?.tracks[0]?.clips).toEqual([]);
+        expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes)).toEqual([]);
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+        expect(actionHistoryStore.value?.entries).toEqual([]);
+        pausePlayback();
+        await recordingLifecycle.waitForClosing();
+        expect(commits()).toBe(0);
+    }
+
+    it('keeps Play rolling and discards the clip when a first-window punch-in start is refused', async () => {
+        await playIntoRefusedFirstWindowPunch(null);
+    });
+
+    it('keeps Play rolling when a refused first-window punch-in start shares the window with a loop seam', async () => {
+        await playIntoRefusedFirstWindowPunch({ loopStart: 0, loopEnd: 8 });
+    });
+
     it('commits an ordinary pause before resuming without a held predecessor', async () => {
         const old = await openFirst();
         pausePlayback();
