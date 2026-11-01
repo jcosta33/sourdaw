@@ -46,7 +46,6 @@ const BACTERIA_PARAMS: readonly PluginParamDef[] = [
     { id: 'foldbackThreshold', label: 'Fold Thresh', min: 0.1, max: 1, default: 0.7, unit: '', step: 0.01 },
     { id: 'bitDepth', label: 'Bit Depth', min: 1, max: 24, default: 16, unit: 'bit', step: 1 },
     { id: 'sampleRateReduce', label: 'SR Reduce', min: 1, max: 64, default: 1, unit: 'x', step: 1 },
-    { id: 'breakdownDepth', label: 'Breakdown', min: 0, max: 4, default: 1, unit: 'oct', step: 0.1 },
 
     // Per-band filter
     { id: 'filterMode', label: 'Filter Mode', min: 0, max: 5, default: 0, unit: '', step: 1 },
