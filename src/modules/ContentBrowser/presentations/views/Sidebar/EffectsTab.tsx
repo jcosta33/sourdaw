@@ -229,8 +229,14 @@ export const EffectsTab = ({
                             // The new device's own id, not `null`: Yeast rack
                             // state is per device instance, so the panel must
                             // open bound to the device it just added
-                            // (issue #2422).
-                            addSelectedTrackDevice('yeast', (deviceId) => panelActions?.showYeast(deviceId));
+                            // (issue #2422). A refused add opens nothing: a null
+                            // id would make the shell fall back to the track's
+                            // existing Yeast and open that panel instead.
+                            addSelectedTrackDevice('yeast', (deviceId) => {
+                                if (deviceId !== null) {
+                                    panelActions?.showYeast(deviceId);
+                                }
+                            });
                         }}
                         theme={YEAST_THEME}
                     />
