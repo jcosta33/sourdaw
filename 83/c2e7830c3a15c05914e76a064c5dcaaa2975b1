@@ -1,0 +1,61 @@
+src/modules/AiRuntime/useCases/aiPanelActions/openAnswerInChat.ts
+  s_55244eb93b97d1::t_9d510590bd8150 19-20
+  s_55244eb93b97d1::t_1e9df249ea0a0b 1
+  s_55244eb93b97d1::t_00c969bf41e1e8 27
+tests/e2e/aiConfirmApplyUndo.spec.ts
+  s_55244eb93b97d1::t_8557bc8e941395 53-63
+  s_55244eb93b97d1::t_9a701eb1943d12 388-395
+  s_55244eb93b97d1::t_4aa6e9704d497c 383-386
+  s_55244eb93b97d1::t_ae414b585e0f87 377-379,381-382,387
+  s_55244eb93b97d1::t_2c1b4878d79e93 64
+  s_55244eb93b97d1::t_4f87756cfcf623 396-398
+  s_55244eb93b97d1::t_7fe265708f3f6f 399-400
+src/modules/AiRuntime/useCases/aiPanelActions/__tests__/openAnswerInChat.spec.ts
+  s_55244eb93b97d1::t_d8360ad3cbfeee 161,213-215
+  s_55244eb93b97d1::t_37ae266601db88 169
+  s_55244eb93b97d1::t_06b881b9173f5f 19
+  s_55244eb93b97d1::t_f6f5fa1243b82f 158-160
+  s_55244eb93b97d1::t_607a83bf6cd1b2 162-164,166-168
+  s_55244eb93b97d1::t_7cd3edb546cadf 170-172,210-212
+  s_55244eb93b97d1::t_1b401c5cd17c2f 216-218
+  s_55244eb93b97d1::t_d835b655a179dd 3-6,16-17,150-157,165,173-209,219-224
+src/modules/AiRuntime/AGENTS.md
+  s_55244eb93b97d1::t_4c797121dfc146 36
+src/modules/CrdtDocument/useCases/index.ts
+  s_55244eb93b97d1::t_cfc5a72dda925f 11
+  s_55244eb93b97d1::t_e98535dfd7b8f6 9-10
+  s_55244eb93b97d1::t_9cc626274f0f50 12
+src/modules/CrdtDocument/useCases/__tests__/projectRevisionMatchesLiveIgnoringCommandCheckpoint.spec.ts
+  s_55244eb93b97d1::t_73bc45cb7dea3e 7-9,331-385
+  s_55244eb93b97d1::t_2dac2b0d63487e 6
+  s_55244eb93b97d1::t_cc52e3123055fa 386-388
+  s_55244eb93b97d1::t_86c4b0aa653682 389-467
+src/modules/CrdtDocument/useCases/projectRevisionMatchesLiveIgnoringCommandCheckpoint.ts
+  s_55244eb93b97d1::t_f35b8a4bfd5b62 84-122,152,229,232,234,247
+  s_55244eb93b97d1::t_2b0f0c8d4914e4 235-245
+  s_55244eb93b97d1::t_9dc777470be8e4 123-125
+  s_55244eb93b97d1::t_93729cb634d6f8 149-151
+  s_55244eb93b97d1::t_69f2cf504270ad 153
+  s_55244eb93b97d1::t_6f1c24b1a979a6 226-228
+  s_55244eb93b97d1::t_8298d8822e2d8b 230-231
+  s_55244eb93b97d1::t_15f30cfdbad328 233
+  s_55244eb93b97d1::t_fc16874ecf5ba7 246
+  s_55244eb93b97d1::t_1c59b9d751fd02 248-249
+  s_55244eb93b97d1::t_ff6af54130b8ca 76-78,126-129,134,157-158,168-173,182-183,188,214,225
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "83c2e7830c3a15c05914e76a064c5dcaaa2975b1",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
