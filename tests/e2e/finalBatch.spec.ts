@@ -142,7 +142,7 @@ test.describe('Browser instrument interaction', () => {
         await launch_from_template({ page, template_name: /EDM/i });
 
         const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        await browser.getByRole('button', { name: 'Effects', exact: true }).click();
+        await browser.getByRole('tab', { name: 'Effects', exact: true }).click();
 
         expect(await browser.getByRole('button').count()).toBeGreaterThan(5);
     });

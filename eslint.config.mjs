@@ -241,6 +241,7 @@ function isDomainLogicFile(filename) {
     return (
         normalized.includes('/useCases/') ||
         normalized.includes('/services/') ||
+        normalized.includes('/worklets/') ||
         normalized.includes('/validators/') ||
         normalized.includes('/transformers/')
     );
@@ -2711,6 +2712,7 @@ export default defineConfig(
             'src/**/events/**/*.ts',
             'src/**/services/**/*.ts',
             'src/**/validators/**/*.ts',
+            'src/**/worklets/**/*.ts',
             'src/helpers/**/*.ts',
         ],
         rules: {
@@ -2764,9 +2766,11 @@ export default defineConfig(
             '**/*.spec.{ts,tsx}',
             '**/*.test.{ts,tsx}',
             '**/setupTests.ts',
-            // Non-.spec test scaffolding: mock factories and __tests__ helpers.
+            // Non-.spec test scaffolding: mock factories, __tests__ helpers and
+            // shared test-support folders (docs/architecture/03-typescript-module.md §4.14).
             '**/*.mock.ts',
             '**/__tests__/**/*.{ts,tsx}',
+            'src/**/testing/**/*.{ts,tsx}',
         ],
         rules: {
             '@eslint-react/no-unnecessary-use-prefix': 'off',

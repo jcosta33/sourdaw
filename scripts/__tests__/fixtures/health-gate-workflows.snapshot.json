@@ -492,7 +492,7 @@
         "name": "Browser AI WebGPU admission",
         "if": "inputs.browser-ai",
         "runs-on": "macos-15",
-        "timeout-minutes": 40,
+        "timeout-minutes": 42,
         "steps": [
           {
             "name": "Checkout",
@@ -534,7 +534,7 @@
           },
           {
             "name": "Run Browser AI WebGPU admission",
-            "timeout-minutes": 18,
+            "timeout-minutes": 20,
             "shell": "bash",
             "env": {
               "DEBUG": "pw:api,pw:browser"

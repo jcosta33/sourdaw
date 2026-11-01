@@ -20,7 +20,7 @@ vi.mock('../telemetryAllocator', async () => {
     const actual = await vi.importActual<typeof import('../telemetryAllocator')>('../telemetryAllocator');
     return { ...actual, telemetryAllocator: { allocateSlot: vi.fn(() => null), releaseSlot: vi.fn() } };
 });
-vi.mock('../../services/crustProcessor.ts?worker&url', () => ({ default: 'crust-processor-url' }));
+vi.mock('../../worklets/crustProcessor.ts?worker&url', () => ({ default: 'crust-processor-url' }));
 
 describe('createCrustNode control protocol', () => {
     let postMessage: ReturnType<typeof vi.fn>;

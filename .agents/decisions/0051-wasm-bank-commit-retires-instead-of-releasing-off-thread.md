@@ -10,7 +10,7 @@ sources:
     - crates/daw-dsp/src/levain/engine.rs
     - crates/daw-dsp/tests/device_process_rt.rs
     - crates/daw-dsp/tests/levain_bank_retirement.rs
-    - src/modules/AudioEngine/services/levainProcessor.ts
+    - src/modules/AudioEngine/worklets/levainProcessor.ts
     - src/modules/Levain/repositories/sampleLoader/loadInstrumentFromManifest.ts
     - https://github.com/jcosta33/sourdaw/issues/4809
 ---

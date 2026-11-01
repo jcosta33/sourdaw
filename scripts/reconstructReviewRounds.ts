@@ -297,13 +297,9 @@ function assertPublicRepairFinding(
     root: PublicReviewComment
 ): void {
     assertReviewRepairRecord(record);
-    // The root uses its review-time line; an immutable repair can record a later live line.
-    if (
-        record.pr !== pr ||
-        record.finding.commentId !== rootId ||
-        record.finding.path !== root.path ||
-        record.finding.side !== root.side
-    ) {
+    // The comment id and side identify the root. The record's path and line describe the position
+    // the author saw at repair time, which GitHub later rewrites on a rename or a moved hunk.
+    if (record.pr !== pr || record.finding.commentId !== rootId || record.finding.side !== root.side) {
         fail(`review reconstruction: repair record does not bind pull request ${pr} and root finding ${rootId}`);
     }
 }
@@ -378,7 +374,8 @@ export function shadowCompareDossier(
                 `finding ${finding.findingId} binds comment ${binding.commentId}, but the public order gives ${comment.commentId}`
             );
         }
-        if (finding.path !== comment.path || finding.line !== comment.line || finding.side !== comment.side) {
+        // The public line is GitHub's review-time original line; the public path follows later renames.
+        if (finding.line !== comment.line || finding.side !== comment.side) {
             mismatches.push(
                 `finding ${finding.findingId} targets ${finding.path}:${finding.line}:${finding.side}, publicly ${comment.path}:${comment.line}:${comment.side}`
             );
