@@ -172,6 +172,7 @@ const {
     setRecordingMidiAdmissionPortMock,
     configureRuntimeGraphProjectRevisionValidatorMock,
     configureRuntimeGraphTopologyValidatorMock,
+    initEngineDeviceCollaboratorsMock,
     runtimeGraphTopologyMock,
     setNotificationEventBusMock,
     setProjectIdentityTransitionDependenciesMock,
@@ -320,6 +321,7 @@ const {
         configureRuntimeGraphProjectRevisionValidatorMock:
             vi.fn<(validator: RuntimeGraphProjectRevisionValidator | null) => void>(),
         configureRuntimeGraphTopologyValidatorMock: vi.fn<(validator: RuntimeGraphTopologyValidator | null) => void>(),
+        initEngineDeviceCollaboratorsMock: vi.fn<() => void>(),
         runtimeGraphTopologyMock: {
             matchesCurrentProject: vi.fn<RuntimeGraphTopologyValidator>(),
         },
@@ -448,6 +450,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     compileAudioGraphTopology: noop,
     configureRuntimeGraphProjectRevisionValidator: configureRuntimeGraphProjectRevisionValidatorMock,
     configureRuntimeGraphTopologyValidator: configureRuntimeGraphTopologyValidatorMock,
+    initEngineDeviceCollaborators: initEngineDeviceCollaboratorsMock,
     recordNativeChainReleases: recordNativeChainReleasesMock,
     isTunerTelemetryNativelyOwned: isTunerTelemetryNativelyOwnedMock,
     startMainThreadLongTaskObservation: noop,
@@ -1105,6 +1108,7 @@ describe('bootstrap', () => {
         expect(configureRuntimeGraphTopologyValidatorMock).toHaveBeenCalledExactlyOnceWith(
             runtimeGraphTopologyMock.matchesCurrentProject
         );
+        expect(initEngineDeviceCollaboratorsMock).toHaveBeenCalledExactlyOnceWith();
         expect(setNotificationEventBusMock).toHaveBeenCalledExactlyOnceWith(eventBusMock);
     });
 

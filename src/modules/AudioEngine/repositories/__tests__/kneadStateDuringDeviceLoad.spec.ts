@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { createMockAudioContext, type MockAudioContext } from '#/helpers/__tests__/audioContext.mock';
 
+import { engineDeviceCollaborators } from '../../useCases/engineDeviceCollaborators';
+
 import {
     createAudioEngineTopologyTestHarness as createAudioEngine,
     type AudioEngineTopologyTestHarness,
@@ -89,6 +91,7 @@ describe('Knead state synced while its device is still loading', () => {
         mockCtx = createMockAudioContext();
         vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
         engine = createAudioEngine(asAudioContext(mockCtx));
+        engine.setUseCaseDeviceCollaborators(engineDeviceCollaborators);
     });
 
     afterEach(() => {

@@ -9,6 +9,7 @@ import {
     getRuntimeGraphRevision,
     configureRuntimeGraphTopologyValidator,
     getTrackStrip,
+    initEngineDeviceCollaborators,
     removeTrackStrip,
     waitForDevices,
     updateDeviceParam,
@@ -92,6 +93,7 @@ describe('registered MIDI device actions with real AudioEngine and TrackNode', (
         trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
         flushAutomergeStorageWrites();
         configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
+        initEngineDeviceCollaborators();
         expect(projectTrack().devices.map((device) => device.type)).toEqual(['builtin-synth']);
     });
 

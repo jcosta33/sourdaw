@@ -881,7 +881,7 @@ These folders hold code that runs outside the plain request/response flow of use
 The code that builds and drives live runtime objects: graph nodes, WASM-backed device hosts, note schedulers, and worker clients. Runtime handles (`AudioNode`, WASM instances, `MessagePort`) belong here and in the repositories that wrap platform APIs; models and stores stay handle-free (§4.1, §4.6).
 
 - Use cases and repositories create and drive engine objects; presentation never imports them (`presentation-no-engine-runtime-imports`).
-- Engine code does not import `repositories/` (`usecases-only-write-boundary-to-repositories`).
+- Engine code does not import `repositories/` (`usecases-only-write-boundary-to-repositories`), nor its own module's `useCases/` or `handlers/` (`engine-no-own-application-layers`). Whoever builds an engine object passes those collaborators in: constructor deps, factory options, or a composition-root port (§4.15).
 - Worklets and workers never import it (`worklets-no-module-runtime-imports`, `workers-no-module-runtime-imports`).
 - `runtime/` is a reserved name that the presentation, worklet, worker, model, event, and layer-purity rules list beside `engine/`. New runtime code goes in `engine/`.
 

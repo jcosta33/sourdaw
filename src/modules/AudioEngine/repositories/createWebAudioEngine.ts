@@ -40,7 +40,9 @@ import { createAudioPreviewIntents } from '../services/audioPreview/createAudioP
 import { compileRuntimeGraphDelta } from '../services/compileRuntimeGraphDelta';
 import { matchesRuntimeDeviceChainTopology } from '../services/matchesRuntimeDeviceChainTopology';
 
+import { applyParams } from './applyParams';
 import { stopInputMonitoring } from './audioRecorder/stopInputMonitoring';
+import { createOfflineDeviceNode } from './deviceNodeFactory';
 
 import type {
     AdjustmentLayerTickInput,
@@ -59,6 +61,32 @@ import type {
     TrackChannelStrip,
 } from '../models/AudioEngineState';
 import type { BuiltinLufsMeterReading } from '../models/BuiltinLufsMeterReader';
+import type { EngineDeviceCollaborators, EngineUseCaseCollaborators } from '../models/EngineDeviceCollaborators';
+
+function refuseUnwiredDeviceCollaborator(name: string): Error {
+    return new Error(
+        `AudioEngine ${name} is not wired: the composition root installs it through initEngineDeviceCollaborators`
+    );
+}
+
+/**
+ * Parameter-write ownership, reported latency and Faust builds are AudioEngine
+ * use-case state the live graph cannot import (`engine-no-own-application-layers`).
+ * Bootstrap installs them before any project loads, so reaching one unwired is a
+ * wiring defect, and it refuses rather than silently dropping the write.
+ */
+const UNWIRED_USE_CASE_DEVICE_COLLABORATORS: EngineUseCaseCollaborators = {
+    captureParameterWriteReceipt: () => {
+        throw refuseUnwiredDeviceCollaborator('captureParameterWriteReceipt');
+    },
+    createFaustDeviceNode: () => Promise.reject(refuseUnwiredDeviceCollaborator('createFaustDeviceNode')),
+    reportLatency: () => {
+        throw refuseUnwiredDeviceCollaborator('reportLatency');
+    },
+    clearReportedLatency: () => {
+        throw refuseUnwiredDeviceCollaborator('clearReportedLatency');
+    },
+};
 
 type NoopMeterNode = {
     connect(): void;
@@ -416,6 +444,18 @@ class AudioEngineImpl implements AudioEngine {
     private runtimeGraphRevision = 0;
     private runtimeGraphProjectRevisionValidator: RuntimeGraphProjectRevisionValidator | null = null;
     private runtimeGraphTopologyValidator: RuntimeGraphTopologyValidator | null = null;
+    private useCaseDeviceCollaborators: EngineUseCaseCollaborators = UNWIRED_USE_CASE_DEVICE_COLLABORATORS;
+    /** Built-ins come straight from this repository; the rest resolve through the installed use cases per call. */
+    private readonly deviceCollaborators: EngineDeviceCollaborators = {
+        createBuiltinDeviceNode: createOfflineDeviceNode,
+        applyParams,
+        captureParameterWriteReceipt: (trackId, deviceId, paramId) =>
+            this.useCaseDeviceCollaborators.captureParameterWriteReceipt(trackId, deviceId, paramId),
+        createFaustDeviceNode: (context, pluginId) =>
+            this.useCaseDeviceCollaborators.createFaustDeviceNode(context, pluginId),
+        reportLatency: (deviceId, latencyMs) => this.useCaseDeviceCollaborators.reportLatency(deviceId, latencyMs),
+        clearReportedLatency: (deviceId) => this.useCaseDeviceCollaborators.clearReportedLatency(deviceId),
+    };
     private initPromise: Promise<void> | null = null;
     private initializationCancellation: PromiseWithResolvers<never> | null = null;
     private initializationGeneration = 0;
@@ -520,6 +560,7 @@ class AudioEngineImpl implements AudioEngine {
             getContext: () => this.context ?? null,
             getTrackDefaultDestination: (trackId) => this.trackNodes.get(trackId)?.getDefaultDestination() ?? null,
             rerouteTrack: (trackId) => this.trackNodes.get(trackId)?.routeOutput(),
+            builtinDevices: this.deviceCollaborators,
         });
     }
 
@@ -1266,6 +1307,11 @@ class AudioEngineImpl implements AudioEngine {
         this.runtimeGraphTopologyValidator = validator;
     }
 
+    // null unwires the collaborators: every later use refuses instead of writing nothing.
+    public setUseCaseDeviceCollaborators(collaborators: EngineUseCaseCollaborators | null): void {
+        this.useCaseDeviceCollaborators = collaborators ?? UNWIRED_USE_CASE_DEVICE_COLLABORATORS;
+    }
+
     /**
      * The sole consumer for compiled output-topology deltas. It runs only on the
      * main/control thread, after the compiler has bounded and frozen its input;
@@ -1729,6 +1775,7 @@ class AudioEngineImpl implements AudioEngine {
                 getSendsForTrack: () => [],
                 pendingDevicePromises: new Set(),
                 readinessDiagnostics: this.deviceReadinessDiagnostics,
+                collaborators: this.deviceCollaborators,
                 getAdjustmentBusForTrack: (id) => this.adjustmentRuntime.getBusInputForTrack(id),
             });
         }
@@ -1741,6 +1788,7 @@ class AudioEngineImpl implements AudioEngine {
                 Array.from(this.sendNodes.values()).filter((state) => state.sourceTrackId === tId),
             pendingDevicePromises: this.pendingDevicePromises,
             readinessDiagnostics: this.deviceReadinessDiagnostics,
+            collaborators: this.deviceCollaborators,
             transportSAB: this.transportSAB ?? undefined,
             getAdjustmentBusForTrack: (id) => this.adjustmentRuntime.getBusInputForTrack(id),
             reconnectRoutingForTrack: (id) => this.reconnectRoutingForTrack(id),

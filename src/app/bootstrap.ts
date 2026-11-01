@@ -67,6 +67,7 @@ import {
     configureOfflineYeastMidiProcessing,
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
+    initEngineDeviceCollaborators,
     recordNativeChainReleases,
     isTunerTelemetryNativelyOwned,
     startMainThreadLongTaskObservation,
@@ -283,6 +284,7 @@ configureRuntimeGraphProjectRevisionValidator(
     (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
 );
 configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
+initEngineDeviceCollaborators();
 commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
 // AiRuntime publishes the capability catalog and imports Project, so capability
 // discovery reaches it through the port the composition root registers.
