@@ -411,6 +411,11 @@ export function startPlayheadScheduler(
     resetMetronomeBeat(state.playheadPosition);
 
     let previousTempo = state.tempo;
+    // The audio-clock instant a punch-out falls due for a punch recording that
+    // a late-wrap tick opened in a pass it handed over at its own seam: that
+    // tick cannot close it (the capture has only just begun), and the ticks
+    // after it scan the incoming pass, which never reaches the punch-out beat.
+    let lateWrapPunchOutAudioTime: number | null = null;
     const grainMs = state.scheduleGrainMs;
     schedulerTimingDiagnostics.reset(grainMs);
 
@@ -1216,6 +1221,21 @@ export function startPlayheadScheduler(
         // when the tick began, so a punch-in opened this tick is never
         // finalized empty.
         const punchOutDueAtWrap = lateWrap && recordingOpenAtTickStart && current.punchOutBeat <= current.loopEnd;
+        // A punch recording opened by an earlier late-wrap tick in the pass
+        // that tick handed over is due once the audio clock reaches its
+        // punch-out, as a scan reaching that beat would make it; a relocation
+        // before then moves the playhead away from the punch-out it was due at.
+        const punchOutDueAfterLateWrap =
+            recordingOpenAtTickStart && lateWrapPunchOutAudioTime !== null && now >= lateWrapPunchOutAudioTime;
+        if (
+            !recordingOpenAtTickStart ||
+            punchOutDueAfterLateWrap ||
+            jumpToPosition !== null ||
+            reemitAfterEdit ||
+            lateWrap
+        ) {
+            lateWrapPunchOutAudioTime = null;
+        }
         if (opensPunchIn(current, punchScanBeat)) {
             openedRecording = true;
             schedulerSession.punchRecordingActive = true;
@@ -1463,6 +1483,16 @@ export function startPlayheadScheduler(
             }
         }
 
+        // A late wrap that opened this recording in a pass it hands over at its
+        // own seam leaves the punch-out to a later tick, since no later scan
+        // reaches the dying pass's band: it is due when the audio clock gets
+        // there. The scheduled seam's own incoming scan never takes this path
+        // (its punch-in captures across the seam, see `punchOutDueAtSeam`).
+        if (openedRecording && seam?.afterLateWrap && current.punchOutBeat <= seam.passUpTo) {
+            lateWrapPunchOutAudioTime =
+                now + secondsBetweenBeats(changes, seam.passPosition, current.punchOutBeat, current.tempo);
+        }
+
         // `punchOutDueAtSeam`: the punch-out point sits inside the dying pass's
         // last look-ahead band — above where it stands at the seam tick but at
         // or below where the seam instant lands it. The crossing will happen
@@ -1471,7 +1501,10 @@ export function startPlayheadScheduler(
         if (
             schedulerSession.punchRecordingActive &&
             current.punchInEnabled &&
-            (punchScanBeat >= current.punchOutBeat || punchOutDueAtSeam || punchOutDueAtWrap)
+            (punchScanBeat >= current.punchOutBeat ||
+                punchOutDueAtSeam ||
+                punchOutDueAtWrap ||
+                punchOutDueAfterLateWrap)
         ) {
             // Finalize BEFORE the flush. The flush runs the capture terminal that
             // commits the take, and the commit captures the live clip and takes;
