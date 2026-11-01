@@ -1,0 +1,23 @@
+docs/affected-e2e.md
+  s_23c4477f6ab7f6::t_291e3aa0efe2d8 112-119
+scripts/__tests__/e2eCoverageSelection.spec.ts
+  s_23c4477f6ab7f6::t_f8c45c14ef0d57 132-138,248-254,422-465,467
+scripts/e2eCoverageSelection.ts
+  s_23c4477f6ab7f6::t_ace5aa4835260a 245-249,256-259,261-262,275,278-280,285-287,292-295,399
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "120aba643fa28aa316279bb259d38c92be92c605",
+  "prompts": {},
+  "sessions": {
+    "s_23c4477f6ab7f6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_23c4477f6ab7f6",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
