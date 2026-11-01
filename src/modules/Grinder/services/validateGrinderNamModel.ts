@@ -9,6 +9,7 @@ import {
     requirePositiveInt,
     type UnknownRecord,
 } from './namConfigReaders';
+import { assertWaveNetRuntimeAdmission } from './waveNetAdmissionBudget';
 import { waveNetWeightCount } from './waveNetWeightCount';
 
 /**
@@ -259,13 +260,17 @@ export function validateGrinderNamModel(nam_json: unknown, file_name: string): V
         assertConvNetBatchnormValid(config, weights);
     }
 
-    return {
+    const validated: ValidatedNamModel = {
         architecture: architecture_name as GrinderNeuralArchitecture,
         version: typeof version === 'string' ? version : null,
         sampleRate: sample_rate,
         config,
         weights,
     };
+    if (validated.architecture === 'WaveNet') {
+        assertWaveNetRuntimeAdmission(validated);
+    }
+    return validated;
 }
 
 /** Variant-level rejections for the supported architectures: NAMCore features
