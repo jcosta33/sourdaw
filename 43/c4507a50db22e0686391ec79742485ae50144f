@@ -1,0 +1,37 @@
+src/modules/Collaboration/presentations/views/CollaborationPanel.tsx
+  s_55244eb93b97d1::t_b198b4c197f4ed 1,73-79,214
+src/modules/Collaboration/presentations/views/__tests__/CollaborationPanel.spec.tsx
+  s_55244eb93b97d1::t_ff6dab0b2f12ce 108-110,112-114
+src/modules/CommandInterface/useCases/keyboardShortcutActions/__tests__/handleKeyboardShortcut.spec.ts
+  s_ba80576e6f5cb5::t_9f35e46dd7ebe2 43
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydown.spec.ts
+  s_55244eb93b97d1::t_6babce17699b81 23,25,142-144,148,391-451
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts
+  s_55244eb93b97d1::t_c54132f1fcabfb 21,23,244-250
+src/modules/WorkspaceShell/presentations/views/__tests__/VirtualKeyboard.spec.tsx
+  s_ba80576e6f5cb5::t_01acdd5c2eeb4d 1216-1231
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "43c4507a50db22e0686391ec79742485ae50144f",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
