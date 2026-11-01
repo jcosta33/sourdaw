@@ -105,6 +105,15 @@ describe('CollaborationPanel', () => {
         expect(mocks.closeCollaborationPanel).toHaveBeenCalledTimes(1);
     });
 
+    it('closes when Escape is pressed in one of its text fields, which the global handler skips', () => {
+        mocks.useStore.mockReturnValue({ collaborationPanelOpen: true });
+        render(<CollaborationPanel />);
+
+        fireEvent.keyDown(screen.getAllByPlaceholderText('Your name')[0]!, { key: 'Escape' });
+
+        expect(mocks.closeCollaborationPanel).toHaveBeenCalledTimes(1);
+    });
+
     it('does not close on other keys', () => {
         mocks.useStore.mockReturnValue({ collaborationPanelOpen: true });
         render(<CollaborationPanel />);
