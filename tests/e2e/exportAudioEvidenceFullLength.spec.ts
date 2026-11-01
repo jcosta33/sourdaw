@@ -1,11 +1,10 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
-import { expect, test } from '@playwright/test';
-
 import { isBuiltE2eShardRun } from '../../scripts/e2eServerIdentity';
 
 import { analyzePcmWav } from './analyzePcmWav';
+import { expect, test } from './e2eTest';
 import { LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 import { expectNebulaMixQuality, watchExportRun } from './exportAudioEvidenceHarness';
 import { installFilePickerCapture } from './exportFilePickerCapture';

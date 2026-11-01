@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 /**
@@ -8,10 +7,7 @@ import { launch_new_project, setupWorkspace } from './e2eUtils';
  * double-click card -> panel opens).
  */
 async function open_scoring_panel(page: import('@playwright/test').Page): Promise<void> {
-    const addAudioButton = page
-        .locator('button')
-        .filter({ hasText: 'Audio' })
-        .filter({ hasText: 'Record or import' });
+    const addAudioButton = page.locator('button').filter({ hasText: 'Audio' }).filter({ hasText: 'Record or import' });
     await addAudioButton.waitFor({ state: 'visible' });
     await addAudioButton.click();
 

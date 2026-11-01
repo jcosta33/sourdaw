@@ -1,5 +1,4 @@
-import { expect, test } from '@playwright/test';
-
+import { expect, test } from './e2eTest';
 import { launch_from_template, setupWorkspace } from './e2eUtils';
 
 // Automation/modulation routing depth: the matrix's primary purpose is routing
@@ -39,11 +38,18 @@ test.describe('Modulation routing — modulator to parameter with amount', () =>
         await expect(matrix.getByText('No modulators')).toHaveCount(0);
 
         // Open the Add Mapping picker on the new modulator card.
-        await matrix.getByRole('button', { name: /Add Mapping/i }).first().click();
+        await matrix
+            .getByRole('button', { name: /Add Mapping/i })
+            .first()
+            .click();
         const targetTrack = matrix.getByRole('combobox', { name: 'Target track' });
         await expect(targetTrack).toBeVisible({ timeout: 5000 });
         // Pick the first real track so device + parameter resolve.
-        const firstTrackValue = await targetTrack.locator('option').filter({ hasText: /.+/ }).nth(1).getAttribute('value');
+        const firstTrackValue = await targetTrack
+            .locator('option')
+            .filter({ hasText: /.+/ })
+            .nth(1)
+            .getAttribute('value');
         if (firstTrackValue) {
             await targetTrack.selectOption(firstTrackValue);
         }

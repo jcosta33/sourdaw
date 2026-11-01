@@ -1,5 +1,4 @@
-import { expect, test } from '@playwright/test';
-
+import { expect, test } from './e2eTest';
 import { launch_from_template, setupWorkspace } from './e2eUtils';
 
 // Master gain keyboard response. The existing master-channel spec asserts the

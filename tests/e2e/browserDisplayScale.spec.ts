@@ -1,6 +1,7 @@
-import { expect, test, type Frame, type FrameLocator, type Locator, type Page } from '@playwright/test';
+import { type Frame, type FrameLocator, type Locator, type Page } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
+import { expect, test } from './e2eTest';
 import { LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS } from './e2eUtils';
 
 type Box = { x: number; y: number; width: number; height: number };

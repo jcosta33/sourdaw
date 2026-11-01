@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -21,7 +21,12 @@ async function create_and_select_clip(page: import('@playwright/test').Page): Pr
 
     for (let attempt = 0; attempt < 5; attempt++) {
         await timeline.click({ position: { x: 300, y: 30 } });
-        if (await clip_content.first().isVisible().catch(() => false)) {
+        if (
+            await clip_content
+                .first()
+                .isVisible()
+                .catch(() => false)
+        ) {
             return;
         }
         await page.waitForTimeout(300);

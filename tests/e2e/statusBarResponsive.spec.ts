@@ -1,6 +1,7 @@
-import { expect, test, type Frame, type FrameLocator, type Page } from '@playwright/test';
+import { type Frame, type FrameLocator, type Page } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
+import { expect, test } from './e2eTest';
 import { LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS } from './e2eUtils';
 
 const OUTER_VIEWPORT = { width: 1150, height: 1264 };

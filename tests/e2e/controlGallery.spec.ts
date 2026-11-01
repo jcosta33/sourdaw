@@ -1,5 +1,4 @@
-import { expect, test } from '@playwright/test';
-
+import { expect, test } from './e2eTest';
 import { LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS, launch_new_project, setupWorkspace } from './e2eUtils';
 
 test('development control gallery shows source tokens and interactive shared controls', async ({ page }, testInfo) => {

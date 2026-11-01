@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
-import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import { type Page, type TestInfo } from '@playwright/test';
 
+import { expect, test } from './e2eTest';
 import { installFilePickerCapture, type FilePickerCapture } from './exportFilePickerCapture';
 
 type ByteChunks = [number[], number[]];

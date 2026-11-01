@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
 import { unzipSync } from 'fflate';
 
 import opus from '../../src/modules/AudioRendering/repositories/audioEncoders/vendor/opus/opus-encode.js';
 import ogg from '../../src/modules/AudioRendering/repositories/audioEncoders/vendor/vorbis/ogg-encode.js';
 
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 import { installFilePickerCapture } from './exportFilePickerCapture';
 
