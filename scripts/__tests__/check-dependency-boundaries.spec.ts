@@ -249,27 +249,80 @@ describe('check-dependency-boundaries', () => {
         expect(match?.slice(1)).toEqual(['src/modules/', 'Common']);
     });
 
-    it('should reject a cross-module import of a non-barrel path and accept barrels and own internals', () => {
-        const ruleConfig = mainConfig.forbidden.find(
-            (candidate: { name: string }) => candidate.name === 'cross-module-index-only'
-        );
-        const from = 'src/modules/A/useCases/x.ts';
-        const fromMatch = new RegExp(ruleConfig.from.path).exec(from);
-        const [prefix, moduleName] = fromMatch?.slice(1) ?? [];
-        const sameModulePattern = ruleConfig.to.pathNot[0].replace('$1', prefix).replace('$2', moduleName);
-        const violates = (to: string): boolean =>
-            new RegExp(ruleConfig.to.path).test(to) &&
-            ![sameModulePattern, ...ruleConfig.to.pathNot.slice(1)].some((pattern: string) =>
-                new RegExp(pattern).test(to)
-            );
+    type SameModuleRule = {
+        name: string;
+        severity: string;
+        from: { path: string | string[] };
+        to: { path: string; pathNot: string | string[] };
+    };
 
-        expect(fromMatch).not.toBeNull();
-        expect(violates('src/modules/B/models/Thing/Thing.ts')).toBe(true);
-        expect(violates('src/modules/B/repositories/read.ts')).toBe(true);
-        expect(violates('src/modules/B/useCases/helper.ts')).toBe(true);
-        expect(violates('src/modules/B/useCases/index.ts')).toBe(false);
-        expect(violates('src/modules/B/presentations/views/index.ts')).toBe(false);
-        expect(violates('src/modules/A/models/Thing/Thing.ts')).toBe(false);
+    const findRule = (config: { forbidden: SameModuleRule[] }, name: string): SameModuleRule => {
+        const rule = config.forbidden.find((candidate) => candidate.name === name);
+        if (!rule) {
+            throw new Error(`missing rule ${name}`);
+        }
+        return rule;
+    };
+
+    // Evaluates the rule the way dependency-cruiser does: `$n` in `to` takes the
+    // n-th capture group of the first `from.path` pattern that matches.
+    const violatesSameModuleRule = (rule: SameModuleRule, from: string, to: string): boolean => {
+        const groups = [rule.from.path]
+            .flat()
+            .map((pattern) => new RegExp(pattern).exec(from))
+            .find((match) => match !== null);
+        if (!groups) {
+            throw new Error(`${rule.name} does not match ${from}`);
+        }
+        const substitute = (pattern: string): string =>
+            pattern.replace(/\$(\d)/g, (_, index: string) => groups[Number(index)] ?? '');
+        return (
+            new RegExp(rule.to.path).test(to) &&
+            ![rule.to.pathNot].flat().some((pattern) => new RegExp(substitute(pattern)).test(to))
+        );
+    };
+
+    const sameModuleRules: Array<[string, SameModuleRule, string]> = [
+        [
+            'cross-module-index-only',
+            findRule(mainConfig, 'cross-module-index-only'),
+            'src/modules/Project/useCases/run.ts',
+        ],
+        [
+            'no-relative-cross-module-imports',
+            findRule(mainConfig, 'no-relative-cross-module-imports'),
+            'src/modules/Project/useCases/run.ts',
+        ],
+        [
+            'test cross-module-index-only',
+            findRule(testConfig, 'cross-module-index-only'),
+            'src/modules/Project/useCases/__tests__/run.spec.ts',
+        ],
+        [
+            'test no-relative-cross-module-imports',
+            findRule(testConfig, 'no-relative-cross-module-imports'),
+            'src/modules/Project/useCases/__tests__/run.spec.ts',
+        ],
+    ];
+
+    it.each(sameModuleRules)('should exempt only the importing module itself from %s', (_name, rule, from) => {
+        expect(rule.severity).toBe('error');
+        expect(violatesSameModuleRule(rule, from, 'src/modules/Project/models/Thing/Thing.ts')).toBe(false);
+        // A module whose name extends the importer's is a different module.
+        expect(violatesSameModuleRule(rule, from, 'src/modules/ProjectVersioning/models/Thing/Thing.ts')).toBe(true);
+        expect(violatesSameModuleRule(rule, from, 'src/modules/Other/repositories/read.ts')).toBe(true);
+    });
+
+    it('should reject a cross-module import of a non-barrel path and accept barrels', () => {
+        const rule = findRule(mainConfig, 'cross-module-index-only');
+        const from = 'src/modules/A/useCases/x.ts';
+
+        expect(violatesSameModuleRule(rule, from, 'src/modules/B/models/Thing/Thing.ts')).toBe(true);
+        expect(violatesSameModuleRule(rule, from, 'src/modules/B/repositories/read.ts')).toBe(true);
+        expect(violatesSameModuleRule(rule, from, 'src/modules/B/useCases/helper.ts')).toBe(true);
+        expect(violatesSameModuleRule(rule, from, 'src/modules/B/useCases/index.ts')).toBe(false);
+        expect(violatesSameModuleRule(rule, from, 'src/modules/B/presentations/views/index.ts')).toBe(false);
+        expect(violatesSameModuleRule(rule, from, 'src/modules/AB/models/Thing.ts')).toBe(true);
     });
 
     it('should include tests outside modules and global test setup', () => {

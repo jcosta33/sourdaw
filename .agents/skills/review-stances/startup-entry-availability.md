@@ -66,6 +66,8 @@ The pre-entry navigation controller retains its separate document-reload budget;
 module reattempt must not spend or emulate it. Keep transport initiation unknown unless direct
 lifecycle or network-initiator evidence distinguishes it.
 Do not widen this initial-import lesson to lazy feature imports, which do not own startup recovery.
+A one-leaf fault passing is no evidence for the reattempt: removing only the identical-import
+reattempt must fail the same browser case.
 
 ### 2026-10-30 — an immediate App retry could join still-failing sibling fetches (#5874, pre-merge)
 

@@ -4,15 +4,7 @@ Automerge CRDT document repository, reactive store projections, multi-branch sta
 
 ## Public Contract Surface
 
-- `stores`: `actionHistoryStore`, `agentProjectRepairStateStore`, `branchStore` (and `MAIN_BRANCH_ID`), `setSemanticContext`, `getSemanticContext`, `clearSemanticContext`.
-- `useCases`:
-    - **Document & Project Lifecycle**: `createCrdtDoc`, `getCrdtDoc`, `getCrdtDocIds`, `hasCrdtDoc`, `removeCrdtDoc`, `replaceCrdtDoc`, `mutateCrdtDoc`, `compactProject`, `resetCrdtProjectAuthority`, `createCrdtProject`, `loadCrdtProject`, `persistCrdtProject`, `getPersistenceBackend`, `registerCrdtStorageRuntime`, `startCrdtAutoSave`, `subscribeToCrdtChanges`, `waitForCrdtDocumentTransition`, `transactSnapshot`, `sessionUndoWitnessStampPort`.
-    - **Action History**: `recordActionHistoryEntry`, `clearActionHistory`, `markActionHistoryEntryReverted`.
-    - **Branching**: `initBranchState`, `whenBranchStateSettled`, `beginBranchSession`, `projectBranchSession`, `endBranchSession`, `captureActiveBranchReference`, `getDrumPreviewBranchHandlers`.
-    - **Projections**: `projectCrdtToStores`, `projectActionHistoryToStore`, `setupProjectionBridge`.
-    - **Inspection & Repair**: `captureProjectRevision`, `captureDurableDocumentWitness`, `captureProjectMutationAuthorization`, `captureUnownedProjectMutations`, `agentProjectInspectionPort`, `inspectAgentProjectDivergence`, `findAutomergeProjectConflicts`, `inspectCurrentAgentProjectRepairState`, `createCommandPreviewWorkspace`, `createCommandRecoveryWorkspace`, `sanitizeIncomingCrdtDocument`.
-- `presentations/views`: `BranchManagerDialog`, `MergeResultDialog`.
-- Handlers: `getDrumPreviewBranchHandlers` (`createDrumPreviewBranches`, `deleteDrumPreviewBranches`).
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 

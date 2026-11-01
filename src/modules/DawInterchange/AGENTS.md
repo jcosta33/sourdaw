@@ -4,8 +4,7 @@ Import and export interchange translation between Sourdaw internal project state
 
 ## Public Contract Surface
 
-- `useCases`: `importDawProject`, `pickAndImportDawProject`, `exportDawProject`, `getDawProjectHandlers`.
-- Handlers: `getDawProjectHandlers` (`importDawProject`, `exportDawProject`).
+Public surface: `useCases/index.ts`.
 
 ## Key Subsystems
 

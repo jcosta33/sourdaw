@@ -4,9 +4,7 @@ Interactive command palette UI, keyboard shortcut mappings and rebindings, comma
 
 ## Public Contract Surface
 
-- `useCases`: `setShortcutMapping`, `resetShortcutMappings`.
-- `stores`: `shortcutStore` (`ShortcutStoreState`, `ShortcutDefinition`, `ShortcutAction`).
-- `presentations/views`: `CommandPalette`, `useGlobalKeyboardShortcuts`.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 
