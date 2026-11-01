@@ -69,7 +69,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
     restoreAutomationLanes: vi.fn(),
     restoreTrackModulationReferences: vi.fn(),
 }));
-vi.mock('#/modules/MIDI/useCases', () => ({ restoreMidiClipData: vi.fn() }));
+vi.mock('#/modules/MIDI/useCases', () => ({ replaceFrozenMidiTakeRow: vi.fn(), restoreMidiClipData: vi.fn() }));
 vi.mock('#/modules/Routing/useCases', () => ({
     ensureBusStrip: vi.fn(),
     getAllSidechainRoutes: () => [],
