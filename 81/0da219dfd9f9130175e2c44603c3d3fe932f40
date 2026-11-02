@@ -1,0 +1,21 @@
+src/modules/AiRuntime/repositories/__tests__/webLlmProviderAdapter.spec.ts
+  s_917db07feb2d61::t_3c83487711e56d 20,23,216-219,228,272,283
+src/modules/AiRuntime/repositories/webLlm/__tests__/engineLifecycle.spec.ts
+  s_917db07feb2d61::t_95f2844abeb8c7 17,22,39,41,43,79,144-154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "810da219dfd9f9130175e2c44603c3d3fe932f40",
+  "prompts": {},
+  "sessions": {
+    "s_917db07feb2d61": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_917db07feb2d61",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
