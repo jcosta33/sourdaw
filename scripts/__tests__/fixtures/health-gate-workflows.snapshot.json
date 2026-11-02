@@ -82,6 +82,11 @@
         "if": "needs.admission.outputs.admitted == 'true'",
         "runs-on": "ubuntu-latest",
         "timeout-minutes": 10,
+        "permissions": {
+          "contents": "read",
+          "pull-requests": "read",
+          "actions": "read"
+        },
         "outputs": {
           "profile": "${{ steps.plan.outputs.profile }}",
           "matrix": "${{ steps.plan.outputs.matrix }}",
@@ -124,11 +129,22 @@
             "run": "pnpm install --frozen-lockfile --ignore-scripts"
           },
           {
+            "name": "Fetch coverage map",
+            "id": "coverage_map",
+            "env": {
+              "GH_TOKEN": "${{ github.token }}",
+              "E2E_COVERAGE_MAP": "${{ runner.temp }}/e2e-coverage-map.json"
+            },
+            "run": "node scripts/fetchE2eCoverageMap.ts"
+          },
+          {
             "name": "Plan affected checks",
             "id": "plan",
             "env": {
               "BASE_SHA": "${{ github.event.pull_request.base.sha }}",
-              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}"
+              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
+              "E2E_COVERAGE_MAP": "${{ runner.temp }}/e2e-coverage-map.json",
+              "E2E_COVERAGE_MAP_CREATED_AT": "${{ steps.coverage_map.outputs.created-at }}"
             },
             "run": "node scripts/prValidationScope.ts plan"
           },
@@ -249,6 +265,11 @@
         "name": "Plan push checks",
         "runs-on": "ubuntu-latest",
         "timeout-minutes": 10,
+        "permissions": {
+          "contents": "read",
+          "pull-requests": "read",
+          "actions": "read"
+        },
         "outputs": {
           "profile": "${{ steps.plan.outputs.profile }}",
           "matrix": "${{ steps.plan.outputs.matrix }}",
@@ -291,11 +312,22 @@
             "run": "pnpm install --frozen-lockfile --ignore-scripts"
           },
           {
+            "name": "Fetch coverage map",
+            "id": "coverage_map",
+            "env": {
+              "GH_TOKEN": "${{ github.token }}",
+              "E2E_COVERAGE_MAP": "${{ runner.temp }}/e2e-coverage-map.json"
+            },
+            "run": "node scripts/fetchE2eCoverageMap.ts"
+          },
+          {
             "name": "Plan affected checks",
             "id": "plan",
             "env": {
               "BASE_SHA": "${{ github.event.pull_request.base.sha }}",
-              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}"
+              "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
+              "E2E_COVERAGE_MAP": "${{ runner.temp }}/e2e-coverage-map.json",
+              "E2E_COVERAGE_MAP_CREATED_AT": "${{ steps.coverage_map.outputs.created-at }}"
             },
             "run": "node scripts/prValidationScope.ts plan"
           },
@@ -2307,7 +2339,7 @@
             "env": {
               "SHARD": "${{ matrix.shard }}"
             },
-            "run": "set -uo pipefail\nexport SOURDAW_E2E_COVERAGE_DIR=\"$PWD/e2e-coverage\"\nstatus=0\npnpm test:e2e --shard=\"$SHARD/12\" --reporter=line || status=$?\nrecords=$(find \"$SOURDAW_E2E_COVERAGE_DIR\" -type f -name '*.json' 2>/dev/null | wc -l)\nprintf 'Playwright exited with status %s; %s coverage records written\\n' \"$status\" \"$records\"\nif [ \"$records\" -eq 0 ]; then\n  printf '::error title=No coverage records::Shard %s wrote no coverage records.\\n' \"$SHARD\"\n  exit 1\nfi\n"
+            "run": "set -uo pipefail\nexport SOURDAW_E2E_COVERAGE_DIR=\"$PWD/e2e-coverage\"\nstatus=0\npnpm test:e2e --shard=\"$SHARD/12\" --reporter=line || status=$?\nprintf 'Playwright exited with status %s\\n' \"$status\"\nif ! node scripts/e2eCoverageMap.ts --check-records \"$SOURDAW_E2E_COVERAGE_DIR\"; then\n  printf '::error title=Unusable coverage records::Shard %s wrote no complete, passed coverage record.\\n' \"$SHARD\"\n  exit 1\nfi\n"
           },
           {
             "name": "Upload coverage records",

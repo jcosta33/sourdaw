@@ -2270,6 +2270,11 @@
         },
         {
             "surface": "project-source",
+            "file": "scripts/fetchE2eCoverageMap.ts",
+            "value": "https://api.github.com"
+        },
+        {
+            "surface": "project-source",
             "file": "scripts/githubAppIdentity.ts",
             "value": "https://api.github.com/app"
         },

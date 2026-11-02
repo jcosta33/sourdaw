@@ -15,14 +15,17 @@ import { HEALTH_GATE_WORKFLOW_FILES } from './healthGateWorkflowContract.ts';
 type JobPins<Value> = Readonly<Record<string, Readonly<Record<string, Value>>>>;
 
 const CODEQL_PERMISSIONS = { contents: 'read', 'security-events': 'write', actions: 'read' } as const;
+const SCOPE_PERMISSIONS = { contents: 'read', 'pull-requests': 'read', actions: 'read' } as const;
 
 // A job-level `permissions` block reshapes one leg's token away from the
 // workflow-level pin: `contents: write` on a validation leg would hand every
 // pull request a token that can push. Every job in every registered file
 // inherits the workflow-level grant except these, each pinned exactly: the
-// CodeQL SARIF uploads and the nightly failure reporter.
+// CodeQL SARIF uploads, the nightly failure reporter, and the pull-request
+// planners, which read the nightly coverage map artifact.
 export const JOB_PERMISSION_PINS: JobPins<Readonly<Record<string, string>>> = {
-    'health-gates.yml': { codeql: CODEQL_PERMISSIONS },
+    'health-gates.yml': { codeql: CODEQL_PERMISSIONS, scope: SCOPE_PERMISSIONS },
+    'pr-checks.yml': { scope: SCOPE_PERMISSIONS },
     'nightly.yml': { codeql: CODEQL_PERMISSIONS, 'nightly-report': { contents: 'read', issues: 'write' } },
     'nightly-evidence-report.yml': {
         validate: { actions: 'read', contents: 'read', 'security-events': 'read' },
@@ -37,7 +40,8 @@ export const JOB_PERMISSION_PINS: JobPins<Readonly<Record<string, string>>> = {
 // to code that never needed one, and on a pull-request trigger to the head's code.
 export const SECRET_REFERENCE_PINS: JobPins<readonly string[]> = {
     'nightly-evidence-report.yml': { validate: ['GITHUB_TOKEN'], publish: ['GITHUB_TOKEN'] },
-    'health-gates.yml': { admission: ['GITHUB_TOKEN'] },
+    'health-gates.yml': { admission: ['GITHUB_TOKEN'], scope: ['GITHUB_TOKEN'] },
+    'pr-checks.yml': { scope: ['GITHUB_TOKEN'] },
     'nightly.yml': {
         'deploy-web': ['GITHUB_TOKEN', 'VERCEL_ORG_ID', 'VERCEL_PROJECT_ID', 'VERCEL_TOKEN'],
         'nightly-report': ['GITHUB_TOKEN'],
