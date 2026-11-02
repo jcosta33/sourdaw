@@ -12,7 +12,7 @@ import {
     updatePreferences,
 } from '#/modules/Preferences/useCases';
 
-import { defaultWorkspaceState, workspaceStore } from '../../../../stores/workspaceStore';
+import { defaultSoloModeState, soloModeStore } from '../../../stores/soloModeStore';
 import { setSoloMode } from '../setSoloMode';
 import { syncSoloModePreference } from '../syncSoloModePreference';
 
@@ -21,34 +21,34 @@ describe('syncSoloModePreference', () => {
 
     beforeEach(() => {
         preferencesStore.trySet(defaultPreferences);
-        workspaceStore.set(defaultWorkspaceState);
+        soloModeStore.set(defaultSoloModeState);
     });
 
     afterEach(() => {
         unsubscribe?.();
         unsubscribe = null;
         preferencesStore.trySet(defaultPreferences);
-        workspaceStore.set(defaultWorkspaceState);
+        soloModeStore.set(defaultSoloModeState);
     });
 
     it('applies the saved mode and synchronously follows preference updates and reset', () => {
         updatePreferences({ patch: { soloMode: 'afl' } });
         unsubscribe = syncSoloModePreference();
-        expect(workspaceStore.value?.soloMode).toBe('afl');
+        expect(soloModeStore.value?.soloMode).toBe('afl');
 
         updatePreferences({ patch: { soloMode: 'pfl' } });
-        expect(workspaceStore.value?.soloMode).toBe('pfl');
+        expect(soloModeStore.value?.soloMode).toBe('pfl');
 
         resetPreferences();
-        expect(workspaceStore.value?.soloMode).toBe(defaultPreferences.soloMode);
+        expect(soloModeStore.value?.soloMode).toBe(defaultPreferences.soloMode);
 
         unsubscribe();
         unsubscribe = null;
         updatePreferences({ patch: { soloMode: 'afl' } });
-        expect(workspaceStore.value?.soloMode).toBe(defaultPreferences.soloMode);
+        expect(soloModeStore.value?.soloMode).toBe(defaultPreferences.soloMode);
     });
 
-    it('leaves a session-only WorkspaceShell choice alone on unrelated preference writes', () => {
+    it('leaves a session-only toolbar choice alone on unrelated preference writes', () => {
         unsubscribe = syncSoloModePreference();
         setSoloMode('pfl');
 
@@ -58,7 +58,7 @@ describe('syncSoloModePreference', () => {
         setTrackHeight('large');
         setTimelineMinimapHeight(32);
 
-        expect(workspaceStore.value?.soloMode).toBe('pfl');
+        expect(soloModeStore.value?.soloMode).toBe('pfl');
         expect(preferencesStore.value?.soloMode).toBe(defaultPreferences.soloMode);
     });
 
@@ -69,7 +69,7 @@ describe('syncSoloModePreference', () => {
 
         updatePreferences({ patch: { soloMode: 'afl' } });
 
-        expect(workspaceStore.value?.soloMode).toBe('afl');
+        expect(soloModeStore.value?.soloMode).toBe('afl');
     });
 
     it('reapplies the default on Reset even when the saved value is already default', () => {
@@ -78,7 +78,7 @@ describe('syncSoloModePreference', () => {
 
         resetPreferences();
 
-        expect(workspaceStore.value?.soloMode).toBe(defaultPreferences.soloMode);
+        expect(soloModeStore.value?.soloMode).toBe(defaultPreferences.soloMode);
     });
 
     it('applies explicit outcomes immediately with pending observers before and after the owner', async () => {
@@ -92,11 +92,11 @@ describe('syncSoloModePreference', () => {
         try {
             setSoloMode('pfl');
             updatePreferences({ patch: { soloMode: 'sip' } });
-            expect(workspaceStore.value?.soloMode).toBe('sip');
+            expect(soloModeStore.value?.soloMode).toBe('sip');
 
             setSoloMode('afl');
             resetPreferences();
-            expect(workspaceStore.value?.soloMode).toBe('sip');
+            expect(soloModeStore.value?.soloMode).toBe('sip');
         } finally {
             stopEarlier();
             stopLater();
@@ -115,7 +115,7 @@ describe('syncSoloModePreference', () => {
         try {
             setSoloMode('afl');
             resetPreferences();
-            expect(workspaceStore.value?.soloMode).toBe('sip');
+            expect(soloModeStore.value?.soloMode).toBe('sip');
             expect(warning).toHaveBeenCalledWith('Error in event handler for preferences.soloModeApplied:', error);
         } finally {
             stopThrowing();
@@ -128,17 +128,17 @@ describe('syncSoloModePreference', () => {
         vi.resetModules();
         const [
             { preferencesStore: loadedPreferences },
-            { workspaceStore: freshWorkspace },
+            { soloModeStore: freshSoloMode },
             { syncSoloModePreference: sync },
         ] = await Promise.all([
             import('#/modules/Preferences/stores'),
-            import('../../../../stores/workspaceStore'),
+            import('../../../stores/soloModeStore'),
             import('../syncSoloModePreference'),
         ]);
         const stop = sync();
         try {
             expect(loadedPreferences.value?.soloMode).toBe('afl');
-            expect(freshWorkspace.value?.soloMode).toBe('afl');
+            expect(freshSoloMode.value?.soloMode).toBe('afl');
         } finally {
             stop();
             window.localStorage.removeItem('sourdaw-preferences');

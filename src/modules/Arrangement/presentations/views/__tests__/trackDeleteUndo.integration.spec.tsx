@@ -46,8 +46,7 @@ import { TrackListView } from '../TrackListView';
  *
  * Graph-cut (non-spread listings, not fake handler maps): AiRuntime/useCases,
  * WorkspaceShell/useCases, MIDI/useCases, Yeast/useCases, and Knead/useCases.
- * WorkspaceShell setWorkspaceMode (TrackListView) and setSoloMode
- * (resetPreferences/updatePreferences), the MIDI/useCases barrel names the
+ * WorkspaceShell setWorkspaceMode (TrackListView), the MIDI/useCases barrel names the
  * remaining graph imports, Yeast `hydrateYeastCrdtProjection`, and Knead
  * pitch-analysis hydration return live `actual.*`; AiRuntime lists only the
  * stubbed `injectPromptDraft`. `getArrangementHandlers` / `setArrangementEventBus`
@@ -61,14 +60,12 @@ vi.mock('#/utils/UI/useContextMenuDismiss', () => ({ useContextMenuDismiss: vi.f
 vi.mock('#/modules/AiRuntime/useCases', () => ({
     injectPromptDraft: vi.fn(),
 }));
-// Non-spread listing: TrackListView imports setWorkspaceMode;
-// resetPreferences and updatePreferences import setSoloMode.
+// Non-spread listing: TrackListView imports setWorkspaceMode.
 vi.mock('#/modules/WorkspaceShell/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/WorkspaceShell/useCases')>(
         '#/modules/WorkspaceShell/useCases'
     );
     return {
-        setSoloMode: actual.setSoloMode,
         setWorkspaceMode: actual.setWorkspaceMode,
     };
 });

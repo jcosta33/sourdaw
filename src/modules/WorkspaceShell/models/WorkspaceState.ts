@@ -2,8 +2,6 @@ import { type EditingTool } from './EditingTool';
 
 export type WorkspaceMode = 'arrange' | 'automation' | 'clip';
 
-export type SoloMode = 'sip' | 'afl' | 'pfl';
-
 export type ChannelStripWidth = 'narrow' | 'normal' | 'wide';
 
 export type TimeDisplayMode = 'musical' | 'time';
@@ -26,7 +24,6 @@ export type WorkspaceState = {
     inspectorWidth: number;
     mixerHeight: number;
     editorHeight: number;
-    soloMode: SoloMode;
     channelStripWidth: ChannelStripWidth;
     timeDisplayMode: TimeDisplayMode;
     undoHistoryOpen: boolean;
@@ -87,7 +84,6 @@ export const defaultWorkspaceState: WorkspaceState = {
     inspectorWidth: 256,
     mixerHeight: 208,
     editorHeight: 360,
-    soloMode: 'sip',
     channelStripWidth: 'normal',
     timeDisplayMode: 'musical',
     undoHistoryOpen: false,

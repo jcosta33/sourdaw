@@ -24,8 +24,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
-import { trackStore, vcaGroupStore, type Device, type Track } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import {
+    defaultSoloModeState,
+    soloModeStore,
+    trackStore,
+    vcaGroupStore,
+    type Device,
+    type Track,
+} from '#/modules/Arrangement/stores';
+import { getArrangementHandlers, setSoloMode } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
@@ -194,6 +201,7 @@ afterEach(() => {
     nativeLiveGraphSession.backend = null;
     nativeLiveGraphSession.rolling = false;
     vcaGroupStore.set({ groups: [] });
+    soloModeStore.set(defaultSoloModeState);
     offlinePpqEndpointProjectorState.project = null;
     offlineDeviceParameterLawState.acceptsExternalPluginParameter = null;
     offlineDeviceParameterLawState.clampExternalPluginValue = null;
@@ -1250,6 +1258,16 @@ describe('live store edits on the existing writer pass', () => {
             },
         ]);
         expect(nativeLiveAutomationWriter.pass?.targets).toEqual([]);
+    });
+
+    it('marks the pass for a re-read when the solo mode changes through its owner', async () => {
+        await playingWith([]);
+        const pass = nativeLiveAutomationWriter.pass!;
+        const revision = pass.inputs.revision;
+
+        setSoloMode('pfl');
+
+        expect(pass.inputs.revision).toBe(revision + 1);
     });
 
     it('restores stored raw gain when the last fader lane is removed or switched off, atomically even at VCA zero', async () => {

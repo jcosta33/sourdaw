@@ -124,11 +124,6 @@
   {
     "type": "module-tier",
     "from": "AudioEngine",
-    "to": "WorkspaceShell"
-  },
-  {
-    "type": "module-tier",
-    "from": "AudioEngine",
     "to": "Yeast"
   },
   {
