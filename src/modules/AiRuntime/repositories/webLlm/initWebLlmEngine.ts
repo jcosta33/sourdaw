@@ -107,13 +107,12 @@ export const initWebLlmEngine = inject({ logger, admitWebLlmModelArtifacts })(
                     consume: async (verifiedAdmission) => {
                         // Dynamic import — avoids loading the 6.2MB WebLLM bundle at app startup.
                         // The browser-wide admission lock stays held until the worker has consumed the verified set.
-                        const [{ CreateWebWorkerMLCEngine }, { default: LlmWorker }] = await Promise.all([
-                            import('@mlc-ai/web-llm'),
-                            import('../llmWorker?worker'),
-                        ]);
+                        const { CreateWebWorkerMLCEngine } = await import('@mlc-ai/web-llm');
                         attemptSignal.throwIfAborted();
 
-                        const worker = new LlmWorker();
+                        const worker = new Worker(new URL('../../workers/llmWorker.ts', import.meta.url), {
+                            type: 'module',
+                        });
                         attemptWorker = worker;
                         engineState.worker = worker;
                         function handleAbort() {

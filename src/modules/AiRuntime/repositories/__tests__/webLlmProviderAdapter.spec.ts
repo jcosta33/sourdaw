@@ -211,17 +211,16 @@ vi.mock('@mlc-ai/web-llm', () => ({
     CreateWebWorkerMLCEngine: createWebWorkerEngineMock,
 }));
 
-vi.mock('../llmWorker?worker', () => ({
-    default: class MockLlmWorker {
-        terminate(): void {
-            terminateWorkerMock();
-        }
-    },
-}));
+class MockLlmWorker {
+    terminate(): void {
+        terminateWorkerMock();
+    }
+}
 
 describe('WebLLM provider artifact admission', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.stubGlobal('Worker', MockLlmWorker);
         Object.defineProperty(globalThis, 'navigator', {
             value: {
                 gpu: {},
@@ -250,6 +249,7 @@ describe('WebLLM provider artifact admission', () => {
 
     afterEach(() => {
         unloadWebLlmEngine();
+        vi.unstubAllGlobals();
         engineState.activeModelId = 'Qwen3-4B-q4f16_1-MLC';
         engineState.activeArtifactSetDigest = null;
     });

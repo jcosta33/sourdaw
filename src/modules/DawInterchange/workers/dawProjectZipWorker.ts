@@ -1,10 +1,8 @@
 /// <reference lib="webworker" />
 
-import {
-    type DawProjectZipWorkerRequest,
-    type DawProjectZipWorkerResponse,
-    runDawProjectZipWorkerRequest,
-} from './runDawProjectZipWorkerRequest';
+import { runDawProjectZipWorkerRequest } from './runDawProjectZipWorkerRequest';
+
+import type { DawProjectZipWorkerRequest, DawProjectZipWorkerResponse } from '../models/DawProjectZipWorkerProtocol';
 
 self.onmessage = (event: MessageEvent<DawProjectZipWorkerRequest>) => {
     try {

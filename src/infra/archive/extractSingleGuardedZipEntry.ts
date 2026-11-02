@@ -23,7 +23,7 @@ export function extractSingleGuardedZipEntry({
             return;
         }
 
-        const worker = new Worker(new URL('./extractGuardedZip.worker.ts', import.meta.url), { type: 'module' });
+        const worker = new Worker(new URL('./workers/extractGuardedZipWorker.ts', import.meta.url), { type: 'module' });
         let settled = false;
 
         function finish(callback: () => void): void {

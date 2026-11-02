@@ -1,6 +1,11 @@
 import { ZipArchiveError } from '#/infra/archive/extractGuardedZip';
 
-import { METADATA_XML_ENTRY_PATH, PROJECT_XML_ENTRY_NAME, PROJECT_XML_ENTRY_PATH } from './dawProjectEntryNames';
+import {
+    METADATA_XML_ENTRY_PATH,
+    PROJECT_XML_ENTRY_NAME,
+    PROJECT_XML_ENTRY_PATH,
+} from '../models/DawProjectEntryNames';
+
 import { DAW_PROJECT_ZIP_LIMITS } from './dawProjectZipLimits';
 import { extractDawProjectZipEntries } from './extractDawProjectZipEntries';
 

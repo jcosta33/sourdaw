@@ -1,24 +1,15 @@
-import { extractGuardedZip, type ZipExtractionLimits } from '#/infra/archive/extractGuardedZip';
+import { extractGuardedZip } from '#/infra/archive/extractGuardedZip';
 
 import {
     METADATA_XML_ENTRY_NAME,
     METADATA_XML_ENTRY_PATH,
     PROJECT_XML_ENTRY_NAME,
     PROJECT_XML_ENTRY_PATH,
-} from './dawProjectEntryNames';
+} from '../models/DawProjectEntryNames';
+
+import type { DawProjectZipWorkerRequest } from '../models/DawProjectZipWorkerProtocol';
 
 const audioAssetPath = /^audio\//;
-
-export type DawProjectZipWorkerPhase = 'header' | 'audio';
-
-export type DawProjectZipWorkerRequest = {
-    bytes: ArrayBuffer;
-    phase: DawProjectZipWorkerPhase;
-    restrictLimits?: Partial<ZipExtractionLimits>;
-};
-
-export type DawProjectZipWorkerResponse =
-    { type: 'success'; entries: Record<string, ArrayBuffer> } | { type: 'error'; message: string };
 
 /**
  * Pure extraction logic shared by the worker entry point and its tests.

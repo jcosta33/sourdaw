@@ -4,6 +4,7 @@
 .dependency-cruiser-known-violations-reachability.json
 .dependency-cruiser-known-violations-tests.json
 .dependency-cruiser-known-violations-types.json
+.dependency-cruiser-known-violations-worker-spawns.json
 node_modules
 target
 dist
@@ -47,14 +48,14 @@ Cargo.lock
 
 # Pinned codec distribution bytes, including the modified Vorbis wrapper.
 # Preserve exact provenance hashes in release/upstream-proofs/audio-export-codecs/.
-src/modules/AudioRendering/repositories/audioEncoders/vendor/vorbis/ogg-encode.js
-src/modules/AudioRendering/repositories/audioEncoders/vendor/vorbis/ogg-encode.d.ts
-src/modules/AudioRendering/repositories/audioEncoders/vendor/opus/opus-encode.js
-src/modules/AudioRendering/repositories/audioEncoders/vendor/opus/opus-encode.d.ts
-src/modules/AudioRendering/repositories/audioEncoders/vendor/opus/core.js
-src/modules/AudioRendering/repositories/audioEncoders/vendor/opus/core.d.ts
-src/modules/AudioRendering/repositories/audioEncoders/vendor/vorbis/vorbis.wasm.js
-src/modules/AudioRendering/repositories/audioEncoders/vendor/opus/src/opus.wasm.js
+src/modules/AudioRendering/workers/vendor/vorbis/ogg-encode.js
+src/modules/AudioRendering/workers/vendor/vorbis/ogg-encode.d.ts
+src/modules/AudioRendering/workers/vendor/opus/opus-encode.js
+src/modules/AudioRendering/workers/vendor/opus/opus-encode.d.ts
+src/modules/AudioRendering/workers/vendor/opus/core.js
+src/modules/AudioRendering/workers/vendor/opus/core.d.ts
+src/modules/AudioRendering/workers/vendor/vorbis/vorbis.wasm.js
+src/modules/AudioRendering/workers/vendor/opus/src/opus.wasm.js
 
 # Pinned codec proof bytes addressed by release/open-source-inventory.json.
 release/upstream-proofs/audio-export-codecs/BUILD.md

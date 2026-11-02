@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { engineState } from '../engineLifecycleState';
 import { initWebLlmEngine } from '../initWebLlmEngine';
@@ -65,15 +65,12 @@ vi.mock('../webLlmArtifactManifest', () => ({
 vi.mock('../getWebLlmContextWindowSize', () => ({
     getWebLlmContextWindowSize: () => BUDGET_CONTEXT_WINDOW_SIZE,
 }));
-vi.mock('../../llmWorker?worker', () => ({
-    default: MockLlmWorker,
-}));
-
 function ignoreEngine(_engine: unknown): void {}
 
 describe('WebLLM engineLifecycle injectables', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.stubGlobal('Worker', MockLlmWorker);
         workerInstances.length = 0;
         admissionGate.webLlm = true;
         artifactAdmissionMock.mockReset();
@@ -111,6 +108,10 @@ describe('WebLLM engineLifecycle injectables', () => {
             chat: { completions: { create: vi.fn() } },
         });
         Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true, writable: true });
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
     });
 
     it('should reject init when WebGPU is unavailable', async () => {

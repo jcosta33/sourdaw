@@ -25,6 +25,7 @@ import {
     findModelCasingFindings,
     findModuleTierState,
     findStaticGuardFindings,
+    findWorkerSpawnState,
     isModuleRootIndex,
     isUseCaseBarrel,
 } from '../check-dependency-boundaries.mjs';
@@ -157,6 +158,26 @@ function withModuleTierFixture(files: Record<string, FixtureContents>, run: (rep
 function moduleTierRowsOf(repositoryRoot: string) {
     return findModuleTierState(repositoryRoot, moduleTierManifest).rows;
 }
+
+function withWorkerSpawnFixture(files: Record<string, FixtureContents>, run: (repositoryRoot: string) => void): void {
+    const repositoryRoot = mkdtempSync(join(tmpdir(), 'check-dependency-boundaries-worker-spawns-'));
+    try {
+        mkdirSync(join(repositoryRoot, 'src'), { recursive: true });
+        for (const [repoPath, contents] of Object.entries(files)) {
+            mkdirSync(dirname(join(repositoryRoot, repoPath)), { recursive: true });
+            writeFixtureFiles(repositoryRoot, { [repoPath]: contents });
+        }
+        run(repositoryRoot);
+    } finally {
+        rmSync(repositoryRoot, { force: true, recursive: true });
+    }
+}
+
+function workerSpawnRowsOf(repositoryRoot: string) {
+    return findWorkerSpawnState(repositoryRoot).rows;
+}
+
+const nonLiteralWorkerTarget = '<target not a string literal>';
 
 function isUnsupportedSymlinkError(error: unknown): boolean {
     if (typeof error !== 'object' || error === null || !('code' in error)) {
@@ -1904,6 +1925,153 @@ describe('check-dependency-boundaries', () => {
             (repositoryRoot) => {
                 expect(moduleTierManifest.tiers[1]?.mayDependOn).not.toContain('core domain');
                 expect(moduleTierRowsOf(repositoryRoot)).toEqual([]);
+            }
+        );
+    });
+
+    it('should fail a Worker spawned from a file outside a workers/ folder, naming the spawn site', () => {
+        withWorkerSpawnFixture({}, (baselineRoot) => {
+            const known = workerSpawnRowsOf(baselineRoot);
+            expect(known).toEqual([]);
+
+            withWorkerSpawnFixture(
+                {
+                    'src/modules/Foo/repositories/startFoo.ts': [
+                        'export const start = () =>',
+                        "    new Worker(new URL('./fooWorker.ts', import.meta.url), { type: 'module' });",
+                    ],
+                },
+                (repositoryRoot) => {
+                    const state = findWorkerSpawnState(repositoryRoot);
+                    const planted = {
+                        type: 'worker-spawn',
+                        from: 'src/modules/Foo/repositories/startFoo.ts',
+                        to: 'src/modules/Foo/repositories/fooWorker.ts',
+                    };
+
+                    expect(compareRows({ current: state.rows, known })).toEqual({ novel: [planted], stale: [] });
+                    expect([...state.details.values()]).toEqual([
+                        'worker entry must live in a workers/ folder; e.g. line 2',
+                    ]);
+                }
+            );
+        });
+    });
+
+    it('should admit a Worker, SharedWorker and ?worker import whose target is in a workers/ folder', () => {
+        withWorkerSpawnFixture(
+            {
+                'src/modules/Foo/repositories/startFoo.ts': [
+                    "export const a = () => new Worker(new URL('../workers/fooWorker.ts', import.meta.url));",
+                    "export const b = () => new SharedWorker(new URL('../workers/fooWorker.ts', import.meta.url));",
+                    "export const c = () => import('../workers/fooWorker?worker');",
+                ],
+                'src/modules/Foo/useCases/startFoo.ts':
+                    "import FooWorker from '#/modules/Foo/workers/fooWorker?sharedworker';\nexport { FooWorker };\n",
+                'src/infra/archive/extract.ts':
+                    "export const e = () => new Worker(new URL('./workers/extractWorker.ts', import.meta.url));\n",
+            },
+            (repositoryRoot) => {
+                expect(workerSpawnRowsOf(repositoryRoot)).toEqual([]);
+            }
+        );
+    });
+
+    it('should fail a ?worker import and a new SharedWorker whose target is outside a workers/ folder', () => {
+        withWorkerSpawnFixture(
+            {
+                'src/modules/Foo/repositories/loadFoo.ts': "export const load = () => import('../fooWorker?worker');\n",
+                'src/modules/Foo/useCases/shareFoo.ts':
+                    "export const share = () => new SharedWorker(new URL('./fooShared.ts', import.meta.url));\n",
+                'src/modules/Foo/engine/importFoo.ts':
+                    "import FooWorker from './fooEngineWorker?worker';\nexport { FooWorker };\n",
+                'src/modules/Foo/engine/nestedWorkersName.ts':
+                    "export const n = () => new Worker(new URL('./notworkers/inner.ts', import.meta.url));\n",
+            },
+            (repositoryRoot) => {
+                expect(workerSpawnRowsOf(repositoryRoot).map(({ from, to }) => ({ from, to }))).toEqual([
+                    { from: 'src/modules/Foo/engine/importFoo.ts', to: 'src/modules/Foo/engine/fooEngineWorker' },
+                    {
+                        from: 'src/modules/Foo/engine/nestedWorkersName.ts',
+                        to: 'src/modules/Foo/engine/notworkers/inner.ts',
+                    },
+                    { from: 'src/modules/Foo/repositories/loadFoo.ts', to: 'src/modules/Foo/fooWorker' },
+                    { from: 'src/modules/Foo/useCases/shareFoo.ts', to: 'src/modules/Foo/useCases/fooShared.ts' },
+                ]);
+            }
+        );
+    });
+
+    it('should fail a Worker whose target is not a string literal', () => {
+        withWorkerSpawnFixture(
+            {
+                'src/modules/Foo/repositories/variable.ts':
+                    'export const v = (path: string) => new Worker(new URL(path, import.meta.url));\n',
+                'src/modules/Foo/repositories/plainUrl.ts': "export const p = () => new Worker('/fooWorker.js');\n",
+                'src/modules/Foo/repositories/noBase.ts':
+                    "export const n = () => new Worker(new URL('../workers/a.ts'));\n",
+            },
+            (repositoryRoot) => {
+                expect(workerSpawnRowsOf(repositoryRoot)).toEqual([
+                    {
+                        type: 'worker-spawn',
+                        from: 'src/modules/Foo/repositories/noBase.ts',
+                        to: nonLiteralWorkerTarget,
+                    },
+                    {
+                        type: 'worker-spawn',
+                        from: 'src/modules/Foo/repositories/plainUrl.ts',
+                        to: nonLiteralWorkerTarget,
+                    },
+                    {
+                        type: 'worker-spawn',
+                        from: 'src/modules/Foo/repositories/variable.ts',
+                        to: nonLiteralWorkerTarget,
+                    },
+                ]);
+            }
+        );
+    });
+
+    it('should leave a stale worker-spawn row once the spawn is removed', () => {
+        withWorkerSpawnFixture(
+            {
+                'src/modules/Foo/repositories/startFoo.ts':
+                    "export const s = () => new Worker(new URL('./fooWorker.ts', import.meta.url));\n",
+            },
+            (repositoryRoot) => {
+                const known = workerSpawnRowsOf(repositoryRoot);
+                expect(known).toHaveLength(1);
+
+                rmSync(join(repositoryRoot, 'src/modules/Foo/repositories/startFoo.ts'));
+
+                expect(compareRows({ current: workerSpawnRowsOf(repositoryRoot), known })).toEqual({
+                    novel: [],
+                    stale: known,
+                });
+            }
+        );
+    });
+
+    it('should not count worklet processor URLs, unrelated constructors or non-production files as spawns', () => {
+        withWorkerSpawnFixture(
+            {
+                'src/modules/Foo/engine/FooNode.ts':
+                    "import url from '../worklets/fooProcessor.ts?worker&url';\nexport { url };\n",
+                'src/modules/Foo/engine/Other.ts':
+                    "export const o = () => new Date(new URL('./x.ts', import.meta.url));\n",
+                'src/modules/Foo/repositories/__tests__/startFoo.spec.ts':
+                    "export const s = () => new Worker(new URL('./fooWorker.ts', import.meta.url));\n",
+                'src/modules/Foo/testing/fakeFoo.ts':
+                    "export const t = () => new Worker(new URL('./fooWorker.ts', import.meta.url));\n",
+                // The one counted spawn proves the scan itself runs.
+                'src/modules/Foo/repositories/startFoo.ts':
+                    "export const s = () => new Worker(new URL('./fooWorker.ts', import.meta.url));\n",
+            },
+            (repositoryRoot) => {
+                expect(workerSpawnRowsOf(repositoryRoot).map(({ from }) => from)).toEqual([
+                    'src/modules/Foo/repositories/startFoo.ts',
+                ]);
             }
         );
     });
