@@ -164,52 +164,7 @@
   {
     "type": "module-tier",
     "from": "CrdtDocument",
-    "to": "Arrangement"
-  },
-  {
-    "type": "module-tier",
-    "from": "CrdtDocument",
-    "to": "Automation"
-  },
-  {
-    "type": "module-tier",
-    "from": "CrdtDocument",
-    "to": "ControlSurface"
-  },
-  {
-    "type": "module-tier",
-    "from": "CrdtDocument",
-    "to": "CvGate"
-  },
-  {
-    "type": "module-tier",
-    "from": "CrdtDocument",
-    "to": "Knead"
-  },
-  {
-    "type": "module-tier",
-    "from": "CrdtDocument",
-    "to": "MIDI"
-  },
-  {
-    "type": "module-tier",
-    "from": "CrdtDocument",
-    "to": "Project"
-  },
-  {
-    "type": "module-tier",
-    "from": "CrdtDocument",
-    "to": "Routing"
-  },
-  {
-    "type": "module-tier",
-    "from": "CrdtDocument",
     "to": "Transport"
-  },
-  {
-    "type": "module-tier",
-    "from": "CrdtDocument",
-    "to": "Yeast"
   },
   {
     "type": "module-tier",

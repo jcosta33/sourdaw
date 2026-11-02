@@ -1,6 +1,7 @@
 import { type Doc, change, load, save } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
@@ -116,6 +117,7 @@ describe('AutomergeSync replay authority integration', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         clearCrdtActionHistory();
         setActionHistoryMetadataPort({
             record: recordActionHistoryEntry,

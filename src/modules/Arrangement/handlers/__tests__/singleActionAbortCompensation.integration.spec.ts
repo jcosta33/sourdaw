@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -123,6 +124,7 @@ describe('a single action aborted after it learned its inverse', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         stopProjectionBridge = setupProjectionBridge();
         projectCrdtToStores();
         setArrangementEventBus(new NoopArrangementEventBus());

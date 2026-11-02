@@ -255,6 +255,7 @@ import { prepareOfflineDeviceSetup, captureOfflineDeviceSetup } from './prepareO
 import { projectNativeDeviceState } from './projectNativeDeviceState';
 import { eventBus, logger } from './registerDependencies';
 import { registerGlobalErrorHandlers } from './registerGlobalErrorHandlers';
+import { registerProjectSlotProjections } from './registerProjectSlotProjections';
 
 logCapabilities();
 
@@ -267,6 +268,7 @@ logCapabilities();
 initBranchState();
 
 registerCrdtStorageRuntime();
+registerProjectSlotProjections();
 setElasticSensitivityRootIdentityCapture(captureProjectRootIdentity);
 configureCommandBatchIdempotency({ canExecute: canExecuteCommandBatch });
 setActionHistoryMetadataPort({
@@ -306,9 +308,7 @@ subscribeToPublishedActionHistory({
     onRootReplaced: resetActionReplayAuthority,
 });
 setRuntimeLogger(logger);
-configureCollaborationAssetOwner({
-    captureOwnerId: getDurableProjectOwnerId,
-});
+configureCollaborationAssetOwner({ captureOwnerId: getDurableProjectOwnerId });
 configureDurableAssetCommitProof({
     getDisposition: getVersionedCommandBatchCommitDisposition,
 });

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import {
     configureAutomergeStoragePort,
     findAutomergeStorageRawProjectionLosses,
@@ -180,6 +181,7 @@ describe('Delete Time through a comped MIDI loop pass (#5112)', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         stopProjectionBridge = setupProjectionBridge();
         projectCrdtToStores();
         sessionStorage.removeItem('sourdaw-undo-session');

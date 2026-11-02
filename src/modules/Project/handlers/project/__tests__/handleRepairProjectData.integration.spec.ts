@@ -1,6 +1,7 @@
 import { change, clone, getHeads, load, merge, save, toJS } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
@@ -193,6 +194,7 @@ describe('handleRepairProjectData against a conflicted document', () => {
             vi.fn(() => undefined)
         );
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         agentProjectInspectionPort.setProvider(() => ({
             audioGraphValid: true,
             projectInvariantsValid: true,

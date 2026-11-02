@@ -4,7 +4,7 @@ import { agentProjectRepairStateStore } from '../../stores/agentProjectRepairSta
 import { DOC_PREFIX_ROOT } from '../crdtDocumentTypes';
 import { inspectCurrentAgentProjectRepairState } from '../inspectCurrentAgentProjectRepairState';
 
-import { projectSlotProjections } from './projectSlotProjections';
+import { projectSlotProjectionRegistry } from './projectSlotProjections';
 
 /**
  * Re-project every root slot from the document into its store.
@@ -25,6 +25,7 @@ type ProjectCrdtToStoresInput = {
 };
 
 export function projectCrdtToStores({ resetProjections = false }: ProjectCrdtToStoresInput = {}): void {
+    const projections = projectSlotProjectionRegistry.read('projectCrdtToStores');
     if (resetProjections) {
         resetAutomergeStorageProjections(DOC_PREFIX_ROOT);
     }
@@ -33,7 +34,7 @@ export function projectCrdtToStores({ resetProjections = false }: ProjectCrdtToS
     if (repairState) {
         return;
     }
-    for (const projection of projectSlotProjections) {
+    for (const projection of projections) {
         projection.hydrate({ keepLocalRuntimeState: !resetProjections });
     }
 }

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import {
     configureAutomergeStoragePort,
     resetAutomergeStorageProjections,
@@ -207,6 +208,7 @@ const adjustmentLayerState: AdjustmentLayerState = {
 describe('projectCrdtToStores — mix state slot survival', () => {
     beforeEach(async () => {
         vi.clearAllMocks();
+        registerProjectSlotProjections();
         configureAutomergeStoragePort(null);
         adjustmentLayerStore.set({ layers: [] });
         vcaGroupStore.set({ groups: [] });

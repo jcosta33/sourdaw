@@ -1,6 +1,7 @@
 import { change, clone, merge, type Doc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -103,6 +104,7 @@ describe('projecting the document into the transport store', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         transportStore.set(defaultTransportState);
         midiLearnStore.set(sanitizeMidiLearnState(undefined));
         flushAutomergeStorageWrites();

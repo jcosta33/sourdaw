@@ -1,15 +1,15 @@
 import { change, clone as cloneDoc, getHeads, type Doc, type Heads } from '@automerge/automerge';
 
-import { trackStore } from '#/modules/Arrangement/stores';
-import { midiStore } from '#/modules/MIDI/stores';
-import { projectDrumPreviewCandidateNotes } from '#/modules/MIDI/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { DOC_PREFIX_ROOT } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { branchStore, type BranchRecord } from '../../stores/branchStore';
+import { drumPreviewSourcePort } from '../drumPreviewSourcePort';
 
 type CreateDrumPreviewBranchesAction = Extract<AppAction, { type: 'createDrumPreviewBranches' }>;
+
+type DrumPreviewSourceReader = ReturnType<typeof drumPreviewSourcePort.requireReader>;
 
 type PreparedDrumPreviewBranch = {
     doc: Doc<Record<string, unknown>>;
@@ -81,8 +81,11 @@ function getCandidateActorId(branchId: string): string | null {
     return /^[0-9a-f]{32}$/u.test(actorId) ? actorId : null;
 }
 
-function hasExactSourceClip(snapshot: CreateDrumPreviewBranchesAction['payload']['kick']): boolean {
-    const tracks = trackStore.value?.tracks ?? [];
+function hasExactSourceClip(
+    source: DrumPreviewSourceReader,
+    snapshot: CreateDrumPreviewBranchesAction['payload']['kick']
+): boolean {
+    const tracks = source.readTracks();
     const trackMatches = tracks.filter(({ id }) => id === snapshot.trackId);
     if (trackMatches.length !== 1) {
         return false;
@@ -97,7 +100,7 @@ function hasExactSourceClip(snapshot: CreateDrumPreviewBranchesAction['payload']
         clipMatches[0]!.type !== 'midi' ||
         clipMatches[0]!.name !== snapshot.clipName ||
         clipMatches[0]!.locked !== snapshot.expectedClipLocked ||
-        !snapshotsEqual(midiStore.value?.notesByClipId[snapshot.clipId] ?? [], snapshot.expectedNotes)
+        !snapshotsEqual(source.readMidiState()?.notesByClipId[snapshot.clipId] ?? [], snapshot.expectedNotes)
     ) {
         return false;
     }
@@ -158,11 +161,12 @@ function hasExactDocumentSnapshot(
 }
 
 function buildPreparedBranches(
+    source: DrumPreviewSourceReader,
     action: CreateDrumPreviewBranchesAction,
     sourceDoc: Doc<Record<string, unknown>>
 ): PreparedDrumPreviewBranches | null {
     const { payload } = action;
-    const midiState = midiStore.value;
+    const midiState = source.readMidiState();
     if (!midiState) {
         return null;
     }
@@ -172,7 +176,7 @@ function buildPreparedBranches(
         if (!actorId) {
             return null;
         }
-        const snareNotes = projectDrumPreviewCandidateNotes({
+        const snareNotes = source.projectCandidateNotes({
             branchId: candidate.branchId,
             endBeat: payload.sectionEndBeat,
             notes: payload.snare.expectedNotes,
@@ -180,7 +184,7 @@ function buildPreparedBranches(
             role: 'snare',
             startBeat: payload.sectionStartBeat,
         });
-        const hiHatNotes = projectDrumPreviewCandidateNotes({
+        const hiHatNotes = source.projectCandidateNotes({
             branchId: candidate.branchId,
             endBeat: payload.sectionEndBeat,
             notes: payload.hiHat.expectedNotes,
@@ -227,6 +231,7 @@ function buildPreparedBranches(
 export function prepareDrumPreviewBranches(
     action: CreateDrumPreviewBranchesAction
 ): PreparedDrumPreviewBranches | null {
+    const source = drumPreviewSourcePort.requireReader();
     const { payload } = action;
     const state = branchStore.value;
     const sourceDoc = automergeRepository.getDoc<Record<string, unknown>>(DOC_PREFIX_ROOT);
@@ -246,11 +251,11 @@ export function prepareDrumPreviewBranches(
             payload.candidates.some((candidate) => candidate.branchId === branchId)
         ) ||
         payload.candidates.some(({ rootDocId }) => automergeRepository.hasDoc(rootDocId)) ||
-        !hasExactSourceClip(payload.kick) ||
-        !hasExactSourceClip(payload.snare) ||
-        !hasExactSourceClip(payload.hiHat)
+        !hasExactSourceClip(source, payload.kick) ||
+        !hasExactSourceClip(source, payload.snare) ||
+        !hasExactSourceClip(source, payload.hiHat)
     ) {
         return null;
     }
-    return buildPreparedBranches(action, sourceDoc);
+    return buildPreparedBranches(source, action, sourceDoc);
 }

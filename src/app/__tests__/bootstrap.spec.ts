@@ -162,6 +162,7 @@ const {
     setTrackPanMock,
     setMidiLearnDependenciesMock,
     registerCrdtStorageRuntimeMock,
+    registerProjectSlotProjectionsMock,
     captureProjectRootIdentityMock,
     setElasticSensitivityRootIdentityCaptureMock,
     captureProjectIdentityMock,
@@ -305,6 +306,7 @@ const {
         initLevainDeviceStatePersistenceMock: vi.fn(),
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
+        registerProjectSlotProjectionsMock: vi.fn<() => void>(),
         captureProjectRootIdentityMock: vi.fn<() => string>(() => 'root-identity'),
         setElasticSensitivityRootIdentityCaptureMock: vi.fn(),
         captureProjectIdentityMock: vi.fn<() => string>(() => 'identity-1'),
@@ -795,6 +797,10 @@ vi.mock('../registerGlobalErrorHandlers', () => ({
     registerGlobalErrorHandlers: registerGlobalErrorHandlersMock,
 }));
 
+vi.mock('../registerProjectSlotProjections', () => ({
+    registerProjectSlotProjections: registerProjectSlotProjectionsMock,
+}));
+
 vi.mock('../composeGrandBoule', () => ({
     composeGrandBoule: composeGrandBouleMock,
 }));
@@ -1071,6 +1077,8 @@ describe('bootstrap', () => {
 
     it('wires project runtime validation and event buses in the composition root', () => {
         expect(registerCrdtStorageRuntimeMock).toHaveBeenCalledExactlyOnceWith();
+        expect(registerProjectSlotProjectionsMock).toHaveBeenCalledExactlyOnceWith();
+        expect(registerProjectSlotProjectionsMock).toHaveBeenCalledAfter(registerCrdtStorageRuntimeMock);
         expect(agentProjectInspectionSetProviderMock).toHaveBeenCalledExactlyOnceWith(
             captureAgentProjectInspectionState
         );
