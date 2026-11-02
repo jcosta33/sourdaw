@@ -1,0 +1,23 @@
+scripts/check-dependency-boundaries.mjs
+  s_0314bb17e5dee3::t_ff651150a5b41a 1964
+  s_0314bb17e5dee3::t_1503f8c99995c5 1965
+  s_0314bb17e5dee3::t_9a1885e44521da 1956-1961,2010-2011
+scripts/__tests__/check-dependency-boundaries.spec.ts
+  s_0314bb17e5dee3::t_1f9fd4741f0d32 2005-2057
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d05e3b0b42682fbffaa886ed3134253f524e3dfd",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
