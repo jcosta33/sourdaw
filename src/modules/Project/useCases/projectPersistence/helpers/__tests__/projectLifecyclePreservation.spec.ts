@@ -13,7 +13,7 @@ import { grinderStore, grinderTelemetryStore } from '#/modules/Grinder/stores';
 import { defaultKneadState, kneadStore } from '#/modules/Knead/stores';
 import { levainStore } from '#/modules/Levain/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
-import { defaultPreferences } from '#/modules/Preferences/useCases';
+import { defaultPreferences, updatePreferences } from '#/modules/Preferences/useCases';
 import { proofStore } from '#/modules/Proof/stores';
 import { defaultToasterState, toasterStore } from '#/modules/Toaster/stores';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
@@ -461,6 +461,21 @@ describe('project lifecycle preservation', () => {
         for (const { verify } of expectations) {
             verify();
         }
+    });
+
+    it('seeds the new project transport from non-default Recording preferences', () => {
+        updatePreferences({ patch: { recordCountIn: 2, preRollEnabled: true, preRollBars: 1 } });
+        transportStore.set({ ...defaultTransportState, tempo: 97 });
+
+        resetModuleStoresToDefault();
+
+        expect(transportStore.value).toEqual({
+            ...defaultTransportState,
+            countInEnabled: true,
+            countInBars: 2,
+            preRollEnabled: true,
+            preRollBars: 1,
+        });
     });
 
     it('hands every loaded field to the module that hydrated it before the registry', () => {
