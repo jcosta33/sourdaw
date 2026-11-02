@@ -435,6 +435,23 @@ describe('scheduleAudioClips — comp parts', () => {
         });
     });
 
+    describe('a cut leaves parts it did not replace to the window rules', () => {
+        it('does not join a part outside the cut span at the playhead', () => {
+            const playback = newPlayback();
+            const otherClip = compPart(9.8, 10, 6, { id: 'clip-2', audioBufferId: 'buf-2' });
+            resolvedParts.value = [compPart(8, 9.6, 0), otherClip];
+            runWindow(playback, 8, 8.2, 8);
+
+            // The other clip's buffer finishes decoding in the pass that swaps
+            // the first clip's take. The swapped span is over and what is left
+            // of the other clip lies before the window, so neither sounds.
+            vi.mocked(getCachedAudioBuffer).mockReturnValue({ duration: 20 } as AudioBuffer);
+            resolvedParts.value = [compPart(8, 9.6, 2), otherClip];
+
+            expect(steadyWindow(playback, 9.9)).toEqual([]);
+        });
+    });
+
     describe('a cut that is reversed re-emits the restored part once', () => {
         it('re-emits a part unmuted after a mute cut it', () => {
             const playback = newPlayback();
