@@ -10,7 +10,7 @@ import { scheduleAudioClips } from '../scheduleAudioClips';
 const trackStoreState: { value: { tracks: unknown[] } } = { value: { tracks: [] } };
 const { audioClock, resolvedParts } = vi.hoisted(() => ({
     audioClock: { seconds: 0 },
-    resolvedParts: { value: [] as unknown[] },
+    resolvedParts: { value: [] as unknown[], byTrack: {} as Record<string, unknown[]> },
 }));
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: {
@@ -47,9 +47,10 @@ vi.mock('#/modules/AudioEngine/useCases', () => {
     };
 });
 // The comp programme is the subject's input: each case states the resolved
-// parts directly, exactly as `resolveClipsWithComping` hands them over.
+// parts directly, exactly as `resolveClipsWithComping` hands them over. A case
+// with several tracks names each track's parts in `byTrack`.
 vi.mock('#/modules/Arrangement/useCases', () => ({
-    resolveClipsWithComping: () => resolvedParts.value,
+    resolveClipsWithComping: (trackId: string) => resolvedParts.byTrack[trackId] ?? resolvedParts.value,
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('../scheduleFrozenTrack', () => ({ scheduleFrozenTrack: vi.fn(() => false) }));
@@ -177,6 +178,7 @@ describe('scheduleAudioClips — comp parts', () => {
         sources.length = 0;
         audioClock.seconds = 0;
         disposeAudioClipScheduling();
+        resolvedParts.byTrack = {};
         vi.mocked(createBufferSource).mockImplementation(() => makeFakeSource() as unknown as AudioBufferSourceNode);
         vi.mocked(getCachedAudioBuffer).mockImplementation(({ bufferId }) =>
             bufferId === 'buf-1' ? ({ duration: 20 } as AudioBuffer) : null
@@ -435,18 +437,45 @@ describe('scheduleAudioClips — comp parts', () => {
         });
     });
 
-    describe('a cut leaves parts it did not replace to the window rules', () => {
-        it('does not join a part outside the cut span at the playhead', () => {
+    describe('a cut on one track rejoins its replacement on another', () => {
+        it.each([
+            ['after', ['track-a', 'track-b']],
+            ['before', ['track-b', 'track-a']],
+        ])('rejoins the tail of a clip moved to a track listed %s its old one, near its end', (_order, trackOrder) => {
+            const playback = newPlayback();
+            const trackOf = (id: string) => ({
+                id,
+                kind: 'audio',
+                muted: false,
+                sends: [],
+                clips: [],
+                freezeState: { status: 'active', frozenBufferId: null },
+            });
+            trackStoreState.value = { tracks: trackOrder.map(trackOf) };
+            resolvedParts.byTrack = { 'track-a': [compPart(8, 12, 0)], 'track-b': [] };
+            runWindow(playback, 8, 8.2, 8);
+            const whole = sources[0]!;
+
+            resolvedParts.byTrack = { 'track-a': [], 'track-b': [compPart(8, 12, 0)] };
+            const started = steadyWindow(playback, 11.95);
+
+            expectStoppedAt(whole, 5.975 + 0.005);
+            expect(started).toHaveLength(1);
+            expectStart(started[0], { when: 5.975, offset: 1.975, duration: 0.025 });
+            expect(steadyWindow(playback, 11.98)).toEqual([]);
+        });
+    });
+
+    describe('without a cut the window rules alone decide what joins', () => {
+        it('does not pull a never-emitted part forward to the playhead', () => {
             const playback = newPlayback();
             const otherClip = compPart(9.8, 10, 6, { id: 'clip-2', audioBufferId: 'buf-2' });
             resolvedParts.value = [compPart(8, 9.6, 0), otherClip];
             runWindow(playback, 8, 8.2, 8);
 
-            // The other clip's buffer finishes decoding in the pass that swaps
-            // the first clip's take. The swapped span is over and what is left
-            // of the other clip lies before the window, so neither sounds.
+            // The other clip's buffer finishes decoding in a pass with no edit;
+            // what is left of it lies before the window, so it stays silent.
             vi.mocked(getCachedAudioBuffer).mockReturnValue({ duration: 20 } as AudioBuffer);
-            resolvedParts.value = [compPart(8, 9.6, 2), otherClip];
 
             expect(steadyWindow(playback, 9.9)).toEqual([]);
         });

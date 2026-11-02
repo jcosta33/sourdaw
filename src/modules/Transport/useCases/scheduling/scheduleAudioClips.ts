@@ -68,8 +68,6 @@ type ScheduledPartTag = {
     clipId: string;
     partKey: string;
     scheduledKey: string;
-    startBeat: number;
-    endBeat: number;
 };
 
 type ScheduledPartSource = SourceWithFade & { scheduledPart?: ScheduledPartTag };
@@ -109,8 +107,7 @@ function resolvesSamePart(parts: readonly ResolvedAudioPart[], tag: ScheduledPar
  * the same identity, is cut on the teardown ramp and its key dropped, so this
  * pass schedules what the edit made: a part sounding now rejoins mid-buffer
  * through the late branch, and a future part schedules fresh. Sources of
- * unchanged parts are left alone. Returns the spans it cut, or null when it
- * cut nothing.
+ * unchanged parts are left alone. Returns whether it cut anything.
  */
 function cutSupersededParts(
     trackId: string,
@@ -118,8 +115,8 @@ function cutSupersededParts(
     scheduledAudioClipsSet: Set<string>,
     activeAudioSources: AudioBufferSourceNode[],
     ctx: BaseAudioContext
-): ScheduledPartTag[] | null {
-    let cut: ScheduledPartTag[] | null = null;
+): boolean {
+    let cutAny = false;
     for (let index = activeAudioSources.length - 1; index >= 0; index--) {
         const source: ScheduledPartSource = activeAudioSources[index]!;
         const tag = source.scheduledPart;
@@ -129,24 +126,9 @@ function cutSupersededParts(
         cutSource(source, ctx);
         activeAudioSources.splice(index, 1);
         scheduledAudioClipsSet.delete(tag.scheduledKey);
-        cut ??= [];
-        cut.push(tag);
+        cutAny = true;
     }
-    return cut;
-}
-
-/**
- * A steady-state window opens one look-ahead past the playhead, so a part the
- * cut replaced can still sound between the playhead and the window start,
- * where the window never looks: a replacement ending there, or a looping
- * part's current pass, would stay silent until its end. A part that overlaps
- * a cut span is therefore emitted over a window opening at the playhead, which
- * admits it only if it still sounds there and joins it through the late
- * branch. A window that floors to its own start (a wrap handover or landing)
- * holds nothing before it to rejoin.
- */
-function overlapsCutSpan(part: ResolvedAudioPart, cut: readonly ScheduledPartTag[]): boolean {
-    return cut.some((span) => part.startBeat < span.endBeat && part.endBeat > span.startBeat);
+    return cutAny;
 }
 
 /** One scheduling pass's view of one audio track. */
@@ -298,8 +280,6 @@ function emitAudioPart(
             clipId: clip.id,
             partKey: clipKey,
             scheduledKey: scheduledIterationKey,
-            startBeat: clip.startBeat,
-            endBeat: clip.endBeat,
         };
 
         const remainingBeats = clip.endBeat - iterStartBeat;
@@ -691,6 +671,12 @@ export function scheduleAudioClips(
         (transport.isLooping === true && fromBeat === transport.loopStart) ||
         playheadInWrapHandover;
 
+    // Every track's superseded sources are cut before any track emits. An
+    // edit's replacement need not sit on the track or span it cut — a clip
+    // moved to another track, or nudged — and a dedup key dropped by a later
+    // track's cut would otherwise still read as emitted to an earlier track.
+    const audioTracks: { track: (typeof tracks)[number]; parts: ResolvedAudioPart[] }[] = [];
+    let cutAny = false;
     for (const track of tracks) {
         if (track.kind !== 'audio') {
             continue;
@@ -721,9 +707,25 @@ export function scheduleAudioClips(
             continue;
         }
 
+        const parts = resolveClipsWithComping(track.id, track.clips);
+        cutAny = cutSupersededParts(track.id, parts, scheduledAudioClipsSet, activeAudioSources, ctx) || cutAny;
+        audioTracks.push({ track, parts });
+    }
+
+    // A steady-state window opens one look-ahead past the playhead, so what an
+    // edit put in place of a cut source can still sound between the playhead
+    // and the window start, where the window never looks: a replacement ending
+    // there, or a looping part's current pass, would stay silent until its
+    // end. After a cut, each part is therefore emitted over a window opening
+    // at the playhead, which admits it only if it still sounds there and joins
+    // it through the late branch; the dedup set keeps every part an earlier
+    // pass emitted from starting again. A window that floors to its own start
+    // (a wrap handover or landing) holds nothing before it to rejoin, and a
+    // pass that cut nothing leaves the window rules alone.
+    const rejoinsAtPlayhead = cutAny && !floorsToWindowStart && accumulatedPosition < fromBeat;
+
+    for (const { track, parts: resolvedAudioClips } of audioTracks) {
         const compensation = getCompensationDelay(track.id);
-        const resolvedAudioClips = resolveClipsWithComping(track.id, track.clips);
-        const cut = cutSupersededParts(track.id, resolvedAudioClips, scheduledAudioClipsSet, activeAudioSources, ctx);
 
         // Single source of truth for beat → audio-context time on the timeline.
         // Every timeline quantity — iteration start, iteration length, fade
@@ -747,7 +749,7 @@ export function scheduleAudioClips(
             ctx,
             changes,
             transport,
-            fromBeat,
+            fromBeat: rejoinsAtPlayhead ? accumulatedPosition : fromBeat,
             toBeat,
             floorsToWindowStart,
             initialSchedulingAnchor,
@@ -755,10 +757,6 @@ export function scheduleAudioClips(
             scheduledAudioClipsSet,
             activeAudioSources,
         };
-        const rejoinEmission: TrackAudioEmission | null =
-            cut !== null && !floorsToWindowStart && accumulatedPosition < fromBeat
-                ? { ...emission, fromBeat: accumulatedPosition }
-                : null;
 
         for (const clip of resolvedAudioClips) {
             const bufferId = playableAudioBufferId(clip);
@@ -766,14 +764,12 @@ export function scheduleAudioClips(
                 continue;
             }
             const clipKey = audioPartKey(clip, bufferId);
-            const partEmission =
-                rejoinEmission !== null && cut !== null && overlapsCutSpan(clip, cut) ? rejoinEmission : emission;
-            const outsideWindow = clip.startBeat > toBeat || clip.endBeat < partEmission.fromBeat;
+            const outsideWindow = clip.startBeat > toBeat || clip.endBeat < emission.fromBeat;
             if (scheduledAudioClipsSet.has(clipKey)) {
                 // Emitted by an earlier pass: what continues it may have been
                 // replaced since by an edit this pass's reconciliation cut.
                 if (!outsideWindow) {
-                    emitContinuingParts(partEmission, resolvedAudioClips, clip, windowTiming);
+                    emitContinuingParts(emission, resolvedAudioClips, clip, windowTiming);
                 }
                 continue;
             }
@@ -805,9 +801,9 @@ export function scheduleAudioClips(
                 continue;
             }
 
-            const continuation = emitAudioPart(partEmission, clip, clipKey, buffer, windowTiming, 'window');
+            const continuation = emitAudioPart(emission, clip, clipKey, buffer, windowTiming, 'window');
             if (continuation) {
-                emitContinuingParts(partEmission, resolvedAudioClips, clip, continuation);
+                emitContinuingParts(emission, resolvedAudioClips, clip, continuation);
             }
         }
     }
