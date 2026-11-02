@@ -645,6 +645,22 @@ module.exports = {
             },
         },
 
+        {
+            name: 'engine-no-own-application-layers',
+            severity: 'error',
+            comment:
+                "engine/ is the runtime layer below its own module's use cases: it must not import that module's " +
+                'useCases/, handlers/, or repositories/. Whoever builds an engine object passes those collaborators in ' +
+                "(constructor deps, factory options, or a composition-root port). Foreign modules' contract barrels " +
+                'remain governed by cross-module-index-only.',
+            from: {
+                path: '^src/modules/([^/]+)/engine/.+' + SOURCE_FILE_RE,
+            },
+            to: {
+                path: '^src/modules/$1/(useCases|handlers|repositories)/.+' + SOURCE_FILE_RE,
+            },
+        },
+
         // --------------------------------------------------------------------
         // React confinement
         // --------------------------------------------------------------------

@@ -4,9 +4,6 @@ import { hasSharedArrayBuffer } from '#/utils/capabilities';
 import { runAllEffects } from '#/utils/runEffects';
 
 import { SIDECHAIN_COMPRESSOR_WORKLET_OPTIONS } from '../models/BuiltinDeviceRuntime';
-import { captureDeviceParameterRuntimeWriteReceipt } from '../useCases/deviceControls/captureDeviceParameterRuntimeWriteReceipt';
-import { applyParams } from '../useCases/deviceResolvers/applyParams';
-import { createBuiltinDeviceNode } from '../useCases/deviceResolvers/createBuiltinDeviceNode';
 
 import { getAudioDeviceRuntimeSink } from './audioDeviceRuntimeSink';
 import { createHostedPluginControls, type HostedPluginControls } from './hostedPluginControls';
@@ -18,6 +15,8 @@ import type {
     DeviceReadinessToken,
 } from './deviceReadinessDiagnostics';
 import type { TrackChannelStrip, BuiltinDeviceNode, DeviceController, SendNode } from '../models/AudioEngineState';
+import type { DeviceParameterWriteReceipt, EngineDeviceCollaborators } from '../models/EngineDeviceCollaborators';
+import type { OfflineDeviceNode } from '../models/OfflineDeviceNode';
 import type { RuntimeGraphDeviceChainDelta } from '../models/RuntimeGraphDelta';
 
 /**
@@ -122,6 +121,8 @@ export type TrackNodeDeps = {
     getSendsForTrack: (tId: string) => SendNode[];
     pendingDevicePromises: Set<Promise<unknown>>;
     readinessDiagnostics: ReturnType<typeof createDeviceReadinessDiagnostics>;
+    /** Device construction, parameter-write receipts and reported latency, supplied by the engine's owner. */
+    collaborators: EngineDeviceCollaborators;
     transportSAB?: SharedArrayBuffer;
     /** Adjustment-layer insert: when non-null for this track, `analyserNode`
      *  routes to this node instead of the track's default destination. */
@@ -178,7 +179,7 @@ type PendingParameterWrite =
           kind: 'immediate';
           name: string;
           value: number;
-          receipt: ReturnType<typeof captureDeviceParameterRuntimeWriteReceipt>;
+          receipt: DeviceParameterWriteReceipt;
       }>
     | Readonly<{ kind: 'scheduled'; name: string; value: number; sampleFrame: number }>;
 
@@ -187,7 +188,7 @@ type PendingDeviceLoad = {
     bypassed?: boolean;
     parameterIds: readonly string[];
     parameterWrites: PendingParameterWrite[];
-    parameterReceipts: Map<string, ReturnType<typeof captureDeviceParameterRuntimeWriteReceipt>>;
+    parameterReceipts: Map<string, DeviceParameterWriteReceipt>;
     loadPromise?: Promise<unknown>;
     placeholder?: BuiltinDeviceNode;
     readinessToken: DeviceReadinessToken;
@@ -791,7 +792,7 @@ export class TrackNode {
                     pendingLoad.parameterWrites.push(Object.freeze({ kind: 'scheduled', name, value, sampleFrame }));
                     return;
                 }
-                const receipt = captureDeviceParameterRuntimeWriteReceipt(this.trackId, deviceId, name);
+                const receipt = this.deps.collaborators.captureParameterWriteReceipt(this.trackId, deviceId, name);
                 receipt.pending();
                 const previous = pendingLoad.parameterWrites.at(-1);
                 if (previous?.kind === 'immediate' && previous.name === name) {
@@ -1214,9 +1215,9 @@ export class TrackNode {
                 dispose: hostedControls.destroy,
             };
         } else {
-            let factoryNode: ReturnType<typeof createBuiltinDeviceNode>;
+            let factoryNode: OfflineDeviceNode | null;
             try {
-                factoryNode = createBuiltinDeviceNode({ context, deviceType });
+                factoryNode = this.deps.collaborators.createBuiltinDeviceNode({ context, deviceType });
             } catch (error) {
                 this.failDeviceConstruction(readinessToken, error);
             }
@@ -1231,7 +1232,8 @@ export class TrackNode {
                     dispose: factoryNode.dispose,
                 };
                 dn.controller = {
-                    setParam: (name: string, value: number) => applyParams(factoryNode, dn.type, { [name]: value }),
+                    setParam: (name: string, value: number) =>
+                        this.deps.collaborators.applyParams(factoryNode, dn.type, { [name]: value }),
                     setBypass: (bypassed: boolean) => {
                         dn!.bypassed = bypassed;
                         this.scheduleRebuildChain();
@@ -1265,6 +1267,7 @@ export class TrackNode {
                         deviceType,
                         parameterIds: pendingLoad.parameterIds,
                         transportSAB: this.deps.transportSAB,
+                        collaborators: this.deps.collaborators,
                         isCurrent: () => this._pendingDeviceLoads.get(deviceId) === pendingLoad && !this._disposed,
                         signal: pendingLoad.abortController.signal,
                         onLoaded: (finalDn) => this.completePendingDeviceLoad(deviceId, pendingLoad, finalDn),
@@ -1511,7 +1514,7 @@ export class TrackNode {
         if (!dn || !dn.controller) {
             return;
         }
-        const receipt = captureDeviceParameterRuntimeWriteReceipt(this.trackId, deviceId, paramId);
+        const receipt = this.deps.collaborators.captureParameterWriteReceipt(this.trackId, deviceId, paramId);
         const complete = receipt.begin();
         dn.controller.setParam(paramId, value);
         const pendingLoad = this._pendingDeviceLoads.get(deviceId);

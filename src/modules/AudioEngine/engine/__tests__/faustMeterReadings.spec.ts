@@ -21,6 +21,7 @@ import { registerBuiltinFaustDSP } from '#/modules/PluginHost/useCases';
 
 import { type BuiltinDeviceNode } from '../../models/AudioEngineState';
 import { getFaustMeterReading } from '../../useCases/engineAccess/getFaustMeterReading';
+import { engineDeviceCollaborators } from '../../useCases/engineDeviceCollaborators';
 import { clearFaustMeterReadings } from '../faustMeterReadings';
 import { findWasmDescriptor } from '../wasmDeviceRegistry';
 
@@ -80,6 +81,7 @@ async function createFaustDevice(deviceId: string, onLoaded: OnLoadedMock = vi.f
     }
     const { loadPromise } = descriptor.create({
         context: createMockAudioContext() as unknown as AudioContext,
+        collaborators: engineDeviceCollaborators,
         deviceId,
         deviceType: DEVICE_TYPE,
         onLoaded,

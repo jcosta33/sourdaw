@@ -45,6 +45,7 @@ const TYPE_ONLY_RULE_NAMES = new Set([
     'workers-no-module-runtime-imports',
     'module-runtime-no-worker-imports',
     'workers-no-app-helper-or-desktop-ipc',
+    'engine-no-own-application-layers',
     'react-only-in-presentation',
     'react-dom-only-in-presentation',
     'desktop-ipc-only-in-repositories',

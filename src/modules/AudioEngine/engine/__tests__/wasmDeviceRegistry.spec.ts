@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMockAudioContext, createMockAudioNode } from '#/helpers/__tests__/audioContext.mock';
 
 import { type BuiltinDeviceNode } from '../../models/AudioEngineState';
+import { engineDeviceCollaborators } from '../../useCases/engineDeviceCollaborators';
 import { externalLatencyRegistry } from '../../useCases/latencyCompensation/compensation/externalLatencyRegistry';
 import { setAudioDeviceRuntimeSink } from '../audioDeviceRuntimeSink';
 import { type BacteriaNodeResult } from '../BacteriaNode';
@@ -137,6 +138,7 @@ describe('findWasmDescriptor', () => {
         }
         const { placeholder, loadPromise } = descriptor.create({
             context: createRegistryAudioContext(),
+            collaborators: engineDeviceCollaborators,
             deviceId: 'proof-replay',
             deviceType: 'proof',
             onLoaded: vi.fn(),
@@ -178,6 +180,7 @@ describe('findWasmDescriptor', () => {
 
         const { placeholder, loadPromise } = desc.create({
             context: createRegistryAudioContext(),
+            collaborators: engineDeviceCollaborators,
             deviceId: 'proof-1',
             deviceType: 'proof',
             onLoaded: vi.fn(),
@@ -215,6 +218,7 @@ describe('findWasmDescriptor', () => {
 
         const { placeholder, loadPromise } = desc.create({
             context: createRegistryAudioContext(),
+            collaborators: engineDeviceCollaborators,
             deviceId: 'proof-1',
             deviceType: 'proof',
             onLoaded,
@@ -258,6 +262,7 @@ describe('findWasmDescriptor', () => {
 
         const { placeholder, loadPromise } = desc.create({
             context: createRegistryAudioContext(),
+            collaborators: engineDeviceCollaborators,
             deviceId: 'proof-1',
             deviceType: 'proof',
             onLoaded,
@@ -294,6 +299,7 @@ describe('findWasmDescriptor', () => {
 
         const { loadPromise } = desc.create({
             context: createRegistryAudioContext(),
+            collaborators: engineDeviceCollaborators,
             deviceId: 'proof-1',
             deviceType: 'proof',
             onLoaded: vi.fn(),
@@ -319,6 +325,7 @@ describe('findWasmDescriptor', () => {
 
         const { loadPromise } = desc.create({
             context: createRegistryAudioContext(),
+            collaborators: engineDeviceCollaborators,
             deviceId: 'ferm-1',
             deviceType: 'fermenter',
             onLoaded,
@@ -348,6 +355,7 @@ describe('findWasmDescriptor', () => {
 
         const { loadPromise } = desc.create({
             context: createRegistryAudioContext(),
+            collaborators: engineDeviceCollaborators,
             deviceId: 'grinder-1',
             deviceType: 'grinder',
             onLoaded,
@@ -380,6 +388,7 @@ describe('findWasmDescriptor', () => {
 
         const { loadPromise } = desc.create({
             context: createRegistryAudioContext(),
+            collaborators: engineDeviceCollaborators,
             deviceId: 'bacteria-1',
             deviceType: 'bacteria',
             onLoaded,
