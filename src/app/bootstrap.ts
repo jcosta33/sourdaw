@@ -28,7 +28,6 @@ import {
     persistDevicePatch,
     quantiseDeviceParameterValue,
     cleanupUnusedFreezeFiles,
-    runtimeGraphTopology,
     setTrackGain as setTrackGainArrangement,
     setTrackPan as setTrackPanArrangement,
     setDeviceParameter,
@@ -65,8 +64,6 @@ import {
     configureOfflineMidiEventProjection,
     configureOfflinePpqEndpointProjection,
     configureOfflineYeastMidiProcessing,
-    configureRuntimeGraphProjectRevisionValidator,
-    configureRuntimeGraphTopologyValidator,
     recordNativeChainReleases,
     isTunerTelemetryNativelyOwned,
     startMainThreadLongTaskObservation,
@@ -241,6 +238,7 @@ import {
     captureCommandBatchPreflightState,
 } from './captureCommandBatchPreflightState';
 import { composeGrandBoule } from './composeGrandBoule';
+import { configureAudioEngineRuntime } from './configureAudioEngineRuntime';
 import { getAgentProtocolManifest } from './getAgentProtocolManifest';
 import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMaps';
 import { initAudioBufferCacheAccess } from './initAudioBufferCacheAccess';
@@ -279,10 +277,7 @@ sessionUndoWitnessStampPort.setProvider(stampSessionUndoWitness);
 productionBriefAdmissionPort.setGuard(productionBriefActionBatchAdmission.capture);
 commandProjectRevisionPort.setProvider(captureProjectRevision);
 commandProjectRevisionPort.setLiveMatchIgnoringCommandCheckpoint(projectRevisionMatchesLiveIgnoringCommandCheckpoint);
-configureRuntimeGraphProjectRevisionValidator(
-    (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
-);
-configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
+configureAudioEngineRuntime();
 commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
 // AiRuntime publishes the capability catalog and imports Project, so capability
 // discovery reaches it through the port the composition root registers.

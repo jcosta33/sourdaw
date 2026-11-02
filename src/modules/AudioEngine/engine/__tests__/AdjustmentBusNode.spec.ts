@@ -8,6 +8,7 @@ import {
     createMockAudioNode,
 } from '../../../../helpers/__tests__/audioContext.mock';
 import { applyReverbParams } from '../../repositories/devices/reverbDelay/applyReverbParams';
+import { engineDeviceCollaborators } from '../../useCases/engineDeviceCollaborators';
 import { ADJUSTMENT_PARAM_MAP, AdjustmentBusNode } from '../AdjustmentBusNode';
 
 import type { OfflineDeviceNode } from '../../repositories/devices/types';
@@ -25,6 +26,7 @@ describe('AdjustmentBusNode', () => {
             context: asBaseAudioContext(ctx),
             effectType: 'eq',
             parameters: { 'High Gain': 6 },
+            builtinDevices: engineDeviceCollaborators,
         });
 
         expect(bus.inputNode).toBeDefined();
@@ -37,6 +39,7 @@ describe('AdjustmentBusNode', () => {
             context: asBaseAudioContext(ctx),
             effectType: 'eq',
             parameters: {},
+            builtinDevices: engineDeviceCollaborators,
         });
         const source = createMockAudioNode('gain');
         const audioSource = asAudioNode(source);
@@ -51,6 +54,7 @@ describe('AdjustmentBusNode', () => {
             context: asBaseAudioContext(ctx),
             effectType: 'eq',
             parameters: {},
+            builtinDevices: engineDeviceCollaborators,
         });
         const dest = createMockAudioNode('gain');
 
@@ -63,6 +67,7 @@ describe('AdjustmentBusNode', () => {
             context: asBaseAudioContext(ctx),
             effectType: 'eq',
             parameters: {},
+            builtinDevices: engineDeviceCollaborators,
         });
 
         bus.setBlend(0.7);
@@ -86,6 +91,7 @@ describe('AdjustmentBusNode', () => {
             context: asBaseAudioContext(ctx),
             effectType: 'pan',
             parameters: { Pan: 50 },
+            builtinDevices: engineDeviceCollaborators,
         });
 
         expect(ctx.createStereoPanner).toHaveBeenCalled();
@@ -101,6 +107,7 @@ describe('AdjustmentBusNode', () => {
             context: asBaseAudioContext(ctx),
             effectType: 'volume',
             parameters: { Gain: -6 },
+            builtinDevices: engineDeviceCollaborators,
         });
 
         const gainNodes = vi.mocked(ctx.createGain).mock.results.map((result) => result.value);
@@ -121,6 +128,7 @@ describe('AdjustmentBusNode', () => {
             context: asBaseAudioContext(ctx),
             effectType: 'eq',
             parameters: {},
+            builtinDevices: engineDeviceCollaborators,
         });
         const source = createMockAudioNode('gain');
         const dest = createMockAudioNode('gain');
@@ -180,6 +188,7 @@ describe('AdjustmentBusNode', () => {
             context: asBaseAudioContext(ctx),
             effectType: 'eq',
             parameters: {},
+            builtinDevices: engineDeviceCollaborators,
         });
         bus.dispose();
 
@@ -199,7 +208,12 @@ describe('AdjustmentBusNode param conversion & lifecycle', () => {
     });
 
     function eqBus(parameters: Record<string, number> = {}): AdjustmentBusNode {
-        return new AdjustmentBusNode({ context: asBaseAudioContext(ctx), effectType: 'eq', parameters });
+        return new AdjustmentBusNode({
+            context: asBaseAudioContext(ctx),
+            effectType: 'eq',
+            parameters,
+            builtinDevices: engineDeviceCollaborators,
+        });
     }
 
     it('connectSource is idempotent (a second connect of the same source is a no-op)', () => {
@@ -298,6 +312,7 @@ describe('AdjustmentBusNode param conversion & lifecycle', () => {
             context: asBaseAudioContext(ctx),
             effectType: 'reverb',
             parameters: { Size: 80 },
+            builtinDevices: engineDeviceCollaborators,
         });
         expect(reverb.inputNode).toBeDefined();
         // saturation Tone: 200 + (value/100)*19800.
@@ -305,6 +320,7 @@ describe('AdjustmentBusNode param conversion & lifecycle', () => {
             context: asBaseAudioContext(ctx),
             effectType: 'saturation',
             parameters: { Tone: 50 },
+            builtinDevices: engineDeviceCollaborators,
         });
         expect(sat.inputNode).toBeDefined();
         // stereo-width Width: value/100.
@@ -312,6 +328,7 @@ describe('AdjustmentBusNode param conversion & lifecycle', () => {
             context: asBaseAudioContext(ctx),
             effectType: 'stereo-width',
             parameters: { Width: 60 },
+            builtinDevices: engineDeviceCollaborators,
         });
         expect(width.inputNode).toBeDefined();
     });
@@ -321,6 +338,7 @@ describe('AdjustmentBusNode param conversion & lifecycle', () => {
             context: asBaseAudioContext(ctx),
             effectType: 'pan',
             parameters: { Pan: 10 },
+            builtinDevices: engineDeviceCollaborators,
         });
         const panner = vi.mocked(ctx.createStereoPanner).mock.results.at(-1)!.value;
         bus.dispose();
@@ -335,7 +353,12 @@ describe('AdjustmentBusNode param conversion & lifecycle', () => {
     });
 
     it('pan effect builds a direct wet chain (no device node)', () => {
-        const bus = new AdjustmentBusNode({ context: asBaseAudioContext(ctx), effectType: 'pan', parameters: {} });
+        const bus = new AdjustmentBusNode({
+            context: asBaseAudioContext(ctx),
+            effectType: 'pan',
+            parameters: {},
+            builtinDevices: engineDeviceCollaborators,
+        });
         // pan maps to deviceType null → deviceNode null, panNode present.
         expect(bus.inputNode).toBeDefined();
         expect(ctx.createStereoPanner).toHaveBeenCalled();

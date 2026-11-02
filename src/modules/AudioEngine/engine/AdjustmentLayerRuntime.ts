@@ -3,6 +3,8 @@ import { runAllEffects } from '#/utils/runEffects';
 
 import { AdjustmentBusNode } from './AdjustmentBusNode';
 
+import type { BuiltinDeviceNodeFactory } from '../models/EngineDeviceCollaborators';
+
 type RegionKey = string;
 
 type LiveBus = {
@@ -29,6 +31,7 @@ export type TrackRerouteDeps = {
     rerouteTrack: (trackId: string) => void;
     getTrackDefaultDestination: (trackId: string) => AudioNode | null;
     getContext: () => BaseAudioContext | null;
+    builtinDevices: BuiltinDeviceNodeFactory;
 };
 
 type ApplyInput = {
@@ -115,6 +118,7 @@ export function createAdjustmentLayerRuntime(deps: TrackRerouteDeps): Adjustment
             context: ctx,
             effectType: input.effectType,
             parameters: input.parameters,
+            builtinDevices: deps.builtinDevices,
         });
         bus.setBlend(input.blend);
         return {

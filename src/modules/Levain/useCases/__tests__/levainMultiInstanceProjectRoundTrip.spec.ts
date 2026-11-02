@@ -39,7 +39,7 @@ import { createControlledLockManager } from '#/infra/testing/createControlledLoc
 import { installTransactionalIndexedDb } from '#/infra/testing/installTransactionalIndexedDb';
 import { persistDeviceParam, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
-import { audioEngine } from '#/modules/AudioEngine/useCases';
+import { audioEngine, initEngineDeviceCollaborators } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, resetActionReplayAuthority } from '#/modules/Command/useCases';
 import { registerCrdtStorageRuntime, removeCrdtDoc, resetCrdtProjectAuthority } from '#/modules/CrdtDocument/useCases';
@@ -77,6 +77,7 @@ describe('two Levain patches across a named-project reopen', () => {
 
     beforeEach(async () => {
         audioEngine.resetGraph();
+        initEngineDeviceCollaborators();
         vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         frameCallbacks = [];
         vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
@@ -111,6 +112,7 @@ describe('two Levain patches across a named-project reopen', () => {
 
     afterEach(async () => {
         audioEngine.resetGraph();
+        audioEngine.setUseCaseDeviceCollaborators(null);
         stopPersistence?.();
         configureLevainDeviceStateProjectAccess(null);
         clearUndoHistory();

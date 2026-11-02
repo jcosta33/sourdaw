@@ -9,6 +9,7 @@ import {
 } from '../../stores/deviceParameterRuntimeWriteOwners';
 import { captureDeviceParameterRuntimeWriteAuthority } from '../../useCases/deviceControls/captureDeviceParameterRuntimeWriteAuthority';
 import { withDeviceParameterRuntimeWriteOwner } from '../../useCases/deviceControls/withDeviceParameterRuntimeWriteOwner';
+import { engineDeviceCollaborators } from '../../useCases/engineDeviceCollaborators';
 import { createDeviceReadinessDiagnostics, type DeviceContentLoadOutcome } from '../deviceReadinessDiagnostics';
 import { RuntimeGraphMutationFailure, TrackNode, type TrackNodeDeps } from '../TrackNode';
 
@@ -84,6 +85,7 @@ function makeDeps(ctx: MockContext, overrides?: Partial<TrackNodeDeps>): TrackNo
         getSendsForTrack: vi.fn(() => []),
         pendingDevicePromises: new Set(),
         readinessDiagnostics: createDeviceReadinessDiagnostics(),
+        collaborators: engineDeviceCollaborators,
         ...overrides,
     };
 }

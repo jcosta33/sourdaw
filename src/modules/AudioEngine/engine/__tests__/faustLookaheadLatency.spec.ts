@@ -20,6 +20,7 @@ import { asAudioNode, createMockAudioContext, createMockAudioNode } from '#/help
 import { trackStore } from '#/modules/Arrangement/stores';
 import { getFaustModuleLatencyMs, registerBuiltinFaustDSP } from '#/modules/PluginHost/useCases';
 
+import { engineDeviceCollaborators } from '../../useCases/engineDeviceCollaborators';
 import { externalLatencyRegistry } from '../../useCases/latencyCompensation/compensation/externalLatencyRegistry';
 import { getCompensationDelay } from '../../useCases/latencyCompensation/compensation/getCompensationDelay';
 import { getTrackLatency } from '../../useCases/latencyCompensation/compensation/getTrackLatency';
@@ -69,6 +70,7 @@ async function createFaustDevice(deviceId: string, deviceType: string): Promise<
     }
     const { loadPromise } = descriptor.create({
         context: createMockAudioContext() as unknown as AudioContext,
+        collaborators: engineDeviceCollaborators,
         deviceId,
         deviceType,
         onLoaded: vi.fn(),

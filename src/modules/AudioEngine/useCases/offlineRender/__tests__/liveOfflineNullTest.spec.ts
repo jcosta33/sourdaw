@@ -180,6 +180,7 @@ import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nat
 import { nativeTimelineMaterialLeases } from '../../../repositories/nativeGraph/nativeTimelineMaterialLeases';
 import { type NativeGraphWireBatch } from '../../../repositories/nativeGraph/serializeAudioGraphCommand';
 import { importWorkletProcessor } from '../../../testing/importWorkletProcessor';
+import { engineDeviceCollaborators } from '../../engineDeviceCollaborators';
 
 import {
     createFixtureAudioBuffer,
@@ -374,6 +375,7 @@ async function renderLive(fixture: TrackFixture, options: RenderOptions = {}): P
         getSendsForTrack: () => [],
         pendingDevicePromises: new Set<Promise<unknown>>(),
         readinessDiagnostics: createDeviceReadinessDiagnostics(),
+        collaborators: engineDeviceCollaborators,
     });
 
     for (const entry of fixture.devices) {

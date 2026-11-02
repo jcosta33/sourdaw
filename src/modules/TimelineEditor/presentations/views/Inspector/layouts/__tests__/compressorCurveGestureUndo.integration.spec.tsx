@@ -12,7 +12,12 @@ import { useStore } from '#/infra/store/useStore';
 import { installTransactionalIndexedDb } from '#/infra/testing/installTransactionalIndexedDb';
 import { type Device, type Track, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack, getPluginById, setDeviceParameter } from '#/modules/Arrangement/useCases';
-import { audioEngine, getAudioContext, updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import {
+    audioEngine,
+    getAudioContext,
+    initEngineDeviceCollaborators,
+    updateDeviceParam,
+} from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import * as automationUseCases from '#/modules/Automation/useCases';
 import { setAutomationRecordingDependencies, stopAutomationRecording } from '#/modules/Automation/useCases';
@@ -332,6 +337,7 @@ describe('actual registered Compressor curve through real project and history', 
         vi.clearAllMocks();
         engineWrites.length = 0;
         Object.assign(audioEngine.context, createMockAudioContext());
+        initEngineDeviceCollaborators();
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('Compressor canvas gesture');
         removeCrdtDoc('root');
@@ -375,6 +381,7 @@ describe('actual registered Compressor curve through real project and history', 
             clear: () => undefined,
         });
         sessionUndoWitnessStampPort.setProvider(null);
+        audioEngine.setUseCaseDeviceCollaborators(null);
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         automationStore.set({ lanes: [] });
         agentProjectRepairStateStore.set(null);
