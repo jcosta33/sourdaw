@@ -1,0 +1,19 @@
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useAppInitialization.spec.ts
+  s_85a05dfedd115e::t_bd75ccfd9cab99 5,102-107,130,141-143,145-147,150,153,155
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "82cf3604b8dfa60d907a331dbbbaf2c40aa6e5db",
+  "prompts": {},
+  "sessions": {
+    "s_85a05dfedd115e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_85a05dfedd115e",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
