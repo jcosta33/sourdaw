@@ -57,13 +57,15 @@ type CreateEnvelopeInput = Parameters<typeof createVersionedCommandEnvelope>[0];
 const projectionMocks = vi.hoisted(() => ({ hydrate: vi.fn() }));
 
 vi.mock('../projection/projectSlotProjections', () => ({
-    projectSlotProjections: [
-        {
-            hydrate: projectionMocks.hydrate,
-            slot: 'targets',
-            triggerSlots: ['targets'],
-        },
-    ],
+    projectSlotProjectionRegistry: {
+        read: () => [
+            {
+                hydrate: projectionMocks.hydrate,
+                slot: 'targets',
+                triggerSlots: ['targets'],
+            },
+        ],
+    },
 }));
 
 type TargetState = {

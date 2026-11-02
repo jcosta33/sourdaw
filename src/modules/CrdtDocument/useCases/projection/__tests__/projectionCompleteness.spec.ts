@@ -1,9 +1,15 @@
 import { afterEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 
 import { projectCrdtToStores } from '../projectProjection';
-import { projectSlotProjections } from '../projectSlotProjections';
+import { projectSlotProjectionRegistry } from '../projectSlotProjections';
+
+// The registry as production composes it: the kernel's own slots plus every
+// domain slot the composition root registers at boot.
+registerProjectSlotProjections();
+const projectSlotProjections = projectSlotProjectionRegistry.read('projectionCompleteness.spec');
 
 // Class guard for audit CC-4, kept honest for audit CC-1/CC-2.
 //
@@ -15,8 +21,9 @@ import { projectSlotProjections } from '../projectSlotProjections';
 //   2. Every registry entry is actually dispatched by the real projection, and
 //      lands on the store that owns the slot.
 //
-// The owner map is no longer maintained here: `projectSlotProjections` in
-// production is the single source, so the two lists cannot drift apart.
+// The owner map is no longer maintained here: the registry production composes
+// (`#/app/registerProjectSlotProjections`) is the single source, so the two
+// lists cannot drift apart.
 
 /**
  * Matches every construction form in use, including the generic ones

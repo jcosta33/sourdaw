@@ -29,6 +29,7 @@ async function openProject(
     const { defaultProjectStoreState, projectStore } = await import('#/modules/Project/stores');
     const { automergeRepository: repository } = await import('../../../repositories/automergeRepository');
     const { registerCrdtStorageRuntime } = await import('../../registerCrdtStorageRuntime');
+    const { registerProjectSlotProjections } = await import('#/app/registerProjectSlotProjections');
     const { createCommandPreviewWorkspace } = await import('../../createCommandPreviewWorkspace');
     const { captureProjectRevision } = await import('../../captureProjectRevision');
     const { setupProjectionBridge } = await import('../setupProjectionBridge');
@@ -53,6 +54,7 @@ async function openProject(
 
     repository.createProject('project');
     registerCrdtStorageRuntime();
+    registerProjectSlotProjections();
     projectStore.set({ ...defaultProjectStoreState, name: BEFORE });
     storage.flushAutomergeStorageWrites();
     unsubscribe = setupProjectionBridge();

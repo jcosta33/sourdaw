@@ -3,6 +3,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
 import { logger } from '#/infra/logger/appLogger';
 import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
@@ -331,6 +332,7 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         branchStore.set({
             branches: [

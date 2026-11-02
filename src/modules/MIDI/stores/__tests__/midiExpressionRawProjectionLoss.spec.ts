@@ -1,6 +1,7 @@
 import { from } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import {
     configureAutomergeStoragePort,
     findAutomergeStorageRawProjectionLosses,
@@ -46,6 +47,7 @@ describe('note expression read from the raw project document (#5972)', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         stopProjectionBridge = setupProjectionBridge();
         projectCrdtToStores();
     });

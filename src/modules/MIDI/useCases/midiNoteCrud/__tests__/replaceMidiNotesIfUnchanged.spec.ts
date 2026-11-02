@@ -1,6 +1,7 @@
 import { clone, merge } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -92,6 +93,7 @@ beforeEach(() => {
     removeCrdtDoc('root');
     createCrdtDoc('root');
     registerCrdtStorageRuntime();
+    registerProjectSlotProjections();
     clearUndoHistory();
     midiStore.set({
         notesByClipId: {

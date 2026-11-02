@@ -1,6 +1,7 @@
 import * as Automerge from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { Container } from '#/infra/di/Container';
 import {
     configureAutomergeStoragePort,
@@ -109,6 +110,7 @@ describe('audio slip exact source session replay', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         sessionStorage.removeItem(sessionKey);
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         tempoMapStore.set({ changes: [] });

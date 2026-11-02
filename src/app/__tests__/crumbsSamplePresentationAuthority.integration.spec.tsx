@@ -29,6 +29,7 @@ import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores
 
 import { createCrumbsSampleProjectAccess } from '../createCrumbsSampleProjectAccess';
 import { initDeviceStateReconciliation } from '../initDeviceStateReconciliation';
+import { registerProjectSlotProjections } from '../registerProjectSlotProjections';
 
 const native = vi.hoisted(() => ({
     invoke: vi.fn<SourdawDesktopBridge['invoke']>(() => Promise.resolve(undefined)),
@@ -232,6 +233,7 @@ beforeEach(async () => {
     removeCrdtDoc('root');
     createCrdtDoc('root');
     registerCrdtStorageRuntime();
+    registerProjectSlotProjections();
     clearHandlerRegistry();
     registerHandlerMap(getArrangementHandlers());
     projectStore.set({ ...defaultProjectStoreState, loading: false, createdAt: 100, updatedAt: 100 });

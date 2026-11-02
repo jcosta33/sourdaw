@@ -2,6 +2,7 @@ import { clone } from '@automerge/automerge';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { useStore } from '#/infra/store/useStore';
@@ -219,6 +220,7 @@ describe('Inspector VCA gestures through production Command and committed gain',
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         command.clearUndoHistory();

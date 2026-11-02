@@ -1,6 +1,7 @@
 import * as Automerge from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
 import {
@@ -150,6 +151,7 @@ describe('ordered tempo and audio split source preparation', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         clearHandlerRegistry();
         clearUndoHistory();
         sessionStorage.removeItem('sourdaw-undo-session');
@@ -677,6 +679,7 @@ describe('ordered tempo and audio split source preparation', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         clearUndoHistory();
         transportStore.set({ ...defaultTransportState, tempo: 120 });
         tempoMapStore.set({ changes: [] });

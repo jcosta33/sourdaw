@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -50,6 +51,7 @@ describe('branch switch projects the incoming branch transport', () => {
         vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         automergeRepository.createProject('branch transport projection test');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         resetAutomergeStorageProjections(DOC_PREFIX_ROOT);
         transportStore.set(defaultTransportState);
         flushAutomergeStorageWrites();

@@ -1,4 +1,4 @@
-import { projectSlotProjections } from './projectSlotProjections';
+import { projectSlotProjectionRegistry } from './projectSlotProjections';
 
 type ProjectChangedCrdtSlotsInput = {
     /** Document slot keys the change touched. */
@@ -21,12 +21,13 @@ type ProjectChangedCrdtSlotsInput = {
  * project rather than to the edit (audit CC-1).
  */
 export function projectChangedCrdtSlots({ changedSlots, origin }: ProjectChangedCrdtSlotsInput): void {
+    const projections = projectSlotProjectionRegistry.read('projectChangedCrdtSlots');
     if (changedSlots.length === 0) {
         return;
     }
 
     const changed = new Set(changedSlots);
-    for (const projection of projectSlotProjections) {
+    for (const projection of projections) {
         const hasTrigger = projection.triggerSlots.some((trigger) => {
             if (origin === 'local-store' && trigger === projection.slot) {
                 return false;

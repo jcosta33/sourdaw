@@ -1,6 +1,7 @@
 import { change, init } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import {
     configureAutomergeStoragePort,
     findAutomergeStorageRawProjectionLosses,
@@ -13,7 +14,10 @@ import { yeastStore } from '#/modules/Yeast/stores';
 
 import { projectChangedCrdtSlots } from '../projectChangedCrdtSlots';
 import { projectCrdtToStores } from '../projectProjection';
-import { projectSlotProjections } from '../projectSlotProjections';
+import { projectSlotProjectionRegistry } from '../projectSlotProjections';
+
+registerProjectSlotProjections();
+const projectSlotProjections = projectSlotProjectionRegistry.read('projectionIsReadOnly.spec');
 
 /**
  * Class guard for audit CC-2 — a projection reads the document, it never writes

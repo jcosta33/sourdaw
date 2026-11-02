@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
@@ -185,6 +186,7 @@ describe('Setlist transport changes use guarded project actions', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         clearHandlerRegistry();
         clearUndoHistory();
         transportStore.set({ ...defaultTransportState, tempo: BASE_BPM });

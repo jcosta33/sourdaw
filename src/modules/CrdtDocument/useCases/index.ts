@@ -23,6 +23,7 @@ export { createCommandPreviewWorkspace } from './createCommandPreviewWorkspace';
 export { createCommandRecoveryWorkspace } from './createCommandRecoveryWorkspace';
 export { captureActiveBranchReference } from './captureActiveBranchReference';
 export { getDrumPreviewBranchHandlers } from './getDrumPreviewBranchHandlers';
+export { drumPreviewSourcePort } from './drumPreviewSourcePort';
 export { waitForCrdtDocumentTransition } from './waitForCrdtDocumentTransition';
 export { createCrdtProject } from './createCrdtProject';
 export { getPersistenceBackend } from './crdtProjectLifecycle';
@@ -43,6 +44,8 @@ export { hasCrdtDoc } from './hasCrdtDoc';
 export { mutateCrdtDoc } from './mutateCrdtDoc';
 
 export { projectCrdtToStores } from './projection/projectProjection';
+export { kernelSlotProjections, projectSlotProjectionRegistry } from './projection/projectSlotProjections';
+export { slotProjection } from './projection/slotProjection';
 export { projectActionHistoryToStore } from './projection/projectActionHistoryToStore';
 export { setupProjectionBridge } from './projection/setupProjectionBridge';
 
