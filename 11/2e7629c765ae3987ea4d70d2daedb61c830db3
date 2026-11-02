@@ -1,0 +1,19 @@
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/recordingCapturePlacement.integration.spec.ts
+  s_824babd2b68d13::t_ec599487c6ee67 713-722
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "112e7629c765ae3987ea4d70d2daedb61c830db3",
+  "prompts": {},
+  "sessions": {
+    "s_824babd2b68d13": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_824babd2b68d13",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
