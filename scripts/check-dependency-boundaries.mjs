@@ -1953,13 +1953,16 @@ function loadModuleTierManifest(repositoryRoot) {
 // An entry outside a `workers/` folder escapes them, so this gate reads every spawn site, resolves its
 // target and requires the target under `src/modules/<Module>/workers/` or `src/infra/<area>/workers/`.
 //
-// A spawn is `new Worker(...)` or `new SharedWorker(...)`, or an import specifier ending in `?worker` or
-// `?sharedworker` (Vite's constructor wrapper, static or dynamic). `?worker&url` is not a spawn: it loads
-// an AudioWorklet processor, which `worklets/` isolation covers. A spawn whose target cannot be read from
-// a string literal is reported too, because nothing can check where it points.
+// A spawn is `new Worker(...)` or `new SharedWorker(...)`, or an import specifier whose query carries a
+// `worker` or `sharedworker` parameter in any position (`?worker&inline`, `?foo&sharedworker`), which is
+// Vite's constructor wrapper, static or dynamic. The patterns are Vite's own (`workerOrSharedWorkerRE` and
+// `urlRE` in its worker plugin). A `url` parameter beside it (`?worker&url`) makes Vite export a URL string,
+// not spawn: that loads an AudioWorklet processor, which `worklets/` isolation covers. A spawn whose target
+// cannot be read from a string literal is reported too, because nothing can check where it points.
 const workerEntryFolderPath = /^src\/(?:modules\/[^/]+|infra\/[^/]+)\/workers\/.+/;
 const workerConstructorNames = new Set(['Worker', 'SharedWorker']);
-const workerImportSuffix = /\?(?:shared)?worker$/;
+const workerImportQuery = /(?:\?|&)(?:shared)?worker(?:&|$)/;
+const urlImportQuery = /(?:\?|&)url(?:&|$)/;
 const nonProductionSegment = /(?:^|\/)(?:__tests__|testing)\//;
 const unreadableWorkerTarget = '<target not a string literal>';
 
@@ -2004,8 +2007,8 @@ function collectWorkerSpawns(sourceFile) {
     };
     visit(sourceFile);
     for (const { text, line } of collectModuleSpecifiers(sourceFile)) {
-        if (workerImportSuffix.test(text)) {
-            spawns.push({ target: text.replace(workerImportSuffix, ''), line });
+        if (workerImportQuery.test(text) && !urlImportQuery.test(text)) {
+            spawns.push({ target: text.slice(0, text.indexOf('?')), line });
         }
     }
     return spawns;

@@ -2002,6 +2002,59 @@ describe('check-dependency-boundaries', () => {
         );
     });
 
+    it('should fail a combined Vite worker query whose target is outside a workers/ folder', () => {
+        withWorkerSpawnFixture(
+            {
+                'src/modules/Foo/repositories/inline.ts': "import A from '../a?worker&inline';\nexport { A };\n",
+                'src/modules/Foo/repositories/shared.ts': "import B from '../b?sharedworker';\nexport { B };\n",
+                'src/modules/Foo/repositories/sharedInline.ts':
+                    "export const c = () => import('../c?sharedworker&inline');\n",
+                'src/modules/Foo/repositories/reversed.ts': "import D from '../d?inline&worker';\nexport { D };\n",
+            },
+            (repositoryRoot) => {
+                expect(workerSpawnRowsOf(repositoryRoot).map(({ from, to }) => ({ from, to }))).toEqual([
+                    { from: 'src/modules/Foo/repositories/inline.ts', to: 'src/modules/Foo/a' },
+                    { from: 'src/modules/Foo/repositories/reversed.ts', to: 'src/modules/Foo/d' },
+                    { from: 'src/modules/Foo/repositories/shared.ts', to: 'src/modules/Foo/b' },
+                    { from: 'src/modules/Foo/repositories/sharedInline.ts', to: 'src/modules/Foo/c' },
+                ]);
+            }
+        );
+    });
+
+    it('should admit a combined Vite worker query whose target is in a workers/ folder', () => {
+        withWorkerSpawnFixture(
+            {
+                'src/modules/Foo/repositories/inline.ts':
+                    "import A from '../workers/a?worker&inline';\nexport { A };\n",
+                'src/modules/Foo/repositories/shared.ts': "import B from '../workers/b?sharedworker';\nexport { B };\n",
+                'src/modules/Foo/repositories/sharedInline.ts':
+                    "export const c = () => import('../workers/c?sharedworker&inline');\n",
+            },
+            (repositoryRoot) => {
+                expect(workerSpawnRowsOf(repositoryRoot)).toEqual([]);
+            }
+        );
+    });
+
+    it('should not count a Vite query that asks for a worker URL, or one that only resembles a worker query', () => {
+        withWorkerSpawnFixture(
+            {
+                'src/modules/Foo/engine/urlForm.ts':
+                    "import a from '../worklets/a.ts?worker&url';\nimport b from '../worklets/b.ts?url&worker';\nexport { a, b };\n",
+                'src/modules/Foo/engine/lookalike.ts':
+                    "import c from '../c?workers';\nimport d from '../d?myworker&inline';\nexport { c, d };\n",
+                // The one counted spawn proves the scan itself runs.
+                'src/modules/Foo/engine/counted.ts': "import e from '../e?worker&inline';\nexport { e };\n",
+            },
+            (repositoryRoot) => {
+                expect(workerSpawnRowsOf(repositoryRoot).map(({ from }) => from)).toEqual([
+                    'src/modules/Foo/engine/counted.ts',
+                ]);
+            }
+        );
+    });
+
     it('should fail a Worker whose target is not a string literal', () => {
         withWorkerSpawnFixture(
             {
