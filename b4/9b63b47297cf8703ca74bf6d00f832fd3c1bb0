@@ -1,0 +1,18 @@
+AGENTS.md
+  h_beb54bf43b47b7 103-109
+scripts/__tests__/reviewerModelDiversity.spec.ts
+  h_beb54bf43b47b7 366-380,382-386,394,397-398,400-401,408-411,436-441
+scripts/reviewerModelDiversity.ts
+  h_beb54bf43b47b7 41-42,47-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b49b63b47297cf8703ca74bf6d00f832fd3c1bb0",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
