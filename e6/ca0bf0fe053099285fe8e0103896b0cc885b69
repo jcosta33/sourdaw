@@ -1,0 +1,116 @@
+scripts/__tests__/check-dependency-boundaries.spec.ts
+  s_0314bb17e5dee3::t_16c21d9710c7f6 165
+  s_0314bb17e5dee3::t_4e2be9fa7756b7 28,169-181,1932-2078
+  s_0314bb17e5dee3::t_03530a8cc4751a 162-164
+  s_0314bb17e5dee3::t_2553387613677d 166-168
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/opusEncoder.spec.ts
+  s_0314bb17e5dee3::t_932669e969272f 4-10
+src/modules/AudioRendering/testing/oggCodecTestWorker.ts
+  s_0314bb17e5dee3::t_e129a5115cea4f 3-4
+scripts/check-dependency-boundaries.mjs
+  s_0314bb17e5dee3::t_c078a4e554c08b 42-45,1951-2064,2183-2187,2274-2280,2288-2294
+eslint.config.mjs
+  s_0314bb17e5dee3::t_60031bee82f535 2363-2369
+src/modules/AudioRendering/workers/oggCodecWorker.ts
+  s_0314bb17e5dee3::t_b0f668eb8ec082 7
+src/infra/archive/extractSingleGuardedZipEntry.ts
+  s_0314bb17e5dee3::t_ca6a57bf86ab4f 26
+.prettierignore
+  s_0314bb17e5dee3::t_667d61bb6ba206 7
+  s_0314bb17e5dee3::t_edf26ba7ec9c63 51-58
+src/modules/DawInterchange/models/DawProjectZipWorkerProtocol.ts
+  s_0314bb17e5dee3::t_564dd1e5a3d153 1-12
+src/modules/DawInterchange/useCases/buildDawProjectZip.ts
+  s_0314bb17e5dee3::t_502b72783aab4d 3
+src/modules/DawInterchange/models/DawProjectEntryNames.ts
+  s_0314bb17e5dee3::t_e61984966b92fa 3
+src/modules/DawInterchange/useCases/__tests__/importDawProject.spec.ts
+  s_0314bb17e5dee3::t_450556d8cd3222 44-45
+src/modules/DawInterchange/workers/__tests__/runDawProjectZipWorkerRequest.spec.ts
+  s_0314bb17e5dee3::t_f078fb836a4554 4-9
+src/modules/DawInterchange/useCases/extractDawProjectZipEntries.ts
+  s_0314bb17e5dee3::t_3370169cc9bd51 7,38
+src/modules/AudioRendering/useCases/audioExport/__tests__/streamExport.spec.ts
+  s_0314bb17e5dee3::t_231c697aa71f0d 10-11
+  s_0314bb17e5dee3::t_e437da1ea80997 19
+src/modules/DawInterchange/useCases/__tests__/extractDawProjectZipEntries.spec.ts
+  s_0314bb17e5dee3::t_30ecd121a118df 3-6
+docs/architecture/05-boundary-enforcement-limits.md
+  s_0314bb17e5dee3::t_5fce82d4d6c5f8 16,24,29-40
+src/modules/AiRuntime/repositories/webLlm/__tests__/engineLifecycle.spec.ts
+  s_0314bb17e5dee3::t_4f0640daf788b9 73
+  s_0314bb17e5dee3::t_eef75cd8a770c9 1,113-116
+evidence/agent-campaign/manifest.json
+  s_78c0f00e043df4::t_b75780153a6cda 386
+tests/e2e/exportOggCodecs.spec.ts
+  s_0314bb17e5dee3::t_55f539ca8ccc13 7-8
+src/infra/archive/workers/extractGuardedZipWorker.ts
+  s_0314bb17e5dee3::t_f39e085ef4d15c 7
+release/open-source-inventory.json
+  s_0314bb17e5dee3::t_52c05c9bfe7e6c 1779-1786
+  s_0314bb17e5dee3::t_f9b06754c9dcee 1754-1761
+  s_0314bb17e5dee3::t_a690c9fbe5b4d7 35
+src/modules/DawInterchange/workers/runDawProjectZipWorkerRequest.ts
+  s_0314bb17e5dee3::t_35bcbffba14c3c 1,10-12
+  s_0314bb17e5dee3::t_cef550b82a3462 8
+src/modules/AudioRendering/repositories/audioEncoders/createOggCodecWorker.ts
+  s_0314bb17e5dee3::t_a4111f2426599e 54
+src/modules/AiRuntime/workers/llmWorker.ts
+  s_0314bb17e5dee3::t_6ec4152d88760d 2-3
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/createOggCodecWorker.spec.ts
+  s_0314bb17e5dee3::t_d2612884fc18f2 4-9
+src/modules/DawInterchange/testing/extractDawProjectZipEntriesInProcess.ts
+  s_0314bb17e5dee3::t_479c7773d95dab 1-25
+src/modules/DawInterchange/useCases/readDawProjectZip.ts
+  s_0314bb17e5dee3::t_817b667bfe1dbd 4-6
+  s_0314bb17e5dee3::t_59304aec9cd23a 7-8
+  s_0314bb17e5dee3::t_a500b599947f54 3
+docs/architecture/03-typescript-module.md
+  s_0314bb17e5dee3::t_66092c33afdd07 901-903
+.oxlintrc.json
+  s_0314bb17e5dee3::t_5b4327147bcce6 40-46
+src/modules/DawInterchange/useCases/__tests__/dawProjectRoundTrip.spec.ts
+  s_0314bb17e5dee3::t_e19d2109fd3529 8,14-15
+src/modules/DawInterchange/workers/dawProjectZipWorker.ts
+  s_0314bb17e5dee3::t_e8a9a339fd361a 3-5
+.dependency-cruiser-known-violations-worker-spawns.json
+  s_0314bb17e5dee3::t_a7f5f2342ed6c4 1
+src/modules/AudioRendering/workers/__tests__/oggCodecWorker.spec.ts
+  s_0314bb17e5dee3::t_020b4e2df5fc83 9
+  s_0314bb17e5dee3::t_62a912dfb906d9 5-6
+.dependency-cruiser.cjs
+  s_0314bb17e5dee3::t_abd3e16bf59331 626-629
+src/modules/DawInterchange/useCases/__tests__/parseDawProject.spec.ts
+  s_0314bb17e5dee3::t_9a557ad35552c1 8,14-15
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/vorbisEncoder.spec.ts
+  s_0314bb17e5dee3::t_9e1c749997d5af 8-14
+src/modules/AiRuntime/repositories/webLlm/initWebLlmEngine.ts
+  s_0314bb17e5dee3::t_d7b63e2eeae569 110,113-115
+src/modules/AiRuntime/repositories/__tests__/webLlmProviderAdapter.spec.ts
+  s_0314bb17e5dee3::t_b596364b7dd3cf 252
+  s_0314bb17e5dee3::t_0d7bdbd837cdd3 214-218,223
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e6ca0bf0fe053099285fe8e0103896b0cc885b69",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_78c0f00e043df4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_78c0f00e043df4",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
