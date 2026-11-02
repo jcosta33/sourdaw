@@ -1,0 +1,23 @@
+src/modules/Transport/useCases/playheadScheduler/cutSource.ts
+  s_e4e2e0fffb8fe4::t_b211e690ed4284 1-21
+src/modules/Transport/useCases/playheadScheduler/schedulerSession.ts
+  s_e4e2e0fffb8fe4::t_7577fa7a371fcd 1-3,45,54
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_e4e2e0fffb8fe4::t_25793823ca5c38 31-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a2c1907a87d3fa24ad81bd57506bd38f963b7198",
+  "prompts": {},
+  "sessions": {
+    "s_e4e2e0fffb8fe4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_e4e2e0fffb8fe4",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
