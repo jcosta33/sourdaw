@@ -1,0 +1,19 @@
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/projectLifecyclePreservation.spec.ts
+  s_c8151a097cf617::t_7dd715bb1539f7 16,466-480
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8ceee3d8ab489693f9a671d694afc7fae2c8cac5",
+  "prompts": {},
+  "sessions": {
+    "s_c8151a097cf617": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_c8151a097cf617",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
