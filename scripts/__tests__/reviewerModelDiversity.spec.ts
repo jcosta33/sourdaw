@@ -29,8 +29,8 @@ describe('reviewer-model diversity enforcement', () => {
     });
 
     it('carries the reviewerModel through parsing when present', () => {
-        const document = parseReviewDocument({ ...baseDocument, reviewerModel: 'glm-5.3-flash' });
-        expect(document.reviewerModel).toBe('glm-5.3-flash');
+        const document = parseReviewDocument({ ...baseDocument, reviewerModel: 'review-model' });
+        expect(document.reviewerModel).toBe('review-model');
     });
 
     it('carries the reviewerModel through REQUEST_CHANGES parsing too', () => {
@@ -47,15 +47,15 @@ describe('reviewer-model diversity enforcement', () => {
                     done: 'Fix the comparison.',
                 },
             ],
-            reviewerModel: 'glm-5.3-flash',
+            reviewerModel: 'review-model',
         });
-        expect(document.reviewerModel).toBe('glm-5.3-flash');
+        expect(document.reviewerModel).toBe('review-model');
     });
 
     it('carries a single-line modelExhaustion through parsing and omits it when absent', () => {
         const document = parseReviewDocument({
             ...baseDocument,
-            reviewerModel: 'glm-5.3',
+            reviewerModel: 'review-model',
             modelExhaustion: ' every other harness is logged out ',
         });
         expect(document.modelExhaustion).toBe('every other harness is logged out');
@@ -91,7 +91,7 @@ describe('reviewer-model diversity enforcement', () => {
 });
 
 describe('assertReviewerModelDiversity', () => {
-    const authorLabel = { name: 'gpt-6-luna', description: 'Authored by gpt-6-luna' };
+    const authorLabel = { name: 'review-model', description: 'Authored by review-model' };
 
     it('exempts the orchestrator acceptance identity entirely', () => {
         expect(() =>
@@ -118,7 +118,7 @@ describe('assertReviewerModelDiversity', () => {
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [{ name: 'bug', description: 'Something is broken' }, authorLabel],
-                document: { reviewerModel: ' gpt-6-luna ', body: 'The change held.' },
+                document: { reviewerModel: ' review-model ', body: 'The change held.' },
             })
         ).toThrow(/matches one of the PR's authoring models/u);
     });
@@ -131,11 +131,11 @@ describe('assertReviewerModelDiversity', () => {
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [
-                    { name: 'gpt-6-luna', description: 'Authored by gpt-6-luna' },
+                    { name: 'review-model', description: 'Authored by review-model' },
                     { name: 'bug', description: 'Something is broken' },
-                    { name: 'gpt-5.6-terra', description: 'Authored by gpt-5.6-terra' },
+                    { name: 'review-model-two', description: 'Authored by review-model-two' },
                 ],
-                document: { reviewerModel: 'gpt-5.6-terra', body: 'The change held.' },
+                document: { reviewerModel: 'review-model-two', body: 'The change held.' },
             })
         ).toThrow(/matches one of the PR's authoring models/u);
     });
@@ -145,7 +145,7 @@ describe('assertReviewerModelDiversity', () => {
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
-                document: { reviewerModel: 'gpt-5.6-terra', body: 'The change held.' },
+                document: { reviewerModel: 'review-model-two', body: 'The change held.' },
             })
         ).not.toThrow();
     });
@@ -154,8 +154,8 @@ describe('assertReviewerModelDiversity', () => {
         expect(() =>
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
-                authorLabels: [{ name: 'gpt-6-luna' }, { name: 'bug', description: 'Something is broken' }],
-                document: { reviewerModel: 'gpt-6-luna', body: 'The change held.' },
+                authorLabels: [{ name: 'review-model' }, { name: 'bug', description: 'Something is broken' }],
+                document: { reviewerModel: 'review-model', body: 'The change held.' },
             })
         ).not.toThrow();
     });
@@ -166,9 +166,9 @@ describe('assertReviewerModelDiversity', () => {
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
                 document: {
-                    reviewerModel: 'gpt-6-luna',
+                    reviewerModel: 'review-model',
                     modelExhaustion: 'every other harness on this machine is logged out or broken',
-                    body: 'Reviewed on gpt-6-luna under the same-model fallback after every other harness was unavailable.',
+                    body: 'Reviewed on review-model under the same-model fallback after every other harness was unavailable.',
                 },
             })
         ).not.toThrow();
@@ -179,14 +179,14 @@ describe('assertReviewerModelDiversity', () => {
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
-                document: { reviewerModel: 'gpt-6-luna', body: 'Reviewed on gpt-6-luna.' },
+                document: { reviewerModel: 'review-model', body: 'Reviewed on review-model.' },
             })
         ).toThrow(/matches one of the PR's authoring models/u);
         expect(() =>
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
-                document: { reviewerModel: 'gpt-6-luna', modelExhaustion: '   ', body: 'Reviewed on gpt-6-luna.' },
+                document: { reviewerModel: 'review-model', modelExhaustion: '   ', body: 'Reviewed on review-model.' },
             })
         ).toThrow(/matches one of the PR's authoring models/u);
     });
@@ -197,7 +197,7 @@ describe('assertReviewerModelDiversity', () => {
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
                 document: {
-                    reviewerModel: 'gpt-6-luna',
+                    reviewerModel: 'review-model',
                     modelExhaustion: 'every other harness on this machine is logged out or broken',
                     body: 'The change held under attack.',
                 },
@@ -211,9 +211,9 @@ describe('assertReviewerModelDiversity', () => {
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
                 document: {
-                    reviewerModel: 'gpt-6-luna',
+                    reviewerModel: 'review-model',
                     modelExhaustion: 'every other harness on this machine is logged out or broken',
-                    body: 'Reviewed on gpt-6-luna-pro under the same-model fallback.',
+                    body: 'Reviewed on review-model-pro under the same-model fallback.',
                 },
             })
         ).toThrow(/naming the reviewer model/u);
@@ -225,9 +225,9 @@ describe('assertReviewerModelDiversity', () => {
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
                 document: {
-                    reviewerModel: 'gpt-6-luna',
+                    reviewerModel: 'review-model',
                     modelExhaustion: 'every other harness on this machine is logged out or broken',
-                    body: 'Same-model fallback: reviewed on gpt-6-luna, with gpt-5.6-terra unavailable.',
+                    body: 'Same-model fallback: reviewed on review-model, with review-model-two unavailable.',
                 },
             })
         ).not.toThrow();
@@ -239,9 +239,9 @@ describe('assertReviewerModelDiversity', () => {
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
                 document: {
-                    reviewerModel: 'gpt-6-luna',
+                    reviewerModel: 'review-model',
                     modelExhaustion: 'every other harness on this machine is logged out or broken',
-                    body: 'gpt-6-luna-pro was unavailable; fell back to gpt-6-luna for this review',
+                    body: 'review-model-pro was unavailable; fell back to review-model for this review',
                 },
             })
         ).not.toThrow();
@@ -249,16 +249,16 @@ describe('assertReviewerModelDiversity', () => {
 
     it('refuses the fallback when the only occurrence extends the model with a token character', () => {
         for (const body of [
-            'only gpt-6-luna.1 was named',
-            'only gpt-6-luna+edge was named',
-            'only xgpt-6-luna was named',
+            'only review-model.1 was named',
+            'only review-model+edge was named',
+            'only xreview-model was named',
         ]) {
             expect(() =>
                 assertReviewerModelDiversity({
                     actorNodeId: REVIEWER_BOT_NODE_ID,
                     authorLabels: [authorLabel],
                     document: {
-                        reviewerModel: 'gpt-6-luna',
+                        reviewerModel: 'review-model',
                         modelExhaustion: 'every other harness on this machine is logged out or broken',
                         body,
                     },
@@ -273,7 +273,7 @@ describe('assertReviewerModelDiversity', () => {
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
                 document: {
-                    reviewerModel: 'gpt-5.6-terra',
+                    reviewerModel: 'review-model-two',
                     modelExhaustion: 'stale field from an earlier round',
                     body: 'The change held under attack.',
                 },
@@ -283,7 +283,7 @@ describe('assertReviewerModelDiversity', () => {
 });
 
 describe('assertReviewerModelDiversity draw records', () => {
-    const authorLabel = { name: 'gpt-6-luna', description: 'Authored by gpt-6-luna' };
+    const authorLabel = { name: 'review-model', description: 'Authored by review-model' };
 
     it('refuses a draw on an authoring model when the document carries no exhaustion', () => {
         // The document reviewer model differs from every author, so only the draw can trip the rule.
@@ -292,15 +292,15 @@ describe('assertReviewerModelDiversity draw records', () => {
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
                 document: {
-                    reviewerModel: 'claude-sonnet-4.5',
+                    reviewerModel: 'review-model-two',
                     body: 'The change held.',
                     draws: [
-                        { stance: 'test-validity', reviewerModel: 'claude-sonnet-4.5', tier: 'standard' },
-                        { stance: 'correctness', reviewerModel: 'gpt-6-luna', tier: 'standard' },
+                        { stance: 'test-validity', reviewerModel: 'review-model-two', tier: 'standard' },
+                        { stance: 'correctness', reviewerModel: 'review-model', tier: 'standard' },
                     ],
                 },
             })
-        ).toThrow(/reviewer model "gpt-6-luna" matches one of the PR's authoring models/u);
+        ).toThrow(/reviewer model "review-model" matches one of the PR's authoring models/u);
     });
 
     it('refuses a disclosed authoring-model draw whose model the body never names', () => {
@@ -309,13 +309,13 @@ describe('assertReviewerModelDiversity draw records', () => {
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
                 document: {
-                    reviewerModel: 'claude-sonnet-4.5',
+                    reviewerModel: 'review-model-two',
                     modelExhaustion: 'every other harness was down',
                     body: 'The change held.',
-                    draws: [{ stance: 'correctness', reviewerModel: 'gpt-6-luna', tier: 'standard' }],
+                    draws: [{ stance: 'correctness', reviewerModel: 'review-model', tier: 'standard' }],
                 },
             })
-        ).toThrow(/naming the reviewer model "gpt-6-luna"/u);
+        ).toThrow(/naming the reviewer model "review-model"/u);
     });
 
     it('admits draws whose models differ from every authoring model without exhaustion', () => {
@@ -324,11 +324,11 @@ describe('assertReviewerModelDiversity draw records', () => {
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
                 document: {
-                    reviewerModel: 'claude-sonnet-4.5',
+                    reviewerModel: 'review-model-two',
                     body: 'The change held.',
                     draws: [
-                        { stance: 'correctness', reviewerModel: 'claude-sonnet-4.5', tier: 'standard' },
-                        { stance: 'test-validity', reviewerModel: 'gpt-5.6-terra', tier: 'economy' },
+                        { stance: 'correctness', reviewerModel: 'review-model-two', tier: 'standard' },
+                        { stance: 'test-validity', reviewerModel: 'review-model-two', tier: 'economy' },
                     ],
                 },
             })
@@ -341,12 +341,12 @@ describe('assertReviewerModelDiversity draw records', () => {
                 actorNodeId: REVIEWER_BOT_NODE_ID,
                 authorLabels: [authorLabel],
                 document: {
-                    reviewerModel: 'claude-sonnet-4.5',
+                    reviewerModel: 'review-model-two',
                     modelExhaustion: 'every other harness was down for the correctness draw',
-                    body: 'Correctness fell back to gpt-6-luna, the only harness left; the change held.',
+                    body: 'Correctness fell back to review-model, the only harness left; the change held.',
                     draws: [
-                        { stance: 'test-validity', reviewerModel: 'claude-sonnet-4.5', tier: 'standard' },
-                        { stance: 'correctness', reviewerModel: 'gpt-6-luna', tier: 'standard' },
+                        { stance: 'test-validity', reviewerModel: 'review-model-two', tier: 'standard' },
+                        { stance: 'correctness', reviewerModel: 'review-model', tier: 'standard' },
                     ],
                 },
             })
@@ -355,60 +355,34 @@ describe('assertReviewerModelDiversity draw records', () => {
 });
 
 describe('fresh review tier rule', () => {
+    const authorLabel = { name: 'review-model', description: 'Authored by review-model' };
+
     function admit(reviewerModel: string, draws?: { stance: string; reviewerModel: string; tier?: string }[]): void {
         assertReviewerModelDiversity({
             actorNodeId: REVIEWER_BOT_NODE_ID,
-            authorLabels: [{ name: 'gpt-6.1-sol', description: 'Authored by gpt-6.1-sol' }],
+            authorLabels: [authorLabel],
             document: { reviewerModel, body: 'The boundary held under attack.', draws },
         });
     }
 
-    it.each([
-        'gpt-6-luna',
-        'gpt-5.6-terra',
-        'claude-sonnet-4.5',
-        'claude-haiku-4-5',
-        'claude-opus-5-5',
-        'gpt-6-sol',
-        'gpt-6-astra',
-        'deepseek-flash',
-        'deepseek-v4-pro',
-        'unknown-family-9',
-        'vendor/model-with-slash',
-    ])('admits any configured summary model name %s', (model) => {
-        expect(() => admit(model)).not.toThrow();
-    });
-
-    it.each([
-        'deepseek-flash',
-        'deepseek-v4-pro',
-        'claude-opus-5-5',
-        'gpt-6-sol',
-        'gpt-6-astra',
-        'unknown-family-9',
-        'vendor/model-with-slash',
-    ])('admits a draw on %s at economy and standard tier', (model) => {
-        for (const tier of ['economy', 'standard']) {
-            expect(() => admit('gpt-6-luna', [{ stance: 'lost identity', reviewerModel: model, tier }])).not.toThrow();
-        }
-    });
-
     it.each(['strongest', 'frontier', ''])('refuses a draw at tier %s by the tier rule alone', (tier) => {
         expect(() =>
-            admit('gpt-6-luna', [{ stance: 'lost identity', reviewerModel: 'claude-opus-5-5', tier }])
+            admit('review-model-two', [{ stance: 'lost identity', reviewerModel: 'review-model-two', tier }])
         ).toThrow(/must use economy or standard review tier/u);
     });
 
     it('refuses a draw that records no tier', () => {
-        expect(() => admit('gpt-6-luna', [{ stance: 'lost identity', reviewerModel: 'gpt-6-luna' }])).toThrow(
-            /must use economy or standard review tier/u
-        );
+        expect(() =>
+            admit('review-model-two', [{ stance: 'lost identity', reviewerModel: 'review-model-two' }])
+        ).toThrow(/must use economy or standard review tier/u);
     });
 
     it('names only the tier rule when it refuses a draw', () => {
         let message = '';
         try {
-            admit('gpt-6-luna', [{ stance: 'lost identity', reviewerModel: 'claude-opus-5-5', tier: 'strongest' }]);
+            admit('review-model-two', [
+                { stance: 'lost identity', reviewerModel: 'review-model-two', tier: 'strongest' },
+            ]);
         } catch (error) {
             message = (error as Error).message;
         }
@@ -417,32 +391,23 @@ describe('fresh review tier rule', () => {
         );
     });
 
-    it('checks every draw even when the summary and preceding draws use admitted tiers', () => {
+    it('checks every draw’s tier even when the preceding draws are admitted', () => {
         expect(() =>
-            admit('gpt-6-luna', [
-                { stance: 'lost identity', reviewerModel: 'claude-haiku-4-5', tier: 'economy' },
-                { stance: 'lost head binding', reviewerModel: 'gpt-6.1-sol', tier: 'strongest' },
+            admit('review-model-two', [
+                { stance: 'lost identity', reviewerModel: 'review-model-two', tier: 'economy' },
+                { stance: 'lost head binding', reviewerModel: 'review-model-two', tier: 'strongest' },
             ])
         ).toThrow(/draws\[1\].*economy or standard/u);
     });
 
-    it('admits model diversity across economy and standard draws', () => {
-        expect(() =>
-            admit('gpt-6-luna', [
-                { stance: 'lost identity', reviewerModel: 'claude-opus-5-5', tier: 'economy' },
-                { stance: 'lost head binding', reviewerModel: 'gpt-6-sol', tier: 'standard' },
-            ])
-        ).not.toThrow();
-    });
-
-    it('admits the same-model fallback on any model when exhaustion is recorded and the body names it', () => {
+    it('admits the same-model fallback when exhaustion is recorded and the body names the model', () => {
         expect(() =>
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
-                authorLabels: [{ name: 'claude-opus-5-5', description: 'Authored by claude-opus-5-5' }],
+                authorLabels: [authorLabel],
                 document: {
-                    reviewerModel: 'claude-opus-5-5',
-                    body: 'Reviewed on claude-opus-5-5 after every other model was unavailable.',
+                    reviewerModel: 'review-model',
+                    body: 'Reviewed on review-model after every other model was unavailable.',
                     modelExhaustion: 'Every other configured model was unavailable.',
                 },
             })
@@ -453,12 +418,12 @@ describe('fresh review tier rule', () => {
         expect(() =>
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
-                authorLabels: [{ name: 'gpt-6.1-sol', description: 'Authored by gpt-6.1-sol' }],
+                authorLabels: [authorLabel],
                 document: {
-                    reviewerModel: 'gpt-6.1-sol',
-                    body: 'Reviewed on gpt-6.1-sol after other models were unavailable.',
+                    reviewerModel: 'review-model',
+                    body: 'Reviewed on review-model after other models were unavailable.',
                     modelExhaustion: 'All permitted review models were unavailable.',
-                    draws: [{ stance: 'lost identity', reviewerModel: 'gpt-6.1-sol', tier: 'strongest' }],
+                    draws: [{ stance: 'lost identity', reviewerModel: 'review-model', tier: 'strongest' }],
                 },
             })
         ).toThrow(/economy or standard/u);

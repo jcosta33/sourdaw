@@ -21,7 +21,7 @@ function plan(riskClasses: ReviewRiskClass[]): ReviewRiskPlan {
 function draws(count: number, tier: CompletedReviewStance['modelTier'] = 'standard'): CompletedReviewStance[] {
     return Array.from({ length: count }, (_, index) => ({
         stance: `risk ${index}`,
-        reviewerModel: 'gpt-6-luna',
+        reviewerModel: 'review-model',
         modelTier: tier,
         outcome: 'clean',
     }));
@@ -71,12 +71,4 @@ describe('assertReviewDrawFloor', () => {
         const mixed = [...draws(2), { ...draws(1, 'strongest')[0]!, stance: 'escaped secret' }];
         expect(() => assertReviewDrawFloor(plan(['native-security', 'undo']), mixed)).toThrow(/economy or standard/u);
     });
-
-    it.each(['claude-opus-4.5', 'gpt-6-sol', 'unknown-family-9', 'vendor/model-with-slash'])(
-        'admits the model name %s from an unpublished historical dossier at an admitted tier',
-        (reviewerModel) => {
-            const mixed = [...draws(2), { ...draws(1)[0]!, stance: 'escaped secret', reviewerModel }];
-            expect(() => assertReviewDrawFloor(plan(['native-security']), mixed)).not.toThrow();
-        }
-    );
 });

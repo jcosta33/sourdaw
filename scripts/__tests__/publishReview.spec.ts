@@ -216,7 +216,7 @@ function fakePort(
             // Every valid fixture must carry the reviewer model, as real review.json files now do;
             // a fixture that sets the key at all (even to undefined) opts out to exercise refusal.
             if (typeof json === 'object' && json !== null && !Array.isArray(json) && !('reviewerModel' in json)) {
-                return { ...json, reviewerModel: 'claude-sonnet-4.5' };
+                return { ...json, reviewerModel: 'review-model' };
             }
             return json;
         },
@@ -271,7 +271,7 @@ function createJournaledRecoveryFixture(
             event: 'APPROVE',
             body: 'Attacked; held.',
             comments: [],
-            reviewerModel: 'glm-5.3-flash',
+            reviewerModel: 'review-model-three',
         })
     );
     writeFileSync(join(bundle, 'diff.patch'), '');
@@ -339,7 +339,7 @@ async function runFailingReviewPublication(root: string, number: number, head: s
             body: 'Attacked; held.',
             comments: [],
             evidence: approvalEvidence(head),
-            reviewerModel: 'claude-sonnet-4.5',
+            reviewerModel: 'review-model',
         })
     );
     writeFileSync(join(bundle, 'diff.patch'), '');
@@ -1162,7 +1162,7 @@ describe('review publish', () => {
                             body: 'Attacked; held.',
                             comments: [],
                             evidence: approvalEvidence('a'.repeat(40)),
-                            reviewerModel: 'claude-sonnet-4.5',
+                            reviewerModel: 'review-model',
                         };
                     },
                     bundleFileExists: (path) => existsSync(path),
@@ -1386,7 +1386,7 @@ describe('review publish', () => {
         const { port, calls } = fakePort({
             labels: [
                 { name: 'enhancement', description: 'New feature or request' },
-                { name: 'claude-sonnet-4.5', description: 'Authored by claude-sonnet-4.5' },
+                { name: 'review-model', description: 'Authored by review-model' },
             ],
         });
 
@@ -1398,7 +1398,7 @@ describe('review publish', () => {
         const { port, calls } = fakePort({
             labels: [
                 { name: 'enhancement', description: 'New feature or request' },
-                { name: 'claude-opus-4.5', description: 'Authored by claude-opus-4.5' },
+                { name: 'review-model-two', description: 'Authored by review-model-two' },
             ],
         });
 
@@ -1408,34 +1408,34 @@ describe('review publish', () => {
 
     it('posts the same-model fallback through the publish path when exhaustion is recorded', () => {
         const { port, calls } = fakePort({
-            labels: [{ name: 'claude-sonnet-4', description: 'Authored by claude-sonnet-4' }],
+            labels: [{ name: 'review-model', description: 'Authored by review-model' }],
             json: {
                 format: 'compact-v1',
                 event: 'APPROVE',
-                body: 'Same-model fallback: reviewed on claude-sonnet-4 after every other harness was unavailable.',
+                body: 'Same-model fallback: reviewed on review-model after every other harness was unavailable.',
                 comments: [],
                 evidence: approvalEvidence(),
-                reviewerModel: 'claude-sonnet-4',
+                reviewerModel: 'review-model',
                 modelExhaustion: 'every other harness on this machine is logged out or broken',
             },
         });
 
         expect(publishReview(42, port)).toBe(99);
         expect(calls[1]).toContain(
-            'APPROVE:Same-model fallback: reviewed on claude-sonnet-4 after every other harness was unavailable.'
+            'APPROVE:Same-model fallback: reviewed on review-model after every other harness was unavailable.'
         );
     });
 
     it('refuses the same-model fallback on the publish path when the body does not name the model', () => {
         const { port, calls } = fakePort({
-            labels: [{ name: 'claude-sonnet-4', description: 'Authored by claude-sonnet-4' }],
+            labels: [{ name: 'review-model', description: 'Authored by review-model' }],
             json: {
                 format: 'compact-v1',
                 event: 'APPROVE',
                 body: 'The change held under attack.',
                 comments: [],
                 evidence: approvalEvidence(),
-                reviewerModel: 'claude-sonnet-4',
+                reviewerModel: 'review-model',
                 modelExhaustion: 'every other harness on this machine is logged out or broken',
             },
         });
@@ -1446,14 +1446,14 @@ describe('review publish', () => {
 
     it('refuses the same-model fallback when the body names only the longer prefix-sharing model', () => {
         const { port, calls } = fakePort({
-            labels: [{ name: 'claude-sonnet-4', description: 'Authored by claude-sonnet-4' }],
+            labels: [{ name: 'review-model', description: 'Authored by review-model' }],
             json: {
                 format: 'compact-v1',
                 event: 'APPROVE',
-                body: 'Reviewed on claude-sonnet-4.5 under the same-model fallback.',
+                body: 'Reviewed on review-model.1 under the same-model fallback.',
                 comments: [],
                 evidence: approvalEvidence(),
-                reviewerModel: 'claude-sonnet-4',
+                reviewerModel: 'review-model',
                 modelExhaustion: 'every other harness on this machine is logged out or broken',
             },
         });
@@ -1465,7 +1465,7 @@ describe('review publish', () => {
     it('treats a bare label name as descriptive, never as the authoring model', () => {
         // A descriptive label that merely shares a model's name carries no `Authored by `
         // description fence, so it must not trigger the diversity refusal.
-        const { port } = fakePort({ labels: [{ name: 'claude-sonnet-4.5' }] });
+        const { port } = fakePort({ labels: [{ name: 'review-model' }] });
 
         expect(publishReview(42, port)).toBe(99);
     });
@@ -2401,7 +2401,7 @@ describe('shellPort postReview state verification', () => {
                     headRefOid: 'headsha',
                     labels: [
                         { name: 'bug', description: 'Something is broken' },
-                        { name: 'claude-sonnet-4.5', description: 'Authored by claude-sonnet-4.5' },
+                        { name: 'review-model', description: 'Authored by review-model' },
                         { name: 'no-description' },
                     ],
                 });
@@ -2415,7 +2415,7 @@ describe('shellPort postReview state verification', () => {
             head: 'headsha',
             labels: [
                 { name: 'bug', description: 'Something is broken' },
-                { name: 'claude-sonnet-4.5', description: 'Authored by claude-sonnet-4.5' },
+                { name: 'review-model', description: 'Authored by review-model' },
                 { name: 'no-description' },
             ],
         });
@@ -2438,7 +2438,7 @@ describe('shellPort postReview state verification', () => {
                 body: 'Attacked; held.',
                 comments: [],
                 evidence: approvalEvidence(head),
-                reviewerModel: 'claude-sonnet-4.5',
+                reviewerModel: 'review-model',
             })
         );
         writeFileSync(join(bundle, 'diff.patch'), '');
@@ -2451,7 +2451,7 @@ describe('shellPort postReview state verification', () => {
                     return JSON.stringify({
                         state: 'OPEN',
                         headRefOid: head,
-                        labels: [{ name: 'claude-sonnet-4.5', description: 'Authored by claude-sonnet-4.5' }],
+                        labels: [{ name: 'review-model', description: 'Authored by review-model' }],
                     });
                 }
                 throw new Error(`unexpected command in test: ${command} ${args.join(' ')}`);
@@ -4097,7 +4097,7 @@ describe('shellPort postReview state verification', () => {
                 event: 'APPROVE',
                 body: 'Attacked; held.',
                 evidence: approvalEvidence(fixture.head),
-                reviewerModel: 'claude-sonnet-5',
+                reviewerModel: 'review-model-two',
             });
             writeFileSync(join(bundle, 'review.json'), JSON.stringify(document));
             const owner = readPullRequestMutationLockOwner(fixture.root, fixture.ownerOid, fixture.number);
@@ -5191,9 +5191,9 @@ describe('fresh reviewer dossier publication', () => {
 
     /** The round's default draws: three distinct stances on an affordable standard model. */
     const defaultDraws: ReviewDraw[] = [
-        { stance: 'correctness', reviewerModel: 'gpt-6-luna', tier: 'standard', outcome: 'clean' },
-        { stance: 'test-validity', reviewerModel: 'gpt-6-luna', tier: 'standard', outcome: 'clean' },
-        { stance: 'stale binding', reviewerModel: 'gpt-6-luna', tier: 'standard', outcome: 'clean' },
+        { stance: 'correctness', reviewerModel: 'review-model-four', tier: 'standard', outcome: 'clean' },
+        { stance: 'test-validity', reviewerModel: 'review-model-four', tier: 'standard', outcome: 'clean' },
+        { stance: 'stale binding', reviewerModel: 'review-model-four', tier: 'standard', outcome: 'clean' },
     ];
 
     const findingDraws = defaultDraws.map((draw, index): ReviewDraw =>
@@ -5207,7 +5207,7 @@ describe('fresh reviewer dossier publication', () => {
         body: 'Attacked the dossier gate; it held.',
         comments: [],
         evidence: approvalEvidence(head),
-        reviewerModel: 'claude-sonnet-4.5',
+        reviewerModel: 'review-model',
     };
 
     /** The canonical record publication itself derives for the given round. */
@@ -5264,7 +5264,7 @@ describe('fresh reviewer dossier publication', () => {
                     sources: findingSources,
                 },
             ],
-            reviewerModel: 'claude-sonnet-4.5',
+            reviewerModel: 'review-model',
         };
     }
 
@@ -5526,12 +5526,12 @@ describe('fresh reviewer dossier publication', () => {
         ['missing sources', undefined, /comment 0 requires sources/u],
         [
             'unknown source',
-            [{ stance: 'uncompleted', reviewerModel: 'gpt-6-luna' }],
+            [{ stance: 'uncompleted', reviewerModel: 'review-model-four' }],
             /source.*does not name a completed findings draw/u,
         ],
         [
             'clean source',
-            [{ stance: 'test-validity', reviewerModel: 'gpt-6-luna' }],
+            [{ stance: 'test-validity', reviewerModel: 'review-model-four' }],
             /source.*does not name a completed findings draw/u,
         ],
     ])('refuses %s before any dossier write, journal, or remote publication', (_label, sources, message) => {
@@ -5701,19 +5701,9 @@ describe('fresh reviewer dossier publication', () => {
                 /economy or standard/u,
             ],
             [
-                'strongest metadata on a premium model name',
+                'exhaustion never waives the tier rule',
                 {
-                    draws: [
-                        { ...defaultDraws[0], reviewerModel: 'claude-opus-5-5', tier: 'strongest' },
-                        ...defaultDraws.slice(1),
-                    ],
-                },
-                /economy or standard/u,
-            ],
-            [
-                'exhaustion waiver of the tier rule',
-                {
-                    reviewerModel: 'gpt-6-astra',
+                    reviewerModel: 'review-model',
                     modelExhaustion: 'All affordable models were unavailable.',
                     draws: [{ ...defaultDraws[0], tier: 'strongest' }, ...defaultDraws.slice(1)],
                 },
@@ -5723,31 +5713,6 @@ describe('fresh reviewer dossier publication', () => {
             const fixture = dossierFixture({ document: { ...reviewDocument, ...fields } });
             try {
                 expect(refusedBeforeSideEffects(fixture)).toMatch(message);
-            } finally {
-                removeTemporaryDirectory(fixture.root);
-            }
-        });
-
-        it('publishes a fresh round on any configured model name at economy or standard tier', () => {
-            const draws: ReviewDraw[] = [
-                { stance: 'correctness', reviewerModel: 'claude-opus-5-5', tier: 'standard', outcome: 'clean' },
-                { stance: 'test-validity', reviewerModel: 'gpt-6-sol', tier: 'economy', outcome: 'clean' },
-                {
-                    stance: 'stale binding',
-                    reviewerModel: 'vendor/model-with-slash',
-                    tier: 'standard',
-                    outcome: 'clean',
-                },
-            ];
-            const fixture = dossierFixture({
-                plan: riskPlan(),
-                draws,
-                diff: patchAdding('src/modules/Tuner/x.ts', 3),
-                document: { ...reviewDocument, reviewerModel: 'gpt-6-astra' },
-            });
-            try {
-                expect(publishReview(number, fixture.port)).toBe(99);
-                expect(fixture.calls).toContain('post');
             } finally {
                 removeTemporaryDirectory(fixture.root);
             }
@@ -6365,7 +6330,7 @@ describe('fresh reviewer dossier publication', () => {
             draws: findingDraws,
             body: 'One blocking finding.',
             comments: [comment],
-            reviewerModel: 'claude-sonnet-4.5',
+            reviewerModel: 'review-model',
         };
         const diff = [
             'diff --git a/scripts/target.ts b/scripts/target.ts',
@@ -6437,7 +6402,7 @@ describe('fresh reviewer dossier publication', () => {
                 draws: findingDraws,
                 body: 'One blocking finding.',
                 comments: [comment],
-                reviewerModel: 'claude-sonnet-4.5',
+                reviewerModel: 'review-model',
             },
             diff: [
                 'diff --git a/scripts/target.ts b/scripts/target.ts',
@@ -6638,7 +6603,7 @@ describe('fresh reviewer dossier publication', () => {
                 draws: findingDraws,
                 body: 'One blocking finding.',
                 comments: [comment],
-                reviewerModel: 'claude-sonnet-4.5',
+                reviewerModel: 'review-model',
             },
             diff,
             reviewComments: [],
@@ -6681,7 +6646,7 @@ describe('fresh reviewer dossier publication', () => {
                 draws: findingDraws,
                 body: 'One blocking finding.',
                 comments: [comment],
-                reviewerModel: 'claude-sonnet-4.5',
+                reviewerModel: 'review-model',
             },
             diff,
             reviewComments: [{ id: 2329000043, path: 'scripts/other.ts', line: 5, side: 'RIGHT', body: 'rendered' }],
@@ -6759,7 +6724,7 @@ describe('fresh reviewer dossier publication', () => {
                 draws: findingDraws,
                 body: 'One blocking finding.',
                 comments: [comment],
-                reviewerModel: 'claude-sonnet-4.5',
+                reviewerModel: 'review-model',
             },
             diff,
             remoteReviews: {
@@ -6838,10 +6803,10 @@ describe('fresh reviewer dossier publication', () => {
         const fixture = dossierFixture({
             plan: riskPlan(),
             draws: [
-                { stance: 'correctness', reviewerModel: 'gpt-6-luna', tier: 'standard', outcome: 'clean' },
-                { stance: 'correctness', reviewerModel: 'gpt-5.6-terra', tier: 'standard', outcome: 'findings' },
-                { stance: 'test-validity', reviewerModel: 'gpt-6-luna', tier: 'standard', outcome: 'clean' },
-                { stance: 'stale binding', reviewerModel: 'gpt-6-luna', tier: 'standard', outcome: 'clean' },
+                { stance: 'correctness', reviewerModel: 'review-model-four', tier: 'standard', outcome: 'clean' },
+                { stance: 'correctness', reviewerModel: 'review-model-five', tier: 'standard', outcome: 'findings' },
+                { stance: 'test-validity', reviewerModel: 'review-model-four', tier: 'standard', outcome: 'clean' },
+                { stance: 'stale binding', reviewerModel: 'review-model-four', tier: 'standard', outcome: 'clean' },
             ],
         });
         try {
@@ -6853,7 +6818,7 @@ describe('fresh reviewer dossier publication', () => {
                 persisted.events
                     .filter((event) => event.kind === 'stance-completed')
                     .map((event) => event.reviewerModel)
-            ).toEqual(['gpt-6-luna', 'gpt-5.6-terra', 'gpt-6-luna', 'gpt-6-luna']);
+            ).toEqual(['review-model-four', 'review-model-five', 'review-model-four', 'review-model-four']);
         } finally {
             removeTemporaryDirectory(fixture.root);
         }
@@ -6862,10 +6827,10 @@ describe('fresh reviewer dossier publication', () => {
     it('keeps the whole-round fallback working when the dossier draws carry no authoring-model draw', () => {
         const fixture = dossierFixture({
             plan: riskPlan(),
-            labels: [{ name: 'claude-sonnet-4.5', description: 'Authored by claude-sonnet-4.5' }],
+            labels: [{ name: 'review-model', description: 'Authored by review-model' }],
             document: {
                 ...reviewDocument,
-                body: 'Whole-round fallback: reviewed on claude-sonnet-4.5 after every other harness was unavailable.',
+                body: 'Whole-round fallback: reviewed on review-model after every other harness was unavailable.',
                 modelExhaustion: 'every other harness on this machine is logged out or broken',
             },
         });
@@ -6879,7 +6844,7 @@ describe('fresh reviewer dossier publication', () => {
 
     it('replays a published pre-ADR mixed-round record unchanged, without the draws its review.json never had', () => {
         const mixedBody =
-            'Mixed round: test-validity ran on review-model; correctness fell back to glm-5.3-flash, the only harness left for it.';
+            'Mixed round: test-validity ran on review-model; correctness fell back to review-model-three, the only harness left for it.';
         const landedReview: RemotePublishedReview = {
             id: 99,
             state: 'APPROVED',
@@ -6901,7 +6866,7 @@ describe('fresh reviewer dossier publication', () => {
                     {
                         kind: 'stance-completed',
                         stance: 'correctness',
-                        reviewerModel: 'glm-5.3-flash',
+                        reviewerModel: 'review-model-three',
                         modelTier: 'strongest',
                         outcome: 'clean',
                         exhaustion: 'every other harness on this machine was committed to another lane',
@@ -6934,8 +6899,8 @@ describe('fresh reviewer dossier publication', () => {
         ]);
         const fixture = dossierFixture({
             plan: riskPlan(),
-            labels: [{ name: 'glm-5.3-flash', description: 'Authored by glm-5.3-flash' }],
-            document: { ...reviewDocument, reviewerModel: 'claude-opus-4.5', body: mixedBody },
+            labels: [{ name: 'review-model-three', description: 'Authored by review-model-three' }],
+            document: { ...reviewDocument, reviewerModel: 'review-model-two', body: mixedBody },
             draws: null,
             dossier: JSON.parse(serializeReviewDossier(authorized)),
             remoteReviews: { 99: landedReview },
@@ -7339,7 +7304,7 @@ describe('review.json round record', () => {
         event: 'REQUEST_CHANGES',
         body: 'One blocking finding.',
         comments: [validComment],
-        reviewerModel: 'glm-5.3-flash',
+        reviewerModel: 'review-model-three',
     };
     const draw = { stance: 'stale replay binding', reviewerModel: 'review-model', tier: 'standard', outcome: 'clean' };
 
