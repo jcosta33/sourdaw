@@ -1,0 +1,153 @@
+src/app/registerProjectLifecycle.ts
+  s_0314bb17e5dee3::t_8764ebaf9bccb9 1-160,162-180
+  s_0314bb17e5dee3::t_44926715a0cc76 161
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/projectLifecyclePreservation.spec.ts
+  s_0314bb17e5dee3::t_f95b870d601a19 1-455,460-461
+  s_0314bb17e5dee3::t_cdba34b52c37be 456-457
+  s_0314bb17e5dee3::t_b0c322dfb6dd80 462-463
+  s_0314bb17e5dee3::t_ed7fe47ce97595 466-468,470,472-474
+src/modules/Project/useCases/projectPersistence/projectLifecycleRegistry.ts
+  s_0314bb17e5dee3::t_e3fcc8da94c2ed 1-98
+src/app/__tests__/bootstrap.spec.ts
+  s_0314bb17e5dee3::t_e0df8618456576 166,300,791-794,1073-1076
+src/app/bootstrap.ts
+  s_0314bb17e5dee3::t_d951a1eab568fe 71,248,263
+src/modules/AiRuntime/useCases/cancelActiveAgentRuns.ts
+  s_0314bb17e5dee3::t_0f8a43f5859c30 10-14
+src/modules/Bacteria/useCases/index.ts
+  s_0314bb17e5dee3::t_e7e1490b5d7e2b 6
+src/modules/Bacteria/useCases/resetBacteriaForProject.ts
+  s_0314bb17e5dee3::t_ca7afaf293c429 1,4-5,7-8
+src/modules/ControlSurface/useCases/index.ts
+  s_0314bb17e5dee3::t_09872afde31b56 8
+src/modules/ControlSurface/useCases/restoreMidiLearnSnapshot.ts
+  s_0314bb17e5dee3::t_df7488449bc899 1,4-7,9-10
+src/modules/Crust/AGENTS.md
+  s_0314bb17e5dee3::t_df245930d31580 7
+src/modules/Crust/useCases/index.ts
+  s_0314bb17e5dee3::t_2a7abaf2bd4594 1
+src/modules/Crust/useCases/resetCrustForProject.ts
+  s_0314bb17e5dee3::t_e31a11d46c4d7a 1,4-6,8-10
+src/modules/Fermenter/useCases/index.ts
+  s_0314bb17e5dee3::t_fc72293a86660c 18
+src/modules/Fermenter/useCases/resetFermenterForProject.ts
+  s_0314bb17e5dee3::t_05103128e47e64 1,4-5,7-9
+src/modules/Gluten/AGENTS.md
+  s_0314bb17e5dee3::t_1710749af0dab7 7
+src/modules/Gluten/useCases/index.ts
+  s_0314bb17e5dee3::t_d0b0edeb5bcd36 1-4
+src/modules/Gluten/useCases/resetGlutenForProject.ts
+  s_0314bb17e5dee3::t_81bd0ca89bff62 1-15
+src/modules/Grinder/useCases/index.ts
+  s_0314bb17e5dee3::t_598f556e5e50a6 12
+src/modules/Grinder/useCases/resetGrinderForProject.ts
+  s_0314bb17e5dee3::t_e57d5ad0df7fac 1-12
+src/modules/Knead/useCases/index.ts
+  s_0314bb17e5dee3::t_7552e3356dfbb6 15
+src/modules/Knead/useCases/resetKneadForProject.ts
+  s_0314bb17e5dee3::t_22ae7f1f7648ff 1-10
+src/modules/Levain/useCases/__tests__/levainMultiInstanceProjectRoundTrip.spec.ts
+  s_0314bb17e5dee3::t_d518e254db1355 35,95
+src/modules/Levain/useCases/index.ts
+  s_0314bb17e5dee3::t_d2a11e70dfdca0 17
+src/modules/Levain/useCases/resetLevainForProject.ts
+  s_0314bb17e5dee3::t_7d9d87055721cb 1-9
+src/modules/Project/AGENTS.md
+  s_0314bb17e5dee3::t_13637e4c4dc519 21
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_0314bb17e5dee3::t_2268f7a64c8d5e 11,243-249,260
+src/modules/Project/useCases/demoProjects/nebulaDrift/__tests__/createNebulaDriftDemo.spec.ts
+  s_0314bb17e5dee3::t_f249224d3be143 64-66
+src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts
+  s_0314bb17e5dee3::t_d704ba2f80e716 16-21,23-24,27,32-33,1363,1392-1394,1400,2235,2237,2287
+src/modules/Project/useCases/index.ts
+  s_0314bb17e5dee3::t_b70f038f19dce6 17-18
+src/modules/Project/useCases/projectPersistence/__tests__/helpers.spec.ts
+  s_0314bb17e5dee3::t_109c0205778f4c 3,6,9,71-91,102,109,111-112
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectMidiHydration.spec.ts
+  s_0314bb17e5dee3::t_c443c77ae77a03 4,106
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectPreservesSessionUndo.spec.ts
+  s_0314bb17e5dee3::t_caf08c205f9797 196,223-230,234
+src/modules/Project/useCases/projectPersistence/__tests__/projectLifecycleRegistry.spec.ts
+  s_0314bb17e5dee3::t_e9c2f9a0fd8e31 1-123
+src/modules/Project/useCases/projectPersistence/durableOwnership/__tests__/savedAudioCollectionRace.integration.spec.ts
+  s_0314bb17e5dee3::t_f50a42d9d51cea 227,239,258
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  s_0314bb17e5dee3::t_2276e307e117b5 3,134-137,150,152,176,184,197,418
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportSnapshotConsistency.integration.spec.ts
+  s_0314bb17e5dee3::t_9b3c23909fff5a 47,227
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/midiLearnPersistence.roundTrip.spec.ts
+  s_0314bb17e5dee3::t_79f2f6d7fb760d 3,57
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/mixStatePersistence.roundTrip.spec.ts
+  s_0314bb17e5dee3::t_ebd5734bd90b32 3,55
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/hydrateModuleStoresFromProjectData.spec.ts
+  s_0314bb17e5dee3::t_3e780f6082de95 3-6,24-25,32-33,37-38,42-43,48-49,53-54,58-59,98,299-302,313-316
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/projectLifecycleOrder.spec.ts
+  s_0314bb17e5dee3::t_3b8a87dc664721 3-4,13,18-23,122-123,199
+src/modules/Project/useCases/projectPersistence/helpers/hydrateModuleStoresFromProjectData.ts
+  s_0314bb17e5dee3::t_113399c7a39960 1,5-9,11-13
+src/modules/Project/useCases/projectPersistence/helpers/resetModuleStoresToDefault.ts
+  s_0314bb17e5dee3::t_2786c02f188664 1,10-14,21-23
+src/modules/Project/useCases/projectPersistence/resetProjectStoresForProject.ts
+  s_0314bb17e5dee3::t_8c258f6a1e0233 1-12
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/grooveTemplateDirtyLifecycle.spec.ts
+  s_0314bb17e5dee3::t_f85478a50af517 3,17
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_0314bb17e5dee3::t_08a95502c15db7 250,329-336,342,373
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.audioDurability.integration.spec.ts
+  s_0314bb17e5dee3::t_3543a6ffca19c7 167,180,197
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.snapshotContinuation.integration.spec.ts
+  s_0314bb17e5dee3::t_89cca99c99d26e 58,74,87
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/builder.spec.ts
+  s_0314bb17e5dee3::t_888cec6527fb43 57
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/initProject.spec.ts
+  s_0314bb17e5dee3::t_6eb5b9d3e5efca 5,46,76
+src/modules/Project/useCases/projectTemplates/templateHelpers/addMarkers.ts
+  s_0314bb17e5dee3::t_f995a3b0e79fd0 2,19
+src/modules/Project/useCases/projectTemplates/templateHelpers/addSections.ts
+  s_0314bb17e5dee3::t_2cfbb07f278b9c 2,20
+src/modules/Project/useCases/projectTemplates/templateHelpers/initProject.ts
+  s_0314bb17e5dee3::t_698067a6a46ea3 3,27-29
+src/modules/ProjectVersioning/useCases/versionControl/__tests__/checkpointProjectIsolation.integration.spec.ts
+  s_0314bb17e5dee3::t_92878120a29194 4,265
+src/modules/ProjectVersioning/useCases/versionControl/__tests__/legacyVersionTimelineSnapshot.integration.spec.ts
+  s_0314bb17e5dee3::t_df2b58f759c441 4,253
+src/modules/Proof/useCases/index.ts
+  s_0314bb17e5dee3::t_57d90c5d097814 6
+src/modules/Proof/useCases/resetProofForProject.ts
+  s_0314bb17e5dee3::t_5cafd069ee576f 1-9
+src/modules/Toaster/useCases/__tests__/resetToasterForProject.spec.ts
+  s_0314bb17e5dee3::t_71baf7d06fdc54 1-40
+src/modules/Toaster/useCases/index.ts
+  s_0314bb17e5dee3::t_3128cde14bc802 16
+src/modules/Toaster/useCases/resetToasterForProject.ts
+  s_0314bb17e5dee3::t_7a86923616cc82 1-20
+src/modules/Transport/useCases/__tests__/seedTransportForNewProject.spec.ts
+  s_0314bb17e5dee3::t_7560cbe4b5f7ee 1-48
+src/modules/Transport/useCases/index.ts
+  s_0314bb17e5dee3::t_8bf63dd24fca5d 74
+src/modules/Transport/useCases/seedTransportForNewProject.ts
+  s_0314bb17e5dee3::t_6c950613a39501 1-15
+src/modules/Tuner/AGENTS.md
+  s_0314bb17e5dee3::t_ca985ace6d76f2 7
+src/modules/Tuner/useCases/index.ts
+  s_0314bb17e5dee3::t_b2f63983e8a7c1 1
+src/modules/Tuner/useCases/resetTunerForProject.ts
+  s_0314bb17e5dee3::t_342c22101b9795 1-9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d7718341b79bbe1800530186639e72d394a5cc1c",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
