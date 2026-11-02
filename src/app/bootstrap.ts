@@ -303,7 +303,9 @@ subscribeToPublishedActionHistory({
     onRootReplaced: resetActionReplayAuthority,
 });
 setRuntimeLogger(logger);
-configureCollaborationAssetOwner({ captureOwnerId: getDurableProjectOwnerId });
+configureCollaborationAssetOwner({
+    captureOwnerId: getDurableProjectOwnerId,
+});
 configureDurableAssetCommitProof({
     getDisposition: getVersionedCommandBatchCommitDisposition,
 });
