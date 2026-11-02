@@ -32,7 +32,8 @@ silently authorized):
 never draws an edge to the worker entry and the `workers-*` isolation rules reach it only by file location.
 An entry outside a `workers/` folder would run unconstrained code on another thread with no rule applying.
 The **worker spawns** gate closes this: it reads every `new Worker(...)` and `new SharedWorker(...)` and every
-import specifier ending in `?worker` or `?sharedworker` in production code under `src/`, resolves the target,
+import specifier whose Vite query carries `worker` or `sharedworker` (including `?worker&inline`) in production
+code under `src/`, resolves the target,
 and reports a row unless it lies under `src/modules/<Module>/workers/` or `src/infra/<area>/workers/`. A target
 that is not a string literal is a row too, since nothing can check where it points. `?worker&url` is a worklet
 processor URL and is governed by `worklets/` instead. A specifier built at run time, such as `import(path)`, is
