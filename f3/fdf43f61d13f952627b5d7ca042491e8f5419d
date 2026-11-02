@@ -1,0 +1,25 @@
+src/app/registerProjectLifecycle.ts
+  s_3f02fbfc614f10::t_5b44e5dfcf85d9 18,157,159
+src/modules/GrandBoule/useCases/index.ts
+  s_3f02fbfc614f10::t_46ba52a4ffbd4d 13
+src/modules/GrandBoule/useCases/resetGrandBouleForProject.ts
+  s_3f02fbfc614f10::t_2536993f927a08 1-9
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/projectLifecycleOrder.spec.ts
+  s_3f02fbfc614f10::t_f36db4b6e9b0d7 65-67,153
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f3fdf43f61d13f952627b5d7ca042491e8f5419d",
+  "prompts": {},
+  "sessions": {
+    "s_3f02fbfc614f10": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_3f02fbfc614f10",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
