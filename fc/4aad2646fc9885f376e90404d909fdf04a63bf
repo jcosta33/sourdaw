@@ -1,0 +1,28 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  h_beb54bf43b47b7 251-252,260,295,433,641-643
+.agents/skills/delivery-orchestration/references/review-records.md
+  h_beb54bf43b47b7 75,79
+AGENTS.md
+  h_beb54bf43b47b7 102-113,153,180-181,212-213
+scripts/__tests__/publishReview.spec.ts
+  h_beb54bf43b47b7 219,274,342,1165,1389,1401,1411,1415,1418,1425,1431,1438,1449,1453,1456,1468,2404,2418,2441,2454,4100,5194-5196,5210,5267,5529,5534,5706,5708,6334,6406,6607,6650,6728,6807-6810,6822,6831,6834,6848,6870,6903-6904,7308
+scripts/__tests__/reviewStructuralAdmission.spec.ts
+  h_beb54bf43b47b7 24
+scripts/__tests__/reviewerModelDiversity.spec.ts
+  h_beb54bf43b47b7 32-33,50,52,58,94,121,134,136,138,148,157-158,169,171,182,189,200,214,216,228,230,242,244,252-254,261,276,286,295,298-299,303,312,315,318,327,330-331,344,346,348-349,357-358,361,366,368-372,375,377-379,381,384,386-387,390,394,396-397,399
+scripts/reviewStructuralAdmission.ts
+  h_beb54bf43b47b7 5,38
+scripts/reviewerModelDiversity.ts
+  h_beb54bf43b47b7 2,4-10,32,40-42,63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fc4aad2646fc9885f376e90404d909fdf04a63bf",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
