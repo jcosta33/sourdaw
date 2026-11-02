@@ -211,6 +211,7 @@ describe('initial App import recovery through main', () => {
         retry.resolve({ App });
         await vi.waitFor(() => expect(appWasIssued()).toBe(true));
         expect(mocks.reportError).not.toHaveBeenCalled();
+        expect(mocks.logError).not.toHaveBeenCalled();
         expect(mocks.reload).not.toHaveBeenCalled();
         expect(mocks.roots).toHaveLength(1);
         expect(mocks.bootstrap).toHaveBeenCalledOnce();
@@ -305,6 +306,7 @@ describe('initial App import recovery through main', () => {
         await vi.waitFor(() => expect(mocks.renderError).toHaveBeenCalledWith(error, expect.anything()));
         expect(mocks.appRequested).toHaveBeenCalledOnce();
         expect(mocks.reportError).not.toHaveBeenCalled();
+        expect(mocks.logError).not.toHaveBeenCalled();
         expect(mocks.reload).not.toHaveBeenCalled();
         expect(document.querySelector('[role="alert"]')).toBeNull();
     });
