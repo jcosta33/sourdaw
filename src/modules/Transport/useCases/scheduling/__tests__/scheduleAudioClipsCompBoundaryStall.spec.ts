@@ -349,5 +349,123 @@ describe('scheduleAudioClips — comp parts', () => {
             expect(playback.active).not.toContain(staleTake);
             expectStart(sourceReading(5), { when: 5, offset: 5, duration: 1 });
         });
+
+        it('carries the boundary instant across a middle part that sounds nothing', () => {
+            const playback = newPlayback();
+            // The middle part enters at source second 25, past the 20 s buffer.
+            resolvedParts.value = [compPart(8, 10, 0), compPart(10, 11, 50), compPart(11, 12, 6)];
+            runWindow(playback, 8, 8.2, 8);
+            runWindow(playback, 11.16, 11.36, 11.16);
+
+            expect(sources.every((source) => startOf(source).offset < 20)).toBe(true);
+            const lastPartStarts = sources.filter((source) => Math.abs(startOf(source).offset - 3) < 0.1);
+            expect(lastPartStarts).toHaveLength(1);
+            expectStart(lastPartStarts[0], { when: 5.5, offset: 3, duration: 0.5 });
+        });
+
+        it('carries a run of three contiguous parts through a stall past the third', () => {
+            const playback = newPlayback();
+            resolvedParts.value = [compPart(8, 9, 0), compPart(9, 10, 20), compPart(10, 12, 6)];
+            runWindow(playback, 8, 8.2, 8);
+            runWindow(playback, 10.16, 10.36, 10.16);
+
+            expectStart(sourceReading(10), { when: 4.5, offset: 10, duration: 0.5 });
+            const thirdPartStarts = sources.filter((source) => Math.abs(startOf(source).offset - 3) < 0.1);
+            expect(thirdPartStarts).toHaveLength(1);
+            expectStart(thirdPartStarts[0], { when: 5, offset: 3, duration: 1 });
+        });
+    });
+
+    // Production windows open where the previous one ended, one look-ahead
+    // past the playhead, so the playhead sits in [playhead, fromBeat) ahead of
+    // every steady-state window.
+    function steadyWindow(playback: Playback, playheadBeat: number): FakeSource[] {
+        const before = sources.length;
+        runWindow(playback, playheadBeat + 0.2, playheadBeat + 0.4, playheadBeat);
+        return sources.slice(before);
+    }
+
+    describe('a cut rejoins the replacement at the playhead under the production window shape', () => {
+        it('rejoins a replacement that ends before the window start', () => {
+            const playback = newPlayback();
+            resolvedParts.value = [compPart(8, 12, 0)];
+            runWindow(playback, 8, 8.2, 8);
+            const whole = sources[0]!;
+
+            resolvedParts.value = [compPart(8, 10, 0), compPart(10, 12, 6)];
+            const started = steadyWindow(playback, 9.9);
+
+            expectStoppedAt(whole, 4.955);
+            expect(started).toHaveLength(2);
+            expectStart(sourceReading(0.95), { when: 4.95, offset: 0.95, duration: 0.05 });
+            expectStart(sourceReading(3), { when: 5, offset: 3, duration: 1 });
+            expect(steadyWindow(playback, 10.1)).toEqual([]);
+        });
+
+        it("rejoins a looping part's current pass when that pass ends before the window start", () => {
+            const playback = newPlayback();
+            resolvedParts.value = [compPart(8, 12, 0, { loopEnabled: true, loopLength: 1 })];
+            runWindow(playback, 9.8, 10.2, 9.8);
+            expect(sources).toHaveLength(2);
+
+            resolvedParts.value = [compPart(8, 12, 6, { loopEnabled: true, loopLength: 1 })];
+            const started = steadyWindow(playback, 9.9);
+
+            for (const superseded of sources.slice(0, 2)) {
+                expectStoppedAt(superseded, 4.955);
+            }
+            expect(started).toHaveLength(2);
+            expectStart(started[0], { when: 4.95, offset: 3.45, duration: 0.05 });
+            expectStart(started[1], { when: 5, offset: 3, duration: 0.5 });
+            expect(steadyWindow(playback, 10.1)).toEqual([]);
+        });
+
+        it('rejoins a short comp fragment that holds the playhead and ends before the window start', () => {
+            const playback = newPlayback();
+            resolvedParts.value = [compPart(8, 12, 0)];
+            runWindow(playback, 8, 8.2, 8);
+
+            resolvedParts.value = [compPart(8, 9.85, 0), compPart(9.85, 10, 6), compPart(10, 12, 4)];
+            const started = steadyWindow(playback, 9.9);
+
+            expect(started).toHaveLength(2);
+            expectStart(sourceReading(3.025), { when: 4.95, offset: 3.025, duration: 0.05 });
+            expectStart(sourceReading(2), { when: 5, offset: 2, duration: 1 });
+            expect(steadyWindow(playback, 10.1)).toEqual([]);
+        });
+    });
+
+    describe('a cut that is reversed re-emits the restored part once', () => {
+        it('re-emits a part unmuted after a mute cut it', () => {
+            const playback = newPlayback();
+            resolvedParts.value = [compPart(8, 12, 0)];
+            runWindow(playback, 8, 8.2, 8);
+            resolvedParts.value = [compPart(8, 12, 0, { muted: true })];
+            expect(steadyWindow(playback, 8.2)).toEqual([]);
+
+            resolvedParts.value = [compPart(8, 12, 0)];
+            const restored = steadyWindow(playback, 8.4);
+
+            expect(restored).toHaveLength(1);
+            expectStart(restored[0], { when: 4.2, offset: 0.2, duration: 1.8 });
+            expect(steadyWindow(playback, 8.6)).toEqual([]);
+        });
+
+        it('re-emits the original take swiped back after a swap', () => {
+            const playback = newPlayback();
+            resolvedParts.value = [compPart(8, 12, 6)];
+            runWindow(playback, 8, 8.2, 8);
+            resolvedParts.value = [compPart(8, 12, 10)];
+            const swapped = steadyWindow(playback, 8.2);
+            expect(swapped).toHaveLength(1);
+
+            resolvedParts.value = [compPart(8, 12, 6)];
+            const restored = steadyWindow(playback, 8.4);
+
+            expectStoppedAt(swapped[0]!, 4.205);
+            expect(restored).toHaveLength(1);
+            expectStart(restored[0], { when: 4.2, offset: 3.2, duration: 1.8 });
+            expect(steadyWindow(playback, 8.6)).toEqual([]);
+        });
     });
 });
