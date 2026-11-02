@@ -1,10 +1,11 @@
-import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import { type Page, type TestInfo } from '@playwright/test';
 
 import {
     getBrowserAiWebGpuHardwareRequirement,
     probeBrowserWebGpuHardware,
     requireBrowserWebGpuHardware,
 } from './browserAiHardware';
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 /**

@@ -1,4 +1,9 @@
-import { getTrackStrip, initializeTrackStripFromSnapshot, updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import {
+    deactivateTrackStrip,
+    getTrackStrip,
+    initializeTrackStripFromSnapshot,
+    updateDeviceParam,
+} from '#/modules/AudioEngine/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { orderDeviceParametersForReplay } from '#/utils/devicePatchPrecedence';
@@ -10,7 +15,7 @@ import {
 } from '#/utils/handlerContract';
 
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
-import { type Device, type Track } from '../../stores/trackStore';
+import { type Track } from '../../stores/trackStore';
 import { compileTrackStripInitializationSnapshot } from '../../useCases/compileTrackStripInitializationSnapshot';
 import { applyDeviceChainRuntimeDelta } from '../../useCases/device/applyDeviceChainRuntimeDelta';
 import { hasLiveProjectHostTrack } from '../../useCases/device/hasLiveProjectHostTrack';
@@ -24,6 +29,8 @@ import { matchesMaterializedPresetDevices } from '../../useCases/preset/matchesM
 import { runtimeGraphTopology } from '../../useCases/runtimeGraphTopology';
 import { updateTrack } from '../../useCases/updateTrack';
 import { getPlannedTrackState } from '../getPlannedTrackState';
+
+import { toPresetProjectDevices } from './toPresetProjectDevices';
 
 type LoadPresetAction = Extract<AppAction, { type: 'loadPreset' }>;
 type RuntimeDeviceDeltaResult = ReturnType<typeof applyDeviceChainRuntimeDelta>;
@@ -51,20 +58,6 @@ function isValidReplacementDevice(device: DeviceSnapshot): boolean {
     );
 }
 
-function toProjectDevices(devices: readonly DeviceSnapshot[]): Device[] {
-    return devices.map((device) => ({
-        id: device.id,
-        name: device.name,
-        type: device.type,
-        bypassed: device.bypassed,
-        parameterValues: { ...device.parameterValues },
-        ...(device.externalPluginId ? { externalPluginId: device.externalPluginId } : {}),
-        ...(device.externalInstanceId ? { externalInstanceId: device.externalInstanceId } : {}),
-        ...(device.externalStateChunk ? { externalStateChunk: device.externalStateChunk } : {}),
-        ...(device.deviceState ? { deviceState: structuredClone(device.deviceState) } : {}),
-    }));
-}
-
 function resolveReplacement(
     input: {
         trackId: string;
@@ -88,7 +81,6 @@ function resolveReplacement(
         (current !== null && !hasUniqueDeviceIds(current.devices)) ||
         !hasUniqueDeviceIds(planned.devices) ||
         !hasUniqueDeviceIds(input.devices) ||
-        input.devices.length === 0 ||
         input.devices.length > 64 ||
         input.devices.some((device) => !isValidReplacementDevice(device)) ||
         !runtimeGraphTopology.matchesNode(planned, input.expectedBefore)
@@ -98,8 +90,16 @@ function resolveReplacement(
     return current ?? planned;
 }
 
+/**
+ * A preset load always installs at least one device. Its restoring inverse
+ * may legitimately put back an empty chain, such as a new Toaster folder's.
+ */
+function hasPresetDevices(action: LoadPresetAction): boolean {
+    return action.payload.devices.length > 0;
+}
+
 function createReplacementTopology(before: Track, replacementDevices: readonly DeviceSnapshot[]): Track {
-    return { ...before, devices: toProjectDevices(replacementDevices) };
+    return { ...before, devices: toPresetProjectDevices(replacementDevices) };
 }
 
 function isReplacementStillAuthoritative(after: Track): boolean {
@@ -120,17 +120,78 @@ function initializeMissingLiveStrip(target: Track): RuntimeDeviceDeltaResult {
     return initializeTrackStripFromSnapshot(snapshot);
 }
 
+function deactivateLiveStrip(trackId: string): void {
+    try {
+        deactivateTrackStrip(trackId);
+    } catch (error) {
+        throw new Error(
+            `Runtime strip removal failed for track ${trackId}: ${String(error)}; manual repair is required`,
+            { cause: error }
+        );
+    }
+}
+
 function createPostCommitRuntimeEffect(
     before: Track,
     after: Track,
     batchContext?: Pick<HandlerValidationContext, 'actions' | 'actionIndex'>
 ): () => void {
     let failure: RuntimeDeviceDeltaPostCommitError | undefined;
+    let leftStripSettled = !shouldCreateLiveTrackStrip(before);
+
+    /**
+     * Whether the runtime result landed. A void delta for a track the same
+     * commit removed did not; a failure is kept so a retry re-throws it.
+     */
+    function settleRuntimeResult(result: RuntimeDeviceDeltaResult): boolean {
+        if (result.acceptance === 'superseded' && result.application === 'not-applied') {
+            return false;
+        }
+        if (result.acceptance !== 'superseded') {
+            const presetFailure = getRuntimeDeviceDeltaPostCommitFailure(result, 'Preset');
+            if (presetFailure) {
+                failure = presetFailure;
+                throw failure;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * A chain that needs no live strip (a restore that empties a Toaster
+     * folder) still owes the strip its old chain built. A track the same
+     * commit removed leaves it to the removing action. When a later action in
+     * the commit makes the track live again, the delta composes the live strip
+     * straight to final project truth, so that action's own delta discharges
+     * and writes the parameters. Otherwise the strip is torn down, as device
+     * removal does.
+     */
+    function settleStripLeftByNonLiveChain(): void {
+        if (!getTrackStrip(after.id) || !hasLiveProjectHostTrack(after.id)) {
+            return;
+        }
+        const authoritativeTrack = findUniqueTrack(after.id);
+        if (!authoritativeTrack) {
+            return;
+        }
+        if (shouldCreateLiveTrackStrip(authoritativeTrack)) {
+            settleRuntimeResult(
+                applyDeviceChainRuntimeDelta({ before, after, operation: 'replace-device-chain', batchContext })
+            );
+            return;
+        }
+        deactivateLiveStrip(after.id);
+    }
+
     return () => {
         if (failure) {
             throw failure;
         }
         if (!shouldCreateLiveTrackStrip(after)) {
+            if (!leftStripSettled) {
+                settleStripLeftByNonLiveChain();
+                leftStripSettled = true;
+            }
             return;
         }
         // This effect runs after the whole batch commits, so a later action in
@@ -165,15 +226,8 @@ function createPostCommitRuntimeEffect(
                 result = initializeMissingLiveStrip(authoritativeTarget);
             }
         }
-        if (result.acceptance === 'superseded' && result.application === 'not-applied') {
+        if (!settleRuntimeResult(result)) {
             return;
-        }
-        if (result.acceptance !== 'superseded') {
-            const presetFailure = getRuntimeDeviceDeltaPostCommitFailure(result, 'Preset');
-            if (presetFailure) {
-                failure = presetFailure;
-                throw failure;
-            }
         }
         if (result.application === 'discharged' && !isReplacementStillAuthoritative(after)) {
             return;
@@ -235,8 +289,15 @@ function expectedAfterTopology(action: LoadPresetAction): DeviceChainTopologySna
     };
 }
 
-function describeLoadPreset(action: LoadPresetAction) {
-    const current = findUniqueTrack(action.payload.trackId);
+/**
+ * A batch describes every member before any executes, so a load onto a track
+ * an earlier `addTrack` creates reads that track's planned chain, the same
+ * projection `validate` admits it against.
+ */
+function describeLoadPreset(action: LoadPresetAction, context?: HandlerValidationContext) {
+    const current = context
+        ? getPlannedTrackState(context, action.payload.trackId)
+        : findUniqueTrack(action.payload.trackId);
     const inverseAction =
         current && runtimeGraphTopology.matchesNode(current, action.payload.expectedBefore)
             ? {
@@ -261,6 +322,7 @@ export const handleLoadPreset = createHandler<'loadPreset'>({
         const preset = findPresetById(action.payload.presetId);
         return (
             preset !== null &&
+            hasPresetDevices(action) &&
             matchesMaterializedPresetDevices(preset, action.payload.devices) &&
             resolveReplacement(
                 {
@@ -276,6 +338,7 @@ export const handleLoadPreset = createHandler<'loadPreset'>({
     },
     execute: (action, context) => {
         if (
+            !hasPresetDevices(action) ||
             resolveReplacement(
                 {
                     trackId: action.payload.trackId,

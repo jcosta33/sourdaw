@@ -9,6 +9,7 @@ TypeScript tests use **Vitest** and live under **`__tests__/`** folders (see §3
 - **Unit tests by default.** A pure transform needs input/output assertions with no collaborators. When the failure depends on a boundary, keep the real collaborators needed to observe it, including cross-module action routing, Automerge authority, history, or store projection. Double external seams such as hardware, OS I/O, and hosted services. Use the narrowest real path that would fail if the invariant broke.
 - **Observe the outcome.** Assert both the promised result and ownership or non-effects when they matter: an earlier revision must not overwrite a newer one, a late async completion must not revive retired state, and grouped undo must preserve unrelated edits. Control completion explicitly and await the resulting observable; do not rely on fixed microtask counts. For combinatorial invariants, use reproducible seeded property cases and retain a failing seed.
 - **Unit-first.** Playwright E2E lives under `tests/e2e/`. Run only affected specs with `pnpm guard --profile broad -- pnpm test:e2e <spec>`. Prefer Vitest for behavior observable below the browser; use an environment that actually renders audio, uses hardware, or hosts the full UI when that is the claim.
+- **E2E files take `test` and `expect` from `tests/e2e/e2eTest.ts`.** That module is the one place a per-test fixture reaches every test, so importing them from `@playwright/test` bypasses it; `scripts/__tests__/e2eSharedTestFixture.spec.ts` enforces the import. Type-only names still come from `@playwright/test`.
 - **Ad-hoc live-UI probes are not E2E.** One-off browser probes/screenshots live in `.agents/ui-scripts/` per the `playwright-ui-bridge` skill — never add them to `tests/e2e/`.
 - **CI browser shards serve a production-mode build.** The dev server's cold module transform is about half of all browser runner time, so a CI shard serves `vite build --mode e2e` through `vite preview` with one Playwright worker. A build serves no `/src/...` module URLs, so any file that loads one at runtime (itself, through a helper, or through an HTML probe) is listed in `tests/e2e/devServerOnlySpecs.ts` and runs against a dev server started in the same shard. Local runs, the offline smoke job, and nightly use the dev server throughout. A built shard runs a production React build, so a browser spec asserting zero console errors there cannot see React's development-only warnings; the dev-server runs still can. `scripts/__tests__/e2eDevServerOnlySpecs.spec.ts` fails when a file loads a `/src/...` URL without being listed, or stays listed after it stops.
 - **Browser specs run with reduced motion.** `playwright.config.ts` emulates `prefers-reduced-motion: reduce`, so decorative transitions do not add a fixed wait to every boot. The product must honour that preference wherever motion delays interaction, such as the launch overlay's exit. A spec that asserts a full-motion path opts back in with `test.use({ reducedMotion: 'no-preference' })`, as `tests/e2e/launchFlows.spec.ts` does for the launch fade.
@@ -458,7 +459,7 @@ Subject: `src/modules/AudioEngine/engine/TrackNode.ts` — constructs an audio g
 
 Pass a mock `AudioContext` (see §7.4) via the constructor `deps`. Assert on the node connections and parameter calls — these are the only observable outputs of the class until the audio thread runs.
 
-Assert a parameter call's time only when the claim is timing, and then assert the frame it lands on, never the raw `ctx.currentTime` (`.agents/skills/review-stances/audio-param-frame-timing.md`). The clamp case below claims the value, so its time argument is `expect.any(Number)`.
+Assert a parameter call's time only when the claim is timing, and then assert the frame it lands on, never the raw `ctx.currentTime` (`.agents/skills/review-stances/audio-timing-format-laws.md` probes 5 to 7). The clamp case below claims the value, so its time argument is `expect.any(Number)`.
 
 ```typescript
 // src/modules/AudioEngine/engine/__tests__/TrackNode.spec.ts
@@ -483,7 +484,11 @@ describe('TrackNode', () => {
         const node = new TrackNode('track-1', { context: ctx });
 
         node.setGain(3);
-        expect(node.strip.faderNode.gain.setTargetAtTime).toHaveBeenCalledWith(FADER_MAX_GAIN, expect.any(Number), 0.01);
+        expect(node.strip.faderNode.gain.setTargetAtTime).toHaveBeenCalledWith(
+            FADER_MAX_GAIN,
+            expect.any(Number),
+            0.01
+        );
 
         node.setGain(-0.2);
         expect(node.strip.faderNode.gain.setTargetAtTime).toHaveBeenCalledWith(0, expect.any(Number), 0.01);

@@ -25,7 +25,12 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
+import {
+    frozenMidiTakeRepeats,
+    midiStore,
+    projectFrozenMidiTakeWindow,
+    selectMidiNotesForRecordingPass,
+} from '#/modules/MIDI/stores';
 import {
     isValidMidiTimeStateRestorePlan,
     prepareMidiGlobalTimeTransaction,
@@ -615,6 +620,227 @@ describe('MIDI loop recordings', () => {
                     })?.passLengthBeats
                 ).toBe(4);
             }
+        });
+
+        describe('frozen by a split, read through the frozen take helpers', () => {
+            /**
+             * Recorded from 6 in loop [8, 12) with one wrap, stopped at 9.5:
+             * pass 0 strikes 6.5 in its run-up and 9 inside the loop, pass 1
+             * strikes 8.5, and an untagged note is drawn at media beat 4.25.
+             */
+            async function recordWithRunUp(stopBeat = 9.5): Promise<void> {
+                transportStore.set({
+                    ...defaultTransportState,
+                    isLooping: true,
+                    loopStart: 8,
+                    loopEnd: 12,
+                    playheadPosition: 6,
+                });
+                const [clip] = startRecording(6);
+                if (!clip) {
+                    throw new Error('Expected a provisional MIDI recording');
+                }
+                transportStore.set({ ...transportStore.value!, isPlaying: true, isRecording: true });
+                holdNote(6.5, 0);
+                releaseNote(6.75, 0);
+                holdNote(9, 0);
+                releaseNote(9.25, 0);
+                stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 2, index: 0 });
+                holdNote(8.5, 1);
+                releaseNote(8.75, 1);
+                playheadWrapCountRef.current = 1;
+                await stopRecording(stopBeat);
+                flushAutomergeStorageWrites();
+                await dispatch({
+                    type: 'addNotes',
+                    payload: {
+                        clipId: clip.id,
+                        notes: [{ pitch: 72, startBeat: 4.25, duration: 0.25, velocity: 100 }],
+                    },
+                });
+            }
+
+            async function compOver(takeName: string, startBeat: number, endBeat: number): Promise<void> {
+                await dispatch({
+                    type: 'setCompRegion',
+                    payload: { trackId: TRACK_ID, takeId: passTake(takeName).id, startBeat, endBeat },
+                });
+            }
+
+            /**
+             * Every note-on the track holds in [fromBeat, toBeat), with its
+             * pitch: a live fragment read by hand from its clip's rows at its
+             * media offset, a frozen one through the frozen take helpers over
+             * each repeat of its captured source. The production readers'
+             * parity, live against frozen, is projectLiveMidiProgramme's and
+             * the schedulers' own suites.
+             */
+            function heardNotes(fromBeat: number, toBeat: number): [beat: number, pitch: number][] {
+                const notes = resolveClipsWithComping(TRACK_ID, recordedClips()).flatMap(
+                    (fragment): [number, number][] => {
+                        const source = fragment.midiTakeSource;
+                        if (source) {
+                            return frozenMidiTakeRepeats(
+                                source,
+                                fragment,
+                                fragment.startBeat,
+                                fragment.endBeat
+                            ).flatMap(
+                                ({ absoluteOccurrenceIndex }) =>
+                                    projectFrozenMidiTakeWindow({
+                                        source,
+                                        fragment,
+                                        recordingPassIndex: fragment.midiTakeRecordingPassIndex,
+                                        absoluteOccurrenceIndex,
+                                        fromBeat: fragment.startBeat,
+                                        toBeat: fragment.endBeat,
+                                    })?.notes.map((note): [number, number] => [note.startBeat, note.pitch]) ?? []
+                            );
+                        }
+                        return selectMidiNotesForRecordingPass(
+                            midiStore.value?.notesByClipId[fragment.id] ?? [],
+                            fragment.midiTakeRecordingPassIndex
+                        )
+                            .map((note): [number, number] => [
+                                fragment.startBeat + note.startBeat - (fragment.midiOffsetBeats ?? 0),
+                                note.pitch,
+                            ])
+                            .filter(([beat]) => beat >= fragment.startBeat && beat < fragment.endBeat);
+                    }
+                );
+                return notes
+                    .filter(([beat]) => beat >= fromBeat && beat < toBeat)
+                    .toSorted((left, right) => left[0] - right[0]);
+            }
+
+            function heardOnsets(fromBeat: number, toBeat: number): number[] {
+                return heardNotes(fromBeat, toBeat).map(([beat]) => beat);
+            }
+
+            async function splitInsideTheLoop(): Promise<void> {
+                await dispatch({
+                    type: 'splitClip',
+                    payload: { clipId: recordedClip().id, beat: 10, rightClipId: 'recording-right' },
+                });
+            }
+
+            it('plays a comped first pass’s run-up after the split on the beats it was struck', async () => {
+                await recordWithRunUp();
+                await compOver('Pass 0', 6, 12);
+                const live = heardOnsets(6, 12);
+                expect(live).toEqual([6.5, 9, 10.25]);
+
+                await splitInsideTheLoop();
+
+                // The split cuts Pass 0 itself, and its comp follows the take's pieces, so the
+                // run-up plays through the uncomped clip piece rather than the frozen repeat.
+                expect(passTake('Pass 0').midiSource).toMatchObject({ sourceEntryBeat: 2, phaseHeadBeat: 8 });
+                expect(heardOnsets(6, 12)).toEqual(live);
+            });
+
+            it('keeps a frozen run-up and its Delete Time bound through an edit of the run-up row and its undo', async () => {
+                await recordWithRunUp();
+                await compOver('Pass 0', 6, 12);
+                await splitInsideTheLoop();
+                // Cuts Pass 0's frozen piece [8, 10) after 9.5, so the piece keeping its id reads to source 3.5.
+                await dispatch({ type: 'deleteTime', payload: { startBeat: 9.5, endBeat: 9.75 } });
+                const bounded = passTake('Pass 0');
+                expect(bounded.midiSource).toMatchObject({ readEndBeat: 3.5 });
+                const sources = () => takeLaneStore.value?.lanes[0]?.takes.map((take) => take.midiSource);
+                const frozenSources = sources();
+                const heard = heardNotes(6, 12);
+                expect(heard).toContainEqual([6.5, 60]);
+                const runUp = bounded.midiSource?.rows.notes.value.find((note) => note.startBeat === 0.5);
+                if (!runUp || !bounded.midiSource) {
+                    throw new Error('Expected the frozen run-up row');
+                }
+
+                await dispatch({
+                    type: 'replaceOriginalMidiTakeRow',
+                    payload: {
+                        laneId: takeLaneStore.value!.lanes[0]!.id,
+                        takeId: bounded.id,
+                        sourceClipId: bounded.midiSource.sourceClipId,
+                        rowId: runUp.id,
+                        rowKind: 'note',
+                        expected: runUp,
+                        replacement: { ...runUp, startBeat: 0.75 },
+                        expectedSlotPresent: true,
+                        replacementSlotPresent: true,
+                        copyScope: 'capture',
+                    },
+                });
+
+                expect(passTake('Pass 0').midiSource).toMatchObject({ readEndBeat: 3.5 });
+                expect(heardNotes(6, 12)).toContainEqual([6.75, 60]);
+                expect(heardNotes(6, 12)).not.toContainEqual([6.5, 60]);
+
+                await undo();
+                flushAutomergeStorageWrites();
+
+                expect(sources()).toEqual(frozenSources);
+                expect(heardNotes(6, 12)).toEqual(heard);
+            });
+
+            it('keeps a later pass comped over its run-up playing it from the clip start when a split cuts its take', async () => {
+                // Stopped at 11, Take 1 runs [8, 11), so the split at 10 cuts the take itself. Its comp
+                // over [6, 12) reads the untagged 4.25 at 6.25; the clip under it would sound pass 0's 6.5.
+                await recordWithRunUp(11);
+                await compOver('Take 1', 6, 12);
+                const live = heardNotes(6, 12);
+                expect(live).toEqual([
+                    [6.25, 72],
+                    [8.5, 60],
+                ]);
+
+                await splitInsideTheLoop();
+
+                expect(heardNotes(6, 12)).toEqual(live);
+            });
+
+            it('sounds none of the time a Delete Time cut from a looping frozen take’s head, folded or not', async () => {
+                // Pitch 80 is drawn at media 1.5, beat 7.5, inside the deleted [7, 9): Pass 0's head is cut.
+                await recordWithRunUp();
+                await dispatch({
+                    type: 'addNotes',
+                    payload: {
+                        clipId: recordedClip().id,
+                        notes: [{ pitch: 80, startBeat: 1.5, duration: 0.25, velocity: 100 }],
+                    },
+                });
+                transportStore.set({ ...transportStore.value!, isPlaying: false, isRecording: false });
+                await dispatch({ type: 'setClipLoop', payload: { clipId: recordedClip().id, enabled: true } });
+                await dispatch({ type: 'setClipLoopLength', payload: { clipId: recordedClip().id, loopLength: 4 } });
+                await compOver('Pass 0', 6, 12);
+                expect(heardNotes(6, 12).map(([, pitch]) => pitch)).toContain(80);
+
+                await dispatch({ type: 'deleteTime', payload: { startBeat: 7, endBeat: 9 } });
+
+                const frozen = resolveClipsWithComping(TRACK_ID, recordedClips()).filter(
+                    (fragment) => fragment.midiTakeSource !== undefined
+                );
+                expect(frozen.some((fragment) => fragment.loopEnabled === true)).toBe(true);
+                expect(heardNotes(0, 32).map(([, pitch]) => pitch)).not.toContain(80);
+            });
+
+            it('plays a later pass comped from before its take start, untagged rows included', async () => {
+                await recordWithRunUp();
+                await compOver('Take 1', 6, 12);
+                const live = heardOnsets(6, 12);
+                // The untagged note sounds where live reads media 4.25 for the pass; pass 0's notes stay out.
+                expect(live).toEqual([6.25, 8.5]);
+
+                await splitInsideTheLoop();
+
+                expect(passTake('Take 1').midiSource).toMatchObject({ sourceEntryBeat: 6, phaseHeadBeat: 8 });
+                expect(heardOnsets(6, 12)).toEqual(live);
+
+                await undo();
+                flushAutomergeStorageWrites();
+                expect(recordedClips()).toHaveLength(1);
+                expect(passTake('Take 1')).not.toHaveProperty('midiSource');
+                expect(heardOnsets(6, 12)).toEqual(live);
+            });
         });
 
         it('plays a comped first pass on the beats it was struck when looping is switched on inside it', async () => {

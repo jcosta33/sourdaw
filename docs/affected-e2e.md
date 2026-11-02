@@ -56,3 +56,77 @@ describes the value of a fast selected presubmit plus later, broader testing. Pl
 own [changed-test selection](https://playwright.dev/docs/ci#fail-fast) heuristic and recommends a
 subsequent full run. Here, explicit suite inputs, conservative widening, and nightly full coverage
 provide that broader check.
+
+## Coverage map
+
+Nightly also records which app source files each browser spec executes, the data test impact
+analysis needs. The app loads nearly every module at boot, so a loaded file says nothing about a
+spec; a file counts as executed only when a function other than its top-level module body ran.
+The `e2e-coverage` job collects it with Chromium JS coverage through the fixture in
+`tests/e2e/e2eTest.ts`, which is active only when `SOURDAW_E2E_COVERAGE_DIR` is set and writes one
+record per test. It runs apart from the gating `e2e` train because coverage slows the browser and
+could push timing-bounded specs over budget; test failures there gate nothing, but a shard fails
+unless at least one of its records is complete and passed, because a fixture broken for every test
+still writes one incomplete record per test.
+
+A test's record is complete only when the test used the fixture page, that page's coverage was
+collected, and no other page ran while the test did. Coverage reaches neither other pages nor
+workers and worklets, so a consumer must treat code that runs there as unmapped. Every record is
+written before the test body as incomplete, so a test whose teardown never runs leaves that record
+behind.
+
+`scripts/e2eCoverageMap.ts` folds the records into `e2e-coverage-map.json` (format
+`e2e-coverage-map-v1`) for one commit: the sorted spec inventory, `alwaysSelect`, and for each
+executed file its Git blob at that commit and the indices of the specs that executed it. Only
+complete, passed records contribute files. A spec with any incomplete, failed, timed-out,
+interrupted, or skipped record, and every inventoried spec without a record, is in `alwaysSelect`,
+so a consumer never narrows on evidence that was not collected. The blob lets a consumer detect a
+file that changed since the map was built.
+
+## Coverage selection
+
+When pull-request planning would otherwise select the full browser suite because of changed
+product files, `scripts/e2eCoverageSelection.ts` may narrow it with the newest map, a form of
+test impact analysis at function-body granularity. Every existing route keeps its result: owner
+narrowing, when it applies, is kept, and directly changed specs are still selected beside the
+narrowed set. The plan selects, for the changed files, the union of the specs that executed each
+file, the map's `alwaysSelect`, and every collected spec the map does not list. Smoke still runs
+for every browser plan, and Browser AI hardware admission follows the selected specs.
+
+It narrows only when all of these hold; otherwise it keeps the full suite and records which rule
+decided:
+
+- The scope job's fetch step retrieved a map that a scheduled or dispatched nightly run of
+  `.github/workflows/nightly.yml` on this repository's `main` uploaded, whose commit is that run's
+  head, and that is at most three days old. Artifacts from pull-request runs, forks, other
+  workflows, or other branches are never read.
+- No changed product path is deleted, renamed, copied, or retyped, and each is a non-declaration
+  TypeScript source under `src/`. Stylesheets, JSON, assets, and paths outside `src/` keep the full
+  suite.
+- No changed file is reachable from a worker or audio-worklet entry: a `new Worker(new URL(…))`
+  target or any script imported by URL (`?worker`, `?worker&url`, `?url`). Page coverage cannot
+  see those threads, and an opaque runtime edge leaves the entry set unproven.
+- Each changed file's blob at the merge-base equals the map's blob, so the map describes the code
+  being changed. A file the map does not list must exist unchanged at the map commit; no browser
+  spec then executed any of its functions.
+- The merge-base and head contents parse, neither holds a build annotation comment, and their parse
+  trees agree outside function bodies. Annotation comments are those compilers and bundlers act on
+  (`@__PURE__`, `@__NO_SIDE_EFFECTS__`, `@vite-ignore`, `sourceURL` and `sourceMappingURL`,
+  `@jsx` pragmas); tools read them by position and by tool-specific rules, so their presence in a
+  changed file, not a difference, keeps the full suite. Each side is flattened to its syntax nodes
+  in pre-order and its tokens by kind and exact text, so other comments and whitespace drop out
+  while string and template-literal contents, including blank lines inside a template, still count,
+  and a line break that automatic semicolon insertion parses differently changes the tree.
+  Type-only declarations are dropped from both sides, and the outside comparison collapses each
+  function, method, constructor, or accessor body to one placeholder. Equal full trees are a
+  comment or type-only change; trees equal only outside bodies are a body change. Comparing trees
+  rather than diff lines means a comment toggle that revives or retires top-level code
+  stays full, whatever lines the diff touches. A body change can affect behaviour only when the
+  function runs, and the map lists every spec in which some function of that file ran. Top-level
+  changes stay full: module bodies run at boot in every spec, and top-level values reach functions
+  in other files the map does not attribute to this one. Imports, signatures, parameters, class
+  property initializers, decorators, enums, and namespaces count as top level.
+
+A stale map can miss a call path created on `main` after the map commit, from an unchanged caller
+into a changed function no mapped spec reached before; the nightly full train remains the
+unconditional backstop that catches it.

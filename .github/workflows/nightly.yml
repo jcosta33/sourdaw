@@ -742,6 +742,126 @@ jobs:
           path: playwright-report/
           retention-days: 7
 
+  e2e-coverage:
+    name: End-to-end coverage ${{ matrix.shard }}/12
+    # Records which app source files each browser test executed, for test
+    # impact analysis (docs/affected-e2e.md). It gates nothing: coverage
+    # collection slows the browser, so it stays out of the gating `e2e` train,
+    # whose timing-bounded specs it could push over budget. A failing test is
+    # recorded and always selected by the map; the gating train owns failures.
+    needs: decide
+    if: needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea
+      options: --init --ipc=host
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up pnpm
+        uses: ./.github/actions/setup-pnpm
+        with:
+          package_json_file: package.json
+
+      - name: Set up Node
+        timeout-minutes: 3
+        continue-on-error: true
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify preinstalled browser runtime
+        timeout-minutes: 2
+        run: node scripts/verifyPlaywrightRuntime.ts 1.64.1
+
+      # Test failures leave this step green because each failing test writes a
+      # record the map always selects. The step fails unless at least one
+      # record in the shard is complete and passed: a shard without one, such
+      # as when the coverage fixture breaks for every test, proves nothing.
+      - name: Run shard with coverage
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          set -uo pipefail
+          export SOURDAW_E2E_COVERAGE_DIR="$PWD/e2e-coverage"
+          status=0
+          pnpm test:e2e --shard="$SHARD/12" --reporter=line || status=$?
+          printf 'Playwright exited with status %s\n' "$status"
+          if ! node scripts/e2eCoverageMap.ts --check-records "$SOURDAW_E2E_COVERAGE_DIR"; then
+            printf '::error title=Unusable coverage records::Shard %s wrote no complete, passed coverage record.\n' "$SHARD"
+            exit 1
+          fi
+
+      - name: Upload coverage records
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-coverage-${{ matrix.shard }}
+          path: e2e-coverage/
+          if-no-files-found: error
+          retention-days: 7
+
+  e2e-coverage-map:
+    name: End-to-end coverage map
+    needs: e2e-coverage
+    if: ${{ !cancelled() && needs.e2e-coverage.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up pnpm
+        uses: ./.github/actions/setup-pnpm
+        with:
+          package_json_file: package.json
+
+      - name: Set up Node
+        timeout-minutes: 3
+        continue-on-error: true
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download coverage records
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: e2e-coverage-*
+          path: all-e2e-coverage
+          merge-multiple: true
+
+      - name: Build the coverage map
+        env:
+          COMMIT: ${{ github.sha }}
+        run: node scripts/e2eCoverageMap.ts --records all-e2e-coverage --commit "$COMMIT" --out e2e-coverage-map.json
+
+      - name: Upload the coverage map
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-coverage-map
+          path: e2e-coverage-map.json
+          if-no-files-found: error
+          retention-days: 14
+
   codeql:
     name: CodeQL
     needs: decide
@@ -1131,6 +1251,8 @@ jobs:
         desktop-measure,
         e2e,
         e2e-report,
+        e2e-coverage,
+        e2e-coverage-map,
         browser-ai-webgpu,
         codeql,
         secrets,

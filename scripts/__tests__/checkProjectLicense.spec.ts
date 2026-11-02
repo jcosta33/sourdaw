@@ -55,6 +55,7 @@ const ownershipFiles = [
     '.dependency-cruiser.tests.cjs',
     '.dependency-cruiser.types.cjs',
     '.dependency-cruiser.reachability.cjs',
+    '.dependency-cruiser.module-tiers.cjs',
     'src/infra/store/storage/LocalStorageKeys.ts',
     'src/modules/AiRuntime/models/ToolDefinitions.ts',
     'src/modules/AiRuntime/models/Tools/Types.ts',

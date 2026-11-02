@@ -1,5 +1,6 @@
-import { expect, test, type Page, type Route } from '@playwright/test';
+import { type Page, type Route } from '@playwright/test';
 
+import { expect, test } from './e2eTest';
 import vercelConfig from '../../vercel.json' with { type: 'json' };
 
 import {

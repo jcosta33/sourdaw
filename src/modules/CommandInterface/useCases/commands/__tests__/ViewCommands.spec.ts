@@ -34,6 +34,7 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     toggleInspector: vi.fn(),
     toggleMixer: vi.fn(),
     toggleAutomationPanel: vi.fn(),
+    getToolShortcutHint: vi.fn(() => ''),
 }));
 vi.mock('../../selectionHelpers/getSelectedClipId', () => ({ getSelectedClipId: vi.fn() }));
 

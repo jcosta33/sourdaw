@@ -14,6 +14,9 @@
 //      every contract-folder file, baseline-compared like a cruise, so a private
 //      models/repositories/transformers symbol reaches a contract surface only
 //      through a registered publication — dependency edges cannot see re-exports)
+//   6) the module tier register (static module-pair edges checked against
+//      .dependency-cruiser.module-tiers.cjs, plus every module-level cycle,
+//      which file-level no-circular cannot see)
 // ----------------------------------------------------------------------------
 // Sourdaw TypeScript module architecture enforcement
 //
@@ -134,7 +137,7 @@ module.exports = {
             to: {
                 path: '^src/modules/',
                 pathNot: [
-                    '^$1$2', // same module may import its own internals freely
+                    '^$1$2/', // same module may import its own internals freely
                     // Only contract-folder barrels are accepted; module-root barrels are not.
                     '^src/modules/[^/]+/(useCases|events|stores|presentations/views)/index(?:\\.ts)?$',
                     '^src/helpers/',
@@ -219,7 +222,7 @@ module.exports = {
             },
             to: {
                 path: '^src/modules/',
-                pathNot: '^$1$2', // target path must NOT start with the same module root
+                pathNot: '^$1$2/', // target path must NOT start with the same module root
                 dependencyTypes: ['local'], // dependency-cruiser marks both relative and tsconfig-alias imports as local
                 dependencyTypesNot: ['aliased', 'aliased-tsconfig', 'aliased-tsconfig-paths'],
             },
@@ -666,7 +669,7 @@ module.exports = {
             severity: 'error',
             comment: 'React belongs only in presentations/. Business and I/O layers must stay React-free.',
             from: {
-                path: '^(src|application)/.+',
+                path: '^src/.+',
                 // presentations/ (all module variants) plus legitimate shared-UI
                 // and React-binding infra: src/components|app|routes are shared
                 // UI; src/infra/store holds the useSyncExternalStore hooks and
@@ -714,7 +717,7 @@ module.exports = {
             severity: 'error',
             comment: 'react-dom belongs only in presentations/.',
             from: {
-                path: '^(src|application)/.+',
+                path: '^src/.+',
                 pathNot: [
                     ...MODULE_PRESENTATION_PATH_NOT,
                     '^src/components/',
@@ -825,7 +828,7 @@ module.exports = {
             severity: 'error',
             comment: 'Production code must not depend on Storybook stories.',
             from: {
-                path: '^(src|application)/',
+                path: '^src/',
                 pathNot: SPEC_FILE_RE,
             },
             to: {
@@ -837,7 +840,7 @@ module.exports = {
             severity: 'error',
             comment: 'Production code should not depend on fixtures or mocks.',
             from: {
-                path: '^(src|application)/',
+                path: '^src/',
                 pathNot: SPEC_FILE_RE,
             },
             to: {
@@ -850,7 +853,7 @@ module.exports = {
             comment:
                 'Production code depends on an npm package listed in devDependencies. Move it to dependencies if it ships.',
             from: {
-                path: '^(src|application)',
+                path: '^src/',
                 // Test-support files legitimately import dev-only test tooling
                 // (vitest, @testing-library, mocks). They are excluded from the
                 // production bundle, so a dev-dep import there is fine. Without

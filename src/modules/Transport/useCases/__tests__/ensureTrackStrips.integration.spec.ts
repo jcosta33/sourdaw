@@ -4,7 +4,7 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { trackStore, type Track } from '#/modules/Arrangement/stores';
+import { defaultSoloModeState, soloModeStore, trackStore, type Track } from '#/modules/Arrangement/stores';
 import {
     createTrack,
     projectTrackToLiveStrip,
@@ -25,7 +25,6 @@ import {
     removeCrdtDoc,
 } from '#/modules/CrdtDocument/useCases';
 import { sidechainStore } from '#/modules/Routing/stores';
-import { workspaceStore, defaultWorkspaceState } from '#/modules/WorkspaceShell/stores';
 
 import { createMockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
 import { ensureTrackStrips } from '../ensureTrackStrips';
@@ -204,7 +203,7 @@ describe('project strip initialization before bus facade and send publication', 
         configureRuntimeGraphProjectRevisionValidator((revision) => revision === captureProjectRevision());
         configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
         initEngineDeviceCollaborators();
-        workspaceStore.set({ ...defaultWorkspaceState, soloMode: 'sip' });
+        soloModeStore.set({ ...defaultSoloModeState, soloMode: 'sip' });
     });
 
     afterEach(() => {
@@ -397,7 +396,7 @@ describe('project strip initialization before bus facade and send publication', 
         first.muted = mode === 'muted';
         first.soloed = mode === 'pfl';
         tracks[0]!.soloed = mode === 'sip';
-        workspaceStore.set({ ...defaultWorkspaceState, soloMode: mode === 'pfl' ? 'pfl' : 'sip' });
+        soloModeStore.set({ ...defaultSoloModeState, soloMode: mode === 'pfl' ? 'pfl' : 'sip' });
         installTracks(tracks);
         expect(ensureTrackStrips().status).toBe('ready');
         const strip = audioEngine.getTrackStrip(first.id)!;

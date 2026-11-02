@@ -1,134 +1,80 @@
-# Public repair record admission and refusal diagnostics
+# Standing probes: public repair record admission and refusal diagnostics
 
-Public review replies become repair evidence only through the immutable author or reviewer App
-actor ID. Keep that identity across the REST adapter and admit it before parsing a repair marker
-or checking its root binding. Missing, unreadable, foreign, and orchestrator actor identities
-contribute no repair evidence. Malformed records from either authorized App still fail closed.
-Review verdict roles remain a separate contract: allowing author repair replies does not make
-author reviews governed rounds.
+Defects where public review replies become, or block, repair evidence without the right identity, ordering,
+serialization or diagnostics. Replies count as repair evidence only through the immutable author or reviewer App
+actor ID, admitted before parsing a marker or checking its root binding; missing, unreadable, foreign and
+orchestrator identities contribute nothing, while malformed records from either authorized App still fail closed.
+Review verdict roles are a separate contract: allowing author repair replies does not make author reviews governed
+rounds. Use offline injected ports; they establish local admission and mutation ordering, not live GitHub behavior
+or repair truth, and every probe keeps the ordinary eligible and idempotent flows as controls.
 
 ## Standing probes
 
-- Feed paginated REST comments through the production reader. Preserve both App node IDs, map
-  absent or unreadable identities to null, and reject identity inferred from a matching login.
-- Put the same malformed marker bytes under author, reviewer, foreign, and unknown identities.
-  Only the authorized records may refuse reconstruction. Foreign valid markers must contribute
-  no repairs, including when they answer an unknown root; authorized unknown-root records refuse.
-- Exercise fresh `publishReview` below the freeze threshold through its real admission path.
-  A malformed foreign reply must permit the publication POST; the same reply from either App must
-  refuse before any POST or bundle write. A reconstruction-only check misses this availability
-  boundary. Preserve valid historical repair order, root bindings, and review role classification.
-- Select multiple refused threads alongside eligible and ignored threads. Require every exact
-  `repair-refused:<pr>:<thread>:<reason>` diagnostic before the aggregate failure, preserve ignored
-  diagnostics, and assert zero confirmation and resolution calls for the whole refused batch.
-  Checking only an exception or a refusal count does not observe the operator's recovery evidence.
-- Persist a finding path containing LF, CR, CRLF, U+2028, or U+2029 in a canonical repair record.
-  Require its full refusal cause on one physical prefixed diagnostic line, alongside zero confirmation
-  and resolution calls even when another repair is eligible. Escape separators only when logging;
-  legitimate Git paths and canonical repair bytes must still parse unchanged. Check ignored thread IDs
-  containing those separators at the same logging boundary.
-- Retain the ordinary eligible and idempotent flows. Use offline injected ports for these probes;
-  they establish local admission and mutation ordering, not live GitHub behavior or repair truth.
-- For both compact and legacy confirmations, make the selected author repair comment ID precede
-  the reviewer confirmation ID through selection and replay. Shuffle reply arrays, test earlier
-  and equal IDs, and put an invalid later thread after a valid one; the whole batch must refuse
-  before any confirmation post or resolution. Preserve valid descendant-head replay exactly once.
-
-## Escape: a foreign marker becomes a publication blocker
-
-[PR #4565](https://github.com/jcosta33/sourdaw/pull/4565), merged as
-`8b682bc8f58a30d39bd395fcab1771ef96a63b9a`, introduced reconstruction that discarded REST comment
-actors and parsed every reply marker. [PR #4588](https://github.com/jcosta33/sourdaw/pull/4588),
-merged as `93dbaf0ebae4b6b79f8844749148a09ce784dceb`, put that reconstruction ahead of the fresh
-publication threshold comparison. A foreign reply containing `sourdaw-repair-v1 {not json`
-therefore refused a fresh publication even below the round threshold then in force (#5007; the freeze threshold since ADR 0054).
-
-The retained final-head #4588 stance
-`the-guard-change-leaves-plan-carrying-publication-unchanged` admitted below-threshold behavior
-changes but did not name malformed foreign reply input. The missed probe was actor admission
-before parsing through the publication caller. #4565's public approval reports reconstruction
-mutation probes; its final-head bundle is unavailable, so its precise stance and tier cannot be
-established from that evidence.
-
-## Escape: computed refusal causes disappear
-
-[PR #4411](https://github.com/jcosta33/sourdaw/pull/4411), merged as
-`ae4793d05ff2fc310a151a55ebe455dd2d816084`, introduced confirmation that logged ignored selections
-but threw only an aggregate count for refused selections (#5004). Its public approval describes
-selection, paging, author handling, and refusal checks; the final-head bundle is unavailable.
-The missing diagnostic probe supplied two refused threads and checked their exact IDs and causes
-alongside the zero-mutation guarantee. An exception-only check preserved safety while leaving the
-operator unable to identify the records to repair.
-
-## Escape: a persisted path splits a refusal diagnostic
-
-[PR #5078](https://github.com/jcosta33/sourdaw/pull/5078) added refusal causes but interpolated
-the persisted finding path verbatim. A canonical path `scripts/first.ts\nforged` against root
-`scripts/actual.ts` split one cause across physical lines, leaving the continuation without its
-`repair-refused` prefix. Ordinary-path exact assertions and zero-mutation checks missed the line
-contract. The required probe preserves the whole-batch refusal while asserting one prefixed physical
-record with the escaped separator and retained cause; rejecting the persisted path would hide the
-logging defect and change the repair-record contract.
-
-## Escape: reviewer confirmations copy and reconstruct the repair as a second record
-
-[PR #4411](https://github.com/jcosta33/sourdaw/pull/4411) introduced reviewer confirmation replies
-with the complete `sourdaw-repair-v1` payload. [PR #4565](https://github.com/jcosta33/sourdaw/pull/4565)
-introduced cold reconstruction that admitted both the immutable author and reviewer into the same
-repair collection; [PR #5078](https://github.com/jcosta33/sourdaw/pull/5078) later preserved actor
-identity without separating those roles. The public result duplicated the full evidence bytes and
-reported a reviewer confirmation as another author repair. This is an observable wire and
-reconstruction cost, not a preference about shorter prose.
-
-The missed probe uses a populated, safe V1 record and proves that a new reviewer marker carries a
-digest of the canonical whole record without copying its evidence, while cold reconstruction retains
-one author repair and a separate confirmation linked to that digest. It also replays a posted
-confirmation after a resolve failure and refuses mixed or doubled confirmations before any remote
-mutation. The historical final-head bundles for #4411 and #4565 are unavailable, so their precise
-stance and reviewer tier cannot be established; no historical tier is inferred here.
-
-## Escape: a reviewer marker predates its selected author repair
-
-[PR #4411](https://github.com/jcosta33/sourdaw/pull/4411) introduced live confirmation
-replay. A matching reviewer marker with comment ID 9001 could be treated as confirmation of a
-selected author record with ID 9002, because the selected reply ID was dropped before both live
-admission and replay. The missing probe compares public comment IDs for compact and legacy
-markers through every route, regardless of array order, and asserts a later invalid thread
-aborts the full batch without mutations. The historical final-head bundle is unavailable, so
-its exact stance and reviewer tier remain unknown.
-
-## Escape: concurrent repair writers duplicate an authoritative record
-
-[PR #4411](https://github.com/jcosta33/sourdaw/pull/4411), merged as
-`ae4793d05ff2fc310a151a55ebe455dd2d816084`, introduced repair and confirmation writers
-without serializing their read-absence/post transactions. GitHub echoes `clientMutationId`
-without deduplicating it. Two cooperating callers could both read an absent marker, post the
-same confirmation, then leave an unresolved thread after resolve failures; later replay refuses
-the duplicate confirmations. Sequential idempotence probes did not establish concurrent safety.
-The historical final-head bundle is unavailable, so its exact stance and reviewer tier remain unknown.
-
-Hold the real production coordinator after its per-PR v4 owner acquisition with an explicit
-barrier. A competing repair or confirmation must refuse before authentication or remote reads,
-while another PR remains independent. Assert one authoritative post after release and replay.
-Use the existing Git owner and recovery runner in a disposable repository; bypassing the
-coordinator's serializer must fail this probe. Core selection functions remain unlocked.
-
-For each actual write port — author reply, reviewer confirmation, and reviewer resolve — make
-the remote apply the write then throw, or fail a resolve after an existing confirmation. Require
-a retained `remote-mutation-attempted` v4 owner and its exact `deliver --recover-lock` command.
-Recover only after controlled dead-fence proof and two stable reads, then replay without a
-second post, including a descendant head. Receipt replay must need no new authentication or
-remote read. Removing any write port's attempt marking must fail its retention probe. Keep
-whole-batch refusal, immutable actor/root binding, ancestry and duplicate refusal intact.
-
-Exercise the real trusted snapshot route as well: both commands need the lock source in their
-pinned closures and trusted process tools with detached POSIX groups. Unit core success cannot
-prove launcher fencing or recoverable ownership. Removing either command's fence classification
-must fail that integration probe.
-
-Pre-merge review lesson from [PR #5701](https://github.com/jcosta33/sourdaw/pull/5701):
-extracting a helper from a trusted writer must preserve both its exact source closure and the
-semantic governance-classification union. Closure-only probes passed while `gitAncestry.ts`
-was missing from `GOVERNANCE_TRANSITION_PATHS`. Run the existing `reviewRiskPolicy.spec.ts`
-union-equality and every-closure-path `native-security` assertions alongside the closure probes
-before publication; preserve their expected sets and classifications.
+1. **Actor identity survives the REST adapter (#4565 `8b682bc8f5`, #5078).** Feed paginated REST comments through the
+   production reader. Preserve both App node IDs, map absent or unreadable identities to null, and reject identity
+   inferred from a matching login.
+2. **Malformed markers are judged by actor before parsing (#4565).** Put the same malformed marker bytes under author,
+   reviewer, foreign and unknown identities: only the authorized records may refuse reconstruction. Foreign valid
+   markers contribute no repairs, including when they answer an unknown root; authorized unknown-root records refuse.
+3. **A foreign marker must not block a fresh publication (#4588 `93dbaf0eba`, #5007).** #4588 put reconstruction ahead
+   of the fresh-publication threshold comparison, so a foreign reply containing `sourdaw-repair-v1 {not json`
+   refused a publication below the round threshold (now the ADR 0054 freeze threshold); its stance
+   `the-guard-change-leaves-plan-carrying-publication-unchanged` never named malformed foreign input. Exercise fresh
+   `publishReview` below the freeze threshold through its real admission path: a malformed foreign reply permits the
+   publication POST; the same reply from either App refuses before any POST or bundle write. A reconstruction-only
+   check misses this availability boundary. Preserve valid historical repair order, root bindings and review role
+   classification.
+4. **Every refused thread is named before the aggregate failure (#4411 `ae4793d05f`, #5004).** Confirmation logged
+   ignored selections but threw only an aggregate count for refused ones. Select multiple refused threads beside
+   eligible and ignored threads; require every exact `repair-refused:<pr>:<thread>:<reason>` diagnostic before the
+   aggregate failure, preserve ignored diagnostics, and assert zero confirmation and resolution calls for the whole
+   refused batch. An exception or a refusal count alone leaves the operator unable to identify the records to repair.
+5. **A persisted path must not split a refusal diagnostic (#5078).** #5078 interpolated the finding path verbatim, so
+   canonical path `scripts/first.ts\nforged` against root `scripts/actual.ts` split one cause across physical lines.
+   Persist a finding path containing LF, CR, CRLF, U+2028 or U+2029 in a canonical repair record; require its full
+   cause on one physical prefixed diagnostic line with the escaped separator, alongside zero confirmation and
+   resolution calls even when another repair is eligible. Escape separators only when logging; legitimate Git paths
+   and canonical repair bytes still parse unchanged (rejecting the path would hide the defect and change the
+   repair-record contract). Check ignored thread IDs containing those separators at the same boundary.
+6. **A reviewer marker must postdate its selected author repair (#4411).** A matching reviewer marker with comment ID
+   9001 could confirm a selected author record with ID 9002, because the selected reply ID was dropped before live
+   admission and replay. For compact and legacy confirmations, make the author repair ID precede the reviewer
+   confirmation ID through selection and replay; shuffle reply arrays, test earlier and equal IDs, and put an
+   invalid later thread after a valid one: the whole batch refuses before any confirmation post or resolution.
+   Preserve valid descendant-head replay exactly once.
+7. **A confirmation links the repair by digest instead of copying it (#4411, #4565, #5078).** Confirmations copied
+   the full `sourdaw-repair-v1` payload and cold reconstruction admitted author and reviewer into one collection,
+   duplicating evidence bytes and reporting a confirmation as another author repair. With a populated, safe V1
+   record, a new reviewer marker carries a digest of the canonical whole record without its evidence, and cold
+   reconstruction keeps one author repair and a separate confirmation linked to that digest. Replay a posted
+   confirmation after a resolve failure, and refuse mixed or doubled confirmations before any remote mutation.
+8. **Concurrent repair writers are serialized (#4411).** Repair and confirmation writers did not serialize their
+   read-absence/post transactions, and GitHub echoes `clientMutationId` without deduplicating, so two callers could
+   both post the same confirmation and later replay refused the duplicates. Hold the real production coordinator
+   after its per-PR v4 owner acquisition with an explicit barrier: a competing repair or confirmation refuses before
+   authentication or remote reads while another PR stays independent; assert one authoritative post after release
+   and replay. Use the existing Git owner and recovery runner in a disposable repository; bypassing the
+   coordinator's serializer must fail. Core selection functions stay unlocked.
+9. **A write that may have landed retains its owner for recovery (#4411).** For each write port (author reply,
+   reviewer confirmation, reviewer resolve) make the remote apply the write then throw, or fail a resolve after an
+   existing confirmation: require a retained `remote-mutation-attempted` v4 owner and its exact
+   `deliver --recover-lock` command. Recover only after controlled dead-fence proof and two stable reads, then
+   replay without a second post, a descendant head included; receipt replay needs no new authentication or remote
+   read. Removing any write port's attempt marking must fail its retention probe. Keep whole-batch refusal,
+   immutable actor/root binding, ancestry and duplicate refusal intact.
+10. **The trusted route carries the lock and its governance classification (#4411; #5701 pre-merge).** Exercise the
+    real trusted snapshot route: both commands need the lock source in their pinned closures and trusted process
+    tools with detached POSIX groups; unit core success cannot prove launcher fencing or recoverable ownership, and
+    removing either command's fence classification must fail the integration probe. Extracting a helper from a
+    trusted writer must preserve both its exact source closure and the semantic governance-classification union:
+    closure-only probes passed while `gitAncestry.ts` was missing from `GOVERNANCE_TRANSITION_PATHS`. Run the
+    existing `reviewRiskPolicy.spec.ts` union-equality and every-closure-path `native-security` assertions beside
+    the closure probes before publication, preserving their expected sets and classifications.
+11. **Repair ancestry binds the finding revision, not the live tip (#4411 `ae4793d05f`, 2026-09-19).** #4411 rejected a
+    repair equal to the live PR head (forcing an unrelated follow-up commit for a one-commit fix) while accepting
+    commits already present when the finding was reviewed, in both author recording and reviewer confirmation.
+    Require a one-commit repair at the live tip to record and confirm; refuse the reviewed commit, its predecessors
+    and a merged sibling that does not descend it, with zero mutations for the whole confirmation batch. Read the
+    root comment's review commit from GitHub in both production queries, preserve it across pagination, and refuse
+    missing provenance. A reply's review or a comment's moving diff commit never replaces the revision that
+    received the finding.

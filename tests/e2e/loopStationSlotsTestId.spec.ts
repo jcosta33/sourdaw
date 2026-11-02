@@ -1,7 +1,7 @@
-import { test, expect } from '@playwright/test';
-import type { Page } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { launch_from_template, launch_new_project, setupWorkspace } from './e2eUtils';
+
+import type { Page } from '@playwright/test';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 

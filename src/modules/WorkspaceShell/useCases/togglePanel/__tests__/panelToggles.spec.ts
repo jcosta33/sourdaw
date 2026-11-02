@@ -13,7 +13,6 @@ import { openInspector } from '../panelToggles/openInspector';
 import { openMixer } from '../panelToggles/openMixer';
 import { openVirtualKeyboard } from '../panelToggles/openVirtualKeyboard';
 import { setSnapValue } from '../panelToggles/setSnapValue';
-import { setSoloMode } from '../panelToggles/setSoloMode';
 import { setTrackListWidth } from '../panelToggles/setTrackListWidth';
 import { setVirtualKeyboardOctave } from '../panelToggles/setVirtualKeyboardOctave';
 import { setVirtualKeyboardVelocity } from '../panelToggles/setVirtualKeyboardVelocity';
@@ -85,7 +84,6 @@ describe('panelToggles', () => {
         }
 
         it.each([
-            ['setSoloMode', setSoloMode, () => setSoloMode('pfl'), { soloMode: 'pfl' }],
             ['toggleSidebar', toggleSidebar, () => toggleSidebar(), { sidebarOpen: false }],
             ['toggleInspector', toggleInspector, () => toggleInspector(), { inspectorOpen: false }],
             ['toggleChatPanel', toggleChatPanel, () => toggleChatPanel(), { chatPanelOpen: true }],

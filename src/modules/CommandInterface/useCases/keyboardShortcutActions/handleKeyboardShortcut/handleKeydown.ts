@@ -18,10 +18,11 @@ import { CommandEventBus, executeUserAppAction, pushUndoEntry, redo, undo } from
 import { loopStationStore } from '#/modules/SessionLauncher/stores';
 import { stopAllSlots, triggerPad } from '#/modules/SessionLauncher/useCases';
 import { panicAllNotes, stopPlayback, seekPlayhead, setLoopRegion } from '#/modules/Transport/useCases';
-import { type EditingTool, workspaceStore } from '#/modules/WorkspaceShell/stores';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import {
     closeCollaborationPanel,
     cycleAutomationVisibility,
+    getToolForKeyPress,
     openExportDialog,
     openPreferencesDialog,
     setEditingTool,
@@ -32,7 +33,6 @@ import {
     toggleTrackList,
     toggleVirtualKeyboard,
     toggleWorkspaceMode,
-    TOOL_SHORTCUTS,
 } from '#/modules/WorkspaceShell/useCases';
 import { isDragGestureActive } from '#/utils/UI/activeDragGesture';
 
@@ -109,14 +109,6 @@ function dispatchAiChord(key: string): boolean {
             return false;
     }
 }
-
-const NUMBER_TOOL_MAP: Record<string, EditingTool> = {
-    '1': 'select',
-    '2': 'cut',
-    '3': 'draw',
-    '4': 'automation',
-    '5': 'stretch',
-};
 
 export type KeyDescriptor = {
     key: string;
@@ -558,7 +550,8 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
         return true;
     }
 
-    function handleSimpleKeys(key: string): boolean {
+    function handleSimpleKeys(desc: KeyDescriptor): boolean {
+        const { key } = desc;
         // NOTE: no shortcut-store definitions loop here. The outer
         // `handleKeydown` already iterates every definition with `matches()`
         // and returns on the first match (with identical input-gating and
@@ -584,12 +577,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                 goToPreviousMarker();
                 return false;
             default: {
-                const numberTool = NUMBER_TOOL_MAP[key];
-                if (numberTool) {
-                    setEditingTool(numberTool);
-                    return false;
-                }
-                const tool = TOOL_SHORTCUTS[key];
+                const tool = getToolForKeyPress(desc);
                 if (tool) {
                     setEditingTool(tool);
                 }
@@ -657,9 +645,8 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
         }
 
         // R-A3: Track hold duration for tool shortcuts (press-and-hold for temporary swap)
-        const normalizedKey = key.toLowerCase();
-        const tool = NUMBER_TOOL_MAP[key] || TOOL_SHORTCUTS[normalizedKey];
-        if (tool && !mod && !shift && !alt && !repeat) {
+        const tool = getToolForKeyPress({ ...desc, key: key.toLowerCase() });
+        if (tool && !shift && !repeat) {
             startToolSwap({
                 key,
                 timestamp: performance.now(),
@@ -667,6 +654,6 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
             });
         }
 
-        return handleSimpleKeys(key);
+        return handleSimpleKeys(desc);
     };
 });

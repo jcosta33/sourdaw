@@ -6,6 +6,11 @@ or siblings rely on. A behavior-risk stance matching no more specific file carri
 with a more specific match never carries it in addition. Each probe names the failure mode, the input,
 state or mutation to run, and the check that must go red. Report the concrete break or none.
 
+Split out by defect class (a stance matching one carries that file, not this one): saved projects, saved history and
+imports in `project-integrity.md`; audio, MIDI, AudioParam timing and format laws in `audio-timing-format-laws.md`; AI
+action bridge, prompt segmentation and request authority in `ai-request-authority.md`; trusted scripts, delivery and
+shared Git publication in `trusted-script-delivery.md`.
+
 ## Standing probes
 
 1. **Hunk-only reading.** The hunk shows what changed, not what the code now does. Read the function,
@@ -141,124 +146,6 @@ state or mutation to run, and the check that must go red. Report the concrete br
     (#3318/#3982): at 39 of 161 files just before the old deadline all five consumers must still finish
     ready without rollback; one peer stalled for its own inactivity window while another progresses fails
     only the stalled peer; obsolete cancellation stays silent.
-
-## Saved projects and replay
-
-15. **Identity namespaces across reload and replay.** Produce entries through real Command, save and
-    load the Automerge document, reset every projection and hydrate the session mirror, then require a
-    global ID census, exact values and real Undo/Redo. Split before surviving points: retained copied
-    IDs must reserve the live namespace, including a preoccupied preferred ID under another owner, an
-    ID claimed by a peer after Undo (zero-write refusal), nested points and cross-domain owners
-    (#4036), at a dyadic and a non-dyadic cut. Producer-local scopes stay local: canonical clip-local gain point IDs repeat across clips
-    and equal a track ID, while same-envelope duplicates, track/clip/device collisions and repeated
-    arrangement IDs stay repair-required. For a batch-admitted restored clip preceding a split, compare
-    captured IDs with the committed IDs before reloading and replaying twice; a live execution that
-    remints a preflight capture is not replay-stable. Read executable entries from the full history
-    owner, not its label-only view; draw is singleton-only, so a rejected draw/split proves admission only.
-16. **Saved inverse authority.** Probe a saved inverse through production hydration before any write:
-    duplicate note identities, malformed CC or bend rows, a missing capture, one side of a mirrored
-    optional satellite absent (present empty is distinct), and a durable-head change alone must not
-    refresh a removal inverse (#5064). Add Redo after unrelated same-track growth (#1425 slot), a
-    cross-track move's source order after a peer removal (#515), and split Redo with a recreated target
-    identity. Mocked minimal rows cannot show the restore owner admits what Arrangement already wrote.
-17. **Lossy import accounts for the whole source.** Enumerate the legal source grammar and account for
-    every preserved, omitted or partially kept element, including named descendants under rejected
-    owners and malformed, nonnumeric, nonfinite, empty and whitespace-only values against the actual
-    parser fallback (DAWproject, #5656/#5795). Assert warning identity, owner, order, cardinality beside
-    playable siblings; remove each accounting branch and its case must fail.
-
-## Audio, timing and format laws
-
-18. **Tempo projection in both directions.** Trace seconds to beats and beats to seconds from captured
-    tempo state to every terminal binding (AudioParam, segment writer, curve writer; track, clip, absent
-    lanes) on a flat tempo and a ramp from a nonzero anchor, with an independent integral. Trace the real
-    render origin through history expansion before prescribing a crop anchor (#5323); a private
-    step-only inverse or lost anchor must fail the terminal-output case (#5209/#5243): include both
-    moving-layer schedulers and stem branches, quantisation, slew and the compensated write clock, and a
-    layer whose beat-zero value differs from its requested-start value under a tempo ramp.
-19. **Musical law against DAW convention.** State the law an established DAW applies and evaluate at
-    two grids (1/16 and 1/4); quantize the output again and require it unchanged; a result no reference
-    DAW reproduces is a finding unless a decision record names the difference (#4788). Mapped ruler
-    paint must follow the model's physical bar origins, not an inverse over bar names (Insert 2 at 4 in
-    4/4 carries the origin to 6 and moves the clip at 8 to 10; two partial pieces can share a number);
-    cover partial bars, denominators other than 4 and a later meter change.
-20. **Fresh instance, highest rate, whole signal.** Render a fresh instance without setting the
-    parameter under test and compare with explicit values (default routing); measure the actual engine
-    at the highest admitted context rate for late tail and silence after the physical duration; compare
-    mid and side impulses with an independent ideal delay. Trace enable transitions on sustained
-    input: short-window output and gain against an already-open reference (zero crossing, near-threshold
-    detector), enable-time hold seeding, and a single NaN or infinity compared sample for sample with a
-    healthy reference through attack, hold, release and reopening; an output scrub proves nothing about
-    recursive state. Revert only the default, cap or fence and the named PCM case must fail; follow the
-    source through regenerated served WASM when the claim is about the shipped carrier.
-21. **Format conformance by an independent decoder.** Compare real encoded output through the shipped
-    decoder against the originating PCM at each bit depth, including container checksums and decoder
-    warnings (FLAC Rice polarity per RFC 9639); reverting the grammar fix must fail the parity case.
-
-## AI action bridge, prompt segmentation and request authority
-
-22. **Context and cancellation at every dispatcher route.** Drive execution context through single and
-    batch dispatch and both runtime and project handlers; prove cancellation and deferred-work attempts
-    at a real consumer; dropping context on the single-action entrypoint alone must fail a case.
-23. **Segmentation keeps each action's qualifiers.** Vary connectors and punctuation; each action keeps
-    its own exclusions and reference ambiguity without borrowing adjacent action text; mutate literal-ID
-    vs display-name evidence and Unicode-overlap evidence. An exact identifier must not erase genuine
-    ambiguity and a clause boundary must not widen a destructive action or collapse competing targets.
-24. **Deterministic admission consumes the whole request.** Test a complete exact command across the
-    registry before complexity heuristics; reserved context references resolve before unquoted names; an
-    unquoted multiword value is semantic unless a bounded grammar proves it literal. Feed fuzzy rank,
-    partial text, context availability or first registry match and require a refusal.
-25. **Source authority and protections come from the original text.** Masked text serves discovery and
-    segmentation only; it never proves literal source syntax or target authority. Deterministic, direct
-    and compiler-backed proposals derive authority from the same original text and the same complete
-    selection set: a primary selection field does not prove the selection is unique, and
-    compiler-resolved identities validate selector structure only. Parse quote boundaries once,
-    offset-preserving, in-word apostrophes as content;
-    reserved selection phrases apply outside quotes only; mask spans are immutable and a generated marker
-    never becomes evidence. Resolve each list member independently, union protected candidates, treat an
-    incomplete protection as rejection, enforce after final target resolution including compiler
-    overrides. When a value can contain the connector, enumerate quote-aware source boundaries, ground
-    each prefix completely (including a complete known owner qualifier; a contained name is
-    insufficient) and admit one unique interpretation, never letting a provider target choose between
-    competing boundaries. Where a grammar permits an optional connector, classify source and value from
-    one quote-aware parse and keep semantic whitespace inside a protection reference without joining
-    separate punctuation-bounded clauses.
-26. **Protection owner, polarity and exceptions.** Probe a name shared by track and clip
-    (`leave Bass Verse unchanged` must not freeze the track, `leave Bass fader unchanged` is control
-    authority, #2811); later admission against a frozen whole owner's actual descendants, and
-    independent `leave Bass alone` and structural or frozen roots kept as whole restrictions beside a
-    separately protected clip, with a track and a clip or device sharing the exact name; a reserved phrase colliding with a display name, quoted compound owners,
-    title-cased qualities, unclosed VCA quality; a fader exception permitting gain but refusing pan and
-    rename; selection retained through pending-card refinement and compiled replacement; independent
-    clauses and later protections restricting, never widening; a compatibility mask consuming the whole
-    clause (#5339). Catalog candidates come from fully consumed resolved spans with unknown protected
-    objects clarified (#4128); a required insertion anchor is checked before optional-field omission,
-    with missing and wrong anchors writing nothing (#1650/#2811).
-27. **Direct-level inventory is catalog-wide.** Enumerate every planner-emittable direct-level command
-    and trace schema, prompt binding, strategy, handler, stored value, undo and full/delta context;
-    test absolute and relative decibels, the owning ceiling, silence and legacy linear values at actual
-    execution (#4366); VCA and metronome fell outside the first enumerated family list, so a passing
-    sample of those families cannot prove the remaining catalog.
-
-## MIDI
-
-28. **Note-correlation regressions cross the rack boundary.** When a transform stores a Note On decision
-    for a later Note Off, drive supplied `noteInstanceId` values through `MidiRack`: one equal-pitch note,
-    change the deciding parameter while held, then attack and release a second identity first. Assert
-    emitted identity and pitch or suppression; channel/pitch FIFO must fail. Keep identityless FIFO apart.
-29. **Expression ordering around note release.** Hold the note-on's async worker, admit pressure, CC74,
-    bend, release and the next same-channel note; read the curve points and execution order; an idle
-    unrelated channel stays immediate (#805).
-
-## Trusted scripts and delivery
-
-30. **Invoke the real route with default dependencies.** Trace a new capability from the package
-    command through the protected launcher to its consumer and run it with controlled remote ports and
-    the default owner fence; observe the acquired process identity before the first PR read. Omitting
-    the command from the launcher's fenced set, or restoring a direct package route to the transaction
-    script, must fail before remote I/O; lock fixtures that inject owner fences cannot show it (#5639).
-31. **Validated tree vs merged tree.** When the base tip moved after the head's last run, especially
-    in the same file, require evidence covering base plus head; reverting either contributing hunk must fail that combined typecheck (#5243).
 
 ## Retired lessons
 

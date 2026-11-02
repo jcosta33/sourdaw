@@ -52,6 +52,7 @@
 
 import { type Track } from '#/modules/Arrangement/stores';
 import {
+    frozenMidiTakeRepeats,
     projectFrozenMidiTakeWindow,
     selectMidiNotesForRecordingPass,
     type MidiStoreState,
@@ -290,15 +291,25 @@ function projectFrozenClipNotes({
     if (!source) {
         return [];
     }
-    const span = source.sourceEndBeat - source.sourceEntryBeat;
-    const first = Math.max(0, Math.floor((clip.startBeat - source.phaseHeadBeat - span) / source.passLengthBeats) + 1);
-    const last = Math.ceil((clip.endBeat - source.phaseHeadBeat) / source.passLengthBeats);
     const projected: ProjectedNote[] = [];
-    for (let absoluteOccurrenceIndex = first; absoluteOccurrenceIndex < last; absoluteOccurrenceIndex++) {
+    // A frozen take counts its occurrences on its own grid, as live does.
+    const sourceOccurrenceOffset = getSourceOccurrenceOffset({
+        sourceStartBeat: clip.sourceStartBeat,
+        segmentStartBeat: clip.startBeat,
+        loopLength: projectClipLoopExpansion({
+            clipDurationBeats: clip.endBeat - clip.startBeat,
+            configuredLoopLengthBeats: clip.loopLength,
+            loopEnabled: clip.loopEnabled ?? false,
+        }).loopLengthBeats,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
+    for (const repeat of frozenMidiTakeRepeats(source, clip, clip.startBeat, clip.endBeat)) {
+        const absoluteOccurrenceIndex = sourceOccurrenceOffset + repeat.absoluteOccurrenceIndex;
         const window = projectFrozenMidiTakeWindow({
             source,
+            fragment: clip,
             recordingPassIndex: clip.midiTakeRecordingPassIndex,
-            absoluteOccurrenceIndex,
+            absoluteOccurrenceIndex: repeat.absoluteOccurrenceIndex,
             fromBeat: clip.startBeat,
             toBeat: clip.endBeat,
         });
@@ -314,14 +325,13 @@ function projectFrozenClipNotes({
                 probabilityPercent: note.probability ?? 100,
             })
         );
-        const passHead = source.phaseHeadBeat + absoluteOccurrenceIndex * source.passLengthBeats;
         const events = input.projectMidiEvents({
             events: admitted,
             clipId: source.sourceClipId,
             clipStartBeat: clip.startBeat,
-            clipEndBeat: Math.min(clip.endBeat, passHead + span),
-            iterationStartBeat: passHead,
-            loopLengthBeats: source.passLengthBeats,
+            clipEndBeat: Math.min(clip.endBeat, repeat.endBeat),
+            iterationStartBeat: repeat.startBeat,
+            loopLengthBeats: repeat.strideBeats,
             midiOffsetBeats: 0,
             loopEnabled: false,
             eventsAreAbsolute: true,

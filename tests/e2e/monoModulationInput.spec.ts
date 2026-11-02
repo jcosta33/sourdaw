@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './e2eTest';
 
 test('mono sources reach both Auto Pan outputs and stay centred through Stereo Widener', async ({ page }) => {
     await page.route('/', (route) =>

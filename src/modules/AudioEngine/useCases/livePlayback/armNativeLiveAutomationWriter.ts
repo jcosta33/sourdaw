@@ -42,12 +42,12 @@ import {
     deriveEffectiveAudibility,
     deriveVcaMultiplier,
     getVcaGroupsState,
+    soloModeStore,
     trackStore,
     vcaGroupStore,
     type Track,
 } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
-import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { type AudioGraphParameterTarget, type AudioGraphParameterWrite } from '../../models/AudioGraphBackend';
 
@@ -197,7 +197,7 @@ function readStripValues(stripTracks: readonly Track[]): LiveAutomationWriterPas
     );
     const { soloGatedByTrackId } = deriveEffectiveAudibility({
         tracks: project,
-        soloMode: workspaceStore.value?.soloMode ?? 'sip',
+        soloMode: soloModeStore.value?.soloMode ?? 'sip',
         stripTrackIds,
     });
     const groups = getVcaGroupsState();
@@ -260,7 +260,7 @@ function observeInputs(pass: LiveAutomationWriterPass): void {
         automationStore.subscribe(changed),
         trackStore.subscribe(changed),
         vcaGroupStore.subscribe(changed),
-        workspaceStore.subscribe(changed),
+        soloModeStore.subscribe(changed),
     ];
 }
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
-import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
+import { defaultSoloModeState, soloModeStore } from '#/modules/Arrangement/stores';
 
 import { renderOffline } from '../renderOffline';
 
@@ -226,7 +226,7 @@ describe('renderOffline effective audibility (OE-4)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         // Each case starts from the default solo mode (SIP); PFL cases opt in.
-        workspaceStore.set(defaultWorkspaceState);
+        soloModeStore.set(defaultSoloModeState);
     });
 
     type SendFixture = { busId: string; level: number; preFader: boolean };
@@ -392,7 +392,7 @@ describe('renderOffline effective audibility (OE-4)', () => {
     });
 
     it('keeps a muted, soloed track audible in the mixdown under PFL (WYSIWYG export ruling)', async () => {
-        workspaceStore.set({ ...defaultWorkspaceState, soloMode: 'pfl' });
+        soloModeStore.set({ ...defaultSoloModeState, soloMode: 'pfl' });
         offlineRenderMocks.resolveRenderContext.mockReturnValue(
             renderContext([audioTrack({ id: 'solo', soloed: true, muted: true }), audioTrack({ id: 'other' })])
         );
@@ -954,7 +954,7 @@ describe('renderOffline effective audibility (OE-4)', () => {
 describe('renderOffline residual branches', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        workspaceStore.set(defaultWorkspaceState);
+        soloModeStore.set(defaultSoloModeState);
     });
 
     function stubOfflineCtx() {

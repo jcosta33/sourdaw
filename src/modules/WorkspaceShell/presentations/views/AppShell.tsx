@@ -94,7 +94,6 @@ import { InstrumentBottomPanel } from '../components/InstrumentBottomPanel';
 import { ProjectLoadFailureOverlay } from '../components/ProjectLoadFailureOverlay';
 import { ProjectLoadingOverlay } from '../components/ProjectLoadingOverlay';
 import { ProjectMutationRefusedBanner } from '../components/ProjectMutationRefusedBanner';
-import { ShortcutCheatSheet } from '../components/ShortcutCheatSheet';
 import { useActiveDevicePanel } from '../hooks/useActiveDevicePanel';
 import { useAppEventHandlers } from '../hooks/useAppEventHandlers';
 import { useAppInitialization } from '../hooks/useAppInitialization';
@@ -107,6 +106,7 @@ import { useWorkspaceState } from '../hooks/useWorkspaceState';
 
 import { AgentWorkspace } from './AgentWorkspace';
 import { LaunchScreen } from './LaunchScreen';
+import { ShortcutHelp } from './ShortcutHelp';
 import { StatusBar } from './StatusBar';
 import { TransportBar } from './TransportBar';
 import { VirtualKeyboard } from './VirtualKeyboard';
@@ -1148,7 +1148,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             {/* Also a sibling, for the same reason as the failure overlay below:
                 it declares `aria-modal="true"`, so the shell root goes `inert`
                 while it is open and it cannot be inside that subtree. */}
-            <ShortcutCheatSheet onOpenChange={setCheatSheetOpen} />
+            <ShortcutHelp onOpenChange={setCheatSheetOpen} />
             {onboarding.active ? <OnboardingTour /> : null}
 
             {/* Terminal open failure: the previous session is gone and no
