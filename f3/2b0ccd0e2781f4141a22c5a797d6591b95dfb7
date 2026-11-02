@@ -1,0 +1,19 @@
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_b35f28e9d2d0fb::t_98aab52f8aa322 34,268,477-498,504,538-541
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f32b0ccd0e2781f4141a22c5a797d6591b95dfb7",
+  "prompts": {},
+  "sessions": {
+    "s_b35f28e9d2d0fb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_b35f28e9d2d0fb",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
