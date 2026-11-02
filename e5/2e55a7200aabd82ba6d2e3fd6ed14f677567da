@@ -1,0 +1,19 @@
+docs/architecture/05-boundary-enforcement-limits.md
+  s_7dbab01d82971b::t_cfb0f1e51b9e54 35-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e52e55a7200aabd82ba6d2e3fd6ed14f677567da",
+  "prompts": {},
+  "sessions": {
+    "s_7dbab01d82971b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_7dbab01d82971b",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
