@@ -27,7 +27,6 @@ export { setWorkspaceMode } from './setWorkspaceMode';
 export { closeCollaborationPanel } from './togglePanel/panelToggles/closeCollaborationPanel';
 export { closeCommandPalette } from './togglePanel/panelToggles/closeCommandPalette';
 export { closeUndoHistory } from './togglePanel/panelToggles/closeUndoHistory';
-export { setSoloMode } from './togglePanel/panelToggles/setSoloMode';
 export { setVirtualKeyboardOctave } from './togglePanel/panelToggles/setVirtualKeyboardOctave';
 export { setVirtualKeyboardVelocity } from './togglePanel/panelToggles/setVirtualKeyboardVelocity';
 export { toggleAutomationPanel } from './togglePanel/panelToggles/toggleAutomationPanel';

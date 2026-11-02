@@ -10,7 +10,7 @@ import { useStore } from '#/infra/store/useStore';
 import { voiceInputAvailabilityStore, voiceModelSetupStore, voiceStatusStore } from '#/modules/AiRuntime/stores';
 import { downloadWhisperModel, toggleVoiceInput } from '#/modules/AiRuntime/useCases';
 import { TimelineClipNavigator } from '#/modules/Arrangement/presentations/views';
-import { trackStore } from '#/modules/Arrangement/stores';
+import { defaultSoloModeState, soloModeStore, trackStore } from '#/modules/Arrangement/stores';
 import { RecentProjectsMenu, ArrangementSelector, MissingMediaPanel } from '#/modules/Project/presentations/views';
 import { PunchRecordingControls } from '#/modules/PunchRecording/presentations/views';
 import { TempoEditor } from '#/modules/TimelineEditor/presentations/views';
@@ -80,8 +80,8 @@ export const TransportBar = ({ onReviewRun }: { onReviewRun: (runId: string) => 
         rippleEditing,
         virtualKeyboardOpen,
         dualViewOpen,
-        soloMode,
     } = useWorkspaceState();
+    const { soloMode } = useStore(soloModeStore, defaultSoloModeState);
     const transport = useTransportState();
     const audioState = useAudioRecordingState();
     const undoState = useUndoState();

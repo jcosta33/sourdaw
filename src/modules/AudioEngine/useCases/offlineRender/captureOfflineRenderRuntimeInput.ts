@@ -1,6 +1,5 @@
-import { type Track } from '#/modules/Arrangement/stores';
+import { soloModeStore, type Track } from '#/modules/Arrangement/stores';
 import { externalPluginParameterStore } from '#/modules/PluginHost/stores';
-import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
 import { audioBufferCache } from '../../stores/audioBufferCache';
@@ -51,6 +50,6 @@ export function captureOfflineRenderRuntimeInput(
         calibrationByDevice,
         loadedExternalInstanceIds: readLoadedExternalInstanceIds(),
         externalPluginParameters: structuredClone(externalPluginParameterStore.value),
-        soloMode: workspaceStore.value?.soloMode ?? 'sip',
+        soloMode: soloModeStore.value?.soloMode ?? 'sip',
     };
 }

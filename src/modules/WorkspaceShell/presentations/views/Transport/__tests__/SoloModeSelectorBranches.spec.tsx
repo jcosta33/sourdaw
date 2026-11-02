@@ -2,13 +2,13 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
+import { setSoloMode } from '#/modules/Arrangement/useCases';
 
-vi.mock('../../../../useCases/togglePanel/panelToggles/setSoloMode', () => ({
+import { SoloModeSelector } from '../SoloModeSelector';
+
+vi.mock('#/modules/Arrangement/useCases', () => ({
     setSoloMode: vi.fn(),
 }));
-
-import { setSoloMode } from '../../../../useCases/togglePanel/panelToggles/setSoloMode';
-import { SoloModeSelector } from '../SoloModeSelector';
 
 const mockedSetSoloMode = vi.mocked(setSoloMode);
 

@@ -17,8 +17,11 @@ import { useStore } from '#/infra/store/useStore';
 import {
     clipSelectionStore,
     defaultClipSelectionState,
+    defaultSoloModeState,
     defaultTrackState,
+    soloModeStore,
     trackStore,
+    type SoloMode,
     type Track,
 } from '#/modules/Arrangement/stores';
 import { getPluginById } from '#/modules/Arrangement/useCases';
@@ -36,7 +39,6 @@ import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
 import { isNativeProjectRuntimeAvailable } from '#/modules/Project/useCases';
 import { listToasterPatternsOutsideArrangement } from '#/modules/Toaster/useCases';
 import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
-import { defaultWorkspaceState, workspaceStore, type WorkspaceState } from '#/modules/WorkspaceShell/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { applyDeliveryPreset } from '../../useCases/applyDeliveryPreset';
@@ -69,7 +71,7 @@ type ExportMode = 'mixdown' | 'stems' | 'render-to-clip';
 type ExportRange = 'project' | 'loop' | 'marquee';
 type TailDetectionSnapshot = {
     tracks: readonly Track[];
-    soloMode: WorkspaceState['soloMode'];
+    soloMode: SoloMode;
     automationLanes: readonly AutomationLane[];
 };
 
@@ -147,7 +149,7 @@ const AutoDetectedTailLabel = ({
 }: {
     honorMuted: boolean;
     tracks: readonly Track[];
-    soloMode: WorkspaceState['soloMode'];
+    soloMode: SoloMode;
     automationLanes: readonly AutomationLane[];
 }): ReactElement => {
     const detected = getAutoDetectedTailSeconds({
@@ -165,7 +167,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     const transport = useStore(transportStore, defaultTransportState);
     const clipSelection = useStore(clipSelectionStore, defaultClipSelectionState);
     const tracksState = useStore(trackStore, defaultTrackState);
-    const workspace = useStore(workspaceStore, defaultWorkspaceState);
+    const soloModeState = useStore(soloModeStore, defaultSoloModeState);
     const automation = useStore(automationStore, { lanes: [] });
     const midi = useStore(midiStore, defaultMidiStoreState);
     const [mode, setMode] = useState<ExportMode>('mixdown');
@@ -663,7 +665,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             const tracks = trackStore.value?.tracks ?? [];
             const tailSnapshot: TailDetectionSnapshot = {
                 tracks,
-                soloMode: workspaceStore.value?.soloMode ?? defaultWorkspaceState.soloMode,
+                soloMode: soloModeStore.value?.soloMode ?? defaultSoloModeState.soloMode,
                 automationLanes: automationStore.value?.lanes ?? [],
             };
             const { startBeat, durationBeats } = resolveRange(tracks);
@@ -1174,7 +1176,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                 <AutoDetectedTailLabel
                                     honorMuted={mode !== 'stems'}
                                     tracks={tracksState.tracks}
-                                    soloMode={workspace.soloMode}
+                                    soloMode={soloModeState.soloMode}
                                     automationLanes={automation.lanes}
                                 />
                             ) : null}
