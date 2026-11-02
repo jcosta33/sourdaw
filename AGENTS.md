@@ -99,19 +99,18 @@ Independence is distinct failure modes, never distinct files: stances pinned to 
 paths that share one probe library are one stance. Dispatch one stance per independent risk, never
 fewer than the risk plan's floor below.
 
-Reviewers record the model that performed each stance by its public model name, at economy or
-standard tier. No model family is excluded by name: any configured model is admissible while the
-tier rule holds, and the tier — not the model name — keeps every review stance, including real-time
-audio, security, data loss, irreversible change and disputed findings, on the reviewer's cost
-control. This rule applies to reviewers only; author and orchestrator routing above stays unchanged.
-Preserve specialist risk classes, independent stances, blind review, and discriminating evidence
-rather than escalating the review tier.
+Reviewers use only fast, low-cost mid-tier models or below: recorded by their public model names.
+Use economy or standard for every review stance, including real-time audio, security, data loss,
+irreversible change and disputed findings. Never use frontier or high-end review models: Fable,
+Astra, Opus, or any Sol model. This ceiling applies to reviewers only; author and orchestrator
+routing above stays unchanged. Preserve specialist risk classes, independent stances, blind
+review, and discriminating evidence rather than escalating the review model.
 
-Diversify among configured models, preferring a different model from the author's when available.
-When only one model is available, disclose the unavailable alternatives in `modelExhaustion` and
-name the reviewer model in the published body; that disclosure never waives the tier rule.
-Independent draws from different models may share one stance to expose different findings; that
-extends model diversity, not the stance count.
+Diversify among configured models, preferring a different model from the author's when
+available. When only one permitted model is available, disclose the unavailable alternatives in
+`modelExhaustion`; it never waives the cost ceiling. Independent draws from different permitted
+models may share one stance to expose different findings; that extends model diversity, not the
+stance count.
 
 Every reviewer carries the baseline posture regardless of stance: establish what must break for
 each existing check to fail and whether it observes what its name claims. A pass alone is not
@@ -151,7 +150,7 @@ any stance report so none anchors it. Does the head do what was asked, fit the a
 product, and keep the right scope? Do its tests observe their claimed subjects, and is every
 accepted finding repaired rather than silenced? Would the orchestrator merge it? Green `Gate` proves
 only the checks and scopes it observed. This global review is not a draw: it is not recorded in
-`draws` and not bound by the reviewer tier rule. A blocker it finds that no draw reported goes
+`draws` and not bound by the reviewer cost ceiling. A blocker it finds that no draw reported goes
 to a blind draw whose stance names that failure mode, never the finding, and is posted once a draw
 reproduces it. Anything no draw reproduces, concrete defect or judgement alike, is never posted:
 the orchestrator withholds approval and, under [Delegation](#delegation), re-briefs the author on a
@@ -178,8 +177,8 @@ from `review.json`, `risk-plan.json`, and live facts. A fresh plan-carrying publ
 before any remote write unless its draws cover the plan's floor of distinct stances — one for
 `docs-only` and `test-only`, two for `small` (product code under `src/` only), otherwise three, or
 every stance the plan's classes earn when they earn fewer. Every fresh publication also checks
-each draw's tier against the economy-or-standard rule, including effective draws reused from an
-unpublished historical dossier; `strongest` metadata refuses a fresh publication.
+the summary reviewer model and each draw against the cost ceiling, including effective draws
+reused from an unpublished historical dossier; `strongest` metadata refuses a fresh publication.
 The floor is the minimum the record can prove; whether the stances attack
 independent risks and whether each probe ran stays the orchestrator's judgement. The retired caller
 files `stances.json`, `discarded.json`, `reassessment.json`, and a caller-written `dossier.json` are
@@ -210,8 +209,8 @@ A lane that adds credential-shaped or armored-key fixtures composes them at runt
 the pull-request diff secret scan is a required gate and matches those literals in source.
 
 A bundle with no `risk-plan.json` retains its legacy shape, but fresh publications still meet the
-reviewer tier and diversity rules. Historical review and acceptance documents stay readable
-unchanged; exact published replay and recovery do not re-run fresh tier or diversity checks, and
+reviewer cost and diversity rules. Historical review and acceptance documents stay readable
+unchanged; exact published replay and recovery do not re-run fresh model eligibility, and
 `review:accept` takes no dossier.
 
 Post validated blockers BEFORE repair: publish a `REQUEST_CHANGES` review against the reviewed

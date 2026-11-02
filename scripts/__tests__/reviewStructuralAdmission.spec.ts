@@ -21,7 +21,7 @@ function plan(riskClasses: ReviewRiskClass[]): ReviewRiskPlan {
 function draws(count: number, tier: CompletedReviewStance['modelTier'] = 'standard'): CompletedReviewStance[] {
     return Array.from({ length: count }, (_, index) => ({
         stance: `risk ${index}`,
-        reviewerModel: 'review-model',
+        reviewerModel: 'gpt-6-luna',
         modelTier: tier,
         outcome: 'clean',
     }));

@@ -72,11 +72,11 @@ with `pr:supersede` once the replacement merges. `review:repair` and
 `review:confirm` stay open.
 
 Legacy tolerance: a bundle with no `risk-plan.json` retains its historical shape.
-A fresh publication still meets reviewer tier and diversity rules.
+A fresh publication still meets reviewer cost and diversity rules.
 
 ### Headless reviewer dispatch
 
-When the harness cannot select subagent models, run each stance on another agent harness headlessly: one stance per dispatch, read-only, without credentials, with the report returned as text. `reviewerModel` records the model actually run; dispatch never enters the trusted snapshot. If no configured model is available, report the blocker.
+When the harness cannot select subagent models, run each stance on another agent harness headlessly: one stance per dispatch, read-only, without credentials, with the report returned as text. `reviewerModel` records the model actually run; dispatch never enters the trusted snapshot. If no model permitted by root [Review policy](../../../../AGENTS.md#review) is available, report the blocker.
 
 ## Review document formats
 

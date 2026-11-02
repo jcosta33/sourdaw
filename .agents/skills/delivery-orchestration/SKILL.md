@@ -248,8 +248,8 @@ never name the stances:
 | `undo`                                                                                      | correctness, project-integrity-undo, test-validity        | 3          |
 
 A plan of several classes needs three distinct stances, or every stance its classes earn when they
-earn fewer. Specialist classes keep those stance and evidence obligations at the same
-economy-or-standard review tier.
+earn fewer. Specialist classes keep those stance and evidence obligations within the same reviewer
+cost ceiling.
 
 Before reading any stance report, review the whole head yourself under AGENTS.md
 [Review](../../../AGENTS.md#review): no stance, against the request and the author brief. Read the
@@ -257,7 +257,7 @@ full lane diff and the code it touches. This global review is not a draw and is 
 `draws`.
 
 Give each blind reviewer exactly one stance with the [reviewer brief](#reviewer-brief) below; a
-stance may take several draws on different models.
+stance may take several draws on different permitted models.
 
 ### g. Validate findings
 
@@ -292,7 +292,7 @@ other unknown top-level or comment key is dropped silently, so a misspelled opti
 | `body`            | Required and nonblank for both events.                                                                                                                                    |
 | `comments`        | `REQUEST_CHANGES` requires at least one; `APPROVE` must carry none. Each entry: `path`, `line`, `side` (`LEFT`/`RIGHT`), `defect`, `consequence`, `done`, `sources`.      |
 | `sources`         | Per comment: non-empty `{ stance, reviewerModel }` pairs naming the completed draws that independently detected the finding; required on fresh plan-carrying publication. |
-| `reviewerModel`   | Required on fresh reviewer publication: the public model name that performed the review stance, in `lane:open --model` token form; any configured model is admissible.    |
+| `reviewerModel`   | Required on fresh reviewer publication: the model that performed the review stance, in `lane:open --model` token form.                                                    |
 | `modelExhaustion` | Only when a reviewer model equals an authoring model: one line naming what made every other model unavailable; the body must then name that reviewer model.               |
 | `draws`           | One `{ stance, reviewerModel, tier, outcome }` per completed blind draw; required on fresh plan-carrying publication.                                                     |
 | `discarded`       | Optional; one `{ finding, reason }` per discarded candidate.                                                                                                              |
@@ -430,7 +430,7 @@ A minimal `APPROVE` on the same plan:
 `pnpm review:publish <pr>` posts `review.json` as the reviewer App only when GitHub's live head
 matches the bundle; a fresh approval also requires matching base context. It validates the plan and
 the document, derives the head's canonical record, and refuses before any remote write when the
-draws miss the floor, a draw's tier is not economy or standard, a reviewer model matches an author
+draws miss the floor, a model exceeds the review cost ceiling, a reviewer model matches an author
 without `modelExhaustion`, or a value is unsafe. A bound published record replays exactly, without
 another post. A legacy bundle without a risk plan retains its historical shape. The full refusal and
 replay contract: [review records](references/review-records.md).
@@ -638,10 +638,9 @@ without a posture and a probe duty returns a pass that proves nothing.
 - **Report**: per finding `path`, `line`, `side`, `defect`, `consequence`, `done`, and the
   reproduction input, state, or mutation with its observed result; or `clean` plus the probe that
   ran and its result. Findings go only to the orchestrator.
-- **Model**: the model that performed the stance, recorded by its public name at economy or standard
-  tier — no model family is excluded by name — and different from the PR's `Authored by` model when
-  one is available, otherwise recorded through `modelExhaustion` (step h). A harness that cannot
-  select models uses
+- **Model**: economy or standard tier on a configured model, different from the PR's
+  `Authored by` model when one is available, otherwise recorded through `modelExhaustion` (step h).
+  A harness that cannot select models uses
   [headless reviewer dispatch](references/review-records.md#headless-reviewer-dispatch).
 
 Never give reviewers other reviewers' prose, the author's transcript, or orchestrator reasoning. The

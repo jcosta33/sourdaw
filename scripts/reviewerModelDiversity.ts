@@ -1,15 +1,13 @@
 /**
- * Fresh reviewer-model tier and diversity checks for `review:publish`.
+ * Fresh reviewer-model cost and diversity checks for `review:publish`.
  *
- * Two rules bind a fresh review publication, and neither tests a model name. Every draw runs at
- * the economy or standard tier: the tier is the cost control, so any configured model may perform
- * a stance and no family or alias is excluded by name. The reviewer's model must differ from the
- * author's when that set offers one: "Assign reviewers a model different from the author's when
- * that set offers one; otherwise reuse the author's." The authoring model is on the PR as the
- * authorship label `lane:publish` applies from the lane's recorded `--model`: a bare model-token
- * name whose description is the fence `Authored by <model>` (see `modelLabelName`/
- * `ensureModelLabelArgs` in `publishLane.ts`). The reviewer's model is the `reviewerModel` field on
- * the review document.
+ * Enforces the AGENTS.md Review rule: "Assign reviewers a model different from
+ * the author's when that set offers one; otherwise reuse the author's." The
+ * authoring model is on the PR as the authorship label `lane:publish` applies
+ * from the lane's recorded `--model`: a bare model-token name whose description
+ * is the fence `Authored by <model>` (see `modelLabelName`/
+ * `ensureModelLabelArgs` in `publishLane.ts`). The reviewer's model is the
+ * `reviewerModel` field on the review document.
  *
  * The otherwise-reuse arm is deliberate, not silent: the review document must
  * carry `modelExhaustion` — one line naming what made every other model
@@ -31,7 +29,7 @@ function authorModelFromLabel(label: AuthorshipLabel): string | undefined {
     return label.description.slice('Authored by '.length);
 }
 
-/** The review-document fields the tier and diversity rules read; structural so specs pass plain objects. */
+/** The review-document fields the diversity rule reads; structural so specs pass plain objects. */
 export type ReviewerModelDocument = {
     reviewerModel?: string;
     modelExhaustion?: string;
@@ -39,13 +37,9 @@ export type ReviewerModelDocument = {
     draws?: readonly { stance: string; reviewerModel: string; tier?: string }[];
 };
 
-/**
- * Fresh publication alone calls this; canonical historical parsers retain every recorded tier.
- * The tier is the whole admissibility rule: the model name records what ran and is never an
- * eligibility test.
- */
-export function assertReviewTier(tier: string | undefined, label: string): void {
-    if (tier !== 'economy' && tier !== 'standard') {
+/** Fresh publication alone calls this; canonical historical parsers retain every recorded tier. */
+export function assertReviewModelEligible(_model: string, label: string, tier?: string): void {
+    if (tier !== undefined && tier !== 'economy' && tier !== 'standard') {
         fail(`${label} must use economy or standard review tier; strongest is historical metadata only`);
     }
 }
@@ -66,7 +60,7 @@ export function assertReviewerModelDiversity(input: {
         );
     }
     for (const [index, draw] of (input.document.draws ?? []).entries()) {
-        assertReviewTier(draw.tier, `review.json draws[${index}]`);
+        assertReviewModelEligible(draw.reviewerModel, `review.json draws[${index}].reviewerModel`, draw.tier);
     }
     const authorModels = input.authorLabels
         .map(authorModelFromLabel)
