@@ -74,7 +74,7 @@ const hardware = vi.hoisted(() => ({
     rollStarts: 0,
     rollGate: Promise.resolve(),
     buffer: null as AudioBuffer | null,
-    sourceStarts: [] as { sourceSeconds: number; durationSeconds: number }[],
+    sourceStarts: [] as { when: number; sourceSeconds: number; durationSeconds: number }[],
     schedulerWorker: null as {
         onmessage: ((event: { data: unknown }) => void) | null;
         generation: number;
@@ -134,8 +134,8 @@ vi.mock('#/modules/AudioEngine/useCases', async (original) => {
             connect: vi.fn(),
             disconnect: vi.fn(),
             playbackRate: { value: 1 },
-            start: (_when: number, sourceSeconds: number, durationSeconds: number) => {
-                hardware.sourceStarts.push({ sourceSeconds, durationSeconds });
+            start: (when: number, sourceSeconds: number, durationSeconds: number) => {
+                hardware.sourceStarts.push({ when, sourceSeconds, durationSeconds });
             },
         }),
         resumeEngine: () => Promise.resolve(),
@@ -690,16 +690,31 @@ describe('real recorder first-frame capture placement', () => {
                     hardware.sourceStarts = [];
                     setPlayback(true);
                     await vi.waitFor(() => expect(playheadClockRef.beat).toBe(selection.take.startBeat));
+                    const playbackStart = hardware.now;
                     await schedulerTick(hardware.now);
-                    const started = hardware.sourceStarts.find(
+                    // The map is flat, so the pass under test runs from the
+                    // take start to the loop seam at `tempo`.
+                    expect(tempoMapStore.value!.changes).toEqual([]);
+                    const { loopStart, loopEnd } = transportStore.value!;
+                    const seamInstant = playbackStart + ((loopEnd - selection.take.startBeat) * 60) / tempo;
+                    const loopSeconds = ((loopEnd - loopStart) * 60) / tempo;
+                    const fragmentStarts = hardware.sourceStarts.filter(
                         (source) => Math.abs(source.sourceSeconds - selection.sourceSeconds) < 1e-9
-                    )!;
-                    expect(started).toBeDefined();
-                    expect(
-                        hardware.sourceStarts.filter(
-                            (source) => Math.abs(source.sourceSeconds - selection.sourceSeconds) < 1e-9
-                        )
-                    ).toHaveLength(1);
+                    );
+                    const inPass = fragmentStarts.filter(
+                        (source) => source.when >= playbackStart - 1e-9 && source.when < seamInstant - 1e-9
+                    );
+                    expect(inPass).toHaveLength(1);
+                    const started = inPass[0]!;
+                    expect(started.when).toBeCloseTo(playbackStart, 10);
+                    // The seam window pre-schedules the next pass's first comp
+                    // boundary with the part before it, so the fragment may also
+                    // start in later passes, each exactly whole loops later.
+                    for (const later of fragmentStarts.filter((source) => source !== started)) {
+                        const passes = Math.round((later.when - started.when) / loopSeconds);
+                        expect(passes).toBeGreaterThanOrEqual(1);
+                        expect(later.when - started.when).toBeCloseTo(passes * loopSeconds, 10);
+                    }
                     expect(started.durationSeconds).toBeCloseTo(selection.durationSeconds, 10);
                     expect(media!.getChannelData(0)[Math.round(started.sourceSeconds * 48000)]).toBe(
                         selection.firstFrame
