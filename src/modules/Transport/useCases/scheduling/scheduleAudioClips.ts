@@ -140,20 +140,13 @@ function cutSupersededParts(
  * cut replaced can still sound between the playhead and the window start,
  * where the window never looks: a replacement ending there, or a looping
  * part's current pass, would stay silent until its end. A part that overlaps
- * a cut span and still sounds at the playhead is therefore emitted over a
- * window opening at the playhead, which joins it there through the late
+ * a cut span is therefore emitted over a window opening at the playhead, which
+ * admits it only if it still sounds there and joins it through the late
  * branch. A window that floors to its own start (a wrap handover or landing)
  * holds nothing before it to rejoin.
  */
-function replacesCutPartAtPlayhead(
-    part: ResolvedAudioPart,
-    cut: readonly ScheduledPartTag[],
-    playheadBeat: number
-): boolean {
-    return (
-        part.endBeat > playheadBeat &&
-        cut.some((span) => part.startBeat < span.endBeat && part.endBeat > span.startBeat)
-    );
+function overlapsCutSpan(part: ResolvedAudioPart, cut: readonly ScheduledPartTag[]): boolean {
+    return cut.some((span) => part.startBeat < span.endBeat && part.endBeat > span.startBeat);
 }
 
 /** One scheduling pass's view of one audio track. */
@@ -774,9 +767,7 @@ export function scheduleAudioClips(
             }
             const clipKey = audioPartKey(clip, bufferId);
             const partEmission =
-                rejoinEmission !== null && cut !== null && replacesCutPartAtPlayhead(clip, cut, accumulatedPosition)
-                    ? rejoinEmission
-                    : emission;
+                rejoinEmission !== null && cut !== null && overlapsCutSpan(clip, cut) ? rejoinEmission : emission;
             const outsideWindow = clip.startBeat > toBeat || clip.endBeat < partEmission.fromBeat;
             if (scheduledAudioClipsSet.has(clipKey)) {
                 // Emitted by an earlier pass: what continues it may have been
