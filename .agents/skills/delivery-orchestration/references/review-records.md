@@ -43,8 +43,8 @@ base context. For a plan-carrying bundle it derives the canonical record from
 refuses before any remote write when the plan is missing, malformed, or rebound
 from the head/base/pr it must bind; when `review.json` carries no `draws` and no
 reusable unpublished record supplies them; when
-the draws miss the plan's draw floor; when the summary reviewer model or any effective
-draw exceeds the review cost ceiling below; or when a value is unsafe. Effective
+the draws miss the plan's draw floor; when any effective draw's tier is not
+economy or standard; or when a value is unsafe. Effective
 draws include an unpublished historical dossier reused by a caller document with
 no draws. These are fresh-publication gates: exact published replay and recovery
 keep their original model and tier metadata without rewriting canonical bytes.
@@ -72,11 +72,11 @@ with `pr:supersede` once the replacement merges. `review:repair` and
 `review:confirm` stay open.
 
 Legacy tolerance: a bundle with no `risk-plan.json` retains its historical shape.
-A fresh publication still meets reviewer cost and diversity rules.
+A fresh publication still meets reviewer tier and diversity rules.
 
 ### Headless reviewer dispatch
 
-When the harness cannot select subagent models, run each stance on another agent harness headlessly: one stance per dispatch, read-only, without credentials, with the report returned as text. `reviewerModel` records the model actually run; dispatch never enters the trusted snapshot. If no model permitted by root [Review policy](../../../../AGENTS.md#review) is available, report the blocker.
+When the harness cannot select subagent models, run each stance on another agent harness headlessly: one stance per dispatch, read-only, without credentials, with the report returned as text. `reviewerModel` records the model actually run; dispatch never enters the trusted snapshot. If no configured model is available, report the blocker.
 
 ## Review document formats
 

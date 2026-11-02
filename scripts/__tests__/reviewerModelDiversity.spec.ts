@@ -295,8 +295,8 @@ describe('assertReviewerModelDiversity draw records', () => {
                     reviewerModel: 'claude-sonnet-4.5',
                     body: 'The change held.',
                     draws: [
-                        { stance: 'test-validity', reviewerModel: 'claude-sonnet-4.5' },
-                        { stance: 'correctness', reviewerModel: 'gpt-6-luna' },
+                        { stance: 'test-validity', reviewerModel: 'claude-sonnet-4.5', tier: 'standard' },
+                        { stance: 'correctness', reviewerModel: 'gpt-6-luna', tier: 'standard' },
                     ],
                 },
             })
@@ -312,7 +312,7 @@ describe('assertReviewerModelDiversity draw records', () => {
                     reviewerModel: 'claude-sonnet-4.5',
                     modelExhaustion: 'every other harness was down',
                     body: 'The change held.',
-                    draws: [{ stance: 'correctness', reviewerModel: 'gpt-6-luna' }],
+                    draws: [{ stance: 'correctness', reviewerModel: 'gpt-6-luna', tier: 'standard' }],
                 },
             })
         ).toThrow(/naming the reviewer model "gpt-6-luna"/u);
@@ -327,8 +327,8 @@ describe('assertReviewerModelDiversity draw records', () => {
                     reviewerModel: 'claude-sonnet-4.5',
                     body: 'The change held.',
                     draws: [
-                        { stance: 'correctness', reviewerModel: 'claude-sonnet-4.5' },
-                        { stance: 'test-validity', reviewerModel: 'gpt-5.6-terra' },
+                        { stance: 'correctness', reviewerModel: 'claude-sonnet-4.5', tier: 'standard' },
+                        { stance: 'test-validity', reviewerModel: 'gpt-5.6-terra', tier: 'economy' },
                     ],
                 },
             })
@@ -345,8 +345,8 @@ describe('assertReviewerModelDiversity draw records', () => {
                     modelExhaustion: 'every other harness was down for the correctness draw',
                     body: 'Correctness fell back to gpt-6-luna, the only harness left; the change held.',
                     draws: [
-                        { stance: 'test-validity', reviewerModel: 'claude-sonnet-4.5' },
-                        { stance: 'correctness', reviewerModel: 'gpt-6-luna' },
+                        { stance: 'test-validity', reviewerModel: 'claude-sonnet-4.5', tier: 'standard' },
+                        { stance: 'correctness', reviewerModel: 'gpt-6-luna', tier: 'standard' },
                     ],
                 },
             })
@@ -354,8 +354,8 @@ describe('assertReviewerModelDiversity draw records', () => {
     });
 });
 
-describe('fresh review model cost ceiling', () => {
-    function admit(reviewerModel: string, draws?: { stance: string; reviewerModel: string; tier: string }[]): void {
+describe('fresh review tier rule', () => {
+    function admit(reviewerModel: string, draws?: { stance: string; reviewerModel: string; tier?: string }[]): void {
         assertReviewerModelDiversity({
             actorNodeId: REVIEWER_BOT_NODE_ID,
             authorLabels: [{ name: 'gpt-6.1-sol', description: 'Authored by gpt-6.1-sol' }],
@@ -368,78 +368,88 @@ describe('fresh review model cost ceiling', () => {
         'gpt-5.6-terra',
         'claude-sonnet-4.5',
         'claude-haiku-4-5',
+        'claude-opus-5-5',
+        'gpt-6-sol',
+        'gpt-6-astra',
         'deepseek-flash',
-        'deepseek-v4-flash',
-        'deepseek-v4-flash-vision-exp',
         'deepseek-v4-pro',
-    ])('admits the affordable public model %s', (model) => {
+        'unknown-family-9',
+        'vendor/model-with-slash',
+    ])('admits any configured summary model name %s', (model) => {
         expect(() => admit(model)).not.toThrow();
     });
 
-    it.each(['deepseek-flash', 'deepseek-v4-flash', 'deepseek-v4-pro'])(
-        'admits the DeepSeek review model %s at economy and standard tier',
-        (model) => {
-            for (const tier of ['economy', 'standard']) {
-                expect(() =>
-                    admit('gpt-6-luna', [{ stance: 'lost identity', reviewerModel: model, tier }])
-                ).not.toThrow();
-            }
-        }
-    );
-
     it.each([
-        'gpt-6-astra',
-        'gpt-6.1-sol',
-        'gpt-5.6-sol',
-        'gpt-6-sol',
-        'fable',
-        'claude-opus-4.5',
+        'deepseek-flash',
+        'deepseek-v4-pro',
         'claude-opus-5-5',
-        'claude-fable-5',
-        'unknown-model',
-        'deepseek-ultra',
-        'deepseek-max',
-        'gpt-6-luna-pro',
-        'claude-sonnet-4.5-opus',
-    ])('refuses premium or unclassified summary model %s', (model) => {
-        expect(() => admit(model)).toThrow(/permitted low-cost review model/u);
+        'gpt-6-sol',
+        'gpt-6-astra',
+        'unknown-family-9',
+        'vendor/model-with-slash',
+    ])('admits a draw on %s at economy and standard tier', (model) => {
+        for (const tier of ['economy', 'standard']) {
+            expect(() => admit('gpt-6-luna', [{ stance: 'lost identity', reviewerModel: model, tier }])).not.toThrow();
+        }
     });
 
-    it('names the admitted DeepSeek family when it refuses a premium sibling', () => {
-        expect(() => admit('deepseek-max')).toThrow(/DeepSeek/u);
+    it.each(['strongest', 'frontier', ''])('refuses a draw at tier %s by the tier rule alone', (tier) => {
+        expect(() =>
+            admit('gpt-6-luna', [{ stance: 'lost identity', reviewerModel: 'claude-opus-5-5', tier }])
+        ).toThrow(/must use economy or standard review tier/u);
     });
 
-    it('checks every draw even when the summary and preceding draw are affordable', () => {
+    it('refuses a draw that records no tier', () => {
+        expect(() => admit('gpt-6-luna', [{ stance: 'lost identity', reviewerModel: 'gpt-6-luna' }])).toThrow(
+            /must use economy or standard review tier/u
+        );
+    });
+
+    it('names only the tier rule when it refuses a draw', () => {
+        let message = '';
+        try {
+            admit('gpt-6-luna', [{ stance: 'lost identity', reviewerModel: 'claude-opus-5-5', tier: 'strongest' }]);
+        } catch (error) {
+            message = (error as Error).message;
+        }
+        expect(message).toBe(
+            'review.json draws[0] must use economy or standard review tier; strongest is historical metadata only'
+        );
+    });
+
+    it('checks every draw even when the summary and preceding draws use admitted tiers', () => {
         expect(() =>
             admit('gpt-6-luna', [
                 { stance: 'lost identity', reviewerModel: 'claude-haiku-4-5', tier: 'economy' },
-                { stance: 'lost head binding', reviewerModel: 'gpt-6.1-sol', tier: 'standard' },
+                { stance: 'lost head binding', reviewerModel: 'gpt-6.1-sol', tier: 'strongest' },
             ])
-        ).toThrow(/draws\[1\].reviewerModel.*permitted low-cost review model/u);
+        ).toThrow(/draws\[1\].*economy or standard/u);
     });
 
-    it('admits model diversity across affordable economy and standard draws', () => {
+    it('admits model diversity across economy and standard draws', () => {
         expect(() =>
             admit('gpt-6-luna', [
-                { stance: 'lost identity', reviewerModel: 'claude-haiku-4-5', tier: 'economy' },
-                { stance: 'lost head binding', reviewerModel: 'gpt-5.6-terra', tier: 'standard' },
+                { stance: 'lost identity', reviewerModel: 'claude-opus-5-5', tier: 'economy' },
+                { stance: 'lost head binding', reviewerModel: 'gpt-6-sol', tier: 'standard' },
             ])
         ).not.toThrow();
     });
 
-    it('refuses strongest metadata on an affordable model instead of relabeling its tier', () => {
+    it('admits the same-model fallback on any model when exhaustion is recorded and the body names it', () => {
         expect(() =>
-            admit('gpt-6-luna', [{ stance: 'lost identity', reviewerModel: 'gpt-6-luna', tier: 'strongest' }])
-        ).toThrow(/economy or standard/u);
+            assertReviewerModelDiversity({
+                actorNodeId: REVIEWER_BOT_NODE_ID,
+                authorLabels: [{ name: 'claude-opus-5-5', description: 'Authored by claude-opus-5-5' }],
+                document: {
+                    reviewerModel: 'claude-opus-5-5',
+                    body: 'Reviewed on claude-opus-5-5 after every other model was unavailable.',
+                    modelExhaustion: 'Every other configured model was unavailable.',
+                },
+            })
+        ).not.toThrow();
     });
 
-    it('refuses strongest metadata on a DeepSeek review model instead of relabeling its tier', () => {
-        expect(() =>
-            admit('gpt-6-luna', [{ stance: 'lost identity', reviewerModel: 'deepseek-flash', tier: 'strongest' }])
-        ).toThrow(/economy or standard/u);
-    });
-
-    it('does not let modelExhaustion waive the cost ceiling', () => {
+    it('does not let modelExhaustion waive the tier rule', () => {
         expect(() =>
             assertReviewerModelDiversity({
                 actorNodeId: REVIEWER_BOT_NODE_ID,
@@ -448,8 +458,9 @@ describe('fresh review model cost ceiling', () => {
                     reviewerModel: 'gpt-6.1-sol',
                     body: 'Reviewed on gpt-6.1-sol after other models were unavailable.',
                     modelExhaustion: 'All permitted review models were unavailable.',
+                    draws: [{ stance: 'lost identity', reviewerModel: 'gpt-6.1-sol', tier: 'strongest' }],
                 },
             })
-        ).toThrow(/permitted low-cost review model/u);
+        ).toThrow(/economy or standard/u);
     });
 });

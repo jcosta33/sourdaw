@@ -2,7 +2,7 @@
 
 import { assertPublicationSafeEvidence } from './evidenceSafety.ts';
 import { fail } from './prContract.ts';
-import { assertReviewModelEligible } from './reviewerModelDiversity.ts';
+import { assertReviewTier } from './reviewerModelDiversity.ts';
 import { reviewStanceFloor } from './reviewRiskPolicy.ts';
 
 import type { ReviewDocument } from './reviewDocumentParser.ts';
@@ -35,6 +35,6 @@ export function assertReviewDrawFloor(plan: ReviewRiskPlan, draws: readonly Comp
     }
     for (const [index, draw] of draws.entries()) {
         // Pre-ADR caller documents can reuse an unpublished dossier instead of declaring draws.
-        assertReviewModelEligible(draw.reviewerModel, `review dossier draws[${index}].reviewerModel`, draw.modelTier);
+        assertReviewTier(draw.modelTier, `review dossier draws[${index}]`);
     }
 }
