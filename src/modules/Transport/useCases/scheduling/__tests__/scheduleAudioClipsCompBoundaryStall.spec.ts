@@ -8,10 +8,10 @@ import { disposeAudioClipScheduling } from '../disposeAudioClipScheduling';
 import { scheduleAudioClips } from '../scheduleAudioClips';
 
 const trackStoreState: { value: { tracks: unknown[] } } = { value: { tracks: [] } };
-const { audioClock, resolvedParts } = vi.hoisted(() => ({
-    audioClock: { seconds: 0 },
-    resolvedParts: { value: [] as unknown[], byTrack: {} as Record<string, unknown[]> },
-}));
+const { audioClock, resolvedParts } = vi.hoisted(() => {
+    const byTrack: Record<string, unknown[]> = {};
+    return { audioClock: { seconds: 0 }, resolvedParts: { value: [] as unknown[], byTrack } };
+});
 vi.mock('#/modules/Arrangement/stores', () => ({
     trackStore: {
         get value() {
