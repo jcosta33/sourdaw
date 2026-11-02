@@ -1,0 +1,123 @@
+src/modules/WorkspaceShell/presentations/hooks/useAppInitialization.ts
+  s_0314bb17e5dee3::t_018459b2bf766e 4
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/AutomationLane.spec.tsx
+  s_0314bb17e5dee3::t_9d5e546dfdf4f8 76
+src/modules/Arrangement/stores/effectiveAudibility.ts
+  s_0314bb17e5dee3::t_96efe79d69cc9a 22
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  s_0314bb17e5dee3::t_41484d4faba66e 68-69
+src/modules/AudioEngine/useCases/livePlayback/prepareNativeSessionStart.ts
+  s_0314bb17e5dee3::t_42f3209fec74f9 6,71
+src/modules/AudioEngine/useCases/livePlayback/armNativeLiveAutomationWriter.ts
+  s_3bb122e91d89a5::t_9ada997f8432c4 45,200,263
+src/modules/AudioEngine/useCases/offlineRender/__tests__/getAutoDetectedTailSeconds.spec.ts
+  s_0314bb17e5dee3::t_138ced9ae5ec9d 6,9,56-57,125,171,187
+src/modules/Arrangement/AGENTS.md
+  s_0314bb17e5dee3::t_f6cc0b86eef199 3,13
+src/modules/Arrangement/stores/soloModeStore.ts
+  s_0314bb17e5dee3::t_a76f94a1fdd811 1-20
+src/modules/WorkspaceShell/models/__tests__/WorkspaceState.spec.ts
+  s_0314bb17e5dee3::t_c8b2f304f20ebe 15
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.integration.spec.ts
+  s_0314bb17e5dee3::t_c7360005f82df3 7,204,396
+src/modules/Arrangement/useCases/toggleTrackState/applySoloLogic.ts
+  s_0314bb17e5dee3::t_60d83a47a3cffd 4,40
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_0314bb17e5dee3::t_bd1c87403ec6e5 73,134,157,190,233-234,735,1308
+src/modules/Arrangement/useCases/soloMode/__tests__/syncSoloModePreference.spec.ts
+  s_0314bb17e5dee3::t_dfaf8ee130d874 15-141
+src/modules/Arrangement/useCases/resolveAgentMeasurementTargets.ts
+  s_0314bb17e5dee3::t_a703cbc8ac4333 5,57
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  s_0314bb17e5dee3::t_54f6e4a214911f 49,63
+src/modules/AudioRendering/presentations/views/__tests__/exportStreamingMemory.spec.tsx
+  s_0314bb17e5dee3::t_426c56d8cbd79b 389,429,452,476,510-511
+src/modules/Arrangement/presentations/views/__tests__/TrackListView.spec.tsx
+  s_0314bb17e5dee3::t_96be2e1941e9fd 140
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  s_0314bb17e5dee3::t_345d78662687bf 37
+src/modules/Arrangement/useCases/soloMode/__tests__/setSoloMode.spec.ts
+  s_0314bb17e5dee3::t_b95883213e37ce 1-24
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngineSteppedQuantisation.spec.ts
+  s_0314bb17e5dee3::t_ecb262c81bc1bd 67
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  s_0314bb17e5dee3::t_d7860c5038ae5b 61,75
+src/modules/WorkspaceShell/presentations/views/Transport/SoloModeSelector.tsx
+  s_0314bb17e5dee3::t_ae2141c3f41580 7-8
+src/modules/Arrangement/useCases/toggleTrackState/__tests__/applySoloLogic.spec.ts
+  s_0314bb17e5dee3::t_a4557e91f88977 14,27-28,38,41
+release/open-source-inventory.json
+  s_03c2e77616e1b9::t_7430365bbf0c65 1216
+src/modules/AudioEngine/useCases/offlineRender/OfflineRenderSource.ts
+  s_0314bb17e5dee3::t_5ee65818b8e547 5,47
+src/modules/WorkspaceShell/presentations/views/Transport/__tests__/SoloModeSelectorBranches.spec.tsx
+  s_0314bb17e5dee3::t_fe119228e3e598 5,7-9
+src/modules/Arrangement/useCases/index.ts
+  s_0314bb17e5dee3::t_102633019f29c8 260-264
+src/modules/AudioEngine/useCases/offlineRender/captureOfflineRenderRuntimeInput.ts
+  s_0314bb17e5dee3::t_35c1be84e6fa4f 1,53
+src/modules/AudioEngine/useCases/livePlayback/__tests__/rearmNativeLiveAutomationWriterInPlace.spec.ts
+  s_0314bb17e5dee3::t_47e7a92c5cf580 27-35,204,1263-1272
+src/modules/AudioEngine/useCases/offlineRender/getAutoDetectedTailSeconds.ts
+  s_0314bb17e5dee3::t_1ca6932894e5f3 1,146
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  s_0314bb17e5dee3::t_69cd93e793fee3 87
+src/modules/Arrangement/useCases/soloMode/setSoloMode.ts
+  s_0314bb17e5dee3::t_1a96fc62839303 1-8
+src/modules/Arrangement/stores/__tests__/soloModeStore.spec.ts
+  s_0314bb17e5dee3::t_9ff790301dc962 1-10
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_0314bb17e5dee3::t_02fbf8b272643d 47
+src/modules/AudioEngine/useCases/__tests__/renderOffline.spec.ts
+  s_0314bb17e5dee3::t_b91ac5300986a5 3,229,395,957
+src/modules/WorkspaceShell/useCases/workspaceQueries/helpers.ts
+  s_0314bb17e5dee3::t_d2c02509894630 9
+src/modules/Arrangement/stores/index.ts
+  s_0314bb17e5dee3::t_35861909217abd 62-64
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_0314bb17e5dee3::t_89acb8040fec44 20,22,24,74,152,170,668,1179
+src/modules/WorkspaceShell/presentations/views/TransportBar.tsx
+  s_0314bb17e5dee3::t_2fd25f3e28cda4 13,84
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useAppInitialization.spec.ts
+  s_85a05dfedd115e::t_bd75ccfd9cab99 5,102-107,130,141-143,145-147,150,153,155
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b99aea32d6732bda20ecf7c6e0d73cd99a706c4f",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_03c2e77616e1b9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_03c2e77616e1b9",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_85a05dfedd115e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_85a05dfedd115e",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
