@@ -17,9 +17,10 @@ import {
     type WebLlmArtifactManifestModel,
 } from '../webLlm/webLlmArtifactManifest';
 
-const { createWebWorkerEngineMock, terminateWorkerMock } = vi.hoisted(() => ({
+const { createWebWorkerEngineMock, terminateWorkerMock, workerSpawns } = vi.hoisted(() => ({
     createWebWorkerEngineMock: vi.fn(),
     terminateWorkerMock: vi.fn(),
+    workerSpawns: [] as { url: string | URL; options: WorkerOptions | undefined }[],
 }));
 
 const cacheEntries = new Map<string, Map<string, Response>>();
@@ -212,6 +213,10 @@ vi.mock('@mlc-ai/web-llm', () => ({
 }));
 
 class MockLlmWorker {
+    constructor(url: string | URL, options?: WorkerOptions) {
+        workerSpawns.push({ url, options });
+    }
+
     terminate(): void {
         terminateWorkerMock();
     }
@@ -220,6 +225,7 @@ class MockLlmWorker {
 describe('WebLLM provider artifact admission', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        workerSpawns.length = 0;
         vi.stubGlobal('Worker', MockLlmWorker);
         Object.defineProperty(globalThis, 'navigator', {
             value: {
@@ -263,6 +269,7 @@ describe('WebLLM provider artifact admission', () => {
 
         expect(createWebWorkerEngineMock).not.toHaveBeenCalled();
         expect(terminateWorkerMock).not.toHaveBeenCalled();
+        expect(workerSpawns).toEqual([]);
     });
 
     it('rejects an unmanifested model before cache access or private worker creation', async () => {
@@ -273,6 +280,7 @@ describe('WebLLM provider artifact admission', () => {
         ).rejects.toThrow(/not admitted by this Sourdaw release/i);
 
         expect(createWebWorkerEngineMock).not.toHaveBeenCalled();
+        expect(workerSpawns).toEqual([]);
         expect(cacheEntries.size).toBe(0);
     });
 

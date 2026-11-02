@@ -14,10 +14,12 @@ const {
     terminateWorkerMock,
     MockLlmWorker,
     workerInstances,
+    workerSpawns,
     BUDGET_CONTEXT_WINDOW_SIZE,
     MANIFEST_CONTEXT_WINDOW_SIZE,
 } = vi.hoisted(() => {
     const workerInstances: EventTarget[] = [];
+    const workerSpawns: { url: string | URL; options: WorkerOptions | undefined }[] = [];
     return {
         // Distinct from each other and from every shipped window, so the engine can only load the
         // window the planning budget reads, never the digested manifest's.
@@ -34,9 +36,11 @@ const {
         createWebWorkerEngineMock: vi.fn(),
         terminateWorkerMock: vi.fn(),
         workerInstances,
+        workerSpawns,
         MockLlmWorker: class MockLlmWorker extends EventTarget {
-            constructor() {
+            constructor(url: string | URL, options?: WorkerOptions) {
                 super();
+                workerSpawns.push({ url, options });
                 workerInstances.push(this);
             }
 
@@ -72,6 +76,7 @@ describe('WebLLM engineLifecycle injectables', () => {
         vi.clearAllMocks();
         vi.stubGlobal('Worker', MockLlmWorker);
         workerInstances.length = 0;
+        workerSpawns.length = 0;
         admissionGate.webLlm = true;
         artifactAdmissionMock.mockReset();
         createWebWorkerEngineMock.mockReset();
@@ -134,6 +139,17 @@ describe('WebLLM engineLifecycle injectables', () => {
     it('should unload engine and log', () => {
         unloadWebLlmEngine();
         expect(mockLogger.info).toHaveBeenCalledWith('[AI Engine] WebLLM unloaded from memory');
+    });
+
+    it('starts the llmWorker entry from the AiRuntime workers folder as a module worker', async () => {
+        Object.defineProperty(globalThis, 'navigator', { value: { gpu: {} }, configurable: true, writable: true });
+
+        await initWebLlmEngine('test-model');
+
+        expect(workerSpawns).toHaveLength(1);
+        const [spawn] = workerSpawns;
+        expect(new URL(String(spawn?.url)).pathname.endsWith('AiRuntime/workers/llmWorker.ts')).toBe(true);
+        expect(spawn?.options?.type).toBe('module');
     });
 
     it('does not let a stale worker retirement clear its replacement engine', () => {
