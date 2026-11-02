@@ -28,7 +28,8 @@ import { boundStretchRatio } from '#/utils/stretchRatioBound';
 import { getTempoAtBeat, secondsBetweenBeats } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
 import { type TempoChange, tempoMapStore } from '../../stores/tempoMapStore';
-import { type SourceWithFade, cutSource, schedulerSession } from '../playheadScheduler/schedulerSession';
+import { cutSource } from '../playheadScheduler/cutSource';
+import { type SourceWithFade, schedulerSession } from '../playheadScheduler/schedulerSession';
 
 import { gainNodePool } from './audioClipSchedulingState';
 import { disposeAudioClipScheduling } from './disposeAudioClipScheduling';

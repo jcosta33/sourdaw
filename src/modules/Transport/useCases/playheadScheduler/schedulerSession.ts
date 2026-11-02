@@ -1,4 +1,6 @@
-import type { TempoChange } from '../../stores/tempoMapStore';
+import { type TempoChange } from '../../stores/tempoMapStore';
+
+import { cutSource } from './cutSource';
 
 /**
  * A buffer source the scheduler tracks, with the handle its fade rides and —
@@ -40,7 +42,7 @@ export function stopActiveSources(sources: AudioBufferSourceNode[], ctx: BaseAud
     for (const src of sources as SourceWithFade[]) {
         const stopAt =
             stopAtTime === undefined ? now + 0.005 : Math.max(stopAtTime + (src.compensationSeconds ?? 0), now);
-        cutSourceAt(src, now, stopAt);
+        cutSource(src, ctx, stopAt);
         if (stopAtTime !== undefined && stopAt > now) {
             schedulerSession.pendingFences.push({ source: src, stopAt });
         }
@@ -49,33 +51,13 @@ export function stopActiveSources(sources: AudioBufferSourceNode[], ctx: BaseAud
     if (stopAtTime === undefined) {
         for (const fence of schedulerSession.pendingFences) {
             if (fence.stopAt > now) {
-                cutSourceAt(fence.source, now, now + 0.005);
+                cutSource(fence.source, ctx);
             }
         }
         schedulerSession.pendingFences.length = 0;
         return;
     }
     schedulerSession.pendingFences = schedulerSession.pendingFences.filter((fence) => fence.stopAt > now);
-}
-
-/** Cut one source with the teardown semantic: one 5 ms ramp after the current clock. */
-export function cutSource(src: SourceWithFade, ctx: BaseAudioContext): void {
-    const now = ctx.currentTime;
-    cutSourceAt(src, now, now + 0.005);
-}
-
-function cutSourceAt(src: SourceWithFade, now: number, stopAt: number): void {
-    try {
-        if (src.fadeGainNode) {
-            const fadeStart = Math.max(stopAt - 0.005, now);
-            src.fadeGainNode.gain.cancelScheduledValues(now);
-            src.fadeGainNode.gain.setValueAtTime(src.fadeGainNode.gain.value, fadeStart);
-            src.fadeGainNode.gain.linearRampToValueAtTime(0, stopAt);
-        }
-        src.stop(stopAt);
-    } catch {
-        /* already stopped */
-    }
 }
 
 // §28.1 / §107.1 — Coalesce scheduler mutables into a single holder so
