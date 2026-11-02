@@ -62,9 +62,9 @@ vi.mock('#/modules/CvGate/useCases', async (importOriginal) => ({
     hydrateCvGateState: vi.fn(record('CvGate.hydrateCvGateState')),
 }));
 
-vi.mock('#/modules/GrandBoule/stores', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/GrandBoule/stores')>()),
-    resetGrandBouleStores: vi.fn(record('GrandBoule.resetGrandBouleStores')),
+vi.mock('#/modules/GrandBoule/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/GrandBoule/useCases')>()),
+    resetGrandBouleForProject: vi.fn(record('GrandBoule.resetGrandBouleForProject')),
 }));
 
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
@@ -150,7 +150,7 @@ const FULL_RESET_ORDER = [
     'Tuner.tunerStore',
     'Toaster.toasterStore',
     'Levain.levainStore',
-    'GrandBoule.resetGrandBouleStores',
+    'GrandBoule.resetGrandBouleForProject',
     'Crust.crustStore',
     'Crust.crustMeterStore',
     'Knead.kneadStore',

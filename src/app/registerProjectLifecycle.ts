@@ -15,7 +15,7 @@ import { resetCrustForProject } from '#/modules/Crust/useCases';
 import { hydrateCvGateState } from '#/modules/CvGate/useCases';
 import { resetFermenterForProject } from '#/modules/Fermenter/useCases';
 import { resetGlutenForProject } from '#/modules/Gluten/useCases';
-import { resetGrandBouleStores } from '#/modules/GrandBoule/stores';
+import { resetGrandBouleForProject } from '#/modules/GrandBoule/useCases';
 import { resetGrinderForProject } from '#/modules/Grinder/useCases';
 import { resetKneadForProject } from '#/modules/Knead/useCases';
 import { resetLevainForProject } from '#/modules/Levain/useCases';
@@ -154,9 +154,9 @@ function buildProductionParticipants(): ProjectLifecycleParticipants {
             // Grand Boule keeps a Map of per-device store instances, not one
             // Record<deviceId, State> store, so one `.set(default)` would leave
             // every other device's slice to leak into the next project;
-            // resetGrandBouleStores resets every per-device store (§13.1).
+            // resetGrandBouleForProject resets every per-device store (§13.1).
             module: 'GrandBoule',
-            resetForProject: () => resetGrandBouleStores(),
+            resetForProject: () => resetGrandBouleForProject(),
         },
         { module: 'Crust', resetForProject: () => resetCrustForProject() },
         { module: 'Knead', resetForProject: () => resetKneadForProject() },
