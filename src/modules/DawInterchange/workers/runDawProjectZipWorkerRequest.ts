@@ -20,20 +20,23 @@ export function runDawProjectZipWorkerRequest(
     request: DawProjectZipWorkerRequest
 ): Record<string, Uint8Array<ArrayBuffer>> {
     const bytes = new Uint8Array(request.bytes);
-    const extracted =
-        request.phase === 'header'
-            ? extractGuardedZip({
-                  bytes,
-                  include: (path) => PROJECT_XML_ENTRY_PATH.test(path) || METADATA_XML_ENTRY_PATH.test(path),
-                  validateInventory: validateDawProjectRootInventory,
-                  restrictLimits: request.restrictLimits,
-              })
-            : extractGuardedZip({
-                  bytes,
-                  include: (path) => audioAssetPath.test(path),
-                  restrictLimits: request.restrictLimits,
-              });
-    return toTransferableEntries(extracted);
+    if (request.phase === 'header') {
+        return toTransferableEntries(
+            extractGuardedZip({
+                bytes,
+                include: (path) => PROJECT_XML_ENTRY_PATH.test(path) || METADATA_XML_ENTRY_PATH.test(path),
+                validateInventory: validateDawProjectRootInventory,
+                restrictLimits: request.restrictLimits,
+            })
+        );
+    }
+    return toTransferableEntries(
+        extractGuardedZip({
+            bytes,
+            include: (path) => audioAssetPath.test(path),
+            restrictLimits: request.restrictLimits,
+        })
+    );
 }
 
 function toTransferableEntries(entries: Record<string, Uint8Array>): Record<string, Uint8Array<ArrayBuffer>> {
