@@ -17,7 +17,6 @@ const mocks = vi.hoisted(() => ({
     loadApp: vi.fn<() => Promise<void>>(() => Promise.resolve()),
     importRejections: [] as unknown[],
     render: vi.fn<(element: unknown) => void>(),
-    reportError: vi.fn(),
     resetBrowserDisplayScaleForChildStartup: vi.fn(),
     resetDisplayScaleForStartup: vi.fn(),
     resolveAppComposition: vi.fn(),
