@@ -100,12 +100,13 @@ paths that share one probe library are one stance. Dispatch one stance per indep
 fewer than the risk plan's floor below.
 
 Reviewers use only fast, low-cost mid-tier models or below: the Luna, Terra, Sonnet and Haiku
-families, recorded by their public model names. Use economy or standard for every review stance,
-including real-time audio, security, data loss, irreversible change and disputed findings. Never
-use frontier or high-end review models: Fable, Astra, Opus, or any Sol model. Unknown families and
-premium aliases are not eligible. This ceiling applies to reviewers only; author and orchestrator
-routing above stays unchanged. Preserve specialist risk classes, independent stances, blind review,
-and discriminating evidence rather than escalating the review model.
+families, and the DeepSeek flash and pro editions, recorded by their public model names. Use
+economy or standard for every review stance, including real-time audio, security, data loss,
+irreversible change and disputed findings. Never use frontier or high-end review models: Fable,
+Astra, Opus, or any Sol model. Unknown families and premium aliases are not eligible. This ceiling
+applies to reviewers only; author and orchestrator routing above stays unchanged. Preserve
+specialist risk classes, independent stances, blind review, and discriminating evidence rather
+than escalating the review model.
 
 Diversify among permitted configured models, preferring a different model from the author's when
 available. When only one permitted model is available, disclose the unavailable alternatives in

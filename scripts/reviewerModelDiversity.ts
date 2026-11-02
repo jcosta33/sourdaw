@@ -38,12 +38,16 @@ export type ReviewerModelDocument = {
 };
 
 /** Public model names only: numeric versions cannot smuggle a premium edition or routing alias. */
-const LOW_COST_REVIEW_MODEL = /^(?:gpt-\d+(?:\.\d+)?-(?:luna|terra)|claude-(?:sonnet|haiku)-\d+(?:[.-]\d+)*)$/u;
+const LOW_COST_REVIEW_MODEL =
+    /^(?:gpt-\d+(?:\.\d+)?-(?:luna|terra)|claude-(?:sonnet|haiku)-\d+(?:[.-]\d+)*|deepseek-(?:flash|v\d+(?:\.\d+)?-(?:flash|pro)(?:-[a-z-]+)*))$/u;
 
 /** Fresh publication alone calls this; canonical historical parsers retain every recorded tier. */
 export function assertReviewModelEligible(model: string, label: string, tier?: string): void {
     if (!LOW_COST_REVIEW_MODEL.test(model.trim())) {
-        fail(`${label} must name a permitted low-cost review model: Luna, Terra, Sonnet or Haiku`);
+        fail(
+            `${label} must name a permitted low-cost review model: ` +
+                'Luna, Terra, Sonnet, Haiku, or DeepSeek flash and pro editions'
+        );
     }
     if (tier !== undefined && tier !== 'economy' && tier !== 'standard') {
         fail(`${label} must use economy or standard review tier; strongest is historical metadata only`);

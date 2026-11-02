@@ -363,10 +363,27 @@ describe('fresh review model cost ceiling', () => {
         });
     }
 
-    it.each(['gpt-6-luna', 'gpt-5.6-terra', 'claude-sonnet-4.5', 'claude-haiku-4-5'])(
-        'admits the affordable public model %s',
+    it.each([
+        'gpt-6-luna',
+        'gpt-5.6-terra',
+        'claude-sonnet-4.5',
+        'claude-haiku-4-5',
+        'deepseek-flash',
+        'deepseek-v4-flash',
+        'deepseek-v4-flash-vision-exp',
+        'deepseek-v4-pro',
+    ])('admits the affordable public model %s', (model) => {
+        expect(() => admit(model)).not.toThrow();
+    });
+
+    it.each(['deepseek-flash', 'deepseek-v4-flash', 'deepseek-v4-pro'])(
+        'admits the DeepSeek review model %s at economy and standard tier',
         (model) => {
-            expect(() => admit(model)).not.toThrow();
+            for (const tier of ['economy', 'standard']) {
+                expect(() =>
+                    admit('gpt-6-luna', [{ stance: 'lost identity', reviewerModel: model, tier }])
+                ).not.toThrow();
+            }
         }
     );
 
@@ -374,13 +391,22 @@ describe('fresh review model cost ceiling', () => {
         'gpt-6-astra',
         'gpt-6.1-sol',
         'gpt-5.6-sol',
+        'gpt-6-sol',
         'fable',
         'claude-opus-4.5',
+        'claude-opus-5-5',
+        'claude-fable-5',
         'unknown-model',
+        'deepseek-ultra',
+        'deepseek-max',
         'gpt-6-luna-pro',
         'claude-sonnet-4.5-opus',
     ])('refuses premium or unclassified summary model %s', (model) => {
         expect(() => admit(model)).toThrow(/permitted low-cost review model/u);
+    });
+
+    it('names the admitted DeepSeek family when it refuses a premium sibling', () => {
+        expect(() => admit('deepseek-max')).toThrow(/DeepSeek/u);
     });
 
     it('checks every draw even when the summary and preceding draw are affordable', () => {
@@ -404,6 +430,12 @@ describe('fresh review model cost ceiling', () => {
     it('refuses strongest metadata on an affordable model instead of relabeling its tier', () => {
         expect(() =>
             admit('gpt-6-luna', [{ stance: 'lost identity', reviewerModel: 'gpt-6-luna', tier: 'strongest' }])
+        ).toThrow(/economy or standard/u);
+    });
+
+    it('refuses strongest metadata on a DeepSeek review model instead of relabeling its tier', () => {
+        expect(() =>
+            admit('gpt-6-luna', [{ stance: 'lost identity', reviewerModel: 'deepseek-flash', tier: 'strongest' }])
         ).toThrow(/economy or standard/u);
     });
 
