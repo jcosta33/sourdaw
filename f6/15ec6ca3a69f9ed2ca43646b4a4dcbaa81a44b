@@ -1,0 +1,28 @@
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClipsCompBoundaryStall.spec.ts
+  s_0314bb17e5dee3::t_496cd65618362e 352-469
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_0314bb17e5dee3::t_69786c7fa4b342 65,71-72
+  s_0314bb17e5dee3::t_ff1b16a76e54be 112-113,121-122,132-133,135-156
+  s_0314bb17e5dee3::t_be454733b5ee7b 308-309
+  s_0314bb17e5dee3::t_bb9391bc6fc156 486-489,496-502
+  s_0314bb17e5dee3::t_fabf7b1ad2edec 765-768,776-780,785
+  s_0314bb17e5dee3::t_790f09424dd5e5 817,819
+  s_0314bb17e5dee3::t_87b4b097a072a9 733
+  s_0314bb17e5dee3::t_e008ce662a3ee3 503
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f615ec6ca3a69f9ed2ca43646b4a4dcbaa81a44b",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
