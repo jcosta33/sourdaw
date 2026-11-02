@@ -1,0 +1,65 @@
+scripts/check-dependency-boundaries.mjs
+  s_0314bb17e5dee3::t_ff651150a5b41a 1964
+  s_0314bb17e5dee3::t_1503f8c99995c5 1965
+  s_0314bb17e5dee3::t_9a1885e44521da 1956-1961,2010-2011
+scripts/__tests__/check-dependency-boundaries.spec.ts
+  s_0314bb17e5dee3::t_1f9fd4741f0d32 2005-2057
+src/modules/AiRuntime/repositories/__tests__/webLlmProviderAdapter.spec.ts
+  s_917db07feb2d61::t_3c83487711e56d 20,23,216-219,228,272,283
+src/modules/AiRuntime/repositories/webLlm/__tests__/engineLifecycle.spec.ts
+  s_917db07feb2d61::t_95f2844abeb8c7 17,22,39,41,43,79,144-154
+src/modules/DawInterchange/workers/runDawProjectZipWorkerRequest.ts
+  s_2d6c9a2aaec724::t_4f1b43d34976d3 23-39
+evidence/agent-campaign/manifest.json
+  s_e549995b90db48::t_8c6567234faee4 386
+docs/architecture/05-boundary-enforcement-limits.md
+  s_7dbab01d82971b::t_cfb0f1e51b9e54 35-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cd4d9a8876477f5327676343c41d7a282737db07",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_2d6c9a2aaec724": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_2d6c9a2aaec724",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_7dbab01d82971b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_7dbab01d82971b",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_917db07feb2d61": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_917db07feb2d61",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_e549995b90db48": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_e549995b90db48",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
