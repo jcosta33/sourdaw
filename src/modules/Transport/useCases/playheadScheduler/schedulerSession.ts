@@ -58,6 +58,12 @@ export function stopActiveSources(sources: AudioBufferSourceNode[], ctx: BaseAud
     schedulerSession.pendingFences = schedulerSession.pendingFences.filter((fence) => fence.stopAt > now);
 }
 
+/** Cut one source with the teardown semantic: one 5 ms ramp after the current clock. */
+export function cutSource(src: SourceWithFade, ctx: BaseAudioContext): void {
+    const now = ctx.currentTime;
+    cutSourceAt(src, now, now + 0.005);
+}
+
 function cutSourceAt(src: SourceWithFade, now: number, stopAt: number): void {
     try {
         if (src.fadeGainNode) {
