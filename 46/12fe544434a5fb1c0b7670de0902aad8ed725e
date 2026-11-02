@@ -1,0 +1,21 @@
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClipsCompBoundaryStall.spec.ts
+  s_f0cac04ac8b85d::t_2822c447b183d1 13,50-51,53,181,440-470,476-477
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_f0cac04ac8b85d::t_f17f8568a0f964 110,118-119,129,131,674-679,710-727,752,767,772,804,806
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4612fe544434a5fb1c0b7670de0902aad8ed725e",
+  "prompts": {},
+  "sessions": {
+    "s_f0cac04ac8b85d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_f0cac04ac8b85d",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
