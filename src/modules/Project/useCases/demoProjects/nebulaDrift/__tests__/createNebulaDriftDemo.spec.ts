@@ -61,8 +61,9 @@ describe('createNebulaDriftDemo', () => {
     it('builds the demo transport on the preference-seeded state, not the unseeded model default', () => {
         // The demo's full-state transport replace runs after the store reset has
         // seeded the Recording preferences; rebuilding from the model default
-        // would silently drop that seed (#4673).
-        expect(demoSource).toContain('transportStore.set({ ...preferencesSeededTransportState(), tempo: bpm');
+        // would silently drop that seed (#4673). Transport's new-project seed
+        // builds on the preferences.
+        expect(demoSource).toContain('seedTransportForNewProject({ tempo: bpm');
     });
 
     /**

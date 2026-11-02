@@ -164,6 +164,7 @@ describe('saveProject audio durability integration', () => {
             { createFreshProjectMetadata },
             { configureCollaborationAssetOwner },
             { withProjectAudioStorageLock },
+            { registerProjectLifecycle },
         ] = await Promise.all([
             import('#/modules/AudioEngine/useCases'),
             import('#/modules/AudioEngine/stores'),
@@ -176,6 +177,7 @@ describe('saveProject audio durability integration', () => {
             import('../../../createFreshProjectMetadata'),
             import('#/modules/Collaboration/useCases'),
             import('#/infra/storage/withProjectAudioStorageLock'),
+            import('#/app/registerProjectLifecycle'),
         ]);
         const context = audioEngine.context as AudioContext & {
             createBuffer: typeof createAudioBuffer;
@@ -192,6 +194,7 @@ describe('saveProject audio durability integration', () => {
         configureDurableAudioBufferOwnership(project.collectDurableOwnedAudioBufferIds);
         project.setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         resetCrdtProjectAuthority('Durability');
+        registerProjectLifecycle();
         resetModuleStoresToDefault();
         projectStore.set({
             ...createFreshProjectMetadata({

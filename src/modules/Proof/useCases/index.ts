@@ -3,3 +3,4 @@ export { registerProofDevice } from './proofParamBridge/registerProofDevice';
 export { unregisterProofDevice } from './proofParamBridge/unregisterProofDevice';
 export { syncFullPatch } from './proofParamBridge/syncFullPatch';
 export { captureOfflineProof } from './captureOfflineProof';
+export { resetProofForProject } from './resetProofForProject';

@@ -5,28 +5,23 @@
       "Arrangement",
       "AudioEngine",
       "Automation",
-      "Bacteria",
       "Collaboration",
       "Command",
       "ControlSurface",
       "CrdtDocument",
       "Crumbs",
-      "Crust",
       "ElasticAudio",
       "Fermenter",
-      "Gluten",
       "GrandBoule",
       "Grinder",
       "Knead",
       "Levain",
       "MIDI",
       "Project",
-      "Proof",
       "Routing",
       "SampleLibrary",
       "Toaster",
       "Transport",
-      "Tuner",
       "WorkspaceShell",
       "Yeast"
     ]
@@ -209,11 +204,6 @@
   {
     "type": "module-tier",
     "from": "Project",
-    "to": "Bacteria"
-  },
-  {
-    "type": "module-tier",
-    "from": "Project",
     "to": "ControlSurface"
   },
   {
@@ -224,42 +214,7 @@
   {
     "type": "module-tier",
     "from": "Project",
-    "to": "Crust"
-  },
-  {
-    "type": "module-tier",
-    "from": "Project",
     "to": "CvGate"
-  },
-  {
-    "type": "module-tier",
-    "from": "Project",
-    "to": "Fermenter"
-  },
-  {
-    "type": "module-tier",
-    "from": "Project",
-    "to": "Gluten"
-  },
-  {
-    "type": "module-tier",
-    "from": "Project",
-    "to": "GrandBoule"
-  },
-  {
-    "type": "module-tier",
-    "from": "Project",
-    "to": "Grinder"
-  },
-  {
-    "type": "module-tier",
-    "from": "Project",
-    "to": "Levain"
-  },
-  {
-    "type": "module-tier",
-    "from": "Project",
-    "to": "Proof"
   },
   {
     "type": "module-tier",
@@ -270,11 +225,6 @@
     "type": "module-tier",
     "from": "Project",
     "to": "Toaster"
-  },
-  {
-    "type": "module-tier",
-    "from": "Project",
-    "to": "Tuner"
   },
   {
     "type": "module-tier",

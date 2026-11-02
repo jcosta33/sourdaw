@@ -163,6 +163,7 @@ const {
     setMidiLearnDependenciesMock,
     registerCrdtStorageRuntimeMock,
     registerProjectSlotProjectionsMock,
+    registerProjectLifecycleMock,
     captureProjectRootIdentityMock,
     setElasticSensitivityRootIdentityCaptureMock,
     captureProjectIdentityMock,
@@ -187,12 +188,6 @@ const {
     executeUserAppActionBinding,
     recordNativeChainReleasesMock,
     registerReleasedStripReportSinkMock,
-    clearAgentMeasurementArtifactsMock,
-    setAgentMeasurementArtifactsClearerMock,
-    clearAgentSectionRenderArtifactsMock,
-    setAgentSectionRenderArtifactsClearerMock,
-    cancelActiveAgentRunsMock,
-    setActiveAgentRunsCancellerMock,
     setCrumbsEventBusMock,
     initCrumbsModePushMock,
     initDeviceStateReconciliationMock,
@@ -287,12 +282,6 @@ const {
         // Distinguishable from the shared noop for the same reason as the
         // durable audio ownership provider above: the assertion pins this
         // exact reference, so rewiring or dropping the registration fails here.
-        clearAgentMeasurementArtifactsMock: vi.fn(),
-        setAgentMeasurementArtifactsClearerMock: vi.fn<(clearer: () => void) => void>(),
-        clearAgentSectionRenderArtifactsMock: vi.fn(),
-        setAgentSectionRenderArtifactsClearerMock: vi.fn<(clearer: () => void) => void>(),
-        cancelActiveAgentRunsMock: vi.fn(),
-        setActiveAgentRunsCancellerMock: vi.fn<(canceller: () => void) => void>(),
         // Distinguishable from the shared noop like the other seam pins: the
         // Crumbs wiring assertions pin these by reference, so deleting the
         // composition-root registration or handing the seam another function
@@ -308,6 +297,7 @@ const {
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
         registerProjectSlotProjectionsMock: vi.fn<() => void>(),
+        registerProjectLifecycleMock: vi.fn<() => void>(),
         captureProjectRootIdentityMock: vi.fn<() => string>(() => 'root-identity'),
         setElasticSensitivityRootIdentityCaptureMock: vi.fn(),
         captureProjectIdentityMock: vi.fn<() => string>(() => 'identity-1'),
@@ -368,7 +358,6 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
     failMixAnalysis: noop,
     recoverInterruptedAgentRuns: recoverInterruptedAgentRunsMock,
     recoverRetainedSectionRenderEffects: recoverRetainedSectionRenderEffectsMock,
-    cancelActiveAgentRuns: cancelActiveAgentRunsMock,
     getProjectContext: noop,
     getAiOrganizationHandlers: sentinelHandlers('AiOrganization'),
     initializeVoiceInputAvailability: noop,
@@ -464,8 +453,6 @@ vi.mock('#/modules/AudioEngine/stores', () => ({
 
 vi.mock('#/modules/AudioRendering/useCases', () => ({
     stageAudioBufferAsset: vi.fn(),
-    clearAgentMeasurementArtifacts: clearAgentMeasurementArtifactsMock,
-    clearAgentSectionRenderArtifacts: clearAgentSectionRenderArtifactsMock,
 
     getAudioRenderingHandlers: sentinelHandlers('AudioRendering'),
 }));
@@ -670,9 +657,6 @@ vi.mock('#/modules/Project/useCases', () => ({
     initPluginStateDirtyTracking: noop,
     initProjectDirtyTracking: noop,
     getDurableProjectOwnerId: getDurableProjectOwnerIdMock,
-    setAgentMeasurementArtifactsClearer: setAgentMeasurementArtifactsClearerMock,
-    setAgentSectionRenderArtifactsClearer: setAgentSectionRenderArtifactsClearerMock,
-    setActiveAgentRunsCanceller: setActiveAgentRunsCancellerMock,
     setProjectIdentityTransitionDependencies: setProjectIdentityTransitionDependenciesMock,
 }));
 
@@ -802,6 +786,10 @@ vi.mock('../registerGlobalErrorHandlers', () => ({
 
 vi.mock('../registerProjectSlotProjections', () => ({
     registerProjectSlotProjections: registerProjectSlotProjectionsMock,
+}));
+
+vi.mock('../registerProjectLifecycle', () => ({
+    registerProjectLifecycle: registerProjectLifecycleMock,
 }));
 
 vi.mock('../composeGrandBoule', () => ({
@@ -1082,6 +1070,10 @@ describe('bootstrap', () => {
         expect(registerCrdtStorageRuntimeMock).toHaveBeenCalledExactlyOnceWith();
         expect(registerProjectSlotProjectionsMock).toHaveBeenCalledExactlyOnceWith();
         expect(registerProjectSlotProjectionsMock).toHaveBeenCalledAfter(registerCrdtStorageRuntimeMock);
+        // Before anything can reset or load a project: until it runs, a
+        // project switch would throw instead of resetting the modules.
+        expect(registerProjectLifecycleMock).toHaveBeenCalledExactlyOnceWith();
+        expect(registerProjectLifecycleMock).toHaveBeenCalledAfter(registerProjectSlotProjectionsMock);
         expect(agentProjectInspectionSetProviderMock).toHaveBeenCalledExactlyOnceWith(
             captureAgentProjectInspectionState
         );
@@ -1221,44 +1213,6 @@ describe('bootstrap', () => {
      */
     it("wires the Levain zone table builder to AudioEngine's off-render-thread build", () => {
         expect(configureLevainZoneTableBuilderMock).toHaveBeenCalledExactlyOnceWith(buildLevainZoneTablesMock);
-    });
-
-    /**
-     * `resetModuleStoresToDefault` calls Project's stored clearer at every
-     * project load, new project, and discard; the composition root is the
-     * only place that binds it to AudioRendering's use case. Pinned by
-     * reference like the durable ownership provider above: dropping the
-     * registration, or handing Project some other function, leaves a closed
-     * project's agent measurement renders retained with nothing reporting it.
-     */
-    it('wires the agent measurement artifact clearer to the AudioRendering use case', () => {
-        expect(setAgentMeasurementArtifactsClearerMock).toHaveBeenCalledExactlyOnceWith(
-            clearAgentMeasurementArtifactsMock
-        );
-    });
-
-    /**
-     * Same seam, same pinning: `resetModuleStoresToDefault` calls Project's
-     * stored section-render clearer at every project boundary, and the
-     * composition root is the only place that binds it to AudioRendering's use
-     * case. Dropping the registration leaves a closed project's section renders
-     * (and their expiry timer) retained with nothing reporting it.
-     */
-    it('wires the agent section render artifact clearer to the AudioRendering use case', () => {
-        expect(setAgentSectionRenderArtifactsClearerMock).toHaveBeenCalledExactlyOnceWith(
-            clearAgentSectionRenderArtifactsMock
-        );
-    });
-
-    /**
-     * The canceller seam binds AiRuntime's run cancellation to the same
-     * boundary: without the registration an agent run in flight survives a
-     * project switch and its render holds the process-wide render lock, keeping
-     * Export disabled in the incoming project. Pinned by reference like the
-     * clearer registrations above.
-     */
-    it('wires the active agent run canceller to the AiRuntime use case', () => {
-        expect(setActiveAgentRunsCancellerMock).toHaveBeenCalledExactlyOnceWith(cancelActiveAgentRunsMock);
     });
 
     /**

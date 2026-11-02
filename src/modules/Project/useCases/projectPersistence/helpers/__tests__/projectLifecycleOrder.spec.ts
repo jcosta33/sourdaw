@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectLifecycle } from '#/app/registerProjectLifecycle';
+import { automationStore } from '#/modules/Automation/stores';
 import { bacteriaStore } from '#/modules/Bacteria/stores';
 import { midiLearnStore } from '#/modules/ControlSurface/stores';
 import { crustMeterStore, crustStore } from '#/modules/Crust/stores';
@@ -8,11 +10,17 @@ import { glutenMeterStore, glutenStore } from '#/modules/Gluten/stores';
 import { grinderStore, grinderTelemetryStore } from '#/modules/Grinder/stores';
 import { kneadStore } from '#/modules/Knead/stores';
 import { levainStore } from '#/modules/Levain/stores';
+import { resetMidiStoreForProject } from '#/modules/MIDI/useCases';
 import { proofStore } from '#/modules/Proof/stores';
 import { toasterStore } from '#/modules/Toaster/stores';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 import { tunerStore } from '#/modules/Tuner/stores';
-import { automationStore } from '#/modules/Automation/stores';
+
+import { arrangementStore } from '../../../../stores/arrangementStore';
+import { missingMediaStore } from '../../../../stores/missingMediaStore';
+import { hydrateModuleStoresFromProjectData } from '../hydrateModuleStoresFromProjectData';
+import { type HydratableProjectData } from '../isHydratableProjectData';
+import { resetModuleStoresToDefault } from '../resetModuleStoresToDefault';
 
 const calls = vi.hoisted(() => [] as string[]);
 const record = vi.hoisted(() => (step: string) => () => {
@@ -81,19 +89,6 @@ vi.mock('#/modules/Yeast/useCases', async (importOriginal) => ({
     hydrateYeastState: vi.fn(record('Yeast.hydrateYeastState')),
 }));
 
-import { cancelActiveAgentRuns } from '#/modules/AiRuntime/useCases';
-import { clearAgentMeasurementArtifacts, clearAgentSectionRenderArtifacts } from '#/modules/AudioRendering/useCases';
-import { resetMidiStoreForProject } from '#/modules/MIDI/useCases';
-
-import { arrangementStore } from '../../../../stores/arrangementStore';
-import { missingMediaStore } from '../../../../stores/missingMediaStore';
-import { setActiveAgentRunsCanceller } from '../../setActiveAgentRunsCanceller';
-import { setAgentMeasurementArtifactsClearer } from '../../setAgentMeasurementArtifactsClearer';
-import { setAgentSectionRenderArtifactsClearer } from '../../setAgentSectionRenderArtifactsClearer';
-import { hydrateModuleStoresFromProjectData } from '../hydrateModuleStoresFromProjectData';
-import { type HydratableProjectData } from '../isHydratableProjectData';
-import { resetModuleStoresToDefault } from '../resetModuleStoresToDefault';
-
 /**
  * Every store write the reset and hydrate make, labelled by owner. A step that
  * runs inside an owner use case is observed on the store it writes, because the
@@ -124,7 +119,8 @@ const STORE_WRITES = {
 
 /**
  * The reset sequence the pre-registry `resetModuleStoresToDefault` produced,
- * written out by hand from that code. The agent run is cancelled before the
+ * written out by hand from that code and confirmed against it before the
+ * registry replaced it. The agent run is cancelled before the
  * artifact stores its renders feed are cleared (#4783), and both happen after
  * Project's own stores and before any transport or device store is reset.
  */
@@ -200,9 +196,7 @@ function createProjectData(): HydratableProjectData {
 describe('project lifecycle order', () => {
     beforeEach(() => {
         calls.length = 0;
-        setActiveAgentRunsCanceller(cancelActiveAgentRuns);
-        setAgentSectionRenderArtifactsClearer(clearAgentSectionRenderArtifacts);
-        setAgentMeasurementArtifactsClearer(clearAgentMeasurementArtifacts);
+        registerProjectLifecycle();
         recordStoreWrites();
     });
 

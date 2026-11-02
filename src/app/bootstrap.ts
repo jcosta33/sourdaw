@@ -11,7 +11,6 @@ import {
     getAgentCapabilityCatalog,
     failMixAnalysis,
     initializeVoiceInputAvailability,
-    cancelActiveAgentRuns,
     recoverInterruptedAgentRuns,
     recoverRetainedSectionRenderEffects,
     setVoiceToggleEventBus,
@@ -69,11 +68,7 @@ import {
     startMainThreadLongTaskObservation,
     stopAllScheduled,
 } from '#/modules/AudioEngine/useCases';
-import {
-    clearAgentMeasurementArtifacts,
-    clearAgentSectionRenderArtifacts,
-    stageAudioBufferAsset,
-} from '#/modules/AudioRendering/useCases';
+import { stageAudioBufferAsset } from '#/modules/AudioRendering/useCases';
 import {
     getAutomationValueAtBeat,
     createOfflineAutomationEvaluator,
@@ -183,9 +178,6 @@ import {
     initGrooveTemplateDirtyTracking,
     initPluginStateDirtyTracking,
     initProjectDirtyTracking,
-    setAgentMeasurementArtifactsClearer,
-    setAgentSectionRenderArtifactsClearer,
-    setActiveAgentRunsCanceller,
     setProjectIdentityTransitionDependencies,
 } from '#/modules/Project/useCases';
 import { clearProofMeters, updateProofMeters } from '#/modules/Proof/stores';
@@ -253,6 +245,7 @@ import { prepareOfflineDeviceSetup, captureOfflineDeviceSetup } from './prepareO
 import { projectNativeDeviceState } from './projectNativeDeviceState';
 import { eventBus, logger } from './registerDependencies';
 import { registerGlobalErrorHandlers } from './registerGlobalErrorHandlers';
+import { registerProjectLifecycle } from './registerProjectLifecycle';
 import { registerProjectSlotProjections } from './registerProjectSlotProjections';
 
 logCapabilities();
@@ -267,6 +260,7 @@ initBranchState();
 
 registerCrdtStorageRuntime();
 registerProjectSlotProjections();
+registerProjectLifecycle();
 setElasticSensitivityRootIdentityCapture(captureProjectRootIdentity);
 configureCommandBatchIdempotency({ canExecute: canExecuteCommandBatch });
 setActionHistoryMetadataPort({
@@ -381,17 +375,6 @@ setWorkspaceEventBus(eventBus);
 // AudioRendering's barrel, which Arrangement cannot import without a module
 // cycle, so the composition root supplies the stager.
 setClipAudioAssetStager(stageAudioBufferAsset);
-// Same seam shape as the stager above: AudioRendering's WAV export path
-// imports Project's use cases, so Project cannot import AudioRendering's
-// barrel directly without a cycle. See agentMeasurementArtifactClearingState.ts.
-setAgentMeasurementArtifactsClearer(clearAgentMeasurementArtifacts);
-// Two more seams of the same shape: the retained section renders and the
-// in-flight agent runs both belong to the project being torn down, and each
-// implementation's module imports Project's barrel, so Project cannot import
-// either back. See agentSectionRenderArtifactsClearingState.ts and
-// activeAgentRunCancellationState.ts.
-setAgentSectionRenderArtifactsClearer(clearAgentSectionRenderArtifacts);
-setActiveAgentRunsCanceller(cancelActiveAgentRuns);
 // An unload changes native strip state with no batch of its own to report it,
 // so PluginHost forwards the strips its own release touched here, the one
 // place that may cross from PluginHost's contract into AudioEngine's.
