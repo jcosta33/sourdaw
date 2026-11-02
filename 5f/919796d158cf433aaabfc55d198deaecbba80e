@@ -1,0 +1,28 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  h_beb54bf43b47b7 251-252,260,295,433,641-644
+.agents/skills/delivery-orchestration/references/review-records.md
+  h_beb54bf43b47b7 46-47,75,79
+AGENTS.md
+  h_beb54bf43b47b7 102-114,154,181-182,213-214
+scripts/__tests__/publishReview.spec.ts
+  h_beb54bf43b47b7 5704-5720,5731-5755,6279,6286
+scripts/__tests__/reviewStructuralAdmission.spec.ts
+  h_beb54bf43b47b7 75-81
+scripts/__tests__/reviewerModelDiversity.spec.ts
+  h_beb54bf43b47b7 298-299,315,330-331,348-349,357-358,371-373,376-378,383-384,386-399,402-405,408-420,424,426,429,432-433,438,440-449,452,461,464
+scripts/reviewStructuralAdmission.ts
+  h_beb54bf43b47b7 5,38
+scripts/reviewerModelDiversity.ts
+  h_beb54bf43b47b7 2,4-12,34,42-48,69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5f919796d158cf433aaabfc55d198deaecbba80e",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
