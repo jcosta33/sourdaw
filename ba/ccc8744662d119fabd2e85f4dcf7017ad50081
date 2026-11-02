@@ -1,0 +1,20 @@
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_0314bb17e5dee3::t_63e2ab78ef7911 143-144,148-149
+  s_0314bb17e5dee3::t_9d7075ab84375e 770
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "baccc8744662d119fabd2e85f4dcf7017ad50081",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
