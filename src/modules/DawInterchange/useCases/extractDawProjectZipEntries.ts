@@ -4,7 +4,7 @@ import {
     type DawProjectZipWorkerPhase,
     type DawProjectZipWorkerRequest,
     type DawProjectZipWorkerResponse,
-} from './runDawProjectZipWorkerRequest';
+} from '../models/DawProjectZipWorkerProtocol';
 
 type ExtractDawProjectZipEntriesInput = {
     bytes: Uint8Array;
@@ -35,7 +35,7 @@ export function extractDawProjectZipEntries({
             return;
         }
 
-        const worker = new Worker(new URL('./dawProjectZip.worker.ts', import.meta.url), { type: 'module' });
+        const worker = new Worker(new URL('../workers/dawProjectZipWorker.ts', import.meta.url), { type: 'module' });
         let settled = false;
 
         function finish(callback: () => void): void {

@@ -13,7 +13,7 @@ boundary rule, check it against every row below.
 ## The gates
 
 `pnpm deps:validate` (`scripts/check-dependency-boundaries.mjs`) first runs its static source
-guards, then six gates, each with its own exact known-violations baseline (repaired debt cannot stay
+guards, then seven gates, each with its own exact known-violations baseline (repaired debt cannot stay
 silently authorized):
 
 | Gate                    | Source                                 | Sees                                                    |
@@ -21,9 +21,23 @@ silently authorized):
 | main                    | `.dependency-cruiser.cjs`              | value + tagged type-only edges (`tsPreCompilationDeps`) |
 | contract re-export reg. | static `export … from` syntax reader   | re-exports of private folders from contract folders     |
 | module tiers            | `.dependency-cruiser.module-tiers.cjs` | module-pair edges against tiers; module-level cycles    |
+| worker spawns           | static AST reader                      | `new Worker(new URL(…))` and `?worker` targets          |
 | reachability            | `.dependency-cruiser.reachability.cjs` | transitive causal edges                                 |
 | types                   | `.dependency-cruiser.types.cjs`        | type-only-specific duplicate boundary rules             |
 | tests                   | `.dependency-cruiser.tests.cjs`        | test-inclusive barrel boundaries                        |
+
+## Worker spawns
+
+`new Worker(new URL('./x.ts', import.meta.url))` is a URL reference, not an import, so dependency-cruiser
+never draws an edge to the worker entry and the `workers-*` isolation rules reach it only by file location.
+An entry outside a `workers/` folder would run unconstrained code on another thread with no rule applying.
+The **worker spawns** gate closes this: it reads every `new Worker(...)` and `new SharedWorker(...)` and every
+import specifier whose Vite query carries `worker` or `sharedworker` (including `?worker&inline`) in production
+code under `src/`, resolves the target,
+and reports a row unless it lies under `src/modules/<Module>/workers/` or `src/infra/<area>/workers/`. A target
+that is not a string literal is a row too, since nothing can check where it points. `?worker&url` is a worklet
+processor URL and is governed by `worklets/` instead. A specifier built at run time, such as `import(path)`, is
+invisible to any static reader and stays a review matter.
 
 ## The six laundering patterns
 

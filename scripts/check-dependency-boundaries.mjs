@@ -39,6 +39,10 @@ const gates = {
         baseline: '.dependency-cruiser-known-violations-module-tiers.json',
         static: true,
     },
+    workerSpawns: {
+        baseline: '.dependency-cruiser-known-violations-worker-spawns.json',
+        static: true,
+    },
     reachability: {
         baseline: '.dependency-cruiser-known-violations-reachability.json',
         config: '.dependency-cruiser.reachability.cjs',
@@ -1944,6 +1948,123 @@ function loadModuleTierManifest(repositoryRoot) {
     return require(resolve(repositoryRoot, moduleTierManifestPath));
 }
 
+// Worker spawns: dependency-cruiser sees `import` edges, and `new Worker(new URL('./x.ts', import.meta.url))`
+// is a URL reference, so the `workers-*` isolation rules reach a Worker entry only by where its file lives.
+// An entry outside a `workers/` folder escapes them, so this gate reads every spawn site, resolves its
+// target and requires the target under `src/modules/<Module>/workers/` or `src/infra/<area>/workers/`.
+//
+// A spawn is `new Worker(...)` or `new SharedWorker(...)`, or an import specifier whose query carries a
+// `worker` or `sharedworker` parameter in any position (`?worker&inline`, `?foo&sharedworker`), which is
+// Vite's constructor wrapper, static or dynamic. The patterns are Vite's own (`workerOrSharedWorkerRE` and
+// `urlRE` in its worker plugin). A `url` parameter beside it (`?worker&url`) makes Vite export a URL string,
+// not spawn: that loads an AudioWorklet processor, which `worklets/` isolation covers. A spawn whose target
+// cannot be read from a string literal is reported too, because nothing can check where it points.
+const workerEntryFolderPath = /^src\/(?:modules\/[^/]+|infra\/[^/]+)\/workers\/.+/;
+const workerConstructorNames = new Set(['Worker', 'SharedWorker']);
+const workerImportQuery = /(?:\?|&)(?:shared)?worker(?:&|$)/;
+const urlImportQuery = /(?:\?|&)url(?:&|$)/;
+const nonProductionSegment = /(?:^|\/)(?:__tests__|testing)\//;
+const unreadableWorkerTarget = '<target not a string literal>';
+
+function isWorkerConstructor(expression) {
+    if (ts.isIdentifier(expression)) {
+        return workerConstructorNames.has(expression.text);
+    }
+    return ts.isPropertyAccessExpression(expression) && workerConstructorNames.has(expression.name.text);
+}
+
+function isImportMetaUrl(node) {
+    return (
+        ts.isPropertyAccessExpression(node) &&
+        node.name.text === 'url' &&
+        ts.isMetaProperty(node.expression) &&
+        node.expression.keywordToken === ts.SyntaxKind.ImportKeyword
+    );
+}
+
+function workerUrlLiteral(argument) {
+    if (
+        !argument ||
+        !ts.isNewExpression(argument) ||
+        !ts.isIdentifier(argument.expression) ||
+        argument.expression.text !== 'URL'
+    ) {
+        return null;
+    }
+    const [path, base] = argument.arguments ?? [];
+    return base && isImportMetaUrl(base) ? moduleSpecifierText(path) : null;
+}
+
+// Returns one `{ target, line }` per spawn; `target` is the specifier as written, or null when unreadable.
+function collectWorkerSpawns(sourceFile) {
+    const spawns = [];
+    const lineOf = (node) => sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+    const visit = (node) => {
+        if (ts.isNewExpression(node) && isWorkerConstructor(node.expression)) {
+            spawns.push({ target: workerUrlLiteral(node.arguments?.[0]), line: lineOf(node) });
+        }
+        ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+    for (const { text, line } of collectModuleSpecifiers(sourceFile)) {
+        if (workerImportQuery.test(text) && !urlImportQuery.test(text)) {
+            spawns.push({ target: text.slice(0, text.indexOf('?')), line });
+        }
+    }
+    return spawns;
+}
+
+function isWorkerSpawnOrigin(repoPath) {
+    return sourceFilePath.test(repoPath) && !specFilePath.test(repoPath) && !nonProductionSegment.test(repoPath);
+}
+
+// Rows carry no line, like the module tier rows, so moving a spawn within its file never stales the baseline.
+export function computeWorkerSpawnRows({ files, sourceFileFor }) {
+    const details = new Map();
+    const rowsByKey = new Map();
+    for (const { absolutePath, repoPath } of files) {
+        const sourceFile = isWorkerSpawnOrigin(repoPath) ? sourceFileFor(absolutePath) : undefined;
+        if (!sourceFile) {
+            continue;
+        }
+        for (const { target, line } of collectWorkerSpawns(sourceFile)) {
+            const targetPath = target === null ? null : moduleSpecifierRepoPath(target, repoPath);
+            if (targetPath !== null && workerEntryFolderPath.test(targetPath)) {
+                continue;
+            }
+            const row = { type: 'worker-spawn', from: repoPath, to: targetPath ?? unreadableWorkerTarget };
+            const key = keyOf(row);
+            if (rowsByKey.has(key)) {
+                continue;
+            }
+            rowsByKey.set(key, row);
+            details.set(
+                key,
+                targetPath === null
+                    ? `worker target must be new URL('<literal>', import.meta.url) or '<literal>?worker'; e.g. line ${line}`
+                    : `worker entry must live in a workers/ folder; e.g. line ${line}`
+            );
+        }
+    }
+    return { rows: sortRows(rowsByKey.values()), details };
+}
+
+export function findWorkerSpawnState(repositoryRoot = root) {
+    const files = walkFiles(resolve(repositoryRoot, 'src')).map((absolutePath) => ({
+        absolutePath,
+        repoPath: toPosixPath(relative(repositoryRoot, absolutePath)),
+    }));
+    const sourceFileFor = (absolutePath) =>
+        ts.createSourceFile(
+            absolutePath,
+            readFileSync(absolutePath, 'utf8'),
+            ts.ScriptTarget.Latest,
+            true,
+            scriptKindFor(absolutePath)
+        );
+    return computeWorkerSpawnRows({ files, sourceFileFor });
+}
+
 function scriptKindFor(fileName) {
     if (/\.tsx$/i.test(fileName)) {
         return ts.ScriptKind.TSX;
@@ -2062,7 +2183,11 @@ function buildStaticGuardState(repositoryRoot) {
             comparePaths(left.reason, right.reason)
     );
     const sourceFileFor = (absolutePath) => sourceFilesByPath.get(normalizeFileName(absolutePath));
-    return { findings, contractReexportRows, files, sourceFileFor };
+    const sourceFiles = sourcePaths.map((absolutePath) => ({
+        absolutePath,
+        repoPath: toPosixPath(relative(repositoryRoot, absolutePath)),
+    }));
+    return { findings, contractReexportRows, files, sourceFiles, sourceFileFor };
 }
 
 export function findStaticGuardFindings(repositoryRoot = root) {
@@ -2149,7 +2274,13 @@ function writeBaseline(name, gate, cruise) {
 }
 
 function main() {
-    const { findings: guardFindings, contractReexportRows, files, sourceFileFor } = buildStaticGuardState(root);
+    const {
+        findings: guardFindings,
+        contractReexportRows,
+        files,
+        sourceFiles,
+        sourceFileFor,
+    } = buildStaticGuardState(root);
     const moduleTierState = collectModuleTierState({
         repositoryRoot: root,
         files,
@@ -2157,8 +2288,13 @@ function main() {
         manifest: loadModuleTierManifest(root),
     });
     const staticFindings = [...guardFindings, ...moduleTierState.findings];
-    const staticRows = { contractReexports: contractReexportRows, moduleTiers: moduleTierState.rows };
-    const rowDetails = moduleTierState.details;
+    const workerSpawnState = computeWorkerSpawnRows({ files: sourceFiles, sourceFileFor });
+    const staticRows = {
+        contractReexports: contractReexportRows,
+        moduleTiers: moduleTierState.rows,
+        workerSpawns: workerSpawnState.rows,
+    };
+    const rowDetails = new Map([...moduleTierState.details, ...workerSpawnState.details]);
     if (staticFindings.length > 0) {
         for (const finding of staticFindings) {
             console.error(`${finding.file}:${finding.line}: ${finding.reason}`);

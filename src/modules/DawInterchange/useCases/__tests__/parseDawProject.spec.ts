@@ -5,27 +5,14 @@ import { describe, it, expect, vi } from 'vitest';
  * No real Worker exists in the jsdom test environment, so this spec fakes
  * only the Worker transport and delegates to the real, synchronous
  * extraction core (`runDawProjectZipWorkerRequest`) — the same logic that
- * runs inside `dawProjectZip.worker.ts` in production. This keeps the round
+ * runs inside `dawProjectZipWorker.ts` in production. This keeps the round
  * trip through real ZIP bytes and real XML while avoiding the environment
  * gap; the Worker lifecycle itself is covered by
  * `extractDawProjectZipEntries.spec.ts`.
  */
 vi.mock('../extractDawProjectZipEntries', async () => {
-    const { runDawProjectZipWorkerRequest } = await import('../runDawProjectZipWorkerRequest');
-    return {
-        extractDawProjectZipEntries: (input: {
-            bytes: Uint8Array<ArrayBuffer>;
-            phase: 'header' | 'audio';
-            restrictLimits?: unknown;
-        }) =>
-            Promise.resolve({
-                entries: runDawProjectZipWorkerRequest({
-                    bytes: input.bytes.buffer,
-                    phase: input.phase,
-                    restrictLimits: input.restrictLimits as never,
-                }),
-            }),
-    };
+    const { extractDawProjectZipEntriesInProcess } = await import('../../testing/extractDawProjectZipEntriesInProcess');
+    return { extractDawProjectZipEntries: extractDawProjectZipEntriesInProcess };
 });
 
 import { parseDawProject } from '../parseDawProject';

@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 
-import { type OggCodecWorkerRequest, type OggCodecWorkerResponse } from '../../../models/OggCodecWorkerProtocol';
-import { installOggCodecWorker } from '../oggCodecWorker';
+import { type OggCodecWorkerRequest, type OggCodecWorkerResponse } from '../models/OggCodecWorkerProtocol';
+import { installOggCodecWorker } from '../workers/oggCodecWorker';
 
 /** Real codec/runtime and transferable ownership; only the Worker transport is in process. */
 export class OggCodecTestWorker extends EventTarget {

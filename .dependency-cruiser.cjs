@@ -623,8 +623,10 @@ module.exports = {
             name: 'module-runtime-no-worker-imports',
             severity: 'error',
             comment:
-                'Use cases, repositories, stores, handlers, and presentations must not import Worker internals. ' +
-                'The engine-owned Worker client is the only application entrypoint for a Worker module.',
+                'Use cases, repositories, stores, handlers, and presentations must not import Worker internals, ' +
+                'including a Vite ?worker import. They start a Worker with new Worker(new URL(..., import.meta.url)), ' +
+                'which is a URL reference rather than an import edge, so the worker spawns gate in ' +
+                'scripts/check-dependency-boundaries.mjs checks that every such target lives in a workers/ folder.',
             from: {
                 path: '^src/modules/[^/]+/(useCases|repositories|stores|handlers|presentations)/.+' + SOURCE_FILE_RE,
             },

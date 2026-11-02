@@ -1,6 +1,6 @@
 import { strToU8, zipSync } from 'fflate';
 
-import { METADATA_XML_ENTRY_NAME, PROJECT_XML_ENTRY_NAME } from './dawProjectEntryNames';
+import { METADATA_XML_ENTRY_NAME, PROJECT_XML_ENTRY_NAME } from '../models/DawProjectEntryNames';
 
 export type BuildDawProjectZipInput = {
     projectXml: string;

@@ -1237,7 +1237,6 @@ export const craftBaselineFiles = {
         'src/modules/DawInterchange/useCases/extractDawProjectZipEntries.ts',
         'src/modules/DawInterchange/useCases/mapToProjectData.ts',
         'src/modules/DawInterchange/useCases/parseProjectXml.ts',
-        'src/modules/DawInterchange/useCases/runDawProjectZipWorkerRequest.ts',
         'src/modules/Fermenter/presentations/components/PresetBrowser.tsx',
         'src/modules/Fermenter/useCases/__tests__/presetMorph.spec.ts',
         'src/modules/GrandBoule/presentations/components/PianoModel3D.tsx',

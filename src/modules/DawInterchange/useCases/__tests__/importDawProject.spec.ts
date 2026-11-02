@@ -41,19 +41,8 @@ vi.mock('../parseDawProject', () => ({
 // Keep the real ZIP guard and XML parser. jsdom has no Worker, so only the
 // worker transport is replaced with the production extraction core.
 vi.mock('../extractDawProjectZipEntries', async () => {
-    const { runDawProjectZipWorkerRequest } = await import('../runDawProjectZipWorkerRequest');
-    return {
-        extractDawProjectZipEntries: (
-            input: Parameters<typeof import('../extractDawProjectZipEntries').extractDawProjectZipEntries>[0]
-        ) =>
-            Promise.resolve({
-                entries: runDawProjectZipWorkerRequest({
-                    bytes: input.bytes.slice().buffer,
-                    phase: input.phase,
-                    restrictLimits: input.restrictLimits,
-                }),
-            }),
-    };
+    const { extractDawProjectZipEntriesInProcess } = await import('../../testing/extractDawProjectZipEntriesInProcess');
+    return { extractDawProjectZipEntries: extractDawProjectZipEntriesInProcess };
 });
 
 const mockTransaction = { canActivate: () => true };
