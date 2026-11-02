@@ -710,11 +710,16 @@ describe('real recorder first-frame capture placement', () => {
                     // The seam window pre-schedules the next pass's first comp
                     // boundary with the part before it, so the fragment may also
                     // start in later passes, each exactly whole loops later.
-                    for (const later of fragmentStarts.filter((source) => source !== started)) {
-                        const passes = Math.round((later.when - started.when) / loopSeconds);
-                        expect(passes).toBeGreaterThanOrEqual(1);
-                        expect(later.when - started.when).toBeCloseTo(passes * loopSeconds, 10);
-                    }
+                    const laterPasses = fragmentStarts
+                        .filter((source) => source !== started)
+                        .map((later) => {
+                            const passes = Math.round((later.when - started.when) / loopSeconds);
+                            expect(passes).toBeGreaterThanOrEqual(1);
+                            expect(later.when - started.when).toBeCloseTo(passes * loopSeconds, 10);
+                            expect(later.durationSeconds).toBeCloseTo(selection.durationSeconds, 10);
+                            return passes;
+                        });
+                    expect(new Set(laterPasses).size).toBe(laterPasses.length);
                     expect(started.durationSeconds).toBeCloseTo(selection.durationSeconds, 10);
                     expect(media!.getChannelData(0)[Math.round(started.sourceSeconds * 48000)]).toBe(
                         selection.firstFrame
