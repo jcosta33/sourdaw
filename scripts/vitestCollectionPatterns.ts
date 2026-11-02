@@ -32,7 +32,7 @@ export const playwrightTestDir = 'tests/e2e';
 
 /** Playwright glob matching ignores case, while its extension filter admits lowercase suffixes only. */
 const playwrightSpecFilePattern = new RegExp(specFilePattern.source, 'i');
-const playwrightExtensionPattern = /\.(?:[cm]?[jt]sx?)$/;
+export const playwrightExtensionPattern = /\.(?:[cm]?[jt]sx?)$/;
 
 /** Playwright's `testIgnore` entry excluding any `__tests__` directory (`playwright.config.ts`). */
 export const playwrightTestIgnorePattern = /(?:^|\/)__tests__\//iu;

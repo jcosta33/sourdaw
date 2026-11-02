@@ -308,15 +308,6 @@
   {
     "type": "contract-reexport",
     "from": "src/modules/WorkspaceShell/useCases/workspaceQueries/helpers.ts",
-    "to": "src/modules/WorkspaceShell/models/EditingTool.ts",
-    "rule": {
-      "severity": "error",
-      "name": "no-models-repos-transformers-in-contract-folders"
-    }
-  },
-  {
-    "type": "contract-reexport",
-    "from": "src/modules/WorkspaceShell/useCases/workspaceQueries/helpers.ts",
     "to": "src/modules/WorkspaceShell/models/WorkspaceState.ts",
     "rule": {
       "severity": "error",

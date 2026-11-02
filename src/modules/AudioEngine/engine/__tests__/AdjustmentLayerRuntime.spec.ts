@@ -6,6 +6,7 @@ import {
     createMockAudioContext,
     createMockAudioNode,
 } from '../../../../helpers/__tests__/audioContext.mock';
+import { engineDeviceCollaborators } from '../../useCases/engineDeviceCollaborators';
 import { AdjustmentBusNode } from '../AdjustmentBusNode';
 import { createAdjustmentLayerRuntime, type TrackRerouteDeps } from '../AdjustmentLayerRuntime';
 
@@ -24,6 +25,7 @@ describe('AdjustmentLayerRuntime', () => {
             getContext: () => asBaseAudioContext(ctx),
             getTrackDefaultDestination: (id) => trackDestinations.get(id) ?? null,
             rerouteTrack,
+            builtinDevices: engineDeviceCollaborators,
         };
 
         trackDestinations.set('t1', asAudioNode(createMockAudioNode('gain')));
@@ -211,6 +213,7 @@ describe('AdjustmentLayerRuntime — chain wiring & disposal-timer branches', ()
             getContext: () => asBaseAudioContext(ctx),
             getTrackDefaultDestination: (id) => trackDestinations.get(id) ?? null,
             rerouteTrack,
+            builtinDevices: engineDeviceCollaborators,
         };
 
         trackDestinations.set('t1', asAudioNode(createMockAudioNode('gain')));
@@ -349,6 +352,7 @@ describe('AdjustmentLayerRuntime — chain order follows the layer stack, not cr
             getContext: () => asBaseAudioContext(ctx),
             getTrackDefaultDestination: (id) => (id === 't1' ? destination : null),
             rerouteTrack: vi.fn<(trackId: string) => void>(),
+            builtinDevices: engineDeviceCollaborators,
         };
         return { runtime: createAdjustmentLayerRuntime(deps), ctx, destination };
     }

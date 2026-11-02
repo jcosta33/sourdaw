@@ -12,9 +12,8 @@ describe('defaultWorkspaceState', () => {
         expect(defaultWorkspaceState.commandPaletteOpen).toBe(false);
     });
 
-    it('should use musical time and single-instance solo by default', () => {
+    it('should use musical time by default', () => {
         expect(defaultWorkspaceState.timeDisplayMode).toBe('musical');
-        expect(defaultWorkspaceState.soloMode).toBe('sip');
     });
 
     it('should expose default panel dimensions', () => {

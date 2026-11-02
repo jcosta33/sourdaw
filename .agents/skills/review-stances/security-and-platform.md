@@ -43,15 +43,7 @@ or none.
    A handle-only consumer must refuse browser-only authority before registration, without exposing a path, File
    or raw error. Removing provenance dispatch or that refusal must redden the owning case. These probes
    establish neither OS-dialog execution nor a security exposure.
-6. **A new fenced command must reach the trusted launcher (#5639).** Supersession added a process-fenced owner
-   without routing its package command through the trusted write bootstrap; injected-fence lock tests passed
-   while the real command had no trusted `ps` pin and refused before PR I/O. Require the command registry,
-   static source closure, risk-classification union and fenced-command set to cover the actual package route.
-   Drive the default process-fence consumer with a launcher-resolved POSIX `ps`, and verify Windows PowerShell
-   selection independently. Inherited forged pins must not survive snapshot isolation, and a missing platform
-   tool refuses rather than falling back to ambient execution. A direct-script route, and removal from the
-   fenced set, must each break the real admission probe before any remote port call.
-7. **Package-manager trust reaches the final caller (#4222 `120c9e2b418`, #5806; #5464 `eded998aebf`).** The setup
+6. **Package-manager trust reaches the final caller (#4222 `120c9e2b418`, #5806; #5464 `eded998aebf`).** The setup
    action's bootstrap could block the selected JavaScript pnpm on unused native-engine signature metadata; the
    Corepack-producer and later Node/cache-consumer arrangement let a Corepack shim in the selected Node
    directory override an already verified target through the later PATH prepend. Public approval prose does not
@@ -62,7 +54,7 @@ or none.
    authenticated target. Before disabling Corepack aliases, validate the whole affected set of leaf symlinks and
    real targets against that selected Node's official distribution; refuse unrecognized launchers without
    deleting recognized peers, and preserve Node, npm, npx, Yarn and unrelated files.
-8. **Private install ownership omitted a cross-environment setting (PR #2 `10f24a6f03`, pinned pnpm 11.6;
+7. **Private install ownership omitted a cross-environment setting (PR #2 `10f24a6f03`, pinned pnpm 11.6;
    2026-10-29).** CI defaults an unset virtual-store setting to false but local freshness comparison sees unset,
    so ownership checks could accept an install that an ordinary local package command refused (no security
    exposure established). Run the real pinned runner on a private offline install under CI, then local and CI
@@ -70,24 +62,24 @@ or none.
    virtual tree stays checkout-private, while the shared download-cache policy and freshness checks remain.
    Removing the explicit `enableGlobalVirtualStore: false` pin must expose the same mismatch; a precheck bypass,
    metadata rewrite or different CI environment cannot carry the proof.
-9. **Hosted WASM control and source revisions are not the same revision (#4057, 2026-09-09).** GitHub executes
+8. **Hosted WASM control and source revisions are not the same revision (#4057, 2026-09-09).** GitHub executes
    workflow YAML from the merge revision while the workflow may check out an older PR head lacking the helper;
    review inspected a same-head build and receipt path, not the control CLI against two pinned roots. Execute the
    real control helper against a distinct clean source Git root lacking both hosted helpers, with relevant and
    irrelevant source changes and divergent closure hashes and toolchain pins; invalid or dirty roots must fail
    before source-toolkit import. For return verification, plant a source-toolkit sentinel and prove the verifier
    only reads the clean source root and never imports it.
-10. **ZIP fixture clock drift obscured the strict artifact boundary (#4057 `d608d165a49`, 2026-10-10).** The
-    streamed-artifact case and ZIP artifact-return fixtures used fflate 0.8.3 without explicit `mtime`; the
-    streamed local and central header writes and both `zipSync` writes per file call `wzh`, which reads a fresh
-    `Date.now()`, and crossing a DOS two-second boundary changed the timestamp word so the strict parser refused
-    the archive before its descriptor or artifact checks ran. Force actual streamed and `zipSync` fixtures across
-    a two-second DOS boundary and inspect both timestamp byte fields; pin every ZIP fixture writer to one fixed
-    `mtime` through the supported `zipSync` option and streamed-entry property. Keep local-central equality,
-    streamed content acceptance, descriptor corruption refusal, and the bounds, CRC, path, file-set and
-    encryption oracles. On the fixed head revert only `mtime` and require the forced-clock case to fail; never
-    relax the parser. This proves boundary behavior, not the hosted failure's clock interval or frequency.
-11. **A replacement PR left its public fixture in scanned history (#5746 `cc52a482abc4`, replacement #5748;
+9. **ZIP fixture clock drift obscured the strict artifact boundary (#4057 `d608d165a49`, 2026-10-10).** The
+   streamed-artifact case and ZIP artifact-return fixtures used fflate 0.8.3 without explicit `mtime`; the
+   streamed local and central header writes and both `zipSync` writes per file call `wzh`, which reads a fresh
+   `Date.now()`, and crossing a DOS two-second boundary changed the timestamp word so the strict parser refused
+   the archive before its descriptor or artifact checks ran. Force actual streamed and `zipSync` fixtures across
+   a two-second DOS boundary and inspect both timestamp byte fields; pin every ZIP fixture writer to one fixed
+   `mtime` through the supported `zipSync` option and streamed-entry property. Keep local-central equality,
+   streamed content acceptance, descriptor corruption refusal, and the bounds, CRC, path, file-set and
+   encryption oracles. On the fixed head revert only `mtime` and require the forced-clock case to fail; never
+   relax the parser. This proves boundary behavior, not the hosted failure's clock interval or frequency.
+10. **A replacement PR left its public fixture in scanned history (#5746 `cc52a482abc4`, replacement #5748;
     2026-10-29).** The original commit quoted the RFC 6455 section 1.2 WebSocket nonce; #5748 composed it at
     runtime and excluded the commit from its PR range, but Nightly's `--all` scan still reached the retained
     original branch. The value is a published protocol example, not an issued credential. Read the exact
@@ -95,7 +87,7 @@ or none.
     commit/path/rule/line fingerprint. A wrong fingerprint and independent synthetic credentials, including
     `gitleaks:allow`, must remain detected under the same trusted configuration and flags. A clean replacement
     diff does not establish a clean full-history scan.
-12. **The PR security scan lacked its main comparison configurations (#3170, #4854; 2026-10-28).** #3170 moved
+11. **The PR security scan lacked its main comparison configurations (#3170, #4854; 2026-10-28).** #3170 moved
     the main CodeQL producer from Health gates to Nightly, leaving the older main configuration in analysis
     history; #4854 later added a PR scan under Health gates' default identity, distinct from Nightly's main
     category. Successful scans and Gate did not prove every main configuration was compared. Paginate all main
@@ -103,7 +95,7 @@ or none.
     hosted PR summary with actual uploads. Before any authorized retirement inspect alert continuity and the
     documented deletion and historical-data consequences. Mutate or omit the PR category and require the
     independent contract to fail after re-recording the workflow snapshot.
-13. **Accepted NAM dimensions exceeded the runtime input width (#5209 `54ff77cd1f`, 2026-10-27).** The LSTM loader
+12. **Accepted NAM dimensions exceeded the runtime input width (#5209 `54ff77cd1f`, 2026-10-27).** The LSTM loader
     sized deeper cells to `hidden_size` while rendering passed a one-element input to every cell. The source
     establishes the length contradiction for `num_layers > 1 && hidden_size > 1`; no trap on the introducing head
     was measured, and the missing obligation was the layer/width cross-product. Pass the exact-layout,
@@ -115,7 +107,7 @@ or none.
     than guessing its length. A validated metadata object alone cannot prove runtime admission. Existing cases
     are partial coverage only: `validateGrinderNamModel.spec.ts` is metadata-only, and
     `grinder_stacked_lstm_rejection.rs` checks the refusal text and that no model loaded.
-14. **Control receipt admission must precede semantic authority (#4128 `1d1471216e`).** The parser advanced
+13. **Control receipt admission must precede semantic authority (#4128 `1d1471216e`).** The parser advanced
     interpretation after bounding its receipt without checking whether bounding had replaced success with
     failure, so staged authority survived an unadmitted control; schema-valid selector arguments hid it.
     Promote authority only after the actual bounded success receipt passes every carrier and byte admission. A
@@ -130,19 +122,6 @@ or none.
     "publishes complete semantic intake and safe reads before restoring exact effectful contracts after success"
     are partial coverage: none asserts the compacted-carrier input.
 
-## Relocated
-
-- Lane removal and merged-lane cleanup (#1802), merge-state landed proof, historical parent substitution
-  (#5615, #5627), dependency authority movement, split PR metadata (#2357/#4420), acknowledged marker
-  vanishing (#5639), `baseRef`/`baseRefOid` field requirements, registered provenance source identity, and the
-  GitHub Actor `id` schema (#5705) → `closure-authority-proof.md`.
-- Darwin and Linux storage census, `LINK` type, pathname diagnostics, capped catalogs, start-time excuse,
-  foreign same-UID attribution, temporary-storage ownership, hosted test isolation, and process-group
-  inspection EPERM (#5274, #5331, #5345, #5443, #4899, #5240) → `guard-reclamation-proof.md`.
-- Delivery authority from an earlier PR state (#4586, #5032), the old-receipt publication bypass (#5111) and
-  the reviewer confirm token permission (#4411) → `review-authorization.md`.
-- Repair ancestry against the finding revision (#4411) → `public-repair-records.md`.
-
 ## Retired lessons
 
 - A declared Body choice never entered the worklet schema (#5254) → enforced by
@@ -154,3 +133,17 @@ or none.
   before replacing an armed target or scheduling another timeout" and
   `src/modules/ControlSurface/useCases/__tests__/midiLearn.spec.ts` "should not start learning when MIDI input is
   unsupported".
+
+## Relocated
+
+- Lane removal and merged-lane cleanup (#1802), merge-state landed proof, historical parent substitution
+  (#5615, #5627), dependency authority movement, split PR metadata (#2357/#4420), acknowledged marker
+  vanishing (#5639), `baseRef`/`baseRefOid` field requirements, registered provenance source identity, and the
+  GitHub Actor `id` schema (#5705) → `closure-authority-proof.md` probes 1 to 10.
+- Darwin and Linux storage census, `LINK` type, pathname diagnostics, capped catalogs, start-time excuse,
+  foreign same-UID attribution, temporary-storage ownership, hosted test isolation, and process-group
+  inspection EPERM (#5274, #5331, #5345, #5443, #4899, #5240) → `guard-reclamation-proof.md` probes 1 to 12.
+- Delivery authority from an earlier PR state (#4586, #5032), the old-receipt publication bypass (#5111) and
+  the reviewer confirm token permission (#4411) → `review-authorization.md` probes 10, 7 and 11.
+- Repair ancestry against the finding revision (#4411) → `public-repair-records.md` probe 11.
+- A new fenced command reaching the trusted launcher (#5639) → `trusted-script-delivery.md` probe 1.

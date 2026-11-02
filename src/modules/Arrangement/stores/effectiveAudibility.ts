@@ -19,7 +19,7 @@ export type { SoloMode };
  * therefore driven by the same derivation — "export = what you hear".
  *
  * `audible` folds in both individual mute and solo-implied muting (mute ∪ solo),
- * honouring workspace solo mode (SIP / AFL / PFL), `soloSafe`, and solo-in-place
+ * honouring the solo mode (SIP / AFL / PFL), `soloSafe`, and solo-in-place
  * routing (soloing a bus keeps the tracks feeding it audible).
  */
 

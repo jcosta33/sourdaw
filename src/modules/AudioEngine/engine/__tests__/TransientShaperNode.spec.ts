@@ -249,6 +249,7 @@ describe('Transient Shaper registry promotion lifecycle', () => {
     async function registry() {
         const { findWasmDescriptor } = await import('../wasmDeviceRegistry');
         const { setAudioDeviceRuntimeSink } = await import('../audioDeviceRuntimeSink');
+        const { engineDeviceCollaborators } = await import('../../useCases/engineDeviceCollaborators');
         const loaded = vi.fn();
         setAudioDeviceRuntimeSink({ emitDeviceLoaded: loaded });
         const descriptor = findWasmDescriptor('transient-shaper');
@@ -256,18 +257,19 @@ describe('Transient Shaper registry promotion lifecycle', () => {
             throw new Error('No real registry descriptor');
         }
         const registryContext = { ...context, createGain: () => ({ disconnect: vi.fn() }) } as unknown as AudioContext;
-        return { descriptor, registryContext, loaded };
+        return { descriptor, registryContext, loaded, engineDeviceCollaborators };
     }
     afterEach(async () => {
         const { setAudioDeviceRuntimeSink } = await import('../audioDeviceRuntimeSink');
         setAudioDeviceRuntimeSink({});
     });
     it.each(['stale', 'rejected', 'aborted'] as const)('never emits loaded after %s promotion', async (state) => {
-        const { descriptor, registryContext, loaded } = await registry();
+        const { descriptor, registryContext, loaded, engineDeviceCollaborators } = await registry();
         const abort = new AbortController();
         const onLoaded = vi.fn(() => state !== 'rejected');
         const load = descriptor.create({
             context: registryContext,
+            collaborators: engineDeviceCollaborators,
             deviceId: 'shaper',
             deviceType: 'transient-shaper',
             signal: abort.signal,
@@ -292,12 +294,13 @@ describe('Transient Shaper registry promotion lifecycle', () => {
         fake.message({ type: 'disposed' });
     });
     it('retires post-ready faults and requests recovery only after the owning graph accepted replacement', async () => {
-        const { descriptor, registryContext, loaded } = await registry();
+        const { descriptor, registryContext, loaded, engineDeviceCollaborators } = await registry();
         const replace = vi.fn(() => true),
             recover = vi.fn();
         const onLoaded = vi.fn((candidate: unknown) => candidate !== undefined);
         const load = descriptor.create({
             context: registryContext,
+            collaborators: engineDeviceCollaborators,
             deviceId: 'shaper',
             deviceType: 'transient-shaper',
             onLoaded,
@@ -320,10 +323,11 @@ describe('Transient Shaper registry promotion lifecycle', () => {
         fake.message({ type: 'disposed' });
     });
     it('does not emit loaded when promotion synchronously exposes a terminal runtime fault', async () => {
-        const { descriptor, registryContext, loaded } = await registry();
+        const { descriptor, registryContext, loaded, engineDeviceCollaborators } = await registry();
         const replace = vi.fn(() => true);
         const load = descriptor.create({
             context: registryContext,
+            collaborators: engineDeviceCollaborators,
             deviceId: 'shaper',
             deviceType: 'transient-shaper',
             onLoaded: () => {

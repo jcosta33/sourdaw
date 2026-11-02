@@ -103,6 +103,6 @@ Automerge guarantees convergence of concurrent edits. It does not guarantee sens
 
 ## References
 
-- Review probes for this area: `../review-stances/project-integrity.md` and `../review-stances/session-lifecycle.md`.
+- Review probes for this area: `../review-stances/project-integrity.md`, `../review-stances/replay-authority.md`, `../review-stances/session-lifecycle.md` and `../review-stances/collaboration-teardown.md`.
 - [docs/architecture/06-crdt-collaboration.md](../../../docs/architecture/06-crdt-collaboration.md) — full write-path and transport architecture.
 - [docs/architecture/01-system.md](../../../docs/architecture/01-system.md) — truth/projection state model.

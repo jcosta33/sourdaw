@@ -5,9 +5,14 @@ import { pathToFileURL } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    joinBytes,
+    oggPages,
+    OggCodecTestWorker,
+    toneSource,
+    useRealOggWorkerTransport,
+} from '../../../testing/oggCodecTestWorker';
 import { audioBufferToVorbis } from '../vorbisEncoder';
-
-import { joinBytes, oggPages, OggCodecTestWorker, toneSource, useRealOggWorkerTransport } from './oggCodecTestWorker';
 
 beforeEach(useRealOggWorkerTransport);
 afterEach(() => vi.unstubAllGlobals());

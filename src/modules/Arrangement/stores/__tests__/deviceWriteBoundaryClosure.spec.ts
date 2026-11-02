@@ -977,11 +977,15 @@ const DEVICE_DATA_COUNTS = {
         // Count provenance: measured 1 — `devices:` on the after-track snapshot
         // for the registered load-external-plugin handler.
         'src/modules/Arrangement/handlers/device/handleLoadExternalPlugin.ts': 1,
-        // Count provenance: measured 10 — lexical `devices:` / `parameterValues:`
-        // in payload types, Device reconstruction, and replacement topology.
-        // Writes go through the registered loadPreset handler after
-        // executeAppAction, not a raw store write from a foreign module.
-        'src/modules/Arrangement/handlers/preset/handleLoadPreset.ts': 10,
+        // Count provenance: measured 8 — lexical `devices:` / `parameterValues:`
+        // in payload types and replacement topology. Writes go through the
+        // registered loadPreset handler after executeAppAction, not a raw store
+        // write from a foreign module.
+        'src/modules/Arrangement/handlers/preset/handleLoadPreset.ts': 8,
+        // Count provenance: measured 2 — the Device reconstruction moved out of
+        // handleLoadPreset so the batch projection writes the same chain the
+        // loadPreset handler and its restoring inverse commit.
+        'src/modules/Arrangement/handlers/preset/toPresetProjectDevices.ts': 2,
         'src/modules/Arrangement/handlers/preset/handleSavePreset.ts': 2,
         // Count provenance: was 1 in `static`, measured 2 — the row moves buckets
         // rather than just incrementing. #2347 rewrote the template validator's

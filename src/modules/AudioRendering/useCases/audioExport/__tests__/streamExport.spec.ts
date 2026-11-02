@@ -7,6 +7,8 @@ import { unzipSync } from 'fflate';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DELIVERY_PRESETS } from '../../../models/DeliveryPresets';
+import { createDeliveryPcmSource } from '../../../repositories/audioEncoders/createDeliveryPcmSource';
+import { readExportPcmBlock } from '../../../repositories/audioEncoders/readExportPcmBlock';
 import {
     deferred,
     joinBytes,
@@ -14,9 +16,7 @@ import {
     oggPages,
     toneSource,
     useRealOggWorkerTransport,
-} from '../../../repositories/audioEncoders/__tests__/oggCodecTestWorker';
-import { createDeliveryPcmSource } from '../../../repositories/audioEncoders/createDeliveryPcmSource';
-import { readExportPcmBlock } from '../../../repositories/audioEncoders/readExportPcmBlock';
+} from '../../../testing/oggCodecTestWorker';
 import { resolveDeliveryTargets } from '../../resolveDeliveryTargets';
 import { streamExport } from '../streamExport';
 

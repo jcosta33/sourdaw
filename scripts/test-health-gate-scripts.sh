@@ -849,8 +849,14 @@ expect(
         Object.keys(requiredCodeql?.permissions ?? {}).length === 3,
     'the required CodeQL job must grant exactly contents: read, security-events: write, and actions: read'
 );
+// The planner reads the nightly coverage map artifact: a read-only actions grant, nothing more.
+expect(
+    JSON.stringify(workflow.jobs?.scope?.permissions) ===
+        JSON.stringify({ contents: 'read', 'pull-requests': 'read', actions: 'read' }),
+    'required scope must grant exactly contents: read, pull-requests: read, and actions: read'
+);
 for (const [jobId, job] of Object.entries(workflow.jobs ?? {})) {
-    if (jobId !== 'codeql') {
+    if (jobId !== 'codeql' && jobId !== 'scope') {
         expect(job?.permissions === undefined, `required ${jobId} must inherit read-only workflow permissions`);
     }
 }

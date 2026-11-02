@@ -287,6 +287,8 @@ const NIGHTLY_REPORT_NEEDS = [
     'desktop-measure',
     'e2e',
     'e2e-report',
+    'e2e-coverage',
+    'e2e-coverage-map',
     'browser-ai-webgpu',
     'codeql',
     'secrets',
@@ -1983,9 +1985,16 @@ function withWorkflowFiles(files: readonly string[]): () => void {
 // The SARIF upload is the only write this job needs: `contents: write` would
 // hand the pull-request workflow a token that can push,
 // and dropping `security-events: write` would fail the upload on the head.
+// The planner reads the nightly coverage map artifact, so it alone adds a read-only actions grant.
+const SCOPE_PERMISSIONS = JSON.stringify({ contents: 'read', 'pull-requests': 'read', actions: 'read' });
+
 function assertRequiredCodeQlPermissions(candidate: UnknownRecord): void {
     for (const [jobId, value] of Object.entries(recordAt(candidate, 'jobs'))) {
-        if (jobId !== 'codeql' && asRecord(value, jobId).permissions !== undefined) {
+        const permissions = asRecord(value, jobId).permissions;
+        if (jobId === 'scope' && JSON.stringify(permissions) !== SCOPE_PERMISSIONS) {
+            throw new Error('the scope job must grant exactly contents: read, pull-requests: read, and actions: read');
+        }
+        if (jobId !== 'codeql' && jobId !== 'scope' && permissions !== undefined) {
             throw new Error(`the ${jobId} job must inherit read-only workflow permissions`);
         }
     }
@@ -4022,7 +4031,12 @@ describe('health gates workflow contract', () => {
         const widenedScope = cloneWorkflows('widened scope permissions');
         jobAt(widenedScope.health, 'scope').permissions = { contents: 'write' };
         expect(() => assertRequiredCodeQlPermissions(widenedScope.health)).toThrow(
-            'the scope job must inherit read-only workflow permissions'
+            'the scope job must grant exactly contents: read, pull-requests: read, and actions: read'
+        );
+        const widenedValidation = cloneWorkflows('widened validation permissions');
+        jobAt(widenedValidation.health, 'validation').permissions = { contents: 'read' };
+        expect(() => assertRequiredCodeQlPermissions(widenedValidation.health)).toThrow(
+            'the validation job must inherit read-only workflow permissions'
         );
     });
 
@@ -4181,7 +4195,7 @@ describe('health gates workflow contract', () => {
             TOKEN: '${{ secrets.VERCEL_TOKEN }}',
         };
         expect(surface(leakedStepSecret)).toThrow(
-            'health-gates.yml job scope must read exactly its pinned secrets: none'
+            'health-gates.yml job scope must read exactly its pinned secrets: GITHUB_TOKEN'
         );
 
         const jobToken = cloneWorkflows('job token on static');
@@ -4357,7 +4371,7 @@ describe('health gates workflow contract', () => {
             const candidate = loadWorkflow(file).parsed;
             callers += assertVerifiedPnpmCallers(candidate, file === 'wasm-artifacts.yml');
         }
-        expect(callers).toBe(26);
+        expect(callers).toBe(28);
 
         const oldBootstrap = structuredClone(validationWorkflow);
         stepNamed(jobAt(oldBootstrap, 'lint'), PNPM_SETUP_STEP).uses =

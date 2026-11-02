@@ -257,6 +257,11 @@ export { toggleInputMonitoring } from './toggleTrackState/toggleInputMonitoring'
 export { toggleSoloSafe } from './toggleTrackState/toggleSoloSafe';
 export { toggleVariationLanes } from './toggleTrackState/toggleVariationLanes';
 
+// ── Solo Mode ─────────────────────────────────────────────────────────────────
+
+export { setSoloMode } from './soloMode/setSoloMode';
+export { syncSoloModePreference } from './soloMode/syncSoloModePreference';
+
 // ── Track View / Zoom ─────────────────────────────────────────────────────────
 
 export { zoomTracksVertical } from './trackZoom';
