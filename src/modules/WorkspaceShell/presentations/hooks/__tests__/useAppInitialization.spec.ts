@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
-import { setSoloMode } from '#/modules/Arrangement/useCases/soloMode/setSoloMode';
+import { syncSoloModePreference } from '#/modules/Arrangement/useCases';
 import {
     initializeAudioEngine,
     resumeEngine,
@@ -11,7 +11,6 @@ import {
     syncNativeTimelineSamples,
 } from '#/modules/AudioEngine/useCases';
 import { syncKneadToEngine } from '#/modules/Knead/useCases';
-import { resetPreferences, updatePreferences } from '#/modules/Preferences/useCases';
 import { finishProjectLoading, loadProject, reportProjectLoadFailure, saveProject } from '#/modules/Project/useCases';
 import { syncTransportMapsToNativeSession } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -100,13 +99,12 @@ vi.mock('#/modules/Transport/useCases', () => ({
     syncTransportMapsToNativeSession: vi.fn(() => vi.fn()),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
-// The real preference projection runs against a stubbed writer, so the case observes
-// exactly which modes the hook's subscription hands to the solo-mode owner.
-vi.mock('#/modules/Arrangement/useCases', async () => {
-    const { syncSoloModePreference } = await import('#/modules/Arrangement/useCases/soloMode/syncSoloModePreference');
-    return { syncSoloModePreference };
-});
-vi.mock('#/modules/Arrangement/useCases/soloMode/setSoloMode', () => ({ setSoloMode: vi.fn() }));
+// The projection itself is Arrangement's and its own spec covers it; this file owns
+// only the wiring: the hook starts the sync on mount and disposes it on unmount.
+const soloModeSync = vi.hoisted(() => ({ unsubscribe: vi.fn() }));
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    syncSoloModePreference: vi.fn(() => soloModeSync.unsubscribe),
+}));
 const mockPreferencesValueHolder: { current: Record<string, unknown> | null } = { current: { uiScale: 1 } };
 const preferenceListeners = vi.hoisted(() => new Set<() => void>());
 // Mock the preferences store the hook imports from #/modules/Preferences/stores,
@@ -129,7 +127,7 @@ beforeEach(() => {
     identityTransitionReady.reset();
 });
 
-describe('useAppInitialization — solo mode preference projection', () => {
+describe('useAppInitialization — solo mode preference sync', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockPreferencesValueHolder.current = { uiScale: 1, soloMode: 'afl', autoSave: false };
@@ -140,26 +138,21 @@ describe('useAppInitialization — solo mode preference projection', () => {
         }
     });
 
-    it('applies the saved mode and explicit owner outcomes, then unsubscribes and reapplies on remount', () => {
-        const { unmount } = renderHook(() => useAppInitialization());
-        expect(setSoloMode).toHaveBeenCalledWith('afl');
+    it('starts the sync once on mount, disposes it on unmount, and starts it again on remount', () => {
+        const { rerender, unmount } = renderHook(() => useAppInitialization());
+        expect(syncSoloModePreference).toHaveBeenCalledTimes(1);
 
-        vi.mocked(setSoloMode).mockClear();
-        act(() => {
-            updatePreferences({ patch: { soloMode: 'pfl' } });
-            expect(setSoloMode).toHaveBeenCalledWith('pfl');
-        });
+        rerender();
+        expect(syncSoloModePreference).toHaveBeenCalledTimes(1);
+        expect(soloModeSync.unsubscribe).not.toHaveBeenCalled();
 
-        vi.mocked(setSoloMode).mockClear();
         unmount();
-        updatePreferences({ patch: { soloMode: 'sip' } });
-        expect(setSoloMode).not.toHaveBeenCalled();
+        expect(soloModeSync.unsubscribe).toHaveBeenCalledTimes(1);
 
-        mockPreferencesValueHolder.current = { uiScale: 1, soloMode: 'sip', autoSave: false };
         const remounted = renderHook(() => useAppInitialization());
-        expect(setSoloMode).toHaveBeenCalledWith('sip');
+        expect(syncSoloModePreference).toHaveBeenCalledTimes(2);
         remounted.unmount();
-        resetPreferences();
+        expect(soloModeSync.unsubscribe).toHaveBeenCalledTimes(2);
     });
 });
 
