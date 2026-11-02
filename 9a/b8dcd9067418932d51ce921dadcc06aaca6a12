@@ -1,0 +1,19 @@
+src/modules/DawInterchange/workers/runDawProjectZipWorkerRequest.ts
+  s_2d6c9a2aaec724::t_4f1b43d34976d3 23-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9ab8dcd9067418932d51ce921dadcc06aaca6a12",
+  "prompts": {},
+  "sessions": {
+    "s_2d6c9a2aaec724": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_2d6c9a2aaec724",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
