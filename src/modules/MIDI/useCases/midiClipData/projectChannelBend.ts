@@ -46,6 +46,10 @@ type ChannelBendPoint = {
     value: number;
     /** The depth `value` is read against, in semitones: the one in force where the row was recorded, even for a carry. */
     rangeSemitones: number;
+    /** The zero-based MIDI channel the row was recorded on. */
+    channel: number;
+    /** Whether the move bends only the notes of its own channel (`MidiPitchBend.channelScoped`). */
+    channelScoped: boolean;
 };
 
 type PlacedBend = { point: ChannelBendPoint; clipIndex: number; rowIndex: number };
@@ -55,11 +59,15 @@ type PlacedBend = { point: ChannelBendPoint; clipIndex: number; rowIndex: number
  * when one is given: every move of every clip's stored bend lane, in the order the instrument
  * receives them.
  *
- * A bend belongs to the channel, not to a note, so it is the bend of the whole track: a note
- * struck while a bend is in force sounds under it, and a note sounding when a move arrives is
- * moved. The caller reads the bend in force at a frame as the last move at or before it.
- * Nothing resets at a clip end: a bend stays where the last row put it until a row says
- * otherwise, as CC1 does, so the clip after one that ended bent starts bent.
+ * A bend belongs to a channel, not to a note: a note struck while a bend that reaches it is in
+ * force sounds under it, and a note sounding when such a move arrives is moved. A row the
+ * recorder captured from a channel's wheel with MPE off reaches only the notes of its channel,
+ * as the live input plays it, and says so (`MidiPitchBend.channelScoped`); every other row
+ * (drawn, imported, saved before rows were scoped, or an MPE zone master's) reaches every note
+ * of the track. Each move keeps its row's channel and scope, and the caller reads the bend in
+ * force for a note as the last move at or before its frame that reaches it. Nothing resets at a
+ * clip end: a bend stays where the last row put it until a row says otherwise, as CC1 does, so
+ * the clip after one that ended bent starts bent.
  *
  * "Last" is the posting order, by sample frame, then clip sequence, then the clip's own row
  * order, never by float beat: two rows a rounding step apart in beat share a frame, and the
@@ -97,6 +105,8 @@ export function projectChannelBend({
                     recordedBeat,
                     value: bend.value,
                     rangeSemitones: readRange(bend.channel, recordedContentBeat),
+                    channel: bend.channel,
+                    channelScoped: bend.channelScoped === true,
                 },
                 clipIndex,
                 rowIndex,
