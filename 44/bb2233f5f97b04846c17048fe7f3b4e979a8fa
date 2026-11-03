@@ -1,0 +1,20 @@
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportSnapshotConsistency.integration.spec.ts
+  h_beb54bf43b47b7 81
+src/modules/Project/useCases/projectPersistence/fileIO/pickAndImportProjectFile.ts
+  h_beb54bf43b47b7 12
+src/modules/Project/useCases/projectPersistence/loadProject.ts
+  h_beb54bf43b47b7 36,40,45
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.projectDirectory.integration.spec.ts
+  h_beb54bf43b47b7 13-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "44bb2233f5f97b04846c17048fe7f3b4e979a8fa",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
