@@ -17,6 +17,7 @@ const defaultWebMidiState: WebMidiState = {
     inputs: [],
     selectedInputId: null,
     enumerationError: null,
+    enumerationCompleted: false,
 };
 
 const DEVICE_NAME_MAX_LENGTH = 15;
