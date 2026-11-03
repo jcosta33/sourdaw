@@ -1,0 +1,138 @@
+src/modules/Arrangement/handlers/recording/__tests__/recordedControllerTake.integration.spec.ts
+  h_beb54bf43b47b7 220-221
+src/modules/Arrangement/models/MidiNoteViewTypes.ts
+  h_beb54bf43b47b7 47-48
+src/modules/AudioEngine/AGENTS.md
+  h_beb54bf43b47b7 28
+src/modules/AudioEngine/repositories/offlineScheduler/offlineMidiEventProjectorState.ts
+  h_beb54bf43b47b7 115,123-131
+src/modules/AudioEngine/useCases/noteExpression/__tests__/projectNoteExpressionCurves.spec.ts
+  h_beb54bf43b47b7 324,330-331,340-442
+src/modules/AudioEngine/useCases/noteExpression/__tests__/relocateNoteExpression.spec.ts
+  h_beb54bf43b47b7 9,15-16,22,28-29,64-77
+src/modules/AudioEngine/useCases/noteExpression/advanceNoteExpression.ts
+  h_beb54bf43b47b7 7,47-50,57,85-86
+src/modules/AudioEngine/useCases/noteExpression/findChannelBendInForce.ts
+  h_beb54bf43b47b7 2,4-26,29-30,32,34,37,43
+src/modules/AudioEngine/useCases/noteExpression/noteExpressionTimeline.ts
+  h_beb54bf43b47b7 26-33,61-65
+src/modules/AudioEngine/useCases/noteExpression/reachesChannel.ts
+  h_beb54bf43b47b7 1-12
+src/modules/AudioEngine/useCases/noteExpression/relocateNoteExpression.ts
+  h_beb54bf43b47b7 41-42,51
+src/modules/AudioEngine/useCases/noteExpression/startNoteExpression.ts
+  h_beb54bf43b47b7 29-30,38-39,179-180,202,216
+src/modules/AudioEngine/useCases/offlineRender/__tests__/renderTrackSubgraphOffline.spec.ts
+  h_beb54bf43b47b7 719-727
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  h_beb54bf43b47b7 2208-2209,2482-2542
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  h_beb54bf43b47b7 915
+src/modules/MIDI/AGENTS.md
+  h_beb54bf43b47b7 23
+src/modules/MIDI/models/MidiNote.ts
+  h_beb54bf43b47b7 100-105,112,115-117,240-245
+src/modules/MIDI/services/__tests__/transformMidiGlobalTimeState.spec.ts
+  h_beb54bf43b47b7 765-808,1422,1425
+src/modules/MIDI/services/decodeMidiClipDataSnapshots.ts
+  h_beb54bf43b47b7 3-8,41-48,52-53
+src/modules/MIDI/services/pitchBendLaneKey.ts
+  h_beb54bf43b47b7 1-11
+src/modules/MIDI/services/projectMidiClipWindow.ts
+  h_beb54bf43b47b7 6,104-105,107-113,119-122,131,136,145-146,162,164-180,219,222-228,230
+src/modules/MIDI/services/registeredParameterState.ts
+  h_beb54bf43b47b7 229-244,270
+src/modules/MIDI/services/transformMidiGlobalTimeState.ts
+  h_beb54bf43b47b7 3,522-527,610-617,642,693-700,775-776
+src/modules/MIDI/stores/__tests__/midiStore.spec.ts
+  h_beb54bf43b47b7 251-271,297-300
+src/modules/MIDI/stores/midiStore.ts
+  h_beb54bf43b47b7 13-14,247-248,253-260,264,270-273
+src/modules/MIDI/useCases/index.ts
+  h_beb54bf43b47b7 108
+src/modules/MIDI/useCases/midiClipData/__tests__/prepareMidiClipGlueState.spec.ts
+  h_beb54bf43b47b7 369-392
+src/modules/MIDI/useCases/midiClipData/__tests__/projectChannelBend.spec.ts
+  h_beb54bf43b47b7 54-127
+src/modules/MIDI/useCases/midiClipData/__tests__/projectClipPitchBendEvents.spec.ts
+  h_beb54bf43b47b7 83,86
+src/modules/MIDI/useCases/midiClipData/__tests__/restoreMidiClipData.spec.ts
+  h_beb54bf43b47b7 452-472
+src/modules/MIDI/useCases/midiClipData/projectChannelBend.ts
+  h_beb54bf43b47b7 49-52,62-70,108-109
+src/modules/MIDI/useCases/midiEvent/restorePitchBend.ts
+  h_beb54bf43b47b7 1-42
+src/modules/MIDI/useCases/recordedControllerTake/bufferRecordedMidiPitchBend.ts
+  h_beb54bf43b47b7 12,20
+src/modules/MIDI/useCases/webMidiInput/__tests__/createRecordedAdmittedMidiNote.spec.ts
+  h_beb54bf43b47b7 1-38
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts
+  h_beb54bf43b47b7 187,1194-1220
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiPitchBend.spec.ts
+  h_beb54bf43b47b7 563-581
+src/modules/MIDI/useCases/webMidiInput/__tests__/sealHeldRecordedMidiNotes.spec.ts
+  h_beb54bf43b47b7 1-64
+src/modules/MIDI/useCases/webMidiInput/__tests__/setMpeEnabled.spec.ts
+  h_beb54bf43b47b7 1,3-67,70-152
+src/modules/MIDI/useCases/webMidiInput/createRecordedAdmittedMidiNote.ts
+  h_beb54bf43b47b7 36-37
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOff.ts
+  h_beb54bf43b47b7 449-451,453,456
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiPitchBend.ts
+  h_beb54bf43b47b7 96-97,101
+src/modules/MIDI/useCases/webMidiInput/recordChannelEvent.ts
+  h_beb54bf43b47b7 22-27,89
+src/modules/MIDI/useCases/webMidiInput/sealHeldRecordedMidiNotes.ts
+  h_beb54bf43b47b7 62-70
+src/modules/MIDI/useCases/webMidiInput/setMpeEnabled.ts
+  h_beb54bf43b47b7 1-6,9-52,54-64
+src/modules/Project/models/ProjectData.ts
+  h_beb54bf43b47b7 286-290
+src/modules/Project/stores/arrangementStore.ts
+  h_beb54bf43b47b7 346
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/hydrateProjectMidi.spec.ts
+  h_beb54bf43b47b7 131-166
+src/modules/Project/useCases/projectPersistence/fileIO/hydrateProjectMidi.ts
+  h_beb54bf43b47b7 61,67-71
+src/modules/Project/useCases/projectPersistence/fileIO/serializeProjectMidi.ts
+  h_beb54bf43b47b7 17-21
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/isHydratableProjectData.spec.ts
+  h_beb54bf43b47b7 226-248
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  h_beb54bf43b47b7 543-547
+src/modules/TimelineEditor/models/MidiNoteViewTypes.ts
+  h_beb54bf43b47b7 40-41
+src/modules/TimelineEditor/presentations/views/AutomationLane/PitchBendLane.tsx
+  h_beb54bf43b47b7 8,149-151,155-157
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/PitchBendLane.spec.tsx
+  h_beb54bf43b47b7 5,70-73,718-731
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/laneUndoRoundTrip.spec.tsx
+  h_beb54bf43b47b7 6,259-324
+src/modules/Transport/AGENTS.md
+  h_beb54bf43b47b7 27
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  h_beb54bf43b47b7 959
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllerStaleMoves.spec.ts
+  h_beb54bf43b47b7 875
+src/modules/Transport/useCases/playheadScheduler/__tests__/stopPlayheadScheduler.spec.ts
+  h_beb54bf43b47b7 164
+src/modules/Transport/useCases/scheduling/__tests__/relocateHeldNoteExpression.spec.ts
+  h_beb54bf43b47b7 36-38,130-140
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesChannelBend.spec.ts
+  h_beb54bf43b47b7 433-523
+src/modules/Transport/useCases/scheduling/__tests__/takeHeldNoteExpression.spec.ts
+  h_beb54bf43b47b7 41-42,252-253,368-369,389-406
+src/utils/handlerContract.ts
+  h_beb54bf43b47b7 412,549
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "832f0ea114b262fd374b95fd5728139c2596231e",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
