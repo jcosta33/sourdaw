@@ -150,7 +150,12 @@ shared Git publication in `trusted-script-delivery.md`.
     deadline measures progress, not elapsed cohort time, and decoded is not worklet-acknowledged
     (#3318/#3982): at 39 of 161 files just before the old deadline all five consumers must still finish
     ready without rollback; one peer stalled for its own inactivity window while another progresses fails
-    only the stalled peer; obsolete cancellation stays silent.
+    only the stalled peer; obsolete cancellation stays silent. A chunk credit belongs to its posted
+    message until a matching acknowledgement, an ordered reply proven to follow it, or processor end: an
+    early `sampleBankError` refusal does not fence the chunks still queued behind it (#5239). Process the
+    refusal, three stale chunks and `retiredBankReleased` in actual port order; a second port must post
+    no chunk before that release, and an eight-chunk healthy successor must finish with no more than four
+    chunks outstanding across both ports.
 
 ## Retired lessons
 

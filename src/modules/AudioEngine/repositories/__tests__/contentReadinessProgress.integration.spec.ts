@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createMockAudioContext, type MockAudioContext } from '#/helpers/__tests__/audioContext.mock';
@@ -14,6 +17,8 @@ import {
 } from '#/modules/Levain/useCases';
 
 import { setAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
+import { installWorkletGlobals } from '../../testing/wasmViewGrowthHarness';
+import { computeLevainZoneTables } from '../../transformers/computeLevainZoneTables';
 import { buildLevainZoneTables } from '../../useCases/buildLevainZoneTables';
 import { registerNativeSampleBanks } from '../nativeGraph/registerNativeSampleBanks';
 
@@ -44,6 +49,11 @@ const DEVICE_IDS = Array.from({ length: 5 }, (_, index) => `levain-${index}`);
 let pendingWorkletAcks: Array<() => void> = [];
 let endWorklets: Array<() => void> = [];
 let workletAckPosted: PromiseWithResolvers<void>;
+let pendingUploadDecisions: Array<(loadToken?: number) => void> = [];
+let pendingChunkAcks: Array<() => void> = [];
+let uploadDecisionPosted: PromiseWithResolvers<void>;
+let holdUploadDecision = false;
+let holdChunkAcks = false;
 
 async function waitForWorkletAcks(count: number): Promise<void> {
     while (pendingWorkletAcks.length < count) {
@@ -110,18 +120,27 @@ function createPort(): MessagePort {
             if (message.type === 'sampleChunk') {
                 // The worklet writes each chunk and says so; the loader sends no
                 // more than a few chunks ahead of these answers.
-                queueMicrotask(() =>
-                    emit({ type: 'sampleChunkWritten', loadToken: message.loadToken, sampleId: message.sampleId })
-                );
+                const acknowledge = () =>
+                    emit({ type: 'sampleChunkWritten', loadToken: message.loadToken, sampleId: message.sampleId });
+                if (holdChunkAcks) {
+                    pendingChunkAcks.push(acknowledge);
+                } else {
+                    queueMicrotask(acknowledge);
+                }
             }
             if (message.type === 'beginSampleBank') {
-                queueMicrotask(() =>
+                const decide = (loadToken = message.loadToken) =>
                     emit({
                         type: 'sampleBankUploadDecision',
-                        loadToken: message.loadToken,
+                        loadToken,
                         uploadRequired: true,
-                    })
-                );
+                    });
+                if (holdUploadDecision) {
+                    pendingUploadDecisions.push(decide);
+                    uploadDecisionPosted.resolve();
+                } else {
+                    queueMicrotask(decide);
+                }
             }
             if (message.type === 'commitSampleBank') {
                 pendingWorkletAcks.push(() => emit({ type: 'sampleBankLoaded', loadToken: message.loadToken }));
@@ -138,8 +157,7 @@ function createPort(): MessagePort {
     } as MessagePort;
 }
 
-function createLevainResult(): LevainNodeResult {
-    const port = createPort();
+function createLevainResult(port = createPort()): LevainNodeResult {
     const workletNode = {
         port,
         connect: vi.fn(),
@@ -183,6 +201,211 @@ function waitForDecodedCount(count: number): Promise<void> {
     });
 }
 
+type RealProcessor = {
+    port: { onmessage: ((event: { data: unknown }) => void) | null; postMessage: ReturnType<typeof vi.fn> };
+    _bankRole: string | null;
+    _pendingBankCommit: boolean;
+};
+let realProcessorConstructor: (new (...args: unknown[]) => RealProcessor) | undefined;
+
+async function installRealShipment(stall?: 'builder' | 'zone-ack' | 'owner-zone-ack') {
+    const instrumentId = stall === 'owner-zone-ack' ? 'piccolo' : 'solo-cello';
+    const zoneArticulationTypes = [
+        'sustain',
+        'sustain-non-vib',
+        'con-sordino',
+        'flautando',
+        'sul-tasto',
+        'sul-ponticello',
+        'harmonics',
+        'spiccato',
+        'staccato',
+        'staccatissimo',
+        'pizzicato',
+        'bartok-pizz',
+        'col-legno',
+        'tremolo',
+        'trill-half',
+        'trill-whole',
+    ] as const;
+    const wasmModule = new WebAssembly.Module(
+        readFileSync(resolve(process.cwd(), 'public/wasm/daw-dsp/daw_dsp_bg.wasm'))
+    );
+    const { registry } = installWorkletGlobals<RealProcessor>();
+    await import('../../worklets/levainProcessor');
+    realProcessorConstructor ??= registry.get('levain-processor');
+    const Constructor = realProcessorConstructor;
+    if (!Constructor) {
+        throw new Error('Missing real Levain processor');
+    }
+    const processors: RealProcessor[] = [];
+    const releasedProcessors = new Set<RealProcessor>();
+    const ownerAcknowledgements: Array<() => void> = [];
+    const heldZoneAcknowledgements: Array<() => void> = [];
+    let changed = Promise.withResolvers<void>();
+    let releaseOwner = false;
+    let buildCount = 0;
+    const stalledBuilder = Promise.withResolvers<ReturnType<typeof computeLevainZoneTables>>();
+    const notify = () => {
+        const previous = changed;
+        changed = Promise.withResolvers<void>();
+        previous.resolve();
+    };
+    async function until(predicate: () => boolean): Promise<void> {
+        while (!predicate()) {
+            await changed.promise;
+        }
+    }
+    configureLevainZoneTableBuilder((request) => {
+        buildCount++;
+        if (stall === 'builder' && buildCount === 1) {
+            notify();
+            return stalledBuilder.promise;
+        }
+        return Promise.resolve(computeLevainZoneTables(wasmModule, request));
+    });
+    levainFactory.createLevainNode.mockImplementation(() => {
+        const processor = new Constructor({ processorOptions: { wasmModule } });
+        const index = processors.length;
+        processors.push(processor);
+        let closed = false;
+        const port: MessagePort = Object.assign(new EventTarget(), {
+            onmessage: null,
+            onmessageerror: null,
+            postMessage: (data: unknown) => {
+                if (closed) {
+                    return;
+                }
+                queueMicrotask(() => {
+                    if (!closed) {
+                        processor.port.onmessage?.({ data });
+                        notify();
+                    }
+                });
+            },
+            start() {},
+            close() {
+                closed = true;
+            },
+        });
+        port.addEventListener('message', (event) => port.onmessage?.call(port, event));
+        port.addEventListener('messageerror', (event) => port.onmessageerror?.call(port, event));
+        const emit = (data: unknown) => {
+            if (!closed) {
+                port.dispatchEvent(new MessageEvent('message', { data }));
+            }
+            notify();
+        };
+        processor.port.postMessage.mockImplementation((data: { type: string; done?: boolean }) => {
+            if (data.type === 'disposed' || (data.type === 'disposedBanksReleased' && !data.done)) {
+                queueMicrotask(() => processor.port.onmessage?.({ data: { type: 'releaseDisposedBanks' } }));
+            }
+            if (data.type === 'disposedBanksReleased' && data.done) {
+                releasedProcessors.add(processor);
+            }
+            if (data.type === 'sampleChunkWritten' && !releaseOwner) {
+                ownerAcknowledgements.push(() => emit(data));
+                notify();
+            } else if (
+                data.type === 'zoneTableChunkWritten' &&
+                ((stall === 'zone-ack' && index === 1) || (stall === 'owner-zone-ack' && index === 0))
+            ) {
+                heldZoneAcknowledgements.push(() => emit(data));
+                notify();
+            } else {
+                queueMicrotask(() => emit(data));
+            }
+        });
+        processor.port.onmessage?.({ data: { type: 'init' } });
+        return Promise.resolve(createLevainResult(port));
+    });
+    levainStore.set(
+        Object.fromEntries(
+            DEVICE_IDS.map((id) => [
+                id,
+                {
+                    ...defaultLevainState,
+                    patch: { ...defaultLevainState.patch, instrumentId },
+                },
+            ])
+        )
+    );
+    vi.stubGlobal(
+        'fetch',
+        vi.fn((url: string) => {
+            if (url.endsWith('/manifest.json')) {
+                const source = manifest(instrumentId);
+                let offered = source;
+                if (stall === 'owner-zone-ack') {
+                    offered = {
+                        ...source,
+                        articulations: zoneArticulationTypes.map((type, id) => {
+                            if (id === 0) {
+                                return { type, id, zones: source.articulations[0]!.zones };
+                            }
+                            return {
+                                type,
+                                id,
+                                zones: [{ ...source.articulations[0]!.zones[0]!, file: 'sample-0.wav' }],
+                            };
+                        }),
+                    };
+                }
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve(offered),
+                });
+            }
+            return Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)) });
+        })
+    );
+    const engine = createAudioEngine(asAudioContext(createMockAudioContext()));
+    for (const id of DEVICE_IDS) {
+        engine.addDeviceToStrip('track-1', id, 'levain');
+    }
+    async function acknowledgeOwner(): Promise<void> {
+        await until(() => ownerAcknowledgements.length > 0);
+        ownerAcknowledgements.shift()!();
+    }
+    return {
+        engine,
+        processors,
+        heldZoneAcknowledgements,
+        until,
+        acknowledgeOwner,
+        async stageFollowers() {
+            const pendingCount = stall === 'builder' ? 3 : 4;
+            while (processors.filter((processor) => processor._pendingBankCommit).length < pendingCount) {
+                await until(
+                    () =>
+                        ownerAcknowledgements.length > 0 ||
+                        processors.filter((processor) => processor._pendingBankCommit).length >= pendingCount
+                );
+                if (processors.filter((processor) => processor._pendingBankCommit).length < pendingCount) {
+                    await acknowledgeOwner();
+                }
+            }
+            expect(processors.filter((processor) => processor._bankRole === 'owner')).toHaveLength(1);
+            expect(processors.filter((processor) => processor._bankRole === 'follower')).toHaveLength(4);
+            expect(engine.getDeviceReadinessDiagnostics().counts).toMatchObject({ nodeReady: 5, graphReady: 5 });
+        },
+        finishOwner() {
+            releaseOwner = true;
+            for (const acknowledge of ownerAcknowledgements.splice(0)) {
+                acknowledge();
+            }
+        },
+        async dispose() {
+            for (const processor of processors) {
+                processor.port.onmessage?.({ data: { type: 'dispose' } });
+            }
+            await until(() => releasedProcessors.size === processors.length);
+            await engine.dispose();
+            await until(() => getDecodedBankDiagnostics().activeLeases === 0);
+        },
+    };
+}
+
 describe('live Levain content progress', () => {
     let progressEvents: Array<{
         deviceId: string;
@@ -218,6 +441,11 @@ describe('live Levain content progress', () => {
         pendingWorkletAcks = [];
         endWorklets = [];
         workletAckPosted = Promise.withResolvers<void>();
+        pendingUploadDecisions = [];
+        pendingChunkAcks = [];
+        uploadDecisionPosted = Promise.withResolvers<void>();
+        holdUploadDecision = false;
+        holdChunkAcks = false;
         vi.stubGlobal('AudioWorkletNode', FakeWorkletNode);
         vi.stubGlobal(
             'OfflineAudioContext',
@@ -469,6 +697,69 @@ describe('live Levain content progress', () => {
             expect(
                 engine.getDeviceReadinessDiagnostics().devices.filter((device) => device.status === 'ready')
             ).toHaveLength(5);
+        } finally {
+            for (const end of endWorklets) {
+                end();
+            }
+            await engine.dispose();
+        }
+    });
+
+    it('renews the actual readiness deadline when an admitted bank answers the upload decision', async () => {
+        const deviceId = DEVICE_IDS[0]!;
+        levainStore.set({
+            [deviceId]: { ...defaultLevainState, patch: { ...defaultLevainState.patch, instrumentId: 'solo-violin' } },
+        });
+        vi.stubGlobal(
+            'fetch',
+            vi.fn((url: string) => {
+                if (url.endsWith('/manifest.json')) {
+                    const source = manifest('solo-violin');
+                    return Promise.resolve({
+                        ok: true,
+                        json: () =>
+                            Promise.resolve({
+                                ...source,
+                                articulations: source.articulations.map((articulation) => ({
+                                    ...articulation,
+                                    zones: articulation.zones.slice(0, 1),
+                                })),
+                            }),
+                    });
+                }
+                return Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(4)) });
+            })
+        );
+        holdUploadDecision = true;
+        holdChunkAcks = true;
+        const engine = createAudioEngine(asAudioContext(createMockAudioContext()));
+        try {
+            engine.addDeviceToStrip('track-1', deviceId, 'levain');
+            await uploadDecisionPosted.promise;
+            const waiting = engine.waitForDevices();
+            const activities = () =>
+                progressEvents.filter((event) => event.deviceId === deviceId && typeof event.progress !== 'number');
+            expect(activities()).toHaveLength(1);
+            const grantAt = activities()[0]!.atMs;
+            await vi.advanceTimersByTimeAsync(9000);
+            pendingUploadDecisions[0]!(-1);
+            expect(activities()).toHaveLength(1);
+            pendingUploadDecisions[0]!();
+            await vi.waitFor(() => expect(pendingChunkAcks.length).toBeGreaterThan(0));
+            expect(activities()).toHaveLength(2);
+            const decisionAt = activities()[1]!.atMs;
+            expect(decisionAt - grantAt).toBeGreaterThanOrEqual(9000);
+            await vi.advanceTimersByTimeAsync(1020);
+            expect(Date.now() - grantAt).toBeGreaterThan(10000);
+            expect(engine.getDeviceReadinessDiagnostics().devices[0]?.status).toBe('content-pending');
+            holdChunkAcks = false;
+            for (const acknowledge of pendingChunkAcks.splice(0)) {
+                acknowledge();
+            }
+            await waitForWorkletAcks(1);
+            expect(activities().some((event) => event.atMs > grantAt + 10000)).toBe(true);
+            pendingWorkletAcks[0]!();
+            await expect(waiting).resolves.toMatchObject({ status: 'ready' });
         } finally {
             for (const end of endWorklets) {
                 end();
@@ -831,4 +1122,132 @@ describe('live Levain content progress', () => {
             await engine.dispose();
         }
     });
+    it('keeps four real pending followers alive through acknowledged owner PCM and completes all five', async () => {
+        const shipment = await installRealShipment();
+        try {
+            await shipment.stageFollowers();
+            const waiting = shipment.engine.waitForDevices();
+            const started = Date.now();
+            for (let count = 0; count < 6; count++) {
+                await vi.advanceTimersByTimeAsync(2050);
+                await shipment.acknowledgeOwner();
+            }
+            expect(Date.now() - started).toBeGreaterThan(10000);
+            const diagnostics = shipment.engine.getDeviceReadinessDiagnostics();
+            expect(diagnostics.counts).toMatchObject({ failed: 0, cancelled: 0 });
+            expect(diagnostics.devices.filter((device) => device.status === 'content-pending')).toHaveLength(5);
+            shipment.finishOwner();
+            await expect(waiting).resolves.toMatchObject({
+                status: 'ready',
+                devices: DEVICE_IDS.map((deviceId) => ({ deviceId, status: 'ready', stage: null })),
+            });
+            expect(shipment.engine.getDeviceReadinessDiagnostics().counts).toMatchObject({
+                contentReady: 5,
+                playableReady: 5,
+                failed: 0,
+            });
+            expect(getDecodedBankDiagnostics().activeLeases).toBe(0);
+        } finally {
+            await shipment.dispose();
+        }
+    });
+
+    it('keeps fully staged followers alive when the real owner acknowledges required zone work', async () => {
+        const shipment = await installRealShipment('owner-zone-ack');
+        try {
+            await shipment.stageFollowers();
+            const waiting = shipment.engine.waitForDevices();
+            const started = Date.now();
+            shipment.finishOwner();
+            await shipment.until(() => shipment.heldZoneAcknowledgements.length === 4);
+            expect(shipment.processors.filter((processor) => processor._pendingBankCommit)).toHaveLength(4);
+            await vi.advanceTimersByTimeAsync(9000);
+            shipment.heldZoneAcknowledgements.shift()!();
+            expect(
+                progressEvents
+                    .filter((event) => typeof event.progress !== 'number' && event.atMs === started + 9000)
+                    .map((event) => event.deviceId)
+            ).toEqual(DEVICE_IDS);
+            await vi.advanceTimersByTimeAsync(1020);
+            expect(Date.now() - started).toBeGreaterThan(10000);
+            expect(shipment.engine.getDeviceReadinessDiagnostics().counts).toMatchObject({ failed: 0, cancelled: 0 });
+            await shipment.until(() => shipment.heldZoneAcknowledgements.length === 4);
+            for (const acknowledge of shipment.heldZoneAcknowledgements.splice(0)) {
+                acknowledge();
+            }
+            await expect(waiting).resolves.toMatchObject({
+                status: 'ready',
+                devices: DEVICE_IDS.map((deviceId) => ({ deviceId, status: 'ready', stage: null })),
+            });
+            expect(shipment.engine.getDeviceReadinessDiagnostics().counts).toMatchObject({
+                contentReady: 5,
+                playableReady: 5,
+                failed: 0,
+            });
+            expect(getDecodedBankDiagnostics().activeLeases).toBe(0);
+        } finally {
+            await shipment.dispose();
+        }
+    });
+
+    it.each([false, true])(
+        'expires real owner silence after prior progress=%s at the unchanged deadline',
+        async (priorProgress) => {
+            const shipment = await installRealShipment();
+            try {
+                await shipment.stageFollowers();
+                const waiting = shipment.engine.waitForDevices();
+                if (priorProgress) {
+                    await vi.advanceTimersByTimeAsync(9000);
+                    await shipment.acknowledgeOwner();
+                }
+                await vi.advanceTimersByTimeAsync(9999);
+                expect(shipment.engine.getDeviceReadinessDiagnostics().counts.failed).toBe(0);
+                await vi.advanceTimersByTimeAsync(1);
+                const result = await waiting;
+                expect(result.status).toBe('failed');
+                expect(result.devices).toEqual(
+                    DEVICE_IDS.map((deviceId) =>
+                        expect.objectContaining({
+                            deviceId,
+                            status: 'failed',
+                            stage: 'content',
+                        })
+                    )
+                );
+                expect(getDecodedBankDiagnostics().activeLeases).toBe(0);
+            } finally {
+                await shipment.dispose();
+            }
+        }
+    );
+
+    it.each(['builder', 'zone-ack'] as const)(
+        'expires an independent follower %s while its real owner progresses',
+        async (stall) => {
+            const shipment = await installRealShipment(stall);
+            try {
+                await shipment.stageFollowers();
+                const waiting = shipment.engine.waitForDevices();
+                if (stall === 'zone-ack') {
+                    expect(shipment.heldZoneAcknowledgements).toHaveLength(2);
+                }
+                for (let count = 0; count < 6; count++) {
+                    await vi.advanceTimersByTimeAsync(2050);
+                    await shipment.acknowledgeOwner();
+                }
+                const diagnostics = shipment.engine.getDeviceReadinessDiagnostics();
+                expect(diagnostics.devices.find((device) => device.deviceId === 'levain-1')).toMatchObject({
+                    status: 'failed',
+                    failureStage: 'content',
+                });
+                expect(diagnostics.counts.failed).toBe(1);
+                shipment.finishOwner();
+                await expect(waiting).resolves.toMatchObject({ status: 'failed' });
+                await shipment.until(() => getDecodedBankDiagnostics().activeLeases === 0);
+            } finally {
+                await shipment.dispose();
+            }
+        }
+    );
 });

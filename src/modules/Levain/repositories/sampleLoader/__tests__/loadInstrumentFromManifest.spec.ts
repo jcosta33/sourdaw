@@ -97,10 +97,12 @@ type FakePort = MessagePort & {
     peakUnacknowledgedChunks: () => number;
     /** Run the answers a 'queued' worklet holds, in arrival order. */
     drainWorklet: () => void;
+    readNextWorkletMessage: () => void;
 };
 
 type MakePortOptions = {
     uploadRequired?: boolean;
+    manualUploadDecision?: boolean;
     autoComplete?: boolean;
     commitError?: string;
     /**
@@ -148,6 +150,8 @@ type MakePortOptions = {
      * in the order the messages arrived).
      */
     chunkAnswers?: 'now' | 'later' | 'never' | 'queued';
+    /** Refuse the first queued chunk; later queued chunks are still read but receive no ACK. */
+    refuseFirstQueuedChunk?: boolean;
     /**
      * Model a port that is closed by the time the loader aborts: posting
      * `abortSampleBank` throws.
@@ -171,6 +175,7 @@ function makePort(options: MakePortOptions = {}): FakePort {
     const listeners = new Set<(event: MessageEvent<unknown>) => void>();
     let pendingToken: number | null = null;
     let releaseRequests = 0;
+    let refusedChunk = false;
     const workletQueue: Array<() => void> = [];
     const tally: ChunkTally = options.chunkTally ?? { unanswered: 0, peak: 0 };
     function emit(message: unknown): void {
@@ -197,6 +202,15 @@ function makePort(options: MakePortOptions = {}): FakePort {
             tally.peak = Math.max(tally.peak, tally.unanswered);
             const answer = (): void => {
                 tally.unanswered--;
+                if (options.refuseFirstQueuedChunk && !refusedChunk) {
+                    refusedChunk = true;
+                    pendingToken = null;
+                    emit({ type: 'sampleBankError', loadToken: message.loadToken, message: 'first chunk refused' });
+                    return;
+                }
+                if (options.refuseFirstQueuedChunk) {
+                    return;
+                }
                 if (message.type === 'sampleChunk') {
                     emit({ type: 'sampleChunkWritten', loadToken: message.loadToken, sampleId: message.sampleId });
                     return;
@@ -215,13 +229,15 @@ function makePort(options: MakePortOptions = {}): FakePort {
         }
         if (message.type === 'beginSampleBank') {
             pendingToken = message.loadToken;
-            queueMicrotask(() => {
-                emit({
-                    type: 'sampleBankUploadDecision',
-                    loadToken: message.loadToken,
-                    uploadRequired: options.uploadRequired ?? true,
+            if (!options.manualUploadDecision) {
+                queueMicrotask(() => {
+                    emit({
+                        type: 'sampleBankUploadDecision',
+                        loadToken: message.loadToken,
+                        uploadRequired: options.uploadRequired ?? true,
+                    });
                 });
-            });
+            }
             return;
         }
         if (message.type === 'commitSampleBank') {
@@ -304,6 +320,7 @@ function makePort(options: MakePortOptions = {}): FakePort {
                 run();
             }
         },
+        readNextWorkletMessage: () => workletQueue.shift()?.(),
         addEventListener: (_type: string, listener: EventListenerOrEventListenerObject) => {
             if (typeof listener === 'function') {
                 listeners.add(listener);
@@ -378,8 +395,9 @@ describe('loadInstrumentFromManifest', () => {
     });
 
     it('reports only acknowledged current shipment activity and releases decoded admission after commit', async () => {
-        const port = makePort({ chunkAnswers: 'queued', autoComplete: false });
+        const port = makePort({ chunkAnswers: 'queued', autoComplete: false, manualUploadDecision: true });
         const progress = vi.fn();
+        const controller = new AbortController();
         const loading = loadInstrumentFromManifest({
             manifestUrl: '/m.json',
             basePath: '/base',
@@ -387,28 +405,223 @@ describe('loadInstrumentFromManifest', () => {
             nodePort: port,
             buildZoneTables,
             onProgress: progress,
+            signal: controller.signal,
         });
-        await vi.waitFor(() => expect(postedTypes(port)).toContain('sampleChunk'));
-        const begin = postedMessages(port).find((message) => message.type === 'beginSampleBank')!;
-        expect(progress.mock.calls.filter(([event]) => typeof event !== 'number')).toHaveLength(0);
-        port.emit({ type: 'sampleChunkWritten', loadToken: -1 });
-        expect(progress.mock.calls.filter(([event]) => typeof event !== 'number')).toHaveLength(0);
-        port.drainWorklet();
-        await vi.waitFor(() => {
+        const settled = Promise.allSettled([loading]);
+        const activityEvents = () => progress.mock.calls.filter(([event]) => typeof event !== 'number');
+        try {
+            await vi.waitFor(() => expect(postedTypes(port)).toContain('beginSampleBank'));
+            const begin = postedMessages(port).find((message) => message.type === 'beginSampleBank')!;
+            expect(activityEvents()).toEqual([[{ type: 'activity' }]]);
+            const grantActivities = activityEvents().length;
+            port.emit({ type: 'sampleBankUploadDecision', loadToken: -1, uploadRequired: true });
+            expect(activityEvents()).toHaveLength(grantActivities);
+            expect(postedTypes(port)).not.toContain('sampleChunk');
+            port.emit({ type: 'sampleBankUploadDecision', loadToken: begin.loadToken, uploadRequired: true });
+            await vi.waitFor(() => expect(postedTypes(port)).toContain('sampleChunk'));
+            expect(activityEvents()).toHaveLength(grantActivities + 1);
+            const decisionActivities = activityEvents().length;
+            port.emit({ type: 'sampleChunkWritten', loadToken: -1 });
+            expect(activityEvents()).toHaveLength(decisionActivities);
             port.drainWorklet();
-            expect(postedTypes(port)).toContain('commitSampleBank');
+            await vi.waitFor(() => {
+                port.drainWorklet();
+                expect(postedTypes(port)).toContain('commitSampleBank');
+            });
+            expect(activityEvents().length).toBeGreaterThan(decisionActivities);
+            expect(decodedBankResource.getDiagnostics().activeLeases).toBe(1);
+            const beforeCommit = progress.mock.calls.length;
+            port.emit({ type: 'sampleChunkWritten', loadToken: begin.loadToken });
+            expect(progress).toHaveBeenCalledTimes(beforeCommit);
+            port.emit({ type: 'sampleBankLoaded', loadToken: begin.loadToken });
+            await loading;
+            expect(decodedBankResource.getDiagnostics().activeLeases).toBe(0);
+            const afterCommit = progress.mock.calls.length;
+            port.emit({ type: 'sampleChunkWritten', loadToken: begin.loadToken });
+            expect(progress).toHaveBeenCalledTimes(afterCommit);
+        } finally {
+            controller.abort();
+            port.emit({ type: 'disposed' });
+            port.drainWorklet();
+            await settled;
+        }
+    });
+
+    it.each(['dependent', 'cached', 'unknown-owner', 'other-owner', 'prior-publication', 'zone-pending'] as const)(
+        'shares only accepted PCM activity with a locally complete %s consumer',
+        async (mode) => {
+            const ports: FakePort[] = [];
+            const controllers: AbortController[] = [];
+            const promises: Promise<unknown>[] = [];
+            function start(port: FakePort, onProgress = vi.fn()) {
+                ports.push(port);
+                const controller = new AbortController();
+                controllers.push(controller);
+                const promise = loadInstrumentFromManifest({
+                    manifestUrl: '/shipment/manifest.json',
+                    basePath: '/shipment',
+                    expectedInstrumentId: 'violin-1',
+                    nodePort: port,
+                    buildZoneTables,
+                    onProgress,
+                    signal: controller.signal,
+                });
+                promises.push(promise);
+                void promise.catch(() => {});
+                return { promise, onProgress };
+            }
+            const owner = makePort({ chunkAnswers: 'never', autoComplete: false });
+            start(owner);
+            try {
+                await vi.waitFor(() => expect(postedTypes(owner)).toContain('commitSampleBank'));
+                const ownerToken = postedMessages(owner).find(
+                    (message) => message.type === 'beginSampleBank'
+                )!.loadToken;
+                owner.emit({ type: 'zoneTableChunkWritten', loadToken: ownerToken });
+                owner.emit({ type: 'zoneTableChunkWritten', loadToken: ownerToken });
+                let ownerLoadToken = ownerToken;
+                if (mode === 'other-owner') {
+                    const independentOwner = makePort({ chunkAnswers: 'never', autoComplete: false });
+                    start(independentOwner);
+                    await vi.waitFor(() => expect(postedTypes(independentOwner)).toContain('commitSampleBank'));
+                    ownerLoadToken = postedMessages(independentOwner).find(
+                        (message) => message.type === 'beginSampleBank'
+                    )!.loadToken;
+                    expect(ownerLoadToken).not.toBe(ownerToken);
+                    independentOwner.emit({ type: 'zoneTableChunkWritten', loadToken: ownerLoadToken });
+                    independentOwner.emit({ type: 'zoneTableChunkWritten', loadToken: ownerLoadToken });
+                }
+                if (mode === 'prior-publication') {
+                    const acquire = decodedBankResource.acquire.bind(decodedBankResource);
+                    vi.spyOn(decodedBankResource, 'acquire').mockImplementationOnce(async (input) => {
+                        const lease = await acquire(input);
+                        return { ...lease, bank: { ...lease.bank, bankKey: `${lease.bank.bankKey}:replacement` } };
+                    });
+                }
+                const follower = makePort({
+                    manualUploadDecision: true,
+                    autoComplete: false,
+                    chunkAnswers: mode === 'zone-pending' ? 'never' : 'now',
+                });
+                const { onProgress } = start(follower);
+                await vi.waitFor(() => expect(postedTypes(follower)).toContain('beginSampleBank'));
+                const followerToken = postedMessages(follower).find(
+                    (message) => message.type === 'beginSampleBank'
+                )!.loadToken;
+                const decision: Record<string, unknown> = {
+                    type: 'sampleBankUploadDecision',
+                    loadToken: followerToken,
+                    uploadRequired: false,
+                };
+                if (mode !== 'cached') {
+                    decision.ownerLoadToken = mode === 'unknown-owner' ? 1_000_000 : ownerLoadToken;
+                }
+                follower.emit(decision);
+                await vi.waitFor(() => expect(postedTypes(follower)).toContain('commitSampleBank'));
+                const count = onProgress.mock.calls.length;
+                owner.emit({ type: 'sampleChunkWritten', loadToken: -1, sampleId: 0 });
+                owner.emit({ type: 'sampleChunkWritten', loadToken: ownerToken, sampleId: 999 });
+                expect(onProgress).toHaveBeenCalledTimes(count);
+                owner.emit({ type: 'sampleChunkWritten', loadToken: ownerToken, sampleId: 0 });
+                expect(onProgress).toHaveBeenCalledTimes(count + (mode === 'dependent' ? 1 : 0));
+                const after = onProgress.mock.calls.length;
+                owner.emit({ type: 'sampleChunkWritten', loadToken: ownerToken, sampleId: 0 });
+                expect(onProgress).toHaveBeenCalledTimes(after);
+                // PCM answers cannot consume a zone reservation or make this follower dependent.
+                follower.emit({ type: 'sampleChunkWritten', loadToken: followerToken, sampleId: 0 });
+                expect(onProgress).toHaveBeenCalledTimes(after);
+                if (mode === 'zone-pending') {
+                    follower.emit({ type: 'zoneTableChunkWritten', loadToken: followerToken });
+                    follower.emit({ type: 'zoneTableChunkWritten', loadToken: followerToken });
+                    expect(onProgress).toHaveBeenCalledTimes(after + 2);
+                }
+                // The one-shot decision cannot replace the accepted dependency.
+                follower.emit({
+                    type: 'sampleBankUploadDecision',
+                    loadToken: followerToken,
+                    uploadRequired: false,
+                    ownerLoadToken: 1_000_000,
+                });
+                expect(onProgress).toHaveBeenCalledTimes(after + (mode === 'zone-pending' ? 2 : 0));
+                controllers[1]?.abort();
+                const aborted = onProgress.mock.calls.length;
+                owner.emit({ type: 'sampleChunkWritten', loadToken: ownerToken, sampleId: 0 });
+                expect(onProgress).toHaveBeenCalledTimes(aborted);
+            } finally {
+                for (const controller of controllers) {
+                    controller.abort();
+                }
+                for (const port of ports) {
+                    port.emit({ type: 'disposed' });
+                }
+                await Promise.allSettled(promises);
+                vi.restoreAllMocks();
+            }
+        }
+    );
+
+    it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, 'owner', 'self', 'uploading'])(
+        'rejects invalid owner decision metadata %s',
+        async (owner) => {
+            const port = makePort({ manualUploadDecision: true });
+            const loading = loadInstrumentFromManifest({
+                manifestUrl: '/m.json',
+                basePath: '/base',
+                expectedInstrumentId: 'violin-1',
+                nodePort: port,
+                buildZoneTables,
+            });
+            const rejected = expect(loading).rejects.toThrow('invalid shared bank owner load token');
+            await vi.waitFor(() => expect(postedTypes(port)).toContain('beginSampleBank'));
+            const loadToken = postedMessages(port).find((message) => message.type === 'beginSampleBank')!.loadToken;
+            let ownerLoadToken: unknown = owner;
+            if (owner === 'self') {
+                ownerLoadToken = loadToken;
+            }
+            if (owner === 'uploading') {
+                ownerLoadToken = 1_000_000;
+            }
+            port.emit({
+                type: 'sampleBankUploadDecision',
+                loadToken,
+                uploadRequired: owner === 'uploading',
+                ownerLoadToken,
+            });
+            await rejected;
+            expect(postedTypes(port)).not.toContain('sampleChunk');
+            expect(decodedBankResource.getDiagnostics().activeLeases).toBe(0);
+        }
+    );
+
+    it('does not renew admission from a decision delivered after its load aborts', async () => {
+        const port = makePort({ manualUploadDecision: true });
+        const progress = vi.fn();
+        const controller = new AbortController();
+        const loading = loadInstrumentFromManifest({
+            manifestUrl: '/m.json',
+            basePath: '/base',
+            expectedInstrumentId: 'violin-1',
+            nodePort: port,
+            buildZoneTables,
+            onProgress: progress,
+            signal: controller.signal,
         });
-        expect(progress).toHaveBeenCalledWith({ type: 'activity' });
-        expect(decodedBankResource.getDiagnostics().activeLeases).toBe(1);
-        const beforeCommit = progress.mock.calls.length;
-        port.emit({ type: 'sampleChunkWritten', loadToken: begin.loadToken });
-        expect(progress).toHaveBeenCalledTimes(beforeCommit);
-        port.emit({ type: 'sampleBankLoaded', loadToken: begin.loadToken });
-        await loading;
-        expect(decodedBankResource.getDiagnostics().activeLeases).toBe(0);
-        const settled = progress.mock.calls.length;
-        port.emit({ type: 'sampleChunkWritten', loadToken: begin.loadToken });
-        expect(progress).toHaveBeenCalledTimes(settled);
+        const settled = Promise.allSettled([loading]);
+        try {
+            await vi.waitFor(() => expect(postedTypes(port)).toContain('beginSampleBank'));
+            const begin = postedMessages(port).find((message) => message.type === 'beginSampleBank')!;
+            const activityCount = progress.mock.calls.filter(([event]) => typeof event !== 'number').length;
+            expect(activityCount).toBe(1);
+            controller.abort();
+            await expect(loading).rejects.toMatchObject({ name: 'AbortError' });
+            port.emit({ type: 'sampleBankUploadDecision', loadToken: begin.loadToken, uploadRequired: true });
+            expect(progress.mock.calls.filter(([event]) => typeof event !== 'number')).toHaveLength(activityCount);
+        } finally {
+            controller.abort();
+            port.emit({ type: 'disposed' });
+            port.drainWorklet();
+            await settled;
+        }
     });
 
     it('builds the zone map for a normal (un-aborted) load', async () => {
@@ -1121,6 +1334,45 @@ describe('loadInstrumentFromManifest', () => {
                 await expect(pending).rejects.toThrow(/does not fit/);
                 expect(postedTypes(port)).not.toContain('sealSample');
             }, 2000);
+
+            it('holds stale queued chunks after the first refusal until the ordered release fence', async () => {
+                const tally: ChunkTally = { unanswered: 0, peak: 0 };
+                const refused = makePort({
+                    chunkAnswers: 'queued',
+                    refuseFirstQueuedChunk: true,
+                    chunkTally: tally,
+                });
+                const successor = makePort({ chunkAnswers: 'now', chunkTally: tally });
+                stubManyChunks();
+                const first = loadChunkBank(refused, 'refused-first');
+                void first.catch(() => {});
+                await vi.waitFor(() => expect(chunkCount(refused)).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT));
+                const second = loadChunkBank(successor, 'refused-successor');
+                try {
+                    await vi.waitFor(() => expect(postedTypes(successor)).toContain('beginSample'));
+                    expect(chunkCount(successor)).toBe(0);
+
+                    refused.readNextWorkletMessage();
+                    await expect(first).rejects.toThrow('first chunk refused');
+                    expect(postedTypes(refused)).toContain('releaseRetiredBank');
+                    expect(chunkCount(successor)).toBe(0);
+                    expect(tally.unanswered).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT - 1);
+
+                    for (let index = 1; index < LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT; index++) {
+                        refused.readNextWorkletMessage();
+                        expect(chunkCount(successor)).toBe(0);
+                    }
+                    expect(tally.unanswered).toBe(0);
+                    refused.readNextWorkletMessage();
+                    await second;
+                    expect(chunkCount(successor)).toBe(8);
+                    expect(tally.peak).toBe(LEVAIN_SAMPLE_CHUNKS_IN_FLIGHT);
+                } finally {
+                    refused.emit({ type: 'disposed' });
+                    successor.emit({ type: 'disposed' });
+                    await Promise.allSettled([first, second]);
+                }
+            }, 5000);
 
             it('settles the load when it is aborted while it waits for an acknowledgement', async () => {
                 stubManyChunks();
