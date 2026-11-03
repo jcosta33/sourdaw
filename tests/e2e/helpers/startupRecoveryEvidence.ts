@@ -1,4 +1,5 @@
-import { expect, type Frame } from '@playwright/test';
+import type { Frame } from '@playwright/test';
+import { expect } from '../e2eTest';
 
 import type { AppAction } from '../../../src/utils/handlerContract';
 
