@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { launch_from_template, launch_new_project, setupWorkspace } from './e2eUtils';
 
 test.describe('Project Lifecycle', () => {
@@ -15,7 +14,7 @@ test.describe('Project Lifecycle', () => {
         const trackList = page.getByRole('grid', { name: /Track list/i });
         const tracks = trackList.getByRole('row');
         await expect(tracks).not.toHaveCount(0, { timeout: 15000 });
-        
+
         // Expect at least 3 tracks in the EDM template
         const count = await tracks.count();
         expect(count).toBeGreaterThanOrEqual(3);
@@ -23,7 +22,7 @@ test.describe('Project Lifecycle', () => {
 
     test('New Project flow clears the timeline', async ({ page }) => {
         await launch_new_project(page);
-        
+
         // The default empty project has no tracks (Master track is handled separately or in the same list but empty)
         // Let's assert there are no rows in the track list
         const trackList = page.getByRole('grid', { name: /Track list/i });

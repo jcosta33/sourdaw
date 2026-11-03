@@ -4,10 +4,7 @@
 
 ## Public Contract Surface
 
-- **Use Cases** (`useCases/index.ts`): `compileToasterTrackStackActions`, `disposeEveryToasterDevice`, `getDefaultPadNames`, `getToasterPresetDeviceState`, `prepareOfflineToaster`, `setToasterEventBus`, `initToasterSubscribers`, `initToasterKitPersistence`, `getToasterPresets`, `setToasterGrooveAssignmentExecutor`.
-- **Stores** (`stores/index.ts`): `defaultToasterState`, `toasterStore`, `resetToasterDeviceLifecycleState`.
-- **Views** (`presentations/views/index.ts`): `ToasterPanel`.
-- **Events** (`events/index.ts`): No public events.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 
@@ -27,6 +24,6 @@
 
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
-- `pnpm test:run <changed-spec>`
-- `pnpm cargo:test --package daw-dsp toaster`
+- `pnpm guard --profile focused -- pnpm test:run <changed-spec>`
+- `pnpm guard --profile focused -- pnpm cargo:test --package daw-dsp toaster`
 - PR CI checks module boundaries; inspect that result after cross-module changes.

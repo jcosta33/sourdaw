@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -119,7 +119,10 @@ test.describe('Transport Advanced Controls', () => {
         await expect(capture_on).toHaveAttribute('aria-pressed', 'true');
 
         await capture_on.click();
-        await expect(page.getByRole('button', { name: 'Enable background capture' })).toHaveAttribute('aria-pressed', 'false');
+        await expect(page.getByRole('button', { name: 'Enable background capture' })).toHaveAttribute(
+            'aria-pressed',
+            'false'
+        );
     });
 
     test('Can toggle ripple editing', async ({ page }) => {

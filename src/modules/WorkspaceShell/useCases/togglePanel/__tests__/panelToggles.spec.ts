@@ -13,7 +13,6 @@ import { openInspector } from '../panelToggles/openInspector';
 import { openMixer } from '../panelToggles/openMixer';
 import { openVirtualKeyboard } from '../panelToggles/openVirtualKeyboard';
 import { setSnapValue } from '../panelToggles/setSnapValue';
-import { setSoloMode } from '../panelToggles/setSoloMode';
 import { setTrackListWidth } from '../panelToggles/setTrackListWidth';
 import { setVirtualKeyboardOctave } from '../panelToggles/setVirtualKeyboardOctave';
 import { setVirtualKeyboardVelocity } from '../panelToggles/setVirtualKeyboardVelocity';
@@ -65,7 +64,12 @@ describe('panelToggles', () => {
             ['openMixer', openMixer, () => openMixer(), { mixerOpen: true }],
             ['openInspector', openInspector, () => openInspector(), { inspectorOpen: true }],
             ['setTrackListWidth', setTrackListWidth, () => setTrackListWidth(300), { trackListWidth: 300 }],
-            ['closeScratchPad', closeScratchPad, () => closeScratchPad(), { scratchPadOpen: false }],
+            [
+                'closeScratchPad',
+                closeScratchPad,
+                () => closeScratchPad(),
+                { scratchPadOpen: false, scratchPadCollapsed: false },
+            ],
             ['closeBranchManager', closeBranchManager, () => closeBranchManager(), { branchManagerOpen: false }],
         ])('should call updateWorkspaceState for %s', (_label, _subject, invoke, expected) => {
             vi.mocked(updateWorkspaceState).mockClear();
@@ -80,7 +84,6 @@ describe('panelToggles', () => {
         }
 
         it.each([
-            ['setSoloMode', setSoloMode, () => setSoloMode('pfl'), { soloMode: 'pfl' }],
             ['toggleSidebar', toggleSidebar, () => toggleSidebar(), { sidebarOpen: false }],
             ['toggleInspector', toggleInspector, () => toggleInspector(), { inspectorOpen: false }],
             ['toggleChatPanel', toggleChatPanel, () => toggleChatPanel(), { chatPanelOpen: true }],

@@ -17,6 +17,32 @@ const loggerMock = vi.hoisted(() => ({
     error: vi.fn(),
     warn: vi.fn(),
 }));
+const previewIntents = vi.hoisted(() => {
+    let exclusive: AbortController | null = null;
+    let ordinarySignal: AbortSignal | null = null;
+    return {
+        get ordinarySignal() {
+            return ordinarySignal;
+        },
+        beginExclusive() {
+            const controller = new AbortController();
+            exclusive = controller;
+            return { signal: controller.signal, release: () => controller.abort('released') };
+        },
+        beginOrdinary() {
+            const previous = exclusive;
+            exclusive = null;
+            previous?.abort('preempted');
+            const controller = new AbortController();
+            ordinarySignal = controller.signal;
+            return { signal: controller.signal, release: () => controller.abort('released') };
+        },
+        reset() {
+            exclusive?.abort('reset');
+            exclusive = null;
+        },
+    };
+});
 
 vi.mock('../../playheadScheduler/stopPlayheadScheduler', () => ({
     stopPlayheadScheduler: vi.fn(),
@@ -27,6 +53,8 @@ vi.mock('../stopActiveRecording', () => ({
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     audioEngine: {
+        beginAudioPreviewIntent: previewIntents.beginOrdinary,
+        beginExclusiveAudioPreviewIntent: previewIntents.beginExclusive,
         setTransportInfo: vi.fn(),
     },
     getAudioContext: vi.fn(() => ({ currentTime: 1, sampleRate: 48000 })),
@@ -59,6 +87,7 @@ vi.mock('#/infra/logger/appLogger', () => ({ logger: loggerMock }));
 
 describe('pausePlayback', () => {
     beforeEach(() => {
+        previewIntents.reset();
         vi.mocked(stopPlayheadScheduler).mockClear();
         vi.mocked(stopActiveRecording).mockClear();
         vi.mocked(stopAllScheduled).mockClear();
@@ -98,6 +127,23 @@ describe('pausePlayback', () => {
             0,
             false
         );
+    });
+
+    it('retires an exclusive preview before the pending recording flush begins', () => {
+        const events: string[] = [];
+        const exclusive = previewIntents.beginExclusive();
+        exclusive.signal.addEventListener('abort', () => events.push('preview-abort'));
+        vi.mocked(getTransportState).mockReturnValue({ ...defaultTransportState, isPlaying: true });
+        vi.mocked(stopActiveRecording).mockImplementationOnce(() => {
+            expect(previewIntents.ordinarySignal?.aborted).toBe(true);
+            events.push('recording-flush');
+            return new Promise<void>(() => undefined);
+        });
+
+        pausePlayback();
+
+        expect(exclusive.signal.aborted).toBe(true);
+        expect(events).toEqual(['preview-abort', 'recording-flush']);
     });
 
     it('parks the native engine at the beat the pause landed on', () => {

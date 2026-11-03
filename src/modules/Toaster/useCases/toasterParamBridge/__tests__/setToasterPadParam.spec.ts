@@ -156,7 +156,7 @@ describe('setToasterPadParam', () => {
 
     /**
      * The worklet translates a camelCase pad field at its own message door
-     * (`PAD_PARAM_MAP`, `AudioEngine/services/toasterProcessor.ts`); the native
+     * (`PAD_PARAM_MAP`, `AudioEngine/worklets/toasterProcessor.ts`); the native
      * body has none, and `Pad::set_param` silently drops a name it has no arm
      * for. A send that forwarded `sendReverb` verbatim would therefore look
      * delivered and change nothing about the sound.

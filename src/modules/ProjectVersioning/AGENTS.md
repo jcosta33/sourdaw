@@ -4,9 +4,7 @@ User-facing snapshot version control for projects, including point-in-time miles
 
 ## Public Contract Surface
 
-- `stores`: `versionControlStore` (`VersionControlState`).
-- `useCases`: `getVersionControlHandlers`.
-- Handlers: `getVersionControlHandlers` (`createProjectVersion`, `restoreProjectVersion`, `createVersionBranch`).
+Public surface: `useCases/index.ts`, `stores/index.ts`.
 
 ## Key Subsystems
 
@@ -27,5 +25,5 @@ User-facing snapshot version control for projects, including point-in-time miles
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
 ```bash
-pnpm test:run <changed-spec>
+pnpm guard --profile focused -- pnpm test:run <changed-spec>
 ```

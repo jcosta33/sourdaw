@@ -7,6 +7,11 @@ import {
     GRID_BEATS,
     TOTAL_ROWS,
     BASE_PITCH,
+    ROW_HEIGHT,
+    RULER_HEIGHT,
+    getPianoRollContentHeight,
+    getPianoRollRowAtY,
+    getPianoRollRowTop,
     type PianoRollExtentSource,
 } from '../pianoRollConstants';
 
@@ -166,5 +171,26 @@ describe('getPianoRollExtentBeats', () => {
     it.each([200, 1_000, 100_000])('covers a clip of %i beats with no ceiling applied', (clipLengthBeats) => {
         expect(extentOf(clipLengthBeats, [])).toBe(clipLengthBeats + 4);
         expect(extentOf(0, [note(clipLengthBeats, 0)])).toBe(clipLengthBeats + 4);
+    });
+});
+
+describe('piano roll vertical geometry law', () => {
+    it('maps every row top and centre back to that row, and its pitch', () => {
+        const visiblePitches = getVisiblePitches('major', 2, true);
+        for (let row = 0; row < visiblePitches.length; row++) {
+            expect(getPianoRollRowAtY(getPianoRollRowTop(row), visiblePitches.length)).toBe(row);
+            expect(getPianoRollRowAtY(getPianoRollRowTop(row) + ROW_HEIGHT / 2, visiblePitches.length)).toBe(row);
+            expect(getPianoRollRowAtY(getPianoRollRowTop(row) + ROW_HEIGHT - 1, visiblePitches.length)).toBe(row);
+        }
+    });
+
+    it('starts the rows under the ruler and ends the content at the last row', () => {
+        expect(getPianoRollRowTop(0)).toBe(RULER_HEIGHT);
+        expect(getPianoRollContentHeight(TOTAL_ROWS)).toBe(getPianoRollRowTop(TOTAL_ROWS));
+    });
+
+    it('returns null over the ruler and past the last row', () => {
+        expect(getPianoRollRowAtY(RULER_HEIGHT - 1, TOTAL_ROWS)).toBeNull();
+        expect(getPianoRollRowAtY(getPianoRollContentHeight(TOTAL_ROWS), TOTAL_ROWS)).toBeNull();
     });
 });

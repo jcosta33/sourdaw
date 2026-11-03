@@ -79,7 +79,7 @@ Never `export type` from `useCases/index.ts` (`no-usecase-type-exports-on-index`
 
 ### 7. Repositories touch metal; engine does not import repositories
 
-I/O (storage, Web Audio setup, desktop bridge calls) belongs in the module-root `src/modules/<M>/repositories/` layer, including its `Common/` and `Supporting/` namespaces. Nested `useCases/repositories` and `presentations/repositories` folders are not repository layers. Desktop bridge confinement (allowlist, mock rules, `desktop-ipc-only-in-repositories` **error**) is canonical in `desktop-platform` rule 4. The engine receives deps from use cases and never imports repositories (**error** `usecases-only-write-boundary-to-repositories`).
+I/O (storage, Web Audio setup, desktop bridge calls) belongs in the module-root `src/modules/<M>/repositories/` layer. Nested `useCases/repositories` and `presentations/repositories` folders are not repository layers. Desktop bridge confinement (allowlist, mock rules, `desktop-ipc-only-in-repositories` **error**) is canonical in `desktop-platform` rule 4. The engine receives deps from use cases and never imports repositories (**error** `usecases-only-write-boundary-to-repositories`).
 
 **Why:** engine → repository couples graph/RT code to I/O and breaks the use-case write boundary.
 

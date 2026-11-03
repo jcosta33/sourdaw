@@ -1,5 +1,6 @@
 import { batchStoreUpdates } from '#/infra/store/createStore';
 import { restampLoopOriginEntry, shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
+import { hasExactAudioSourceFields } from '#/utils/hasExactAudioSourceFields';
 
 import { type Clip, type Track } from '../../models/Track';
 import { getTrackState, type TrackState } from '../../repositories/track/getTrackState';
@@ -12,6 +13,7 @@ import {
 import { markerStore, type MarkerStoreState } from '../../stores/markerStore';
 import { createClipWriteTargetIndex } from '../../stores/resolveEligibleClipWriteTarget';
 import { removeClipSatelliteData } from '../clip/removeClipSatelliteData';
+import { prepareAudioClipCutFields } from '../clipEditing/prepareAudioClipCutFields';
 import { applyTakeReKeyTransitions } from '../comping/applyTakeReKeyTransitions';
 import { captureRetiredTakeLanes } from '../comping/captureRetiredTakeLanes';
 import { captureTrackTakeReKeyTransitions } from '../comping/captureTrackTakeReKeyTransitions';
@@ -303,7 +305,7 @@ function validateClip(value: unknown): value is Clip {
     if (typeof value.locked !== 'boolean' || typeof value.muted !== 'boolean') {
         return false;
     }
-    return true;
+    return hasExactAudioSourceFields(value);
 }
 
 function validateOwners(state: TrackState): readonly NormalizedOwner[] | null {
@@ -922,7 +924,7 @@ function prepareDeletedTracks(
         retainOnSourceWindows?: readonly { start: number; end: number }[];
     }>;
     removeClipIds: string[];
-} {
+} | null {
     const duration = operation.endBeat - operation.startBeat;
     const identityIndex = indexClipIdentities(identities);
     const splits: Array<{
@@ -950,6 +952,10 @@ function prepareDeletedTracks(
                 continue;
             }
             if (clip.startBeat >= operation.endBeat) {
+                const source = prepareAudioClipCutFields(clip, clip.startBeat, -duration);
+                if (!source) {
+                    return null;
+                }
                 trackChanged = true;
                 clips.push({
                     ...clip,
@@ -961,6 +967,7 @@ function prepareDeletedTracks(
                     // key absent — the inverse plan's snapshot is compared
                     // structurally against the normalized live state.
                     ...shiftLoopOriginEntry(clip, -duration),
+                    ...source,
                 });
                 continue;
             }
@@ -970,6 +977,11 @@ function prepareDeletedTracks(
                 continue;
             }
             if (clip.startBeat < operation.startBeat && clip.endBeat > operation.endBeat) {
+                const leftSource = prepareAudioClipCutFields(clip, clip.startBeat, 0);
+                const rightSource = prepareAudioClipCutFields(clip, operation.endBeat, -duration);
+                if (!leftSource || !rightSource) {
+                    return null;
+                }
                 trackChanged = true;
                 const identity = getClipIdentity(identityIndex, 'delete-right', owner.id, clip.id);
                 // The fragment anchor follows the basis it creates (#4988).
@@ -993,7 +1005,7 @@ function prepareDeletedTracks(
                         ? restampLoopOriginEntry(clip, operation.startBeat)
                         : shiftLoopOriginEntry(clip, -duration);
                 clips.push(
-                    { ...clip, endBeat: operation.startBeat, name: `${clip.name} (L)` },
+                    { ...clip, endBeat: operation.startBeat, name: `${clip.name} (L)`, ...leftSource },
                     {
                         ...clip,
                         id: identity.targetClipId,
@@ -1003,6 +1015,7 @@ function prepareDeletedTracks(
                         audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (operation.endBeat - clip.startBeat),
                         midiOffsetBeats: 0,
                         ...rightLoopOriginEntry,
+                        ...rightSource,
                     }
                 );
                 if (clip.type === 'midi') {
@@ -1024,8 +1037,12 @@ function prepareDeletedTracks(
                 continue;
             }
             if (clip.startBeat < operation.startBeat) {
+                const source = prepareAudioClipCutFields(clip, clip.startBeat, 0);
+                if (!source) {
+                    return null;
+                }
                 trackChanged = true;
-                clips.push({ ...clip, endBeat: operation.startBeat });
+                clips.push({ ...clip, endBeat: operation.startBeat, ...source });
                 if (clip.type === 'midi') {
                     const mediaSplit = operation.startBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);
                     const identity = getClipIdentity(identityIndex, 'delete-discard', owner.id, clip.id);
@@ -1047,6 +1064,10 @@ function prepareDeletedTracks(
 
             trackChanged = true;
             const identity = getClipIdentity(identityIndex, 'delete-right', owner.id, clip.id);
+            const source = prepareAudioClipCutFields(clip, operation.endBeat, -duration);
+            if (!source) {
+                return null;
+            }
             // Same per-basis law as the spanning fragment above (#4988): the
             // MIDI notes re-base under midiOffsetBeats 0, so the source
             // anchor would derive a spurious (here negative) advance whose
@@ -1069,6 +1090,7 @@ function prepareDeletedTracks(
                 audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (operation.endBeat - clip.startBeat),
                 midiOffsetBeats: 0,
                 ...rightLoopOriginEntry,
+                ...source,
             });
             if (clip.type === 'midi') {
                 const mediaSplit = operation.endBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);
@@ -1291,7 +1313,7 @@ function prepareLocalState(
     operation: GlobalTimeOperation,
     clipIdentities: readonly ClipReplayIdentity[],
     retainWindowsFor: (clip: Clip) => readonly { start: number; end: number }[]
-): PlannedLocalState {
+): PlannedLocalState | null {
     if (operation.type === 'insert') {
         return {
             trackState: prepareInsertedTracks(trackState, owners, operation),
@@ -1319,6 +1341,9 @@ function prepareLocalState(
     }
 
     const deleted = prepareDeletedTracks(trackState, owners, operation, clipIdentities, retainWindowsFor);
+    if (!deleted) {
+        return null;
+    }
     return {
         trackState: deleted.state,
         markerState: prepareDeletedMarkerState(markerState, operation),
@@ -1630,6 +1655,9 @@ export function executeGlobalTimeOperation(input: ExecuteGlobalTimeOperationInpu
         clipIdentities,
         retainWindowsFor
     );
+    if (!local) {
+        return rejectResult();
+    }
     const clipIdentityTransition = collectClipIdentityTransition(owners, validatedInput.operation, clipIdentities);
     if (
         !clipIdentityTransition ||

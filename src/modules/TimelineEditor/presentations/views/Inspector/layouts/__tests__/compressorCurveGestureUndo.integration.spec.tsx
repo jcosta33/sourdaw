@@ -12,7 +12,12 @@ import { useStore } from '#/infra/store/useStore';
 import { installTransactionalIndexedDb } from '#/infra/testing/installTransactionalIndexedDb';
 import { type Device, type Track, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack, getPluginById, setDeviceParameter } from '#/modules/Arrangement/useCases';
-import { audioEngine, getAudioContext, updateDeviceParam } from '#/modules/AudioEngine/useCases';
+import {
+    audioEngine,
+    getAudioContext,
+    initEngineDeviceCollaborators,
+    updateDeviceParam,
+} from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import * as automationUseCases from '#/modules/Automation/useCases';
 import { setAutomationRecordingDependencies, stopAutomationRecording } from '#/modules/Automation/useCases';
@@ -266,7 +271,7 @@ function expectThresholdValue(type: CompressorType, value: number): void {
     }
     expect(parameter.minValue).toBe(-60);
     expect(parameter.maxValue).toBe(0);
-    // The thumb exposes 0..100; both surrounding readouts carry native dB.
+    // The thumb exposes 0..100; the parameter header is the single readout and carries native dB.
     const position = ((value - parameter.minValue) / (parameter.maxValue - parameter.minValue)) * 100;
     const control = screen.getByRole('slider', { name: 'Threshold' });
     expect(control).toHaveAttribute('aria-valuemin', '0');
@@ -274,10 +279,8 @@ function expectThresholdValue(type: CompressorType, value: number): void {
     expect(control).toHaveAttribute('aria-valuenow');
     expect(Number(control.getAttribute('aria-valuenow'))).toBeCloseTo(position, 10);
     const readouts = screen.getAllByText(`${value.toFixed(1)} dB`);
-    expect(readouts).toHaveLength(2);
-    for (const readout of readouts) {
-        expect(readout).toBeVisible();
-    }
+    expect(readouts).toHaveLength(1);
+    expect(readouts[0]).toBeVisible();
 }
 async function committed(type: CompressorType, value: number, historyDepth = 1): Promise<void> {
     const id = `${prefix(type)}-threshold`;
@@ -334,6 +337,7 @@ describe('actual registered Compressor curve through real project and history', 
         vi.clearAllMocks();
         engineWrites.length = 0;
         Object.assign(audioEngine.context, createMockAudioContext());
+        initEngineDeviceCollaborators();
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('Compressor canvas gesture');
         removeCrdtDoc('root');
@@ -377,6 +381,7 @@ describe('actual registered Compressor curve through real project and history', 
             clear: () => undefined,
         });
         sessionUndoWitnessStampPort.setProvider(null);
+        audioEngine.setUseCaseDeviceCollaborators(null);
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         automationStore.set({ lanes: [] });
         agentProjectRepairStateStore.set(null);

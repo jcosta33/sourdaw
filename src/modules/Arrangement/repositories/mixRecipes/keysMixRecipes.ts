@@ -397,4 +397,32 @@ export const keysMixRecipes: readonly MixRecipe[] = [
         ],
         source: 'Period keyboard amplifiers modulated amplitude at a few hertz with a sine shape and stopped well short of the top octave, so the modulation and the bandwidth limit belong together. Depth under a half keeps the effect as character rather than as a gate.',
     },
+    {
+        id: 'keys-controlled',
+        descriptor: 'controlled',
+        roles: ['keys'],
+        title: 'Even unintended dynamic-accompaniment note and chord levels',
+        steps: [
+            {
+                kind: 'insert',
+                deviceType: 'builtin-compressor',
+                parameters: [
+                    { paramId: 'comp-threshold', minimum: -22, maximum: -14 },
+                    { paramId: 'comp-ratio', minimum: 3, maximum: 5 },
+                    { paramId: 'comp-attack', minimum: 5, maximum: 15 },
+                    { paramId: 'comp-release', minimum: 60, maximum: 120 },
+                ],
+            },
+        ],
+        prerequisites: [
+            'The accompaniment is dynamically played and has unintended note or chord level swings.',
+            'Left-hand energy does not cause unwanted ducking of the right hand.',
+        ],
+        contraindications: [
+            'Skip fixed-velocity programmed parts and intentional contrast between sections.',
+            'Skip when compression removes wanted hammer articulation.',
+        ],
+        metrics: [{ metric: 'dynamicRangeEstimate', direction: 'decrease' }],
+        source: 'The existing keyboard accompaniment uses this compressor window for level control. This move omits tonal weight changes and only reduces unwanted variation on a suitably played source.',
+    },
 ];

@@ -23,8 +23,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getCachedAudioBufferWaveformPeaks: mocks.getCachedAudioBufferWaveformPeaks,
 }));
 
-const create_test_audio_buffer = (sampleRate = 48_000): AudioBuffer => {
-    const channel_data = new Float32Array(96_000);
+const create_test_audio_buffer = (sampleRate = 48_000, length = 96_000): AudioBuffer => {
+    const channel_data = new Float32Array(length);
     return {
         copyFromChannel: (destination, _channel_number, start_in_channel = 0) => {
             destination.set(channel_data.subarray(start_in_channel, start_in_channel + destination.length));
@@ -71,6 +71,7 @@ const create_audio_clip = (overrides: Partial<ClipRenderModel> = {}): ClipRender
     audioBufferId: 'buf-1',
     audioOffsetBeats: 1,
     stretchRatio: 2,
+    stretchMode: 'timestretch',
     loopEnabled: false,
     loopLength: undefined,
     midiOffsetBeats: 0,
@@ -155,6 +156,67 @@ describe('drawClip (Coordinate Conventions)', () => {
         const noteCall = mockCtx.roundRect.mock.calls.find((args: any[]) => args[0] === 200 && args[2] <= 100);
         expect(noteCall).toBeTruthy();
         expect(noteCall[0]).toBe(200);
+    });
+
+    describe('inline MIDI editing', () => {
+        const inlineClip = (overrides: Partial<ClipRenderModel>): ClipRenderModel => ({
+            id: 'c1',
+            startBeat: 8,
+            endBeat: 12,
+            name: 'Inline',
+            type: 'midi',
+            color: '#000',
+            muted: false,
+            midiNotes: [],
+            isInlineEditing: true,
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            ...overrides,
+        });
+
+        it('places a note of a clip that starts at beat 8 by its offset and clip-relative beat', () => {
+            const clip = inlineClip({
+                midiOffsetBeats: 1,
+                midiNotes: [{ id: 'n1', startBeat: 1.5, duration: 1, pitch: 60 }],
+            });
+
+            drawClip(mockCtx, clip, create_test_model(), 0, 80);
+
+            // x = 8 * 25 = 200, w = 4 * 25 = 100; relStart = 1.5 - 1 = 0.5 beat => 200 + 0.5 / 4 * 100.
+            const noteCall = mockCtx.roundRect.mock.calls.find((args: number[]) => args[0] === 212.5);
+            expect(noteCall?.[2]).toBe(25);
+        });
+
+        it('draws the pitch grid for an inline clip with no notes', () => {
+            drawClip(mockCtx, inlineClip({}), create_test_model(), 0, 80);
+
+            // The grid backdrop covers the note area (padding 2 inside an 80px track) and the 12 rows of the octave from middle C are ruled by 13 lines.
+            expect(mockCtx.fillRect).toHaveBeenCalledWith(200, 2, 100, 76);
+            expect(mockCtx.moveTo.mock.calls.filter(([x, y]: [number, number]) => x === 200 && y >= 2)).toHaveLength(
+                13
+            );
+        });
+
+        it('draws no pitch grid for a non-inline clip with no notes', () => {
+            drawClip(mockCtx, inlineClip({ isInlineEditing: false }), create_test_model(), 0, 80);
+
+            expect(mockCtx.fillRect).not.toHaveBeenCalledWith(200, 2, 100, 76);
+        });
+
+        it('keeps the preview note placement for a non-inline clip', () => {
+            const clip = inlineClip({
+                isInlineEditing: false,
+                midiOffsetBeats: 1,
+                midiNotes: [{ id: 'n1', startBeat: 1.5, duration: 1, pitch: 60 }],
+            });
+
+            drawClip(mockCtx, clip, create_test_model(), 0, 80);
+
+            // Preview area starts under the 18px header: height 80 - 2 - 18 = 60, split in two rows for a single pitch,
+            // and the note takes the lower one: y = 18 + 60 - 60 / 2 = 48.
+            const noteCall = mockCtx.fillRect.mock.calls.find((args: number[]) => args[0] === 212.5);
+            expect(noteCall).toEqual([212.5, 48, 25, 30]);
+        });
     });
 
     it('draws the clip name at the shared label geometry, condensed to the clip width', () => {
@@ -258,7 +320,7 @@ describe('drawClip (Coordinate Conventions)', () => {
     });
 
     it('should draw cached audio waveform peaks through AudioEngine owner use cases', () => {
-        const buffer = create_test_audio_buffer();
+        const buffer = create_test_audio_buffer(48_000, 480_000);
         mocks.getCachedAudioBuffer.mockReturnValue(buffer);
         mocks.getCachedAudioBufferWaveformPeaks.mockReturnValue(new Float32Array([0.1, 0.5, 0.25]));
 
@@ -274,11 +336,64 @@ describe('drawClip (Coordinate Conventions)', () => {
     });
 
     it('requests the clip-start-tempo source window when the map tempo differs from base tempo', () => {
-        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer());
-        drawClip(mockCtx, create_audio_clip({ clipStartTempo: 90 }), create_test_model(), 0, 40);
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer(48_000, 480_000));
+        drawClip(
+            mockCtx,
+            create_audio_clip({ clipStartTempo: 90 }),
+            create_test_model({
+                sourceTimeline: { secondsAtBeat: (beat) => (beat * 2) / 3, beatAtSeconds: (seconds) => seconds * 1.5 },
+            }),
+            0,
+            40
+        );
         expect(mocks.getCachedAudioBufferWaveformPeaks).toHaveBeenCalledWith(
             expect.objectContaining({ startSample: 32_000, endSample: 288_000 })
         );
+    });
+
+    it('requests canonical PCM and places its bins through the captured tempo map', () => {
+        mocks.getCachedAudioBuffer.mockReturnValue(create_test_audio_buffer(48_000, 480_000));
+        mocks.getCachedAudioBufferWaveformPeaks.mockReturnValue(new Float32Array([0.1, 0.5, 0.25]));
+        const clip = create_audio_clip({
+            startBeat: 4,
+            endBeat: 8,
+            audioOffsetBeats: 12,
+            audioOffsetSeconds: 0,
+            clipStartTempo: 60,
+        });
+        const model = create_test_model({
+            sourceTimeline: {
+                secondsAtBeat: (beat) => {
+                    if (beat <= 4) {
+                        return beat / 2;
+                    }
+                    if (beat <= 6) {
+                        return 2 + beat - 4;
+                    }
+                    return 4 + (beat - 6) / 2;
+                },
+                beatAtSeconds: (seconds) => {
+                    if (seconds <= 2) {
+                        return seconds * 2;
+                    }
+                    if (seconds <= 4) {
+                        return 4 + seconds - 2;
+                    }
+                    return 6 + (seconds - 4) * 2;
+                },
+            },
+        });
+
+        drawClip(mockCtx, clip, model, 0, 40);
+
+        expect(mocks.getCachedAudioBufferWaveformPeaks).toHaveBeenCalledWith({
+            bufferId: 'buf-1',
+            numBins: 100,
+            startSample: 0,
+            endSample: 288000,
+        });
+        const waveform = mockCtx.lineTo.mock.calls.filter((args: number[]) => args[1] !== 2.5);
+        expect(waveform.slice(0, 3).map((point: number[]) => point[0])).toEqual([102, 127, 152]);
     });
 
     it('should not read waveform peaks when the cached audio buffer is missing', () => {

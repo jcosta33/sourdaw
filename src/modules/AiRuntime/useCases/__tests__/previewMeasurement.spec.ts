@@ -4,14 +4,15 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { trackStore, type Track } from '#/modules/Arrangement/stores';
+import { markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
 import {
     createTrack,
     getArrangementHandlers,
     reserveNextTrackColorForCommand,
     setArrangementEventBus,
 } from '#/modules/Arrangement/useCases';
-import { clearAgentMeasurementArtifacts } from '#/modules/AudioRendering/useCases';
+import * as audioAnalysisUseCases from '#/modules/AudioAnalysis/useCases';
+import { clearAgentMeasurementArtifacts, getAgentMeasurementArtifact } from '#/modules/AudioRendering/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -33,32 +34,43 @@ import { type AnalysisMeasureRead } from '../../models/AnalysisMeasureRead';
 import { type CreativeRequestAuthority } from '../../models/CreativeInterpretation';
 import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
 import { type IntentResult } from '../../models/IntentResult';
+import { type MeasurementAdmitter } from '../../models/MeasurementBudget';
+import { agentRunStore } from '../../stores/agentRunStore';
 import { chatStore } from '../../stores/chatStore';
 import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
+    pendingActionConfirmationStore,
 } from '../../stores/pendingActionConfirmationStore';
 import { tryCompoundFastPath, tryParameterizedPath, tryPresetMatch } from '../../transformers/promptParser/parsing';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { admitCreativeInterpretation } from '../admitCreativeInterpretation';
 import { persistPromptActionConfirmation } from '../agentRequestOrchestration/persistPromptActionConfirmation';
 import { agentRunLifecycle } from '../agentRunLifecycle';
-import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
+import { APPLICATION_OWNED_TOOL_LOOP_LIMITS, runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { compileAgentActionExecution } from '../compileAgentActionExecution';
 import * as batchDigest from '../digestCommandBatchContent';
 import { executeAnalysisMeasure } from '../executeAnalysisMeasure';
 import { executeRecipeExpansion } from '../executeRecipeExpansion';
 import { getAgentApprovalView } from '../getAgentApprovalView';
+import { getMeasuredPreviewAuditionView } from '../getMeasuredPreviewAuditionView';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
+import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { parsePromptToActions } from '../parsePromptToActions';
 import { prepareCreativeInterpretationCatalog } from '../prepareCreativeInterpretationCatalog';
 import { reproposePendingChatActions } from '../reproposePendingChatActions';
+import { resolveMeasuredPreviewAudition } from '../resolveMeasuredPreviewAudition';
+import { startMeasuredPreviewAudition } from '../startMeasuredPreviewAudition';
+import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
 
 import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { advertisedAnswerCandidateId, advertisedAnswerSchema } from './answerWireFixture';
+import { readCreativeInterpretationCatalog } from './highLevelIntentWorkflowFixture';
+import { readMetricPublication } from './metricGoalWorkflowFixture';
 
 // Only the engine's render boundary is replaced: compilation, grounding, the isolated preview,
 // target resolution and the measurement figures are the real ones.
@@ -99,7 +111,7 @@ const RUN_ID = 'run-preview';
 const ASSISTANT_ID = 'assistant-preview';
 const RANGE = { startBeat: 0, endBeat: 8 };
 
-type SubgraphRequest = { renderTracks: readonly Track[]; trackId?: string };
+type SubgraphRequest = { renderTracks: readonly Track[]; trackId?: string; targetTrackId?: string };
 
 const DRUMS_TRIM_ID = 'drums-trim';
 const DEVICE_NAMES: Readonly<Record<string, string>> = {
@@ -140,18 +152,23 @@ function proposalOf(...items: ReturnType<typeof lowerGain>[]): Proposal {
     return { schemaVersion: 1, items };
 }
 
-/** Two seconds of a 1 kHz stereo sine at `amplitude`. */
-function sineBuffer(amplitude: number): AudioBuffer {
-    const length = SAMPLE_RATE * 2;
+/** `durationSeconds` of a 1 kHz sine at `amplitude`, stereo by default. */
+function sineBuffer(
+    amplitude: number,
+    sampleRate = SAMPLE_RATE,
+    durationSeconds = 2,
+    numberOfChannels = 2
+): AudioBuffer {
+    const length = sampleRate * durationSeconds;
     const channel = new Float32Array(length);
     for (let frame = 0; frame < length; frame++) {
-        channel[frame] = amplitude * Math.sin((2 * Math.PI * 1_000 * frame) / SAMPLE_RATE);
+        channel[frame] = amplitude * Math.sin((2 * Math.PI * 1_000 * frame) / sampleRate);
     }
     return {
-        sampleRate: SAMPLE_RATE,
+        sampleRate,
         length,
-        numberOfChannels: 2,
-        duration: length / SAMPLE_RATE,
+        numberOfChannels,
+        duration: durationSeconds,
         getChannelData: () => channel,
     } as unknown as AudioBuffer;
 }
@@ -160,13 +177,13 @@ function sineBuffer(amplitude: number): AudioBuffer {
  * A stand-in renderer that honours what it is handed: the drums sound at their fader gain times
  * every gain device's level, so a preview that lowers a device renders quieter.
  */
-function renderSubgraph(request: SubgraphRequest): Promise<AudioBuffer> {
+function renderSubgraph(request: SubgraphRequest, seconds = 2): Promise<AudioBuffer> {
     const track = request.renderTracks.find((candidate) => candidate.id === 'drums');
     const levelDb = (track?.devices ?? []).reduce(
         (total, device) => total + (device.parameterValues['gain-level'] ?? 0),
         0
     );
-    return Promise.resolve(sineBuffer(0.5 * (track?.gain ?? 1) * 10 ** (levelDb / 20)));
+    return Promise.resolve(sineBuffer(0.5 * (track?.gain ?? 1) * 10 ** (levelDb / 20), SAMPLE_RATE, seconds));
 }
 
 function drumsLevel(): number | undefined {
@@ -176,9 +193,9 @@ function drumsLevel(): number | undefined {
 }
 
 /** The interpretation a hosted run admits for the prompt: edit the drums' processing. */
-function interpretationCall(revision: string): ToolCallResult {
+function interpretationCall(revision: string, prompt = PROMPT): ToolCallResult {
     const catalog = prepareCreativeInterpretationCatalog({
-        prompt: PROMPT,
+        prompt,
         context: getProjectContext(),
         projectRevision: revision,
     });
@@ -245,8 +262,8 @@ function measure(args: Record<string, unknown>, revision = captureProjectRevisio
     });
 }
 
-function previewArgs(proposal: Proposal) {
-    return { scope: DRUMS_SCOPE, range: RANGE, metrics: ['integratedLoudness'], subject: 'preview', proposal };
+function previewArgs(proposal: Proposal, metrics: readonly string[] = ['integratedLoudness']) {
+    return { scope: DRUMS_SCOPE, range: RANGE, metrics, subject: 'preview', proposal };
 }
 
 /** One planning loop: a preview measurement, then a proposal adopting it by call id. */
@@ -290,20 +307,65 @@ function measureThenAdopt(proposal: Proposal, loopRevision: string) {
 }
 
 /** A hosted run's provider turns: interpret the request, measure the preview, propose exactly it. */
-function scriptMeasureThenAdoptTurns(revision: string, proposal: Proposal): void {
+function scriptMeasureThenAdoptTurns(revision: string, proposal: Proposal, metrics?: readonly string[]): void {
     scriptTurns(revision, [
-        [measureCallFor('measure-1', proposal)],
+        [measureCallFor('measure-1', proposal, metrics)],
         [proposeCall({ commands: [], compiledCallIds: ['measure-1'] })],
     ]);
 }
 
 /** The interpretation turn, then each scripted turn in order. */
-function scriptTurns(revision: string, turns: ReadonlyArray<ToolCallResult[]>): void {
+function scriptTurns(
+    revision: string,
+    turns: ReadonlyArray<ToolCallResult[]>,
+    criterion: 'unsupported' | 'match' = 'unsupported',
+    prompt = PROMPT
+): void {
     const planning = vi.mocked(generateToolPlanningOutcome);
-    planning.mockResolvedValueOnce({
-        status: 'complete',
-        toolCalls: [interpretationCall(revision)],
-        providerTurn: { provider: 'openai', assistantItems: null },
+    planning.mockImplementationOnce(async (_systemPrompt, userMessage, toolSchemas) => {
+        const unsupported = readMetricPublication({ function: advertisedAnswerSchema(toolSchemas) }).find((row) => {
+            if (criterion === 'unsupported') {
+                return row.kind === 'unsupported';
+            }
+            return row.goals.some((goal) => goal.relation === 'match-current');
+        });
+        if (unsupported === undefined) {
+            throw new TypeError('Expected the actual published unsupported acoustic objective.');
+        }
+        const call = interpretationCall(revision, prompt);
+        let scopeCandidateId: string | null = null;
+        let referenceScopeCandidateId: string | null = null;
+        let rangeCandidateId: string | null = null;
+        if (criterion === 'match') {
+            scopeCandidateId = advertisedAnswerCandidateId([toolSchemas, userMessage], 'drums');
+            referenceScopeCandidateId = advertisedAnswerCandidateId([toolSchemas, userMessage], 'bass');
+            rangeCandidateId = advertisedAnswerCandidateId([toolSchemas, userMessage], 'Passage', 'ranges');
+        }
+        return {
+            status: 'complete',
+            toolCalls: [
+                {
+                    ...call,
+                    arguments: {
+                        ...call.arguments,
+                        answer: null,
+                        metricIntent: {
+                            kind: criterion === 'match' ? 'comparative' : 'perceptual',
+                            uncertainty: 'none',
+                            objectives: [
+                                {
+                                    objectiveId: unsupported.id,
+                                    scopeCandidateId,
+                                    referenceScopeCandidateId,
+                                    rangeCandidateId,
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+            providerTurn: { provider: 'openai', assistantItems: null },
+        };
     });
     for (const toolCalls of turns) {
         planning.mockResolvedValueOnce({
@@ -314,8 +376,8 @@ function scriptTurns(revision: string, turns: ReadonlyArray<ToolCallResult[]>): 
     }
 }
 
-function measureCallFor(id: string, proposal: Proposal): ToolCallResult {
-    return { id, name: 'analysis.measure', arguments: previewArgs(proposal) };
+function measureCallFor(id: string, proposal: Proposal, metrics?: readonly string[]): ToolCallResult {
+    return { id, name: 'analysis.measure', arguments: previewArgs(proposal, metrics) };
 }
 
 function proposeCall(args: Record<string, unknown>): ToolCallResult {
@@ -419,17 +481,18 @@ async function approvalMeasuredPreview(revision: string) {
 }
 
 /** Persist a planned result for approval as the prompt route does, under a run that is planning. */
-function persistForApproval(planned: IntentResult, revision: string): string {
-    agentRunLifecycle.create({ runId: RUN_ID, request: PROMPT, mode: 'apply', createdRevision: null, createdAt: 1 });
+function persistForApproval(planned: IntentResult, revision: string, prompt = PROMPT): string {
+    agentRunLifecycle.create({ runId: RUN_ID, request: prompt, mode: 'apply', createdRevision: null, createdAt: 1 });
     agentRunLifecycle.transitionPhase({ runId: RUN_ID, phase: 'planning' });
     const group = { groupId: 'group-preview', groupLabel: 'Punchier drums' };
     const actionLabels = planned.actions.map((action) => action.type);
     const compiled = compileAgentActionExecution({
         actions: planned.actions,
+        metricGoalState: planned.metricGoalState,
         actionCommandGraph: planned.actionCommandGraph,
         actionLabels,
         group,
-        intent: PROMPT,
+        intent: prompt,
         projectRevision: revision,
         runId: RUN_ID,
         context: getProjectContext(),
@@ -447,13 +510,14 @@ function persistForApproval(planned: IntentResult, revision: string): string {
     }
     const confirmationId = persistPromptActionConfirmation({
         runId: RUN_ID,
-        prompt: PROMPT,
+        prompt,
         assistantMessageId: ASSISTANT_ID,
         actions: planned.actions,
         actionLabels,
         commandEnvelopes: compiled.commandEnvelopes,
         commandBatch: compiled.commandBatch,
         agentApproval: compiled.agentApproval,
+        metricGoalState: compiled.metricGoalState,
         affectedIds: ['drums'],
         protectedUnchanged: [],
         measuredPreview: planned.measuredPreview,
@@ -530,6 +594,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    markerStore.set({ markers: [], sections: [] });
     vi.restoreAllMocks();
     clearPendingActionConfirmations();
     agentRunLifecycle.clear();
@@ -543,6 +608,176 @@ afterEach(() => {
     projectStore.set(structuredClone(defaultProjectStoreState));
     configureAutomergeStoragePort(null);
     removeCrdtDoc('root');
+});
+
+describe('receipt-backed retained audition through the admitted prompt caller', () => {
+    it.each(['prompt-bar', 'preset'] as const)(
+        'preserves genuine planner proof through %s and refuses missing or foreign receipts',
+        async (source) => {
+            const revision = captureProjectRevision();
+            const history = structuredClone(undoHistoryStore.value);
+            scriptMeasureThenAdoptTurns(revision, proposalOf(lowerGain(DRUMS_GAIN_ID, -6)));
+            const result = await submitAdmittedPromptRequest({ prompt: PROMPT, source, requiresConfirmation: true });
+            expect(result.status).toBe('awaiting-approval');
+            if (result.status !== 'awaiting-approval') {
+                throw new Error(`Actual prompt admission failed: ${result.status}`);
+            }
+            const input = { confirmationId: result.confirmationId, targetId: 'drums' };
+            const resolved = resolveMeasuredPreviewAudition(input);
+            expect(resolved.status).toBe('available');
+            if (resolved.status !== 'available') {
+                throw new Error(resolved.reason);
+            }
+            expect(resolved.baseline.buffer).not.toBe(resolved.preview.buffer);
+            expect(resolved.baseline.gain).toBeCloseTo(10 ** (-6 / 20), 2);
+            expect(resolved.preview.gain).toBe(1);
+            expect(getAgentApprovalView({ confirmationId: result.confirmationId })?.canConfirm).toBe(false);
+            expect(resolveMeasuredPreviewAudition({ ...input, selectedIntentGroupIds: [] }).status).toBe('unavailable');
+            const view = getMeasuredPreviewAuditionView({ confirmationId: result.confirmationId });
+            expect(view.targets[0]).toMatchObject({ targetId: 'drums', available: true });
+            expect(JSON.stringify(view)).not.toContain('contentAddress');
+            expect(JSON.stringify(view)).not.toContain('getChannelData');
+            const run = agentRunLifecycle.get(result.runId);
+            if (run?.plan === null || run?.plan === undefined) {
+                throw new Error('The actual admitted caller must persist a plan.');
+            }
+            const applicationToolReceipts = run.plan.applicationToolReceipts;
+            expect(applicationToolReceipts).toBeDefined();
+            if (applicationToolReceipts === undefined) {
+                throw new Error('The admitted measurement must persist its application tool receipts.');
+            }
+            expect(
+                applicationToolReceipts.some(
+                    (receipt) => receipt.callId === 'measure-1' && receipt.status === 'success'
+                )
+            ).toBe(true);
+            for (const receipts of [
+                [],
+                applicationToolReceipts.map((receipt) => ({ ...receipt, callId: 'foreign-measurement' })),
+            ]) {
+                agentRunStore.update((state) => {
+                    if (!state) {
+                        return state;
+                    }
+                    return {
+                        ...state,
+                        runs: state.runs.map((candidate) => {
+                            if (candidate.runId === result.runId && candidate.plan !== null) {
+                                return { ...candidate, plan: { ...candidate.plan, applicationToolReceipts: receipts } };
+                            }
+                            return candidate;
+                        }),
+                    };
+                });
+                expect(resolveMeasuredPreviewAudition(input).status).toBe('unavailable');
+            }
+            agentRunStore.update((state) => {
+                if (!state) {
+                    return state;
+                }
+                return {
+                    ...state,
+                    runs: state.runs.map((candidate) => {
+                        if (candidate.runId === run.runId) {
+                            return run;
+                        }
+                        return candidate;
+                    }),
+                };
+            });
+            expect(resolveMeasuredPreviewAudition(input).status).toBe('available');
+            const confirmation = getPendingActionConfirmation(result.confirmationId);
+            const goals = metricGoalStateCodec(confirmation?.approvalSnapshot.metricGoalState);
+            if (confirmation === null || goals === null) {
+                throw new Error('Missing actual bound proof.');
+            }
+            const forged = {
+                ...goals,
+                proofs: goals.proofs.map((proof) => ({
+                    ...proof,
+                    preview: {
+                        ...proof.preview,
+                        targets: proof.preview.targets.map((target) => {
+                            if (target.audition === undefined) {
+                                return target;
+                            }
+                            return {
+                                ...target,
+                                audition: {
+                                    ...target.audition,
+                                    baseline: {
+                                        ...target.audition.baseline,
+                                        artifact: { contentAddress: target.audition.preview.artifact.contentAddress },
+                                    },
+                                },
+                            };
+                        }),
+                    },
+                })),
+            };
+            pendingActionConfirmationStore.update((state) => {
+                if (!state) {
+                    return state;
+                }
+                return {
+                    ...state,
+                    confirmations: state.confirmations.map((entry) => {
+                        if (entry.id === confirmation.id) {
+                            return {
+                                ...entry,
+                                approvalSnapshot: {
+                                    ...entry.approvalSnapshot,
+                                    metricGoalState: JSON.stringify(forged),
+                                },
+                            };
+                        }
+                        return entry;
+                    }),
+                };
+            });
+            await expect(startMeasuredPreviewAudition({ ...input, side: 'baseline' })).resolves.toMatchObject({
+                status: 'unavailable',
+            });
+            pendingActionConfirmationStore.update((state) => {
+                if (!state) {
+                    return state;
+                }
+                return {
+                    ...state,
+                    confirmations: state.confirmations.map((entry) => {
+                        if (entry.id === confirmation.id) {
+                            return confirmation;
+                        }
+                        return entry;
+                    }),
+                };
+            });
+            const expired = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 5 * 60 * 60 * 1_000);
+            try {
+                expect(getAgentApprovalView({ confirmationId: result.confirmationId })?.freshness.status).toBe(
+                    'current'
+                );
+                const retainedAddress =
+                    goals.proofs.at(-1)?.preview.targets[0]?.audition?.baseline.artifact.contentAddress;
+                if (retainedAddress === undefined) {
+                    throw new Error('Missing genuine retained baseline address.');
+                }
+                expect(getAgentMeasurementArtifact(retainedAddress)).toBeNull();
+                await expect(startMeasuredPreviewAudition({ ...input, side: 'preview' })).resolves.toMatchObject({
+                    status: 'unavailable',
+                });
+            } finally {
+                expired.mockRestore();
+            }
+            clearAgentMeasurementArtifacts();
+            await expect(startMeasuredPreviewAudition({ ...input, side: 'baseline' })).resolves.toMatchObject({
+                status: 'unavailable',
+            });
+            expect(drumsLevel()).toBe(0);
+            expect(captureProjectRevision()).toBe(revision);
+            expect(undoHistoryStore.value).toEqual(history);
+        }
+    );
 });
 
 describe('analysis.measure of a proposal preview', () => {
@@ -567,6 +802,86 @@ describe('analysis.measure of a proposal preview', () => {
         expect(captureProjectRevision()).toBe(revision);
         expect(drumsLevel()).toBe(0);
         expect(engine.updateDeviceParam).not.toHaveBeenCalled();
+    });
+
+    it('retains the exact differing render pair and private match figures without widening requested metrics', async () => {
+        const revision = captureProjectRevision();
+        const history = structuredClone(undoHistoryStore.value);
+        const baseline = sineBuffer(0.5, 48_000, 2, 2);
+        const proposed = sineBuffer(0.25, 44_100, 1.5, 1);
+        const baselinePcm = baseline.getChannelData(0).slice();
+        const proposedPcm = proposed.getChannelData(0).slice();
+        engine.renderTrackSubgraphOffline.mockReset().mockResolvedValueOnce(baseline).mockResolvedValueOnce(proposed);
+        scriptMeasureThenAdoptTurns(revision, proposalOf(lowerGain(DRUMS_GAIN_ID, -6)), ['rms']);
+        const { planned, confirmationId } = await approvalMeasuredPreview(revision);
+        const saved = getPendingActionConfirmation(confirmationId)?.approvalSnapshot.measuredPreview;
+        const pair = saved?.targets[0]?.audition;
+        if (pair === undefined) {
+            throw new Error('The actual admitted preview must carry its retained audition pair.');
+        }
+        expect(pair).toMatchObject({
+            baseline: {
+                route: 'isolated-subgraph',
+                sampleRate: 48_000,
+                frameCount: 96_000,
+                channelCount: 2,
+                durationSeconds: 2,
+            },
+            preview: {
+                route: 'isolated-subgraph',
+                sampleRate: 44_100,
+                frameCount: 66_150,
+                channelCount: 1,
+                durationSeconds: 1.5,
+            },
+            baselineIntegratedLoudness: { status: 'measured', unit: 'LUFS' },
+            previewIntegratedLoudness: { status: 'measured', unit: 'LUFS' },
+        });
+        expect(getAgentMeasurementArtifact(pair.baseline.artifact.contentAddress)?.buffer).toBe(baseline);
+        expect(getAgentMeasurementArtifact(pair.preview.artifact.contentAddress)?.buffer).toBe(proposed);
+        expect(saved?.provenance).toMatchObject({ origin: 'planner', callId: 'measure-1', runId: expect.any(String) });
+        expect(Object.keys(saved?.targets[0]?.baseline ?? {})).toEqual(['rms']);
+        expect(Object.keys(saved?.targets[0]?.preview ?? {})).toEqual(['rms']);
+        expect(Object.keys(saved?.targets[0]?.deltas ?? {})).toEqual(['rms']);
+        const receipt = planned.applicationToolReceipts?.find(({ callId }) => callId === 'measure-1');
+        expect(receipt?.data).toMatchObject({
+            metrics: ['rms'],
+            targets: [
+                { baselineRender: { route: 'isolated-subgraph' }, previewRender: { route: 'isolated-subgraph' } },
+            ],
+        });
+        expect(JSON.stringify(receipt)).not.toContain('audition');
+        expect(JSON.stringify(receipt)).not.toContain('baselineIntegratedLoudness');
+        expect(JSON.stringify(receipt)).not.toContain('AudioBuffer');
+        expect(baseline.getChannelData(0)).toEqual(baselinePcm);
+        expect(proposed.getChannelData(0)).toEqual(proposedPcm);
+        expect(captureProjectRevision()).toBe(revision);
+        expect(undoHistoryStore.value).toEqual(history);
+        expect(drumsLevel()).toBe(0);
+        expect(engine.updateDeviceParam).not.toHaveBeenCalled();
+    });
+
+    it('keeps requested measurement success when auxiliary loudness is unavailable', async () => {
+        const measureObjective = audioAnalysisUseCases.measureAgentScopeRender;
+        const spy = vi.spyOn(audioAnalysisUseCases, 'measureAgentScopeRender').mockImplementation((buffer, metrics) => {
+            const figures = measureObjective(buffer, metrics);
+            delete figures.integratedLoudness;
+            return figures;
+        });
+        try {
+            const read = await measure(previewArgs(proposalOf(lowerGain(DRUMS_GAIN_ID, -6)), ['rms']));
+            expect(read.receipt).toMatchObject({ status: 'success', data: { metrics: ['rms'] }, error: null });
+            expect(read.measuredPreview?.targets[0]).toMatchObject({
+                baseline: { rms: { status: 'measured' } },
+                preview: { rms: { status: 'measured' } },
+                audition: {
+                    baselineIntegratedLoudness: { status: 'unavailable' },
+                    previewIntegratedLoudness: { status: 'unavailable' },
+                },
+            });
+        } finally {
+            spy.mockRestore();
+        }
     });
 
     // Red when the loop stops comparing a retained preview's revision with the measurement's own.
@@ -741,6 +1056,8 @@ describe('a measured preview through proposal and approval', () => {
             failedReads: [],
         });
         expect(vi.mocked(generateToolPlanningOutcome)).toHaveBeenCalledTimes(5);
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[1]?.[8]).toEqual({ mode: 'auto' });
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[8]).toEqual({ mode: 'auto' });
         const replay: HostedTurnHistory | undefined = vi
             .mocked(generateToolPlanningOutcome)
             .mock.calls.at(-1)?.[9]?.history;
@@ -789,9 +1106,9 @@ describe('a measured preview through proposal and approval', () => {
     });
 
     // Red when the query branch the planning prompt states (the context cannot resolve the target: the
-    // interpretation, project.query alone, discovery, expansion, then a propose adopting the expansion)
+    // interpretation, project.query plus baseline, discovery, expansion, then a propose adopting the expansion)
     // stops fitting the loop's turns or completing without a rejection.
-    it('completes the prompt-stated query branch in the loop turns: query alone, discover, expand, then adopt the expansion', async () => {
+    it('completes the prompt-stated query branch in the loop turns: query and baseline, discover, expand, then adopt the expansion', async () => {
         projectStore.set({
             ...structuredClone(defaultProjectStoreState),
             projectId: '405e744b-dead-843a-9395-86fdcd66368c',
@@ -807,7 +1124,10 @@ describe('a measured preview through proposal and approval', () => {
             { paramId: 'comp-makeup', value: 4.5 },
         ];
         scriptTurns(revision, [
-            [{ id: 'resolve-target', name: 'project.query', arguments: { type: 'project-summary' } }],
+            [
+                { id: 'resolve-target', name: 'project.query', arguments: { type: 'project-summary' } },
+                { id: 'query-baseline', name: 'analysis.measure', arguments: { scope: DRUMS_SCOPE, range: RANGE } },
+            ],
             [
                 {
                     id: 'discover-1',
@@ -1255,5 +1575,876 @@ describe('recipe previews retain existing render controls', () => {
         });
         expect(settle).toHaveBeenCalledTimes(1);
         expect((await measureRecipe()).receipt.status).toBe('success');
+    });
+});
+
+describe('real caller sequential measurement opportunity', () => {
+    function queryCall(): ToolCallResult {
+        return { id: 'sequence-query', name: 'project.query', arguments: { type: 'project-summary' } };
+    }
+
+    function scriptOpportunity(revision: string, calls: ToolCallResult[] = [recipePreviewCall()]) {
+        scriptTurns(revision, [
+            [queryCall()],
+            [recipeExpansionCall()],
+            calls,
+            [proposeCall({ commands: [], compiledCallIds: ['expand-1'] })],
+        ]);
+    }
+
+    function assertUnchanged(before: { tracks: unknown; history: unknown; transport: unknown; revision: string }) {
+        expect(trackStore.value).toEqual(before.tracks);
+        expect(undoHistoryStore.value).toEqual(before.history);
+        expect(transportStore.value).toEqual(before.transport);
+        expect(captureProjectRevision()).toBe(before.revision);
+    }
+
+    function captureBefore() {
+        return {
+            tracks: structuredClone(trackStore.value),
+            history: structuredClone(undoHistoryStore.value),
+            transport: structuredClone(transportStore.value),
+            revision: captureProjectRevision(),
+        };
+    }
+
+    it('awaits the real dispatcher and admits its receipt before requesting a normal visible proposal', async () => {
+        const before = captureBefore();
+        const entered = Promise.withResolvers<void>();
+        const released = Promise.withResolvers<void>();
+        engine.renderTrackSubgraphOffline.mockImplementationOnce(async (request: SubgraphRequest) => {
+            entered.resolve();
+            await released.promise;
+            return renderSubgraph(request);
+        });
+        scriptOpportunity(before.revision);
+        const pending = parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: before.revision,
+        });
+        await entered.promise;
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[8]).toEqual({
+            mode: 'required',
+            toolNames: ['analysis.measure'],
+            parallelToolCalls: false,
+        });
+        assertUnchanged(before);
+        released.resolve();
+        const planned = await pending;
+        expect(planned.rejectionReason).toBeUndefined();
+        expect(planned.actions.some((action) => action.type === 'addDevice')).toBe(true);
+        const receipt = planned.applicationToolReceipts?.find((entry) => entry.callId === 'measure-recipe');
+        expect(receipt).toMatchObject({
+            status: 'success',
+            turn: 4,
+            toolName: 'analysis.measure',
+            revision: before.revision,
+        });
+        const final = vi.mocked(generateToolPlanningOutcome).mock.calls[4];
+        expect(final?.[8]).toMatchObject({
+            mode: 'required',
+            toolNames: expect.arrayContaining(['command.batch.propose', 'command.batch.decline']),
+        });
+        expect(final?.[8]).not.toHaveProperty('parallelToolCalls');
+        expect(final?.[9]?.history.flatMap((turn: HostedTurnHistory[number]) => turn.receipts)).toContainEqual(
+            expect.objectContaining({
+                callId: 'measure-recipe',
+                toolName: 'analysis.measure',
+                turn: 4,
+                status: 'success',
+                revision: before.revision,
+            })
+        );
+        const confirmationId = persistForApproval(planned, before.revision);
+        expect(getAgentApprovalView({ confirmationId })).toMatchObject({
+            status: 'proposed',
+            canConfirm: false,
+            metricGoals: { status: 'blocked' },
+        });
+        assertUnchanged(before);
+    });
+
+    it.each(['typed refusal', 'render error'] as const)(
+        'retains the valid visible plan after actual %s evidence without authorizing it',
+        async (kind) => {
+            const before = captureBefore();
+            if (kind === 'render error') {
+                engine.renderTrackSubgraphOffline.mockRejectedValue(new Error('Controlled render failure.'));
+            }
+            scriptOpportunity(before.revision);
+            const admission = vi.fn<MeasurementAdmitter>(() => ({ status: 'refused', category: 'maxRenderJobs' }));
+            const planned = await parsePromptToActions({
+                prompt: PROMPT,
+                context: getProjectContext(),
+                projectRevision: before.revision,
+                onMeasurementAttempt: kind === 'typed refusal' ? admission : undefined,
+            });
+            expect(planned.rejectionReason).toBeUndefined();
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(5);
+            expect(vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[8]).toEqual({
+                mode: 'required',
+                toolNames: ['analysis.measure'],
+                parallelToolCalls: false,
+            });
+            const receipt = planned.applicationToolReceipts?.find((entry) => entry.callId === 'measure-recipe');
+            expect(receipt).toMatchObject({ toolName: 'analysis.measure', turn: 4, status: 'failure' });
+            if (kind === 'typed refusal') {
+                expect(admission).toHaveBeenCalledOnce();
+                expect(receipt?.error?.code).toBe('measurement-budget-exhausted');
+                expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+            } else {
+                expect(engine.renderTrackSubgraphOffline).toHaveBeenCalled();
+            }
+            expect(planned.actions.some((action) => action.type === 'addDevice')).toBe(true);
+            const confirmationId = persistForApproval(planned, before.revision);
+            expect(getAgentApprovalView({ confirmationId })).toMatchObject({
+                status: 'proposed',
+                canConfirm: false,
+                metricGoals: { status: 'blocked' },
+            });
+            assertUnchanged(before);
+        }
+    );
+
+    it.each([
+        { label: 'no call', calls: [], measured: false },
+        { label: 'a read', calls: [{ ...queryCall(), id: 'step-query' }], measured: false },
+        {
+            label: 'a measure beside a read',
+            calls: [recipePreviewCall(), { ...queryCall(), id: 'step-query' }],
+            measured: true,
+        },
+    ])(
+        'keeps a visible unverified plan when the constrained caller turn returns $label',
+        async ({ calls, measured }) => {
+            const before = captureBefore();
+            scriptOpportunity(before.revision, calls);
+            const planned = await parsePromptToActions({
+                prompt: PROMPT,
+                context: getProjectContext(),
+                projectRevision: before.revision,
+            });
+            expect(planned.rejectionReason).toBeUndefined();
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(5);
+            expect(vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[8]).toEqual({
+                mode: 'required',
+                toolNames: ['analysis.measure'],
+                parallelToolCalls: false,
+            });
+            const stepReceipts = planned.applicationToolReceipts?.filter((entry) => entry.turn === 4) ?? [];
+            expect(stepReceipts.some((entry) => entry.callId === 'step-query')).toBe(false);
+            if (measured) {
+                expect(stepReceipts).toEqual([
+                    expect.objectContaining({
+                        callId: 'measure-recipe',
+                        toolName: 'analysis.measure',
+                        status: 'success',
+                    }),
+                ]);
+                expect(engine.renderTrackSubgraphOffline).toHaveBeenCalled();
+            } else {
+                expect(stepReceipts).toEqual([
+                    expect.objectContaining({
+                        toolName: 'analysis.measure',
+                        status: 'failure',
+                        error: expect.objectContaining({ code: 'measurement-not-requested' }),
+                    }),
+                ]);
+                expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+            }
+            expect(planned.actions.some((action) => action.type === 'addDevice')).toBe(true);
+            const confirmationId = persistForApproval(planned, before.revision);
+            expect(getAgentApprovalView({ confirmationId })).toMatchObject({
+                status: 'proposed',
+                canConfirm: false,
+                metricGoals: { status: 'blocked' },
+            });
+            assertUnchanged(before);
+        }
+    );
+
+    it('keeps a proposal sent on the measurement step as a visible unverified plan', async () => {
+        const before = captureBefore();
+        scriptTurns(before.revision, [
+            [queryCall()],
+            [recipeExpansionCall()],
+            [proposeCall({ commands: [], compiledCallIds: ['expand-1'] })],
+            [],
+        ]);
+        const planned = await parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: before.revision,
+        });
+        expect(planned.rejectionReason).toBeUndefined();
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[8]).toEqual({
+            mode: 'required',
+            toolNames: ['analysis.measure'],
+            parallelToolCalls: false,
+        });
+        expect(planned.applicationToolReceipts?.filter((entry) => entry.turn === 4)).toEqual([
+            expect.objectContaining({
+                toolName: 'analysis.measure',
+                status: 'failure',
+                error: expect.objectContaining({ code: 'measurement-not-requested' }),
+            }),
+        ]);
+        expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        expect(planned.actions.some((action) => action.type === 'addDevice')).toBe(true);
+        const confirmationId = persistForApproval(planned, before.revision);
+        expect(getAgentApprovalView({ confirmationId })).toMatchObject({
+            status: 'proposed',
+            canConfirm: false,
+            metricGoals: { status: 'blocked' },
+        });
+        assertUnchanged(before);
+    });
+
+    it('shows a clarify sent on the penultimate measurement step with no actions and nothing written', async () => {
+        const before = captureBefore();
+        const questions = ['Which drum element should get more punch?'];
+        scriptTurns(before.revision, [
+            [queryCall()],
+            [recipeExpansionCall()],
+            [
+                {
+                    id: 'step-clarify',
+                    name: 'command.batch.decline',
+                    arguments: { kind: 'clarify', reason: 'The drums target is ambiguous.', questions },
+                },
+            ],
+            [proposeCall({ commands: [], compiledCallIds: ['expand-1'] })],
+        ]);
+        const planned = await parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: before.revision,
+        });
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[8]).toEqual({
+            mode: 'required',
+            toolNames: ['analysis.measure'],
+            parallelToolCalls: false,
+        });
+        expect(planned.planningOutcome).toEqual({
+            kind: 'clarify',
+            reason: 'The drums target is ambiguous.',
+            questions,
+        });
+        expect(planned.actions).toEqual([]);
+        expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        assertUnchanged(before);
+    });
+
+    it('keeps a visible unverified plan when the application refuses a clarify sent on the measurement step', async () => {
+        // The perceptual-goal admission refuses a clarify for this delegated goal.
+        const prompt = 'make the drums punchier';
+        const before = captureBefore();
+        scriptTurns(
+            before.revision,
+            [
+                [queryCall()],
+                [recipeExpansionCall()],
+                [
+                    {
+                        id: 'step-clarify',
+                        name: 'command.batch.decline',
+                        arguments: {
+                            kind: 'clarify',
+                            reason: 'Punch is subjective.',
+                            questions: ['What do you mean by punchier?'],
+                        },
+                    },
+                ],
+                [proposeCall({ commands: [], compiledCallIds: ['expand-1'] })],
+            ],
+            'unsupported',
+            prompt
+        );
+        const planned = await parsePromptToActions({
+            prompt,
+            context: getProjectContext(),
+            projectRevision: before.revision,
+        });
+        expect(planned.rejectionReason).toBeUndefined();
+        expect(planned.planningOutcome?.kind).not.toBe('clarify');
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(5);
+        expect(planned.applicationToolReceipts?.filter((entry) => entry.turn === 4)).toEqual([
+            expect.objectContaining({
+                toolName: 'analysis.measure',
+                status: 'failure',
+                error: expect.objectContaining({ code: 'measurement-not-requested' }),
+            }),
+        ]);
+        expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        expect(planned.actions.some((action) => action.type === 'addDevice')).toBe(true);
+        const confirmationId = persistForApproval(planned, before.revision);
+        expect(getAgentApprovalView({ confirmationId })).toMatchObject({
+            status: 'proposed',
+            canConfirm: false,
+            metricGoals: { status: 'blocked' },
+        });
+        assertUnchanged(before);
+    });
+
+    it.each(['matched', 'contradicted', 'incomparable'] as const)(
+        'keeps sequencing separate from actual %s frozen metric proof',
+        async (kind) => {
+            markerStore.set({
+                markers: [],
+                sections: [
+                    { id: 'private-sequence-section', name: 'Passage', startBeat: 0, endBeat: 8, color: '#ffffff' },
+                ],
+            });
+            const state = trackStore.value;
+            if (state === null) {
+                throw new TypeError('Expected the actual configured tracks.');
+            }
+            trackStore.set({
+                ...state,
+                tracks: state.tracks.map((track) => (track.id === 'bass' ? { ...track, gain: 0.4 } : track)),
+            });
+            flushAutomergeStorageWrites();
+            const before = captureBefore();
+            engine.renderTrackSubgraphOffline.mockImplementation(async (request: SubgraphRequest) => {
+                if (kind === 'incomparable') {
+                    return sineBuffer(0);
+                }
+                const target = request.renderTracks.find((track) => track.id === request.targetTrackId);
+                if (target === undefined) {
+                    throw new TypeError('Expected the actual rendered current subject.');
+                }
+                const levelDb = target.devices.reduce(
+                    (sum, device) => sum + (device.parameterValues['gain-level'] ?? 0),
+                    0
+                );
+                return sineBuffer(0.5 * target.gain * 10 ** (levelDb / 20));
+            });
+            const proposal = proposalOf(lowerGain(DRUMS_GAIN_ID, kind === 'matched' ? -6 : -12));
+            const prompt = 'Make Drums match Bass loudness over Passage';
+            scriptTurns(
+                before.revision,
+                [
+                    [queryCall()],
+                    [recipeExpansionCall()],
+                    [
+                        {
+                            ...measureCallFor('sequence-preview', proposal),
+                            arguments: { ...previewArgs(proposal), scope: { kind: 'tracks', ids: ['drums', 'bass'] } },
+                        },
+                    ],
+                    [proposeCall({ commands: [], compiledCallIds: ['sequence-preview'] })],
+                ],
+                'match',
+                prompt
+            );
+            const planned = await parsePromptToActions({
+                prompt,
+                context: getProjectContext(),
+                projectRevision: before.revision,
+                streamIdentity: { runId: RUN_ID, requestId: 'sequence-request', cancellationGeneration: 0 },
+            });
+            expect(planned.rejectionReason).toBeUndefined();
+            expect(planned.actions).toHaveLength(1);
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(5);
+            expect(vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[8]).toEqual({
+                mode: 'required',
+                toolNames: ['analysis.measure'],
+                parallelToolCalls: false,
+            });
+            expect(
+                planned.applicationToolReceipts?.find((receipt) => receipt.callId === 'sequence-preview')
+            ).toMatchObject({ status: 'success', turn: 4 });
+            const confirmationId = persistForApproval(planned, before.revision, prompt);
+            const view = getAgentApprovalView({ confirmationId });
+            expect(view?.status).toBe('proposed');
+            expect(view?.canConfirm).toBe(kind === 'matched');
+            expect(view?.metricGoals.status).toBe(kind === 'matched' ? 'verified' : 'blocked');
+            if (kind === 'contradicted') {
+                expect(view?.metricGoals.failure).toBe('out-of-tolerance');
+            }
+            if (kind === 'incomparable') {
+                expect(view?.metricGoals.failure).toBe('incomparable');
+            }
+            assertUnchanged(before);
+        }
+    );
+
+    it('keeps a valid blocked plan when the genuine raw preview receipt exceeds the unchanged per-call bound', async () => {
+        const state = trackStore.value;
+        if (state === null) {
+            throw new TypeError('Expected configured source tracks.');
+        }
+        const extraIds = Array.from({ length: 2 }, (_, index) => `receipt-track-${String(index)}`);
+        // Bounded IDs and distinct controls overflow the genuine receipt without violating scope or composition limits.
+        const devices = Array.from({ length: 16 }, (_, index) => ({
+            ...gainDevice(`gain-${String(index)}-${'a'.repeat(200)}`),
+            name: `Receipt Gain ${String(index)}`,
+        }));
+        trackStore.set({
+            ...state,
+            tracks: [
+                ...state.tracks.map((track) =>
+                    track.id === 'drums' ? { ...track, devices: [...track.devices, ...devices] } : track
+                ),
+                ...extraIds.map((id) => createTrack({ id, name: id, kind: 'audio' })),
+            ],
+        });
+        flushAutomergeStorageWrites();
+        // Both measurements make eight full-metric renders. Half a second each still clears the
+        // integrated and momentary loudness gates and keeps the receipt over the per-call bound
+        // while fitting the default deadline on a loaded CI runner.
+        engine.renderTrackSubgraphOffline.mockImplementation((request: SubgraphRequest) =>
+            renderSubgraph(request, 0.5)
+        );
+        const before = captureBefore();
+        const proposal = {
+            schemaVersion: 1,
+            items: devices.map((device, index) => ({
+                id: `receipt-step-${String(index)}`,
+                name: 'setDeviceParameter',
+                arguments: { paramId: 'gain-level', value: -1 },
+                selector: {
+                    targetArgument: 'deviceId',
+                    entity: 'device',
+                    where: { name: device.name },
+                    quantity: { unit: 'targets', exactly: 1 },
+                },
+            })),
+        };
+        const argumentsValue = {
+            subject: 'preview',
+            proposal,
+            scope: { kind: 'tracks', ids: ['drums', 'bass', ...extraIds] },
+            range: RANGE,
+        };
+        const raw = await measure(argumentsValue, before.revision);
+        expect(raw.receipt).toMatchObject({ status: 'success', error: null });
+        expect(new TextEncoder().encode(JSON.stringify(raw.receipt)).byteLength).toBeGreaterThan(
+            APPLICATION_OWNED_TOOL_LOOP_LIMITS.maxReceiptBytesPerCall
+        );
+        engine.renderTrackSubgraphOffline.mockClear();
+        scriptTurns(before.revision, [
+            [queryCall()],
+            [recipeExpansionCall()],
+            [{ id: 'oversized-preview', name: 'analysis.measure', arguments: argumentsValue }],
+            [proposeCall({ commands: [], compiledCallIds: ['expand-1'] })],
+        ]);
+        const planned = await parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: before.revision,
+        });
+        expect(planned.rejectionReason).toBeUndefined();
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(5);
+        expect(
+            planned.applicationToolReceipts?.find((receipt) => receipt.callId === 'oversized-preview')
+        ).toMatchObject({ status: 'failure', data: null, error: { code: 'tool-receipt-too-large' } });
+        expect(planned.measuredPreview).toBeUndefined();
+        expect(engine.renderTrackSubgraphOffline).toHaveBeenCalledTimes(8);
+        const confirmationId = persistForApproval(planned, before.revision);
+        expect(getAgentApprovalView({ confirmationId })).toMatchObject({
+            status: 'proposed',
+            canConfirm: false,
+            metricGoals: { status: 'blocked' },
+        });
+        assertUnchanged(before);
+    });
+
+    it('cancels a held real measurement before receipt admission without a later proposal or write', async () => {
+        const before = captureBefore();
+        const controller = new AbortController();
+        const entered = Promise.withResolvers<void>();
+        const released = Promise.withResolvers<void>();
+        engine.renderTrackSubgraphOffline.mockImplementationOnce(async (request: SubgraphRequest) => {
+            entered.resolve();
+            await released.promise;
+            return renderSubgraph(request);
+        });
+        scriptOpportunity(before.revision);
+        const pending = parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: before.revision,
+            signal: controller.signal,
+        });
+        await entered.promise;
+        controller.abort();
+        released.resolve();
+        const planned = await pending;
+        expect(planned.actions).toEqual([]);
+        expect(planned.requiresConfirmation).toBe(false);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
+        expect(planned.applicationToolReceipts?.some((receipt) => receipt.callId === 'measure-recipe')).toBe(false);
+        assertUnchanged(before);
+    });
+
+    it('keeps an admitted literal workflow selector and proposal together on the final real caller turn', async () => {
+        const before = captureBefore();
+        const prompt = 'Import the prepared stem selection and build its starting mix';
+        const context = getProjectContext();
+        const scope: NonNullable<Parameters<typeof parsePromptToActions>[0]['stemImportScope']> = {
+            capability: {
+                schemaVersion: 1,
+                baseRevision: before.revision,
+                actionType: 'importStemSet',
+                selectionId: 'sequence-stems',
+                projectTempo: 120,
+                stems: [
+                    { stemId: 'stem-kick', sourceName: 'Kick.wav', durationSeconds: 2, detectedTempo: 120 },
+                    { stemId: 'stem-bass', sourceName: 'Bass.wav', durationSeconds: 2, detectedTempo: 120 },
+                ],
+                allowedRoles: ['kick', 'bass'],
+                constraints: {
+                    requireCompleteSelection: true,
+                    preserveExistingProject: true,
+                    requireFreshConfirmation: true,
+                    providerCannotAssignProjectIds: true,
+                },
+            },
+            actionSeed: {
+                selectionId: 'sequence-stems',
+                groupName: 'Imported Stems',
+                projectTempo: 120,
+                folderId: 'sequence-imported-folder',
+                stems: [
+                    {
+                        stemId: 'stem-kick',
+                        sourceName: 'Kick.wav',
+                        role: 'other',
+                        sourceTempo: 120,
+                        durationSeconds: 2,
+                        sourceBytes: 1024,
+                        decodedBytes: 4096,
+                        audioBufferId: 'sequence-kick-buffer',
+                        trackId: 'sequence-kick-track',
+                        trackName: 'Kick',
+                        trackGain: 1,
+                        trackPan: 0,
+                        clipId: 'sequence-kick-clip',
+                    },
+                    {
+                        stemId: 'stem-bass',
+                        sourceName: 'Bass.wav',
+                        role: 'other',
+                        sourceTempo: 120,
+                        durationSeconds: 2,
+                        sourceBytes: 1024,
+                        decodedBytes: 4096,
+                        audioBufferId: 'sequence-bass-buffer',
+                        trackId: 'sequence-bass-track',
+                        trackName: 'Bass',
+                        trackGain: 1,
+                        trackPan: 0,
+                        clipId: 'sequence-bass-clip',
+                    },
+                ],
+            },
+        };
+        vi.mocked(generateToolPlanningOutcome).mockImplementationOnce(async (_system, message, schemas) => {
+            const catalog = readCreativeInterpretationCatalog(message, schemas);
+            expect(catalog.modes).toContain('literal');
+            return {
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'literal-intake',
+                        name: 'selectCreativeInterpretation',
+                        arguments: {
+                            catalogId: catalog.catalogId,
+                            modeId: 'literal',
+                            targetCandidateIds: [],
+                            editDimensionCandidateIds: [],
+                            constraintCandidateIds: [],
+                            creationSlotIds: [],
+                            uncertainty: 'none',
+                            answer: null,
+                            metricIntent: { kind: 'literal', uncertainty: 'none', objectives: [] },
+                        },
+                    },
+                ],
+            };
+        });
+        for (const calls of [
+            [
+                {
+                    id: 'import-catalog',
+                    name: 'agent.catalog.discover',
+                    arguments: { category: 'command', names: ['importStemSet'] },
+                },
+            ],
+            [{ ...queryCall(), id: 'import-query-3' }],
+            [{ ...queryCall(), id: 'import-query-4' }],
+            [
+                {
+                    id: 'workflow',
+                    name: 'selectWorkflowCapability',
+                    arguments: { capabilityId: 'stem-import-starting-mix' },
+                },
+                proposeCall({
+                    commands: [
+                        {
+                            name: 'importStemSet',
+                            arguments: {
+                                selectionId: 'sequence-stems',
+                                groupName: 'Imported Stems',
+                                stems: [
+                                    { stemId: 'stem-kick', role: 'kick' },
+                                    { stemId: 'stem-bass', role: 'bass' },
+                                ],
+                            },
+                        },
+                    ],
+                }),
+            ],
+        ]) {
+            vi.mocked(generateToolPlanningOutcome).mockResolvedValueOnce({ status: 'complete', toolCalls: calls });
+        }
+        const planned = await parsePromptToActions({
+            prompt,
+            context,
+            projectRevision: before.revision,
+            stemImportScope: scope,
+        });
+        expect(planned.rejectionReason).toBeUndefined();
+        expect(planned.actions).toMatchObject([{ type: 'importStemSet', payload: { selectionId: 'sequence-stems' } }]);
+        expect(planned.workflowCapabilityId).toBe('stem-import-starting-mix');
+        expect(planned.requiresConfirmation).toBe(true);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(5);
+        const final = vi.mocked(generateToolPlanningOutcome).mock.calls[4]?.[8];
+        expect(final).toMatchObject({
+            mode: 'required',
+            toolNames: expect.arrayContaining(['selectWorkflowCapability', 'command.batch.propose']),
+        });
+        expect(final).not.toHaveProperty('parallelToolCalls');
+        expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        assertUnchanged(before);
+    });
+
+    it('keeps a valid plan visible when the actual caller has no revision-bound measurement executor', async () => {
+        const before = captureBefore();
+        scriptTurns('', [
+            [
+                {
+                    id: 'ordinary-catalog',
+                    name: 'agent.catalog.discover',
+                    arguments: { category: 'command', names: ['setDeviceParameter'] },
+                },
+            ],
+            [{ ...queryCall(), id: 'unavailable-query-3' }],
+            [{ ...queryCall(), id: 'unavailable-query-4' }],
+            [
+                proposeCall({
+                    commands: [
+                        {
+                            name: 'setDeviceParameter',
+                            arguments: { deviceId: DRUMS_GAIN_ID, paramId: 'gain-level', value: -6 },
+                        },
+                    ],
+                }),
+            ],
+        ]);
+        const planned = await parsePromptToActions({ prompt: PROMPT, context: getProjectContext() });
+        expect(planned.rejectionReason).toBeUndefined();
+        expect(planned.actions).toMatchObject([
+            { type: 'setDeviceParameter', payload: { deviceId: DRUMS_GAIN_ID, paramId: 'gain-level', value: -6 } },
+        ]);
+        expect(planned.applicationToolReceipts?.some((receipt) => receipt.toolName === 'analysis.measure')).toBe(false);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(5);
+        expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        expect(planned.measuredPreview).toBeUndefined();
+        const confirmationId = persistForApproval(planned, before.revision);
+        expect(getAgentApprovalView({ confirmationId })).toMatchObject({
+            status: 'proposed',
+            canConfirm: false,
+            metricGoals: { status: 'blocked' },
+        });
+        assertUnchanged(before);
+    });
+
+    it('refuses a provider-named measurement before dispatch when the actual caller has no executor', async () => {
+        const before = captureBefore();
+        scriptTurns('', [
+            [{ id: 'unavailable-measure', name: 'analysis.measure', arguments: { scope: DRUMS_SCOPE, range: RANGE } }],
+        ]);
+        const planned = await parsePromptToActions({ prompt: PROMPT, context: getProjectContext() });
+        expect(planned.rejectionReason).toBe(
+            'Provider planning rejected: Provider requested an unavailable application tool.'
+        );
+        expect(planned.actions).toEqual([]);
+        expect(planned.requiresConfirmation).toBe(false);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(2);
+        expect(planned.applicationToolReceipts?.some((receipt) => receipt.toolName === 'analysis.measure')).toBe(false);
+        expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        assertUnchanged(before);
+    });
+
+    it('forces a receipt without an earlier retained candidate and adopts a preview first prepared on the penultimate turn', async () => {
+        const before = captureBefore();
+        const proposal = proposalOf(lowerGain(DRUMS_GAIN_ID, -6));
+        scriptTurns(before.revision, [
+            [queryCall()],
+            [
+                {
+                    id: 'sequence-discovery',
+                    name: 'recipe.discover',
+                    arguments: { descriptors: ['punchy'], targetId: 'drums' },
+                },
+            ],
+            [measureCallFor('late-preview', proposal)],
+            [proposeCall({ commands: [], compiledCallIds: ['late-preview'] })],
+        ]);
+        const planned = await parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: before.revision,
+        });
+        expect(planned.rejectionReason).toBeUndefined();
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(5);
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[8]).toEqual({
+            mode: 'required',
+            toolNames: ['analysis.measure'],
+            parallelToolCalls: false,
+        });
+        expect(planned.actions).toMatchObject([
+            { type: 'setDeviceParameter', payload: { deviceId: DRUMS_GAIN_ID, value: -6 } },
+        ]);
+        expect(engine.renderTrackSubgraphOffline).toHaveBeenCalled();
+        expect(planned.applicationToolReceipts).toContainEqual(
+            expect.objectContaining({
+                callId: 'late-preview',
+                toolName: 'analysis.measure',
+                status: 'success',
+                turn: 4,
+            })
+        );
+        const confirmationId = persistForApproval(planned, before.revision);
+        expect(getAgentApprovalView({ confirmationId })).toMatchObject({
+            status: 'proposed',
+            canConfirm: false,
+            metricGoals: { status: 'blocked' },
+        });
+        assertUnchanged(before);
+    });
+
+    it('holds an early valid proposal through the real render and releases it after the admitted receipt', async () => {
+        const before = captureBefore();
+        const entered = Promise.withResolvers<void>();
+        const released = Promise.withResolvers<void>();
+        engine.renderTrackSubgraphOffline.mockImplementationOnce(async (request: SubgraphRequest) => {
+            entered.resolve();
+            await released.promise;
+            return renderSubgraph(request);
+        });
+        scriptTurns(before.revision, [
+            [recipeExpansionCall()],
+            [proposeCall({ commands: [], compiledCallIds: ['expand-1'] })],
+            [recipePreviewCall()],
+        ]);
+        let completed = false;
+        const pending = parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: before.revision,
+        });
+        void pending.then(() => {
+            completed = true;
+        });
+        await entered.promise;
+        expect(completed).toBe(false);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[8]).toEqual({
+            mode: 'required',
+            toolNames: ['analysis.measure'],
+            parallelToolCalls: false,
+        });
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[9]?.history).toContainEqual(
+            expect.objectContaining({
+                turn: 3,
+                calls: [expect.objectContaining({ id: 'propose-1', name: 'command.batch.propose' })],
+                receipts: [
+                    expect.objectContaining({
+                        callId: 'propose-1',
+                        toolName: 'command.batch.propose',
+                        status: 'failure',
+                        error: expect.objectContaining({ code: 'measurement-required' }),
+                    }),
+                ],
+            })
+        );
+        assertUnchanged(before);
+        released.resolve();
+        const planned = await pending;
+        expect(planned.rejectionReason).toBeUndefined();
+        expect(planned.actions.length).toBeGreaterThan(0);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
+        expect(planned.applicationToolReceipts).toContainEqual(
+            expect.objectContaining({
+                callId: 'measure-recipe',
+                toolName: 'analysis.measure',
+                status: 'success',
+                turn: 4,
+            })
+        );
+        const confirmationId = persistForApproval(planned, before.revision);
+        expect(getAgentApprovalView({ confirmationId })).toMatchObject({
+            status: 'proposed',
+            canConfirm: false,
+            metricGoals: { status: 'blocked' },
+        });
+        assertUnchanged(before);
+    });
+
+    it('holds an inline proposal without a retained compiler result until the actual failed attempt receipt', async () => {
+        const before = captureBefore();
+        scriptTurns(before.revision, [
+            [
+                {
+                    id: 'inline-catalog',
+                    name: 'agent.catalog.discover',
+                    arguments: { category: 'command', names: ['setDeviceParameter'] },
+                },
+            ],
+            [
+                proposeCall({
+                    commands: [
+                        {
+                            name: 'setDeviceParameter',
+                            arguments: { deviceId: DRUMS_GAIN_ID, paramId: 'gain-level', value: -6 },
+                        },
+                    ],
+                }),
+            ],
+            [{ id: 'inline-baseline', name: 'analysis.measure', arguments: { scope: DRUMS_SCOPE, range: RANGE } }],
+        ]);
+        const planned = await parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: before.revision,
+            onMeasurementAttempt: () => ({ status: 'refused', category: 'maxRenderJobs' }),
+        });
+        expect(planned.rejectionReason).toBeUndefined();
+        expect(planned.actions).toMatchObject([
+            { type: 'setDeviceParameter', payload: { deviceId: DRUMS_GAIN_ID, value: -6 } },
+        ]);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
+        expect(planned.applicationToolReceipts).toContainEqual(
+            expect.objectContaining({
+                callId: 'inline-baseline',
+                status: 'failure',
+                error: expect.objectContaining({ code: 'measurement-budget-exhausted' }),
+            })
+        );
+        expect(planned.measuredPreview).toBeUndefined();
+        const confirmationId = persistForApproval(planned, before.revision);
+        expect(getAgentApprovalView({ confirmationId })).toMatchObject({
+            status: 'proposed',
+            canConfirm: false,
+            metricGoals: { status: 'blocked' },
+        });
+        assertUnchanged(before);
     });
 });

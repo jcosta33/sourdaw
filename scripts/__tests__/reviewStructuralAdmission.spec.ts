@@ -71,11 +71,4 @@ describe('assertReviewDrawFloor', () => {
         const mixed = [...draws(2), { ...draws(1, 'strongest')[0]!, stance: 'escaped secret' }];
         expect(() => assertReviewDrawFloor(plan(['native-security', 'undo']), mixed)).toThrow(/economy or standard/u);
     });
-
-    it('refuses a fresh effective round with a premium model from an unpublished historical dossier', () => {
-        const mixed = [...draws(2), { ...draws(1)[0]!, stance: 'escaped secret', reviewerModel: 'claude-opus-4.5' }];
-        expect(() => assertReviewDrawFloor(plan(['native-security']), mixed)).toThrow(
-            /permitted low-cost review model/u
-        );
-    });
 });

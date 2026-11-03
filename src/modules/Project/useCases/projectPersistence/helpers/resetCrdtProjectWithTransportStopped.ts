@@ -101,6 +101,9 @@ export async function resetCrdtProjectWithTransportStopped(
         if (!owesClosedTake()) {
             return;
         }
+        if (!isTransportIdle()) {
+            return;
+        }
         if (outgoingProject === 'discard') {
             unsavedClosedTakes.acknowledgeAll();
             return;

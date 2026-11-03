@@ -156,6 +156,7 @@ const trackStripStub = {
     preFaderTap: { connect: () => {} },
 };
 
+vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRootIdentity: () => 'scheduler-fixture-root' }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRootIdentity: vi.fn<typeof import('#/modules/CrdtDocument/useCases').captureProjectRootIdentity>(
@@ -229,6 +230,9 @@ vi.mock('#/modules/Automation/useCases', () => ({
     isRecordingAutomation: vi.fn(() => false),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    prepareRecoveredRecording: vi.fn(),
+    admitRecordingCaptureClock: vi.fn(),
+    observeRecordingPassEntry: vi.fn(),
     discardRecording: vi.fn(),
     startRecording: vi.fn(() => []),
     stopRecording: vi.fn(),
@@ -248,6 +252,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     takeOwnsRecordingRoot: vi.fn(() => true),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    ensureCachedAudioBuffersDurable: vi.fn(),
+    createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
     analyzePitchForClip: vi.fn(),
     ensureBusStrip: vi.fn(),
     getEngineState: vi.fn(),
@@ -275,7 +281,14 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     relocateNoteExpression: ({ timeline }: { timeline: unknown }) => ({ timeline, expression: undefined }),
     registerScheduledSource: vi.fn(),
     scheduleFaustNote: vi.fn(),
-    audioEngine: { setTransportInfo: vi.fn() },
+    audioEngine: {
+        beginAudioPreviewIntent: () => ({
+            signal: new AbortController().signal,
+            isCurrent: () => true,
+            release: vi.fn(),
+        }),
+        setTransportInfo: vi.fn(),
+    },
     stopAllScheduled: vi.fn(),
     startAudioRecording: vi.fn(),
     stopAudioRecording: vi.fn(),
@@ -859,6 +872,7 @@ describe('stored controller moves posted for a look-ahead playback then leaves',
                 releaseBeat: 100,
                 followsChannelBend: true,
                 timeline: {
+                    noteChannel: 0,
                     startFrame: 0,
                     releaseFrame: 1_000_000_000,
                     frameAtBeat: (beat) => beat * 24_000,

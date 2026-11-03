@@ -4,6 +4,7 @@ import { getSettledProjectId } from '#/modules/Project/stores';
 import { digest } from '#/utils/canonicalDigest';
 
 import { ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME } from '../models/AgentToolCatalogNames';
+import { type AnswerOnsets } from '../models/AnswerEvidence';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type MeasurementAdmitter } from '../models/MeasurementBudget';
 import { type ToolCallResult } from '../models/ToolCallResult';
@@ -85,6 +86,7 @@ type Session = {
     sourceRevisionDigest: string;
     nonce: string;
     entries: Map<string, Entry>;
+    answerSources: Map<string, AnswerOnsets>;
     cursors: Map<string, Page>;
     pending: Set<string>;
     controller: AbortController;
@@ -213,6 +215,14 @@ function pageReceipt(
     if (new TextEncoder().encode(JSON.stringify(receipt)).byteLength > MAX_RECEIPT_BYTES) {
         return failure(call, 'tool-receipt-too-large');
     }
+    session.answerSources.set(call.callId, {
+        clipId: source.identity.clipId,
+        sourceRevisionDigest: session.sourceRevisionDigest,
+        timeAxis: 'source-buffer',
+        totalHitCount: source.hits.length,
+        coverage: { offset: page.offset, endOffset: nextOffset },
+        hits,
+    });
     if (page.cursor !== undefined) {
         session.cursors.delete(page.cursor);
     }
@@ -265,6 +275,7 @@ async function executeRead(session: Session, call: Call, dispose: () => void): P
 export function executeTransientOnsetRead(input: ReadInput): {
     execute: (call: Call) => Promise<ApplicationToolReceipt>;
     dispose: () => void;
+    readAnswerSource: (callId: string) => AnswerOnsets | undefined;
 } {
     const session: Session = {
         input,
@@ -272,6 +283,7 @@ export function executeTransientOnsetRead(input: ReadInput): {
         sourceRevisionDigest: digest(input.projectRevision),
         nonce: crypto.randomUUID(),
         entries: new Map(),
+        answerSources: new Map(),
         cursors: new Map(),
         pending: new Set(),
         controller: new AbortController(),
@@ -284,6 +296,7 @@ export function executeTransientOnsetRead(input: ReadInput): {
         session.disposed = true;
         session.controller.abort();
         session.entries.clear();
+        session.answerSources.clear();
         session.cursors.clear();
         session.pending.clear();
         input.signal?.removeEventListener('abort', dispose);
@@ -292,5 +305,9 @@ export function executeTransientOnsetRead(input: ReadInput): {
     if (input.signal?.aborted) {
         dispose();
     }
-    return { execute: (call) => executeRead(session, call, dispose), dispose };
+    return {
+        execute: (call) => executeRead(session, call, dispose),
+        dispose,
+        readAnswerSource: (callId) => session.answerSources.get(callId),
+    };
 }

@@ -18,9 +18,11 @@ import { CommandEventBus, executeUserAppAction, pushUndoEntry, redo, undo } from
 import { loopStationStore } from '#/modules/SessionLauncher/stores';
 import { stopAllSlots, triggerPad } from '#/modules/SessionLauncher/useCases';
 import { panicAllNotes, stopPlayback, seekPlayhead, setLoopRegion } from '#/modules/Transport/useCases';
-import { type EditingTool } from '#/modules/WorkspaceShell/stores';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import {
+    closeCollaborationPanel,
     cycleAutomationVisibility,
+    getToolForKeyPress,
     openExportDialog,
     openPreferencesDialog,
     setEditingTool,
@@ -31,8 +33,8 @@ import {
     toggleTrackList,
     toggleVirtualKeyboard,
     toggleWorkspaceMode,
-    TOOL_SHORTCUTS,
 } from '#/modules/WorkspaceShell/useCases';
+import { isDragGestureActive } from '#/utils/UI/activeDragGesture';
 
 import { parseLoopStationPadCallbackId, shortcutStore, type ShortcutAction } from '../../../stores/shortcutStore';
 import { getAllClipIds } from '../../selectionHelpers/getAllClipIds';
@@ -107,14 +109,6 @@ function dispatchAiChord(key: string): boolean {
             return false;
     }
 }
-
-const NUMBER_TOOL_MAP: Record<string, EditingTool> = {
-    '1': 'select',
-    '2': 'cut',
-    '3': 'draw',
-    '4': 'automation',
-    '5': 'stretch',
-};
 
 export type KeyDescriptor = {
     key: string;
@@ -195,7 +189,7 @@ function executeDuplicateTimeRange(startBeat: number, endBeat: number): void {
 }
 
 export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }) => {
-    function executeShortcutAction(action: ShortcutAction): boolean {
+    function executeShortcutAction(action: ShortcutAction, key: string): boolean {
         if (action.type === 'appAction') {
             const appAction = action.action;
 
@@ -221,8 +215,10 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                 return true;
             }
             if (appAction.type === 'duplicateClipToNextBar' && appAction.payload.clipId === 'selected') {
+                // Single-clip command: the clip context menu hides it for a multi-clip selection, so the key does too.
+                const selectedClipIds = clipSelectionStore.value?.selectedClipIds ?? [];
                 const selectedClipId = clipSelectionStore.value?.selectedClipId;
-                if (selectedClipId) {
+                if (selectedClipId && selectedClipIds.length <= 1) {
                     void executeUserAppAction({ type: 'duplicateClipToNextBar', payload: { clipId: selectedClipId } });
                 }
                 return true;
@@ -238,6 +234,20 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                     // the gesture discards its preview (no history entry) and
                     // the key does not fall through to transport stop.
                     if (cancelActiveTimelineGesture()) {
+                        return true;
+                    }
+                    // A marked drag owns Escape completely: its own window listener
+                    // cancels it, so no later step may also act on the same key.
+                    // Returning true only prevents the default; that listener still runs.
+                    if (key === 'Escape' && isDragGestureActive()) {
+                        return true;
+                    }
+                    // The Collaborate panel is a non-modal floating surface, so Escape
+                    // dismisses it here, below a gesture cancel and above the selection
+                    // and transport steps, wherever focus is. Enter shares this binding
+                    // but is not a dismissal.
+                    if (key === 'Escape' && workspaceStore.value?.collaborationPanelOpen) {
+                        closeCollaborationPanel();
                         return true;
                     }
                     // R-E1.2: Escape dismisses selected ghost clip first
@@ -540,7 +550,8 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
         return true;
     }
 
-    function handleSimpleKeys(key: string): boolean {
+    function handleSimpleKeys(desc: KeyDescriptor): boolean {
+        const { key } = desc;
         // NOTE: no shortcut-store definitions loop here. The outer
         // `handleKeydown` already iterates every definition with `matches()`
         // and returns on the first match (with identical input-gating and
@@ -566,12 +577,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                 goToPreviousMarker();
                 return false;
             default: {
-                const numberTool = NUMBER_TOOL_MAP[key];
-                if (numberTool) {
-                    setEditingTool(numberTool);
-                    return false;
-                }
-                const tool = TOOL_SHORTCUTS[key];
+                const tool = getToolForKeyPress(desc);
                 if (tool) {
                     setEditingTool(tool);
                 }
@@ -627,7 +633,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                 if (repeat && !REPEATABLE_ON_HOLD_SHORTCUT_IDS.has(def.id)) {
                     return true;
                 }
-                return executeShortcutAction(def.action);
+                return executeShortcutAction(def.action, key);
             }
         }
 
@@ -639,9 +645,8 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
         }
 
         // R-A3: Track hold duration for tool shortcuts (press-and-hold for temporary swap)
-        const normalizedKey = key.toLowerCase();
-        const tool = NUMBER_TOOL_MAP[key] || TOOL_SHORTCUTS[normalizedKey];
-        if (tool && !mod && !shift && !alt && !repeat) {
+        const tool = getToolForKeyPress({ ...desc, key: key.toLowerCase() });
+        if (tool && !shift && !repeat) {
             startToolSwap({
                 key,
                 timestamp: performance.now(),
@@ -649,6 +654,6 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
             });
         }
 
-        return handleSimpleKeys(key);
+        return handleSimpleKeys(desc);
     };
 });

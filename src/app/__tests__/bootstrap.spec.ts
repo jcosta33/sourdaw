@@ -20,6 +20,8 @@ import type {
     configureRuntimeGraphTopologyValidator,
 } from '#/modules/AudioEngine/useCases';
 import type { configureDurableAssetCommitProof } from '#/modules/Collaboration/useCases';
+import type { resetActionReplayAuthority, syncActionReplayMetadata } from '#/modules/Command/useCases';
+import type { subscribeToPublishedActionHistory } from '#/modules/CrdtDocument/useCases';
 import type { setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import type { NotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
@@ -48,6 +50,7 @@ type DurableAssetOwnerRecoveryAfterProjectLoad = NonNullable<
     ProjectIdentityTransitionDependencies['resumeDurableAssetOwnerHandoffsAfterProjectLoad']
 >;
 type DurableAssetCommitProofProvider = Parameters<typeof configureDurableAssetCommitProof>[0];
+type PublishedHistoryObserver = Parameters<typeof subscribeToPublishedActionHistory>[0];
 type AssetTransferMock = {
     resumeDurableOwnerRebindsAfterProjectLoad: DurableAssetOwnerRecoveryAfterProjectLoad;
 };
@@ -116,6 +119,9 @@ const {
     eventBusMock,
     loggerMock,
     actionHistoryStoreMock,
+    subscribeToPublishedActionHistoryMock,
+    syncActionReplayMetadataMock,
+    resetActionReplayAuthorityMock,
     trackStoreMock,
     setTimeOperationDependenciesMock,
     setVcaRuntimeProjectionDependenciesMock,
@@ -156,13 +162,17 @@ const {
     setTrackPanMock,
     setMidiLearnDependenciesMock,
     registerCrdtStorageRuntimeMock,
+    captureProjectRootIdentityMock,
+    setElasticSensitivityRootIdentityCaptureMock,
     captureProjectIdentityMock,
     captureProjectRevisionMock,
     projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
     agentProjectInspectionSetProviderMock,
     setArrangementEventBusMock,
+    setRecordingMidiAdmissionPortMock,
     configureRuntimeGraphProjectRevisionValidatorMock,
     configureRuntimeGraphTopologyValidatorMock,
+    initEngineDeviceCollaboratorsMock,
     runtimeGraphTopologyMock,
     setNotificationEventBusMock,
     setProjectIdentityTransitionDependenciesMock,
@@ -176,8 +186,6 @@ const {
     executeUserAppActionBinding,
     recordNativeChainReleasesMock,
     registerReleasedStripReportSinkMock,
-    configureDurableAudioBufferOwnershipMock,
-    collectDurableOwnedAudioBufferIdsMock,
     clearAgentMeasurementArtifactsMock,
     setAgentMeasurementArtifactsClearerMock,
     clearAgentSectionRenderArtifactsMock,
@@ -187,7 +195,11 @@ const {
     setCrumbsEventBusMock,
     initCrumbsModePushMock,
     initDeviceStateReconciliationMock,
+    initTimelineScrollClampMock,
+    initAudioBufferCacheAccessMock,
     initInputMonitoringProjectAccessMock,
+    initLevainDeviceStateProjectAccessMock,
+    initLevainDeviceStatePersistenceMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -219,6 +231,9 @@ const {
         eventBusMock: { emit: vi.fn(), on: vi.fn(), off: vi.fn() },
         loggerMock: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), setWriters: vi.fn() },
         actionHistoryStoreMock: { value: { entries: [] as unknown[] }, subscribe: vi.fn() },
+        subscribeToPublishedActionHistoryMock: vi.fn<typeof subscribeToPublishedActionHistory>(() => noop),
+        syncActionReplayMetadataMock: vi.fn<typeof syncActionReplayMetadata>(),
+        resetActionReplayAuthorityMock: vi.fn<typeof resetActionReplayAuthority>(),
         trackStoreMock: { subscribe: vi.fn() },
         setTimeOperationDependenciesMock: vi.fn(),
         setVcaRuntimeProjectionDependenciesMock: vi.fn(),
@@ -268,8 +283,6 @@ const {
         toasterGrooveExecutorMock: vi.fn(),
         executeUserAppActionBinding: vi.fn(),
         setTrackPanMock: vi.fn(),
-        configureDurableAudioBufferOwnershipMock: vi.fn(),
-        collectDurableOwnedAudioBufferIdsMock: vi.fn<() => Promise<readonly string[]>>(() => Promise.resolve([])),
         // Distinguishable from the shared noop for the same reason as the
         // durable audio ownership provider above: the assertion pins this
         // exact reference, so rewiring or dropping the registration fails here.
@@ -286,9 +299,15 @@ const {
         setCrumbsEventBusMock: vi.fn(),
         initCrumbsModePushMock: vi.fn(),
         initDeviceStateReconciliationMock: vi.fn(),
+        initTimelineScrollClampMock: vi.fn(),
+        initAudioBufferCacheAccessMock: vi.fn(),
         initInputMonitoringProjectAccessMock: vi.fn(),
+        initLevainDeviceStateProjectAccessMock: vi.fn(),
+        initLevainDeviceStatePersistenceMock: vi.fn(),
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
+        captureProjectRootIdentityMock: vi.fn<() => string>(() => 'root-identity'),
+        setElasticSensitivityRootIdentityCaptureMock: vi.fn(),
         captureProjectIdentityMock: vi.fn<() => string>(() => 'identity-1'),
         captureProjectRevisionMock: vi.fn<() => string>(() => 'revision-1'),
         projectRevisionMatchesLiveIgnoringCommandCheckpointMock: vi.fn<(expectedRevision: string) => boolean>(
@@ -296,11 +315,13 @@ const {
         ),
         agentProjectInspectionSetProviderMock: vi.fn(),
         setArrangementEventBusMock: vi.fn<(eventBus: ArrangementEventBus) => void>(),
+        setRecordingMidiAdmissionPortMock: vi.fn(),
         setProjectIdentityTransitionDependenciesMock:
             vi.fn<(dependencies: ProjectIdentityTransitionDependencies) => void>(),
         configureRuntimeGraphProjectRevisionValidatorMock:
             vi.fn<(validator: RuntimeGraphProjectRevisionValidator | null) => void>(),
         configureRuntimeGraphTopologyValidatorMock: vi.fn<(validator: RuntimeGraphTopologyValidator | null) => void>(),
+        initEngineDeviceCollaboratorsMock: vi.fn<() => void>(),
         runtimeGraphTopologyMock: {
             matchesCurrentProject: vi.fn<RuntimeGraphTopologyValidator>(),
         },
@@ -359,6 +380,15 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    admitRecordingMidiNoteOn: noop,
+    admitRecordingMidiNoteOff: noop,
+    admitRecordingMidiExpression: noop,
+    findOpenRecordingMidiAdmission: noop,
+    findOpenRecordingMidiMemberAdmission: noop,
+    getRecordingMidiAdmission: noop,
+    retireRecordingMidiAdmission: noop,
+    takeOwnsRecordingRoot: noop,
+    recordingMidiSourceBeatAt: noop,
     getDeviceManifestProtocolContract: noop,
     setClipAudioAssetStager: noop,
     stageAudioBufferAsset: noop,
@@ -383,6 +413,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     setDeviceParameter: noop,
     getArrangementHandlers: sentinelHandlers('Arrangement'),
     initStalenessDetection: noop,
+    initTimelineScrollClamp: initTimelineScrollClampMock,
     setArrangementEventBus: setArrangementEventBusMock,
     setOfflineRenderDependencies: noop,
     setTimeOperationDependencies: setTimeOperationDependenciesMock,
@@ -419,8 +450,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     compileAudioGraphTopology: noop,
     configureRuntimeGraphProjectRevisionValidator: configureRuntimeGraphProjectRevisionValidatorMock,
     configureRuntimeGraphTopologyValidator: configureRuntimeGraphTopologyValidatorMock,
+    initEngineDeviceCollaborators: initEngineDeviceCollaboratorsMock,
     recordNativeChainReleases: recordNativeChainReleasesMock,
-    configureDurableAudioBufferOwnership: configureDurableAudioBufferOwnershipMock,
     isTunerTelemetryNativelyOwned: isTunerTelemetryNativelyOwnedMock,
     startMainThreadLongTaskObservation: noop,
 }));
@@ -493,7 +524,8 @@ vi.mock('#/modules/Command/useCases', () => ({
     commandTrackDefaultsPort: { setTrackColorProvider: noop },
     commandRuntimeRepairPort: commandRuntimeRepairPortMock,
     setCommandEventBus: noop,
-    syncActionReplayMetadata: noop,
+    syncActionReplayMetadata: syncActionReplayMetadataMock,
+    resetActionReplayAuthority: resetActionReplayAuthorityMock,
     captureCommandTargetFingerprints: noop,
     stampSessionUndoWitness: stampSessionUndoWitnessMock,
 }));
@@ -516,6 +548,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     DOC_PREFIX_ROOT: 'root',
     agentProjectInspectionPort: { setProvider: agentProjectInspectionSetProviderMock },
     captureProjectIdentity: captureProjectIdentityMock,
+    captureProjectRootIdentity: captureProjectRootIdentityMock,
     captureProjectRevision: captureProjectRevisionMock,
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
     createCommandPreviewWorkspace: noop,
@@ -529,12 +562,17 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     recordActionHistoryEntries: noop,
     clearActionHistory: noop,
     registerCrdtStorageRuntime: registerCrdtStorageRuntimeMock,
+    subscribeToPublishedActionHistory: subscribeToPublishedActionHistoryMock,
     sessionUndoWitnessStampPort: sessionUndoWitnessStampPortMock,
     // The Crumbs device-state reconciliation is pinned by reference in its own
     // mock below, so this stands in for the document-change listeners the
     // collaboration bridge registers at session start. A noop unsubscribe is
     // all any of them need here: no document change fires under this fixture.
     subscribeToCrdtChanges: () => noop,
+}));
+
+vi.mock('#/modules/ElasticAudio/useCases', () => ({
+    setElasticSensitivityRootIdentityCapture: setElasticSensitivityRootIdentityCaptureMock,
 }));
 
 vi.mock('#/modules/Crumbs/stores', async (importOriginal) => ({
@@ -579,7 +617,7 @@ vi.mock('#/modules/Levain/stores', () => ({ setEngineReady: noop }));
 
 vi.mock('#/modules/Levain/useCases', () => ({
     configureLevainZoneTableBuilder: configureLevainZoneTableBuilderMock,
-    initLevainDeviceStatePersistence: () => noop,
+    initLevainDeviceStatePersistence: initLevainDeviceStatePersistenceMock,
     reconcileLevainDeviceStatesFromProject: noop,
     registerLevainDevice: noop,
     unregisterLevainDevice: noop,
@@ -610,6 +648,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     shouldPlayMidiEvent: () => true,
     setWebMidiRealtimeProcessor: noop,
     setWebMidiRuntimeEventBus: noop,
+    setRecordingMidiAdmissionPort: setRecordingMidiAdmissionPortMock,
     getWebMidiInputHandlers: sentinelHandlers('WebMidiInput'),
     destroyWebMidi: noop,
 }));
@@ -623,7 +662,6 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 vi.mock('#/modules/Project/useCases', () => ({
     agentCapabilityDiscoveryPort: { setProvider: noop },
     getProjectProtocolContracts: noop,
-    collectDurableOwnedAudioBufferIds: collectDurableOwnedAudioBufferIdsMock,
     productionBriefActionBatchAdmission: { capture: () => ({ allowsCurrent: () => true }) },
     getProjectHandlers: sentinelHandlers('Project'),
     initGrooveTemplateDirtyTracking: noop,
@@ -771,8 +809,14 @@ vi.mock('../initCrumbsModePush', () => ({
 vi.mock('../initDeviceStateReconciliation', () => ({
     initDeviceStateReconciliation: initDeviceStateReconciliationMock,
 }));
+vi.mock('../initAudioBufferCacheAccess', () => ({
+    initAudioBufferCacheAccess: initAudioBufferCacheAccessMock,
+}));
 vi.mock('../initInputMonitoringProjectAccess', () => ({
     initInputMonitoringProjectAccess: initInputMonitoringProjectAccessMock,
+}));
+vi.mock('../initLevainDeviceStateProjectAccess', () => ({
+    initLevainDeviceStateProjectAccess: initLevainDeviceStateProjectAccessMock,
 }));
 
 // Side-effect import: this is what runs the composition root under test.
@@ -796,8 +840,53 @@ function getDurableAssetOwnerRecoveryAfterProjectLoad(): DurableAssetOwnerRecove
 }
 
 describe('bootstrap', () => {
+    it('wires the live root identity reader before project transition configuration', () => {
+        expect(setElasticSensitivityRootIdentityCaptureMock).toHaveBeenCalledExactlyOnceWith(
+            captureProjectRootIdentityMock
+        );
+        expect(setElasticSensitivityRootIdentityCaptureMock.mock.invocationCallOrder[0]).toBeLessThan(
+            setProjectIdentityTransitionDependenciesMock.mock.invocationCallOrder[0] ?? 0
+        );
+    });
     it('binds committed project access during bootstrap', () => {
         expect(initInputMonitoringProjectAccessMock).toHaveBeenCalledExactlyOnceWith();
+    });
+    it('routes published history and root replacement to the Command replay authority callbacks', () => {
+        expect(subscribeToPublishedActionHistoryMock).toHaveBeenCalledOnce();
+        expect(actionHistoryStoreMock.subscribe).not.toHaveBeenCalled();
+        const observer = subscribeToPublishedActionHistoryMock.mock.calls[0]?.[0];
+        if (!observer) {
+            throw new Error('bootstrap never registered the published history observer');
+        }
+        const entries: Parameters<PublishedHistoryObserver['onHistory']>[0] = [
+            {
+                id: 'bootstrap-history-entry',
+                label: 'Set snap',
+                actionKind: 'setSnapValue',
+                source: 'manual',
+                timestamp: 1,
+                reverted: false,
+            },
+        ];
+        syncActionReplayMetadataMock.mockClear();
+        resetActionReplayAuthorityMock.mockClear();
+
+        observer.onHistory(entries);
+
+        expect(syncActionReplayMetadataMock).toHaveBeenCalledExactlyOnceWith(entries);
+        expect(resetActionReplayAuthorityMock).not.toHaveBeenCalled();
+
+        observer.onRootReplaced();
+
+        expect(resetActionReplayAuthorityMock).toHaveBeenCalledExactlyOnceWith();
+        expect(syncActionReplayMetadataMock).toHaveBeenCalledExactlyOnceWith(entries);
+    });
+    it('binds committed Levain membership before device-state persistence subscribes', () => {
+        expect(initLevainDeviceStateProjectAccessMock).toHaveBeenCalledExactlyOnceWith();
+        expect(initLevainDeviceStatePersistenceMock).toHaveBeenCalledExactlyOnceWith();
+        expect(initLevainDeviceStateProjectAccessMock.mock.invocationCallOrder[0]).toBeLessThan(
+            initLevainDeviceStatePersistenceMock.mock.invocationCallOrder[0]!
+        );
     });
     // The exact order bootstrap.ts passes module handler maps to the production assembler.
     // This list IS the assertion: every module bootstrap wires into the shared
@@ -989,6 +1078,17 @@ describe('bootstrap', () => {
             captureAgentProjectInspectionState
         );
         expect(setArrangementEventBusMock).toHaveBeenCalledExactlyOnceWith(eventBusMock);
+        expect(setRecordingMidiAdmissionPortMock).toHaveBeenCalledExactlyOnceWith({
+            admitRecordingMidiNoteOn: noop,
+            admitRecordingMidiNoteOff: noop,
+            admitRecordingMidiExpression: noop,
+            findOpenRecordingMidiAdmission: noop,
+            findOpenRecordingMidiMemberAdmission: noop,
+            getRecordingMidiAdmission: noop,
+            retireRecordingMidiAdmission: noop,
+            takeOwnsRecordingRoot: noop,
+            recordingMidiSourceBeatAt: noop,
+        });
 
         expect(configureRuntimeGraphProjectRevisionValidatorMock).toHaveBeenCalledTimes(1);
         const projectRevisionValidatorCall = configureRuntimeGraphProjectRevisionValidatorMock.mock.calls.at(0);
@@ -1008,6 +1108,7 @@ describe('bootstrap', () => {
         expect(configureRuntimeGraphTopologyValidatorMock).toHaveBeenCalledExactlyOnceWith(
             runtimeGraphTopologyMock.matchesCurrentProject
         );
+        expect(initEngineDeviceCollaboratorsMock).toHaveBeenCalledExactlyOnceWith();
         expect(setNotificationEventBusMock).toHaveBeenCalledExactlyOnceWith(eventBusMock);
     });
 
@@ -1092,16 +1193,14 @@ describe('bootstrap', () => {
     });
 
     /**
-     * AudioEngine's cache collectors must ask Project's persisted snapshots for
-     * the durable owned-id set at collection time (#3777), and AudioEngine
-     * cannot import Project, so the composition root is the only place that
-     * binding can be made. Pinned by reference like the other seam wirings:
-     * dropping the registration, or handing the seam some other function,
-     * leaves the collectors sweeping saved projects' PCM as if it were orphans.
+     * The audio cache's durable-ownership and live-reference reads can only be
+     * bound by the composition root; `initAudioBufferCacheAccess.spec.ts` pins
+     * what each binding reads.
      */
-    it('wires the durable audio ownership provider to the persisted-project enumeration', () => {
-        expect(configureDurableAudioBufferOwnershipMock).toHaveBeenCalledExactlyOnceWith(
-            collectDurableOwnedAudioBufferIdsMock
+    it('binds the audio cache ownership and residency reads during bootstrap', () => {
+        expect(initAudioBufferCacheAccessMock).toHaveBeenCalledExactlyOnceWith();
+        expect(initAudioBufferCacheAccessMock.mock.invocationCallOrder[0]).toBeLessThan(
+            initInputMonitoringProjectAccessMock.mock.invocationCallOrder[0] ?? 0
         );
     });
 
@@ -1421,6 +1520,13 @@ describe('bootstrap', () => {
         // edit commits that stale store over the peer's change (#4764). Pinned
         // by reference like the Grand Boule registration above.
         expect(initDeviceStateReconciliationMock).toHaveBeenCalledExactlyOnceWith();
+    });
+
+    it('registers the timeline scroll clamp as an explicit boot step', () => {
+        // Deleting a track or collapsing a folder shrinks the timeline's
+        // content; without this registration the scroll offset stays past the
+        // last row and leaves blank canvas until the next wheel event.
+        expect(initTimelineScrollClampMock).toHaveBeenCalledExactlyOnceWith();
     });
 
     it('wires the Crumbs mode push to the shared event bus', () => {

@@ -111,7 +111,7 @@ export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProp
     };
 
     return (
-        <Stack gap={4} className="p-3">
+        <Stack gap={4} className="@container p-3">
             <InspectorDetailHeader
                 title={<h3 className="truncate text-xs font-medium text-foreground">{device.name}</h3>}
                 onBack={onBack}

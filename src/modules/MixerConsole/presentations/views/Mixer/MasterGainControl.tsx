@@ -140,6 +140,7 @@ const MasterGainMenu = ({
             x={position.x}
             y={position.y}
             onClose={onClose}
+            onClick={(event) => event.stopPropagation()}
             onKeyDown={handleNavigationKeyDown}
         >
             <DawMenuButton role="menuitem" onClick={onReset}>

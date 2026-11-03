@@ -7,10 +7,26 @@ import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { cn } from '#/utils/Styles/cn';
 
-import { openAnswerInChat } from '../../useCases/aiPanelActions/openAnswerInChat';
+import { openAnswerInChat, type OpenAnswerInChatResult } from '../../useCases/aiPanelActions/openAnswerInChat';
 import { undoLastAction } from '../../useCases/aiPanelActions/undoLastAction';
 import { type AiChangeNotification } from '../../useCases/notifyAiChange';
 import { subscribeAiChangeNotification } from '../../useCases/subscribeAiChangeNotification';
+
+const STALE_ANSWER_NOTICES: Record<Exclude<OpenAnswerInChatResult, 'opened'>, string> = {
+    'project-switched': 'This answer was about another project, so it was not added to this chat. Ask again here.',
+    'project-changed':
+        'The project changed after this answer, so it was not added to the chat. Ask again for an answer about the project as it is now.',
+};
+
+/** Repeated detail lines keep distinct keys by counting the copies before each. */
+function keyDetailRows(changeId: string, details: readonly string[]): { detail: string; key: string }[] {
+    return details.map((detail, detail_position) => {
+        const occurrence = details
+            .slice(0, detail_position)
+            .filter((previous_detail) => previous_detail === detail).length;
+        return { detail, key: `${changeId}-${detail}-${occurrence}` };
+    });
+}
 
 export const AiChangeToast = (): ReactElement | null => {
     const [changes, setChanges] = useState<AiChangeNotification[]>([]);
@@ -43,15 +59,13 @@ export const AiChangeToast = (): ReactElement | null => {
     // A long answer is clamped here; "Open in chat" shows it whole.
     const summaryClassName = cn('text-xs font-medium text-foreground', isAnswer && 'line-clamp-4 whitespace-pre-line');
     const dismissLatest = () => setChanges((prev) => prev.slice(1));
-    const detailRows = latest.details.map((detail, detail_position) => {
-        const occurrence = latest.details
-            .slice(0, detail_position)
-            .filter((previous_detail) => previous_detail === detail).length;
-        return {
-            detail,
-            key: `${latest.id}-${detail}-${occurrence}`,
-        };
-    });
+    // A stale answer gives way to a notice saying why it was not opened; that notice times out as any notice does.
+    const replaceLatestWithNotice = (summary: string) =>
+        setChanges((prev) => [
+            { id: `${latest.id}-stale`, summary, details: [], timestamp: Date.now(), kind: 'notice' },
+            ...prev.slice(1),
+        ]);
+    const detailRows = keyDetailRows(latest.id, latest.details);
 
     return (
         <DawUtilityPanel
@@ -98,8 +112,12 @@ export const AiChangeToast = (): ReactElement | null => {
                                 variant="ghost"
                                 size="xs"
                                 onClick={() => {
-                                    openAnswerInChat(latest.answer);
-                                    dismissLatest();
+                                    const opened = openAnswerInChat(latest.answer);
+                                    if (opened === 'opened') {
+                                        dismissLatest();
+                                        return;
+                                    }
+                                    replaceLatestWithNotice(STALE_ANSWER_NOTICES[opened]);
                                 }}
                             >
                                 <MessageSquare className="size-3 mr-1" /> Open in chat

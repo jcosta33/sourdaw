@@ -71,8 +71,12 @@ const TRACK_ELIGIBILITY: Readonly<Record<TrackEligibilityKind, Readonly<TrackEli
         createsOfflineStrip: true,
         exportsStem: true,
     },
+    // Master has no timeline row and cannot hold clips, so a take armed onto it
+    // would land in a clip nothing can show.
     master: {
         ...ELIGIBLE_FOR_ALL_AUDIO_BEARING_WRITES,
+        acceptsArm: false,
+        acceptsRecording: false,
         removesMidiFxProjectResidue: false,
         rendersTrackContent: false,
         createsLiveStrip: true,

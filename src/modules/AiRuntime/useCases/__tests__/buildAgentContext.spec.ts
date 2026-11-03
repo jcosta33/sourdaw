@@ -711,9 +711,9 @@ describe('buildAgentContext', () => {
         it.each([
             [
                 'a five-track first turn with capability data',
-                '1b1d3c0d774a3b3e9b12e017fafaa2246305e7be2ec6e00fc8310e6abf630947',
+                'a8fbdef30830b86483ab184c2f73bff7b0fa262092809af3a901d4aabaa5f507',
             ],
-            ['a five-track receipt turn', 'dd6dbe19fbe966909b3232d6d2196d5063ac7b8ad8cdaf59f5096a1b2f2b9585'],
+            ['a five-track receipt turn', 'd3b20f0c1bafedc46c38dc91659d90cc4d4f571b33f9a954b1f9c34726fa0506'],
         ] as const)('keeps the hosted message for %s byte-identical', (label, expectedDigest) => {
             const built = buildAgentContext(hostedInputs[label]);
 
@@ -862,13 +862,12 @@ describe('buildAgentContext', () => {
                     'loopStart',
                     'metronomeEnabled',
                     'metronomeVolume',
+                    'metronomeVolumeDb',
                     'productionBrief',
                     'punchInBeat',
                     'punchInEnabled',
                     'punchOutBeat',
                     'sidechainRoutes',
-                    'tempo',
-                    'timeSignature',
                     'trackDefaults',
                     'tracks',
                     'vcaGroups',

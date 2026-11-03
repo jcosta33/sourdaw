@@ -34,6 +34,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     deriveEffectiveAudibility: vi.fn(),
     adjustmentLayerStore: { value: null, subscribe: () => () => undefined },
     vcaGroupStore: { value: null, subscribe: () => () => undefined },
+    soloModeStore: { value: null, subscribe: () => () => undefined },
     deriveVcaMultiplier: vi.fn(),
     getVcaGroupsState: vi.fn(),
     gainEnvelopeStore: { value: null, subscribe: () => () => undefined },

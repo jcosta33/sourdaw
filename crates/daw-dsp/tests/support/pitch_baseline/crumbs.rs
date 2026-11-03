@@ -1,0 +1,158 @@
+// Frozen test-only source oracle from cdf56ae23082998f2f3be0264309ca2c6025dee2.
+// Captured before the shared-pitch extraction; never used by production.
+#![allow(dead_code)]
+
+/// Pitch detection wrapper for the crumbs.
+///
+/// Uses Knead's YIN algorithm with multi-window analysis to detect the
+/// fundamental frequency of a sample. Returns the detected root MIDI note
+/// and frequency. Analyzes multiple windows across the sample and takes
+/// the median result for robustness.
+use super::yin::{yin_frame, YinConfig, YinResult};
+
+// ── Configuration ──────────────────────────────────────────────────────
+
+const ANALYSIS_FRAME_SIZE: usize = 2048;
+const MAX_ANALYSIS_WINDOWS: usize = 16;
+const YIN_THRESHOLD: f32 = 0.15;
+const MIN_PITCH_HZ: f32 = 30.0;
+const MAX_PITCH_HZ: f32 = 4000.0;
+
+// ── 12-TET anchor ──────────────────────────────────────────────────────
+//
+// Restated per the TS↔Rust lockstep rule (no crate edge exists to the
+// owners): `daw_core::tuning` owns the Rust pair, `src/utils/pitch.ts` the
+// TypeScript one, `scoring/src/tuning.rs` carries the tuner's own copy, and
+// `fermenter/voice.rs`, `levain/fallback.rs`, and `grand_boule/parameters.rs`
+// carry the rest of this crate's copies. All seven must agree on the A4
+// anchor.
+
+/// Concert-A reference frequency the 12-TET grid is anchored to.
+const STANDARD_A4_HZ: f32 = 440.0;
+/// MIDI note number of concert A on that grid.
+const A4_MIDI_NOTE: f32 = 69.0;
+/// Semitones per octave in twelve-tone equal temperament.
+const SEMITONES_PER_OCTAVE: f32 = 12.0;
+
+// ── Result ─────────────────────────────────────────────────────────────
+
+/// Result of pitch detection on a sample.
+#[derive(Debug, Clone, Copy)]
+pub struct PitchResult {
+    /// Detected fundamental frequency in Hz, if found.
+    pub frequency_hz: Option<f32>,
+    /// Corresponding MIDI note number (A4 = 69 = 440Hz).
+    pub midi_note: Option<u8>,
+    /// Confidence (0.0–1.0), derived from YIN periodicity.
+    pub confidence: f32,
+}
+
+// ── Detection ──────────────────────────────────────────────────────────
+
+/// Detect the pitch of an audio sample.
+///
+/// Analyzes up to `MAX_ANALYSIS_WINDOWS` evenly-spaced windows across
+/// the sample, runs YIN on each, and returns the median detected pitch.
+/// Skips the first 10% and last 10% of the sample to avoid transients
+/// and release tails.
+pub fn detect_pitch(samples: &[f32], sample_rate: f32) -> PitchResult {
+    if samples.len() < ANALYSIS_FRAME_SIZE {
+        return PitchResult {
+            frequency_hz: None,
+            midi_note: None,
+            confidence: 0.0,
+        };
+    }
+
+    let yin_config = YinConfig {
+        sample_rate,
+        frame_size: ANALYSIS_FRAME_SIZE,
+        f0_min: MIN_PITCH_HZ,
+        f0_max: MAX_PITCH_HZ,
+        cmnd_threshold: YIN_THRESHOLD,
+    };
+
+    // Pre-allocate work buffers for YIN.
+    let max_tau = (sample_rate / MIN_PITCH_HZ).ceil() as usize + 1;
+    let buf_size = max_tau.max(ANALYSIS_FRAME_SIZE);
+    let mut work_d = vec![0.0f32; buf_size];
+    let mut work_cmnd = vec![0.0f32; buf_size];
+
+    // Skip first/last 10% of the sample (transient/tail avoidance).
+    let skip = samples.len() / 10;
+    let analysis_start = skip;
+    let analysis_end = samples.len().saturating_sub(skip);
+    let analysis_len = analysis_end - analysis_start;
+
+    if analysis_len < ANALYSIS_FRAME_SIZE {
+        return PitchResult {
+            frequency_hz: None,
+            midi_note: None,
+            confidence: 0.0,
+        };
+    }
+
+    // Calculate window positions (evenly spaced).
+    let num_windows = ((analysis_len - ANALYSIS_FRAME_SIZE) / (ANALYSIS_FRAME_SIZE / 2))
+        .min(MAX_ANALYSIS_WINDOWS)
+        .max(1);
+
+    let step = if num_windows > 1 {
+        (analysis_len - ANALYSIS_FRAME_SIZE) / (num_windows - 1)
+    } else {
+        0
+    };
+
+    // Run YIN on each window, collect valid results.
+    let mut detected_freqs: Vec<f32> = Vec::with_capacity(num_windows);
+    let mut total_periodicity = 0.0f32;
+
+    for window_idx in 0..num_windows {
+        let offset = analysis_start + window_idx * step;
+        let frame = &samples[offset..offset + ANALYSIS_FRAME_SIZE];
+
+        let result: YinResult = yin_frame(frame, &yin_config, &mut work_d, &mut work_cmnd);
+
+        if let Some(freq) = result.f0_hz {
+            if freq >= MIN_PITCH_HZ && freq <= MAX_PITCH_HZ {
+                detected_freqs.push(freq);
+                total_periodicity += result.periodicity;
+            }
+        }
+    }
+
+    if detected_freqs.is_empty() {
+        return PitchResult {
+            frequency_hz: None,
+            midi_note: None,
+            confidence: 0.0,
+        };
+    }
+
+    // Take the median frequency for robustness.
+    detected_freqs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
+    let median_freq = detected_freqs[detected_freqs.len() / 2];
+
+    // Convert to MIDI note.
+    let midi_float = A4_MIDI_NOTE + SEMITONES_PER_OCTAVE * (median_freq / STANDARD_A4_HZ).log2();
+    let midi_note = midi_float.round() as u8;
+
+    let confidence = total_periodicity / detected_freqs.len() as f32;
+
+    PitchResult {
+        frequency_hz: Some(median_freq),
+        midi_note: Some(midi_note.min(127)),
+        confidence: confidence.clamp(0.0, 1.0),
+    }
+}
+
+/// Convert a frequency in Hz to the nearest MIDI note number.
+pub fn hz_to_midi(freq_hz: f32) -> u8 {
+    let midi = A4_MIDI_NOTE + SEMITONES_PER_OCTAVE * (freq_hz / STANDARD_A4_HZ).log2();
+    (midi.round() as u8).min(127)
+}
+
+/// Convert a MIDI note number to frequency in Hz.
+pub fn midi_to_hz(note: u8) -> f32 {
+    STANDARD_A4_HZ * 2.0_f32.powf((note as f32 - A4_MIDI_NOTE) / SEMITONES_PER_OCTAVE)
+}

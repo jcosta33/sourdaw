@@ -13,8 +13,13 @@ import {
     getCreativeSelectionSnapshot,
 } from '../models/CreativeInterpretation';
 import { type ProjectContext, type ProjectContextClip } from '../models/ProjectContext';
+import { scanPromptQuotedText } from '../transformers/promptParser/promptQuotedText';
 
+import { getBestAgentReferenceNameRanges } from './agentReference/getBestAgentReferenceNameRanges';
+import { getExplicitClipProtection } from './agentReference/getExplicitlyProtectedClips';
 import { normalizeAgentReferenceText } from './agentReference/normalizeAgentReferenceText';
+import { readExplicitProtections } from './agentReference/readExplicitProtections';
+import { protectionSlots, type Range } from './agentReference/readProtectionSlots';
 
 /**
  * Provisional ceilings on what one admitted creation slot may produce. They sit below the
@@ -46,6 +51,63 @@ type ClipWithTrack = { clip: ProjectContextClip; trackId: string };
 
 function collectClips(context: ProjectContext): ClipWithTrack[] {
     return context.tracks.flatMap((track) => track.clips.map((clip) => ({ clip, trackId: track.id })));
+}
+
+function maskRanges(text: string, ranges: readonly Range[]): string {
+    return ranges.reduce(
+        (masked, { start, end }) => `${masked.slice(0, start)}${' '.repeat(end - start)}${masked.slice(end)}`,
+        text
+    );
+}
+
+function hasAmbiguousProtectedName(text: string, objects: readonly { id: string; name: string }[]): boolean {
+    const ranges = getBestAgentReferenceNameRanges(text, objects, 'exact');
+    return ranges.some((range) =>
+        ranges.some((other) => other.id !== range.id && other.start === range.start && other.end === range.end)
+    );
+}
+
+/** Only consumed, resolved clauses may disappear from positive name lookup. */
+function readMutationProtections(prompt: string, context: ProjectContext) {
+    const reading = readExplicitProtections(prompt, context);
+    const unique = readExplicitProtections(prompt, context, { requireUniqueTrackOwners: true });
+    const unresolved = [...reading.unresolved];
+    for (const range of reading.resolvedTrackClauses) {
+        if (
+            !unique.resolvedTrackClauses.some(
+                (resolved) => resolved.start === range.start && resolved.end === range.end
+            )
+        ) {
+            unresolved.push(prompt.slice(range.start, range.end));
+        }
+    }
+    const trackMasked = maskRanges(prompt, unique.resolvedTrackClauses);
+    let clips = getExplicitClipProtection(prompt, context);
+    if (!clips.complete) {
+        clips = getExplicitClipProtection(trackMasked, context);
+    }
+    const clipRanges: Range[] = [];
+    const protectedTracks = context.tracks.filter((track) => reading.protectedTrackIds.includes(track.id));
+    for (const slot of protectionSlots.read(scanPromptQuotedText(prompt).maskedText)) {
+        const range = slot.completeRange;
+        if (range === null || !slot.strict) {
+            continue;
+        }
+        const clause = prompt.slice(range.start, range.end);
+        const clipClause = getExplicitClipProtection(clause, context);
+        if (clipClause.complete && clipClause.clips.length > 0) {
+            if (hasAmbiguousProtectedName(clause, [...protectedTracks, ...clipClause.clips])) {
+                unresolved.push(clause);
+            } else {
+                clipRanges.push(range);
+            }
+        }
+    }
+    return {
+        positivePrompt: maskRanges(trackMasked, clipRanges),
+        objectIds: [...new Set([...reading.protectedTrackIds, ...clips.clips.map((clip) => clip.id)])],
+        unresolved,
+    };
 }
 
 /** Whole-word containment over the same folded vocabulary the reference grounder uses. */
@@ -103,7 +165,10 @@ function collectExplicitTargets(prompt: string, context: ProjectContext): Creati
  * `clip-set`, never a scalar clip derived from it, so an admitted authority can never narrow a
  * multi-clip request down to whichever clip happened to be focused last.
  */
-function collectContextualTargets(context: ProjectContext): CreativeTargetCandidate[] {
+function collectContextualTargets(
+    context: ProjectContext,
+    protectedIds: ReadonlySet<string>
+): CreativeTargetCandidate[] {
     const targets: CreativeTargetCandidate[] = [];
     const nextId = () => `target-${String(targets.length + 1)}`;
     const selectedTrack = context.tracks.find((track) => track.id === context.selectedTrackId) ?? null;
@@ -132,7 +197,11 @@ function collectContextualTargets(context: ProjectContext): CreativeTargetCandid
         context.selectedClipId === null
             ? undefined
             : collectClips(context).find(({ clip }) => clip.id === context.selectedClipId);
-    if (selectedClip === undefined) {
+    if (
+        selectedClip === undefined ||
+        protectedIds.has(selectedClip.clip.id) ||
+        protectedIds.has(selectedClip.trackId)
+    ) {
         return targets;
     }
     targets.push({
@@ -157,7 +226,10 @@ function collectContextualTargets(context: ProjectContext): CreativeTargetCandid
     return targets;
 }
 
-function collectConstraints(context: ProjectContext): CreativeConstraintCandidate[] {
+function collectConstraints(
+    context: ProjectContext,
+    protectedObjectIds: readonly string[]
+): CreativeConstraintCandidate[] {
     const constraints: CreativeConstraintCandidate[] = PUBLISHED_EDIT_DIMENSIONS.map((dimension, index) => ({
         candidateId: `constraint-${String(index + 1)}`,
         kind: 'exclude-dimension' as const,
@@ -180,7 +252,31 @@ function collectConstraints(context: ProjectContext): CreativeConstraintCandidat
             label: objectsById.get(lockedObjectId) ?? lockedObjectId,
         });
     }
+    for (const objectId of protectedObjectIds) {
+        if (
+            constraints.some((constraint) => constraint.kind === 'protect-object' && constraint.objectId === objectId)
+        ) {
+            continue;
+        }
+        constraints.push({
+            candidateId: `constraint-${String(constraints.length + 1)}`,
+            kind: 'protect-object',
+            objectId,
+            label: objectsById.get(objectId) ?? objectId,
+        });
+    }
     return constraints;
+}
+
+function withoutProtectedTargets(
+    targets: readonly CreativeTargetCandidate[],
+    protectedIds: ReadonlySet<string>,
+    context: ProjectContext
+): CreativeTargetCandidate[] {
+    const clipTracks = new Map(collectClips(context).map(({ clip, trackId }) => [clip.id, trackId]));
+    return targets.filter((target) =>
+        target.objectIds.every((id) => !protectedIds.has(id) && !protectedIds.has(clipTracks.get(id) ?? ''))
+    );
 }
 
 function collectCreationSlots(targets: readonly CreativeTargetCandidate[]): CreativeCreationSlot[] {
@@ -260,24 +356,30 @@ export function prepareCreativeInterpretationCatalog(input: {
     const selection = getCreativeSelectionSnapshot(context);
     const catalogId = `creative-${digest({ requestDigest, revision: projectRevision, selection }).slice(0, 16)}`;
 
-    const explicitTargets = collectExplicitTargets(trimmedPrompt, context);
+    const protections = readMutationProtections(trimmedPrompt, context);
+    const explicitTargets = collectExplicitTargets(protections.positivePrompt, context);
     const knownNames = new Set(
         [...context.tracks.map((track) => track.name), ...collectClips(context).map(({ clip }) => clip.name)].map(
             (name) => normalizeAgentReferenceText(name)
         )
     );
-    const unresolvedExplicitReferences = collectQuotedSpans(trimmedPrompt).filter(
-        (span) => !knownNames.has(normalizeAgentReferenceText(span))
-    );
+    const unresolvedExplicitReferences = [
+        ...new Set([
+            ...protections.unresolved,
+            ...collectQuotedSpans(trimmedPrompt).filter((span) => !knownNames.has(normalizeAgentReferenceText(span))),
+        ]),
+    ];
 
     const dimensions: CreativeEditDimensionCandidate[] = PUBLISHED_EDIT_DIMENSIONS.map((dimension) => ({
         candidateId: `dimension-${dimension}`,
         dimension,
     }));
-    const constraints = collectConstraints(context);
+    const constraints = collectConstraints(context, protections.objectIds);
+    const protectedIds = new Set(
+        constraints.flatMap((constraint) => (constraint.kind === 'protect-object' ? [constraint.objectId] : []))
+    );
 
-    // A quoted name the project does not hold is a request about something that is not here. Falling
-    // back to the current selection would answer a different request than the one that was made.
+    // An unresolved name or protection cannot fall back to selection and answer a different request.
     if (unresolvedExplicitReferences.length > 0) {
         return {
             schemaVersion: 1,
@@ -294,7 +396,8 @@ export function prepareCreativeInterpretationCatalog(input: {
         };
     }
 
-    const targets = explicitTargets.length > 0 ? explicitTargets : collectContextualTargets(context);
+    const candidates = explicitTargets.length > 0 ? explicitTargets : collectContextualTargets(context, protectedIds);
+    const targets = withoutProtectedTargets(candidates, protectedIds, context);
     const creationSlots = collectCreationSlots(targets);
     // `edit` needs a target to be admissible at all, so a catalog without one does not publish it:
     // a mode no admission could ever accept would only invite a rejected turn.

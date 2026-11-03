@@ -7,6 +7,7 @@ import {
     type AgentContextEvidence,
 } from '../models/AgentContext';
 import { type AgentRunBudgets, type AgentRunGrants } from '../models/AgentRun';
+import { type PlanningContextBinding } from '../models/PlanningContextBinding';
 import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
 import { PROJECT_CONTEXT_LEVEL_LAW, type ProjectContext } from '../models/ProjectContext';
 import { type ThreadContext } from '../models/ThreadContext';
@@ -296,6 +297,17 @@ function buildProjectData(context: ProjectContext) {
         levelLaw: PROJECT_CONTEXT_LEVEL_LAW,
         masterGain: context.masterGain,
         masterGainDb: context.masterGainDb ?? toLevelDb(context.masterGain),
+        metronomeVolume: context.metronomeVolume,
+        metronomeVolumeDb: toLevelDb(context.metronomeVolume),
+        vcaGroups: (context.vcaGroups ?? []).slice(0, MAX_CONTEXT_TARGETS).map((group) => ({
+            id: group.id,
+            name: { trust: 'untrusted_imported_string' as const, ...boundedString(group.name) },
+            gain: group.gain,
+            gainDb: toLevelDb(group.gain),
+            muted: group.muted,
+            trackIds: group.trackIds.slice(0, MAX_CONTEXT_TARGETS),
+            omittedTrackCount: Math.max(0, group.trackIds.length - MAX_CONTEXT_TARGETS),
+        })),
         selectedTrack,
         selectableTargets,
         automationLanes,
@@ -304,6 +316,8 @@ function buildProjectData(context: ProjectContext) {
         targetCount: context.tracks.length,
         truncated:
             context.tracks.length > selectableTargets.length ||
+            (context.vcaGroups?.length ?? 0) > MAX_CONTEXT_TARGETS ||
+            (context.vcaGroups ?? []).some((group) => group.trackIds.length > MAX_CONTEXT_TARGETS) ||
             (context.sections?.length ?? 0) > sections.length ||
             (context.automationLanes?.length ?? 0) > automationLanes.length ||
             selectableTargets.some((target) => target.omittedClipCount > 0 || target.omittedSendCount > 0) ||
@@ -331,6 +345,8 @@ function snapshotProjectData(projectData: ReturnType<typeof buildProjectData>) {
             levelLaw: projectData.levelLaw,
             masterGain: projectData.masterGain,
             masterGainDb: projectData.masterGainDb,
+            metronomeVolume: projectData.metronomeVolume,
+            vcaGroups: projectData.vcaGroups,
             selectedTrack,
             selectableTargets,
             automationLanes,
@@ -371,11 +387,22 @@ function buildRevisionPayload(input: {
         input.priorEvidence.revision !== input.revision &&
         priorSnapshot !== undefined &&
         !priorSnapshot.truncated &&
-        !input.snapshot.truncated;
+        !input.snapshot.truncated &&
+        // Sections have no outward internal identity, so deletion cannot use an id tombstone.
+        (priorSnapshot.sections ?? []).every((section) =>
+            (input.snapshot.sections ?? []).some((current) => current.id === section.id)
+        );
     if (!compatiblePrior) {
+        const {
+            metronomeVolume: _metronomeVolume,
+            metronomeVolumeDb: _metronomeVolumeDb,
+            vcaGroups: _vcaGroups,
+            ...fullProjectData
+        } = input.projectData;
         return {
+            candidateSections: input.projectData.sections,
             delta: { mode: 'full' as const, baseRevision: null, currentRevision: input.revision },
-            projectPayload: { ...input.projectData, sections: input.projectData.sections.map(toProviderBoundSection) },
+            projectPayload: { ...fullProjectData, sections: input.projectData.sections.map(toProviderBoundSection) },
         };
     }
     const priorTargets = new Map(priorSnapshot.selectableTargets.map((target) => [target.id, target.digest]));
@@ -403,6 +430,7 @@ function buildRevisionPayload(input: {
         .filter((section) => !currentSectionIds.has(section.id))
         .map((section) => section.id);
     return {
+        candidateSections: changedSections,
         delta: {
             mode: 'delta' as const,
             baseRevision: input.priorEvidence!.revision,
@@ -414,6 +442,9 @@ function buildRevisionPayload(input: {
             levelLaw: input.projectData.levelLaw,
             masterGain: input.projectData.masterGain,
             masterGainDb: input.projectData.masterGainDb,
+            metronomeVolume: input.projectData.metronomeVolume,
+            metronomeVolumeDb: input.projectData.metronomeVolumeDb,
+            vcaGroups: input.projectData.vcaGroups,
             ...(priorSnapshot.tempo === input.snapshot.tempo ? {} : { tempo: input.projectData.tempo }),
             ...(stableJson(priorSnapshot.timeSignature) === stableJson(input.snapshot.timeSignature)
                 ? {}
@@ -431,6 +462,67 @@ function buildRevisionPayload(input: {
     };
 }
 
+/** Only complete rows in the actual outbound payload may supply candidate references. */
+function buildPlanningContextBinding(
+    payload: ReturnType<typeof buildRevisionPayload>,
+    snapshotIdentity: string,
+    revision: string | null,
+    selection: PlanningContextBinding['selection'],
+    authorityComplete: boolean
+): PlanningContextBinding {
+    const targets = payload.projectPayload.selectableTargets ?? [];
+    const objects: PlanningContextBinding['objects'] = [];
+    for (const [index, target] of targets.entries()) {
+        const reference = `t${String(index)}`;
+        if (!target.name.truncated) {
+            objects.push({
+                reference,
+                id: target.id,
+                label: target.name.value,
+                kind: target.kind,
+                parentId: null,
+                startBeat: null,
+                endBeat: null,
+            });
+        }
+        for (const [clipIndex, clip] of target.clips.entries()) {
+            if (!target.name.truncated && !clip.name.truncated) {
+                objects.push({
+                    reference: `c${String(index)}.${String(clipIndex)}`,
+                    id: clip.id,
+                    label: clip.name.value,
+                    kind: clip.type,
+                    parentId: target.id,
+                    startBeat: clip.startBeat,
+                    endBeat: clip.endBeat,
+                });
+            }
+        }
+    }
+    const sections = payload.candidateSections.flatMap((section, index) =>
+        section.name.truncated
+            ? []
+            : [
+                  {
+                      reference: `r${String(index)}`,
+                      id: section.id,
+                      label: section.name.value,
+                      startBeat: section.startBeat,
+                      endBeat: section.endBeat,
+                  },
+              ]
+    );
+    return {
+        authorityComplete,
+        snapshotIdentity,
+        mode: payload.delta.mode,
+        revision,
+        selection: structuredClone(selection),
+        objects,
+        sections,
+    };
+}
+
 /**
  * The planning context for one turn, in two renderings of the same evidence. `message` is what a
  * hosted provider reads. `localMessage` is what the local model reads inside its context window:
@@ -440,6 +532,7 @@ function buildRevisionPayload(input: {
  */
 export function buildAgentContext(input: BuildAgentContextInput): {
     authorityComplete: boolean;
+    planningBinding: PlanningContextBinding;
     message: string;
     localMessage: string;
     evidence: AgentContextEvidence;
@@ -626,11 +719,19 @@ export function buildAgentContext(input: BuildAgentContextInput): {
                   context: input.context,
                   projectRevision: input.projectRevision,
                   profile,
+                  includeRequest: profile !== 'local' || input.prompt.length > MAX_IMPORTED_STRING_LENGTH,
                   ...input.capabilityData,
               })}`;
 
     return {
         authorityComplete: productionBrief?.incompleteRelevantAuthority !== true,
+        planningBinding: buildPlanningContextBinding(
+            revisionPayload,
+            snapshot.identity,
+            revision,
+            evidence.selection,
+            productionBrief?.incompleteRelevantAuthority !== true
+        ),
         evidence,
         message: `fixed_policy:\n${input.fixedPolicy}\n\n${hostedSections}${projectContextMessage('hosted')}`,
         localMessage: `${localSections}${projectContextMessage('local')}`,

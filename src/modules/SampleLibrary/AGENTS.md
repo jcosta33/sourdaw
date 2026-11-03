@@ -4,9 +4,7 @@ Local and native sample collection indexing, folder tree hierarchies, sample met
 
 ## Public Contract Surface
 
-- `stores`: `libraryStore` (`LibraryState`), `embeddingStore`.
-- `useCases`: `buildFolderTree`, `requestPermission`, `readNativeLibrarySampleFile`, `resolveDroppedSampleFile`, `restoreLibrary`, `searchSamples`, `findSimilarSamples`, `searchAgentCatalog`, `resolveAgentCatalogCandidate`, `projectSpatialMap`, `seedFactoryLibrary`.
-- `presentations/views`: `LibraryBrowser`, `SpatialMapRenderer`.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 
@@ -28,5 +26,5 @@ Local and native sample collection indexing, folder tree hierarchies, sample met
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
 ```bash
-pnpm test:run <changed-spec>
+pnpm guard --profile focused -- pnpm test:run <changed-spec>
 ```

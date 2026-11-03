@@ -20,7 +20,14 @@ describe('mutateCrdtDoc', () => {
         mutateCrdtDoc({ id: 'root', changeFn });
 
         expect(automergeRepository.changeDoc).toHaveBeenCalledTimes(1);
-        expect(automergeRepository.changeDoc).toHaveBeenCalledWith('root', changeFn, undefined, undefined, undefined);
+        expect(automergeRepository.changeDoc).toHaveBeenCalledWith(
+            'root',
+            changeFn,
+            undefined,
+            undefined,
+            undefined,
+            undefined
+        );
     });
 
     it('forwards the optional change message to the repository', () => {
@@ -32,6 +39,7 @@ describe('mutateCrdtDoc', () => {
             'root',
             changeFn,
             'edited clip name',
+            undefined,
             undefined,
             undefined
         );
@@ -48,6 +56,7 @@ describe('mutateCrdtDoc', () => {
             changeFn,
             undefined,
             snapshotTransaction,
+            undefined,
             undefined
         );
     });
@@ -57,9 +66,13 @@ describe('mutateCrdtDoc', () => {
 
         mutateCrdtDoc({ id: 'root', changeFn, localSlots: ['tracks', 'markers'] });
 
-        expect(automergeRepository.changeDoc).toHaveBeenCalledWith('root', changeFn, undefined, undefined, [
-            'tracks',
-            'markers',
-        ]);
+        expect(automergeRepository.changeDoc).toHaveBeenCalledWith(
+            'root',
+            changeFn,
+            undefined,
+            undefined,
+            ['tracks', 'markers'],
+            undefined
+        );
     });
 });

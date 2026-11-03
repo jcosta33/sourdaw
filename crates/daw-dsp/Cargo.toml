@@ -10,6 +10,10 @@ repository.workspace = true
 [lib]
 crate-type = ["rlib", "cdylib"]
 
+[features]
+default = ["wasm-runtime"]
+wasm-runtime = []
+
 [dependencies]
 wasm-bindgen = "=0.2.127"
 serde = { version = "1", features = ["derive"] }

@@ -12,11 +12,11 @@ WebAssembly-compiled audio decoder wrapping `daw-io` Symphonia codecs for browse
 
 - **Panic Hooks**: Uses `console_error_panic_hook` in WASM targets to surface readable diagnostic traces rather than opaque unreachable traps.
 - **Memory Management**: Decoded output buffers passed across the WASM boundary to JavaScript must release heap memory cleanly to prevent browser tab leaks during heavy sample importing.
-- **WASM Freshness**: Any change to `daw-wasm-decoder` or its `daw-io` dependency requires running `pnpm wasm:decoder` and updating `scripts/gen-wasm-manifest.ts`.
+- **WASM Freshness**: Any change to `daw-wasm-decoder` or its `daw-io` dependency requires running `pnpm guard --profile broad -- pnpm wasm:decoder` and updating `scripts/gen-wasm-manifest.ts`.
 
 ## Verification
 
 ```bash
-pnpm wasm:decoder
+pnpm guard --profile broad -- pnpm wasm:decoder
 pnpm wasm:verify
 ```

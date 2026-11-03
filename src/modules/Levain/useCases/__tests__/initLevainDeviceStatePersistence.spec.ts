@@ -23,7 +23,10 @@ function makeState(instrumentId: string, currentArticulation: string) {
     return { patch: makePatch(instrumentId, currentArticulation) };
 }
 
-type LevainInstance = Record<string, { patch: { instrumentId: string; currentArticulation: string } }>;
+type LevainInstance = Record<
+    string,
+    { patch: { instrumentId: string; currentArticulation: string }; uiLevel?: number }
+>;
 
 function captureSubscriber() {
     return () => {
@@ -124,4 +127,14 @@ describe('initLevainDeviceStatePersistence', () => {
 
         expect(mocks.commitLevainDeviceState).not.toHaveBeenCalled();
     });
+});
+
+it('does not mirror a tier-only projection as another identity write', () => {
+    const getSubscriber = captureSubscriber();
+    vi.clearAllMocks();
+    initLevainDeviceStatePersistence();
+    const notify = getSubscriber();
+    notify({ a: { ...makeState('violin-1', 'sustain'), uiLevel: 1 } });
+    notify({ a: { ...makeState('violin-1', 'sustain'), uiLevel: 6 } });
+    expect(mocks.commitLevainDeviceState).not.toHaveBeenCalled();
 });

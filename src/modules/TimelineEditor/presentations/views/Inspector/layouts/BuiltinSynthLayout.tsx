@@ -12,7 +12,7 @@ import { DawHeaderBand } from '#/components/daw/DawHeaderBand';
 import { ADSREnvelope } from '#/components/daw/visualizers/ADSREnvelope';
 import { FilterResponse } from '#/components/daw/visualizers/FilterResponse';
 import { OscillatorWaveform } from '#/components/daw/visualizers/OscillatorWaveform';
-import { Grid, Row, Stack } from '#/components/layout';
+import { Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 
@@ -20,6 +20,8 @@ import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
 import { useDeviceParameterGesture } from '../../../hooks/useDeviceParameterGesture';
 import { type DeviceLayoutProps, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
+import { FitWidth } from '../FitWidth';
+import { ParamCardGrid } from '../ParamCardGrid';
 import { SectionHeader } from '../SectionHeader';
 
 const WAVE_NAMES = ['sine', 'triangle', 'sawtooth', 'square'] as const;
@@ -51,11 +53,11 @@ const Row2 = ({
     device: DeviceLayoutProps['device'];
     trackId: string;
 }): ReactElement => (
-    <Grid cols={2} gap={2}>
+    <ParamCardGrid>
         {filterParams(params, ids).map((param) => (
             <Param key={param.id} param={param} device={device} trackId={trackId} />
         ))}
-    </Grid>
+    </ParamCardGrid>
 );
 
 const Collapsible = ({
@@ -98,7 +100,11 @@ const InteractiveSynthEnvelope = ({
     device,
     trackId,
     stages,
-}: Pick<DeviceLayoutProps, 'device' | 'trackId'> & { stages: Record<EnvelopeStage, P> }): ReactElement => {
+    width,
+}: Pick<DeviceLayoutProps, 'device' | 'trackId'> & {
+    stages: Record<EnvelopeStage, P>;
+    width: number;
+}): ReactElement => {
     const attack = useDeviceParameterGesture({ param: stages.attack, device, trackId });
     const decay = useDeviceParameterGesture({ param: stages.decay, device, trackId });
     const sustain = useDeviceParameterGesture({ param: stages.sustain, device, trackId });
@@ -111,7 +117,7 @@ const InteractiveSynthEnvelope = ({
             decay={decay.value}
             sustain={sustain.value}
             release={release.value}
-            width={200}
+            width={width}
             height={80}
             onParamChange={(stage, value) => {
                 if (stage === 'attack' || stage === 'decay' || stage === 'sustain' || stage === 'release') {
@@ -125,7 +131,7 @@ const InteractiveSynthEnvelope = ({
     );
 };
 
-const SynthEnvelope = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElement => {
+const SynthEnvelope = ({ device, trackId, parameters, width }: DeviceLayoutProps & { width: number }): ReactElement => {
     const attack = parameters.find((param) => param.id === 'attack');
     const decay = parameters.find((param) => param.id === 'decay');
     const sustain = parameters.find((param) => param.id === 'sustain');
@@ -137,12 +143,19 @@ const SynthEnvelope = ({ device, trackId, parameters }: DeviceLayoutProps): Reac
                 decay={device.parameterValues.decay ?? decay?.value ?? 0.2}
                 sustain={device.parameterValues.sustain ?? sustain?.value ?? 0.7}
                 release={device.parameterValues.release ?? release?.value ?? 0.3}
-                width={200}
+                width={width}
                 height={80}
             />
         );
     }
-    return <InteractiveSynthEnvelope device={device} trackId={trackId} stages={{ attack, decay, sustain, release }} />;
+    return (
+        <InteractiveSynthEnvelope
+            device={device}
+            trackId={trackId}
+            stages={{ attack, decay, sustain, release }}
+            width={width}
+        />
+    );
 };
 
 const BuiltinSynthLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElement => {
@@ -162,38 +175,44 @@ const BuiltinSynthLayout = ({ device, trackId, parameters }: DeviceLayoutProps):
             {/* Oscillator */}
             <div>
                 <SectionHeader title="Oscillator" />
-                <Row align="stretch" justify="center" className="mb-3">
-                    <OscillatorWaveform
-                        waveform={waveform}
-                        osc2Waveform={osc2Waveform}
-                        osc2Mix={pv.osc2Mix ?? 0}
-                        detune={pv.osc2Detune ?? 0}
-                        width={200}
-                        height={60}
-                    />
-                </Row>
+                <FitWidth fallbackWidth={200} className="mb-3">
+                    {(width) => (
+                        <OscillatorWaveform
+                            waveform={waveform}
+                            osc2Waveform={osc2Waveform}
+                            osc2Mix={pv.osc2Mix ?? 0}
+                            detune={pv.osc2Detune ?? 0}
+                            width={width}
+                            height={60}
+                        />
+                    )}
+                </FitWidth>
                 <Row2 ids={['waveform', 'detune']} params={parameters} device={device} trackId={trackId} />
             </div>
             {/* Filter — interactive */}
             <div>
                 <SectionHeader title="Filter" />
-                <Row align="stretch" justify="center" className="mb-3">
-                    <FilterResponse
-                        cutoff={pv.filterCutoff ?? 5000}
-                        resonance={pv.filterResonance ?? 1}
-                        filterType={pv.filterType ?? 0}
-                        width={200}
-                        height={70}
-                        onParamChange={change}
-                    />
-                </Row>
+                <FitWidth fallbackWidth={200} className="mb-3">
+                    {(width) => (
+                        <FilterResponse
+                            cutoff={pv.filterCutoff ?? 5000}
+                            resonance={pv.filterResonance ?? 1}
+                            filterType={pv.filterType ?? 0}
+                            width={width}
+                            height={70}
+                            onParamChange={change}
+                        />
+                    )}
+                </FitWidth>
                 <Row2 ids={['filterCutoff', 'filterResonance']} params={parameters} device={device} trackId={trackId} />
             </div>
             <div>
                 <SectionHeader title="Envelope" />
-                <Row align="stretch" justify="center" className="mb-3">
-                    <SynthEnvelope device={device} trackId={trackId} parameters={parameters} />
-                </Row>
+                <FitWidth fallbackWidth={200} className="mb-3">
+                    {(width) => (
+                        <SynthEnvelope device={device} trackId={trackId} parameters={parameters} width={width} />
+                    )}
+                </FitWidth>
                 <Row2 ids={['attack', 'decay']} params={parameters} device={device} trackId={trackId} />
                 <div className="mt-2">
                     <Row2 ids={['sustain', 'release']} params={parameters} device={device} trackId={trackId} />

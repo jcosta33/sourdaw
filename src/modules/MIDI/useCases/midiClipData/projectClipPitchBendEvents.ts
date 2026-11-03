@@ -1,10 +1,9 @@
-import { type MidiPitchBend } from '../../models/MidiNote';
+import { projectMidiClipWindow, type MidiPitchBendWindowRow } from '../../services/projectMidiClipWindow';
 
 import { listClipControllerPasses, type ControllerProjectionClip } from './listClipControllerPasses';
-import { projectMidiClipWindow } from './projectMidiClipWindow';
 
 type ProjectClipPitchBendEventsInput = {
-    pitchBends: readonly MidiPitchBend[];
+    pitchBends: readonly MidiPitchBendWindowRow[];
     clip: ControllerProjectionClip;
     /** The window `[fromBeat, toBeat)` on the timeline; a bend belongs to exactly one such window. */
     fromBeat: number;
@@ -12,12 +11,13 @@ type ProjectClipPitchBendEventsInput = {
 };
 
 /** A channel pitch-bend move a clip plays, at its absolute beat. */
-export type ProjectedClipPitchBend = MidiPitchBend & {
+export type ProjectedClipPitchBend = MidiPitchBendWindowRow & {
     /** Where the row sits in the clip's content, before the pass and the content offset placed it. */
     contentBeat: number;
     /**
      * Where the row was recorded in the clip's content: `contentBeat`, except for a carry, which sits on the pass
-     * head though its row was recorded before it. A caller reads the state the row was recorded under here.
+     * head though its row was recorded before it. Ordinary clips read the state the row was recorded under here;
+     * a frozen window also retains its original source beat for that read.
      */
     recordedContentBeat: number;
     /**
@@ -28,7 +28,7 @@ export type ProjectedClipPitchBend = MidiPitchBend & {
     recordedBeat: number;
 };
 
-type RecordedPitchBend = MidiPitchBend & Pick<ProjectedClipPitchBend, 'recordedContentBeat'>;
+type RecordedPitchBend = MidiPitchBendWindowRow & Pick<ProjectedClipPitchBend, 'recordedContentBeat'>;
 
 /**
  * The channel pitch-bend moves a clip plays inside the timeline window `[fromBeat, toBeat)`,

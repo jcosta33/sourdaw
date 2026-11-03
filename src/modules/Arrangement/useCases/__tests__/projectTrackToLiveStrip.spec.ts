@@ -65,8 +65,8 @@ vi.mock('#/modules/Routing/useCases', () => ({
     getAllSidechainRoutes: mocks.getAllSidechainRoutes,
 }));
 
-vi.mock('#/modules/WorkspaceShell/stores', () => ({
-    workspaceStore: {
+vi.mock('../../stores/soloModeStore', () => ({
+    soloModeStore: {
         get value() {
             return { soloMode: mocks.soloMode };
         },

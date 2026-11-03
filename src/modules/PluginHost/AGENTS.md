@@ -8,15 +8,7 @@ Owns third-party native audio plugin lifecycle (VST3, CLAP, AU scanning, loading
 
 ## Public Contract Surface
 
-- **`useCases`**:
-    - **Plugin lifecycle & bridge**: `loadPlugin`, `unloadPlugin`, `openPluginGui`, `setPluginParameter`, `setPluginBypass`, `readPluginState`, `readExternalPluginStateForCapture`, `restorePluginState`, `activateExternalPlugin`, `clearLoadedExternalPlugins`, `refreshExternalPluginParameters`, `hasUnresolvedExternalPluginRestoreFailure`, `shouldWarnExternalPluginRestoreFailure`, `clearExternalPluginRestoreFailure`.
-    - **Scanning & discovery**: `findPluginByName`, `findSupportedPlugin`, `SUPPORTED_PLUGIN_FORMATS`, `isSupportedPluginFormat`, `getExternalPluginContractVersionForCommand`, `getAgentDeviceFactoryManifest`, `startPluginScan`, `addScanPath`, `removeScanPath`.
-    - **Faust DSP**: `registerBuiltinFaustDSP`, `registerFaustDSP`, `compileFaustDSP`, `createFaustNode`, `isFaustModule`, `getFaustModuleLatencyMs`, `isFaustInstrumentModule`.
-    - **Handler maps**: `getPluginHostHandlers`.
-- **`stores`**: `pluginScanStore` (`defaultPluginScanState`, type `PluginScanState`), `externalPluginActivationStore` (`defaultExternalPluginActivationState`, types `ExternalPluginActivationState`, `ExternalPluginActivationStatus`), `externalPluginParameterStore` (`defaultExternalPluginParameterState`, types `ExternalPluginParameter`, `ExternalPluginParameterSnapshot`, `ExternalPluginParameterState`) — read-only outside the module: its writers stay off the barrel.
-- **`events`**: None.
-- **`presentations/views`**: None.
-- **Handler maps**: `getPluginHostHandlers` (`handleScanPlugins`).
+Public surface: `useCases/index.ts`, `stores/index.ts`. The module exports no events or views.
 
 ## Key Subsystems
 
@@ -34,10 +26,11 @@ Owns third-party native audio plugin lifecycle (VST3, CLAP, AU scanning, loading
 - **Faust synchronization**: Faust is wired in PluginHost and AudioEngine; updates to Faust DSP types or node interfaces must remain synchronized across both modules.
 - **External plugins are engine-hosted**: the native engine processes a hosted plugin inline on its own audio callback. No command carries per-block audio across the desktop IPC boundary, and the Web Audio graph holds a unity pass-through where such a device sits.
 - **Released strips report back through the sink**: an unload's own chain release changes native strip state with no batch of its own, so `unloadPlugin` forwards the strips it released to whatever `registerReleasedStripReportSink` wired up, and the composition root — never this module — decides who that is.
+- **External plugin parameter store is read-only outside the module**: `externalPluginParameterStore` is exported for reading; its writers stay off the `stores/index.ts` barrel.
 
 ## Verification
 
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
-- **Focused unit tests**: `pnpm test:run <changed-spec>`
+- **Focused unit tests**: `pnpm guard --profile focused -- pnpm test:run <changed-spec>`
 - PR CI checks module boundaries; inspect that result after cross-module changes.

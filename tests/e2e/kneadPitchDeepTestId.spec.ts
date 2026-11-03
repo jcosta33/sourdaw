@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 // A short mono sine WAV (440 Hz, 0.5 s) — long enough to produce a voiced pitch
@@ -66,7 +65,12 @@ async function openPitchEditorWithAudio(page: import('@playwright/test').Page): 
     for (const x of [40, 80, 120]) {
         await canvas.dblclick({ position: { x, y: 20 } });
         await page.waitForTimeout(400);
-        if (await page.getByRole('button', { name: /Knead/i }).isVisible().catch(() => false)) {
+        if (
+            await page
+                .getByRole('button', { name: /Knead/i })
+                .isVisible()
+                .catch(() => false)
+        ) {
             break;
         }
     }

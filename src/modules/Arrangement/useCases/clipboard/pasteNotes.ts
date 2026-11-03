@@ -16,7 +16,17 @@ export function pasteNotes(clipId: string, beatOffset: number): void {
     }
 
     const pastedNotes = noteClipboard.notes.map(
-        ({ id: _sourceId, probability, pressure, slide, pitchBend, channel, ...node }) => ({
+        // A pasted note is new content: it sounds in every take, so its loop pass is not carried.
+        ({
+            id: _sourceId,
+            recordingPassIndex: _sourcePass,
+            probability,
+            pressure,
+            slide,
+            pitchBend,
+            channel,
+            ...node
+        }) => ({
             ...node,
             startBeat: node.startBeat - minStart + beatOffset,
             ...(probability === undefined ? {} : { probability }),

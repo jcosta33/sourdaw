@@ -36,6 +36,7 @@ export const ArticulationList = ({ articulations, current, grid, onSelect }: Art
                         <DawPluginChip
                             key={art.type}
                             active={isActive}
+                            aria-pressed={isActive}
                             tone="amber"
                             caps={false}
                             shape="soft"
@@ -67,6 +68,7 @@ export const ArticulationList = ({ articulations, current, grid, onSelect }: Art
                     <DawPluginChip
                         key={art.type}
                         active={isActive}
+                        aria-pressed={isActive}
                         tone="amber"
                         caps={false}
                         className="flex w-full items-center justify-between px-2 py-1 text-dense"

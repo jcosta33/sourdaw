@@ -290,6 +290,7 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
         clip?: Record<string, unknown>;
         /** The audio clock's beat this window schedules against; defaults to the transport start, 0. */
         clockBeat?: number;
+        opensAtRelocation?: boolean;
         note: { startBeat: number; duration: number };
         grooveState: GrooveTemplateState;
     }): Promise<ScheduledVoice[]> {
@@ -320,7 +321,9 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
             new Set<string>(),
             [],
             defaultTransportState,
-            120
+            120,
+            undefined,
+            options.opensAtRelocation ?? false
         );
         return vi.mocked(scheduleNote).mock.calls.map((call) => ({
             pitch: call[2],
@@ -553,6 +556,62 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
                     grooveState: defaultGrooveTemplateState,
                 })
             ).toEqual([{ pitch: 60, beat: 0, durationBeats: 0.5 }]);
+        });
+    });
+
+    // A tick that arrives late by less than one look-ahead keeps its window
+    // continuing from the high-water mark, so the audio clock stands past the
+    // window start and the window's first notes are due in the past. Plain
+    // MIDI, clicks and audio play them late; an owned Yeast note must too.
+    // These cases put the clock 0.04 beats (20 ms) past the window start, so
+    // a note owned at the window start reads −0.04: scheduled 20 ms late.
+    describe('when a continuing window opens behind the audio clock', () => {
+        const loopedClip = { endBeat: 8, loopEnabled: true, loopLength: 4 };
+
+        it('plays the note owned at the window start late', async () => {
+            const voices = await voicesInSingleWindow({
+                fromBeat: 1,
+                toBeat: 1.2,
+                clockBeat: 1.04,
+                note: { startBeat: 1, duration: 0.5 },
+                grooveState: defaultGrooveTemplateState,
+            });
+            expect(voices).toHaveLength(1);
+            expect(voices[0]?.beat).toBeCloseTo(-0.04, 9);
+            expect(voices[0]?.durationBeats).toBeCloseTo(0.5, 9);
+        });
+
+        it('still drops a duration tail re-anchored behind the window start', async () => {
+            // The note at phase 0.1 wraps a 0.15-beat tail to the iteration
+            // head at 0, behind the window start the scheduler continues
+            // from: stale content no on-time window would have voiced either.
+            // Only the head owned at the window start sounds, late.
+            const voices = await voicesInSingleWindow({
+                fromBeat: 0.1,
+                toBeat: 0.3,
+                clip: loopedClip,
+                clockBeat: 0.14,
+                note: { startBeat: 0.1, duration: 4.05 },
+                grooveState: defaultGrooveTemplateState,
+            });
+            expect(voices).toHaveLength(1);
+            expect(voices[0]?.beat).toBeCloseTo(-0.04, 9);
+            expect(voices[0]?.durationBeats).toBeCloseTo(3.9, 9);
+        });
+
+        it('keeps the clock floor in a relocating window', async () => {
+            // A relocation opens at its destination; content behind the
+            // clock there was never this pass's to play.
+            expect(
+                await voicesInSingleWindow({
+                    fromBeat: 1,
+                    toBeat: 1.2,
+                    clockBeat: 1.04,
+                    opensAtRelocation: true,
+                    note: { startBeat: 1, duration: 0.5 },
+                    grooveState: defaultGrooveTemplateState,
+                })
+            ).toEqual([]);
         });
     });
 

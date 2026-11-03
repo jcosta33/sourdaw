@@ -98,7 +98,7 @@ try {
   function visit(current) {
     const physical = fs.realpathSync(current);
     const relative = path.relative(context.toolRoot, physical);
-    if (relative.startsWith('..') || path.isAbsolute(relative) || ++count > 100000 || Date.now() > deadline) throw new Error('closure-boundary');
+    if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative) || ++count > 100000 || Date.now() > deadline) throw new Error('closure-boundary');
     const stat = fs.statSync(physical);
     fs.accessSync(physical, fs.constants.R_OK | (stat.isDirectory() || (stat.mode & 0o111) ? fs.constants.X_OK : 0));
     if (stat.isDirectory()) for (const name of fs.readdirSync(physical)) visit(path.join(physical, name));

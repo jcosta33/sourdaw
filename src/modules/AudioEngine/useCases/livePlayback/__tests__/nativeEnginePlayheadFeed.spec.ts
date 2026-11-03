@@ -79,6 +79,9 @@ describe('the native engine playhead feed', () => {
         stopNativeEnginePlayheadFeed();
         nativeEnginePlayheadFeed.inFlightEpoch = null;
         nativeLiveGraphSession.audibleCarrier = true;
+        nativeLiveGraphSession.programmeCarrier = false;
+        nativeLiveGraphSession.auditionOwner = null;
+        nativeLiveGraphSession.auditionOutputSuppressed = false;
         vi.mocked(animationScheduler.register).mockClear();
         vi.mocked(animationScheduler.unregister).mockClear();
         vi.mocked(getEngineTransportPosition).mockReset();
@@ -342,6 +345,22 @@ describe('the native engine playhead feed', () => {
 
         // The engine is running and rolling, but it is not what a musician
         // hears; a cursor drawn from it would leave the mix.
+        expect(readNativeEnginePlayheadSeconds()).toBeNull();
+    });
+
+    it('keeps the full programme clock while A/B suppresses output and while Stop restores it', async () => {
+        vi.mocked(getEngineTransportPosition).mockResolvedValue(rollingAt(3.25));
+        startNativeEnginePlayheadFeed();
+        pollNativeEnginePlayheadOnce();
+        await vi.waitFor(() => expect(nativeEnginePlayheadFeed.reading).not.toBeNull());
+        nativeLiveGraphSession.audibleCarrier = false;
+        nativeLiveGraphSession.programmeCarrier = true;
+        nativeLiveGraphSession.auditionOwner = Symbol('audition');
+        expect(readNativeEnginePlayheadSeconds()).toBe(3.25);
+        nativeLiveGraphSession.auditionOwner = null;
+        nativeLiveGraphSession.auditionOutputSuppressed = true;
+        expect(readNativeEnginePlayheadSeconds()).toBe(3.25);
+        nativeLiveGraphSession.programmeCarrier = false;
         expect(readNativeEnginePlayheadSeconds()).toBeNull();
     });
 

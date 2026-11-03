@@ -11,6 +11,8 @@ import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 import { projectDeclarativeTransformSnapshot } from '../projectDeclarativeTransformSnapshot';
 
+import { type ScriptedTurn } from './highLevelIntentWorkflowFixture';
+import { literalMetricIntakeTurn, nonAcousticMetricIntakeTurn } from './metricGoalWorkflowFixture';
 import { eventEnvelope, finishEnvelope, readyRequest } from './modelProviderProtocolFixture';
 
 vi.mock('../llmOrchestration/inference', async (importOriginal) => ({
@@ -109,20 +111,41 @@ const DOCUMENT = {
     assertions: [],
 };
 
+type ScriptedPlanningOutcome = Awaited<ReturnType<typeof generateToolPlanningOutcome>>;
+
+function scriptPlanningTurns(
+    turns: readonly ScriptedPlanningOutcome[],
+    intake: ScriptedTurn = literalMetricIntakeTurn
+): void {
+    let providerTurn = 0;
+    vi.mocked(generateToolPlanningOutcome).mockImplementation(async (_system, userMessage, schemas) => {
+        const phase = providerTurn % (turns.length + 1);
+        providerTurn += 1;
+        if (phase === 0) {
+            return { status: 'complete', toolCalls: intake(userMessage, schemas) };
+        }
+        const outcome = turns[phase - 1];
+        if (outcome === undefined) {
+            throw new Error('Expected a scripted transform planning turn.');
+        }
+        return outcome;
+    });
+}
+
 function planCalls(
     selected: string[] = ['compile-1'],
     document: unknown = DOCUMENT,
     providerTurn?: HostedProviderTurn
 ) {
-    vi.mocked(generateToolPlanningOutcome)
-        .mockResolvedValueOnce({
+    scriptPlanningTurns([
+        {
             status: 'complete',
             providerTurn,
             toolCalls: [
                 { id: 'compile-1', name: 'transform.compile', arguments: { document: JSON.stringify(document) } },
             ],
-        })
-        .mockResolvedValueOnce({
+        },
+        {
             status: 'complete',
             providerTurn,
             toolCalls: [
@@ -132,7 +155,8 @@ function planCalls(
                     arguments: { commands: [], compiledCallIds: selected },
                 },
             ],
-        });
+        },
+    ]);
 }
 
 describe('transform.compile planner tool', () => {
@@ -205,9 +229,9 @@ describe('transform.compile planner tool', () => {
             ).not.toThrow();
             const admitted = accepted.finish(finishEnvelope(request, 1, { reason: 'stop' }));
             expect(admitted.output.toolCalls).toHaveLength(1);
-            vi.mocked(generateToolPlanningOutcome)
-                .mockResolvedValueOnce({ status: 'complete', toolCalls: admitted.output.toolCalls })
-                .mockResolvedValueOnce({
+            scriptPlanningTurns([
+                { status: 'complete', toolCalls: admitted.output.toolCalls },
+                {
                     status: 'complete',
                     toolCalls: [
                         {
@@ -216,7 +240,8 @@ describe('transform.compile planner tool', () => {
                             arguments: { commands: [], compiledCallIds: ['compile-text'] },
                         },
                     ],
-                });
+                },
+            ]);
             const planned = await parsePromptToActions({
                 prompt: 'set note velocities in the selected MIDI clips to 90',
                 context: CONTEXT,
@@ -303,14 +328,15 @@ describe('transform.compile planner tool', () => {
         ).not.toThrow();
         const admitted = session.finish(finishEnvelope(request, 1, { reason: 'stop' }));
         expect(admitted.output.toolCalls).toHaveLength(1);
-        vi.mocked(generateToolPlanningOutcome)
-            .mockResolvedValueOnce({
+        scriptPlanningTurns([
+            {
                 status: 'complete',
                 toolCalls: [
                     { id: 'compile-1', name: 'transform.compile', arguments: { document: JSON.stringify(DOCUMENT) } },
                 ],
-            })
-            .mockResolvedValueOnce({ status: 'complete', toolCalls: admitted.output.toolCalls });
+            },
+            { status: 'complete', toolCalls: admitted.output.toolCalls },
+        ]);
         const result = await parsePromptToActions({
             prompt: 'set note velocities in the selected MIDI clips to 90',
             context: CONTEXT,
@@ -331,7 +357,7 @@ describe('transform.compile planner tool', () => {
             })
         );
         const emptyCall = emptySession.finish(finishEnvelope(request, 1, { reason: 'stop' })).output.toolCalls;
-        vi.mocked(generateToolPlanningOutcome).mockResolvedValueOnce({ status: 'complete', toolCalls: emptyCall });
+        scriptPlanningTurns([{ status: 'complete', toolCalls: emptyCall }]);
         const empty = await parsePromptToActions({
             prompt: 'set note velocities in the selected MIDI clips to 90',
             context: CONTEXT,
@@ -367,14 +393,12 @@ describe('transform.compile planner tool', () => {
             projectRevision: 'revision-transform-1',
         });
         expect(result.rejectionReason).toBeUndefined();
-        expect(result.applicationToolReceipts).toMatchObject([
-            {
-                callId: 'compile-1',
-                toolName: 'transform.compile',
-                status: 'success',
-                revision: 'revision-transform-1',
-            },
-        ]);
+        expect(result.applicationToolReceipts?.find((receipt) => receipt.callId === 'compile-1')).toMatchObject({
+            callId: 'compile-1',
+            toolName: 'transform.compile',
+            status: 'success',
+            revision: 'revision-transform-1',
+        });
         expect(result.actions).toEqual([
             { type: 'setAllVelocities', payload: expect.objectContaining({ clipId: 'clip-verse', velocity: 90 }) },
             { type: 'setAllVelocities', payload: expect.objectContaining({ clipId: 'clip-chorus', velocity: 90 }) },
@@ -505,8 +529,8 @@ describe('transform.compile planner tool', () => {
                 },
             ],
         };
-        vi.mocked(generateToolPlanningOutcome)
-            .mockResolvedValueOnce({
+        scriptPlanningTurns([
+            {
                 status: 'complete',
                 toolCalls: [
                     { id: 'compile-1', name: 'transform.compile', arguments: { document: JSON.stringify(document) } },
@@ -516,8 +540,8 @@ describe('transform.compile planner tool', () => {
                         arguments: { category: 'command', names: ['renameClip'] },
                     },
                 ],
-            })
-            .mockResolvedValueOnce({
+            },
+            {
                 status: 'complete',
                 toolCalls: [
                     {
@@ -531,7 +555,8 @@ describe('transform.compile planner tool', () => {
                         },
                     },
                 ],
-            });
+            },
+        ]);
         const result = await parsePromptToActions({
             prompt: 'set note velocities in Bass Verse to 90, excluding Lead, rename Bass Verse to "set 100"',
             context,
@@ -705,46 +730,50 @@ describe('transform.compile planner tool', () => {
                     },
                 ],
             };
-            vi.mocked(generateToolPlanningOutcome)
-                .mockResolvedValueOnce({
-                    status: 'complete',
-                    toolCalls: [
-                        {
-                            id: 'compile-1',
-                            name: 'transform.compile',
-                            arguments: { document: JSON.stringify(document) },
-                        },
-                        {
-                            id: 'catalog-1',
-                            name: 'agent.catalog.discover',
-                            arguments: {
-                                category: 'command',
-                                names: ['addNotes'],
+            scriptPlanningTurns(
+                [
+                    {
+                        status: 'complete',
+                        toolCalls: [
+                            {
+                                id: 'compile-1',
+                                name: 'transform.compile',
+                                arguments: { document: JSON.stringify(document) },
                             },
-                        },
-                    ],
-                })
-                .mockResolvedValueOnce({
-                    status: 'complete',
-                    toolCalls: [
-                        {
-                            id: 'propose-1',
-                            name: 'command.batch.propose',
-                            arguments: {
-                                compiledCallIds: ['compile-1'],
-                                commands: [
-                                    {
-                                        name: 'addNotes',
-                                        arguments: {
-                                            clipId: '$melody',
-                                            notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 90 }],
+                            {
+                                id: 'catalog-1',
+                                name: 'agent.catalog.discover',
+                                arguments: {
+                                    category: 'command',
+                                    names: ['addNotes'],
+                                },
+                            },
+                        ],
+                    },
+                    {
+                        status: 'complete',
+                        toolCalls: [
+                            {
+                                id: 'propose-1',
+                                name: 'command.batch.propose',
+                                arguments: {
+                                    compiledCallIds: ['compile-1'],
+                                    commands: [
+                                        {
+                                            name: 'addNotes',
+                                            arguments: {
+                                                clipId: '$melody',
+                                                notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 90 }],
+                                            },
                                         },
-                                    },
-                                ],
+                                    ],
+                                },
                             },
-                        },
-                    ],
-                });
+                        ],
+                    },
+                ],
+                literalMetricIntakeTurn
+            );
             const result = await parsePromptToActions({
                 prompt,
                 context: CONTEXT,
@@ -785,8 +814,8 @@ describe('transform.compile planner tool', () => {
                 },
             ],
         };
-        vi.mocked(generateToolPlanningOutcome)
-            .mockResolvedValueOnce({
+        scriptPlanningTurns([
+            {
                 status: 'complete',
                 toolCalls: [
                     { id: 'compile-1', name: 'transform.compile', arguments: { document: JSON.stringify(document) } },
@@ -799,8 +828,8 @@ describe('transform.compile planner tool', () => {
                         },
                     },
                 ],
-            })
-            .mockResolvedValueOnce({
+            },
+            {
                 status: 'complete',
                 toolCalls: [
                     {
@@ -814,7 +843,8 @@ describe('transform.compile planner tool', () => {
                         },
                     },
                 ],
-            });
+            },
+        ]);
         const result = await parsePromptToActions({
             prompt: 'set note velocities in Verse MIDI clip to 90, excluding Chorus; set note velocities in Chorus MIDI clip to 100',
             context: CONTEXT,
@@ -884,48 +914,52 @@ describe('transform.compile planner tool', () => {
                     arguments: { name: 'Sneaky', kind: 'midi', binding: 'sneaky' },
                 });
             }
-            vi.mocked(generateToolPlanningOutcome)
-                .mockResolvedValueOnce({
-                    status: 'complete',
-                    toolCalls: [
-                        {
-                            id: 'catalog-1',
-                            name: 'agent.catalog.discover',
-                            arguments: {
-                                category: 'command',
-                                names: ['addTrack', 'addClip', 'addNotes'],
-                            },
-                        },
-                    ],
-                })
-                .mockResolvedValueOnce({
-                    status: 'complete',
-                    toolCalls: [
-                        {
-                            id: 'propose-1',
-                            name: 'command.batch.propose',
-                            arguments: {
-                                plan: {
-                                    semantic: { classification: 'simple', uncertainty: [] },
-                                    objective: 'Create a MIDI track and clip.',
-                                    constraints: [],
-                                    scope: {
-                                        targetIds: [],
-                                        targetRanges: [],
-                                        protectedTargetIds: [],
-                                        protectedRanges: [],
-                                    },
-                                    capabilityIds: ['addTrack', 'addClip', 'addNotes'],
-                                    assetIds: [],
-                                    alternatives: [],
-                                    validationStrategy: ['Check command targets.'],
-                                    stoppingConditions: ['Stop if revision changes.'],
+            scriptPlanningTurns(
+                [
+                    {
+                        status: 'complete',
+                        toolCalls: [
+                            {
+                                id: 'catalog-1',
+                                name: 'agent.catalog.discover',
+                                arguments: {
+                                    category: 'command',
+                                    names: ['addTrack', 'addClip', 'addNotes'],
                                 },
-                                list: { schemaVersion: 1, items: commands },
                             },
-                        },
-                    ],
-                });
+                        ],
+                    },
+                    {
+                        status: 'complete',
+                        toolCalls: [
+                            {
+                                id: 'propose-1',
+                                name: 'command.batch.propose',
+                                arguments: {
+                                    plan: {
+                                        semantic: { classification: 'simple', uncertainty: [] },
+                                        objective: 'Create a MIDI track and clip.',
+                                        constraints: [],
+                                        scope: {
+                                            targetIds: [],
+                                            targetRanges: [],
+                                            protectedTargetIds: [],
+                                            protectedRanges: [],
+                                        },
+                                        capabilityIds: ['addTrack', 'addClip', 'addNotes'],
+                                        assetIds: [],
+                                        alternatives: [],
+                                        validationStrategy: ['Check command targets.'],
+                                        stoppingConditions: ['Stop if revision changes.'],
+                                    },
+                                    list: { schemaVersion: 1, items: commands },
+                                },
+                            },
+                        ],
+                    },
+                ],
+                literalMetricIntakeTurn
+            );
             const result = await parsePromptToActions({
                 prompt,
                 context: CONTEXT,
@@ -961,40 +995,54 @@ describe('transform.compile planner tool', () => {
                 arguments: { clipId: '$melody', notes: [{ pitch: 60, startBeat: 0, duration: 1, velocity: 90 }] },
             },
         ];
-        vi.mocked(generateToolPlanningOutcome)
-            .mockResolvedValueOnce({
-                status: 'complete',
-                toolCalls: [
-                    {
-                        id: 'catalog-1',
-                        name: 'agent.catalog.discover',
-                        arguments: { category: 'command', names: ['addTrack', 'addClip', 'addNotes'] },
-                    },
-                ],
-            })
-            .mockResolvedValueOnce({
-                status: 'complete',
-                toolCalls: [
-                    {
-                        id: 'proposal-1',
-                        name: 'command.batch.propose',
-                        arguments: {
-                            plan: {
-                                semantic: { classification: 'simple', uncertainty: [] },
-                                objective: 'Create named tracks and add notes to the Melody clip.',
-                                constraints: [],
-                                scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
-                                capabilityIds: ['addTrack', 'addClip', 'addNotes'],
-                                assetIds: [],
-                                alternatives: [],
-                                validationStrategy: ['Check owner and target.'],
-                                stoppingConditions: ['Stop if revision changes.'],
-                            },
-                            list: { schemaVersion: 1, items: commands },
+        scriptPlanningTurns(
+            [
+                {
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'catalog-1',
+                            name: 'agent.catalog.discover',
+                            arguments: { category: 'command', names: ['addTrack', 'addClip', 'addNotes'] },
                         },
-                    },
-                ],
-            });
+                    ],
+                },
+                {
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'proposal-1',
+                            name: 'command.batch.propose',
+                            arguments: {
+                                plan: {
+                                    semantic: { classification: 'simple', uncertainty: [] },
+                                    objective: 'Create named tracks and add notes to the Melody clip.',
+                                    constraints: [],
+                                    scope: {
+                                        targetIds: [],
+                                        targetRanges: [],
+                                        protectedTargetIds: [],
+                                        protectedRanges: [],
+                                    },
+                                    capabilityIds: ['addTrack', 'addClip', 'addNotes'],
+                                    assetIds: [],
+                                    alternatives: [],
+                                    validationStrategy: ['Check owner and target.'],
+                                    stoppingConditions: ['Stop if revision changes.'],
+                                },
+                                list: { schemaVersion: 1, items: commands },
+                            },
+                        },
+                    ],
+                },
+            ],
+            nonAcousticMetricIntakeTurn({
+                modeId: 'create',
+                dimensions: ['arrangement', 'midi-content'],
+                creationSlotObjectTypes: ['track'],
+                nestedCreationSlotObjectTypes: ['clip'],
+            })
+        );
         const result = await parsePromptToActions({
             prompt: `create a MIDI track named Lead; create a MIDI track named Bass; add a MIDI clip named Melody on the new Lead track from beat 0 to beat 4; add notes to Melody on ${ownerName} track`,
             context: CONTEXT,
@@ -1513,11 +1561,15 @@ describe('transform.compile planner tool', () => {
     });
 
     it('combines a structured-list command with selected transform emissions in one indexed batch', async () => {
-        vi.mocked(generateToolPlanningOutcome)
-            .mockResolvedValueOnce({
+        scriptPlanningTurns([
+            {
                 status: 'complete',
                 toolCalls: [
-                    { id: 'compile-1', name: 'transform.compile', arguments: { document: JSON.stringify(DOCUMENT) } },
+                    {
+                        id: 'compile-1',
+                        name: 'transform.compile',
+                        arguments: { document: JSON.stringify(DOCUMENT) },
+                    },
                     {
                         id: 'catalog-1',
                         name: 'agent.catalog.discover',
@@ -1527,8 +1579,8 @@ describe('transform.compile planner tool', () => {
                         },
                     },
                 ],
-            })
-            .mockResolvedValueOnce({
+            },
+            {
                 status: 'complete',
                 toolCalls: [
                     {
@@ -1540,7 +1592,12 @@ describe('transform.compile planner tool', () => {
                                 semantic: { classification: 'simple', uncertainty: [] },
                                 objective: 'Set MIDI velocities and mute the MIDI track.',
                                 constraints: [],
-                                scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                                scope: {
+                                    targetIds: [],
+                                    targetRanges: [],
+                                    protectedTargetIds: [],
+                                    protectedRanges: [],
+                                },
                                 capabilityIds: ['setAllVelocities', 'muteTrack'],
                                 assetIds: [],
                                 alternatives: [],
@@ -1566,7 +1623,8 @@ describe('transform.compile planner tool', () => {
                         },
                     },
                 ],
-            });
+            },
+        ]);
         const result = await parsePromptToActions({
             prompt: 'set note velocities in Verse and Chorus MIDI clips to 90, then mute all MIDI tracks',
             context: CONTEXT,
@@ -1596,8 +1654,8 @@ describe('transform.compile planner tool', () => {
                 },
             ],
         };
-        vi.mocked(generateToolPlanningOutcome)
-            .mockResolvedValueOnce({
+        scriptPlanningTurns([
+            {
                 status: 'complete',
                 toolCalls: [
                     { id: 'compile-1', name: 'transform.compile', arguments: { document: JSON.stringify(document) } },
@@ -1607,8 +1665,8 @@ describe('transform.compile planner tool', () => {
                         arguments: { category: 'command', names: ['addTrack', 'addClip', 'addNotes'] },
                     },
                 ],
-            })
-            .mockResolvedValueOnce({
+            },
+            {
                 status: 'complete',
                 toolCalls: [
                     {
@@ -1661,7 +1719,8 @@ describe('transform.compile planner tool', () => {
                         },
                     },
                 ],
-            });
+            },
+        ]);
         const result = await parsePromptToActions({
             prompt: 'create a MIDI track named Lead and add a MIDI clip named Melody on that new track from beat 0 to beat 4, then add notes to Melody',
             context: CONTEXT,
@@ -1691,8 +1750,8 @@ describe('transform.compile planner tool', () => {
                     },
                 ],
             };
-            vi.mocked(generateToolPlanningOutcome)
-                .mockResolvedValueOnce({
+            scriptPlanningTurns([
+                {
                     status: 'complete',
                     toolCalls: [
                         {
@@ -1706,8 +1765,8 @@ describe('transform.compile planner tool', () => {
                             arguments: { category: 'command', names: ['addTrack'] },
                         },
                     ],
-                })
-                .mockResolvedValueOnce({
+                },
+                {
                     status: 'complete',
                     toolCalls: [
                         {
@@ -1724,7 +1783,8 @@ describe('transform.compile planner tool', () => {
                             },
                         },
                     ],
-                });
+                },
+            ]);
 
             const result = await parsePromptToActions({
                 prompt: 'create 2 MIDI tracks named Lead and Bass',
@@ -2121,20 +2181,22 @@ describe('transform.compile planner tool', () => {
             context: CONTEXT,
             projectRevision: 'revision-transform-1',
         });
-        expect(failed.applicationToolReceipts?.[0]).toMatchObject({ status: 'failure' });
+        expect(failed.applicationToolReceipts?.find((receipt) => receipt.callId === 'compile-1')).toMatchObject({
+            status: 'failure',
+        });
         expect(failed.actions).toEqual([]);
         expect(failed.rejectionReason).toContain('unknown, duplicate, or failed transform compilation');
     });
 
     it('allows a successful compilation to remain unused when the planner declines', async () => {
-        vi.mocked(generateToolPlanningOutcome)
-            .mockResolvedValueOnce({
+        scriptPlanningTurns([
+            {
                 status: 'complete',
                 toolCalls: [
                     { id: 'compile-1', name: 'transform.compile', arguments: { document: JSON.stringify(DOCUMENT) } },
                 ],
-            })
-            .mockResolvedValueOnce({
+            },
+            {
                 status: 'complete',
                 toolCalls: [
                     {
@@ -2147,7 +2209,8 @@ describe('transform.compile planner tool', () => {
                         },
                     },
                 ],
-            });
+            },
+        ]);
         const result = await parsePromptToActions({
             prompt: 'set note velocities in the selected MIDI clips to 90',
             context: CONTEXT,
@@ -2227,7 +2290,7 @@ describe('transform.compile planner tool', () => {
             expect(result.rejectionReason).toBe(
                 'Provider planning rejected: Provider command proposal exceeds the command budget.'
             );
-            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(2);
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
         }
     );
 

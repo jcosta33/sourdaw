@@ -28,9 +28,12 @@ import {
     selectValidationPlan,
     SMOKE_SPEC,
 } from '../prValidationScope';
+import { isVitestCollected } from '../vitestCollectionPatterns';
 
 // Synchronous Git fixture and planner child-process work can exceed Vitest's 5000 ms default on shared CI runners.
 const GIT_PLANNER_CASE_TIMEOUT_MS = 30_000;
+// The serial immutable-route Git/Node matrix observed 32.4s on the shared host.
+const IMMUTABLE_PACKAGE_ROUTES_TIMEOUT_MS = 60_000;
 const TUNER = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
 const TUNER_SPECS = ['tests/e2e/tuner.spec.ts', 'tests/e2e/tunerReferenceHomeEnd.spec.ts'] as const;
 const EXPORT = 'src/modules/AudioRendering/presentations/views/ExportDialog.tsx';
@@ -830,6 +833,120 @@ describe('required affected verification', () => {
         GIT_PLANNER_CASE_TIMEOUT_MS
     );
     it(
+        'narrows a function-body change through a fresh coverage map and keeps the full suite otherwise',
+        () => {
+            const root = temporaryRoot();
+            const mapPath = join(temporaryRoot(), 'e2e-coverage-map.json');
+            const feature = 'src/feature/feed.ts';
+            const alpha = 'tests/e2e/alpha.spec.ts';
+            const beta = 'tests/e2e/beta.spec.ts';
+            const gamma = 'tests/e2e/gamma.spec.ts';
+            mkdirSync(join(root, 'tests/e2e'), { recursive: true });
+            mkdirSync(join(root, 'src/app'), { recursive: true });
+            mkdirSync(join(root, 'src/feature'), { recursive: true });
+            mkdirSync(join(root, 'public'), { recursive: true });
+            fixturePlaywright(root);
+            appendFileSync(join(root, '.gitignore'), 'github-output\npr-validation-scope.json\n');
+            for (const spec of [SMOKE_SPEC, gamma, alpha, beta]) {
+                fixtureBrowserCase(root, spec);
+            }
+            writeFileSync(join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: {} }));
+            writeFileSync(
+                join(root, 'src/app/main.ts'),
+                "import { feed } from '../feature/feed';\nexport const app = feed(1);\n"
+            );
+            const feed =
+                'export const LIMIT = 1;\nexport function feed(value: number): number {\n    return value + LIMIT;\n}\n';
+            writeFileSync(join(root, feature), feed);
+            const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+            git('init', '-q', '-b', 'main');
+            git('config', 'user.email', 'ci@example.invalid');
+            git('config', 'user.name', 'Scope test');
+            git('add', '.');
+            git('commit', '-q', '-m', 'base');
+            const base = git('rev-parse', 'HEAD');
+            writeFileSync(
+                mapPath,
+                JSON.stringify({
+                    format: 'e2e-coverage-map-v1',
+                    commit: base,
+                    specs: [alpha, beta, gamma],
+                    alwaysSelect: [beta],
+                    files: { [feature]: { blob: git('rev-parse', `HEAD:${feature}`), specs: [0] } },
+                })
+            );
+            const plan = (head: string, map: Record<string, string>) => {
+                const env: NodeJS.ProcessEnv = {
+                    ...process.env,
+                    BASE_SHA: base,
+                    HEAD_SHA: head,
+                    GITHUB_OUTPUT: join(root, 'github-output'),
+                    ...map,
+                };
+                if (!('E2E_COVERAGE_MAP' in map)) {
+                    delete env.E2E_COVERAGE_MAP;
+                    delete env.E2E_COVERAGE_MAP_CREATED_AT;
+                }
+                const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+                    cwd: root,
+                    encoding: 'utf8',
+                    env,
+                });
+                expect(result.status, result.stderr).toBe(0);
+                return JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')) as ReturnType<
+                    typeof selectValidationPlan
+                >;
+            };
+            const freshMap = { E2E_COVERAGE_MAP: mapPath, E2E_COVERAGE_MAP_CREATED_AT: new Date().toISOString() };
+            git('checkout', '-q', '-b', 'body');
+            writeFileSync(join(root, feature), feed.replace('value + LIMIT', 'value - LIMIT'));
+            git('commit', '-q', '-am', 'body change');
+            const bodyHead = git('rev-parse', 'HEAD');
+            const narrowed = plan(bodyHead, freshMap);
+            expect(allSelected(narrowed)).toEqual([alpha, beta]);
+            expect(narrowed).toMatchObject({
+                browser: true,
+                browserAi: false,
+                reasons: [
+                    {
+                        path: feature,
+                        reason: expect.stringContaining('function-body change executed by 1 mapped specs'),
+                    },
+                ],
+            });
+            // The fetch step wrote nothing: the configured path is absent.
+            const unfetched = plan(bodyHead, {
+                E2E_COVERAGE_MAP: `${mapPath}.missing`,
+                E2E_COVERAGE_MAP_CREATED_AT: '',
+            });
+            expect(allSelected(unfetched)).toEqual([alpha, beta, gamma]);
+            expect(unfetched.reasons).toEqual([
+                { path: feature, reason: expect.stringContaining('no coverage map was retrieved') },
+            ]);
+            const unconfigured = plan(bodyHead, {});
+            expect(allSelected(unconfigured)).toEqual([alpha, beta, gamma]);
+            expect(unconfigured.reasons).toEqual([
+                {
+                    path: feature,
+                    reason: 'product, shared, deleted, renamed, or unclassified dependency; full browser coverage',
+                },
+            ]);
+            git('checkout', '-q', 'main');
+            git('checkout', '-q', '-b', 'top-level');
+            writeFileSync(join(root, feature), feed.replace('LIMIT = 1', 'LIMIT = 2'));
+            git('commit', '-q', '-am', 'top-level change');
+            const topLevel = plan(git('rev-parse', 'HEAD'), freshMap);
+            expect(allSelected(topLevel)).toEqual([alpha, beta, gamma]);
+            expect(topLevel.reasons).toEqual([
+                {
+                    path: feature,
+                    reason: expect.stringContaining(`${feature}: change outside a function body at head line 1`),
+                },
+            ]);
+        },
+        GIT_PLANNER_CASE_TIMEOUT_MS
+    );
+    it(
         'disables inherited Trace2 for disposable Git fixture children',
         () => {
             const root = temporaryRoot();
@@ -1022,6 +1139,8 @@ describe('required affected verification', () => {
             const known = {
                 test: 'node scripts/other.ts',
                 'retarget:plan': 'node scripts/retargetCapabilitySnapshot.ts',
+                'lane:cleanup': 'node scripts/cleanupLanes.ts',
+                'lane:cleanup:install': 'node scripts/installCleanupLanes.ts',
             };
             const baseline = { test: 'node scripts/other.ts' };
             const writePackage = (contents: string | null) => {
@@ -1241,7 +1360,7 @@ describe('required affected verification', () => {
             const renameHead = commit('rename package');
             expectBroad(renameBase, renameHead);
         },
-        GIT_PLANNER_CASE_TIMEOUT_MS
+        IMMUTABLE_PACKAGE_ROUTES_TIMEOUT_MS
     );
 
     it.each(SHARED_OR_BROWSER_OWNED_SCRIPTS)(
@@ -1295,6 +1414,19 @@ describe('required affected verification', () => {
         expect(plan.matrix.include).toEqual([]);
         expect(plan.reasons.map(({ path }) => path)).toEqual(REVIEW_DELIVERY_PATHS);
     });
+
+    it.each(['cleanupLanes', 'installCleanupLanes', 'laneActivity'])(
+        'selects cleanup tooling and its exact spec for %s',
+        (name) => {
+            for (const path of [`scripts/${name}.ts`, `scripts/__tests__/${name}.spec.ts`]) {
+                expect(selectValidationPlan([path], INVENTORY)).toMatchObject({
+                    profile: 'tooling',
+                    browser: false,
+                    codeql: true,
+                });
+            }
+        }
+    );
 
     it.each(NEW_REVIEW_TOOLING_PATHS)('recognizes added review tooling path %s', (path) => {
         expect(selectValidationPlan([path], INVENTORY)).toMatchObject({
@@ -2175,5 +2307,196 @@ describe('repository tooling selects no browser suite', () => {
         const plan = selectValidationPlan(['src/modules/Tuner/notes.md'], INVENTORY);
         expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
         expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+    });
+
+    it.each([
+        'src/app/AGENTS.md',
+        'src/modules/Tuner/CLAUDE.md',
+        'src/infra/ZCODE.md',
+        'src/modules/GrandBoule/GEMINI.md',
+        'src/app/CODEX.md',
+        'src/app/KIMI.md',
+        'tests/e2e/AGENTS.md',
+    ])('keeps per-vendor agent guidance %s on broad non-browser validation', (path) => {
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(plan).toMatchObject(BROAD_WITHOUT_BROWSER);
+        expect(plan.reasons).toEqual([
+            { path, reason: 'repository tooling; broad non-browser validation without browser execution' },
+        ]);
+        expect(productPathsOf([path], INVENTORY, false)).toEqual([]);
+    });
+
+    it('lets the product path decide browser selection when agent guidance changes beside it', () => {
+        expect(productPathsOf(['src/modules/Tuner/AGENTS.md', TUNER], INVENTORY, false)).toEqual([TUNER]);
+    });
+
+    it.each([
+        'public/AGENTS.md',
+        'src/modules/Tuner/notes.md',
+        'src/app/agents.md',
+        'src/app/AGENTS.mdx',
+        'src/app/AGENTS.md.bak',
+        'src/app/NOTAGENTS.md',
+        'src/modules/Tuner/README.md',
+    ])('retains full browser coverage for non-guidance Markdown %s', (path) => {
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+        expect(productPathsOf([path], INVENTORY, false)).toEqual([path]);
+    });
+
+    it('keeps full browser coverage when agent guidance is renamed to product code', () => {
+        const plan = selectValidationPlan(
+            parseChangedPaths('R100\0src/app/AGENTS.md\0src/app/bootstrap.ts\0'),
+            INVENTORY
+        );
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+    });
+
+    it.each([
+        'crates/sourdaw-native/src/lib.rs',
+        'crates/daw-dsp/src/filters.rs',
+        'crates/daw-dsp/Cargo.toml',
+        'Cargo.toml',
+        'Cargo.lock',
+        'rust-toolchain.toml',
+        '.github/workflows/nightly.yml',
+        'evidence/agent-campaign/manifest.json',
+        'evidence/agent-campaign/corpora/held-out.json',
+    ])('keeps %s on broad non-browser validation', (path) => {
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(plan).toMatchObject(BROAD_WITHOUT_BROWSER);
+        expect(plan.reasons).toEqual([
+            { path, reason: 'repository tooling; broad non-browser validation without browser execution' },
+        ]);
+        expect(productPathsOf([path], INVENTORY, false)).toEqual([]);
+    });
+
+    it.each([
+        'crates/daw-dsp/src/filters.rs',
+        'Cargo.lock',
+        '.github/workflows/nightly.yml',
+        'evidence/agent-campaign/manifest.json',
+    ])('lets the feature presentation narrow when %s changes beside it', (path) => {
+        expect(productPathsOf([path, TUNER], INVENTORY, false)).toEqual([TUNER]);
+    });
+
+    it.each([
+        'public/wasm/daw-dsp/daw_dsp_bg.wasm',
+        'src/modules/AudioEngine/wasm/daw_dsp.js',
+        'crates/daw-dsp/src/grinder/nam/fixtures/lstm.nam',
+        'crates/daw-dsp/src/foo.json',
+        'src/foo.rs',
+        '.github/workflows/health-gates.yml',
+        '.github/workflows/heavy-gates.yml',
+        '.github/workflows/nightly.yaml',
+        'cratesx/foo.rs',
+        'src/crates/foo.ts',
+        'evidencex/manifest.json',
+        'electron/main.ts',
+    ])('retains full browser coverage for %s', (path) => {
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+        expect(productPathsOf([path], INVENTORY, false)).toEqual([path]);
+    });
+
+    it('keeps full browser coverage when a Rust source is renamed to product code', () => {
+        const plan = selectValidationPlan(
+            parseChangedPaths('R100\0crates/daw-dsp/src/a.rs\0src/app/bootstrap.ts\0'),
+            INVENTORY
+        );
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+    });
+});
+
+const UNIT_SPEC_REASON = 'unit test source; broad non-browser validation without browser execution';
+
+function e2eSourceReferences(): { file: string; reference: string }[] {
+    const references: { file: string; reference: string }[] = [];
+    for (const entry of readdirSync('tests/e2e', { recursive: true, withFileTypes: true })) {
+        if (!entry.isFile()) {
+            continue;
+        }
+        const file = posix.join(entry.parentPath, entry.name);
+        for (const [match] of readFileSync(file, 'utf8').matchAll(/(?<![\w-])(?:src|#)\/[\w./@-]*/g)) {
+            references.push({ file, reference: match.replace(/^#\//, 'src/') });
+        }
+    }
+    return references;
+}
+
+describe('unit test sources select no browser suite', () => {
+    it.each([
+        'src/modules/AudioEngine/repositories/devices/toneShaping/__tests__/createDeEsser.spec.ts',
+        'src/modules/Tuner/presentations/views/__tests__/TunerPanel.integration.spec.tsx',
+        'src/modules/Tuner/useCases/detectPitch.test.ts',
+    ])('keeps a lone %s on broad non-browser validation', (path) => {
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(plan).toMatchObject({ ...BROAD_WITHOUT_BROWSER, codeql: true });
+        expect(plan.reasons).toEqual([{ path, reason: UNIT_SPEC_REASON }]);
+        expect(productPathsOf([path], INVENTORY, false)).toEqual([]);
+    });
+
+    it.each([
+        'src/modules/BrowserAi/useCases/__tests__/ddspRenderProbe.ts',
+        'src/modules/Tuner/presentations/views/__tests__/tunerFixture.ts',
+        'src/modules/Tuner/presentations/views/TunerPanel.e2e.spec.ts',
+        'src/modules/Tuner/presentations/views/__tests__/TunerPanel.SPEC.ts',
+        'electron/main/__tests__/foo.spec.ts',
+    ])('retains full browser coverage for %s', (path) => {
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+        expect(productPathsOf([path], INVENTORY, false)).toEqual([path]);
+    });
+
+    it('lets a shared product path beside a unit spec select full coverage', () => {
+        const plan = selectValidationPlan(
+            ['src/modules/Tuner/useCases/__tests__/detectPitch.spec.ts', 'src/app/bootstrap.ts'],
+            INVENTORY
+        );
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+    });
+
+    it.each(['R100\0src/a/__tests__/x.spec.ts\0src/a/x.ts\0', 'R100\0src/a/x.ts\0src/a/__tests__/x.spec.ts\0'])(
+        'selects full coverage when a rename crosses between a unit spec and a source: %j',
+        (diff) => {
+            const plan = selectValidationPlan(parseChangedPaths(diff), INVENTORY);
+            expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+            expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+        }
+    );
+
+    it('lets the presentation path decide browser selection when its unit spec changes beside it', () => {
+        const unitSpec = 'src/modules/Tuner/presentations/views/__tests__/TunerPanel.spec.tsx';
+        const paths = [unitSpec, TUNER];
+        const productPaths = productPathsOf(paths, INVENTORY, false);
+        expect(productPaths).toEqual([TUNER]);
+        expect(canNarrow({ productPaths, candidateDiff: `M\0${unitSpec}\0M\0${TUNER}\0`, integrationDiff: '' })).toBe(
+            true
+        );
+        const narrow = selectValidationPlan(paths, INVENTORY, new Map(), false, {
+            kind: 'narrow',
+            specs: [...TUNER_SPECS],
+            browserAi: false,
+            owners: ['Tuner'],
+        });
+        expect(narrow).toMatchObject({ profile: 'broad', browser: true, browserAi: false });
+        expect(allSelected(narrow)).toEqual([...TUNER_SPECS].sort());
+    });
+
+    it('holds the premise that no browser harness file references a Vitest-collected source', () => {
+        const references = e2eSourceReferences();
+        expect(references.map(({ reference }) => reference)).toContain(
+            'src/modules/BrowserAi/useCases/__tests__/ddspRenderProbe.ts'
+        );
+        const collected = references.filter(({ reference }) =>
+            ['', '.ts', '.tsx', '.js', '.jsx'].some((extension) => isVitestCollected(`${reference}${extension}`))
+        );
+        expect(collected).toEqual([]);
     });
 });

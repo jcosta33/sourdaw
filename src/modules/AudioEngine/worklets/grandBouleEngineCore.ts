@@ -193,7 +193,7 @@ export type GrandBouleBlockViews = {
  * Growth shows up as a new buffer identity, which is why the caller must read
  * `memory.buffer` fresh each block and pass it in.
  *
- * This is the same contract as `services/wasmView.ts`, which the other seven
+ * This is the same contract as `worklets/wasmView.ts`, which the other seven
  * processors use, and it is restated rather than imported: `deps:validate`
  * forbids both `worklets/` and `workers/` from importing `services/`, and this
  * module has to be reachable from both. Consolidating one level up would move a
@@ -204,7 +204,7 @@ export type GrandBouleBlockViews = {
  * signal, and that only holds for a non-shared `WebAssembly.Memory`, where
  * `grow()` detaches the old `ArrayBuffer` and installs a new one. A memory
  * declared `shared` grows in place: `memory.buffer` keeps the same identity and
- * the same `byteLength`, so neither this nor `services/wasmView.ts` would notice.
+ * the same `byteLength`, so neither this nor `worklets/wasmView.ts` would notice.
  * It is safe today because `daw-dsp` is built without threads and its memory is
  * not shared; a threaded build would have to compare `byteLength` as well. Stated
  * here so the next reader does not have to re-derive it.

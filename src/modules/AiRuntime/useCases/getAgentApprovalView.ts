@@ -1,7 +1,9 @@
 import { trackStore } from '#/modules/Arrangement/stores';
+import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import { type ChatActionConfirmationStatus } from '../models/Chat';
+import { type MetricGoalEvaluation } from '../models/MetricGoalAdmission';
 import {
     type PendingAppActionConfirmation,
     getPendingActionConfirmation,
@@ -9,7 +11,10 @@ import {
 import { diffProposalCommands } from '../transformers/diffProposalCommands';
 
 import { proposalCommandShape } from './agentReference/proposalCommandShape';
+import { evaluateMetricGoalAdmission } from './evaluateMetricGoalAdmission';
 import { getProviderRouteView } from './getProviderRouteView';
+import { metricGoalStateCodec } from './metricGoalStateCodec';
+import { OBJECTIVE_METRIC_LABELS } from './objectiveMetricProjection';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
 
 type ApprovalSnapshot = PendingAppActionConfirmation['approvalSnapshot'];
@@ -95,6 +100,10 @@ type ApprovalFreshness =
     | { status: 'settled'; currentRevision: string | null };
 
 export type AgentApprovalView = {
+    canConfirm: boolean;
+    metricGoals: Omit<MetricGoalEvaluation, 'criteria'> & {
+        criteria: ReadonlyArray<MetricGoalEvaluation['criteria'][number] & { criterionText: string }>;
+    };
     confirmationId: string;
     runId: string;
     status: ChatActionConfirmationStatus;
@@ -187,7 +196,15 @@ function getFreshness(confirmation: PendingAppActionConfirmation): ApprovalFresh
     }
     try {
         const validation = validateAgentRiskApproval({ approval: agentApproval, commandBatch, currentRevision });
-        if (validation.status === 'valid') {
+        const metric = evaluateMetricGoalAdmission({
+            state: metricGoalStateCodec(confirmation.approvalSnapshot.metricGoalState),
+            commandBatch,
+            currentRevision,
+        });
+        if (
+            validation.status === 'valid' ||
+            (!validation.stale && metric.status === 'blocked' && validation.reason === metric.reason)
+        ) {
             return { status: 'current', currentRevision };
         }
         return { status: validation.stale ? 'stale' : 'mismatched', reason: validation.reason, currentRevision };
@@ -212,7 +229,16 @@ function getRePreviewAvailability(
     if (!confirmation.approvalSnapshot.commandBatch) {
         return { available: false, reason: 'The confirmation has no approved command batch to re-preview.' };
     }
-    if (freshness.status !== 'stale' && freshness.status !== 'mismatched') {
+    const batch = confirmation.approvalSnapshot.commandBatch;
+    const state = metricGoalStateCodec(confirmation.approvalSnapshot.metricGoalState);
+    if (state === null || state.authorities.length === 0) {
+        return { available: false, reason: 'Submit the request again to establish its whole-request intent.' };
+    }
+    const metric = evaluateMetricGoalAdmission({
+        state,
+        commandBatch: batch,
+    });
+    if (freshness.status !== 'stale' && freshness.status !== 'mismatched' && metric.status !== 'blocked') {
         return { available: false, reason: 'The proposal still matches the current project.' };
     }
     return { available: true, reason: null };
@@ -349,6 +375,85 @@ function projectRisk(agentApproval: ApprovalSnapshot['agentApproval']): AgentApp
     };
 }
 
+function projectMetricGoals(metricEvaluation: MetricGoalEvaluation): AgentApprovalView['metricGoals'] {
+    const metricRecipeCatalog = getMixRecipeCatalog();
+    const metricGoals: AgentApprovalView['metricGoals'] = {
+        ...metricEvaluation,
+        criteria: metricEvaluation.criteria.map((criterion) => {
+            const names = (ids: readonly string[]) =>
+                ids
+                    .map((id) => {
+                        if (id === 'master') {
+                            return 'Master output';
+                        }
+                        return trackStore.value?.tracks.find((track) => track.id === id)?.name ?? id;
+                    })
+                    .map((name) => `“${name}”`)
+                    .join(', ');
+            let unit = criterion.unit ?? '';
+            if (unit === 'hertz') {
+                unit = 'Hz';
+            }
+            const range =
+                criterion.range === null
+                    ? 'range unavailable'
+                    : `beats ${String(criterion.range.startBeat)}–${String(criterion.range.endBeat)}`;
+            let source = 'Objective criterion';
+            if (criterion.source.kind === 'recipe') {
+                const recipeId = criterion.source.recipeId;
+                const recipe = metricRecipeCatalog.recipes.find((entry) => entry.id === recipeId);
+                source = recipe === undefined ? 'Authored mixing recipe' : `Recipe “${recipe.title}”`;
+            }
+            if (criterion.source.kind === 'policy') {
+                source = 'Preview comparison';
+            }
+            if (criterion.source.kind === 'request-number') {
+                source = 'Requested target';
+            }
+            const metric =
+                Object.entries(OBJECTIVE_METRIC_LABELS).find(([id]) => id === criterion.metricId)?.[1] ??
+                'unsupported metric';
+            const relations: Readonly<Record<typeof criterion.relation, string>> = {
+                increase: 'must increase',
+                decrease: 'must decrease',
+                hold: 'must stay equal',
+                'match-current': 'must match the current reference preview',
+                'greater-than-current': 'must exceed the current reference preview',
+                'less-than-current': 'must be below the current reference preview',
+                target: `must reach ${criterion.targetValue === null ? 'an unavailable target' : String(criterion.targetValue)} ${unit}`,
+                unsupported: 'cannot be verified with the available measurements',
+            };
+            let reference = '';
+            if (criterion.referenceTargetIds.length > 0) {
+                reference = `; reference ${names(criterion.referenceTargetIds)} in this preview: ${criterion.reference.map(String).join(', ') || 'unavailable'} ${unit}`;
+            }
+            let tolerance = '';
+            if (criterion.relation === 'match-current') {
+                tolerance = ` within ${String(criterion.tolerance)} LU (application objective policy)`;
+            }
+            return {
+                ...criterion,
+                criterionText: `${source}: ${metric}${criterion.band === null ? '' : ` (${criterion.band} band)`} on ${names(criterion.targetIds)}, ${range}, ${relations[criterion.relation]}${tolerance}. Baseline: ${criterion.baseline.map(String).join(', ') || 'unavailable'} ${unit}; preview: ${criterion.observed.map(String).join(', ') || 'unavailable'} ${unit}${reference}. ${criterion.status}.`,
+            };
+        }),
+    };
+    return metricGoals;
+}
+
+function canConfirmApproval(
+    confirmation: PendingAppActionConfirmation,
+    freshness: ApprovalFreshness,
+    metricGoals: AgentApprovalView['metricGoals'],
+    agentApproval: ApprovalSnapshot['agentApproval']
+): boolean {
+    return (
+        confirmation.status === 'proposed' &&
+        freshness.status === 'current' &&
+        metricGoals.status !== 'blocked' &&
+        agentApproval !== undefined
+    );
+}
+
 /**
  * Everything a musician needs to judge one pending proposal: what it changes, what it destroys
  * and how recoverable that is, what it is allowed to touch, whether it still matches the project,
@@ -368,7 +473,23 @@ export function getAgentApprovalView(input: GetAgentApprovalViewInput): AgentApp
     if (measuredPreview?.revision === confirmation.projectRevision && measuredPreview.recipeSource !== undefined) {
         recipes.push(measuredPreview.recipeSource);
     }
+    let metricEvaluation: MetricGoalEvaluation = {
+        status: 'blocked',
+        failure: 'missing',
+        reason: 'This proposal has no command batch to verify.',
+        criteria: [],
+    };
+    if (commandBatch !== undefined) {
+        metricEvaluation = evaluateMetricGoalAdmission({
+            state: metricGoalStateCodec(confirmation.approvalSnapshot.metricGoalState),
+            commandBatch,
+            currentRevision: freshness.currentRevision ?? undefined,
+        });
+    }
+    const metricGoals = projectMetricGoals(metricEvaluation);
     return {
+        canConfirm: canConfirmApproval(confirmation, freshness, metricGoals, agentApproval),
+        metricGoals,
         confirmationId: confirmation.id,
         runId: confirmation.runId,
         status: confirmation.status,

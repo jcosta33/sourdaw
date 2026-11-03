@@ -69,7 +69,7 @@ export async function executeOfflineRender(
         // Instrument setup stops at an export cancel or at this render's own stop, whichever comes first.
         const cancellationSignal = combineSignals(scopeSignal, abortSignal);
         const input = capture();
-        const { sampleRate, historySeconds, outputDurationSeconds } = input;
+        const { sampleRate, historyFrameCount, outputFrameCount } = input;
         const plan = resolveOfflineMixPlan(input, callbacks.onWarning);
         let buffer = await tryNativeOfflineRender(input, plan, callbacks);
         if (!buffer) {
@@ -102,11 +102,11 @@ export async function executeOfflineRender(
         callbacks.onProgress?.(1);
         if (options.onRendered) {
             await options.onRendered(
-                cropHistoryFromRenderedBuffer({ buffer, historySeconds, outputDurationSeconds, borrowed: true })
+                cropHistoryFromRenderedBuffer({ buffer, historyFrameCount, outputFrameCount, borrowed: true })
             );
             return buffer;
         }
-        return cropHistoryFromRenderedBuffer({ buffer, historySeconds, outputDurationSeconds });
+        return cropHistoryFromRenderedBuffer({ buffer, historyFrameCount, outputFrameCount });
     } catch (error) {
         // A render a musician's export stopped reports why, unless its caller stopped it first.
         if (holder !== 'musician-export' && preemption.signal.aborted && callerSignal?.aborted !== true) {

@@ -119,6 +119,7 @@ function buildInvocations(): Record<string, () => unknown> {
         getWaveformPeaks: () => audioBufferCache.getWaveformPeaks('pcm', 4),
         restoreFromIdb: () => audioBufferCache.restoreFromIdb({ context: makeContext() }),
         prepareFromIdb: () => audioBufferCache.prepareFromIdb({ context: makeContext() }),
+        rehydrateEvicted: () => audioBufferCache.rehydrateEvicted(['pcm']),
         clear: () => audioBufferCache.clear(),
         cancelPendingImport: () => audioBufferCache.cancelPendingImport(),
         importBuffers: () => {

@@ -4,6 +4,7 @@ import { createMockAudioContext, createMockAudioNode } from '#/helpers/__tests__
 import { clearProofMeters, proofStore, updateProofMeters } from '#/modules/Proof/stores';
 
 import { type BuiltinDeviceNode } from '../../models/AudioEngineState';
+import { engineDeviceCollaborators } from '../../useCases/engineDeviceCollaborators';
 import { externalLatencyRegistry } from '../../useCases/latencyCompensation/compensation/externalLatencyRegistry';
 import { setAudioDeviceRuntimeSink } from '../audioDeviceRuntimeSink';
 import { type BacteriaNodeResult } from '../BacteriaNode';
@@ -124,6 +125,7 @@ function makeGainNode(): GainNode {
 function createDeps(overrides?: Partial<WasmDeviceCreateDeps>): WasmDeviceCreateDeps {
     return {
         context: makeContext(),
+        collaborators: engineDeviceCollaborators,
         deviceId: 'dev-1',
         deviceType: 'toaster',
         isCurrent: () => true,

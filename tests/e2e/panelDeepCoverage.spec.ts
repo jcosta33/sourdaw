@@ -1,5 +1,4 @@
-import { expect, test } from '@playwright/test';
-
+import { expect, test } from './e2eTest';
 import { launch_from_template, launch_new_project, open_browser_instrument, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -56,8 +55,14 @@ test.describe('Session view', () => {
         await page.locator('#bottom-dock-tab-session').click();
     });
 
-    test('Session view exposes scene-launch buttons (master column always present)', async ({ page }) => {
-        // A fresh project has a master track, so the session grid always renders scene buttons.
+    test('A fresh project shows the empty state and no scene-launch buttons', async ({ page }) => {
+        // The master is not a launch column, so a project with no tracks has nothing to launch.
+        await expect(page.getByText('No session tracks yet')).toBeVisible();
+        await expect(page.getByRole('button', { name: /Launch scene 1/i })).toHaveCount(0);
+    });
+
+    test('Session view exposes scene-launch buttons once a track exists', async ({ page }) => {
+        await add_track(page, 'MIDI');
         await expect(page.getByRole('button', { name: /Launch scene 1/i })).toBeVisible();
         await expect(page.getByRole('button', { name: /Launch scene 8/i })).toBeVisible();
     });
@@ -156,10 +161,10 @@ test.describe('Browser tab switching', () => {
     test('Switching tabs updates the browser route title', async ({ page }) => {
         const browser = page.getByRole('complementary', { name: 'Browser panel' });
 
-        await browser.getByRole('button', { name: 'Effects', exact: true }).click();
+        await browser.getByRole('tab', { name: 'Effects', exact: true }).click();
         await expect(browser.getByText(/Effects/i).first()).toBeVisible();
 
-        await browser.getByRole('button', { name: 'Project', exact: true }).click();
+        await browser.getByRole('tab', { name: 'Project', exact: true }).click();
         await expect(browser.getByText(/Project/i).first()).toBeVisible();
     });
 });

@@ -163,7 +163,7 @@ export const TOASTER_IDX = Object.freeze({
 // seqlock generation exactly as it does in every other telemetry SAB, and the
 // waveform follows it. Keeping the counter at one fixed index for every
 // telemetry SAB in the engine is what lets the worklet-side writer
-// (services/telemetrySeqlock.ts) and {@link createTelemetryReader} be shared
+// (worklets/telemetrySeqlock.ts) and {@link createTelemetryReader} be shared
 // verbatim instead of forked per layout — the scalar indices 2..30 are unused
 // headroom, not padding hiding a different protocol.
 
@@ -216,7 +216,7 @@ export type CreateTelemetryReaderInput<TSnapshot> = {
  * Build the torn-free reader for one device slot (audit RT-2).
  *
  * The worklet publishes its fields under a generation counter (odd while
- * writing, even when settled — see services/telemetrySeqlock.ts). Each read
+ * writing, even when settled — see worklets/telemetrySeqlock.ts). Each read
  * samples the counter before and after the projection and retries while it is
  * odd or moved, so a poll landing mid-write never mixes fields from two blocks.
  *

@@ -30,7 +30,7 @@ vi.mock('../telemetryAllocator', async () => {
     return { ...actual, telemetryAllocator: { allocateSlot: vi.fn(() => null), releaseSlot: vi.fn() } };
 });
 
-vi.mock('../../services/scoringProcessor.ts?worker&url', () => ({ default: 'scoring-processor-url' }));
+vi.mock('../../worklets/scoringProcessor.ts?worker&url', () => ({ default: 'scoring-processor-url' }));
 
 describe('isScoringDevice', () => {
     it('should return true only for the native-scoring device type string', () => {

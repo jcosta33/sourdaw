@@ -1,4 +1,6 @@
 import { type TakeLane } from '../../models/TakeLane';
+import { collectLiveClipIds } from '../../services/collectLiveClipIds';
+import { getTrackStoreState } from '../getTrackStoreState';
 
 import { takesWithLiveClips } from './takesWithLiveClips';
 
@@ -15,9 +17,14 @@ import { takesWithLiveClips } from './takesWithLiveClips';
 export function laneWithLiveTakes(lane: TakeLane): TakeLane {
     const takes = takesWithLiveClips(lane.takes);
     const takeIds = new Set(takes.map((take) => take.id));
-    return {
+    const liveClipIds = collectLiveClipIds(getTrackStoreState()?.tracks ?? []);
+    const next = {
         ...lane,
         takes,
         activeCompRegions: lane.activeCompRegions.filter((region) => takeIds.has(region.takeId)),
     };
+    if (lane.baseGapAudioSources !== undefined) {
+        next.baseGapAudioSources = lane.baseGapAudioSources.filter((tile) => liveClipIds.has(tile.clipId));
+    }
+    return next;
 }

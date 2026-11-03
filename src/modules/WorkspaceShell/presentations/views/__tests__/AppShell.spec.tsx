@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
@@ -39,6 +39,11 @@ const activeDevicePanelStateMock = vi.hoisted(() => ({
 }));
 const elasticEditorPanelMock = vi.hoisted(() => vi.fn());
 const dismissAlphaNoticeMock = vi.hoisted(() => vi.fn());
+const revealDeviceInInspectorMock = vi.hoisted(() => vi.fn());
+const sidebarPanelActions = vi.hoisted(() => ({
+    current: null as { revealDevice: (deviceId: string) => void } | null,
+}));
+const arrangementMinimumHeightMock = vi.hoisted(() => ({ value: 0 }));
 
 // Mock external dependencies
 vi.mock('#/infra/store/useStore', () => ({
@@ -84,11 +89,20 @@ vi.mock('../AgentWorkspace', () => ({
 // never touched it. See #1393.
 vi.mock('#/modules/ContentBrowser/presentations/views', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/ContentBrowser/presentations/views')>()),
-    Sidebar: ({ style }: { style?: React.CSSProperties }) => (
-        <div data-testid="sidebar" style={style}>
-            Sidebar
-        </div>
-    ),
+    Sidebar: ({
+        style,
+        panelActions,
+    }: {
+        style?: React.CSSProperties;
+        panelActions?: { revealDevice: (deviceId: string) => void };
+    }) => {
+        sidebarPanelActions.current = panelActions ?? null;
+        return (
+            <div data-testid="sidebar" style={style}>
+                Sidebar
+            </div>
+        );
+    },
 }));
 
 vi.mock('#/modules/MixerConsole/presentations/views', async (importOriginal) => ({
@@ -98,6 +112,7 @@ vi.mock('#/modules/MixerConsole/presentations/views', async (importOriginal) => 
 
 vi.mock('#/modules/TimelineEditor/presentations/views', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/TimelineEditor/presentations/views')>()),
+    useArrangementMinimumHeight: () => arrangementMinimumHeightMock.value,
     ClipView: () => <div data-testid="clip-view">Clip View</div>,
     AutomationBottomPanel: () => <div data-testid="automation-panel">Automation</div>,
     InspectorPanel: ({ style }: { style?: React.CSSProperties }) => (
@@ -105,6 +120,11 @@ vi.mock('#/modules/TimelineEditor/presentations/views', async (importOriginal) =
             Inspector
         </div>
     ),
+}));
+
+vi.mock('#/modules/Arrangement/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/presentations/views')>()),
+    TakeLanesView: () => <div data-testid="take-lanes-view">Takes</div>,
 }));
 
 vi.mock('#/modules/Preferences/presentations/views', async (importOriginal) => ({
@@ -229,6 +249,10 @@ vi.mock('../../components/AlphaNoticeDialog', () => ({
             </div>
         );
     },
+}));
+
+vi.mock('../../../useCases/panels/revealDeviceInInspector', () => ({
+    revealDeviceInInspector: revealDeviceInInspectorMock,
 }));
 
 vi.mock('../../../useCases/dismissAlphaNotice', () => ({
@@ -452,6 +476,14 @@ describe('AppShell', () => {
         expect(screen.getByTestId('sidebar')).toBeInTheDocument();
     });
 
+    it('gives the sidebar a revealDevice action that shows the device in the inspector', () => {
+        render(<AppShell>Content</AppShell>);
+
+        sidebarPanelActions.current?.revealDevice('device-1');
+
+        expect(revealDeviceInInspectorMock).toHaveBeenCalledExactlyOnceWith('device-1');
+    });
+
     it('preserves falsy defaults for unlisted stores', () => {
         expect(useStore(actionReplayRevisionStore, 0)).toBe(0);
     });
@@ -672,6 +704,202 @@ describe('AppShell', () => {
         });
     });
 
+    describe('Bottom dock tablist', () => {
+        beforeEach(() => {
+            vi.mocked(useWorkspaceState).mockReturnValue(
+                createWorkspaceState({
+                    sidebarOpen: false,
+                    inspectorOpen: false,
+                    mixerOpen: true,
+                })
+            );
+        });
+
+        it('keeps only the selected tab in the tab order and wires it to the shared panel', () => {
+            render(<AppShell>Content</AppShell>);
+
+            const tabs = within(screen.getByRole('tablist', { name: 'Bottom dock' })).getAllByRole('tab');
+            expect(tabs.filter((tab) => tab.getAttribute('tabindex') === '0').map((tab) => tab.textContent)).toEqual([
+                'Mixer',
+            ]);
+            const panel = screen.getByRole('tabpanel');
+            for (const tab of tabs) {
+                expect(tab).toHaveAttribute('aria-controls', panel.id);
+            }
+        });
+
+        it('moves focus along the dock tabs with arrow keys and activates only on click', () => {
+            render(<AppShell>Content</AppShell>);
+            screen.getByRole('tab', { name: 'Mixer' }).focus();
+
+            fireEvent.keyDown(screen.getByRole('tab', { name: 'Mixer' }), { key: 'ArrowRight' });
+            expect(screen.getByRole('tab', { name: 'Editor' })).toHaveFocus();
+            expect(screen.getByRole('tab', { name: 'Mixer' })).toHaveAttribute('aria-selected', 'true');
+
+            fireEvent.keyDown(screen.getByRole('tab', { name: 'Editor' }), { key: 'End' });
+            expect(screen.getByRole('tab', { name: 'Agent' })).toHaveFocus();
+
+            fireEvent.click(screen.getByRole('tab', { name: 'Agent' }));
+            expect(screen.getByRole('tab', { name: 'Agent' })).toHaveAttribute('aria-selected', 'true');
+            expect(screen.getByRole('tab', { name: 'Agent' })).toHaveAttribute('tabindex', '0');
+            expect(screen.getByRole('tab', { name: 'Mixer' })).toHaveAttribute('tabindex', '-1');
+        });
+
+        it('keeps the onboarding hooks on the tabs the tour targets', () => {
+            const { container } = render(<AppShell>Content</AppShell>);
+
+            for (const hook of ['setlist-tab', 'loop-station-tab', 'modulation-tab']) {
+                expect(container.querySelector(`[role="tab"][data-onboarding="${hook}"]`)).not.toBeNull();
+            }
+        });
+    });
+
+    describe('Takes dock tab', () => {
+        const trackWithLanes = (showVariationLanes: boolean): Track => ({
+            ...createTrack(createClip('midi')),
+            showVariationLanes,
+        });
+
+        beforeEach(() => {
+            vi.mocked(useWorkspaceState).mockReturnValue(
+                createWorkspaceState({
+                    sidebarOpen: false,
+                    inspectorOpen: false,
+                    mixerOpen: true,
+                })
+            );
+        });
+
+        it('appears only while a track has variation lanes on', () => {
+            trackStoreState = { tracks: [trackWithLanes(false)], selectedTrackId: null, ghostClips: [] };
+            const { rerender } = render(<AppShell>Content</AppShell>);
+            expect(screen.queryByTestId('takes-tab-button')).not.toBeInTheDocument();
+
+            trackStoreState = { tracks: [trackWithLanes(true)], selectedTrackId: null, ghostClips: [] };
+            rerender(<AppShell>Content</AppShell>);
+            expect(screen.getByTestId('takes-tab-button')).toBeInTheDocument();
+
+            trackStoreState = { tracks: [trackWithLanes(false)], selectedTrackId: null, ghostClips: [] };
+            rerender(<AppShell>Content</AppShell>);
+            expect(screen.queryByTestId('takes-tab-button')).not.toBeInTheDocument();
+        });
+
+        it('does not count a folder, whose lanes are never shown', () => {
+            trackStoreState = {
+                tracks: [{ ...trackWithLanes(true), kind: 'folder' }],
+                selectedTrackId: null,
+                ghostClips: [],
+            };
+
+            render(<AppShell>Content</AppShell>);
+
+            expect(screen.queryByTestId('takes-tab-button')).not.toBeInTheDocument();
+        });
+
+        it('hosts the take lanes view in the dock panel when selected', () => {
+            trackStoreState = { tracks: [trackWithLanes(true)], selectedTrackId: null, ghostClips: [] };
+            render(<AppShell>Content</AppShell>);
+
+            fireEvent.click(screen.getByTestId('takes-tab-button'));
+
+            const tab = screen.getByRole('tab', { name: 'Takes' });
+            expect(tab).toHaveAttribute('aria-selected', 'true');
+            expect(screen.getByRole('tabpanel').getAttribute('aria-labelledby')).toBe(tab.id);
+            expect(screen.getByTestId('take-lanes-view')).toBeInTheDocument();
+        });
+
+        it("opens the dock on the Takes tab when a track's lanes are switched on", () => {
+            vi.mocked(useWorkspaceState).mockReturnValue(
+                createWorkspaceState({ sidebarOpen: false, inspectorOpen: false, mixerOpen: false })
+            );
+            trackStoreState = { tracks: [trackWithLanes(false)], selectedTrackId: null, ghostClips: [] };
+            const { rerender } = render(<AppShell>Content</AppShell>);
+            expect(workspaceStore.value?.mixerOpen).toBe(false);
+
+            trackStoreState = { tracks: [trackWithLanes(true)], selectedTrackId: null, ghostClips: [] };
+            rerender(<AppShell>Content</AppShell>);
+            expect(workspaceStore.value?.mixerOpen).toBe(true);
+
+            vi.mocked(useWorkspaceState).mockReturnValue(
+                createWorkspaceState({ sidebarOpen: false, inspectorOpen: false, mixerOpen: true })
+            );
+            rerender(<AppShell>Content</AppShell>);
+            expect(screen.getByRole('tab', { name: 'Takes' })).toHaveAttribute('aria-selected', 'true');
+            expect(screen.getByTestId('take-lanes-view')).toBeInTheDocument();
+        });
+
+        it('does not pop the dock for a project that loads with lanes already on', () => {
+            vi.mocked(useWorkspaceState).mockReturnValue(
+                createWorkspaceState({ sidebarOpen: false, inspectorOpen: false, mixerOpen: false })
+            );
+            trackStoreState = { tracks: [], selectedTrackId: null, ghostClips: [] };
+            const { rerender } = render(<AppShell>Content</AppShell>);
+
+            trackStoreState = { tracks: [trackWithLanes(true)], selectedTrackId: null, ghostClips: [] };
+            rerender(<AppShell>Content</AppShell>);
+            expect(workspaceStore.value?.mixerOpen).toBe(false);
+
+            vi.mocked(useWorkspaceState).mockReturnValue(
+                createWorkspaceState({ sidebarOpen: false, inspectorOpen: false, mixerOpen: true })
+            );
+            rerender(<AppShell>Content</AppShell>);
+            expect(screen.getByRole('tab', { name: 'Takes' })).toHaveAttribute('aria-selected', 'false');
+        });
+
+        it('does not pop the dock when the shell first mounts over lanes that are already on', () => {
+            trackStoreState = { tracks: [trackWithLanes(true)], selectedTrackId: null, ghostClips: [] };
+            vi.mocked(useWorkspaceState).mockReturnValue(
+                createWorkspaceState({ sidebarOpen: false, inspectorOpen: false, mixerOpen: false })
+            );
+
+            render(<AppShell>Content</AppShell>);
+
+            expect(workspaceStore.value?.mixerOpen).toBe(false);
+        });
+
+        it('lets the user leave the Takes tab while lanes stay on', () => {
+            trackStoreState = { tracks: [trackWithLanes(false)], selectedTrackId: null, ghostClips: [] };
+            const { rerender } = render(<AppShell>Content</AppShell>);
+            trackStoreState = { tracks: [trackWithLanes(true)], selectedTrackId: null, ghostClips: [] };
+            rerender(<AppShell>Content</AppShell>);
+            expect(screen.getByRole('tab', { name: 'Takes' })).toHaveAttribute('aria-selected', 'true');
+
+            fireEvent.click(screen.getByRole('tab', { name: 'Mixer' }));
+            rerender(<AppShell>Content</AppShell>);
+
+            expect(screen.getByRole('tab', { name: 'Mixer' })).toHaveAttribute('aria-selected', 'true');
+            expect(screen.getByRole('tab', { name: 'Takes' })).toHaveAttribute('aria-selected', 'false');
+        });
+
+        it('leaves the dock where it was when lanes are switched off', () => {
+            trackStoreState = { tracks: [trackWithLanes(false)], selectedTrackId: null, ghostClips: [] };
+            const { rerender } = render(<AppShell>Content</AppShell>);
+            trackStoreState = { tracks: [trackWithLanes(true)], selectedTrackId: null, ghostClips: [] };
+            rerender(<AppShell>Content</AppShell>);
+            fireEvent.click(screen.getByRole('tab', { name: 'Editor' }));
+
+            trackStoreState = { tracks: [trackWithLanes(false)], selectedTrackId: null, ghostClips: [] };
+            rerender(<AppShell>Content</AppShell>);
+
+            expect(screen.getByRole('tab', { name: 'Editor' })).toHaveAttribute('aria-selected', 'true');
+            expect(workspaceStore.value?.mixerOpen).toBe(true);
+        });
+
+        it('falls back to the mixer tab when the last lane is switched off while Takes is active', () => {
+            trackStoreState = { tracks: [trackWithLanes(true)], selectedTrackId: null, ghostClips: [] };
+            const { rerender } = render(<AppShell>Content</AppShell>);
+            fireEvent.click(screen.getByTestId('takes-tab-button'));
+            expect(screen.getByTestId('take-lanes-view')).toBeInTheDocument();
+
+            trackStoreState = { tracks: [trackWithLanes(false)], selectedTrackId: null, ghostClips: [] };
+            rerender(<AppShell>Content</AppShell>);
+
+            expect(screen.queryByTestId('takes-tab-button')).not.toBeInTheDocument();
+            expect(screen.queryByTestId('take-lanes-view')).not.toBeInTheDocument();
+            expect(screen.getByRole('tab', { name: 'Mixer' })).toHaveAttribute('aria-selected', 'true');
+        });
+    });
+
     describe('bottom-dock editorHeight and resize floor (Issue #3697)', () => {
         it('uses editorHeight when activeBottomTab is editor and mixerHeight when activeBottomTab is mixer', () => {
             workspaceState = createWorkspaceState({
@@ -735,6 +963,56 @@ describe('AppShell', () => {
             const dockStack = screen.getByRole('tabpanel').parentElement;
             expect(dockStack).not.toHaveClass('shrink-0');
             expect(dockStack).toHaveStyle({ minHeight: '280px' });
+        });
+    });
+
+    describe('arrangement and bottom-dock vertical allocation', () => {
+        afterEach(() => {
+            arrangementMinimumHeightMock.value = 0;
+        });
+
+        it('gives the arrangement the space the bottom panels leave, floored by the arrangement minimum', () => {
+            arrangementMinimumHeightMock.value = 212;
+
+            render(<AppShell>Content</AppShell>);
+
+            const main = document.getElementById('main-content');
+            expect(main).toHaveClass('flex-1', 'min-h-0');
+            expect(main).not.toHaveClass('min-h-min');
+            expect(main).toHaveStyle({ minHeight: '212px' });
+        });
+
+        it('lets the mixer dock shrink while retaining its 120px CSS floor', () => {
+            workspaceState = createWorkspaceState({
+                sidebarOpen: false,
+                inspectorOpen: false,
+                mixerOpen: true,
+                mixerHeight: 200,
+            });
+            vi.mocked(useWorkspaceState).mockImplementation(() => workspaceState);
+
+            render(<AppShell>Content</AppShell>);
+
+            const dockStack = screen.getByRole('tabpanel').parentElement;
+            expect(dockStack).not.toHaveClass('shrink-0');
+            expect(dockStack).toHaveStyle({ height: '200px', minHeight: '120px' });
+        });
+
+        it('lets the virtual keyboard shrink while retaining its 80px CSS floor', () => {
+            workspaceState = createWorkspaceState({
+                sidebarOpen: false,
+                inspectorOpen: false,
+                mixerOpen: false,
+                virtualKeyboardOpen: true,
+                virtualKeyboardHeight: 160,
+            });
+            vi.mocked(useWorkspaceState).mockImplementation(() => workspaceState);
+
+            render(<AppShell>Content</AppShell>);
+
+            const keyboardDock = screen.getByTestId('virtual-keyboard-dock');
+            expect(keyboardDock).not.toHaveClass('shrink-0');
+            expect(keyboardDock).toHaveStyle({ height: '160px', minHeight: '80px' });
         });
     });
 
@@ -937,6 +1215,34 @@ describe('AppShell', () => {
                 vi.advanceTimersByTime(1);
             });
             expect(screen.queryByTestId('launch-screen')).not.toBeInTheDocument();
+        });
+
+        it('unmounts the launch screen without waiting for the fade under reduced motion', () => {
+            vi.useFakeTimers();
+            vi.stubGlobal('matchMedia', (query: string) => ({
+                matches: query === '(prefers-reduced-motion: reduce)',
+                media: query,
+                onchange: null,
+                addListener: vi.fn(),
+                removeListener: vi.fn(),
+                addEventListener: vi.fn(),
+                removeEventListener: vi.fn(),
+                dispatchEvent: vi.fn(),
+            }));
+            try {
+                projectState = createProjectState({ initialized: false, loading: false });
+                const { rerender } = render(<AppShell>Content</AppShell>);
+
+                projectState = createProjectState({ initialized: true, loading: false });
+                rerender(<AppShell>Content</AppShell>);
+
+                act(() => {
+                    vi.advanceTimersByTime(0);
+                });
+                expect(screen.queryByTestId('launch-screen')).not.toBeInTheDocument();
+            } finally {
+                vi.unstubAllGlobals();
+            }
         });
 
         /**

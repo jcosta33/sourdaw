@@ -12,6 +12,7 @@ import { getApplicationWorkflowScope } from './getApplicationWorkflowScope';
 import { getBulkDeviceInsertionTrackScope } from './getBulkDeviceInsertionTrackScope';
 import { getMutedEmptyTrackDeletionScope } from './getMutedEmptyTrackDeletionScope';
 import { getSidechainRoutingPromptScope } from './getSidechainRoutingPromptScope';
+import { getWholeProjectVibeMixScope } from './getWholeProjectVibeMixScope';
 
 function uniqueIds(ids: readonly string[]): string[] {
     return [...new Set(ids)];
@@ -36,6 +37,20 @@ export function composeVerifiedProviderProposalScope(input: {
     workflowCapabilityId: WorkflowCapabilityId | undefined;
 }): AgentRunScope | undefined {
     const targetRanges = getPlannedActionTargetRanges(input.actions);
+    if (input.workflowCapabilityId === 'whole-project-vibe-mix') {
+        const scope = getWholeProjectVibeMixScope(input.context);
+        if (scope !== null) {
+            return {
+                targetIds: [...scope.targetIds],
+                targetRanges,
+                protectedTargetIds: uniqueIds([
+                    ...scope.protectedObjects.map((object) => object.id),
+                    ...getApplicationProtectedObjects(input).map((object) => object.id),
+                ]),
+                protectedRanges: [],
+            };
+        }
+    }
     const workflowScope = getApplicationWorkflowScope({ ...input, targetRanges });
     if (workflowScope !== undefined) {
         return workflowScope;

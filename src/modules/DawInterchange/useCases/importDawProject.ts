@@ -10,6 +10,8 @@ import { parseDawProject } from './parseDawProject';
 export type ImportDawProjectInput = {
     buffer: ArrayBuffer;
     fileName: string;
+    /** `discard` when the user chose to leave the open project without saving. */
+    outgoingProject?: Parameters<typeof applyImportedProjectData>[0]['outgoingProject'];
     /** The caller keeps this true only while the user still wants this replacement. */
     shouldProceed?: () => boolean;
 };
@@ -105,6 +107,7 @@ export async function importDawProject(input: ImportDawProjectInput): ImportDawP
         const ok = await applyImportedProjectData({
             data: projectData,
             decodedAudioBuffers: audioBuffers,
+            outgoingProject: input.outgoingProject,
             shouldProceed,
             transaction,
         });

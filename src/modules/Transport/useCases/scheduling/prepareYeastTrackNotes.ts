@@ -1,4 +1,9 @@
 import { getAudioContext } from '#/modules/AudioEngine/useCases';
+import {
+    frozenMidiTakeRepeats,
+    projectFrozenMidiTakeWindow,
+    selectMidiNotesForRecordingPass,
+} from '#/modules/MIDI/stores';
 import { projectCommittedGroove, shouldPlayMidiEvent } from '#/modules/MIDI/useCases';
 import { isBeatAdmittedByAnchoredClipLoopWindow } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
@@ -375,7 +380,83 @@ function probableYeastNotes(
     );
 }
 
-function prepareClipYeastIterations(
+function prepareFrozenClipYeastIterations(
+    track: SchedulerTrack,
+    clip: ReturnType<typeof resolveMidiWindowClips>[number],
+    midiState: MidiStoreState,
+    fromBeat: number,
+    toBeat: number,
+    cancellation: SchedulerCancellation | undefined,
+    isCurrent: () => boolean,
+    liveYeastIterations: LiveYeastIteration[]
+): string | null | undefined {
+    const frozenSource = clip.midiTakeSource;
+    if (!frozenSource) {
+        return undefined;
+    }
+    let activeYeastCarrierRouteId: string | undefined;
+    const { loopLengthBeats } = projectClipLoopExpansion({
+        clipDurationBeats: clip.endBeat - clip.startBeat,
+        configuredLoopLengthBeats: clip.loopLength,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
+    // A frozen take counts its occurrences on its own grid, as live does.
+    const sourceOccurrenceOffset = getSourceOccurrenceOffset({
+        sourceStartBeat: clip.sourceStartBeat,
+        segmentStartBeat: clip.startBeat,
+        loopLength: loopLengthBeats,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
+    // Admits one repeat before the first that reaches the window.
+    const repeats = frozenMidiTakeRepeats(frozenSource, clip, fromBeat - loopLengthBeats, toBeat);
+    for (const repeat of repeats) {
+        if (!isCurrent()) {
+            return null;
+        }
+        const absoluteOccurrenceIndex = sourceOccurrenceOffset + repeat.absoluteOccurrenceIndex;
+        const window = projectFrozenMidiTakeWindow({
+            source: frozenSource,
+            fragment: clip,
+            recordingPassIndex: clip.midiTakeRecordingPassIndex,
+            absoluteOccurrenceIndex: repeat.absoluteOccurrenceIndex,
+            fromBeat: clip.startBeat,
+            toBeat: clip.endBeat,
+        });
+        if (!window) {
+            throw new Error('Invalid frozen MIDI take window');
+        }
+        const passStart = repeat.startBeat;
+        const passEnd = Math.min(repeat.endBeat, clip.endBeat);
+        const isActive = passStart < toBeat && passEnd > fromBeat;
+        if (!isActive && window.notes.length === 0) {
+            continue;
+        }
+        const routeId = `live-yeast:${track.id}:${clip.id}:${absoluteOccurrenceIndex}`;
+        const sourceNotes = window.notes.map((note) => ({ ...note, startBeat: note.startBeat - passStart }));
+        const descriptor = {
+            routeId,
+            clipId: frozenSource.sourceClipId,
+            iterationStartBeat: passStart,
+            iterationEndBeat: passEnd,
+            midiOffsetBeats: 0,
+            loopEnabled: false,
+            loopLengthBeats: repeat.strideBeats,
+            clipStartBeat: clip.startBeat,
+            sourceNotes,
+        } satisfies LiveYeastIteration;
+        cancellation?.yeastRouteLineage.set(routeId, descriptor);
+        liveYeastIterations.push({
+            ...descriptor,
+            sourceNotes: probableYeastNotes(sourceNotes, midiState, frozenSource.sourceClipId, absoluteOccurrenceIndex),
+        });
+        if (activeYeastCarrierRouteId === undefined && isActive) {
+            activeYeastCarrierRouteId = routeId;
+        }
+    }
+    return activeYeastCarrierRouteId;
+}
+
+function prepareRawClipYeastIterations(
     track: SchedulerTrack,
     clip: ReturnType<typeof resolveMidiWindowClips>[number],
     midiState: MidiStoreState,
@@ -386,7 +467,10 @@ function prepareClipYeastIterations(
     liveYeastIterations: LiveYeastIteration[]
 ): string | null | undefined {
     let activeYeastCarrierRouteId: string | undefined;
-    const sourceNotes = midiState.notesByClipId[clip.id] ?? [];
+    const sourceNotes = selectMidiNotesForRecordingPass(
+        midiState.notesByClipId[clip.id] ?? [],
+        clip.midiTakeRecordingPassIndex
+    );
 
     const clipVisualLength = clip.endBeat - clip.startBeat;
     const loopProjection = projectClipLoopExpansion({
@@ -470,6 +554,20 @@ function prepareClipYeastIterations(
         }
     }
     return activeYeastCarrierRouteId;
+}
+
+function prepareClipYeastIterations(
+    track: SchedulerTrack,
+    clip: ReturnType<typeof resolveMidiWindowClips>[number],
+    midiState: MidiStoreState,
+    fromBeat: number,
+    toBeat: number,
+    cancellation: SchedulerCancellation | undefined,
+    isCurrent: () => boolean,
+    liveYeastIterations: LiveYeastIteration[]
+): string | null | undefined {
+    const prepare = clip.midiTakeSource ? prepareFrozenClipYeastIterations : prepareRawClipYeastIterations;
+    return prepare(track, clip, midiState, fromBeat, toBeat, cancellation, isCurrent, liveYeastIterations);
 }
 
 function appendGeneratedYeastNotes(

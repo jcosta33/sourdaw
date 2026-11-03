@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { launch_from_template, launch_new_project, setupWorkspace } from './e2eUtils';
 
 async function openPalette(page: import('@playwright/test').Page): Promise<void> {

@@ -3,15 +3,10 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     trackStore: { value: null as { tracks: unknown[] } | null },
+    soloModeStore: { value: { soloMode: 'sip' } as { soloMode: string } | null },
 }));
 
-vi.mock('#/modules/WorkspaceShell/stores', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/WorkspaceShell/stores')>()),
-    workspaceStore: { value: { soloMode: 'sip' } as { soloMode: string } | null },
-}));
-
-import { trackStore } from '#/modules/Arrangement/stores';
-import { workspaceStore } from '#/modules/WorkspaceShell/stores';
+import { soloModeStore, trackStore } from '#/modules/Arrangement/stores';
 import { UNKNOWN_FROZEN_TAIL_SECONDS } from '#/utils/frozenBufferTail';
 
 import * as estimateMod from '../../../services/estimateRenderTailSeconds';
@@ -58,8 +53,8 @@ function tailForDeviceType(deviceType: string) {
 type MutableTrackStore = { value: { tracks: unknown[] } | null };
 const mockTrackStore = trackStore as unknown as MutableTrackStore;
 
-type MutableWorkspaceStore = { value: { soloMode: string } | null };
-const mockWorkspaceStore = workspaceStore as unknown as MutableWorkspaceStore;
+type MutableSoloModeStore = { value: { soloMode: string } | null };
+const mockSoloModeStore = soloModeStore as unknown as MutableSoloModeStore;
 
 type TrackOverrides = {
     muted?: boolean;
@@ -127,7 +122,7 @@ function makeTrack(
 describe('getAutoDetectedTailSeconds', () => {
     beforeEach(() => {
         mockTrackStore.value = null;
-        mockWorkspaceStore.value = { soloMode: 'sip' };
+        mockSoloModeStore.value = { soloMode: 'sip' };
         vi.restoreAllMocks();
     });
 
@@ -173,7 +168,7 @@ describe('getAutoDetectedTailSeconds', () => {
         // `applySoloLogic` clears mute unconditionally for a soloed track in PFL
         // mode, which is the whole point of PFL: preview a muted channel. The
         // render therefore plays it in full, so its tail must be reserved.
-        mockWorkspaceStore.value = { soloMode: 'pfl' };
+        mockSoloModeStore.value = { soloMode: 'pfl' };
         mockTrackStore.value = {
             tracks: [
                 makeTrack([{ type: 'builtin-reverb', parameterValues: { 'rev-decay': 20 } }], {
@@ -189,7 +184,7 @@ describe('getAutoDetectedTailSeconds', () => {
     it('drops a track that solo-in-place gates out', () => {
         // The mirror case: with another track soloed in SIP mode, this one feeds
         // nothing and its tail is dead weight.
-        mockWorkspaceStore.value = { soloMode: 'sip' };
+        mockSoloModeStore.value = { soloMode: 'sip' };
         mockTrackStore.value = {
             tracks: [
                 makeTrack([{ type: 'builtin-reverb', parameterValues: { 'rev-decay': 20 } }], { id: 'track-1' }),

@@ -50,6 +50,7 @@ import {
     resetMidiState,
     selectMidiInput,
     setMidiInputTrack,
+    setRecordingMidiAdmissionPort,
     setWebMidiRuntimeEventBus,
 } from '#/modules/MIDI/useCases';
 import { transportStore } from '#/modules/Transport/stores';
@@ -58,11 +59,21 @@ import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
+import { admitRecordingMidiExpression } from '../../../useCases/recording/admitRecordingMidiExpression';
+import { admitRecordingMidiNoteOff } from '../../../useCases/recording/admitRecordingMidiNoteOff';
+import { admitRecordingMidiNoteOn } from '../../../useCases/recording/admitRecordingMidiNoteOn';
+import { findOpenRecordingMidiAdmission } from '../../../useCases/recording/findOpenRecordingMidiAdmission';
+import { findOpenRecordingMidiMemberAdmission } from '../../../useCases/recording/findOpenRecordingMidiMemberAdmission';
+import { getRecordingMidiAdmission } from '../../../useCases/recording/getRecordingMidiAdmission';
+import { recordingMidiSourceBeatAt } from '../../../useCases/recording/recordingMidiSourceBeatAt';
+import { retireRecordingMidiAdmission } from '../../../useCases/recording/retireRecordingMidiAdmission';
 import { startRecording } from '../../../useCases/recording/startRecording';
 import { stopRecording } from '../../../useCases/recording/stopRecording';
+import { takeOwnsRecordingRoot } from '../../../useCases/recording/takeOwnsRecordingRoot';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 
 const TRACK_ID = 'track-midi';
+let disposeRecordingAdmission = (): void => {};
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -99,6 +110,17 @@ describe('recorded controller take commit', () => {
         });
         takeLaneStore.set({ lanes: [] });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        disposeRecordingAdmission = setRecordingMidiAdmissionPort({
+            admitRecordingMidiNoteOn,
+            admitRecordingMidiNoteOff,
+            admitRecordingMidiExpression,
+            findOpenRecordingMidiAdmission,
+            findOpenRecordingMidiMemberAdmission,
+            getRecordingMidiAdmission,
+            retireRecordingMidiAdmission,
+            takeOwnsRecordingRoot,
+            recordingMidiSourceBeatAt,
+        });
         transportStore.set({
             ...transportStore.value!,
             isRecording: false,
@@ -111,6 +133,7 @@ describe('recorded controller take commit', () => {
     afterEach(() => {
         transportStore.set({ ...transportStore.value!, isRecording: false, overdubEnabled: false });
         destroyWebMidi();
+        disposeRecordingAdmission();
         clearHandlerRegistry();
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -194,7 +217,8 @@ describe('recorded controller take commit', () => {
             { controller: 64, value: 127, beat: 1.5, channel: 0 },
             { controller: 64, value: 0, beat: 4, channel: 0 },
         ]);
-        expect(rowsOf(recordedBend)).toEqual([{ value: 1000, beat: 1, channel: 0 }]);
+        // A wheel moved with MPE off bends only its own channel's notes, and the take says so.
+        expect(rowsOf(recordedBend)).toEqual([{ value: 1000, beat: 1, channel: 0, channelScoped: true }]);
         expect(undoHistoryStore.value?.past ?? []).toHaveLength(1);
 
         await undo();
@@ -345,7 +369,7 @@ describe('recorded controller take commit', () => {
             expect(midiStore.value?.pitchBendByClipId[clipId]).toEqual(committedBend);
         });
 
-        it('writes nothing for a discarded take and starts the next take empty', async () => {
+        it('writes nothing for a discarded take and starts the next take with none of its rows, only the wheel it left held', async () => {
             const discardedClipId = await startLiveTake();
             sendLive(4.5, 0xb0, 1, 55);
             sendLive(5, 0xe0, 104, 71);
@@ -369,7 +393,10 @@ describe('recorded controller take commit', () => {
             flushAutomergeStorageWrites();
 
             expect(pedalsOf(next.id)).toEqual([{ controller: 1, value: 33, beat: 0.25, channel: 0 }]);
-            expect(midiStore.value?.pitchBendByClipId[next.id]).toBeUndefined();
+            // None of the discarded take's rows: only the wheel it left off centre, which the next take begins under.
+            expect((midiStore.value?.pitchBendByClipId[next.id] ?? []).map(({ id: _id, ...row }) => row)).toEqual([
+                { value: 1000, beat: 0, channel: 0, channelScoped: true },
+            ]);
             expect(midiStore.value?.ccByClipId[discardedClipId]).toBeUndefined();
         });
 
@@ -844,6 +871,67 @@ describe('recorded controller take commit', () => {
                     { controller: 64, value: 127, beat: 0, channel: 0 },
                     { controller: 64, value: 0, beat: 2, channel: 0 },
                 ]);
+            });
+        });
+
+        describe('a pitch wheel already off centre when the take begins', () => {
+            it('leads the take with the wheel scoped to its channel at clip beat 0, removed by undo and restored by redo', async () => {
+                setWebMidiRuntimeEventBus({ eventBus: { emit: () => Promise.resolve(), on: () => () => {} } });
+                await initWebMidi();
+                setMidiInputTrack(TRACK_ID);
+                // Channel 2's wheel a quarter up (4096 above centre), held through Record.
+                sendLive(4, 0xe1, 0, 96);
+                const [provisional] = startRecording(4);
+                if (!provisional) {
+                    throw new Error('expected a provisional recording clip');
+                }
+                transportStore.set({ ...transportStore.value!, isRecording: true });
+
+                appendRecordedMidiNote({
+                    clipId: provisional.id,
+                    note: { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100, channel: 0 },
+                });
+                appendRecordedMidiNote({
+                    clipId: provisional.id,
+                    note: { id: 'note-2', pitch: 64, startBeat: 0, duration: 1, velocity: 100, channel: 1 },
+                });
+                await stopRecording(8);
+                flushAutomergeStorageWrites();
+
+                const bendsOf = (clipId: string) =>
+                    (midiStore.value?.pitchBendByClipId[clipId] ?? []).map(({ id: _id, ...row }) => row);
+                const expected = [{ value: 4096, beat: 0, channel: 1, channelScoped: true }];
+                expect(bendsOf(provisional.id)).toEqual(expected);
+
+                await undo();
+                flushAutomergeStorageWrites();
+                expect(midiStore.value?.pitchBendByClipId[provisional.id]).toBeUndefined();
+
+                await redo();
+                flushAutomergeStorageWrites();
+                expect(bendsOf(provisional.id)).toEqual(expected);
+            });
+
+            it('adds no bend row when every wheel is centred', async () => {
+                setWebMidiRuntimeEventBus({ eventBus: { emit: () => Promise.resolve(), on: () => () => {} } });
+                await initWebMidi();
+                setMidiInputTrack(TRACK_ID);
+                sendLive(4, 0xe1, 0, 96);
+                sendLive(4, 0xe1, 0, 64);
+                const [provisional] = startRecording(4);
+                if (!provisional) {
+                    throw new Error('expected a provisional recording clip');
+                }
+                transportStore.set({ ...transportStore.value!, isRecording: true });
+
+                appendRecordedMidiNote({
+                    clipId: provisional.id,
+                    note: { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 },
+                });
+                await stopRecording(8);
+                flushAutomergeStorageWrites();
+
+                expect(midiStore.value?.pitchBendByClipId[provisional.id]).toBeUndefined();
             });
         });
 

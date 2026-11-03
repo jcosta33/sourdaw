@@ -4,10 +4,7 @@ Multiband creative multi-effects framework (crossover filtering, multi-model dis
 
 ## Public Contract Surface
 
-- **Stores** (`stores/index.ts`): `bacteriaStore`, `updateBacteriaMeters`.
-- **Views** (`presentations/views/index.ts`): `BacteriaPanel`.
-- **Events** (`events/index.ts`): No public events.
-- **Use Cases** (`useCases/index.ts`): `initBacteriaSubscribers`, `initBacteriaModAssignmentsPersistence`, `captureOfflineBacteria`, `prepareOfflineBacteria`, `resolveNativeBacteriaModAssignments`. Internal parameter bridge and preset loaders otherwise consume state within the module.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`. The parameter bridge and preset loaders consume state within the module and are not exported.
 
 ## Key Subsystems
 
@@ -28,6 +25,6 @@ Multiband creative multi-effects framework (crossover filtering, multi-model dis
 
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
-- `pnpm test:run <changed-spec>`
-- `pnpm cargo:test --package daw-dsp bacteria`
+- `pnpm guard --profile focused -- pnpm test:run <changed-spec>`
+- `pnpm guard --profile focused -- pnpm cargo:test --package daw-dsp bacteria`
 - PR CI checks module boundaries; inspect that result after cross-module changes.

@@ -1,4 +1,4 @@
-import { automergeRepository } from '../repositories/automergeRepository';
+import { captureProjectIdentity as captureStoredProjectIdentity } from '../stores/documentIdentityEpoch';
 
 /**
  * Capture the identity of the loaded project: stable across an ordinary in-place mutation, and
@@ -11,5 +11,5 @@ import { automergeRepository } from '../repositories/automergeRepository';
  * that needs "same project" reaches for this instead.
  */
 export function captureProjectIdentity(): string {
-    return JSON.stringify({ documentIdentityEpoch: automergeRepository.getDocumentIdentityEpoch() });
+    return captureStoredProjectIdentity();
 }

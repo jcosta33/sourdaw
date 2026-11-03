@@ -69,13 +69,17 @@ vi.mock('#/components/daw/DawCompactSelect', () => ({
     DawCompactSelect: ({
         value,
         onChange,
+        className,
+        title,
         children,
     }: {
         value: number;
         onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
+        className?: string;
+        title?: string;
         children: React.ReactNode;
     }) => (
-        <select data-testid="compact-select" value={value} onChange={onChange}>
+        <select data-testid="compact-select" value={value} onChange={onChange} className={className} title={title}>
             {children}
         </select>
     ),
@@ -85,19 +89,26 @@ vi.mock('#/components/ui/bipolar-slider', () => ({
     BipolarSlider: ({
         value,
         onValueChange,
+        showValue = true,
+        formatValue = String,
         'aria-label': ariaLabel,
     }: {
         value: number;
         onValueChange: (v: number) => void;
+        showValue?: boolean;
+        formatValue?: (v: number) => string;
         'aria-label'?: string;
     }) => (
-        <input
-            type="range"
-            data-testid="bipolar-slider"
-            aria-label={ariaLabel}
-            value={value}
-            onChange={(event) => onValueChange(Number(event.target.value))}
-        />
+        <div>
+            <input
+                type="range"
+                data-testid="bipolar-slider"
+                aria-label={ariaLabel}
+                value={value}
+                onChange={(event) => onValueChange(Number(event.target.value))}
+            />
+            {showValue ? <span data-testid="bipolar-slider-readout">{formatValue(value)}</span> : null}
+        </div>
     ),
 }));
 
@@ -359,6 +370,34 @@ describe('DeviceParameterControl', () => {
         expect(screen.getByTestId('compact-select')).toBeInTheDocument();
     });
 
+    it('lets a choice select take the card width and exposes the full selected option on hover', () => {
+        const choiceParam: DeviceParameterView = {
+            ...mockParam,
+            name: 'Kit',
+            type: 'choice',
+            value: 1,
+            choices: ['808 Kit', 'Electronic Kit', 'Acoustic Kit'],
+        };
+        const device: Device = { ...mockDevice, parameterValues: { gain: 1 } };
+        render(<DeviceParameterControl param={choiceParam} device={device} trackId="track-1" />);
+
+        const select = screen.getByTestId('compact-select');
+        expect(select).toHaveAttribute('title', 'Electronic Kit');
+        expect(select.className).toMatch(/\bw-full\b/);
+        expect(select.className).toMatch(/\bmin-w-0\b/);
+        expect(select.className).toMatch(/\btruncate\b/);
+        expect(select.className).not.toMatch(/\bw-\[\d+px\]/);
+    });
+
+    it('gives a legal-set select the same width rule and titles it with the member in force', () => {
+        render(<DeviceParameterControl param={crustOversamplingParam()} device={crustDevice} trackId="track-1" />);
+
+        const select = screen.getByTestId('compact-select');
+        expect(select).toHaveAttribute('title', expect.stringMatching(/^4/));
+        expect(select.className).not.toMatch(/\bw-\[\d+px\]/);
+        expect(select.className).toMatch(/\bw-full\b/);
+    });
+
     it('dispatches one guarded action when choice selection changes', () => {
         const choiceParam: DeviceParameterView = {
             ...mockParam,
@@ -534,6 +573,53 @@ describe('DeviceParameterControl', () => {
         };
         render(<DeviceParameterControl param={dbParam} device={mockDevice} trackId="track-1" />);
         expect(screen.getByRole('slider', { name: 'Gain' })).toBeInTheDocument();
+    });
+
+    describe('slider parameter card layout', () => {
+        const dbParam: DeviceParameterView = {
+            ...mockParam,
+            name: 'High Gain',
+            unit: 'dB',
+            value: -13,
+            minValue: -24,
+            maxValue: 24,
+        };
+
+        it('lets the label shrink and truncate instead of pushing the value group', () => {
+            render(<DeviceParameterControl param={dbParam} device={mockDevice} trackId="track-1" />);
+            const label = screen.getByText('High Gain');
+            expect(label).toHaveClass('min-w-0', 'flex-1', 'truncate');
+            expect(label).toHaveAttribute('title', 'High Gain');
+        });
+
+        it('keeps the value, MIDI learn and automation controls together in a non-shrinking group', () => {
+            render(<DeviceParameterControl param={dbParam} device={mockDevice} trackId="track-1" />);
+            const group = screen.getByTestId('midi-learn-btn').parentElement;
+            expect(group).toHaveClass('shrink-0');
+            expect(group).toContainElement(screen.getByLabelText(/Automate High Gain/i));
+            expect(group).toHaveTextContent(/dB/);
+            expect(group?.parentElement).toHaveClass('flex-wrap');
+        });
+
+        it('shows the value once, in the header, with the parameter unit', () => {
+            const device: Device = { ...mockDevice, parameterValues: { gain: -13 } };
+            render(<DeviceParameterControl param={dbParam} device={device} trackId="track-1" />);
+            expect(screen.queryByTestId('bipolar-slider-readout')).not.toBeInTheDocument();
+            expect(screen.getAllByText(/-13(\.\d+)?\s*dB/)).toHaveLength(1);
+        });
+
+        it('keeps the knob label column shrinkable for non-dB units', () => {
+            render(
+                <DeviceParameterControl
+                    param={{ ...mockParam, name: 'Frequency', unit: 'Hz' }}
+                    device={mockDevice}
+                    trackId="track-1"
+                />
+            );
+            expect(screen.getByText('Frequency')).toHaveClass('min-w-0', 'truncate');
+            expect(screen.getByText(/Hz/)).toHaveClass('tabular-nums');
+            expect(screen.getByTestId('rotary-knob')).toBeInTheDocument();
+        });
     });
 
     it('should render MIDI learn button', () => {

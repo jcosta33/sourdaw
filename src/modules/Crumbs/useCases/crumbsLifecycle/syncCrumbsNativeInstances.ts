@@ -54,6 +54,7 @@ import {
 import { crumbsStore, removeInstance } from '../../stores/crumbsStore';
 import { ensurePadInstance, removePadInstance } from '../../stores/padStore';
 import { ensureSliceInstance, removeSliceInstance } from '../../stores/sliceStore';
+import { syncCrumbsRecordingState } from '../recording/syncCrumbsRecordingState';
 
 import { ensureCrumbsInstanceFromProject } from './ensureCrumbsInstanceFromProject';
 
@@ -103,6 +104,7 @@ async function openInstance(deviceId: string): Promise<void> {
             // it does not change what a write reaches.
             logger.debug(`[Crumbs] instance ${deviceId} is already bound to the engine`);
             markCrumbsInstanceBound(deviceId);
+            await syncCrumbsRecordingState(deviceId, 'attach');
             return;
         }
         // Rolled back for the same reason the panel's own init used to roll it
@@ -118,6 +120,8 @@ async function openInstance(deviceId: string): Promise<void> {
         removeSliceInstance(deviceId);
         return;
     }
+
+    await syncCrumbsRecordingState(deviceId, 'attach');
 
     const filePath = crumbsStore.value?.[deviceId]?.activeSample?.filePath;
     if (!filePath) {
@@ -140,6 +144,7 @@ async function openInstance(deviceId: string): Promise<void> {
 }
 
 async function closeInstance(deviceId: string): Promise<void> {
+    await syncCrumbsRecordingState(deviceId, 'detach');
     // The retraction leads the destroy, for the reason PluginHost states for a
     // hosted unload: between the native side dropping the instance and this
     // process hearing about it, a play that still read the mirror would build a
@@ -164,11 +169,18 @@ export function syncCrumbsNativeInstances(): () => void {
         return () => undefined;
     }
 
+    let active = true;
     const live = new Set<string>();
     const chains = new Map<string, Promise<void>>();
 
     const queue = (deviceId: string, work: () => Promise<void>): void => {
-        const chain = (chains.get(deviceId) ?? Promise.resolve()).then(work, work);
+        const run = async (): Promise<void> => {
+            await work();
+            if (!active) {
+                await syncCrumbsRecordingState(deviceId, 'detach');
+            }
+        };
+        const chain = (chains.get(deviceId) ?? Promise.resolve()).then(run, run);
         chains.set(deviceId, chain);
         void chain.then(() => {
             if (chains.get(deviceId) === chain) {
@@ -177,7 +189,7 @@ export function syncCrumbsNativeInstances(): () => void {
         });
     };
 
-    return trackStore.subscribe((state) => {
+    const unsubscribe = trackStore.subscribe((state) => {
         const present = crumbsDeviceIds(state);
 
         for (const deviceId of present) {
@@ -196,4 +208,12 @@ export function syncCrumbsNativeInstances(): () => void {
             queue(deviceId, () => closeInstance(deviceId));
         }
     });
+
+    return () => {
+        active = false;
+        unsubscribe();
+        for (const deviceId of live) {
+            void syncCrumbsRecordingState(deviceId, 'detach');
+        }
+    };
 }

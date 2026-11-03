@@ -4,10 +4,7 @@ Multi-topology compressor audio effect (VCA, Opto, FET, Diode models with Thrust
 
 ## Public Contract Surface
 
-- **Stores** (`stores/index.ts`): `glutenStore`, `glutenMeterStore`, `updateGlutenMeters`, `deleteGlutenMeters`, `GlutenMeterValues`.
-- **Views** (`presentations/views/index.ts`): `GlutenPanel`.
-- **Use Cases** (`useCases/index.ts`): No public cross-module use cases; internal param bridge and presets are consumed locally by `GlutenPanel`.
-- **Events** (`events/index.ts`): No public events.
+Public surface: `stores/index.ts`, `presentations/views/index.ts`. The module has no public cross-module use cases; its param bridge and presets are consumed locally by `GlutenPanel`.
 
 ## Key Subsystems
 
@@ -26,6 +23,6 @@ Multi-topology compressor audio effect (VCA, Opto, FET, Diode models with Thrust
 
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
-- `pnpm test:run <changed-spec>`
-- `pnpm cargo:test --package daw-dsp gluten`
+- `pnpm guard --profile focused -- pnpm test:run <changed-spec>`
+- `pnpm guard --profile focused -- pnpm cargo:test --package daw-dsp gluten`
 - PR CI checks module boundaries; inspect that result after cross-module changes.

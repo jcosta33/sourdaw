@@ -36,6 +36,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     takeOwnsRecordingRoot: vi.fn(() => true),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    getAudioContext: vi.fn(() => ({ currentTime: 0.2 })),
     stopAudioRecording: vi.fn(),
 }));
 vi.mock('../../../repositories/transport/updateTransportState', () => ({

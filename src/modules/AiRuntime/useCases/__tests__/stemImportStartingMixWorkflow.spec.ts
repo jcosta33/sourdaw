@@ -35,6 +35,7 @@ import {
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { type ToolSchema } from '../../models/ToolDefinitions';
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { agentRunStore } from '../../stores/agentRunStore';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -48,18 +49,69 @@ import { preparedStemImportResources } from '../agentReference/registerPreparedS
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { cancelPendingChatActions } from '../cancelPendingChatActions';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { getAgentApprovalView } from '../getAgentApprovalView';
+import { metricGoalStateCodec } from '../metricGoalStateCodec';
+import * as promptParser from '../parsePromptToActions';
 import { sendChatMessage } from '../sendChatMessage';
 
 import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { advertisedAnswerSchema } from './answerWireFixture';
+import {
+    type ScriptedTurn,
+    readCreativeInterpretationCatalog,
+    selectCreativeInterpretationCall,
+} from './highLevelIntentWorkflowFixture';
+import { literalMetricIntakeTurn, readMetricPublication } from './metricGoalWorkflowFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 
 const PROMPT =
     'Import stems, align them to project tempo, name and group them, classify likely instrument roles, and create a sensible starting mix.';
 const PARAPHRASE =
     'Bring in this stem set, tempo-align and organize it by likely instrument, then establish a practical initial balance.';
+// Import/recovery controls request the published role coefficients, without asserting mix quality.
+const IMPORT_CONTROL_PROMPT =
+    'Import stems, align them to project tempo, name and group them, classify likely instrument roles, and apply the published role-based gain and pan values.';
+const IMPORT_CONTROL_PARAPHRASE =
+    'Bring in the selected stems, tempo-align and organize them by instrument role, using the published role-based gain and pan values.';
+
+const startingMixMetricIntake: ScriptedTurn = (userMessage, providerView) => {
+    const call = selectCreativeInterpretationCall({
+        catalog: readCreativeInterpretationCatalog(userMessage, providerView),
+        modeId: 'create',
+        creationSlotObjectTypes: ['track'],
+        dimensions: ['processing', 'arrangement'],
+    });
+    const objective = readMetricPublication({ function: advertisedAnswerSchema(providerView) }).find(
+        (candidate) => candidate.kind === 'unsupported'
+    );
+    if (objective === undefined) {
+        throw new TypeError('Expected the published unsupported starting-mix objective.');
+    }
+    return [
+        {
+            ...call,
+            arguments: {
+                ...call.arguments,
+                answer: null,
+                metricIntent: {
+                    kind: 'perceptual',
+                    uncertainty: 'none',
+                    objectives: [
+                        {
+                            objectiveId: objective.id,
+                            scopeCandidateId: null,
+                            referenceScopeCandidateId: null,
+                            rangeCandidateId: null,
+                        },
+                    ],
+                },
+            },
+        },
+    ];
+};
 const STEM_SOURCE_NAMES = [
     'Kick_120.wav',
     'Snare_120.wav',
@@ -457,7 +509,7 @@ function assertDiscoveredCommandSchemas(receipts: readonly unknown[], finalCalls
     if (
         !isRecord(discovery) ||
         discovery.status !== 'success' ||
-        discovery.turn !== 1 ||
+        discovery.turn !== 2 ||
         !isRecord(discovery.data) ||
         discovery.data.schema !== 'sourdaw.agent-tool-catalog' ||
         discovery.data.schemaVersion !== 1 ||
@@ -565,23 +617,63 @@ function getFinalStemImportCalls(
 function getProviderCallsForUserMessage(
     userMessage: string,
     transformPlan: (plan: ProviderCall[]) => ProviderCall[],
-    receipts: readonly unknown[]
+    receipts: readonly unknown[],
+    providerView: string | readonly ToolSchema[],
+    intake: ScriptedTurn = literalMetricIntakeTurn
 ): ProviderCall[] {
+    if (
+        !receipts.some(
+            (receipt) =>
+                isRecord(receipt) && receipt.toolName === 'selectCreativeInterpretation' && receipt.status === 'success'
+        )
+    ) {
+        return intake(userMessage, providerView);
+    }
+    if (
+        intake === startingMixMetricIntake &&
+        receipts.some(
+            (receipt) =>
+                isRecord(receipt) &&
+                receipt.toolName === 'selectWorkflowCapability' &&
+                isRecord(receipt.error) &&
+                receipt.error.code === 'measurement-required'
+        ) &&
+        !receipts.some((receipt) => isRecord(receipt) && receipt.toolName === 'analysis.measure')
+    ) {
+        return [
+            {
+                name: 'analysis.measure',
+                arguments: { scope: { kind: 'master' }, range: { sectionId: 'missing-section' } },
+            },
+        ];
+    }
     if (getProviderContext(userMessage).stemImportCapability === undefined) {
         return withWorkflowCapabilitySelection('stem-import-starting-mix', []);
     }
     const finalCalls = getFinalStemImportCalls(userMessage, transformPlan);
-    if (receipts.length === 0) {
-        return catalogDiscoveryPlan(finalCalls);
+    if (!receipts.some((receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover')) {
+        const discovery = catalogDiscoveryPlan(finalCalls);
+        if (intake === startingMixMetricIntake) {
+            discovery.push({
+                name: 'analysis.measure',
+                arguments: { scope: { kind: 'master' }, range: { sectionId: 'missing-section' } },
+            });
+        }
+        return discovery;
     }
     assertDiscoveredCommandSchemas(receipts, finalCalls);
     return finalCalls;
 }
 
-function createWebLlmResponder(transformPlan: (plan: ProviderCall[]) => ProviderCall[] = (plan) => plan) {
-    return (_systemPrompt: string, userMessage: string) => {
+function createWebLlmResponder(
+    transformPlan: (plan: ProviderCall[]) => ProviderCall[] = (plan) => plan,
+    intake: ScriptedTurn = literalMetricIntakeTurn
+) {
+    return (systemPrompt: string, userMessage: string) => {
         const receipts = hasApplicationToolReceiptContext(userMessage) ? getApplicationToolReceipts(userMessage) : [];
-        return Promise.resolve(JSON.stringify(getProviderCallsForUserMessage(userMessage, transformPlan, receipts)));
+        return Promise.resolve(
+            JSON.stringify(getProviderCallsForUserMessage(userMessage, transformPlan, receipts, systemPrompt, intake))
+        );
     };
 }
 
@@ -593,11 +685,17 @@ function createHostedResponder(
             throw new TypeError('Expected hosted provider request body');
         }
         const userMessage = getHostedUserMessage(init.body);
+        const request = JSON.parse(init.body) as { tools: ToolSchema[] };
         // A hosted turn answers the turns behind it natively, so its receipts arrive as tool
         // messages rather than as text folded into the user message.
         return Promise.resolve(
             toolCallsResponse(
-                getProviderCallsForUserMessage(userMessage, transformPlan, getReplayedToolReceipts(init.body))
+                getProviderCallsForUserMessage(
+                    userMessage,
+                    transformPlan,
+                    getReplayedToolReceipts(init.body),
+                    request.tools
+                )
             )
         );
     };
@@ -727,15 +825,123 @@ describe('stem import and starting mix workflow', () => {
         vi.unstubAllGlobals();
     });
 
-    it('routes a semantic paraphrase to the stem-import capability before opening the picker', async () => {
-        await sendChatMessage(PARAPHRASE);
+    it.each([PROMPT, PARAPHRASE])(
+        'keeps the original starting-mix request visible and blocks unmeasured approval: %s',
+        async (prompt) => {
+            mocks.generateWebLlmCompletion.mockImplementation(
+                createWebLlmResponder((plan) => plan, startingMixMetricIntake)
+            );
+            flushAutomergeStorageWrites();
+            const before = {
+                tracks: structuredClone(trackStore.value),
+                undo: structuredClone(undoStore.value),
+                revision: captureProjectRevision(),
+            };
+
+            const planning = vi.spyOn(promptParser, 'parsePromptToActions');
+            let plans: Awaited<ReturnType<typeof promptParser.parsePromptToActions>>[];
+            try {
+                await sendChatMessage(prompt);
+                expect(mocks.generateWebLlmCompletion).toHaveBeenCalledTimes(6);
+                expect(planning).toHaveBeenCalledTimes(2);
+                plans = await Promise.all(planning.mock.results.map((result) => result.value));
+            } finally {
+                planning.mockRestore();
+            }
+            expect(plans[0]?.preparationRequest).toBe('stem-import');
+            for (const plan of plans) {
+                const receipts = plan.applicationToolReceipts ?? [];
+                const intake = receipts.find((receipt) => receipt.toolName === 'selectCreativeInterpretation');
+                const measurement = receipts.find((receipt) => receipt.toolName === 'analysis.measure');
+                expect(intake).toMatchObject({ status: 'success', revision: null });
+                expect(measurement).toMatchObject({
+                    status: 'failure',
+                    revision: null,
+                    error: { code: 'unknown-section' },
+                });
+                expect(measurement?.callId).not.toBe(intake?.callId);
+                expect(measurement?.turn).toBeGreaterThan(intake?.turn ?? 0);
+            }
+            const firstReceipts = plans[0]?.applicationToolReceipts ?? [];
+            expect(firstReceipts).toContainEqual(
+                expect.objectContaining({
+                    toolName: 'selectWorkflowCapability',
+                    error: expect.objectContaining({ code: 'measurement-required' }),
+                })
+            );
+            const firstSettlement = plans[0]?.terminalMeasurementSettlement;
+            if (firstSettlement === undefined) {
+                throw new TypeError('Expected the held selection settlement.');
+            }
+            const settlement: { revision: string; intake: { callId: string }; measurement: { callId: string } } =
+                JSON.parse(firstSettlement);
+            expect(settlement.revision).toBe(before.revision);
+            expect(settlement.intake.callId).toBe(
+                firstReceipts.find((receipt) => receipt.toolName === 'selectCreativeInterpretation')?.callId
+            );
+            expect(settlement.measurement.callId).toBe(
+                firstReceipts.find((receipt) => receipt.toolName === 'analysis.measure')?.callId
+            );
+            const secondIntake = plans[1]?.applicationToolReceipts?.find(
+                (receipt) => receipt.toolName === 'selectCreativeInterpretation'
+            );
+            expect(metricGoalStateCodec(plans[1]?.metricGoalState)?.authorities).toContainEqual(
+                expect.objectContaining({ revision: before.revision, callId: secondIntake?.callId })
+            );
+            expect(plans[1]?.actions.map((action) => action.type)).toEqual(['importStemSet']);
+
+            const id = confirmationId();
+            const confirmation = getPendingActionConfirmation(id);
+            if (!confirmation) {
+                throw new TypeError('Expected the complete original starting-mix proposal to remain visible.');
+            }
+            const metricState = confirmation.approvalSnapshot.metricGoalState;
+            expect(metricGoalStateCodec(metricState)?.authorities).toMatchObject([
+                { kind: 'perceptual', goals: [{ relation: 'unsupported' }] },
+            ]);
+            expect(metricGoalStateCodec(metricState)?.steps).toEqual([
+                {
+                    stepId: 'overall',
+                    commandCount: 1,
+                    operationTypes: ['importStemSet'],
+                    recipePrefixHash: null,
+                },
+            ]);
+            expect(metricGoalStateCodec(metricState)?.proofs).toEqual([]);
+            expect(confirmation.approvalSnapshot.agentApproval?.metricGoalState).toBe(metricState);
+            expect(agentRunLifecycle.get(confirmation.runId ?? '')?.plan?.metricGoalState).toBe(metricState);
+            expect(agentRunLifecycle.get(confirmation.runId ?? '')?.plan?.applicationToolReceipts).toContainEqual(
+                expect.objectContaining({
+                    toolName: 'analysis.measure',
+                    status: 'failure',
+                    error: expect.objectContaining({ code: 'unknown-section' }),
+                })
+            );
+            expect(confirmation?.actions.map((action) => action.type)).toEqual(['importStemSet']);
+            expect(getAgentApprovalView({ confirmationId: id })).toMatchObject({
+                canConfirm: false,
+                metricGoals: { status: 'blocked' },
+            });
+            await expect(confirmPendingChatActions({ confirmationId: id })).resolves.toMatchObject({
+                status: 'failed',
+                reason: expect.stringMatching(/metric|objective|measur/u),
+            });
+            expect(trackStore.value).toEqual(before.tracks);
+            expect(undoStore.value).toEqual(before.undo);
+            expect(captureProjectRevision()).toBe(before.revision);
+            expect(mocks.promoteDurableStagedAsset).not.toHaveBeenCalled();
+        }
+    );
+
+    it('routes the separate literal role-coefficient import control to the capability before opening the picker', async () => {
+        await sendChatMessage(IMPORT_CONTROL_PARAPHRASE);
         expect(confirmationId()).not.toBe('');
     });
 
-    it('imports, aligns, classifies, groups, mixes, receipts, and replays the exact selected stem set', async () => {
+    it('imports, aligns, classifies, groups, applies explicit role coefficients, receipts, and replays the selected stems', async () => {
         const originalTracks = structuredClone(trackStore.value?.tracks ?? []);
 
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(IMPORT_CONTROL_PROMPT);
 
         const confirmation = getPendingActionConfirmation(confirmationId());
         expect(confirmation).not.toBeNull();
@@ -793,7 +999,7 @@ describe('stem import and starting mix workflow', () => {
     it('normalizes the hosted provider plan from the same revision-bound selected-stem capability', async () => {
         useHostedFixture();
 
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(IMPORT_CONTROL_PROMPT);
 
         const confirmation = getPendingActionConfirmation(confirmationId());
         expect(confirmation?.actions).toEqual([
@@ -813,7 +1019,7 @@ describe('stem import and starting mix workflow', () => {
                 }),
             }),
         ]);
-        expect(mocks.fetch).toHaveBeenCalledTimes(3);
+        expect(mocks.fetch).toHaveBeenCalledTimes(5);
         await expect(confirmPendingChatActions({ confirmationId: confirmation!.id })).resolves.toEqual({
             status: 'executed',
         });
@@ -823,9 +1029,9 @@ describe('stem import and starting mix workflow', () => {
         const originalTracks = structuredClone(trackStore.value?.tracks ?? []);
         mocks.pickFiles.mockResolvedValue(null);
 
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(IMPORT_CONTROL_PROMPT);
 
-        expect(mocks.generateWebLlmCompletion).toHaveBeenCalledOnce();
+        expect(mocks.generateWebLlmCompletion).toHaveBeenCalledTimes(2);
         expect(mocks.fetch).not.toHaveBeenCalled();
         expect(confirmationId()).toBe('');
         expect(trackStore.value?.tracks).toEqual(originalTracks);
@@ -842,14 +1048,14 @@ describe('stem import and starting mix workflow', () => {
                 })
         );
 
-        const sending = sendChatMessage(PROMPT);
+        const sending = sendChatMessage(IMPORT_CONTROL_PROMPT);
         await vi.waitFor(() => expect(mocks.decodeAudioFile).toHaveBeenCalledTimes(1));
         stopGenerating();
         resolveFirstDecode?.({ id: 'buffer-Kick_120.wav', buffer: audioBuffer() });
         await sending;
 
         expect(mocks.decodeAudioFile).toHaveBeenCalledTimes(1);
-        expect(mocks.generateWebLlmCompletion).toHaveBeenCalledOnce();
+        expect(mocks.generateWebLlmCompletion).toHaveBeenCalledTimes(2);
         expect(confirmationId()).toBe('');
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('buffer-Kick_120.wav');
         expect(mocks.stageDurableAsset).not.toHaveBeenCalled();
@@ -879,7 +1085,7 @@ describe('stem import and starting mix workflow', () => {
             })
         );
 
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(IMPORT_CONTROL_PROMPT);
 
         const confirmation = getPendingActionConfirmation(confirmationId());
         const action = confirmation?.actions[0];
@@ -900,7 +1106,7 @@ describe('stem import and starting mix workflow', () => {
             )
         );
 
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(IMPORT_CONTROL_PROMPT);
 
         expect(confirmationId()).toBe('');
         expectPreparedStemResourcesReleased(1);
@@ -911,10 +1117,10 @@ describe('stem import and starting mix workflow', () => {
         Object.defineProperty(oversized, 'size', { value: 256 * 1024 * 1024 + 1 });
         mocks.pickFiles.mockResolvedValue([oversized, new File(['other'], 'Other.wav', { type: 'audio/wav' })]);
 
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(IMPORT_CONTROL_PROMPT);
 
         expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
-        expect(mocks.generateWebLlmCompletion).toHaveBeenCalledOnce();
+        expect(mocks.generateWebLlmCompletion).toHaveBeenCalledTimes(2);
         expect(confirmationId()).toBe('');
         expect(trackStore.value?.tracks).toEqual([createTrack('track-guide', 'Guide Mix')]);
     });
@@ -923,9 +1129,9 @@ describe('stem import and starting mix workflow', () => {
         const originalTracks = structuredClone(trackStore.value?.tracks ?? []);
         mocks.detectTempo.mockReturnValueOnce(null);
 
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(IMPORT_CONTROL_PROMPT);
 
-        expect(mocks.generateWebLlmCompletion).toHaveBeenCalledOnce();
+        expect(mocks.generateWebLlmCompletion).toHaveBeenCalledTimes(2);
         expect(confirmationId()).toBe('');
         expect(trackStore.value?.tracks).toEqual(originalTracks);
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('buffer-Kick_120.wav');
@@ -937,7 +1143,7 @@ describe('stem import and starting mix workflow', () => {
             throw new Error('tempo analyzer failed');
         });
 
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(IMPORT_CONTROL_PROMPT);
 
         expect(confirmationId()).toBe('');
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('buffer-Kick_120.wav');
@@ -957,7 +1163,7 @@ describe('stem import and starting mix workflow', () => {
             })
         );
 
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(IMPORT_CONTROL_PROMPT);
 
         expect(confirmationId()).toBe('');
         expect(trackStore.value?.tracks).toEqual(originalTracks);
@@ -966,7 +1172,7 @@ describe('stem import and starting mix workflow', () => {
 
     it('releases preparation-owned resources when the user cancels the exact proposal', async () => {
         const originalTracks = structuredClone(trackStore.value?.tracks ?? []);
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(IMPORT_CONTROL_PROMPT);
         const confirmation = getPendingActionConfirmation(confirmationId());
 
         await expect(cancelPendingChatActions({ confirmationId: confirmation!.id })).resolves.toEqual({
@@ -979,7 +1185,7 @@ describe('stem import and starting mix workflow', () => {
 
     it('releases the newly prepared stems when the predecessor is cancelled during refinement planning', async () => {
         const originalTracks = structuredClone(trackStore.value?.tracks ?? []);
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(IMPORT_CONTROL_PROMPT);
         const predecessorId = confirmationId();
         const predecessorRunId = getPendingActionConfirmation(predecessorId)?.runId;
         expect(predecessorRunId).toBeTruthy();
@@ -1001,7 +1207,7 @@ describe('stem import and starting mix workflow', () => {
             const receipts = hasApplicationToolReceiptContext(userMessage)
                 ? getApplicationToolReceipts(userMessage)
                 : [];
-            const calls = getProviderCallsForUserMessage(userMessage, (plan) => plan, receipts);
+            const calls = getProviderCallsForUserMessage(userMessage, (plan) => plan, receipts, _systemPrompt);
             return Promise.resolve(
                 JSON.stringify(
                     calls.map((call) => {
@@ -1018,7 +1224,7 @@ describe('stem import and starting mix workflow', () => {
         const register = vi.spyOn(preparedStemImportResources, 'register');
         let registeredRunId: string | undefined;
         try {
-            await sendChatMessage(PROMPT);
+            await sendChatMessage(IMPORT_CONTROL_PROMPT);
             expect(register).toHaveBeenCalledTimes(1);
             const registration = register.mock.calls[0]?.[0];
             registeredRunId = registration?.runId;
@@ -1071,7 +1277,7 @@ describe('stem import and starting mix workflow', () => {
 
     it('refuses a stem-import refinement that omits the pending import it does not name, keeping the card and its stems', async () => {
         const originalTracks = structuredClone(trackStore.value?.tracks ?? []);
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(IMPORT_CONTROL_PROMPT);
         const predecessorId = confirmationId();
         expect(getPendingActionConfirmation(predecessorId)?.status).toBe('proposed');
 
@@ -1081,7 +1287,7 @@ describe('stem import and starting mix workflow', () => {
             const receipts = hasApplicationToolReceiptContext(userMessage)
                 ? getApplicationToolReceipts(userMessage)
                 : [];
-            const calls = getProviderCallsForUserMessage(userMessage, (plan) => plan, receipts);
+            const calls = getProviderCallsForUserMessage(userMessage, (plan) => plan, receipts, _systemPrompt);
             return Promise.resolve(
                 JSON.stringify(
                     calls.map((call) =>
@@ -1093,7 +1299,7 @@ describe('stem import and starting mix workflow', () => {
             );
         });
 
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(IMPORT_CONTROL_PROMPT);
 
         expect(getPendingActionConfirmation(predecessorId)).toMatchObject({ status: 'proposed', supersededBy: null });
         expect(
@@ -1110,7 +1316,7 @@ describe('stem import and starting mix workflow', () => {
 
     it('asks for reapproval instead of discarding a stale proposal, keeping prepared resources and the locally added track intact until the second confirm commits', async () => {
         const originalTracks = structuredClone(trackStore.value?.tracks ?? []);
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(IMPORT_CONTROL_PROMPT);
         const confirmation = getPendingActionConfirmation(confirmationId());
         await executeAppAction(
             { type: 'addTrack', payload: { id: 'track-collaborator', name: 'Collaborator', kind: 'audio' } },
@@ -1146,7 +1352,7 @@ describe('stem import and starting mix workflow', () => {
     });
 
     it('asks for reapproval when an unrelated collaborator edit lands through a sync', async () => {
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(IMPORT_CONTROL_PROMPT);
         const confirmation = getPendingActionConfirmation(confirmationId());
 
         flushAutomergeStorageWrites();
@@ -1175,7 +1381,7 @@ describe('stem import and starting mix workflow', () => {
     // branchSwitchProjectIdentity.integration.spec.ts; this case observes the epoch gate at
     // inspectAgentProjectDivergence.ts:103.
     it('still hard-invalidates when the document identity moves under a pending proposal', async () => {
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(IMPORT_CONTROL_PROMPT);
         const confirmation = getPendingActionConfirmation(confirmationId());
 
         flushAutomergeStorageWrites();
@@ -1201,7 +1407,7 @@ describe('stem import and starting mix workflow', () => {
     });
 
     it('keeps grouped undo retryable when a collaborator changes an imported track', async () => {
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(IMPORT_CONTROL_PROMPT);
         const confirmation = getPendingActionConfirmation(confirmationId());
         await confirmPendingChatActions({ confirmationId: confirmation!.id });
         const committedTracks = structuredClone(trackStore.value?.tracks ?? []);
@@ -1224,7 +1430,7 @@ describe('stem import and starting mix workflow', () => {
     });
 
     it('keeps grouped redo retryable when a collaborator reuses an imported track identity', async () => {
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(IMPORT_CONTROL_PROMPT);
         const confirmation = getPendingActionConfirmation(confirmationId());
         const action = confirmation?.actions[0];
         if (!confirmation || action?.type !== 'importStemSet') {
@@ -1248,7 +1454,7 @@ describe('stem import and starting mix workflow', () => {
     });
 
     it('does not consume redo when a collaborator reuses every generated track identity with different state', async () => {
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(IMPORT_CONTROL_PROMPT);
         const confirmation = getPendingActionConfirmation(confirmationId());
         const action = confirmation?.actions[0];
         if (!confirmation || action?.type !== 'importStemSet') {
@@ -1273,7 +1479,7 @@ describe('stem import and starting mix workflow', () => {
         mocks.initializeTrackStripFromSnapshot.mockImplementationOnce(() => {
             throw new Error('transient strip projection failure');
         });
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(IMPORT_CONTROL_PROMPT);
         const confirmation = getPendingActionConfirmation(confirmationId());
 
         await expect(confirmPendingChatActions({ confirmationId: confirmation!.id })).resolves.toEqual({
@@ -1290,7 +1496,7 @@ describe('stem import and starting mix workflow', () => {
 
     it('reconciles a transient track-added event failure before reporting a clean commit', async () => {
         mocks.arrangementEventEmit.mockRejectedValueOnce(new Error('transient track-added event failure'));
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(IMPORT_CONTROL_PROMPT);
         const confirmation = getPendingActionConfirmation(confirmationId());
 
         await expect(confirmPendingChatActions({ confirmationId: confirmation!.id })).resolves.toEqual({
@@ -1305,7 +1511,7 @@ describe('stem import and starting mix workflow', () => {
     });
 
     it('cleans staged resources when Command rejects unexpectedly before a status result', async () => {
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(IMPORT_CONTROL_PROMPT);
         const confirmation = getPendingActionConfirmation(confirmationId());
         mocks.executeBatchError.value = new Error('unexpected command rejection');
 
@@ -1323,7 +1529,7 @@ describe('stem import and starting mix workflow', () => {
         mocks.initializeTrackStripFromSnapshot.mockImplementation(() => {
             throw new Error('persistent strip projection failure');
         });
-        await sendChatMessage(PROMPT);
+        await sendChatMessage(IMPORT_CONTROL_PROMPT);
         const confirmation = getPendingActionConfirmation(confirmationId());
 
         const result = await confirmPendingChatActions({ confirmationId: confirmation!.id });

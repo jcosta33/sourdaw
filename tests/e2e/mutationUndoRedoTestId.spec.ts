@@ -1,5 +1,6 @@
-import { test, expect, type Locator, type Page } from '@playwright/test';
+import { type Locator, type Page } from '@playwright/test';
 
+import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -25,7 +26,7 @@ function buildSineWav(seconds = 4): Buffer {
     buffer.write('data', 36);
     buffer.writeUInt32LE(dataSize, 40);
     for (let i = 0; i < samples; i += 1) {
-        buffer.writeInt16LE(Math.round((Math.sin((2 * Math.PI * 440 * i) / sampleRate) * 12000)), 44 + i * 2);
+        buffer.writeInt16LE(Math.round(Math.sin((2 * Math.PI * 440 * i) / sampleRate) * 12000), 44 + i * 2);
     }
     return buffer;
 }
@@ -55,7 +56,10 @@ async function addMidiTrackFromEmptyState(page: Page): Promise<void> {
 }
 
 function trackRows(page: Page): Locator {
-    return page.getByRole('grid', { name: /Track list/i }).first().getByRole('row');
+    return page
+        .getByRole('grid', { name: /Track list/i })
+        .first()
+        .getByRole('row');
 }
 
 // Each track nests two rows, so row counts are 2:1 with tracks; the arm

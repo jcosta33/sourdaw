@@ -8,11 +8,7 @@ Owns transient marker detection, warp marker editing/quantization, warp algorith
 
 ## Public Contract Surface
 
-- **`useCases`**: `detectTransients`, `detectTransientsForClip`, `markElasticDetectionComplete`, `selectElasticMarkers`, `openElasticEditor`, `closeElasticEditor`, `setElasticTool`, `setElasticSensitivity`, `addManualMarker`, `removeMarker`, `toggleMarkerLock`, `quantizeTransients`, `enableWarping`, `setWarpAlgorithm`, `setPitchShift`, `setDefaultAlgorithm`, `getAlgorithmInfo`.
-- **`stores`**: `elasticAudioStore` (`defaultElasticAudioState`, types `ElasticAudioState`, `ElasticEditorTool`), `audioWarpStore` (`DEFAULT_WARP_SETTINGS`, `WARP_ALGORITHMS`, types `WarpAlgorithm`, `WarpState`, `ClipWarpSettings`).
-- **`presentations/views`**: `ElasticEditorPanel`.
-- **`events`**: None.
-- **Handler maps**: Handlers for elastic audio/warping actions live in `AudioEngine/handlers/finalFeature`.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`. Handlers for elastic audio/warping actions live in `AudioEngine/handlers/finalFeature`, not here.
 
 ## Key Subsystems
 
@@ -25,11 +21,11 @@ Owns transient marker detection, warp marker editing/quantization, warp algorith
 
 - **Non-destructive transient metadata**: Transient markers and warp points are metadata projections on audio clips; original PCM audio in `audioBufferCache` is never mutated.
 - **Locked marker protection**: Locked warp markers cannot be moved or auto-quantized; transient quantization operations must respect marker lock flags.
-- **Sensitivity re-detection**: Changing sensitivity writes the canonical user preference and re-runs transient detection for an open clip after a 150 ms debounce. The first user-triggered detection for another clip reads that preference; selecting a clip alone does not detect.
+- **Sensitivity re-detection**: Changing sensitivity writes the canonical user preference and re-runs transient detection for the displayed audio clip after a 150 ms debounce. An explicitly open clip takes precedence over selection. A pending gesture cannot mutate a changed clip, source, or project root; selecting a clip alone does not detect.
 
 ## Verification
 
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
-- **Focused unit tests**: `pnpm test:run <changed-spec>`
+- **Focused unit tests**: `pnpm guard --profile focused -- pnpm test:run <changed-spec>`
 - PR CI checks module boundaries; inspect that result after cross-module changes.

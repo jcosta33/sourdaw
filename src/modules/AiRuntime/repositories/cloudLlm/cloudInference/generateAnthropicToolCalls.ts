@@ -62,17 +62,19 @@ function buildToolChoiceExtension(input: {
     model: string;
     thinking: AnthropicCloudRuntime['thinking'];
 }): Record<string, unknown> {
-    if (input.directive.mode !== 'required') {
-        return {};
+    const single = input.directive.parallelToolCalls === false;
+    const forcedChoiceAllowed =
+        input.thinking?.type !== 'enabled' && !anthropicModelRejectsForcedToolChoice(input.model);
+    if (input.directive.mode === 'required' && forcedChoiceAllowed) {
+        if (single) {
+            return { tool_choice: { type: 'any', disable_parallel_tool_use: true } };
+        }
+        return { tool_choice: { type: 'any' } };
     }
-    if (input.thinking?.type === 'enabled' || anthropicModelRejectsForcedToolChoice(input.model)) {
-        return {};
+    if (single) {
+        return { tool_choice: { type: 'auto', disable_parallel_tool_use: true } };
     }
-    // No `disable_parallel_tool_use`: the workflow terminal shape is two calls in one
-    // turn (`selectWorkflowCapability` beside `command.batch.propose`), so capping the
-    // forced turn at one call would strand the batch call out of its workflow scope.
-    // `maxCallsPerTurn` already bounds how many calls one turn may contain.
-    return { tool_choice: { type: 'any' } };
+    return {};
 }
 
 /**

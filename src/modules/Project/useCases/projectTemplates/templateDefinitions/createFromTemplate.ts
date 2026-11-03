@@ -13,6 +13,7 @@ import { setAutoSaveHandle } from '../../projectPersistence/helpers/autoSaveHand
 import { markProjectDurabilityPending } from '../../projectPersistence/helpers/markProjectDurabilityPending';
 import {
     resetCrdtProjectWithTransportStopped,
+    type OutgoingProjectDisposition,
     type ReplacedProject,
 } from '../../projectPersistence/helpers/resetCrdtProjectWithTransportStopped';
 import { resetModuleStoresToDefault } from '../../projectPersistence/helpers/resetModuleStoresToDefault';
@@ -100,20 +101,22 @@ async function activateTemplateTransition(
 }
 
 type CreateFromTemplateOptions = {
+    /** `discard` when the user chose to leave the outgoing project without saving. */
+    readonly outgoingProject?: OutgoingProjectDisposition;
     /** The caller keeps this true only while the user still wants this replacement. */
     readonly shouldProceed?: () => boolean;
 };
 
 export async function createFromTemplate(
     templateId: string,
-    { shouldProceed = () => true }: CreateFromTemplateOptions = {}
+    { outgoingProject = 'save-closed-takes', shouldProceed = () => true }: CreateFromTemplateOptions = {}
 ): Promise<boolean> {
     const template = templates.find((time) => time.id === templateId);
     if (!template) {
         return false;
     }
     if (template.executionBoundary === 'project-replacement') {
-        return await template.create({ shouldProceed });
+        return await template.create({ outgoingProject, shouldProceed });
     }
 
     // Template creation REPLACES the open project, so it must run the same
@@ -160,7 +163,8 @@ export async function createFromTemplate(
             () => {
                 authorityReplaced = true;
             },
-            shouldContinue
+            shouldContinue,
+            outgoingProject
         );
         if (reset.status === 'refused') {
             // Decided before the switch, so the previous project is intact and

@@ -4,9 +4,7 @@ Application-wide user preferences (audio settings, MIDI configuration, appearanc
 
 ## Public Contract Surface
 
-- `useCases`: `updatePreferences`, `resetPreferences`, `setTrackHeight`, `setTimelineMinimapHeight`, `gridSnapBeats`, `defaultPreferences`, `TRACK_HEIGHT_VALUES`.
-- `stores`: `preferencesStore` (`Preferences`).
-- `presentations/views`: `PreferencesDialog`.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `events/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 
@@ -23,5 +21,5 @@ Application-wide user preferences (audio settings, MIDI configuration, appearanc
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
 ```bash
-pnpm test:run <changed-spec>
+pnpm guard --profile focused -- pnpm test:run <changed-spec>
 ```

@@ -357,7 +357,12 @@
                     "level": 1,
                     "preFader": false
                 }
-            ]
+            ],
+            "canonicalRole": {
+                "role": "kick",
+                "source": "name-tags",
+                "evidence": "name-tokens"
+            }
         },
         {
             "id": "track-snare",
@@ -381,7 +386,12 @@
                     "level": 1,
                     "preFader": false
                 }
-            ]
+            ],
+            "canonicalRole": {
+                "role": "snare",
+                "source": "name-tags",
+                "evidence": "name-tokens"
+            }
         },
         {
             "id": "track-hi-hat",
@@ -405,7 +415,12 @@
                     "level": 1,
                     "preFader": false
                 }
-            ]
+            ],
+            "canonicalRole": {
+                "role": "hi-hat",
+                "source": "name-tags",
+                "evidence": "name-tokens"
+            }
         },
         {
             "id": "track-overheads",
@@ -429,7 +444,12 @@
                     "level": 1,
                     "preFader": false
                 }
-            ]
+            ],
+            "canonicalRole": {
+                "role": "overhead",
+                "source": "name-tags",
+                "evidence": "name-tokens"
+            }
         },
         {
             "id": "track-bass-di",
@@ -526,7 +546,12 @@
             "clipCount": 0,
             "deviceCount": 0,
             "clips": [],
-            "devices": []
+            "devices": [],
+            "canonicalRole": {
+                "role": "lead vocal",
+                "source": "name-tags",
+                "evidence": "name-tokens"
+            }
         },
         {
             "id": "track-backing-vocal-left",
@@ -543,7 +568,12 @@
             "clipCount": 0,
             "deviceCount": 0,
             "clips": [],
-            "devices": []
+            "devices": [],
+            "canonicalRole": {
+                "role": "backing vocal",
+                "source": "name-tags",
+                "evidence": "name-tokens"
+            }
         },
         {
             "id": "track-backing-vocal-right",
@@ -560,7 +590,12 @@
             "clipCount": 0,
             "deviceCount": 0,
             "clips": [],
-            "devices": []
+            "devices": [],
+            "canonicalRole": {
+                "role": "backing vocal",
+                "source": "name-tags",
+                "evidence": "name-tokens"
+            }
         },
         {
             "id": "track-guitar",

@@ -35,6 +35,8 @@ export type WebMidiState = {
     selectedInputId: string | null;
     /** Retryable native/Web enumeration failure; null when listing succeeded. */
     enumerationError: string | null;
+    /** True once an enumeration completed successfully, including one that found no devices. */
+    enumerationCompleted: boolean;
 };
 
 export type WebMidiNoteKey = `${number}:${number}`;
@@ -89,6 +91,12 @@ export type ActiveNoteData = {
     velocity?: number;
     /** Track that originated the note; selection changes must not retarget release. */
     trackId: string;
+    /** Provisional recording owner at onset; a later recording must not seal this held key. */
+    recordingClipId?: string;
+    /** Owner-bound onset admission, retained through queued and worker work. */
+    recordingAdmissionId?: string;
+    /** Scheduler pass traversed at onset, captured with the admitted beat before queued work. */
+    recordingPassIndex?: number;
     /** Instrument owner resolved at note-on; source-track changes must not retarget release. */
     instrumentTrackId: string;
     /** Stable runtime identity carried through the Yeast note-on/note-off pair. */

@@ -29,7 +29,7 @@ vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
     })),
 }));
 
-vi.mock('../../services/levainProcessor.ts?worker&url', () => ({ default: 'levain-processor-url' }));
+vi.mock('../../worklets/levainProcessor.ts?worker&url', () => ({ default: 'levain-processor-url' }));
 
 // A post-ready worklet fault must surface through the onFault callback so the
 // caller can flip engineReady back to false (obs. 3 — engineReady was a

@@ -1,10 +1,9 @@
-import { createInvalidTempoError } from '../errors/InvalidTempoError';
 import { createTempoRampWriteError } from '../errors/TempoRampWriteError';
-import { MAX_TEMPO_MAP_TEMPO, MIN_TEMPO_MAP_TEMPO } from '../models/TempoMap';
 import { updateTransportState } from '../repositories/transport/updateTransportState';
 import { tempoMapStore } from '../stores/tempoMapStore';
-import { MIN_TEMPO, MAX_TEMPO } from '../stores/transportStore';
+import { runWithTempoWriteIntent } from '../stores/tempoWriteIntent';
 
+import { assertTempoWriteBpm } from './assertTempoWriteBpm';
 import { getTempoWriteTarget } from './transportQueries/getTempoWriteTarget';
 
 export type SetTempoInput = {
@@ -79,10 +78,10 @@ export function setTempo(input: SetTempoInput): SetTempoOutput {
     }
 
     if (target.tempoChangeId === null) {
-        if (input.bpm < MIN_TEMPO || input.bpm > MAX_TEMPO) {
-            throw createInvalidTempoError(input.bpm);
-        }
-        updateTransportState({ tempo: input.bpm });
+        assertTempoWriteBpm(input.bpm, null);
+        runWithTempoWriteIntent({ tempoChangeId: null, expectedBpm: target.tempo, bpm: input.bpm }, () =>
+            updateTransportState({ tempo: input.bpm })
+        );
         return { status: 'written' };
     }
 
@@ -95,27 +94,28 @@ type WriteTempoChangeInput = {
 };
 
 function writeTempoChange({ bpm, tempoChangeId }: WriteTempoChangeInput): SetTempoOutput {
-    if (bpm < MIN_TEMPO_MAP_TEMPO || bpm > MAX_TEMPO_MAP_TEMPO) {
-        throw createInvalidTempoError(bpm);
-    }
+    assertTempoWriteBpm(bpm, tempoChangeId);
 
     const tempoMap = tempoMapStore.value;
     if (!tempoMap) {
         return { status: 'no-write' };
     }
-    if (!tempoMap.changes.some((change) => change.id === tempoChangeId)) {
+    const expected = tempoMap.changes.find((change) => change.id === tempoChangeId);
+    if (!expected) {
         // The named change was removed since the write this inverts. Restoring a
         // tempo onto some other event would be worse than doing nothing.
         return { status: 'no-write' };
     }
 
-    tempoMapStore.set({
-        changes: tempoMap.changes.map((change) => {
-            if (change.id !== tempoChangeId) {
-                return change;
-            }
-            return { ...change, tempo: bpm };
-        }),
-    });
+    runWithTempoWriteIntent({ tempoChangeId, expectedBpm: expected.tempo, bpm }, () =>
+        tempoMapStore.set({
+            changes: tempoMap.changes.map((change) => {
+                if (change.id !== tempoChangeId) {
+                    return change;
+                }
+                return { ...change, tempo: bpm };
+            }),
+        })
+    );
     return { status: 'written' };
 }

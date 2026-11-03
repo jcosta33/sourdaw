@@ -2,7 +2,7 @@ import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 import {
     FACTORY_LIBRARY_ROOT_ID,
     FACTORY_SEED_FLAG_KEY,
-    generateFactorySamples,
+    renderFactorySamples,
 } from '#/modules/FactorySynthesis/useCases';
 
 import { type LibraryRoot, type SampleAnalysis, type SampleRecord, toBpm } from '../models/LibraryTypes';
@@ -12,7 +12,7 @@ import { addLibraryRoot, addSamples, libraryStore } from '../stores/libraryStore
 
 import { buildFolderTree } from './buildFolderTree';
 
-type FactorySample = ReturnType<typeof generateFactorySamples>[number];
+type FactorySample = Awaited<ReturnType<typeof renderFactorySamples>>[number];
 
 function getCategoryFolder(sample: FactorySample): string {
     const primary = sample.tags[0] ?? sample.category;
@@ -98,7 +98,7 @@ export async function seedFactoryLibrary(ctx: AudioContext): Promise<void> {
         return;
     }
 
-    const samples = generateFactorySamples(ctx);
+    const samples = await renderFactorySamples(ctx);
     ensureFactoryRoot();
 
     const records = samples.map(toSampleRecord);

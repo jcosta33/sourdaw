@@ -82,6 +82,12 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     stageCommandSourcePublication: vi.fn<
         typeof import('#/modules/CrdtDocument/useCases').stageCommandSourcePublication
     >(() => () => undefined),
+    captureProjectRootIdentity: vi.fn<typeof import('#/modules/CrdtDocument/useCases').captureProjectRootIdentity>(
+        () => 'document-identity'
+    ),
+    subscribeToCrdtChanges: vi.fn<typeof import('#/modules/CrdtDocument/useCases').subscribeToCrdtChanges>(
+        () => () => {}
+    ),
     hasForeignPendingProjectWrites: vi.fn(() => false),
     captureDurableDocumentWitness: vi.fn(() => mocks.witness),
     captureProjectMutationAuthorization: vi.fn(() => () => true),

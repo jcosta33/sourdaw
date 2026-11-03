@@ -10,7 +10,7 @@ import {
     createReadyGrinderProcessor,
     grinderSetParamCalls,
     resetGrinderProcessorCalls,
-} from '../../../services/__tests__/grinderProcessorTestHarness';
+} from '../../../testing/grinderProcessorTestHarness';
 import { createNativeDspStrategy } from '../NativeDspDeviceStrategy';
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({

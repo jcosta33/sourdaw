@@ -23,6 +23,7 @@ import { stopActiveRecording } from './stopActiveRecording';
 let seekOwner: { generation: number } | null = null;
 
 export function executePlayheadSeek(beat: number): Promise<void> {
+    audioEngine.beginAudioPreviewIntent().release();
     const state = getTransportState();
     if (!state) {
         return Promise.resolve();

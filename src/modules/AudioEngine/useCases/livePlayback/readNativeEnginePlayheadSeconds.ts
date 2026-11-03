@@ -18,12 +18,20 @@ import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';
  * carries a whole project behind a shadowed monitor keeps the cursor on Web
  * Audio, and the cutover moves it with nothing to remember to switch on.
  *
+ * A retained audition suppresses only the listening output. Its underlying
+ * programme keeps this same native clock during acquisition, playback and
+ * restoration; a base-shadowed session still owns no audible programme.
+ *
  * `null` therefore covers every case in which the engine's position is not the
  * position a musician is hearing: no feed, no engine, an engine that is not
  * rolling, and a session that is not the audible carrier.
  */
 export function readNativeEnginePlayheadSeconds(): number | null {
-    if (!nativeEnginePlayheadFeed.running || !nativeLiveGraphSession.audibleCarrier) {
+    const programmeOwnsClock =
+        nativeLiveGraphSession.audibleCarrier ||
+        ((nativeLiveGraphSession.auditionOwner !== null || nativeLiveGraphSession.auditionOutputSuppressed) &&
+            nativeLiveGraphSession.programmeCarrier);
+    if (!nativeEnginePlayheadFeed.running || !programmeOwnsClock) {
         return null;
     }
     const reading = nativeEnginePlayheadFeed.reading;

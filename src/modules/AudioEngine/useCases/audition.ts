@@ -1,3 +1,4 @@
+import { logger } from '#/infra/logger/appLogger';
 import { trackStore } from '#/modules/Arrangement/stores';
 import {
     scheduleNote,
@@ -8,6 +9,7 @@ import {
 } from '#/modules/Synth/useCases';
 import { isBypassedNoteReceiver, readDrumKitOutputGain } from '#/utils/deviceTypeMatching';
 
+import { type AudioPreviewIntent } from '../models/AudioPreviewIntent';
 import { audioEngine } from '../repositories/createWebAudioEngine';
 
 import { getDrumKitByIndex } from './audioEngineQueries/getDrumKitByIndex';
@@ -32,7 +34,57 @@ type AuditionTrack = {
     devices: AuditionDevice[];
 };
 
-export function playAuditionNote(trackId: string, pitch: number, velocity: number = 100): () => void {
+export function playAuditionNote(
+    trackId: string,
+    pitch: number,
+    velocity: number = 100,
+    parentIntent?: AudioPreviewIntent
+): () => void {
+    const intent = parentIntent ?? audioEngine.beginAudioPreviewIntent();
+    let ended = false;
+    let stopNote: (() => void) | null = null;
+    const stop = () => {
+        if (ended) {
+            return;
+        }
+        ended = true;
+        intent.signal.removeEventListener('abort', stop);
+        try {
+            stopNote?.();
+        } finally {
+            if (parentIntent === undefined) {
+                intent.release();
+            }
+        }
+    };
+    intent.signal.addEventListener('abort', stop, { once: true });
+    const start = () => {
+        if (ended || !intent.isCurrent()) {
+            stop();
+            return;
+        }
+        stopNote = startAuditionNote(trackId, pitch, velocity);
+        if (!intent.isCurrent()) {
+            stop();
+        }
+    };
+    try {
+        if (intent.ready === undefined) {
+            start();
+        } else {
+            void intent.ready.then(start).catch((error: unknown) => {
+                stop();
+                logger.warn(new Error('Note audition could not restore its listening output', { cause: error }));
+            });
+        }
+    } catch (error) {
+        stop();
+        throw error;
+    }
+    return stop;
+}
+
+function startAuditionNote(trackId: string, pitch: number, velocity: number): () => void {
     const strip = audioEngine.ensureTrackStrip(trackId);
     const now = audioEngine.context.currentTime;
 

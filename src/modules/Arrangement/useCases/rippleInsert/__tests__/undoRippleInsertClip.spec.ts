@@ -101,6 +101,11 @@ describe('undoRippleInsertClip', () => {
             loopEnabled: true,
             loopLength: 4,
             loopOriginBeat: 20,
+            audioOffsetSeconds: 0.5,
+            audioUnwrappedOffsetSeconds: 0,
+            audioLoopStartSeconds: 0,
+            audioLoopPassEntrySeconds: 0.25,
+            audioLoopPassOriginBeat: 20,
         });
         const targetTrack = TrackDummy.create({
             id: 'track-target',
@@ -127,6 +132,7 @@ describe('undoRippleInsertClip', () => {
                             startBeat: 16,
                             endBeat: 18,
                             loopOriginBeat: 16,
+                            audioLoopPassOriginBeat: 16,
                         },
                     ],
                 },
@@ -167,6 +173,7 @@ describe('undoRippleInsertClip', () => {
         }
         expect(restoredClip.startBeat).toBe(16);
         expect(Object.hasOwn(restoredClip, 'loopOriginBeat')).toBe(false);
+        expect(Object.hasOwn(restoredClip, 'audioLoopPassOriginBeat')).toBe(false);
     });
 
     it('is a no-op when the track store holds no state', () => {

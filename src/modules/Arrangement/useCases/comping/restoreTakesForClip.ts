@@ -1,6 +1,9 @@
 import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
+import { type TakeLane } from '../../models/TakeLane';
+import { collectLiveClipIds } from '../../services/collectLiveClipIds';
 import { takeLaneStore } from '../../stores/takeLaneStore';
+import { getTrackStoreState } from '../getTrackStoreState';
 
 import { laneTrackExists } from './laneTrackExists';
 import { reconcileLane } from './reconcileLane';
@@ -35,7 +38,7 @@ export function restoreTakesForClip(retiredLanes: readonly RetiredTakeLaneSnapsh
 
     const lanes = [...state.lanes];
     let changed = false;
-    for (const { lane, laneIndex, retiredTakeIds } of retiredLanes) {
+    for (const { lane, laneIndex, retiredTakeIds, retiredBaseGapAudioSources } of retiredLanes) {
         // A lane whose track is gone has no host, and a take whose clip is gone has no
         // material to resolve against: re-inserting either strands state nothing can
         // read — the orphan this retirement work exists to prevent. The guard belongs
@@ -45,6 +48,8 @@ export function restoreTakesForClip(retiredLanes: readonly RetiredTakeLaneSnapsh
         if (!laneTrackExists(lane.trackId)) {
             continue;
         }
+        const liveClipIds = collectLiveClipIds(getTrackStoreState()?.tracks ?? []);
+        const residentTiles = (retiredBaseGapAudioSources ?? []).filter((tile) => liveClipIds.has(tile.clipId));
         const liveTakeIds = new Set(takesWithLiveClips(lane.takes).map((take) => take.id));
         const residentTakeIds = (retiredTakeIds ?? []).filter((takeId) => liveTakeIds.has(takeId));
 
@@ -59,7 +64,26 @@ export function restoreTakesForClip(retiredLanes: readonly RetiredTakeLaneSnapsh
             // empty lane and insert only what the removal retired, so a captured
             // take the removal never touched — or a capture written before
             // `retiredTakeIds` existed — cannot ride back in with the whole clone.
-            const inserted = reconcileLane({ ...lane, takes: [], activeCompRegions: [] }, lane, residentTakeIds);
+            const laneId = lane.id;
+            const trackId = lane.trackId;
+            let emptyLane: TakeLane;
+            if (lane.automationLaneId !== undefined) {
+                emptyLane = {
+                    id: laneId,
+                    trackId,
+                    automationLaneId: lane.automationLaneId,
+                    takes: [],
+                    activeCompRegions: [],
+                };
+            } else {
+                emptyLane = {
+                    id: laneId,
+                    trackId,
+                    takes: [],
+                    activeCompRegions: [],
+                };
+            }
+            const inserted = reconcileLane(emptyLane, lane, residentTakeIds, residentTiles);
             if (inserted) {
                 lanes.splice(Math.min(Math.max(laneIndex, 0), lanes.length), 0, inserted);
                 changed = true;
@@ -67,7 +91,7 @@ export function restoreTakesForClip(retiredLanes: readonly RetiredTakeLaneSnapsh
             continue;
         }
 
-        const reconciled = reconcileLane(lanes[targetIndex]!, lane, residentTakeIds);
+        const reconciled = reconcileLane(lanes[targetIndex]!, lane, residentTakeIds, residentTiles);
         if (reconciled) {
             lanes[targetIndex] = reconciled;
             changed = true;

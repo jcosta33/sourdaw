@@ -3,16 +3,17 @@ import { isBuiltinSynthDevice, isDrumDevice } from '#/utils/deviceTypeMatching';
 import type { TrackChannelStrip } from '../models/AudioEngineState';
 import type { RuntimeGraphDeltaNode } from '../models/RuntimeGraphDelta';
 
+/** Selects persistent Web Audio slots without changing full project/native device records. */
+export function projectPersistentRuntimeDevices(devices: RuntimeGraphDeltaNode['devices']) {
+    return devices.filter((device) => !isBuiltinSynthDevice(device.type) && !isDrumDevice(device.type));
+}
+
 /** Exact topology comparison shared by graph writes and read-only discharge proofs. */
 export function matchesRuntimeDeviceChainTopology(
     strip: Pick<TrackChannelStrip, 'trackId' | 'deviceNodes'> | undefined,
     expected: RuntimeGraphDeltaNode
 ): boolean {
-    // The project and native topology retain note-scheduled instruments, but
-    // their voices feed the strip without occupying persistent Web Audio slots.
-    const persistentDevices = expected.devices.filter(
-        (device) => !isBuiltinSynthDevice(device.type) && !isDrumDevice(device.type)
-    );
+    const persistentDevices = projectPersistentRuntimeDevices(expected.devices);
     return (
         strip !== undefined &&
         strip.trackId === expected.id &&

@@ -2,8 +2,6 @@ import { type EditingTool } from './EditingTool';
 
 export type WorkspaceMode = 'arrange' | 'automation' | 'clip';
 
-export type SoloMode = 'sip' | 'afl' | 'pfl';
-
 export type ChannelStripWidth = 'narrow' | 'normal' | 'wide';
 
 export type TimeDisplayMode = 'musical' | 'time';
@@ -26,7 +24,6 @@ export type WorkspaceState = {
     inspectorWidth: number;
     mixerHeight: number;
     editorHeight: number;
-    soloMode: SoloMode;
     channelStripWidth: ChannelStripWidth;
     timeDisplayMode: TimeDisplayMode;
     undoHistoryOpen: boolean;
@@ -43,6 +40,14 @@ export type WorkspaceState = {
     automationSubLanes: Record<string, string[]>; // trackId → parameterIds shown inline
     scratchPadOpen: boolean;
     scratchPadHeight: number;
+    /** The pad shows only its header strip. Session UI state; reset whenever the pad opens or closes. */
+    scratchPadCollapsed: boolean;
+    /**
+     * Height of the timeline minimap while its resize handle is being dragged, before the
+     * height is committed to preferences. Null when no drag is in progress. Published by
+     * the arrangement so the shell's arrangement floor follows what is rendered.
+     */
+    timelineMinimapPreviewHeight: number | null;
     aiPanelWidth: number;
     fermenterHeight: number;
     toasterHeight: number;
@@ -79,7 +84,6 @@ export const defaultWorkspaceState: WorkspaceState = {
     inspectorWidth: 256,
     mixerHeight: 208,
     editorHeight: 360,
-    soloMode: 'sip',
     channelStripWidth: 'normal',
     timeDisplayMode: 'musical',
     undoHistoryOpen: false,
@@ -94,6 +98,8 @@ export const defaultWorkspaceState: WorkspaceState = {
     automationSubLanes: {},
     scratchPadOpen: false,
     scratchPadHeight: 120,
+    scratchPadCollapsed: false,
+    timelineMinimapPreviewHeight: null,
     aiPanelWidth: 340,
     fermenterHeight: 320,
     toasterHeight: 420,

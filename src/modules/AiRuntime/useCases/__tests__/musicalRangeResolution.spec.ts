@@ -18,6 +18,7 @@ import {
     scriptProviderTurns,
     searchCalls,
 } from './highLevelIntentWorkflowFixture';
+import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 
 const runtimeMocks = vi.hoisted(() => ({ generateWebLlmCompletion: vi.fn() }));
 
@@ -90,6 +91,7 @@ const leadVocalSelector = {
 
 function scriptDip(section: string): void {
     scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+        literalMetricIntakeTurn,
         () => searchCalls(['dip a track level across a section']),
         discoverSearchedCalls(['automateParameterRange']),
         proposeDiscoveredCalls(
@@ -296,7 +298,7 @@ describe('musical range resolution', () => {
 
         scriptDip('chorus');
         const result = await parsePromptToActions({
-            prompt: 'Dip the Lead Vocal by 6 dB in the chorus.',
+            prompt: 'Dip the Lead Vocal by 6 dB in the chorus with 0.5 beat ramps in and out.',
             context,
             projectRevision: 'revision-ambiguous-chorus',
         });
@@ -311,12 +313,12 @@ describe('musical range resolution', () => {
     it('proposes the range write through the registry route once the reference names one section', async () => {
         scriptDip('second chorus');
         const result = await parsePromptToActions({
-            prompt: 'Dip the Lead Vocal by 6 dB in the second chorus.',
+            prompt: 'Dip the Lead Vocal by 6 dB in the second chorus with 0.5 beat ramps in and out.',
             context: projectWithTwoChoruses(),
             projectRevision: 'revision-second-chorus',
         });
 
-        expect(result.planningOutcome).toEqual({ kind: 'proposal' });
+        expect(result.planningOutcome, JSON.stringify(result)).toEqual({ kind: 'proposal' });
         expect(result.actions).toEqual([
             {
                 type: 'automateParameterRange',

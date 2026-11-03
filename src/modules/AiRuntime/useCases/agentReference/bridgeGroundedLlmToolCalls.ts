@@ -7,10 +7,12 @@ import {
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
 import { normalizeDeviceParameterValueUnit, type DeviceParameterValueUnit } from '#/utils/deviceParameterValueUnit';
 import { NOTE_NAMES } from '#/utils/noteNames';
+import { isRecord } from '#/utils/structuralEquality';
 
 import { type ActionCommandGraph } from '../../models/ActionCommandGraph';
 import { type CreativeRequestAuthority } from '../../models/CreativeInterpretation';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../../models/LlmActionLimits';
+import { type WorkflowNativeLiteralUse } from '../../models/MetricGoalAdmission';
 import { type ProjectContext } from '../../models/ProjectContext';
 import {
     type BoundRequestProtections,
@@ -52,10 +54,11 @@ import {
 } from '../validateArbitraryCommandListEvidence';
 
 import {
-    admitsCompiledTargets,
+    createCompiledTargetAdmission,
     type CompiledSelectorTerms,
+    type CompiledTargetAdmission,
     type CompiledTargetAuthority,
-    type CompiledTargetAuthorityInput,
+    type CompiledTargetCallTerms,
 } from './admitCompiledTargets';
 import { admitCreativeCommandBatch, type CreativeCallAdmission } from './admitCreativeCommandBatch';
 import { type BatchLocalActionIdentity } from './BatchLocalActionIdentity';
@@ -106,6 +109,7 @@ import {
     getSyncopatedArpeggioPromptScope,
     type SyncopatedArpeggioRequestScope,
 } from './getSyncopatedArpeggioPromptScope';
+import { getUnresolvedClipProtectionMembers } from './getUnresolvedClipProtectionMembers';
 import { getWholeProjectVibeMixScope } from './getWholeProjectVibeMixScope';
 import {
     bindDecibelFiguresToReferences,
@@ -157,6 +161,7 @@ import { isBatchLocalDeviceParameterTarget } from './isBatchLocalDeviceParameter
 import { projectBatchLocalCreation } from './projectBatchLocalCreation';
 import { proposalCommandShape } from './proposalCommandShape';
 import { proposalProtection } from './proposalProtection';
+import { protectionObjectForms } from './protectionObjectForms';
 import { readExplicitProtections } from './readExplicitProtections';
 import { readStoredCardRemoval } from './readStoredCardRemoval';
 import { refinementCardCommands } from './refinementCardCommands';
@@ -199,12 +204,10 @@ type GroundToolCallInput = {
     /** Whether the batch as a whole may take the plan-created object evidence route. */
     admitsPlanCreatedObjects: boolean;
     batchLocalCreationBindings: ReadonlyMap<string, BatchLocalCreationBinding>;
-    /** The text values every call of the batch writes, which never pick a compiled target. */
-    batchWrittenValueTexts: readonly string[];
     call: ToolCallResult;
     catalog: GroundingCatalog;
-    /** Every id the compiled list's own selectors excluded or protected; empty off the compiled route. */
-    compilerExcludedIds: ReadonlySet<string>;
+    /** The batch's compiled target authority, which reads the request once for every call sharing its terms. */
+    compiledTargetAdmission: CompiledTargetAdmission;
     /** The selector this call's compiled targets came from, when the compiler resolved one. */
     compiledSelectorTerms?: CompiledSelectorTerms;
     context: ProjectContext;
@@ -218,7 +221,6 @@ type GroundToolCallInput = {
     declaredBindingsByCallIndex: ReadonlyMap<number, BatchLocalCreationBinding>;
     index: number;
     prompt: string;
-    requestProtections?: BoundRequestProtections;
     plannedActionNames: readonly string[];
     sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[];
     sameActionCallCount: number;
@@ -235,6 +237,7 @@ type GroundingCatalog = ReturnType<typeof getExecutableAppActionGroundingCatalog
 type GroundingRules = NonNullable<ReturnType<typeof getExecutableAppActionGroundingRules>>;
 
 type BridgeGroundedLlmToolCallsResult = LlmActionBridgeResult & {
+    nativeLiteralUses?: WorkflowNativeLiteralUse[];
     appOwnedRenderTailSeconds?: number;
     bassProcessingCopyScope?: BassProcessingCopyRequestScope;
     midiOverlapTransformScope?: MidiOverlapTransformRequestScope;
@@ -1836,6 +1839,44 @@ function isListAnsweredByEveryMember(
  * can enumerate which ("instead", "actually", "on the Reverb send", "turn the Comp off"), so the phrase
  * then names nothing and the request is read as main reads it.
  */
+function readsOnlyReferencedVcaLevel(input: {
+    calls: readonly ToolCallResult[];
+    catalog: GroundingCatalog;
+    context: ProjectContext;
+    prompt: string;
+}): boolean {
+    if (input.calls.length !== 1 || input.calls[0]?.name !== 'setVcaGain') {
+        return false;
+    }
+    const id = input.calls[0].arguments.vcaGroupId;
+    const group = input.context.vcaGroups?.find((candidate) => candidate.id === id);
+    if (!group) {
+        return false;
+    }
+    const masked = maskQuotedLabels(maskProjectReferences(input.prompt, input.context));
+    const clauses = splitAttachedSourceClauses(getPromptClauses(input.prompt, masked), input.catalog);
+    if (clauses.length !== 1) {
+        return false;
+    }
+    const clause = clauses[0]!;
+    const intent = resolveClauseActionIntent(clause.masked, input.catalog, 'setVcaGain');
+    if (intent?.actionType !== 'setVcaGain' || !intent.referenceSlot) {
+        return false;
+    }
+    const reference = normalizePromptText(clause.text.slice(intent.referenceSlot.start, intent.referenceSlot.end));
+    const matches = (input.context.vcaGroups ?? []).filter((candidate) =>
+        [candidate.id, candidate.name].some((name) => normalizePromptText(name) === reference)
+    );
+    const collidesWithTrack = input.context.tracks.some((track) =>
+        [track.id, track.name].some((name) => normalizePromptText(name) === reference)
+    );
+    return (
+        matches.length === 1 &&
+        matches[0]?.id === group.id &&
+        (reference === normalizePromptText(group.id) || !collidesWithTrack)
+    );
+}
+
 function readsOnlyReferencedLevelClauses(input: {
     calls: readonly ToolCallResult[];
     catalog: GroundingCatalog;
@@ -4549,11 +4590,10 @@ function groundToolCall({
     actionOrdinal,
     admitsPlanCreatedObjects,
     batchLocalCreationBindings,
-    batchWrittenValueTexts,
     call,
     catalog,
     compiledSelectorTerms,
-    compilerExcludedIds,
+    compiledTargetAdmission,
     context,
     creativeAdmission,
     creativeAuthorityMode,
@@ -4562,7 +4602,6 @@ function groundToolCall({
     declaredBindingsByCallIndex,
     index,
     prompt,
-    requestProtections,
     plannedActionNames,
     resolvedTargetOverrides,
     sameActionAssertedArguments,
@@ -4696,6 +4735,21 @@ function groundToolCall({
         call.name === 'automateTrackGainRange' ? getWholeProjectVibeMixScope(context) : null;
     for (const targetRule of groundingRules.targetRules) {
         const assertedValue = groundedArguments[targetRule.argument];
+        if (
+            bulkDeviceInsertionScope &&
+            call.name === 'addDevice' &&
+            targetRule.argument === 'afterDeviceId' &&
+            isInsertionAnchorRequired(bulkDeviceInsertionScope.anchors.length, assertedValue)
+        ) {
+            const anchor = bulkDeviceInsertionScope.anchors.find(
+                (candidate) => candidate.trackId === groundedArguments.trackId
+            );
+            if (anchor === undefined || assertedValue !== anchor.afterDeviceId) {
+                return insertionAnchorRejection(index, call.name);
+            }
+            groundedArguments.afterDeviceId = anchor.afterDeviceId;
+            continue;
+        }
         if (targetRule.optional && assertedValue === undefined) {
             continue;
         }
@@ -4795,22 +4849,6 @@ function groundToolCall({
         ) {
             continue;
         }
-        if (bulkDeviceInsertionScope && call.name === 'addDevice' && targetRule.argument === 'afterDeviceId') {
-            const trackId = groundedArguments.trackId;
-            const anchor =
-                typeof trackId === 'string'
-                    ? bulkDeviceInsertionScope.anchors.find((candidate) => candidate.trackId === trackId)
-                    : undefined;
-            if (anchor === undefined || assertedValue !== anchor.afterDeviceId) {
-                return rejection(
-                    index,
-                    call.name,
-                    'Provider afterDeviceId does not match the application-resolved insertion anchor'
-                );
-            }
-            groundedArguments.afterDeviceId = anchor.afterDeviceId;
-            continue;
-        }
         if (
             bulkMutedEmptyTrackDeletionTargetIds &&
             call.name === 'removeTrack' &&
@@ -4848,17 +4886,12 @@ function groundToolCall({
                 );
             }
             const setRefusal = compiledTargetRefusalReason(
-                admitsCompiledTargets({
+                compiledTargetAdmission({
                     argument: targetRule.argument,
                     capability: targetRule.capability,
-                    catalog,
-                    compilerExcludedIds,
                     context,
-                    prompt,
-                    requestProtections,
                     referenceResolved: false,
                     selectorTerms: compiledSelectorTerms,
-                    valueTexts: batchWrittenValueTexts,
                     targetIds: compilerTargetOverride.stableIds,
                 }),
                 targetRule.argument
@@ -4981,21 +5014,16 @@ function groundToolCall({
             groundedArguments[targetRule.argument] = assertedValue;
             continue;
         }
-        const compiledTargetAuthority: CompiledTargetAuthorityInput | null =
+        const compiledTargetAuthority: CompiledTargetCallTerms | null =
             compilerTargetOverride !== undefined && 'stableIds' in compilerTargetOverride
                 ? {
                       argument: targetRule.argument,
                       capability: targetRule.capability,
-                      catalog,
-                      compilerExcludedIds,
                       context,
                       dependencyId: typeof dependencyValue === 'string' ? dependencyValue : undefined,
-                      prompt,
-                      requestProtections,
                       referenceResolved: false,
                       selectorTerms: compiledSelectorTerms,
                       targetIds: compilerTargetOverride.stableIds,
-                      valueTexts: batchWrittenValueTexts,
                   }
                 : null;
         if (
@@ -5017,7 +5045,7 @@ function groundToolCall({
                 );
             }
             const compiledRefusal = compiledTargetRefusalReason(
-                admitsCompiledTargets(compiledTargetAuthority),
+                compiledTargetAdmission(compiledTargetAuthority),
                 targetRule.argument
             );
             if (compiledRefusal !== null) {
@@ -5075,7 +5103,7 @@ function groundToolCall({
             compiledTargetAuthority === null
                 ? null
                 : compiledTargetRefusalReason(
-                      admitsCompiledTargets({ ...compiledTargetAuthority, referenceResolved: true }),
+                      compiledTargetAdmission({ ...compiledTargetAuthority, referenceResolved: true }),
                       targetRule.argument
                   );
         if (resolvedRefusal !== null) {
@@ -6996,7 +7024,98 @@ export function bridgeGroundedLlmToolCalls(input: BridgeGroundedLlmToolCallsInpu
     if (input.refinementBasis !== undefined) {
         return bridgeRefinedLlmToolCalls(input, input.refinementBasis);
     }
-    return refuseWhenProtectionIsUnresolved(input, bridgeOriginalRequestToolCalls(input));
+    const grounded = bridgeOriginalRequestToolCalls(input);
+    const conflict = findWorkflowInterpretationConflict(input, grounded);
+    if (conflict !== null) {
+        return refuseProtectedRequest(conflict);
+    }
+    return refuseWhenProtectionIsUnresolved(input, grounded);
+}
+
+/** A later exact workflow specializes execution; it cannot replace an already frozen restriction. */
+function findWorkflowInterpretationConflict(
+    input: BridgeGroundedLlmToolCallsInput,
+    grounded: BridgeGroundedLlmToolCallsResult
+): string | null {
+    const authority = input.creativeAuthority;
+    if (
+        authority === undefined ||
+        grounded.actions.length === 0 ||
+        (input.workflowCapabilityId === undefined &&
+            !input.calls.some((call) => call.name === 'automateTrackGainRange'))
+    ) {
+        return null;
+    }
+    if (authority.mode === 'read-only') {
+        return 'A read-only interpretation cannot select a writing workflow.';
+    }
+    const protectedObjects = authority.prohibitions.flatMap((restriction) =>
+        restriction.kind === 'protect-object' ? [{ id: restriction.objectId, name: restriction.objectId }] : []
+    );
+    if (findChangedObject(grounded.actions, protectedObjects, input.context) !== null) {
+        return 'The selected workflow changes an object protected by the frozen interpretation.';
+    }
+    const excluded = new Set<string>(
+        authority.prohibitions.flatMap((restriction) =>
+            restriction.kind === 'exclude-dimension' ? [restriction.dimension] : []
+        )
+    );
+    const targetIds = new Set(authority.targets.flatMap((target) => [...target.objectIds]));
+    if (authority.mode === 'create') {
+        const createdTracks = grounded.actions.filter((action) => {
+            const created = getExecutableAppActionEffect(action.type)?.creates ?? [];
+            return created.includes('track') || created.includes('bus');
+        }).length;
+        if (createdTracks > (getAuthorityTrackCreationBudget(authority) ?? 0)) {
+            return 'The selected workflow exceeds the frozen track creation budget.';
+        }
+    }
+    for (const action of grounded.actions) {
+        const effect = getExecutableAppActionEffect(action.type);
+        if (
+            effect?.dimensions.some(
+                (dimension) => excluded.has(dimension) || (dimension === 'clip-audio' && excluded.has('processing'))
+            )
+        ) {
+            return 'The selected workflow changes a dimension excluded by the frozen interpretation.';
+        }
+        if (targetIds.size === 0 && authority.mode === 'create') {
+            continue;
+        }
+        if (reachesOutsideWorkflowSubjects(action, input.context, targetIds)) {
+            return 'The selected workflow reaches outside the frozen interpretation subjects.';
+        }
+    }
+    return null;
+}
+
+function reachesOutsideWorkflowSubjects(
+    action: BridgeGroundedLlmToolCallsResult['actions'][number],
+    context: ProjectContext,
+    targetIds: ReadonlySet<string>
+): boolean {
+    const payload: unknown = 'payload' in action ? action.payload : undefined;
+    if (!isRecord(payload)) {
+        return false;
+    }
+    const references: unknown[] = (getExecutableAppActionGroundingRules(action.type)?.targetRules ?? []).flatMap(
+        (rule): readonly unknown[] => {
+            const value = payload[rule.argument];
+            return Array.isArray(value) ? value : [value];
+        }
+    );
+    return references.some((id) => {
+        if (typeof id !== 'string') {
+            return false;
+        }
+        const owner = context.tracks.find(
+            (track) =>
+                track.id === id ||
+                track.devices.some((device) => device.id === id) ||
+                track.clips.some((clip) => clip.id === id)
+        );
+        return owner !== undefined && !targetIds.has(id) && !targetIds.has(owner.id);
+    });
 }
 
 /**
@@ -7029,6 +7148,19 @@ function refuseWhenProtectionIsUnresolved(
             `Protection names ${references}, which resolves to no track, clip, device or group, so the request is refused`
         );
     }
+    // A protection binding any clip is a clip protection, so every member it lists must name an object.
+    // Without clip evidence the track reader alone decides, since a bare name there may be a quality.
+    const clipProtection = readClipProtection(input.prompt, context, protections);
+    const unnamedMembers =
+        clipProtection.clips.length > 0
+            ? findUnnamedClipProtectionMembers(input.prompt, clipProtection.read, context)
+            : [];
+    if (unnamedMembers.length > 0) {
+        const references = unnamedMembers.map((member) => `"${member}"`).join(', ');
+        return refuseProtectedRequest(
+            `Protection names ${references}, which resolves to no track, clip, device or group, so the request is refused`
+        );
+    }
     const wholeTracks = context.tracks.filter((track) => protections.protectedTrackIds.includes(track.id));
     const recordedControls = (input.protectionFacts?.protectedControls ?? []).map(
         ({ trackId, operations, exceptOperations }) => ({
@@ -7040,12 +7172,58 @@ function refuseWhenProtectionIsUnresolved(
     const changedTrack =
         findChangedObject(
             grounded.actions,
-            [...wholeTracks, ...(input.protectionFacts?.protectedUnchanged ?? [])],
+            [...wholeTracks, ...clipProtection.clips, ...(input.protectionFacts?.protectedUnchanged ?? [])],
             context
         ) ?? findChangedControl(grounded.actions, [...protections.protectedControls, ...recordedControls], context);
     return changedTrack === null
         ? grounded
         : refuseProtectedRequest(`Request changes "${changedTrack.name}", which a protection in it leaves alone`);
+}
+
+/**
+ * The clips a request's explicit protections and exclusions keep, whether every member resolved, and
+ * the text that reading was taken from. A resolved track clause is blanked and the request read again
+ * only when the whole request does not parse completely, since removing a following track clause can
+ * extend an earlier exclusion; the blanked text keeps every offset of the request.
+ */
+function readClipProtection(
+    prompt: string,
+    context: ProjectContext,
+    trackProtections: ReturnType<typeof readExplicitProtections>
+): ReturnType<typeof getExplicitClipProtection> & { read: string } {
+    const clipProtection = getExplicitClipProtection(prompt, context);
+    if (clipProtection.complete) {
+        return { ...clipProtection, read: prompt };
+    }
+    const clipPrompt = trackProtections.resolvedTrackClauses.reduce(
+        (text, { start, end }) => `${text.slice(0, start)}${' '.repeat(end - start)}${text.slice(end)}`,
+        prompt
+    );
+    return { ...getExplicitClipProtection(clipPrompt, context), read: clipPrompt };
+}
+
+/**
+ * The clip protection list members, read from `read`, that name nothing: no clip, track, device,
+ * parameter or group the reference masking hides, nor the project's conventional routing, and written
+ * as a name ("Omega" beside a missing clip, never "the loop"). A quoted member names an object only
+ * when that object's name is its whole quoted text.
+ */
+function findUnnamedClipProtectionMembers(prompt: string, read: string, context: ProjectContext): string[] {
+    const masked = scanPromptQuotedText(prompt).maskedText;
+    const candidates = refinementRequestReading.candidates(context);
+    return getUnresolvedClipProtectionMembers(read, context).flatMap((member) => {
+        const tokens = protectionObjectForms.readTokens(prompt, masked, member);
+        if (!protectionObjectForms.writesUnboundName(tokens)) {
+            return [];
+        }
+        const quoted = tokens.some((token) => token.quoted);
+        const named = quoted ? member.text.replaceAll(/^["'“”‘’]+|["'“”‘’]+$/gu, '') : member.text;
+        const references = refinementRequestReading.references(named, candidates);
+        const namesObject = quoted
+            ? references.some((reference) => reference.start === 0 && reference.end === named.length)
+            : references.length > 0;
+        return namesObject ? [] : [named];
+    });
 }
 
 function refuseProtectedRequest(reason: string): BridgeGroundedLlmToolCallsResult {
@@ -7057,19 +7235,20 @@ function bridgeOriginalRequestToolCalls(input: BridgeGroundedLlmToolCallsInput):
     if (main.rejections.length === 0) {
         return main;
     }
-    // A level phrase that names its track ("set Drums to -6 dB") grounds only where main's reading refuses
+    // A level phrase naming its track or VCA grounds only where main's reading refuses
     // a call and every clause of the request is accounted for, so it admits nothing main refused beside a
     // clause that might restrict it, and changes nothing main grounded. A refusal of the batch as a whole
     // (an oversized or mismatched plan) is not one a level phrase can answer.
     const catalog = getExecutableAppActionGroundingCatalog();
     if (
         main.rejections.some((mainRejection) => mainRejection.name === '<batch>') ||
-        !readsOnlyReferencedLevelClauses({
+        (!readsOnlyReferencedLevelClauses({
             calls: input.calls,
             catalog,
             context: input.context,
             prompt: input.prompt,
-        })
+        }) &&
+            !readsOnlyReferencedVcaLevel({ calls: input.calls, catalog, context: input.context, prompt: input.prompt }))
     ) {
         return main;
     }
@@ -7130,16 +7309,7 @@ function bridgeUnrefinedLlmToolCalls(
                     `Protection names ${references}, which resolves to no track, clip, device or group, so the request is refused`
                 );
             }
-            let clipProtection = getExplicitClipProtection(prompt, context);
-            if (!clipProtection.complete) {
-                // Removing a following track clause can extend an earlier exclusion, so keep any complete source parse.
-                const clipPrompt = trackProtections.resolvedTrackClauses.reduce(
-                    (text, { start, end }) => `${text.slice(0, start)}${' '.repeat(end - start)}${text.slice(end)}`,
-                    prompt
-                );
-                clipProtection = getExplicitClipProtection(clipPrompt, context);
-            }
-            complete = clipProtection.complete;
+            complete = readClipProtection(prompt, context, trackProtections).complete;
             protectedObjects = getApplicationProtectedObjects({ actions: [], context, prompt });
         }
         const protectedIds = new Set(protectedObjects?.map((object) => object.id));
@@ -7267,13 +7437,7 @@ function bridgeUnrefinedLlmToolCalls(
         return { actions: [], rejections: [rejection(0, '<batch>', backingVocalPlatePlan.reason)] };
     }
     if (backingVocalPlatePlan.status === 'accepted') {
-        return {
-            actions: backingVocalPlatePlan.actions,
-            appOwnedRenderTailSeconds: backingVocalPlatePlan.renderTailSeconds,
-            batchLocalActionIdentities: backingVocalPlatePlan.identities,
-            providerKnownTargetIds: backingVocalPlatePlan.providerKnownTargetIds,
-            rejections: [],
-        };
+        return groundedBackingVocalPlatePlan(backingVocalPlatePlan);
     }
     let effectiveCalls = calls;
     const bassProcessingCopyScope =
@@ -7567,6 +7731,12 @@ function bridgeUnrefinedLlmToolCalls(
     // `automateTrackGainRange` selection, and a selection the project shape
     // cannot admit still fails closed below.
     const providerVibeMixCalls = calls.filter((call) => call.name === 'automateTrackGainRange');
+    if (workflowCapabilityId === 'whole-project-vibe-mix' && providerVibeMixCalls.length !== 1) {
+        return {
+            actions: [],
+            rejections: [rejection(0, '<batch>', 'The selected workflow requires its exact bounded gain plan')],
+        };
+    }
     const wholeProjectVibeMixScope = providerVibeMixCalls.length > 0 ? getWholeProjectVibeMixScope(context) : null;
     if (wholeProjectVibeMixScope || providerVibeMixCalls.length > 0) {
         const providerCall = providerVibeMixCalls[0];
@@ -7875,7 +8045,13 @@ function bridgeUnrefinedLlmToolCalls(
     const acceptedGroundedCalls: ToolCallResult[] = [];
     const visibleBindings = new Map<string, BatchLocalCreationBinding>();
     const visiblePlannedTrackCreations: ToolCallResult[] = [];
-    const batchWrittenValueTexts = getBatchWrittenValueTexts(effectiveCalls);
+    const compiledTargetAdmission = createCompiledTargetAdmission({
+        catalog,
+        compilerExcludedIds,
+        prompt,
+        requestProtections,
+        valueTexts: getBatchWrittenValueTexts(effectiveCalls),
+    });
     let prospectiveContext = context;
     for (const [index, providerCall] of effectiveCalls.entries()) {
         const call = stripBatchLocalBinding(providerCall);
@@ -7897,7 +8073,13 @@ function bridgeUnrefinedLlmToolCalls(
                       )
                       .map((candidate) => candidate.arguments)
                 : undefined;
-        const creativeAdmission = creativeAdmissionsByCallIndex?.get(index);
+        // A mixed request may state literal transport or monitoring controls beside creative work.
+        // These effects confer no creative authority: ordinary grounding must prove the command,
+        // target and value, and a read-only interpretation still forbids every write.
+        const ordinaryLiteralControl =
+            creativeAuthority?.mode !== 'read-only' &&
+            isOrdinaryLiteralControl(getExecutableAppActionEffect(call.name));
+        const creativeAdmission = ordinaryLiteralControl ? undefined : creativeAdmissionsByCallIndex?.get(index);
         const createdTargetIntent = getExplicitCreatedTargetIntent({
             bindings: visibleBindings,
             call,
@@ -7946,12 +8128,10 @@ function bridgeUnrefinedLlmToolCalls(
                         createdObjectRequestIndexes.has(index) ||
                         createdTargetIntent === 'matched'),
                 batchLocalCreationBindings: visibleBindings,
-                batchWrittenValueTexts,
                 call,
                 catalog,
                 compiledSelectorTerms: compiledSelectorTermsByCallIndex.get(index),
-                compilerExcludedIds,
-                requestProtections,
+                compiledTargetAdmission,
                 context: prospectiveContext,
                 ...(creativeAdmission === undefined ? {} : { creativeAdmission }),
                 ...(creativeAuthority === undefined ? {} : { creativeAuthorityMode: creativeAuthority.mode }),
@@ -8135,5 +8315,41 @@ function bridgeUnrefinedLlmToolCalls(
         batchLocalActionIdentities,
         ...(compilerActionCommandGraph === undefined ? {} : { actionCommandGraph: compilerActionCommandGraph }),
         rejections,
+    };
+}
+
+/**
+ * A literal project-timing or monitoring control. A project-timing write such as a tempo change also
+ * reflows the arrangement and audio clips it carries; that reflow follows from the stated value and is
+ * not delegated creative work, so it does not demand creative authority over those dimensions.
+ */
+function isOrdinaryLiteralControl(effect: ReturnType<typeof getExecutableAppActionEffect>): boolean {
+    if (effect === null || effect.dimensions.length === 0) {
+        return false;
+    }
+    return (
+        effect.dimensions.includes('project-timing') ||
+        effect.dimensions.every((dimension) => dimension === 'monitoring')
+    );
+}
+
+function isInsertionAnchorRequired(requestedAnchorCount: number, assertedValue: unknown): boolean {
+    return requestedAnchorCount > 0 || assertedValue !== undefined;
+}
+
+function insertionAnchorRejection(index: number, name: string): LlmActionRejection {
+    return rejection(index, name, 'Provider afterDeviceId does not match the application-resolved insertion anchor');
+}
+
+function groundedBackingVocalPlatePlan(
+    plan: Extract<ReturnType<typeof bridgeBackingVocalPlatePlan>, { status: 'accepted' }>
+): BridgeGroundedLlmToolCallsResult {
+    return {
+        actions: plan.actions,
+        nativeLiteralUses: plan.nativeLiteralUses,
+        appOwnedRenderTailSeconds: plan.renderTailSeconds,
+        batchLocalActionIdentities: plan.identities,
+        providerKnownTargetIds: plan.providerKnownTargetIds,
+        rejections: [],
     };
 }
