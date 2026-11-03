@@ -74,6 +74,7 @@ import { addTempoChange, getTransportHandlers, updateTempoChange } from '#/modul
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { deriveDeterministicProjectId, type ProjectData } from '../../../../models/ProjectData';
+import { projectOriginalMediaPort } from '../../projectOriginalMediaPort';
 import { projectStore } from '../../../../stores/projectStore';
 import { stopActiveAutoSave } from '../../helpers/stopActiveAutoSave';
 import { newProject } from '../../newProject';
@@ -240,6 +241,11 @@ describe('project export snapshot consistency integration', () => {
         clearUndoHistory();
         resetActionReplayAuthority();
         setArrangementEventBus({ emit: () => Promise.resolve() });
+        projectOriginalMediaPort.configure({
+            capture: originalMediaRuntime.captureProjectOriginalMedia,
+            restore: async () => undefined,
+            activate: async () => undefined,
+        });
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         resetProjectFileIoFixture();
         audioRuntime.exportCachedAudioBuffers.mockReset();
@@ -257,6 +263,7 @@ describe('project export snapshot consistency integration', () => {
         Container.clear();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
+        projectOriginalMediaPort.configure(null);
         agentProjectRepairStateStore.set(null);
         vi.unstubAllGlobals();
     });

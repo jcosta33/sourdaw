@@ -9,6 +9,7 @@ import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stor
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import type { ProjectDirectoryHandle } from '../../../../repositories/project/projectDirectory';
+import { projectOriginalMediaPort } from '../../projectOriginalMediaPort';
 
 function filePosition(value: number | null | undefined): number {
     if (value === null || value === undefined || !Number.isSafeInteger(value) || value < 0) {
@@ -387,6 +388,11 @@ async function createSavedDirectoryProject() {
         import('#/modules/PluginHost/useCases'),
         import('@automerge/automerge'),
     ]);
+    projectOriginalMediaPort.configure({
+        capture: collaboration.captureProjectOriginalMedia,
+        restore: collaboration.restoreProjectOriginalMedia,
+        activate: collaboration.activateProjectOriginalMedia,
+    });
     Object.assign(audio.audioEngine.context, {
         createBuffer: (_channels: number, length: number) => makePcm(new Float32Array(length)),
         decodeAudioData: async (bytes: ArrayBuffer) => {
@@ -562,6 +568,7 @@ describe('project directory save and cold Recent open', () => {
         vi.unstubAllGlobals();
         Reflect.deleteProperty(window, 'showDirectoryPicker');
         Reflect.deleteProperty(window, 'showSaveFilePicker');
+        projectOriginalMediaPort.configure(null);
         vi.restoreAllMocks();
     });
 
@@ -578,6 +585,11 @@ describe('project directory save and cold Recent open', () => {
                 import('../../../createFreshProjectMetadata'),
                 import('#/modules/Collaboration/useCases'),
             ]);
+        projectOriginalMediaPort.configure({
+            capture: collaboration.captureProjectOriginalMedia,
+            restore: collaboration.restoreProjectOriginalMedia,
+            activate: collaboration.activateProjectOriginalMedia,
+        });
         Object.assign(audio.audioEngine.context, {
             createBuffer: (_channels: number, length: number) => makePcm(new Float32Array(length)),
             decodeAudioData: async (bytes: ArrayBuffer) => {
@@ -832,16 +844,27 @@ describe('project directory save and cold Recent open', () => {
         expect(arrangementStores.trackStore.value?.tracks).toEqual(blankTracks);
         // The load reactivates every restored original and throws if one is not owned, so no peer
         // or library lookup can stand in for the folder bytes the emptied store no longer holds.
-        const { PeerConnectionManager } = await import('#/modules/Collaboration/repositories/peerConnection');
-        const broadcast = vi.spyOn(PeerConnectionManager.prototype, 'broadcastCrdtSync');
+        // The transfer's peer-facing entry points are reached through the public asset runtime, so
+        // watch its prototype rather than importing the module-private transport.
+        const transferBeforeReopen = collaboration.getAssetTransfer();
+        if (!transferBeforeReopen) {
+            throw new Error('Expected the project asset runtime before the cold reopen');
+        }
+        type PeerFacingTransferEntryPoints = {
+            requestAsset: (hash: string) => void;
+            handleMessage: (peerId: string, message: unknown) => Promise<void>;
+        };
+        const transferPrototype = Object.getPrototypeOf(transferBeforeReopen) as PeerFacingTransferEntryPoints;
+        const requestAsset = vi.spyOn(transferPrototype, 'requestAsset');
+        const handleMessage = vi.spyOn(transferPrototype, 'handleMessage');
         try {
             mediaDirectory.files.set(mediaName, originalBytes);
             expect(await project.loadRecentProject(project.getProjectSnapshotKey(createdAt))).toBe('committed');
-            expect(broadcast).not.toHaveBeenCalledWith(
-                expect.objectContaining({ data: expect.stringContaining('asset.request') })
-            );
+            expect(requestAsset).not.toHaveBeenCalled();
+            expect(handleMessage).not.toHaveBeenCalled();
         } finally {
-            broadcast.mockRestore();
+            requestAsset.mockRestore();
+            handleMessage.mockRestore();
         }
         const reopenedRoot = crdt.getCrdtDoc(crdt.DOC_PREFIX_ROOT);
         if (!reopenedRoot) {

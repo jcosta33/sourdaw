@@ -1,6 +1,7 @@
 import { bytesToBase64 } from '#/utils/base64';
 
 import { collectProjectOriginalHashes } from '../helpers/collectProjectOriginalHashes';
+import { projectOriginalMediaPort } from '../projectOriginalMediaPort';
 
 import type { ProjectData } from '../../../models/ProjectData';
 
@@ -24,8 +25,7 @@ export async function buildProjectOriginalMediaArchive(
     if (hashes.length === 0) {
         return { ...data, originalMedia: { format: 'sourdaw-original-media-v1', assets: [], unavailable: [] } };
     }
-    const { captureProjectOriginalMedia } = await import('#/modules/Collaboration/useCases');
-    const originals = await captureProjectOriginalMedia(projectId, hashes, shouldContinue);
+    const originals = await projectOriginalMediaPort.capture(projectId, hashes, shouldContinue);
     const assets: ProjectOriginalMediaArchive['assets'] = [];
     for (const [hash, blob] of originals.media) {
         if (!shouldContinue()) {

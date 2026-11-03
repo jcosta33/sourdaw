@@ -8,6 +8,7 @@ import { collectProjectOriginalHashes } from '../helpers/collectProjectOriginalH
 import { isHydratableProjectData } from '../helpers/isHydratableProjectData';
 import { normalizeLegacyProjectData } from '../helpers/normalizeLegacyProjectData';
 import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
+import { projectOriginalMediaPort } from '../projectOriginalMediaPort';
 import { pendingProjectReplacements } from '../pendingProjectReplacements';
 import { saveProjectBeforeReplacement } from '../saveProject/saveProjectBeforeReplacement';
 
@@ -69,8 +70,7 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
         const normalized = normalizeLegacyProjectData(data);
         if (archive) {
             const projectId = requireMatchingArchiveProjectId(normalized, archive);
-            const { restoreProjectOriginalMedia } = await import('#/modules/Collaboration/useCases');
-            await restoreProjectOriginalMedia(projectId, archive.media, isStillChosen);
+            await projectOriginalMediaPort.restore(projectId, archive.media, isStillChosen);
             if (!isStillChosen()) {
                 return false;
             }
@@ -101,8 +101,11 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
             return false;
         }
         if (archive && isHydratableProjectData(normalized) && normalized.meta.projectId) {
-            const { activateProjectOriginalMedia } = await import('#/modules/Collaboration/useCases');
-            await activateProjectOriginalMedia(normalized.meta.projectId, [...archive.media.keys()], isStillChosen);
+            await projectOriginalMediaPort.activate(
+                normalized.meta.projectId,
+                [...archive.media.keys()],
+                isStillChosen
+            );
         }
         return true;
     } catch (error) {

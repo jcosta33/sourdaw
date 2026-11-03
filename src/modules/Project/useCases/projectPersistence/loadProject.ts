@@ -38,6 +38,7 @@ import { runProjectLoadTransaction, type ProjectLoadTransaction } from './helper
 import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
 import { verifyAudioBufferReferences } from './helpers/verifyAudioBufferReferences';
 import { migrateActiveProjectIdentity } from './migrateActiveProjectIdentity';
+import { projectOriginalMediaPort } from './projectOriginalMediaPort';
 import { prepareProjectDirectoryRead, type PreparedProjectDirectoryRead } from './projectDirectoryRead';
 import { projectIdentityTransitionDependencies } from './projectIdentityTransitionDependencies';
 import { whenProjectIdentityTransitionDependenciesConfigured } from './whenProjectIdentityTransitionDependenciesConfigured';
@@ -105,8 +106,7 @@ export async function loadProject({
     let preparedDirectoryAudio: Awaited<ReturnType<typeof importCachedAudioBuffers>> | null = null;
     try {
         if (directory) {
-            const { restoreProjectOriginalMedia } = await import('#/modules/Collaboration/useCases');
-            await restoreProjectOriginalMedia(directory.projectId, directory.media, isCurrent);
+            await projectOriginalMediaPort.restore(directory.projectId, directory.media, isCurrent);
             if (!isCurrent()) {
                 return false;
             }
@@ -304,8 +304,7 @@ export async function loadProject({
     }
 
     if (directory) {
-        const { activateProjectOriginalMedia } = await import('#/modules/Collaboration/useCases');
-        await activateProjectOriginalMedia(directory.projectId, [...directory.media.keys()], isCurrent);
+        await projectOriginalMediaPort.activate(directory.projectId, [...directory.media.keys()], isCurrent);
         if (!isCurrent()) {
             return false;
         }

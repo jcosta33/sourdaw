@@ -91,10 +91,13 @@ import { initBrowserAi, initRaveModels } from '#/modules/BrowserAi/useCases';
 import {
     canExecuteCommandBatch,
     canMutateBranchMetadata,
+    activateProjectOriginalMedia,
+    captureProjectOriginalMedia,
     configureCollaborationAssetOwner,
     configureDurableAssetCommitProof,
     getAssetTransfer,
     leaveSession,
+    restoreProjectOriginalMedia,
 } from '#/modules/Collaboration/useCases';
 import { registerMidiTransforms } from '#/modules/Command/stores';
 import {
@@ -180,6 +183,7 @@ import {
     agentCapabilityDiscoveryPort,
     getDurableProjectOwnerId,
     productionBriefActionBatchAdmission,
+    projectOriginalMediaPort,
     initGrooveTemplateDirtyTracking,
     initPluginStateDirtyTracking,
     initProjectDirtyTracking,
@@ -445,6 +449,11 @@ setTimeOperationDependencies({
     prepareMidiTimeStateRestore,
     prepareTimelineMapTimeOperation,
     prepareTimelineMapStateRestore,
+});
+projectOriginalMediaPort.configure({
+    capture: captureProjectOriginalMedia,
+    restore: restoreProjectOriginalMedia,
+    activate: activateProjectOriginalMedia,
 });
 setProjectIdentityTransitionDependencies({
     leaveCollaborationSession: leaveSession,

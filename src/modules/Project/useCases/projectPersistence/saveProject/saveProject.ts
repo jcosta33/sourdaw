@@ -20,6 +20,7 @@ import { collectProjectFreezeOnlyBufferIds } from '../helpers/collectProjectFree
 import { collectProjectOriginalHashes } from '../helpers/collectProjectOriginalHashes';
 import { unsavedClosedTakes } from '../helpers/unsavedClosedTakes';
 import { migrateActiveProjectIdentity } from '../migrateActiveProjectIdentity';
+import { projectOriginalMediaPort } from '../projectOriginalMediaPort';
 
 import { captureExternalPluginStates } from './captureExternalPluginStates';
 import { collectProjectDirectoryPcm } from './collectProjectDirectoryPcm';
@@ -144,8 +145,11 @@ async function commitProjectDirectory({
             return false;
         }
     };
-    const { captureProjectOriginalMedia } = await import('#/modules/Collaboration/useCases');
-    const originals = await captureProjectOriginalMedia(projectId, collectProjectOriginalHashes(built.data), isCurrent);
+    const originals = await projectOriginalMediaPort.capture(
+        projectId,
+        collectProjectOriginalHashes(built.data),
+        isCurrent
+    );
     assertSnapshotContinuation(audioDurabilityReceipt);
     const pcm = await collectProjectDirectoryPcm(built.requiredAudioBufferIds, isCurrent);
     assertSnapshotContinuation(audioDurabilityReceipt);

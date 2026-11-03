@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
 import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
@@ -7,6 +7,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { CURRENT_PROJECT_VERSION, type ProjectData } from '../../../../models/ProjectData';
 import { downloadProjectFile } from '../../../../repositories/project/downloadProjectFile';
+import { projectOriginalMediaPort } from '../../projectOriginalMediaPort';
 import { exportProjectFile } from '../exportProjectFile';
 
 import type { Track } from '#/modules/Arrangement/stores';
@@ -160,6 +161,11 @@ function seedMissingOriginalExport(): void {
 
 describe('exportProjectFile', () => {
     beforeEach(() => {
+        projectOriginalMediaPort.configure({
+            capture: captureProjectOriginalMedia,
+            restore: async () => undefined,
+            activate: async () => undefined,
+        });
         agentProjectRepairStateStoreMock.value = null;
         vi.mocked(downloadProjectFile).mockClear();
         vi.mocked(logger.error).mockClear();
@@ -347,4 +353,8 @@ describe('exportProjectFile', () => {
         expect(notifyUser).toHaveBeenCalledWith('Failed to export project', 'error');
         expect(notifyUser).not.toHaveBeenCalledWith('Project exported successfully', 'info');
     });
+});
+
+afterEach(() => {
+    projectOriginalMediaPort.configure(null);
 });

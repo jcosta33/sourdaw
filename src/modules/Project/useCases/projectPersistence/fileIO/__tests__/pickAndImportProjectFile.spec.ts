@@ -1,8 +1,9 @@
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { projectLoadFailureStore } from '../../../../stores/projectLoadFailureStore';
 import { pendingProjectReplacements } from '../../pendingProjectReplacements';
+import { projectOriginalMediaPort } from '../../projectOriginalMediaPort';
 import { pickAndImportProjectFile } from '../pickAndImportProjectFile';
 
 import type { ProjectLoadTransaction } from '../../helpers/runProjectLoadTransaction';
@@ -22,7 +23,14 @@ const mocks = vi.hoisted(() => {
     return {
         pickFiles: vi.fn<() => Promise<File[] | null>>(),
         runProjectLoadTransaction: vi.fn<() => ProjectLoadTransaction>(),
-        applyImportedProjectData: vi.fn<(input: { shouldProceed?: () => boolean }) => Promise<boolean>>(),
+        applyImportedProjectData: vi.fn<
+            (input: {
+                data?: unknown;
+                outgoingProject?: string;
+                shouldProceed?: () => boolean;
+                transaction?: unknown;
+            }) => Promise<boolean>
+        >(),
         notifyUser: vi.fn<(message: string, level?: 'info' | 'success' | 'warning' | 'error') => void>(),
         loggerError: vi.fn<(error: Error) => void>(),
         saveProject: vi.fn<() => Promise<boolean>>(),
@@ -93,6 +101,11 @@ function makeFile(content: string, name = 'song.sourdaw'): File {
 describe('pickAndImportProjectFile', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        projectOriginalMediaPort.configure({
+            capture: async () => ({ media: new Map(), unavailable: [] }),
+            restore: originalMedia.restore,
+            activate: originalMedia.activate,
+        });
         originalMedia.restore.mockResolvedValue(undefined);
         originalMedia.activate.mockResolvedValue(undefined);
         mocks.runProjectLoadTransaction.mockReturnValue(transactionSentinel);
@@ -606,4 +619,8 @@ describe('pickAndImportProjectFile', () => {
             expect(mocks.notifyUser).not.toHaveBeenCalled();
         });
     });
+});
+
+afterEach(() => {
+    projectOriginalMediaPort.configure(null);
 });
