@@ -99,15 +99,14 @@ Independence is distinct failure modes, never distinct files: stances pinned to 
 paths that share one probe library are one stance. Dispatch one stance per independent risk, never
 fewer than the risk plan's floor below.
 
-Reviewers use only fast, low-cost mid-tier models or below: the Luna, Terra, Sonnet and Haiku
-families, recorded by their public model names. Use economy or standard for every review stance,
-including real-time audio, security, data loss, irreversible change and disputed findings. Never
-use frontier or high-end review models: Fable, Astra, Opus, or any Sol model. Unknown families and
-premium aliases are not eligible. This ceiling applies to reviewers only; author and orchestrator
-routing above stays unchanged. Preserve specialist risk classes, independent stances, blind review,
-and discriminating evidence rather than escalating the review model.
+Reviewers use only fast, low-cost mid-tier models or below: recorded by their public model names.
+Use economy or standard for every review stance, including real-time audio, security, data loss,
+irreversible change and disputed findings. Never use frontier or high-end review models: Fable,
+Astra, Opus, or any Sol model. This ceiling applies to reviewers only; author and orchestrator
+routing above stays unchanged. Preserve specialist risk classes, independent stances, blind
+review, and discriminating evidence rather than escalating the review model.
 
-Diversify among permitted configured models, preferring a different model from the author's when
+Diversify among configured models, preferring a different model from the author's when
 available. When only one permitted model is available, disclose the unavailable alternatives in
 `modelExhaustion`; it never waives the cost ceiling. Independent draws from different permitted
 models may share one stance to expose different findings; that extends model diversity, not the
