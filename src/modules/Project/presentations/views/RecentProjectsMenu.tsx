@@ -102,7 +102,7 @@ export const RecentProjectsMenu = (): ReactElement => {
     };
 
     const handleSave = () => {
-        void saveProject();
+        void saveProject({ requestFolderSelection: true });
         setOpen(false);
     };
 

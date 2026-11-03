@@ -169,6 +169,16 @@ describe('private project directory binding cache', () => {
         expect(await cold.loadProjectDirectoryRoot('P')).toBe(first);
     });
 
+    it('seeds the live cache from a remembered durable root', async () => {
+        const selected = new SelectedDirectory('remembered');
+        const binding = (await import('../projectDirectoryBinding')).projectDirectoryBinding;
+
+        binding.rememberProjectDirectoryRoot('P', selected);
+
+        expect(binding.cachedProjectDirectoryRoot('P')).toBe(selected);
+        await expect(binding.loadProjectDirectoryRoot('P')).resolves.toBe(selected);
+    });
+
     it('caches a current durable read and exposes database open failures', async () => {
         const selected = new SelectedDirectory('current');
         const initial = (await import('../projectDirectoryBinding')).projectDirectoryBinding;

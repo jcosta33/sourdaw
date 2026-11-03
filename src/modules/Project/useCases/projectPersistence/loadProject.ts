@@ -45,7 +45,7 @@ import { prepareProjectDirectoryRead, type PreparedProjectDirectoryRead } from '
 import { projectIdentityTransitionDependencies } from './projectIdentityTransitionDependencies';
 import { whenProjectIdentityTransitionDependenciesConfigured } from './whenProjectIdentityTransitionDependenciesConfigured';
 
-const { loadProjectDirectoryBinding } = projectDirectoryBinding;
+const { loadProjectDirectoryBinding, rememberProjectDirectoryRoot } = projectDirectoryBinding;
 
 type LoadProjectInput = {
     directory?: PreparedProjectDirectoryRead;
@@ -78,6 +78,7 @@ export async function loadProject({
     const canActivate = () => transaction.canActivate() && canContinue();
     const isCurrent = () => transaction.isCurrent() && canContinue();
     let directory = providedDirectory;
+    let bootBinding: ProjectDirectoryBinding | null = null;
     try {
         if (!directory && !explicit && typeof window.showDirectoryPicker === 'function') {
             const binding: ProjectDirectoryBinding | null = await loadProjectDirectoryBinding('last');
@@ -85,6 +86,7 @@ export async function loadProject({
                 return false;
             }
             if (binding) {
+                bootBinding = binding;
                 directory = await prepareProjectDirectoryRead(binding, canActivate);
             }
         }
@@ -343,6 +345,11 @@ export async function loadProject({
     // Stop any previous auto-save loop first (e.g. if loadProject is called again).
     stopActiveAutoSave();
     setAutoSaveHandle(startCrdtAutoSave());
+    if (bootBinding) {
+        // The durable bookmark already owns this folder; a later Save uses it
+        // instead of asking for the folder again.
+        rememberProjectDirectoryRoot(bootBinding.projectId, bootBinding.root);
+    }
 
     return true;
 }

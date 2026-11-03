@@ -71,35 +71,41 @@ function describeSnapshotChange(
     return null;
 }
 
-/**
- * Starts Save's folder picker in the user's gesture turn, before the queued
- * predecessor settles or migration and plugin capture await. Autosave has no
- * activation, so it only ever reaches the folder this project already bound.
- */
-function beginSaveFolderPick(): Promise<FileSystemDirectoryHandle> | null {
-    if (projectLoadFailureStore.value !== null) {
-        return null;
-    }
-    const project = projectStore.value;
-    if (!project) {
-        return null;
-    }
-    return beginSaveFolderSelection(project.projectId, folderSaveAvailable());
-}
+let pendingFolderSelection: { projectId: string; root: Promise<FileSystemDirectoryHandle> } | null = null;
 
 function folderSaveAvailable(): boolean {
     return !isNativeProjectRuntimeAvailable() && typeof window.showDirectoryPicker === 'function';
 }
 
-function beginSaveFolderSelection(
-    projectId: string | undefined,
-    available: boolean
-): Promise<FileSystemDirectoryHandle> | null {
-    if (!available || (projectId && cachedProjectDirectoryRoot(projectId)) || !navigator.userActivation?.isActive) {
+/**
+ * Ask for the project folder only when the user pressed Save.
+ *
+ * Chromium keeps user activation for seconds after any interaction, so inferring
+ * intent from it let the 30 s autosave, a replacement pre-save, or a take-saving
+ * reset open a folder dialog nobody asked for. The caller states the intent
+ * instead. A save queued behind the one that opened the dialog awaits the same
+ * pending selection, so two presses produce one dialog and one folder.
+ */
+function requestProjectFolderSelection(): Promise<FileSystemDirectoryHandle> | null {
+    if (projectLoadFailureStore.value !== null) {
         return null;
+    }
+    const project = projectStore.value;
+    if (!project || !folderSaveAvailable()) {
+        return null;
+    }
+    const projectId = project.projectId;
+    if (projectId && cachedProjectDirectoryRoot(projectId)) {
+        return null;
+    }
+    if (projectId && pendingFolderSelection?.projectId === projectId) {
+        return pendingFolderSelection.root;
     }
     const selection = beginProjectDirectorySelection();
     void selection.catch(() => undefined);
+    if (projectId) {
+        pendingFolderSelection = { projectId, root: selection };
+    }
     return selection;
 }
 
@@ -178,8 +184,19 @@ async function commitProjectDirectory({
  * during a Save the user asked for) moved the first one's revision and the
  * first save refused itself (#5984).
  */
-export function saveProject(): Promise<boolean> {
-    const selectedRoot = beginSaveFolderPick();
+export type SaveProjectOptions = {
+    /**
+     * True only for a Save the user explicitly asked for. Nothing else may open
+     * the folder picker: a background save or a replacement's pre-save must use
+     * the folder the project already bound.
+     */
+    requestFolderSelection?: boolean;
+};
+
+export function saveProject({ requestFolderSelection = false }: SaveProjectOptions = {}): Promise<boolean> {
+    // The picker must start in the gesture turn, before the queued predecessor
+    // settles or migration and plugin capture await.
+    const selectedRoot = requestFolderSelection ? requestProjectFolderSelection() : null;
     const save = runSaveAfter(latestSave, selectedRoot);
     latestSave = save;
     // Only a save still in flight is waited on: once it settles, fulfilled or
@@ -187,6 +204,7 @@ export function saveProject(): Promise<boolean> {
     const releaseQueueSlot = (): void => {
         if (latestSave === save) {
             latestSave = undefined;
+            pendingFolderSelection = null;
         }
     };
     void save.then(releaseQueueSlot, releaseQueueSlot);

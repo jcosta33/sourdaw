@@ -146,6 +146,15 @@ function cachedProjectDirectoryRoot(projectId: string): FileSystemDirectoryHandl
     return invalidatedProjectIds.has(projectId) ? null : (cachedRoots.get(projectId) ?? null);
 }
 
+/**
+ * Seed the live cache from a durable binding read at boot. The bookmark already owns this folder,
+ * so the first explicit Save must reuse it instead of asking again.
+ */
+function rememberProjectDirectoryRoot(projectId: string, root: FileSystemDirectoryHandle): void {
+    invalidatedProjectIds.delete(projectId);
+    cachedRoots.set(projectId, root);
+}
+
 async function bindProjectDirectoryRoot(
     projectId: string,
     root: FileSystemDirectoryHandle,
@@ -206,6 +215,7 @@ export const projectDirectoryBinding = {
     loadProjectDirectoryBinding,
     clearLastProjectDirectoryBinding,
     cachedProjectDirectoryRoot,
+    rememberProjectDirectoryRoot,
     bindProjectDirectoryRoot,
     beginProjectDirectorySelection,
     openProjectDirectory,

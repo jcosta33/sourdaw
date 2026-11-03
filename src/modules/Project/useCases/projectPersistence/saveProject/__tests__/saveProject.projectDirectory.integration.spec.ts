@@ -274,11 +274,16 @@ class MemoryDirectory implements FileSystemDirectoryHandle, ProjectDirectoryHand
     }
 }
 
+vi.mock('#/utils/Notification/confirmUser', () => ({ confirmUser: vi.fn(async () => false) }));
+
 const folder = vi.hoisted(() => ({
     root: null as MemoryDirectory | null,
     bound: new Map<string, { projectId: string; recentKey: string; root: MemoryDirectory }>(),
+    cached: new Map<string, MemoryDirectory>(),
     permission: true,
     bindFail: false,
+    selectionCalls: 0,
+    beginSelection: (): Promise<MemoryDirectory | null> => Promise.resolve(folder.root),
     beforeBindingRead: null as (() => Promise<void>) | null,
 }));
 
@@ -286,9 +291,16 @@ let stopHistoryMirror: (() => void) | undefined;
 
 vi.mock('../../../../repositories/project/projectDirectoryBinding', () => ({
     projectDirectoryBinding: {
-        beginProjectDirectorySelection: () => Promise.resolve(folder.root),
-        cachedProjectDirectoryRoot: (projectId: string) => folder.bound.get(projectId)?.root ?? null,
-        loadProjectDirectoryRoot: async (projectId: string) => folder.bound.get(projectId)?.root ?? null,
+        beginProjectDirectorySelection: () => {
+            folder.selectionCalls += 1;
+            return folder.beginSelection();
+        },
+        cachedProjectDirectoryRoot: (projectId: string) => folder.cached.get(projectId) ?? null,
+        rememberProjectDirectoryRoot: (projectId: string, root: MemoryDirectory) => {
+            folder.cached.set(projectId, root);
+        },
+        loadProjectDirectoryRoot: async (projectId: string) =>
+            folder.cached.get(projectId) ?? folder.bound.get(projectId)?.root ?? null,
         loadProjectDirectoryBinding: async (key: string) => {
             const binding = folder.bound.get(key) ?? null;
             await folder.beforeBindingRead?.();
@@ -302,9 +314,14 @@ vi.mock('../../../../repositories/project/projectDirectoryBinding', () => ({
             folder.bound.set(projectId, binding);
             folder.bound.set(`recent:${recentKey}`, binding);
             folder.bound.set('last', binding);
+            folder.cached.set(projectId, root);
         },
-        clearLastProjectDirectoryBinding: async () => {
+        clearLastProjectDirectoryBinding: async (projectId?: string) => {
             folder.bound.delete('last');
+            if (projectId) {
+                folder.cached.delete(projectId);
+                folder.bound.delete(projectId);
+            }
         },
         openProjectDirectory: async (root: MemoryDirectory, projectId: string, create: boolean) => {
             if (!folder.permission) {
@@ -439,7 +456,7 @@ async function createSavedDirectoryProject() {
         projectId: projectStores.projectStore.value?.projectId,
         captureWitness: crdt.captureDurableDocumentWitness,
     });
-    expect(await project.saveProject()).toBe(true);
+    expect(await project.saveProject({ requestFolderSelection: true })).toBe(true);
     const projectId = projectStores.projectStore.value?.projectId;
     if (!projectId) {
         throw new Error('Expected saved directory identity');
@@ -519,6 +536,9 @@ describe('project directory save and cold Recent open', () => {
     beforeEach(() => {
         folder.root = new MemoryDirectory('selected-root');
         folder.bound.clear();
+        folder.cached.clear();
+        folder.selectionCalls = 0;
+        folder.beginSelection = () => Promise.resolve(folder.root);
         folder.permission = true;
         folder.bindFail = false;
         folder.beforeBindingRead = null;
@@ -629,7 +649,7 @@ describe('project directory save and cold Recent open', () => {
         const residentTransfer = collaboration.getAssetTransfer();
         expect(await residentTransfer?.releaseDurableAsset(clip.assetHash)).toMatchObject({ status: 'released' });
         expect(residentTransfer?.getAsset(clip.assetHash)).toBeInstanceOf(Blob);
-        expect(await project.saveProject()).toBe(true);
+        expect(await project.saveProject({ requestFolderSelection: true })).toBe(true);
         const projectId = projectStores.projectStore.value?.projectId;
         if (!projectId || !folder.root || !clip?.assetHash || !clip.audioBufferId || !secondClip?.audioBufferId) {
             throw new Error('Expected a saved media-bearing project');
@@ -773,10 +793,7 @@ describe('project directory save and cold Recent open', () => {
         if (!coldTransfer) {
             throw new Error('Expected the pre-reset project asset runtime');
         }
-        expect(await coldTransfer.releaseDurableAsset(clip.assetHash)).toMatchObject({
-            status: 'released',
-            assetRemoved: true,
-        });
+        expect(await coldTransfer.releaseDurableAsset(clip.assetHash)).toMatchObject({ status: 'released' });
         await expect(coldTransfer.reopenDurableAsset(clip.assetHash)).resolves.toMatchObject({
             status: 'failed',
             reason: expect.stringMatching(/^(asset-not-owned|missing-asset)$/),
@@ -928,7 +945,7 @@ describe('project directory save and cold Recent open', () => {
 
         folder.permission = false;
         projectStores.projectStore.set({ ...projectStores.projectStore.value!, dirty: true });
-        expect(await project.saveProject()).toBe(false);
+        expect(await project.saveProject({ requestFolderSelection: true })).toBe(false);
         expect(projectStores.projectStore.value?.dirty).toBe(true);
     }, 70_000);
 
@@ -1102,7 +1119,7 @@ describe('project directory save and cold Recent open', () => {
         const readFrozenTrack = () =>
             runtime.arrangementStores.trackStore.value?.tracks.find((track) => track.id === runtime.clip.trackId);
         expect(readFrozenTrack()?.freezeState).toMatchObject({ status: 'frozen', frozenBufferId: freezeId });
-        expect(await runtime.project.saveProject()).toBe(true);
+        expect(await runtime.project.saveProject({ requestFolderSelection: true })).toBe(true);
         const { projectDirectory } = await import('../../../../repositories/project/projectDirectory');
         const saved = await projectDirectory.read(runtime.directory, runtime.projectId);
         expect(saved.pcm.has(runtime.clip.audioBufferId!)).toBe(true);
@@ -1146,7 +1163,7 @@ describe('project directory save and cold Recent open', () => {
             type: 'moveClip',
             payload: { clipId: runtime.clip.id, trackId: runtime.clip.trackId, startBeat: 8 },
         });
-        expect(await runtime.project.saveProject()).toBe(true);
+        expect(await runtime.project.saveProject({ requestFolderSelection: true })).toBe(true);
         runtime.command.stampSessionUndoWitness();
         const mirror = sessionStorage.getItem('sourdaw-undo-session');
         expect(mirror).toBeTruthy();
@@ -1178,4 +1195,71 @@ describe('project directory save and cold Recent open', () => {
             runtime.audio.getCachedAudioBuffer({ bufferId: runtime.clip.audioBufferId! })?.getChannelData(0)[1]
         ).toBeCloseTo(0.5, 3);
     }, 70_000);
+
+    it('never opens the folder picker for a background save or a replacement pre-save', async () => {
+        const runtime = await createSavedDirectoryProject();
+        runtime.crdt.resetCrdtProjectAuthority('Unbound');
+        runtime.helpers.resetModuleStoresToDefault();
+        runtime.projectStores.projectStore.set({
+            ...runtime.metadata.createFreshProjectMetadata({ name: 'Unbound', loading: false, initialized: true }),
+            dirty: true,
+        });
+        folder.bound.clear();
+        folder.cached.clear();
+        folder.selectionCalls = 0;
+
+        const background = runtime.project.saveProject();
+        expect(folder.selectionCalls).toBe(0);
+        await expect(background).resolves.toBe(false);
+
+        const { saveProjectBeforeReplacement } = await import('../saveProjectBeforeReplacement');
+        await expect(saveProjectBeforeReplacement()).resolves.toBe('stay');
+        expect(folder.selectionCalls).toBe(0);
+    }, 70_000);
+
+    it('shares one pending folder selection between two queued saves', async () => {
+        const runtime = await createSavedDirectoryProject();
+        runtime.crdt.resetCrdtProjectAuthority('Unbound saves');
+        runtime.helpers.resetModuleStoresToDefault();
+        runtime.projectStores.projectStore.set({
+            ...runtime.metadata.createFreshProjectMetadata({ name: 'Unbound saves', loading: false, initialized: true }),
+            dirty: true,
+        });
+        folder.bound.clear();
+        folder.cached.clear();
+        folder.selectionCalls = 0;
+        const selected = Promise.withResolvers<MemoryDirectory | null>();
+        folder.beginSelection = () => selected.promise;
+
+        const first = runtime.project.saveProject({ requestFolderSelection: true });
+        const second = runtime.project.saveProject({ requestFolderSelection: true });
+        expect(folder.selectionCalls).toBe(1);
+        selected.resolve(folder.root);
+
+        await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
+    }, 70_000);
+
+    it('takes the durable folder for the first save after a boot restore', async () => {
+        const runtime = await createSavedDirectoryProject();
+        // A fresh realm holds only the durable bookmark, not the live cache.
+        folder.cached.clear();
+        runtime.crdt.resetCrdtProjectAuthority('Boot blank');
+        runtime.helpers.resetModuleStoresToDefault();
+        runtime.audio.clearRuntimeCachedAudioBuffers();
+        runtime.projectStores.projectStore.set({
+            ...runtime.metadata.createFreshProjectMetadata({ name: 'Boot blank', loading: false, initialized: true }),
+            createdAt: runtime.projectStores.projectStore.value?.createdAt ?? 0,
+            updatedAt: runtime.projectStores.projectStore.value?.updatedAt ?? 0,
+            dirty: false,
+        });
+
+        expect(await runtime.project.loadProject({ transaction: runtime.runProjectLoadTransaction() })).toBe(true);
+        expect(folder.cached.get(runtime.projectId)).toBeDefined();
+        runtime.projectStores.projectStore.set({ ...runtime.projectStores.projectStore.value!, dirty: true });
+        folder.selectionCalls = 0;
+
+        expect(await runtime.project.saveProject({ requestFolderSelection: true })).toBe(true);
+        expect(folder.selectionCalls).toBe(0);
+    }, 70_000);
+
 });

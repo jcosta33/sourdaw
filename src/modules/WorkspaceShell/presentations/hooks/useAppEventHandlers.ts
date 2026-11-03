@@ -28,7 +28,7 @@ export const useAppEventHandlers = ({ onOpenExport, onOpenPreferences }: AppEven
             onDialogOpenPreferences(() => onOpenPreferences()),
             onProjectSave(() => {
                 // Fire-and-forget: saveProject notifies the user itself on failure.
-                void saveProject();
+                void saveProject({ requestFolderSelection: true });
             }),
             onProjectNew(() => {
                 void (async () => {

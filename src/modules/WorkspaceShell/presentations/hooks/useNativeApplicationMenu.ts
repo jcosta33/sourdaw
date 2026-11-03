@@ -153,7 +153,7 @@ const runMenuAction = async (intent: NativeMenuIntent): Promise<void> => {
                 }
                 return;
             }
-            const saved = await saveProject();
+            const saved = await saveProject({ requestFolderSelection: true });
             if (intent.requestId !== undefined && intent.projectKey !== undefined) {
                 await reportCloseResult(intent.requestId, saved, intent.projectKey);
             }
