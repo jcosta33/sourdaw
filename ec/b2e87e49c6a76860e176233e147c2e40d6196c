@@ -1,0 +1,16 @@
+src/modules/Collaboration/useCases/__tests__/durableAssetOwnership.spec.ts
+  h_beb54bf43b47b7 3,236-269
+src/modules/Collaboration/useCases/assetTransfer.ts
+  h_beb54bf43b47b7 1318-1319
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ecb2e87e49c6a76860e176233e147c2e40d6196c",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
