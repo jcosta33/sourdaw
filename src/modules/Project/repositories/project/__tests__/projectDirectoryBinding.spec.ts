@@ -181,7 +181,7 @@ describe('private project directory binding cache', () => {
 
     it('re-requests a lapsed folder grant during the open gesture', async () => {
         const root = new SelectedDirectory('P');
-        const request = vi.fn(async () => 'granted' as PermissionState);
+        const request = vi.fn(async () => 'granted');
         root.queryPermission = async () => 'prompt';
         root.requestPermission = request;
         const binding = (await import('../projectDirectoryBinding')).projectDirectoryBinding;
@@ -194,7 +194,7 @@ describe('private project directory binding cache', () => {
     it('refuses the folder when the re-requested grant is denied', async () => {
         const root = new SelectedDirectory('Q');
         root.queryPermission = async () => 'prompt';
-        root.requestPermission = async () => 'denied' as PermissionState;
+        root.requestPermission = async () => 'denied';
         const binding = (await import('../projectDirectoryBinding')).projectDirectoryBinding;
 
         await expect(binding.openProjectDirectory(root, 'Q', false)).rejects.toThrow(
