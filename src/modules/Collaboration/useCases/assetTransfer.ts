@@ -1315,9 +1315,8 @@ export class AssetTransfer {
     }
 
     private async fulfillFromDurableOriginal(hash: string, attempt: ReceiveAttempt): Promise<boolean> {
-        if (attempt.persistenceUnavailable) {
-            return false;
-        }
+        // Opening an already-owned original reads owned durable bytes and needs no resume-journal
+        // write, so unreadable partial-transfer storage must not hide it from this local lookup.
         const opened = await this.reopenDurableAsset(hash);
         if (!this.attemptIsCurrent(hash, attempt)) {
             return false;
