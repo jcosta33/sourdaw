@@ -1,8 +1,8 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { joinBytes } from '../../../repositories/audioEncoders/__tests__/oggCodecTestWorker';
 import { streamExportToNative } from '../../../repositories/audioExport/streamExportToNative';
+import { joinBytes } from '../../../testing/oggCodecTestWorker';
 import { streamExport } from '../streamExport';
 
 import { expectReportDescribes, reportStem, twoWavReportTargets, wavReportTargets } from './wavReportFixtures';

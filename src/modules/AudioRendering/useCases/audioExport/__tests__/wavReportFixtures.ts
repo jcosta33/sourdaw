@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { expect } from 'vitest';
 
-import { toneSource } from '../../../repositories/audioEncoders/__tests__/oggCodecTestWorker';
+import { toneSource } from '../../../testing/oggCodecTestWorker';
 import { resolveDeliveryTargets } from '../../resolveDeliveryTargets';
 import { type streamExport } from '../streamExport';
 
