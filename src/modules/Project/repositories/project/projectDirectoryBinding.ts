@@ -200,7 +200,18 @@ async function openProjectDirectory(
     projectId: string,
     create: boolean
 ): Promise<FileSystemDirectoryHandle> {
-    if ((await root.queryPermission({ mode: create ? 'readwrite' : 'read' })) !== 'granted') {
+    const mode = create ? 'readwrite' : 'read';
+    let permission = await root.queryPermission({ mode });
+    if (permission === 'prompt') {
+        // A handle restored from a previous session loses its grant; the user's
+        // click that led here is the gesture the browser needs to re-ask.
+        try {
+            permission = await root.requestPermission({ mode });
+        } catch {
+            permission = 'denied';
+        }
+    }
+    if (permission !== 'granted') {
         throw new Error('Project folder permission is unavailable');
     }
     if (root.name === projectId) {

@@ -179,6 +179,29 @@ describe('private project directory binding cache', () => {
         await expect(binding.loadProjectDirectoryRoot('P')).resolves.toBe(selected);
     });
 
+    it('re-requests a lapsed folder grant during the open gesture', async () => {
+        const root = new SelectedDirectory('P');
+        const request = vi.fn(async () => 'granted' as PermissionState);
+        root.queryPermission = async () => 'prompt';
+        root.requestPermission = request;
+        const binding = (await import('../projectDirectoryBinding')).projectDirectoryBinding;
+
+        await expect(binding.openProjectDirectory(root, 'P', false)).resolves.toBe(root);
+
+        expect(request).toHaveBeenCalledWith({ mode: 'read' });
+    });
+
+    it('refuses the folder when the re-requested grant is denied', async () => {
+        const root = new SelectedDirectory('Q');
+        root.queryPermission = async () => 'prompt';
+        root.requestPermission = async () => 'denied' as PermissionState;
+        const binding = (await import('../projectDirectoryBinding')).projectDirectoryBinding;
+
+        await expect(binding.openProjectDirectory(root, 'Q', false)).rejects.toThrow(
+            'Project folder permission is unavailable'
+        );
+    });
+
     it('caches a current durable read and exposes database open failures', async () => {
         const selected = new SelectedDirectory('current');
         const initial = (await import('../projectDirectoryBinding')).projectDirectoryBinding;
