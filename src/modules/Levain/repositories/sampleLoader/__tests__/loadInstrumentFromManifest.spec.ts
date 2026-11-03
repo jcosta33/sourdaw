@@ -593,7 +593,7 @@ describe('loadInstrumentFromManifest', () => {
         }
     );
 
-    it('does not renew admission from a decision delivered after its load aborts', async () => {
+    it('does not renew admission when an abort lands after the upload decision settles', async () => {
         const port = makePort({ manualUploadDecision: true });
         const progress = vi.fn();
         const controller = new AbortController();
@@ -612,9 +612,14 @@ describe('loadInstrumentFromManifest', () => {
             const begin = postedMessages(port).find((message) => message.type === 'beginSampleBank')!;
             const activityCount = progress.mock.calls.filter(([event]) => typeof event !== 'number').length;
             expect(activityCount).toBe(1);
+            // The decision resolves while the handshake still listens, and the
+            // abort lands in the same turn, so the loader's continuation runs
+            // under an aborted signal while its progress listener is still
+            // registered. A renewal from that continuation would be observed;
+            // settling the load before the decision is sent would not.
+            port.emit({ type: 'sampleBankUploadDecision', loadToken: begin.loadToken, uploadRequired: true });
             controller.abort();
             await expect(loading).rejects.toMatchObject({ name: 'AbortError' });
-            port.emit({ type: 'sampleBankUploadDecision', loadToken: begin.loadToken, uploadRequired: true });
             expect(progress.mock.calls.filter(([event]) => typeof event !== 'number')).toHaveLength(activityCount);
         } finally {
             controller.abort();
