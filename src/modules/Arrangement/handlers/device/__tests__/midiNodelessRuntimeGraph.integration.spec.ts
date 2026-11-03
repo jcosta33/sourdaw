@@ -9,6 +9,7 @@ import {
     configureAudioDeviceRuntimeSink,
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
+    initEngineDeviceCollaborators,
     mirrorDeviceChainDelta,
 } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
@@ -170,6 +171,7 @@ beforeEach(async () => {
     configureRuntimeGraphProjectRevisionValidator((revision) => revision === captureProjectRevision());
     configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
     configureAudioDeviceRuntimeSink({ emitDeviceRemoved: removed });
+    initEngineDeviceCollaborators();
     await audioEngine.initialize();
 });
 
@@ -178,6 +180,7 @@ afterEach(() => {
     configureAudioDeviceRuntimeSink({});
     configureRuntimeGraphProjectRevisionValidator(null);
     configureRuntimeGraphTopologyValidator(null);
+    audioEngine.setUseCaseDeviceCollaborators(null);
     clearUndoHistory();
     clearHandlerRegistry();
     stopProjection?.();
