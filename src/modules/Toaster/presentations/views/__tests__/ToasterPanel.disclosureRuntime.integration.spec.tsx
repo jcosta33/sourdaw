@@ -200,8 +200,12 @@ describe('Toaster Simple and Full views keep the real performance connected', ()
             });
         };
         onTestFailed(() => {
-            mark('failure');
-            console.error('Toaster persistence phases:', JSON.stringify(stages));
+            console.error(
+                'Toaster persistence phases:',
+                "cumulative marks from the case's start;",
+                'the last mark names the phase in progress when the case ended.',
+                JSON.stringify(stages)
+            );
         });
         mark('callback started');
         projectStore.set({ ...defaultProjectStoreState, initialized: true, loading: false });
