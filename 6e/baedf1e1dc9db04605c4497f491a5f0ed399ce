@@ -1,0 +1,34 @@
+src/app/bootstrap.ts
+  h_beb54bf43b47b7 94-95,100,186,453-457
+src/modules/Project/useCases/index.ts
+  h_beb54bf43b47b7 48
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.spec.ts
+  h_beb54bf43b47b7 1,10,164-168,357-360
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportSnapshotConsistency.integration.spec.ts
+  h_beb54bf43b47b7 77,244-248,266
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/pickAndImportProjectFile.spec.ts
+  h_beb54bf43b47b7 2,6,26-33,104-108,623-626
+src/modules/Project/useCases/projectPersistence/fileIO/pickAndImportProjectFile.ts
+  h_beb54bf43b47b7 11,73,104-108
+src/modules/Project/useCases/projectPersistence/fileIO/projectOriginalMediaArchive.ts
+  h_beb54bf43b47b7 4,28
+src/modules/Project/useCases/projectPersistence/loadProject.ts
+  h_beb54bf43b47b7 41,109,307
+src/modules/Project/useCases/projectPersistence/projectOriginalMediaPort.ts
+  h_beb54bf43b47b7 1-48
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.projectDirectory.integration.spec.ts
+  h_beb54bf43b47b7 12,391-395,571,588-592,847-859,863-864,866-867
+src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts
+  h_beb54bf43b47b7 23,148-152
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6ebaedf1e1dc9db04605c4497f491a5f0ed399ce",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
