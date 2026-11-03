@@ -70,7 +70,20 @@ vi.mock('../../../../stores/projectStore', () => ({
     },
 }));
 
+vi.mock('#/modules/Collaboration/useCases', () => ({
+    captureProjectOriginalMedia: vi.fn(() => {
+        throw new Error('Unexpected original media capture in this fixture');
+    }),
+}));
+vi.mock('../collectProjectDirectoryPcm', () => ({
+    collectProjectDirectoryPcm: vi.fn(() => {
+        throw new Error('Unexpected directory PCM capture in this fixture');
+    }),
+}));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    exportSdawFile: vi.fn(() => {
+        throw new Error('Unexpected directory document export in this fixture');
+    }),
     captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureProjectRevision: mocks.captureProjectRevision,
     persistCrdtProject: mocks.persistCrdtProject,

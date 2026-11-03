@@ -127,6 +127,14 @@ Split out (a stance matching one carries that file, not this one): replay agains
     fail the cold-value case. Preserve validated read-only rehydration, initialized live state, stale-owner refusal
     and live meters, with no engine or project write; unconditional UI admission and a genuine saved snapshot
     prevent a vacuous pass. UI evidence does not establish audible behavior or engine acceptance.
+12. **A cold reopen reopens the project's own original before any library or peer (#5778).** Failure: resolving a
+    missing asset reads an authorized mapped library or asks a peer although the project already durably owns the
+    verified original, so revoking the grant or ending the session takes the source with it. Probe: save a mapped
+    original into project ownership, revoke the library grant, end the session, reopen cold and request its hash
+    through the real caller; the exact verified project-owned bytes return and no `asset.request` leaves. A resident
+    Blob or a still-authorized library file cannot stand in for the project's durable owner. Removing the
+    owner-scoped lookup must fail that cold case; keep lease and journal cleanup, alias and PCM protection, and
+    terminal retry fences.
 
 ## Retired lessons
 

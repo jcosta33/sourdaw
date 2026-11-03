@@ -1,3 +1,4 @@
+import { chooseProjectDirectory } from './chosenProjectDirectory';
 import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace, wait_for_launch_first_paint, wait_for_workspace_ready } from './e2eUtils';
 
@@ -74,7 +75,12 @@ test.describe('Proof device — add to chain', () => {
     test('saved disclosure and ceiling survive reopening in a fresh page', async ({ page }) => {
         test.setTimeout(120_000);
         const name = 'Proof disclosure round trip';
-        await page.getByRole('button', { name: 'Untitled Project', exact: true }).click();
+        const projectNameControl = page.getByTestId('project-name');
+        await expect(projectNameControl).toBeVisible();
+        await expect(projectNameControl).toHaveText('Untitled Project');
+        await expect(projectNameControl.getByTitle('Unsaved changes')).toBeVisible();
+        await chooseProjectDirectory(page);
+        await projectNameControl.click();
         const projectName = page.locator('input:focus');
         await projectName.fill(name);
         await projectName.press('Enter');

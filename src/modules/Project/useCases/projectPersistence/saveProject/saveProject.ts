@@ -3,20 +3,34 @@ import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioSto
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { ensureCachedAudioBuffersDurable } from '#/modules/AudioEngine/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
-import { captureProjectRevision, persistCrdtProject } from '#/modules/CrdtDocument/useCases';
+import { captureProjectRevision, exportSdawFile, persistCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { countSettledTakes } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { projectDirectory } from '../../../repositories/project/projectDirectory';
+import { projectDirectoryBinding } from '../../../repositories/project/projectDirectoryBinding';
 import { writeNamedProjectJsonByKey } from '../../../repositories/project/writeNamedProjectJsonByKey';
 import { projectLoadFailureStore } from '../../../stores/projectLoadFailureStore';
 import { projectStore, type ProjectStoreState } from '../../../stores/projectStore';
+import { isNativeProjectRuntimeAvailable } from '../../isNativeProjectRuntimeAvailable';
 import { addToRecentProjects } from '../../recentProjects/addToRecentProjects';
 import { buildProjectData } from '../fileIO/buildProjectData';
 import { getProjectSnapshotKey } from '../getProjectSnapshotKey';
+import { collectProjectFreezeOnlyBufferIds } from '../helpers/collectProjectFreezeOnlyBufferIds';
+import { collectProjectOriginalHashes } from '../helpers/collectProjectOriginalHashes';
 import { unsavedClosedTakes } from '../helpers/unsavedClosedTakes';
 import { migrateActiveProjectIdentity } from '../migrateActiveProjectIdentity';
 
 import { captureExternalPluginStates } from './captureExternalPluginStates';
+import { collectProjectDirectoryPcm } from './collectProjectDirectoryPcm';
+
+const {
+    beginProjectDirectorySelection,
+    bindProjectDirectoryRoot,
+    cachedProjectDirectoryRoot,
+    loadProjectDirectoryRoot,
+    openProjectDirectory,
+} = projectDirectoryBinding;
 
 type AudioDurabilityReceipt = {
     isCurrent: () => boolean;
@@ -57,6 +71,103 @@ function describeSnapshotChange(
 }
 
 /**
+ * Starts Save's folder picker in the user's gesture turn, before the queued
+ * predecessor settles or migration and plugin capture await. Autosave has no
+ * activation, so it only ever reaches the folder this project already bound.
+ */
+function beginSaveFolderPick(): Promise<FileSystemDirectoryHandle> | null {
+    if (projectLoadFailureStore.value !== null) {
+        return null;
+    }
+    const project = projectStore.value;
+    if (!project) {
+        return null;
+    }
+    return beginSaveFolderSelection(project.projectId, folderSaveAvailable());
+}
+
+function folderSaveAvailable(): boolean {
+    return !isNativeProjectRuntimeAvailable() && typeof window.showDirectoryPicker === 'function';
+}
+
+function beginSaveFolderSelection(
+    projectId: string | undefined,
+    available: boolean
+): Promise<FileSystemDirectoryHandle> | null {
+    if (!available || (projectId && cachedProjectDirectoryRoot(projectId)) || !navigator.userActivation?.isActive) {
+        return null;
+    }
+    const selection = beginProjectDirectorySelection();
+    void selection.catch(() => undefined);
+    return selection;
+}
+
+async function captureRejectedPluginStates(): Promise<readonly string[]> {
+    try {
+        const capture = await captureExternalPluginStates();
+        return capture.rejectedPlugins;
+    } catch (error) {
+        logger.warn('[saveProject] Native plugin state capture failed:', error);
+        return [];
+    }
+}
+
+async function commitProjectDirectory({
+    projectId,
+    createdAt,
+    recentKey,
+    selectedRoot,
+    built,
+    audioDurabilityReceipt,
+    assertSnapshotContinuation,
+}: {
+    projectId: string;
+    createdAt: number;
+    recentKey: string;
+    selectedRoot: Promise<FileSystemDirectoryHandle> | null;
+    built: NonNullable<Awaited<ReturnType<typeof buildProjectData>>>;
+    audioDurabilityReceipt: AudioDurabilityReceipt;
+    assertSnapshotContinuation: (receipt?: AudioDurabilityReceipt) => void;
+}): Promise<void> {
+    const root = selectedRoot ? await selectedRoot : await loadProjectDirectoryRoot(projectId);
+    if (!root) {
+        throw new Error('[saveProject] Choose a project folder with Save before autosave can commit');
+    }
+    assertSnapshotContinuation(audioDurabilityReceipt);
+    const directory = await openProjectDirectory(root, projectId, true);
+    assertSnapshotContinuation(audioDurabilityReceipt);
+    const isCurrent = (): boolean => {
+        try {
+            assertSnapshotContinuation(audioDurabilityReceipt);
+            return true;
+        } catch {
+            return false;
+        }
+    };
+    const { captureProjectOriginalMedia } = await import('#/modules/Collaboration/useCases');
+    const originals = await captureProjectOriginalMedia(projectId, collectProjectOriginalHashes(built.data), isCurrent);
+    assertSnapshotContinuation(audioDurabilityReceipt);
+    const pcm = await collectProjectDirectoryPcm(built.requiredAudioBufferIds, isCurrent);
+    assertSnapshotContinuation(audioDurabilityReceipt);
+    const document = new Uint8Array(await exportSdawFile().arrayBuffer());
+    assertSnapshotContinuation(audioDurabilityReceipt);
+    await projectDirectory.write({
+        directory,
+        projectId,
+        document,
+        snapshot: JSON.stringify(built.data),
+        media: originals.media,
+        unavailableOriginals: originals.unavailable,
+        pcm,
+        freezeProjectIdByBufferId: new Map(collectProjectFreezeOnlyBufferIds(built.data).map((id) => [id, createdAt])),
+        isCurrent,
+    });
+    assertSnapshotContinuation(audioDurabilityReceipt);
+    await bindProjectDirectoryRoot(projectId, root, recentKey);
+    assertSnapshotContinuation(audioDurabilityReceipt);
+}
+
+/**
  * Saves run one at a time, and each persists its own snapshot. Every save
  * publishes a fresh `updatedAt` into the project before it builds its
  * snapshot, so a second save overlapping the first (the 30 s autosave firing
@@ -64,7 +175,8 @@ function describeSnapshotChange(
  * first save refused itself (#5984).
  */
 export function saveProject(): Promise<boolean> {
-    const save = runSaveAfter(latestSave);
+    const selectedRoot = beginSaveFolderPick();
+    const save = runSaveAfter(latestSave, selectedRoot);
     latestSave = save;
     // Only a save still in flight is waited on: once it settles, fulfilled or
     // rejected, the next save starts at once.
@@ -79,16 +191,19 @@ export function saveProject(): Promise<boolean> {
     return save.then((saved) => saved);
 }
 
-async function runSaveAfter(predecessor: Promise<boolean> | undefined): Promise<boolean> {
+async function runSaveAfter(
+    predecessor: Promise<boolean> | undefined,
+    selectedRoot: Promise<FileSystemDirectoryHandle> | null
+): Promise<boolean> {
     if (predecessor) {
         // Only the order matters here; the predecessor's own caller receives
         // its result, rejection included, through the promise it was handed.
         await predecessor.catch(() => undefined);
     }
-    return persistProjectSnapshot();
+    return persistProjectSnapshot(selectedRoot);
 }
 
-async function persistProjectSnapshot(): Promise<boolean> {
+async function persistProjectSnapshot(selectedRoot: Promise<FileSystemDirectoryHandle> | null): Promise<boolean> {
     // Everything below assumes `projectStore` identifies the project the other
     // stores hold. That pairing only survives while a project is open. After a
     // load replaced the CRDT authority and then failed, `projectStore` still
@@ -119,13 +234,12 @@ async function persistProjectSnapshot(): Promise<boolean> {
         return true;
     }
 
-    const updatedAt = Date.now();
-
     // Key recent projects by a stable per-project id (createdAt, set once at
     // creation and preserved across renames and reloads) rather than the
     // mutable display name — so duplicate names don't collide and a rename
     // doesn't orphan the old key.
     const recentKey = getProjectSnapshotKey(project.createdAt);
+    const folderSave = folderSaveAvailable();
 
     try {
         await migrateActiveProjectIdentity();
@@ -137,13 +251,7 @@ async function persistProjectSnapshot(): Promise<boolean> {
         // project still persists. A PRECOMMIT rejection is reported back instead
         // of thrown: that plugin's live edit is not in project truth, so this
         // save must not read as a clean success for it.
-        let rejectedCapturePlugins: readonly string[] = [];
-        try {
-            const capture = await captureExternalPluginStates();
-            rejectedCapturePlugins = capture.rejectedPlugins;
-        } catch (error) {
-            logger.warn('[saveProject] Native plugin state capture failed:', error);
-        }
+        const rejectedCapturePlugins = await captureRejectedPluginStates();
 
         const current = projectStore.value;
         if (!current || current.createdAt !== project.createdAt) {
@@ -154,7 +262,7 @@ async function persistProjectSnapshot(): Promise<boolean> {
         // Keep the project dirty until every durable write succeeds. The
         // timestamp belongs to the snapshot being built, so publish it before
         // serialization and include it in the revision token below.
-        projectStore.set({ ...current, updatedAt, dirty: true });
+        projectStore.set({ ...current, updatedAt: Date.now(), dirty: true });
 
         // Write a flat-JSON ProjectData snapshot under the SAME key the
         // recent entry uses, so loadRecentProject can reopen it. The
@@ -226,6 +334,18 @@ async function persistProjectSnapshot(): Promise<boolean> {
 
                     await persistCrdtProject();
                     assertSnapshotContinuation(audioDurabilityReceipt);
+
+                    if (folderSave) {
+                        await commitProjectDirectory({
+                            projectId: persistedProject.projectId!,
+                            createdAt: persistedProject.createdAt,
+                            recentKey,
+                            selectedRoot,
+                            built,
+                            audioDurabilityReceipt,
+                            assertSnapshotContinuation,
+                        });
+                    }
 
                     // Awaited, so a rejected transaction reaches the catch below
                     // rather than being reported as a successful save.

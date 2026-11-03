@@ -388,10 +388,13 @@ export class AssetTransfer {
 
     /** Register a local asset (e.g. after recording or importing). */
     async addLocalAsset(blob: Blob, name: string): Promise<string> {
+        const ownerId = this.ownerId;
+        const lifetime = this.transferLifetime;
+        this.assertLocalAssetAuthority(ownerId, lifetime);
         const hash = await hashBlob(blob);
-        if (this.disposed) {
-            throw new Error('AssetTransfer is disposed');
-        }
+        this.assertLocalAssetAuthority(ownerId, lifetime);
+        await this.retainOriginal(blob, name, hash, ownerId, lifetime);
+        this.assertLocalAssetAuthority(ownerId, lifetime);
         const existing = this.localAssets.get(hash);
         if (existing) {
             existing.durable = true;
@@ -403,10 +406,13 @@ export class AssetTransfer {
 
     /** Stage an import in this live Collaboration session until commit or cancellation. */
     async stageLocalAsset(blob: Blob, name: string): Promise<{ hash: string; leaseId: string }> {
+        const ownerId = this.ownerId;
+        const lifetime = this.transferLifetime;
+        this.assertLocalAssetAuthority(ownerId, lifetime);
         const hash = await hashBlob(blob);
-        if (this.disposed) {
-            throw new Error('AssetTransfer is disposed');
-        }
+        this.assertLocalAssetAuthority(ownerId, lifetime);
+        await this.retainOriginal(blob, name, hash, ownerId, lifetime);
+        this.assertLocalAssetAuthority(ownerId, lifetime);
         const leaseId = `asset-stage-${crypto.randomUUID()}`;
         const existing = this.localAssets.get(hash);
         if (existing) {
@@ -416,6 +422,75 @@ export class AssetTransfer {
         }
         this.stagingLeaseHashById.set(leaseId, hash);
         return { hash, leaseId };
+    }
+
+    private assertLocalAssetAuthority(ownerId: string, lifetime: number): void {
+        if (this.disposed) {
+            throw new Error('AssetTransfer is disposed');
+        }
+        if (this.ownerId !== ownerId || this.transferLifetime !== lifetime) {
+            throw new Error('Project original ownership changed');
+        }
+    }
+
+    /** Make every verified source independently reopenable before exposing it to a clip or peer. */
+    private async retainOriginal(
+        blob: Blob,
+        name: string,
+        hash: string,
+        expectedOwnerId = this.ownerId,
+        expectedLifetime = this.transferLifetime
+    ): Promise<void> {
+        if (typeof window === 'undefined' || typeof window.showDirectoryPicker !== 'function') {
+            return;
+        }
+        const isCurrent = () =>
+            !this.disposed && this.transferLifetime === expectedLifetime && this.ownerId === expectedOwnerId;
+        await this.runOwnerOperation(async (assets) => {
+            if (!isCurrent()) {
+                throw new Error('Project original ownership changed');
+            }
+            const alreadyOwned = await assets.reopenDurableAsset(hash);
+            if (!isCurrent()) {
+                throw new Error('Project original ownership changed');
+            }
+            if (alreadyOwned.status === 'opened') {
+                return;
+            }
+            if (alreadyOwned.reason !== 'asset-not-owned' && alreadyOwned.reason !== 'missing-asset') {
+                throw new Error(`Project original could not be reopened: ${alreadyOwned.reason}`);
+            }
+            const leaseId = `asset-original-${crypto.randomUUID()}`;
+            let staged = false;
+            try {
+                const result = await assets.stageAsset(leaseId, blob, name);
+                staged = true;
+                if (!isCurrent()) {
+                    throw new Error('Project original staging was superseded');
+                }
+                if (result.hash !== hash) {
+                    throw new Error('Project original changed while it was staged');
+                }
+                const promoted = await assets.promoteStagedAsset(leaseId, hash);
+                if (promoted.status === 'failed') {
+                    throw new Error(`Project original could not be retained: ${promoted.reason}`);
+                }
+                staged = false;
+                if (!isCurrent()) {
+                    throw new Error('Project original promotion was superseded');
+                }
+            } catch (error) {
+                if (staged) {
+                    const released = await assets.releaseStagedAsset(leaseId, hash);
+                    if (released.status === 'failed') {
+                        throw new Error(`Project original staging could not be released: ${released.reason}`, {
+                            cause: error,
+                        });
+                    }
+                }
+                throw error;
+            }
+        });
     }
 
     /** Release one unresolved live-session staging reference. */
@@ -1043,6 +1118,28 @@ export class AssetTransfer {
         return this.localAssets.get(hash)?.blob ?? this.durableAssetCache.get(hash)?.blob;
     }
 
+    /** Carry a verified resident original forward when opening an older project. */
+    async retainLocalOriginal(hash: string): Promise<boolean> {
+        if (typeof window === 'undefined' || typeof window.showDirectoryPicker !== 'function') {
+            return false;
+        }
+        const blob = this.getAsset(hash);
+        if (!blob) {
+            return false;
+        }
+        const ownerId = this.ownerId;
+        const lifetime = this.transferLifetime;
+        if ((await hashBlob(blob)) !== hash) {
+            throw new Error(`Resident project original has changed: ${hash}`);
+        }
+        if (this.disposed || this.ownerId !== ownerId || this.transferLifetime !== lifetime) {
+            throw new Error('Project original ownership changed');
+        }
+        await this.retainOriginal(blob, hash, hash, ownerId, lifetime);
+        this.assertLocalAssetAuthority(ownerId, lifetime);
+        return true;
+    }
+
     /**
      * Request a missing asset from connected peers.
      *
@@ -1183,6 +1280,9 @@ export class AssetTransfer {
         }
         attempt.localLookupInProgress = true;
         try {
+            if (await this.fulfillFromDurableOriginal(hash, attempt)) {
+                return;
+            }
             if (await this.fulfillFromMappedLibrary(hash, attempt)) {
                 return;
             }
@@ -1212,6 +1312,25 @@ export class AssetTransfer {
             docId: DOC_ID_ASSET,
             data: JSON.stringify(msg),
         });
+    }
+
+    private async fulfillFromDurableOriginal(hash: string, attempt: ReceiveAttempt): Promise<boolean> {
+        if (attempt.persistenceUnavailable) {
+            return false;
+        }
+        const opened = await this.reopenDurableAsset(hash);
+        if (!this.attemptIsCurrent(hash, attempt)) {
+            return false;
+        }
+        if (opened.status === 'opened') {
+            attempt.assembling = true;
+            await this.publishVerifiedAsset(hash, opened.blob, opened.name, attempt);
+            return true;
+        }
+        if (opened.reason !== 'asset-not-owned' && opened.reason !== 'missing-asset') {
+            throw new Error(`Project original failed integrity verification: ${opened.reason}`);
+        }
+        return false;
     }
 
     private async fulfillFromMappedLibrary(hash: string, attempt: ReceiveAttempt): Promise<boolean> {
@@ -1258,6 +1377,10 @@ export class AssetTransfer {
     }
 
     private async publishVerifiedAsset(hash: string, blob: Blob, name: string, attempt: ReceiveAttempt): Promise<void> {
+        if (!this.attemptIsCurrent(hash, attempt)) {
+            return;
+        }
+        await this.retainOriginal(blob, name, hash);
         if (!this.attemptIsCurrent(hash, attempt)) {
             return;
         }

@@ -333,6 +333,189 @@ function decodedBuffer(): AudioBuffer {
 }
 
 describe('local library fulfillment through the real asset request boundary', () => {
+    it.each(['addLocalAsset', 'stageLocalAsset'] as const)(
+        '%s rejects a pre-handoff hash and leaves the next owner free to retain the exact original',
+        async (method) => {
+            const nativeClone = structuredClone;
+            vi.stubGlobal('structuredClone', (value: unknown) => {
+                const cloned: unknown = nativeClone(value);
+                if (
+                    typeof value === 'object' &&
+                    value !== null &&
+                    'blob' in value &&
+                    value.blob instanceof Blob &&
+                    typeof cloned === 'object' &&
+                    cloned !== null
+                ) {
+                    Reflect.set(cloned, 'blob', value.blob.slice(0, value.blob.size, value.blob.type));
+                }
+                return cloned;
+            });
+            vi.stubGlobal('showDirectoryPicker', vi.fn());
+            const bytes = new TextEncoder().encode(`${method} old owner source`);
+            const hash = await chunkDigest(bytes);
+            const blob = new Blob([bytes]);
+            const nativeRead = Blob.prototype.arrayBuffer.bind(blob);
+            const readEntered = Promise.withResolvers<void>();
+            const finishRead = Promise.withResolvers<ArrayBuffer>();
+            Object.defineProperty(blob, 'arrayBuffer', {
+                configurable: true,
+                value: vi
+                    .fn()
+                    .mockImplementationOnce(() => {
+                        readEntered.resolve();
+                        return finishRead.promise;
+                    })
+                    .mockImplementation(() => nativeRead()),
+            });
+
+            const current = endpoint();
+            const staleImport = current.transfer[method](blob, 'source.wav');
+            await readEntered.promise;
+            const nextOwner = 'cccccccc-cccc-8ccc-8ccc-cccccccccccc';
+            const handoff = await current.transfer.prepareDurableOwnerRebind(nextOwner);
+            expect(handoff.status).toBe('prepared');
+            if (handoff.status !== 'prepared') {
+                throw new Error('Expected owner handoff preparation');
+            }
+            expect(await handoff.commit()).toMatchObject({ status: 'committed' });
+            finishRead.resolve(await nativeRead());
+
+            await expect(staleImport).rejects.toThrow('ownership changed');
+            expect(current.transfer.hasAsset(hash)).toBe(false);
+            const cold = endpoint(nextOwner);
+            expect(await cold.transfer.reopenDurableAsset(hash)).toMatchObject({
+                status: 'failed',
+                reason: 'missing-asset',
+            });
+
+            await current.transfer[method](blob, 'source.wav');
+            const retried = endpoint(nextOwner);
+            expect(await retried.transfer.reopenDurableAsset(hash)).toMatchObject({ status: 'opened' });
+            expect(Array.from(new Uint8Array(await retried.transfer.getAsset(hash)!.arrayBuffer()))).toEqual(
+                Array.from(bytes)
+            );
+        }
+    );
+
+    it('does not retain an old owner resident blob after a handoff during hashing, then permits a new owner retry', async () => {
+        const nativeClone = structuredClone;
+        vi.stubGlobal('structuredClone', (value: unknown) => {
+            const cloned: unknown = nativeClone(value);
+            if (
+                typeof value === 'object' &&
+                value !== null &&
+                'blob' in value &&
+                value.blob instanceof Blob &&
+                typeof cloned === 'object' &&
+                cloned !== null
+            ) {
+                Reflect.set(cloned, 'blob', value.blob.slice(0, value.blob.size, value.blob.type));
+            }
+            return cloned;
+        });
+        const blob = new Blob(['resident source']);
+        const current = endpoint();
+        const hash = await current.transfer.addLocalAsset(blob, 'source.wav');
+        const readEntered = Promise.withResolvers<void>();
+        const finishRead = Promise.withResolvers<ArrayBuffer>();
+        const nativeRead = Blob.prototype.arrayBuffer.bind(blob);
+        const delayedRead = vi
+            .fn()
+            .mockImplementationOnce(() => {
+                readEntered.resolve();
+                return finishRead.promise;
+            })
+            .mockImplementation(() => nativeRead());
+        Object.defineProperty(blob, 'arrayBuffer', { configurable: true, value: delayedRead });
+        vi.stubGlobal('showDirectoryPicker', vi.fn());
+
+        const staleRetain = current.transfer.retainLocalOriginal(hash);
+        await readEntered.promise;
+        const nextOwner = 'cccccccc-cccc-8ccc-8ccc-cccccccccccc';
+        const handoff = await current.transfer.prepareDurableOwnerRebind(nextOwner);
+        expect(handoff.status).toBe('prepared');
+        if (handoff.status !== 'prepared') {
+            throw new Error('Expected owner handoff preparation');
+        }
+        expect(await handoff.commit()).toMatchObject({ status: 'committed' });
+        finishRead.resolve(await nativeRead());
+
+        await expect(staleRetain).rejects.toThrow('ownership changed');
+        expect(await current.transfer.reopenDurableAsset(hash)).toMatchObject({
+            status: 'failed',
+            reason: 'missing-asset',
+        });
+        await expect(current.transfer.retainLocalOriginal(hash)).resolves.toBe(true);
+        expect(await current.transfer.reopenDurableAsset(hash)).toMatchObject({ status: 'opened' });
+    });
+
+    it('serves a mapped original from project ownership after the library grant is gone', async () => {
+        const bytes = new Uint8Array([82, 73, 70, 70, 9, 3, 7, 1, 4]);
+        const original = endpoint();
+        const hash = await original.transfer.addLocalAsset(new Blob([bytes]), 'kick.wav');
+        await seedBinding(hash);
+        original.transfer.dispose();
+        const read = armNativeLibrary(bytes);
+        const nativeClone = structuredClone;
+        vi.stubGlobal('structuredClone', (value: unknown) => {
+            const cloned: unknown = nativeClone(value);
+            if (
+                typeof value === 'object' &&
+                value !== null &&
+                'blob' in value &&
+                value.blob instanceof Blob &&
+                typeof cloned === 'object' &&
+                cloned !== null
+            ) {
+                Reflect.set(cloned, 'blob', value.blob.slice(0, value.blob.size, value.blob.type));
+            }
+            return cloned;
+        });
+        vi.stubGlobal('showDirectoryPicker', vi.fn());
+
+        const mapped = endpoint('cccccccc-cccc-8ccc-8ccc-cccccccccccc');
+        mapped.transfer.requestAsset(hash);
+        expect(await mapped.settled).toBe('available');
+        expect(mapped.sent).toEqual([]);
+        expect(read).toHaveBeenCalledTimes(1);
+        expect((await mapped.transfer.reopenDurableAsset(hash)).status).toBe('opened');
+        mapped.transfer.dispose();
+
+        read.mockRejectedValue(new DOMException('Library grant revoked', 'NotAllowedError'));
+        const cold = endpoint('cccccccc-cccc-8ccc-8ccc-cccccccccccc');
+        cold.transfer.requestAsset(hash);
+        expect(await cold.settled).toBe('available');
+        expect(cold.sent).toEqual([]);
+        expect(read).toHaveBeenCalledTimes(1);
+        expect(Array.from(new Uint8Array(await cold.transfer.getAsset(hash)!.arrayBuffer()))).toEqual(
+            Array.from(bytes)
+        );
+
+        cold.transfer.dispose();
+        const held = endpoint('cccccccc-cccc-8ccc-8ccc-cccccccccccc');
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const reopen = held.transfer.reopenDurableAsset.bind(held.transfer);
+        vi.spyOn(held.transfer, 'reopenDurableAsset').mockImplementation(async (requestedHash) => {
+            entered.resolve();
+            await release.promise;
+            return reopen(requestedHash);
+        });
+        held.transfer.requestAsset(hash);
+        await entered.promise;
+        const oldRecovery = admittedRecovery(held.transfer, hash);
+        held.transfer.dispose();
+        const successor = endpoint('cccccccc-cccc-8ccc-8ccc-cccccccccccc');
+        successor.transfer.requestAsset(hash);
+        release.resolve();
+        await oldRecovery;
+        expect(held.callbacks.onAssetAvailable).not.toHaveBeenCalled();
+        expect(held.sent).toEqual([]);
+        expect(await successor.settled).toBe('available');
+        expect(successor.sent).toEqual([]);
+    });
+
     it('reopens a persisted raw binding in a new manager without emitting an asset request', async () => {
         const bytes = new Uint8Array([82, 73, 70, 70, 9, 3, 7, 1]);
         const original = endpoint();

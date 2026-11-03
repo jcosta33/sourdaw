@@ -26,7 +26,11 @@ release and provenance drift in `release-provenance-drift.md`.
    required entry point unavailable (rename its locator, unmount it, misname the parameter) and
    require the case to fail. Before any negative, assert the subject was admitted: the route selected,
    every input record consumed by the production reader, the valid control accepted, the write run.
-   (#4441, #1531, #1536, #1590, #5370, #2606, #4356, #4933, #5111, #4987, #5144)
+   A dirty project name admitted only after an incidental autosave cleared its `Unsaved changes` status is the
+   same defect (#5749, #5809): assert the real control while the dirty state holds, before waiting for Save or
+   autosave, by its stable identity and a separate expected-name assertion, then make that control unavailable
+   (rename its test id) and require the named case to fail at admission.
+   (#4441, #1531, #1536, #1590, #5370, #2606, #4356, #4933, #5111, #4987, #5144, #5749)
 
 2. **A negative case passes on the wrong refusal.**
    Probe: require the unmodified subject to pass a positive control on the same fixture, and require

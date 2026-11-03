@@ -1,5 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { projectDirectoryBinding } from '../../repositories/project/projectDirectoryBinding';
 import { readNamedProjectJson } from '../../repositories/project/readNamedProjectJson';
 import { writeProjectJson } from '../../repositories/project/writeProjectJson';
 import { isHydratableProjectData } from '../projectPersistence/helpers/isHydratableProjectData';
@@ -9,8 +11,13 @@ import {
     runProjectLoadTransaction,
     type ProjectLoadTransaction,
 } from '../projectPersistence/helpers/runProjectLoadTransaction';
+import { loadProject } from '../projectPersistence/loadProject';
+import { prepareProjectDirectoryRead } from '../projectPersistence/projectDirectoryRead';
 
 import type { OutgoingProjectDisposition } from '../projectPersistence/helpers/resetCrdtProjectWithTransportStopped';
+
+const { bindProjectDirectoryRoot, clearLastProjectDirectoryBinding, loadProjectDirectoryBinding } =
+    projectDirectoryBinding;
 
 /**
  * Why a recent-project load ended the way it did. Callers must distinguish
@@ -38,6 +45,41 @@ function isTransitionSuperseded(transaction: ProjectLoadTransaction, shouldProce
     );
 }
 
+async function loadRecentProjectDirectory(
+    key: string,
+    transaction: ProjectLoadTransaction,
+    shouldProceed?: () => boolean
+): Promise<LoadRecentProjectOutcome | null> {
+    if (typeof window === 'undefined' || typeof window.showDirectoryPicker !== 'function') {
+        return null;
+    }
+    try {
+        const binding = await loadProjectDirectoryBinding(`recent:${key}`);
+        if (!binding) {
+            return null;
+        }
+        const canContinue = () => transaction.canActivate() && shouldProceed?.() !== false;
+        const directory = await prepareProjectDirectoryRead(binding, canContinue);
+        if (!canContinue()) {
+            return 'aborted';
+        }
+        const loaded = await loadProject({ directory, transaction, explicit: true, shouldProceed });
+        if (!loaded) {
+            return isTransitionSuperseded(transaction, shouldProceed) ? 'aborted' : 'failed';
+        }
+        try {
+            await bindProjectDirectoryRoot(binding.projectId, binding.root, key);
+        } catch (error) {
+            logger.warn('Opened recent project folder could not be remembered:', error);
+            notifyUser('Project opened, but this browser could not remember its folder.', 'warning');
+        }
+        return 'committed';
+    } catch (error) {
+        logger.error(new Error('Failed to read or open recent project directory', { cause: error }));
+        return isTransitionSuperseded(transaction, shouldProceed) ? 'aborted' : 'failed';
+    }
+}
+
 export async function loadRecentProject(
     key: string,
     {
@@ -47,6 +89,10 @@ export async function loadRecentProject(
         transaction = runProjectLoadTransaction(),
     }: LoadRecentProjectOptions = {}
 ): Promise<LoadRecentProjectOutcome> {
+    const directoryOutcome = await loadRecentProjectDirectory(key, transaction, shouldProceed);
+    if (directoryOutcome !== null) {
+        return directoryOutcome;
+    }
     let raw: string | null;
     try {
         // Reads IndexedDB, the only store project content is written to. A
@@ -98,6 +144,7 @@ export async function loadRecentProject(
     }
 
     if (result.status === 'committed') {
+        await clearLastProjectDirectoryBinding(data.meta.projectId);
         return requireDurable && !result.durable ? 'failed' : 'committed';
     }
     if (result.status === 'failed') {
