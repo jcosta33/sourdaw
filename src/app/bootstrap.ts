@@ -91,13 +91,10 @@ import { initBrowserAi, initRaveModels } from '#/modules/BrowserAi/useCases';
 import {
     canExecuteCommandBatch,
     canMutateBranchMetadata,
-    activateProjectOriginalMedia,
-    captureProjectOriginalMedia,
     configureCollaborationAssetOwner,
     configureDurableAssetCommitProof,
     getAssetTransfer,
     leaveSession,
-    restoreProjectOriginalMedia,
 } from '#/modules/Collaboration/useCases';
 import { registerMidiTransforms } from '#/modules/Command/stores';
 import {
@@ -183,7 +180,6 @@ import {
     agentCapabilityDiscoveryPort,
     getDurableProjectOwnerId,
     productionBriefActionBatchAdmission,
-    projectOriginalMediaPort,
     initGrooveTemplateDirtyTracking,
     initPluginStateDirtyTracking,
     initProjectDirtyTracking,
@@ -243,6 +239,7 @@ import {
 } from './captureCommandBatchPreflightState';
 import { composeGrandBoule } from './composeGrandBoule';
 import { configureAudioEngineRuntime } from './configureAudioEngineRuntime';
+import { configureProjectOriginalMediaPort } from './configureProjectOriginalMediaPort';
 import { getAgentProtocolManifest } from './getAgentProtocolManifest';
 import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMaps';
 import { initAudioBufferCacheAccess } from './initAudioBufferCacheAccess';
@@ -450,11 +447,7 @@ setTimeOperationDependencies({
     prepareTimelineMapTimeOperation,
     prepareTimelineMapStateRestore,
 });
-projectOriginalMediaPort.configure({
-    capture: captureProjectOriginalMedia,
-    restore: restoreProjectOriginalMedia,
-    activate: activateProjectOriginalMedia,
-});
+configureProjectOriginalMediaPort();
 setProjectIdentityTransitionDependencies({
     leaveCollaborationSession: leaveSession,
     resumeDurableAssetOwnerHandoffsAfterProjectLoad: async (authority) => {
