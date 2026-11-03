@@ -1,0 +1,16 @@
+tests/e2e/proofPanelTestId.spec.ts
+  h_beb54bf43b47b7 132-157,164-196,203-205
+tests/e2e/smoke.spec.ts
+  h_beb54bf43b47b7 24-31,443-563,571,578-580,593-595,627,632-638
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3733258f87af54f1850ee6902517ca3a07be6fad",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
