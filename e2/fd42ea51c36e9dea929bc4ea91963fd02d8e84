@@ -1,0 +1,54 @@
+src/modules/AudioEngine/engine/TrackNode.ts
+  h_beb54bf43b47b7 1288-1291
+src/modules/AudioEngine/engine/__tests__/deviceReadinessDiagnostics.spec.ts
+  h_beb54bf43b47b7 12-42
+src/modules/AudioEngine/engine/__tests__/wasmDeviceRegistryDescriptors.spec.ts
+  h_beb54bf43b47b7 425-431,453
+src/modules/AudioEngine/engine/audioDeviceRuntimeSink.ts
+  h_beb54bf43b47b7 60
+src/modules/AudioEngine/engine/deviceReadinessDiagnostics.ts
+  h_beb54bf43b47b7 205-223
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  h_beb54bf43b47b7 59
+src/modules/AudioEngine/models/NativeSampleBank.ts
+  h_beb54bf43b47b7 128-129
+src/modules/AudioEngine/repositories/__tests__/contentReadinessProgress.integration.spec.ts
+  h_beb54bf43b47b7 9,18,45-53,104,128,187-192,198-203,219-220,272-279,291,331-333,338,378-775,784,793,828-830
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/registerNativeSampleBanks.spec.ts
+  h_beb54bf43b47b7 174-204,207,212,223
+src/modules/AudioEngine/repositories/nativeGraph/registerNativeSampleBanks.ts
+  h_beb54bf43b47b7 87,96,110
+src/modules/Levain/repositories/sampleLoader/__tests__/createDecodedBankResource.spec.ts
+  h_beb54bf43b47b7 294,297,325,405,452,454-455,607,618-620,669-671,675-677,688,759-760,764,788,795-804,806-823,826-832,835-862,864-919,921-1029,1031-1040,1042-1063,1065-1093
+src/modules/Levain/repositories/sampleLoader/__tests__/loadInstrumentFromManifest.spec.ts
+  h_beb54bf43b47b7 348-353,359-411,662-671,674,677-678,680-686,691-719,721,723-758,766,768,773,777,794,797,803,812-813,831,836,860,865,898,903,918-919,951,958,983,1007,1011,1015,1019
+src/modules/Levain/repositories/sampleLoader/createDecodedBankResource.ts
+  h_beb54bf43b47b7 46-47,53-54,62,108,126-133,214-216,339-340,369-484,486-488,813,896-913,916-937,943-947,964,966-969,986-987
+src/modules/Levain/repositories/sampleLoader/loadInstrumentFromManifest.ts
+  h_beb54bf43b47b7 403-408,455-457,614,712,841
+src/modules/Levain/useCases/__tests__/autoLoadSamples.spec.ts
+  h_beb54bf43b47b7 69-88
+src/modules/Levain/useCases/acquireLevainNativeBank.ts
+  h_beb54bf43b47b7 47-51
+src/modules/Levain/useCases/autoLoadSamples.ts
+  h_beb54bf43b47b7 67,99-101
+src/modules/Levain/useCases/levainParamBridge/__tests__/helpers.spec.ts
+  h_beb54bf43b47b7 19,469,472,484-485,487,489-490,493
+src/modules/Levain/useCases/levainParamBridge/__tests__/registerLevainDevice.spec.ts
+  h_beb54bf43b47b7 20,24-25,29
+src/modules/Levain/useCases/levainParamBridge/helpers.ts
+  h_beb54bf43b47b7 86,362
+src/modules/Levain/useCases/levainParamBridge/registerLevainDevice.ts
+  h_beb54bf43b47b7 9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e2fd42ea51c36e9dea929bc4ea91963fd02d8e84",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
