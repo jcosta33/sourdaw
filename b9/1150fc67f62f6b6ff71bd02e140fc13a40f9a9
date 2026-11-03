@@ -1,0 +1,16 @@
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/pickAndImportProjectFile.spec.ts
+  h_beb54bf43b47b7 224-278
+src/modules/Project/useCases/projectPersistence/fileIO/pickAndImportProjectFile.ts
+  h_beb54bf43b47b7 70-71,82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b91150fc67f62f6b6ff71bd02e140fc13a40f9a9",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
