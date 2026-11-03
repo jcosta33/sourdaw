@@ -1,0 +1,22 @@
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 78-83
+.agents/skills/review-stances/runtime-instance-lifetimes.md
+  h_beb54bf43b47b7 35-38
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 39-43,45,68-71
+src/modules/Arrangement/handlers/device/__tests__/midiNodelessRuntimeGraph.integration.spec.ts
+  h_beb54bf43b47b7 294
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  h_beb54bf43b47b7 6,484-561
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c6133567d058c775f0e1c6d24a7bfdb0d3abc508",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
