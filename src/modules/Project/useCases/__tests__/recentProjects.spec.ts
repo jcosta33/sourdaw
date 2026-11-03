@@ -81,6 +81,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     ensureTrackStrips: vi.fn(),
     restoreTimelineMapSnapshot: vi.fn(),
     countSettledTakes: () => 0,
+    isTransportIdle: () => true,
 }));
 
 describe('recentProjects injectables', () => {

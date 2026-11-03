@@ -108,6 +108,8 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     compactProject: vi.fn(() => {
         throw new Error('Unexpected directory compaction in this fixture');
     }),
+    resetCrdtProject: vi.fn(),
+    exportSdawFile: vi.fn(),
     prepareExternalProjectDocument: vi.fn(() => {
         throw new Error('Unexpected directory read in this fixture');
     }),

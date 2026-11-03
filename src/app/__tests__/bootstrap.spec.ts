@@ -491,13 +491,16 @@ vi.mock('#/modules/BrowserAi/useCases', () => ({
 }));
 
 vi.mock('#/modules/Collaboration/useCases', () => ({
+    activateProjectOriginalMedia: noop,
     canExecuteCommandBatch: canExecuteCommandBatchMock,
     canMutateBranchMetadata: () => true,
     configureCollaborationAssetOwner: configureCollaborationAssetOwnerMock,
+    captureProjectOriginalMedia: noop,
     configureDurableAssetCommitProof: configureDurableAssetCommitProofMock,
     getCollaborationHandlers: sentinelHandlers('Collaboration'),
     getAssetTransfer: getAssetTransferMock,
     leaveSession: noop,
+    restoreProjectOriginalMedia: noop,
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -665,6 +668,7 @@ vi.mock('#/modules/Project/useCases', () => ({
     productionBriefActionBatchAdmission: { capture: () => ({ allowsCurrent: () => true }) },
     getProjectHandlers: sentinelHandlers('Project'),
     initGrooveTemplateDirtyTracking: noop,
+    projectOriginalMediaPort: { configure: noop },
     initPluginStateDirtyTracking: noop,
     initProjectDirtyTracking: noop,
     getDurableProjectOwnerId: getDurableProjectOwnerIdMock,
