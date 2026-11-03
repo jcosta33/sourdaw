@@ -23,14 +23,15 @@ const mocks = vi.hoisted(() => {
     return {
         pickFiles: vi.fn<() => Promise<File[] | null>>(),
         runProjectLoadTransaction: vi.fn<() => ProjectLoadTransaction>(),
-        applyImportedProjectData: vi.fn<
-            (input: {
-                data?: unknown;
-                outgoingProject?: string;
-                shouldProceed?: () => boolean;
-                transaction?: unknown;
-            }) => Promise<boolean>
-        >(),
+        applyImportedProjectData:
+            vi.fn<
+                (input: {
+                    data?: unknown;
+                    outgoingProject?: string;
+                    shouldProceed?: () => boolean;
+                    transaction?: unknown;
+                }) => Promise<boolean>
+            >(),
         notifyUser: vi.fn<(message: string, level?: 'info' | 'success' | 'warning' | 'error') => void>(),
         loggerError: vi.fn<(error: Error) => void>(),
         saveProject: vi.fn<() => Promise<boolean>>(),

@@ -1222,7 +1222,11 @@ describe('project directory save and cold Recent open', () => {
         runtime.crdt.resetCrdtProjectAuthority('Unbound saves');
         runtime.helpers.resetModuleStoresToDefault();
         runtime.projectStores.projectStore.set({
-            ...runtime.metadata.createFreshProjectMetadata({ name: 'Unbound saves', loading: false, initialized: true }),
+            ...runtime.metadata.createFreshProjectMetadata({
+                name: 'Unbound saves',
+                loading: false,
+                initialized: true,
+            }),
             dirty: true,
         });
         folder.bound.clear();
@@ -1261,5 +1265,4 @@ describe('project directory save and cold Recent open', () => {
         expect(await runtime.project.saveProject({ requestFolderSelection: true })).toBe(true);
         expect(folder.selectionCalls).toBe(0);
     }, 70_000);
-
 });

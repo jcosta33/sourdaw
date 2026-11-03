@@ -15,7 +15,11 @@ export type CapturedProjectOriginals = {
 
 export type ProjectOriginalMediaPort = {
     /** Resolve only verified project-owned originals for the hashes a saved snapshot references. */
-    capture(projectId: string, hashes: readonly string[], shouldContinue: () => boolean): Promise<CapturedProjectOriginals>;
+    capture(
+        projectId: string,
+        hashes: readonly string[],
+        shouldContinue: () => boolean
+    ): Promise<CapturedProjectOriginals>;
     /** Restore verified original bytes under their project identity before the project is visible. */
     restore(projectId: string, media: ReadonlyMap<string, Uint8Array>, shouldContinue: () => boolean): Promise<void>;
     /** Suppress peer requests for every original just restored from a local project. */
