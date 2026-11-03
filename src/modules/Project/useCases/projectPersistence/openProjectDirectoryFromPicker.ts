@@ -27,7 +27,10 @@ export async function openProjectDirectoryFromPicker(): Promise<boolean> {
         return false;
     }
     const isStillChosen = pendingProjectReplacements.capture();
-    if (projectStore.value?.dirty && !(await saveProjectBeforeReplacement())) {
+    // Every value of the disposition is truthy, `'stay'` included, so only an
+    // explicit comparison can honor Cancel in the leave-without-saving dialog.
+    const outgoingProject = projectStore.value?.dirty ? await saveProjectBeforeReplacement() : 'save-closed-takes';
+    if (outgoingProject === 'stay' || !isStillChosen()) {
         return false;
     }
     const transaction = runProjectLoadTransaction();
@@ -47,7 +50,13 @@ export async function openProjectDirectoryFromPicker(): Promise<boolean> {
         if (!isStillChosen()) {
             return false;
         }
-        const loaded = await loadProject({ directory, transaction, explicit: true, shouldProceed: isStillChosen });
+        const loaded = await loadProject({
+            directory,
+            transaction,
+            explicit: true,
+            outgoingProject,
+            shouldProceed: isStillChosen,
+        });
         if (!loaded) {
             return false;
         }

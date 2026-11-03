@@ -48,6 +48,7 @@ function isTransitionSuperseded(transaction: ProjectLoadTransaction, shouldProce
 async function loadRecentProjectDirectory(
     key: string,
     transaction: ProjectLoadTransaction,
+    outgoingProject: OutgoingProjectDisposition | undefined,
     shouldProceed?: () => boolean
 ): Promise<LoadRecentProjectOutcome | null> {
     if (typeof window === 'undefined' || typeof window.showDirectoryPicker !== 'function') {
@@ -63,7 +64,7 @@ async function loadRecentProjectDirectory(
         if (!canContinue()) {
             return 'aborted';
         }
-        const loaded = await loadProject({ directory, transaction, explicit: true, shouldProceed });
+        const loaded = await loadProject({ directory, transaction, explicit: true, outgoingProject, shouldProceed });
         if (!loaded) {
             return isTransitionSuperseded(transaction, shouldProceed) ? 'aborted' : 'failed';
         }
@@ -89,7 +90,7 @@ export async function loadRecentProject(
         transaction = runProjectLoadTransaction(),
     }: LoadRecentProjectOptions = {}
 ): Promise<LoadRecentProjectOutcome> {
-    const directoryOutcome = await loadRecentProjectDirectory(key, transaction, shouldProceed);
+    const directoryOutcome = await loadRecentProjectDirectory(key, transaction, outgoingProject, shouldProceed);
     if (directoryOutcome !== null) {
         return directoryOutcome;
     }

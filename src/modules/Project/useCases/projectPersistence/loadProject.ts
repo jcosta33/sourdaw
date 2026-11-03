@@ -32,6 +32,8 @@ import { finishProjectLoading } from '../finishProjectLoading';
 import { getDurableProjectOwnerId } from '../getDurableProjectOwnerId';
 
 import { setAutoSaveHandle } from './helpers/autoSaveHandle';
+import { type OutgoingProjectDisposition } from './helpers/resetCrdtProjectWithTransportStopped';
+import { unsavedClosedTakes } from './helpers/unsavedClosedTakes';
 import { collectTrackStateAudioBufferIds } from './helpers/collectTrackStateAudioBufferIds';
 import { resetModuleStoresToDefault } from './helpers/resetModuleStoresToDefault';
 import { runProjectLoadTransaction, type ProjectLoadTransaction } from './helpers/runProjectLoadTransaction';
@@ -49,6 +51,8 @@ type LoadProjectInput = {
     directory?: PreparedProjectDirectoryRead;
     transaction?: ProjectLoadTransaction;
     explicit?: boolean;
+    /** `discard` when the user chose to leave the outgoing project without saving. */
+    outgoingProject?: OutgoingProjectDisposition;
     shouldProceed?: () => boolean;
     shouldContinue?: () => boolean;
 };
@@ -57,6 +61,7 @@ export async function loadProject({
     directory: providedDirectory,
     transaction: providedTransaction,
     explicit = false,
+    outgoingProject,
     shouldProceed,
     shouldContinue = () => true,
 }: LoadProjectInput = {}): Promise<boolean> {
@@ -143,6 +148,11 @@ export async function loadProject({
             // run the unified createCrdtProject path from the launch flow.
             finishProjectLoading();
             return false;
+        }
+        if (outgoingProject === 'discard') {
+            // Don't Save drops the outgoing project's settled takes with it; the
+            // incoming project owes nothing for them.
+            unsavedClosedTakes.acknowledgeAll();
         }
     } catch (error) {
         if (!isCurrent()) {
