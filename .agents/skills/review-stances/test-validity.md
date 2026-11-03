@@ -36,9 +36,13 @@ release and provenance drift in `release-provenance-drift.md`.
    fixture digest, a broad failure regex or an unrelated census mismatch must not satisfy it. Feed
    each guard its own violating row with every other precondition met, audit every new lexical match
    before updating a census count, and assert deliberate refusals through the thrown error with the
-   spec's stderr clean. When a repair adds a `compile`-named production route, run the device-write
+   spec's stderr clean. A full-project output delta can be refused by current-project topology
+   validation before the intended live identity matcher decides (#5387/#5805): build output fixtures
+   through the production `createWebAudioNode` compiler, require a positive control, and prove the
+   injected mismatch is deciding by disabling only that matcher. When a repair adds a `compile`-named
+   production route, run the device-write
    boundary closure census and account for each new match by its actual runtime or document effect.
-   (#2927, #5852, #5829, #1650, #2712, #3328, #4108, #5646, #4128, #5291, #4486, #4904)
+   (#2927, #5852, #5829, #1650, #2712, #3328, #4108, #5646, #4128, #5291, #4486, #4904, #5387, #5805)
 
 3. **The test drives a helper while the production caller takes another route.**
    Probe: drive every real entry route (component, registered Command handler, bridge, dispatcher,
@@ -61,7 +65,10 @@ release and provenance drift in `release-provenance-drift.md`.
    success; a failed control receipt must leave no staged authority for the next effectful call; a
    grouped replay whose older inverse conflicts (gain plus mute) must leave full project and history
    unchanged before its refusal feedback. Replacing an atomic path with a per-member loop must fail.
-   (#3905, #2648, #1049, #5277, #5339, #4128, #2811, #2083, #5643, #5254, #5247, #5215, #474, #5798, #5565)
+   An upstream already-projected integration delta cannot discriminate TrackNode's direct loops
+   (#5387/#5805): add direct writer fixtures with full scheduled-instrument after-chains; reverting
+   the reorder and replacement loops must fail their named direct cases.
+   (#3905, #2648, #1049, #5277, #5339, #4128, #2811, #2083, #5643, #5254, #5247, #5215, #474, #5798, #5565, #5387, #5805)
 
 4. **The oracle is computed by the code under test.**
    Probe: take each expected value from an independent source and write it as a literal stating its

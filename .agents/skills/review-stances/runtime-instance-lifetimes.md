@@ -32,7 +32,10 @@ wall-clock) prove ordering, ownership and cleanup; they never establish physical
    construction refusal), an existing mismatched strip, stale or unrelated project divergence, duplicate ownership;
    inject initialization rejection and require committed failure with no later parameter writes. Remove the
    projection or the missing-strip admission and the cold Command regression must fail. The UI case requires the
-   Remove Synth control unconditionally and clicks it before first Play.
+   Remove Synth control unconditionally and clicks it before first Play. The same exclusion escapes warm
+   (#5387/#5805): scheduled Synth/drum records hold no persistent Web Audio slot beside effects, so output,
+   reorder and mixed full-chain replacement must run through the real graph writers, preserving the full
+   project/native records and keeping retained-id removal announcements correct.
 3. **Settlement needs the current attempt, root and incarnation.** A continuation admitted by track ID, device ID or
    reused project timestamp alone can publish into a successor. Hold the continuation and replace what it belongs to:
     - Failed Freeze settlement (#2597): the failure settlement after the render refuses must still belong to the exact

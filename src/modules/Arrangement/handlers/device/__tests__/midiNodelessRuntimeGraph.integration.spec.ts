@@ -291,7 +291,7 @@ function outputDelta(track: Track, bus: Track) {
         schemaVersion: 1,
         command: 'set-track-output',
         correlation: { appRevision: audioEngine.getRuntimeGraphRevision(), projectRevision: captureProjectRevision() },
-        nodes: [runtimeGraphTopology.createNode(track), runtimeGraphTopology.createNode(bus)],
+        nodes: [runtimeGraphTopology.createWebAudioNode(track), runtimeGraphTopology.createWebAudioNode(bus)],
         edges: [{ kind: 'output', sourceId: track.id, targetId: bus.id }],
         parameters: [],
     };
