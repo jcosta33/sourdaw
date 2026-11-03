@@ -161,7 +161,12 @@ test.describe('Proof device — add to chain', () => {
                     request.onerror = () => reject(request.error ?? new Error('IndexedDB delete failed'));
                     request.onblocked = () => reject(new Error('IndexedDB delete was blocked'));
                 });
-                const entries: unknown = JSON.parse(localStorage.getItem('sourdaw-recent-projects') ?? '[]');
+                const rawIndex = localStorage.getItem('sourdaw-recent-projects');
+                const storedIndex: unknown = rawIndex === null ? null : JSON.parse(rawIndex);
+                const entries: unknown =
+                    typeof storedIndex === 'object' && storedIndex !== null && 'json' in storedIndex
+                        ? storedIndex.json
+                        : storedIndex;
                 const entry = (Array.isArray(entries) ? entries : []).find(
                     (candidate): candidate is { name: string; key: string } =>
                         typeof candidate === 'object' &&

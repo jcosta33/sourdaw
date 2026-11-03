@@ -443,7 +443,12 @@ async function clearCrdtDatabase(page: Page): Promise<void> {
 async function recentProjectKey(page: Page, name: string): Promise<string> {
     return page.evaluate(
         ({ name, recentProjectsKey }) => {
-            const entries: unknown = JSON.parse(localStorage.getItem(recentProjectsKey) ?? '[]');
+            // The project adapter stores the list through superjson, so the entry array is
+            // `{ json: [...] }`; a raw array stays readable for completeness.
+            const raw = localStorage.getItem(recentProjectsKey);
+            const stored: unknown = raw === null ? null : JSON.parse(raw);
+            const entries: unknown =
+                typeof stored === 'object' && stored !== null && 'json' in stored ? stored.json : stored;
             if (!Array.isArray(entries)) {
                 throw new Error('The recent-projects index is unreadable');
             }
