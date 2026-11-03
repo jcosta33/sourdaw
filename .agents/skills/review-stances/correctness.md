@@ -75,7 +75,12 @@ shared Git publication in `trusted-script-delivery.md`.
    must pass every reader's admission gate on a take made of only that kind: restore each reader's skip,
    and a controller-only clip with no note list must go red (#5338); fix the reader, never write a
    placeholder into shared CRDT state. A doc sentence calling two commands atomic must say whether it
-   means visibility-atomic or success-atomic and what a refusal leaves behind.
+   means visibility-atomic or success-atomic and what a refusal leaves behind. One shared projection
+   can have several real graph writers (#5387/#5805): for a warmed MIDI chain holding scheduled Synth
+   or drum plus persistent effects, enumerate output validation, reorder and full replacement; real
+   Command/CRDT Undo/Redo must preserve the complete project/native chains while Web Audio holds only
+   persistent slots. Reverting the shared projection and each writer's use separately must redden its
+   owning check.
 9. **The record the real producer sends.** Admission checked against the acceptor's vocabulary rather
    than the producer's output fails live. Build what the producer ships for a freshly created object
    (Fermenter camelCase `parameterValues` vs snake_case engine keys) on a contributing and a
