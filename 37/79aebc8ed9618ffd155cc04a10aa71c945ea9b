@@ -1,0 +1,30 @@
+src/modules/Arrangement/handlers/recording/__tests__/recordedControllerTake.integration.spec.ts
+  h_beb54bf43b47b7 372,396-399,877-937
+src/modules/MIDI/AGENTS.md
+  h_beb54bf43b47b7 23
+src/modules/MIDI/repositories/webMidi/recordedControllerTakeState.ts
+  h_beb54bf43b47b7 73-78,94
+src/modules/MIDI/useCases/recordedControllerTake/__tests__/seedWheelAtTakeStart.spec.ts
+  h_beb54bf43b47b7 1-386
+src/modules/MIDI/useCases/recordedControllerTake/beginRecordedControllerTake.ts
+  h_beb54bf43b47b7 8,44-46,56-64,71,99-103,105,108-111
+src/modules/MIDI/useCases/recordedControllerTake/discardRecordedControllers.ts
+  h_beb54bf43b47b7 4-5,9,13
+src/modules/MIDI/useCases/recordedControllerTake/endRecordedControllerTake.ts
+  h_beb54bf43b47b7 25-26,46
+src/modules/MIDI/useCases/recordedControllerTake/planRecordedControllers.ts
+  h_beb54bf43b47b7 4,26-27,32-35,40,51-52,61,65-76,86
+src/modules/MIDI/useCases/recordedControllerTake/readHeldWheelRows.ts
+  h_beb54bf43b47b7 1-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3779aebc8ed9618ffd155cc04a10aa71c945ea9b",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
