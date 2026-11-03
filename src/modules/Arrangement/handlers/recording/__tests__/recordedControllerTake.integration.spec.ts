@@ -217,7 +217,8 @@ describe('recorded controller take commit', () => {
             { controller: 64, value: 127, beat: 1.5, channel: 0 },
             { controller: 64, value: 0, beat: 4, channel: 0 },
         ]);
-        expect(rowsOf(recordedBend)).toEqual([{ value: 1000, beat: 1, channel: 0 }]);
+        // A wheel moved with MPE off bends only its own channel's notes, and the take says so.
+        expect(rowsOf(recordedBend)).toEqual([{ value: 1000, beat: 1, channel: 0, channelScoped: true }]);
         expect(undoHistoryStore.value?.past ?? []).toHaveLength(1);
 
         await undo();

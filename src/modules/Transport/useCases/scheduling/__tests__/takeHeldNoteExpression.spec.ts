@@ -38,6 +38,8 @@ const move = (beat: number, value: number) => ({
     recordedBeat: beat,
     value,
     rangeSemitones: 2,
+    channel: 0,
+    channelScoped: false,
 });
 
 /** A note that starts on beat 0 and whose pressure curve is the given points, as `[offsetBeats, value]`. */
@@ -247,6 +249,8 @@ describe('heldNoteExpression', () => {
                 recordedBeat: 3.9999,
                 value: 8_191,
                 rangeSemitones: 2,
+                channel: 0,
+                channelScoped: false,
             };
             const due = take(0, 6, 'track-1', [lateOnTheWindowClock]);
 
@@ -361,6 +365,8 @@ describe('heldNoteExpression', () => {
                 recordedBeat: 1.0004,
                 value: 8_191,
                 rangeSemitones: 2,
+                channel: 0,
+                channelScoped: false,
             };
 
             expect(bends(take(0, 1.5, 'track-1', [roundingStepLater]))).toEqual([[1.0001, 4_000, 48]]);
@@ -380,8 +386,24 @@ describe('heldNoteExpression', () => {
             // first: the move the note ends on is the one with the earlier beat.
             const wholeFrames = (beat: number) => Math.round(beat * 1000);
             holdFollowingNote([], wholeFrames);
-            const listedFirst = { beat: 1.0004, frame: 1000, recordedBeat: 1.0004, value: 8_191, rangeSemitones: 2 };
-            const listedLast = { beat: 1.0001, frame: 1000, recordedBeat: 1.0001, value: 4_096, rangeSemitones: 2 };
+            const listedFirst = {
+                beat: 1.0004,
+                frame: 1000,
+                recordedBeat: 1.0004,
+                value: 8_191,
+                rangeSemitones: 2,
+                channel: 0,
+                channelScoped: false,
+            };
+            const listedLast = {
+                beat: 1.0001,
+                frame: 1000,
+                recordedBeat: 1.0001,
+                value: 4_096,
+                rangeSemitones: 2,
+                channel: 0,
+                channelScoped: false,
+            };
 
             expect(bends(take(0, 1.5, 'track-1', [listedFirst, listedLast]))).toEqual([[1.0001, 4_096, 2]]);
             expect(bends(take(2, 3, 'track-1', [listedFirst, listedLast]))).toEqual([[2, 4_096, 2]]);
