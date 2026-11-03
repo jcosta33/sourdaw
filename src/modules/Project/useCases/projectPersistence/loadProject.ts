@@ -32,17 +32,17 @@ import { finishProjectLoading } from '../finishProjectLoading';
 import { getDurableProjectOwnerId } from '../getDurableProjectOwnerId';
 
 import { setAutoSaveHandle } from './helpers/autoSaveHandle';
-import { type OutgoingProjectDisposition } from './helpers/resetCrdtProjectWithTransportStopped';
-import { unsavedClosedTakes } from './helpers/unsavedClosedTakes';
 import { collectTrackStateAudioBufferIds } from './helpers/collectTrackStateAudioBufferIds';
+import { type OutgoingProjectDisposition } from './helpers/resetCrdtProjectWithTransportStopped';
 import { resetModuleStoresToDefault } from './helpers/resetModuleStoresToDefault';
 import { runProjectLoadTransaction, type ProjectLoadTransaction } from './helpers/runProjectLoadTransaction';
 import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
+import { unsavedClosedTakes } from './helpers/unsavedClosedTakes';
 import { verifyAudioBufferReferences } from './helpers/verifyAudioBufferReferences';
 import { migrateActiveProjectIdentity } from './migrateActiveProjectIdentity';
-import { projectOriginalMediaPort } from './projectOriginalMediaPort';
 import { prepareProjectDirectoryRead, type PreparedProjectDirectoryRead } from './projectDirectoryRead';
 import { projectIdentityTransitionDependencies } from './projectIdentityTransitionDependencies';
+import { projectOriginalMediaPort } from './projectOriginalMediaPort';
 import { whenProjectIdentityTransitionDependenciesConfigured } from './whenProjectIdentityTransitionDependenciesConfigured';
 
 const { loadProjectDirectoryBinding, rememberProjectDirectoryRoot } = projectDirectoryBinding;

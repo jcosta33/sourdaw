@@ -8,8 +8,8 @@ import { collectProjectOriginalHashes } from '../helpers/collectProjectOriginalH
 import { isHydratableProjectData } from '../helpers/isHydratableProjectData';
 import { normalizeLegacyProjectData } from '../helpers/normalizeLegacyProjectData';
 import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
-import { projectOriginalMediaPort } from '../projectOriginalMediaPort';
 import { pendingProjectReplacements } from '../pendingProjectReplacements';
+import { projectOriginalMediaPort } from '../projectOriginalMediaPort';
 import { saveProjectBeforeReplacement } from '../saveProject/saveProjectBeforeReplacement';
 
 import { applyImportedProjectData } from './applyImportedProjectData';

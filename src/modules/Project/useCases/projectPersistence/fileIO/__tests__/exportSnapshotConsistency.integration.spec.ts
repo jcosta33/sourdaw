@@ -74,11 +74,11 @@ import { addTempoChange, getTransportHandlers, updateTempoChange } from '#/modul
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { deriveDeterministicProjectId, type ProjectData } from '../../../../models/ProjectData';
-import { projectOriginalMediaPort } from '../../projectOriginalMediaPort';
 import { projectStore } from '../../../../stores/projectStore';
 import { stopActiveAutoSave } from '../../helpers/stopActiveAutoSave';
 import { newProject } from '../../newProject';
 import { setProjectIdentityTransitionDependencies } from '../../projectIdentityTransitionDependencies';
+import { projectOriginalMediaPort } from '../../projectOriginalMediaPort';
 import { installMultiDatabaseIndexedDb } from '../../saveProject/__tests__/multiDatabaseIndexedDb';
 import { applyImportedProjectData } from '../applyImportedProjectData';
 import { buildProjectData } from '../buildProjectData';

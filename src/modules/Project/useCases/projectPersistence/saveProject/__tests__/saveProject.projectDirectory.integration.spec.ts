@@ -8,8 +8,9 @@ import { createControlledLockManager } from '#/infra/testing/createControlledLoc
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import type { ProjectDirectoryHandle } from '../../../../repositories/project/projectDirectory';
 import { projectOriginalMediaPort } from '../../projectOriginalMediaPort';
+
+import type { ProjectDirectoryHandle } from '../../../../repositories/project/projectDirectory';
 
 function filePosition(value: number | null | undefined): number {
     if (value === null || value === undefined || !Number.isSafeInteger(value) || value < 0) {
