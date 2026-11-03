@@ -221,6 +221,61 @@ describe('pickAndImportProjectFile', () => {
         );
     });
 
+    it('normalizes a legacy project once so its originals and replacement share one identity', async () => {
+        const bytes = new Uint8Array([5, 6, 7, 8]);
+        const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+        const hash = `sha256:${Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+        const legacy = {
+            version: 1,
+            name: 'Legacy original',
+            createdAt: 1,
+            updatedAt: 1,
+            tracks: {
+                selectedTrackId: null,
+                tracks: [
+                    {
+                        id: 'track',
+                        name: 'Audio',
+                        kind: 'audio',
+                        clips: [
+                            {
+                                id: 'clip',
+                                trackId: 'track',
+                                name: 'Take',
+                                startBeat: 0,
+                                endBeat: 4,
+                                type: 'audio',
+                                bufferId: 'pcm',
+                                assetHash: hash,
+                                fadeInBeats: 0,
+                                fadeOutBeats: 0,
+                                gain: 1,
+                                color: '#fff',
+                                locked: false,
+                                muted: false,
+                            },
+                        ],
+                    },
+                ],
+            },
+            originalMedia: {
+                format: 'sourdaw-original-media-v1',
+                assets: [{ hash, bytes: btoa(String.fromCharCode(...bytes)) }],
+                unavailable: [],
+            },
+        };
+        mocks.pickFiles.mockResolvedValue([makeFile(JSON.stringify(legacy))]);
+        mocks.applyImportedProjectData.mockResolvedValue(true);
+
+        await expect(pickAndImportProjectFile()).resolves.toBe(true);
+
+        const restoredProjectId: unknown = originalMedia.restore.mock.calls[0]?.[0];
+        expect(restoredProjectId).toEqual(expect.any(String));
+        const applied = mocks.applyImportedProjectData.mock.calls[0]?.[0]?.data;
+        expect(applied).toMatchObject({ version: 2, meta: { projectId: restoredProjectId } });
+        expect(originalMedia.activate).toHaveBeenCalledExactlyOnceWith(restoredProjectId, [hash], expect.any(Function));
+    });
+
     it('refuses corrupt embedded originals through production restoration without changing the open same-ID owner', async () => {
         vi.stubGlobal('indexedDB', new IDBFactory());
         vi.stubGlobal('IDBKeyRange', IDBKeyRange);

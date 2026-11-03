@@ -67,6 +67,8 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
         }
         const data: unknown = JSON.parse(content);
         const archive = readProjectOriginalMediaArchive(data);
+        // Normalize once: a legacy file mints its project identity here, and the archive restore and
+        // the committed replacement must own originals under the same identity.
         const normalized = normalizeLegacyProjectData(data);
         if (archive) {
             const projectId = requireMatchingArchiveProjectId(normalized, archive);
@@ -77,7 +79,7 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
         }
 
         const imported = await applyImportedProjectData({
-            data,
+            data: normalized,
             outgoingProject,
             shouldProceed: isStillChosen,
             transaction,
