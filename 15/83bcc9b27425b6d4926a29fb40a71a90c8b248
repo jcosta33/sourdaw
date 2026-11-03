@@ -1,0 +1,34 @@
+src/modules/CommandInterface/useCases/commands/ProjectCommands.ts
+  h_beb54bf43b47b7 42
+src/modules/Project/presentations/views/RecentProjectsMenu.tsx
+  h_beb54bf43b47b7 105
+src/modules/Project/repositories/project/__tests__/projectDirectoryBinding.spec.ts
+  h_beb54bf43b47b7 172-181
+src/modules/Project/repositories/project/projectDirectoryBinding.ts
+  h_beb54bf43b47b7 149-157,218
+src/modules/Project/useCases/projectPersistence/loadProject.ts
+  h_beb54bf43b47b7 48,81,89,348-352
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.projectDirectory.integration.spec.ts
+  h_beb54bf43b47b7 277-278,282,285-286,294-303,317,319,321-324,459,539-541,652,796,948,1122,1166,1198-1265
+src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts
+  h_beb54bf43b47b7 74-79,81-87,89,94,97-98,101-103,106-108,187-199,207
+src/modules/WorkspaceShell/handlers/workspace/handleSaveProject.ts
+  h_beb54bf43b47b7 7
+src/modules/WorkspaceShell/presentations/hooks/useAppEventHandlers.ts
+  h_beb54bf43b47b7 31
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  h_beb54bf43b47b7 156
+src/modules/WorkspaceShell/presentations/views/Transport/ProjectName.tsx
+  h_beb54bf43b47b7 61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1583bcc9b27425b6d4926a29fb40a71a90c8b248",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
