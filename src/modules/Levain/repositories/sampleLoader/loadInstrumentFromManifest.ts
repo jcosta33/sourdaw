@@ -400,7 +400,12 @@ function withdrawFromChunkBudget(waiter: BudgetWaiter): boolean {
  * the loader asks for next; the first of those, or the processor ending, hands
  * back whatever is still held, and the listener is removed.
  */
-function createChunkPacer(nodePort: MessagePort, loadToken: number, signal?: AbortSignal): ChunkPacer {
+function createChunkPacer(
+    nodePort: MessagePort,
+    loadToken: number,
+    signal: AbortSignal | undefined,
+    onActivity: () => void
+): ChunkPacer {
     let held = 0;
     let failure: Error | null = null;
     let queued: BudgetWaiter | null = null;
@@ -447,6 +452,9 @@ function createChunkPacer(nodePort: MessagePort, loadToken: number, signal?: Abo
         if (message.type === 'sampleChunkWritten' || message.type === 'zoneTableChunkWritten') {
             if (held > 0) {
                 held -= 1;
+                if (!ended && !failure && !signal?.aborted) {
+                    onActivity();
+                }
                 giveBackChunkCredit();
             }
             stopListeningWhenDone();
@@ -603,7 +611,7 @@ export type LoadInstrumentFromManifestInput = {
     /** Computes the bank's zone tables off the render thread; there is no fallback. */
     buildZoneTables: LevainZoneTableBuilder;
     lod?: SampleLodConfig;
-    onProgress?: (progress: number) => void;
+    onProgress?: (progress: number | { type: 'activity' }) => void;
     signal?: AbortSignal;
 };
 
@@ -701,7 +709,7 @@ export async function loadInstrumentFromManifest({
         // Made before the begin whatever the role: a load that uploads no PCM
         // still stages its zone tables, and must hear the processor end or
         // the worklet refuse the load while they are being built.
-        const pacer = createChunkPacer(nodePort, loadToken, signal);
+        const pacer = createChunkPacer(nodePort, loadToken, signal, lease.reportActivity);
         chunkPacer = pacer;
         nodePort.postMessage({
             type: 'beginSampleBank',
@@ -830,6 +838,7 @@ export async function loadInstrumentFromManifest({
         // instead of rejecting a load the engine goes on to commit.
         handshake.markCommitPosted();
         await handshake.completed;
+        lease.reportActivity();
         completed = true;
         releaseStarted = true;
         releaseRetiredBank(nodePort, loads, loadToken, over.resolve);
