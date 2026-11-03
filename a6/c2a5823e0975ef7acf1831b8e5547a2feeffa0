@@ -1,0 +1,18 @@
+src/app/__tests__/bootstrap.spec.ts
+  h_beb54bf43b47b7 494,498,503,671
+src/modules/Project/useCases/__tests__/recentProjects.spec.ts
+  h_beb54bf43b47b7 84
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  h_beb54bf43b47b7 111-112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a6c2a5823e0975ef7acf1831b8e5547a2feeffa0",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
