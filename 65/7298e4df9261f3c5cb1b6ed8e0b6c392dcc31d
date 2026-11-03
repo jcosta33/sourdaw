@@ -1,0 +1,18 @@
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/pickAndImportProjectFile.spec.ts
+  h_beb54bf43b47b7 26-34
+src/modules/Project/useCases/projectPersistence/projectOriginalMediaPort.ts
+  h_beb54bf43b47b7 18-22
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.projectDirectory.integration.spec.ts
+  h_beb54bf43b47b7 1225-1229,1268
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "657298e4df9261f3c5cb1b6ed8e0b6c392dcc31d",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
