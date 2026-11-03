@@ -129,19 +129,80 @@ test.describe('Proof device — add to chain', () => {
             }
             expect(neutralDocument.ok()).toBe(true);
             expect(neutralDocument.headers()['content-type']).toMatch(/^text\/plain(?:;|$)/);
-            await reopened.evaluate(async () => {
+            // The folder must be the reopen source: drop the live CRDT copy, the named snapshot
+            // the recent load falls back to, and any `last` bookmark so boot cannot preload it.
+            await reopened.evaluate(async (projectName) => {
+                const deleteRecord = (databaseName: string, storeName: string, key: string) =>
+                    new Promise<void>((resolve, reject) => {
+                        const request = indexedDB.open(databaseName);
+                        request.onerror = () => reject(request.error ?? new Error('IndexedDB open failed'));
+                        request.onsuccess = () => {
+                            const database = request.result;
+                            if (!database.objectStoreNames.contains(storeName)) {
+                                database.close();
+                                resolve();
+                                return;
+                            }
+                            const transaction = database.transaction(storeName, 'readwrite');
+                            transaction.objectStore(storeName).delete(key);
+                            transaction.oncomplete = () => {
+                                database.close();
+                                resolve();
+                            };
+                            transaction.onerror = () =>
+                                reject(transaction.error ?? new Error('IndexedDB record delete failed'));
+                            transaction.onabort = () =>
+                                reject(transaction.error ?? new Error('IndexedDB record delete aborted'));
+                        };
+                    });
                 await new Promise<void>((resolve, reject) => {
                     const request = indexedDB.deleteDatabase('sourdaw-crdt-docs');
                     request.onsuccess = () => resolve();
                     request.onerror = () => reject(request.error ?? new Error('IndexedDB delete failed'));
                     request.onblocked = () => reject(new Error('IndexedDB delete was blocked'));
                 });
+                const entries: unknown = JSON.parse(localStorage.getItem('sourdaw-recent-projects') ?? '[]');
+                const entry = (Array.isArray(entries) ? entries : []).find(
+                    (candidate): candidate is { name: string; key: string } =>
+                        typeof candidate === 'object' &&
+                        candidate !== null &&
+                        'name' in candidate &&
+                        'key' in candidate &&
+                        candidate.name === projectName &&
+                        typeof candidate.key === 'string'
+                );
+                if (!entry) {
+                    throw new Error(`No recent project entry is named ${projectName}`);
+                }
+                await deleteRecord('sourdaw-projects', 'projects', entry.key);
+                await deleteRecord('sourdaw-project-directory-bindings', 'directories', 'last');
+            }, name);
+            // A handle restored from an earlier session lost its grant; the browser re-asks during
+            // the user's click. The persistent profile keeps the grant, so force the prompt state.
+            await reopened.addInitScript(() => {
+                if (typeof FileSystemDirectoryHandle === 'undefined') {
+                    return;
+                }
+                const prototype = FileSystemDirectoryHandle.prototype;
+                const queryPermission = prototype.queryPermission;
+                prototype.queryPermission = async function (options?: FileSystemHandlePermissionDescriptor) {
+                    const state = await queryPermission.call(this, options);
+                    return state === 'granted' ? 'prompt' : state;
+                };
+                prototype.requestPermission = async function () {
+                    const key = '__sourdawFolderGrantRequests';
+                    Reflect.set(window, key, Number(Reflect.get(window, key) ?? 0) + 1);
+                    return 'granted';
+                };
             });
             await reopened.goto(origin);
             await wait_for_launch_first_paint(reopened);
             await reopened.getByRole('button', { name: `Open recent project ${name}`, exact: true }).click();
             await wait_for_workspace_ready(reopened);
             await expect(reopened.getByTestId('project-name')).toHaveText(name);
+            expect(
+                await reopened.evaluate(() => Number(Reflect.get(window, '__sourdawFolderGrantRequests') ?? 0))
+            ).toBeGreaterThan(0);
 
             const restoredInspector = reopened.getByRole('complementary', { name: 'Inspector panel' });
             await restoredInspector.getByText('Proof', { exact: false }).first().click();

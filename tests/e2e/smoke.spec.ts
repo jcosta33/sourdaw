@@ -21,6 +21,14 @@ const MAX_SCHEDULED_OSCILLATOR_LEAD_SECONDS = 0.1;
 const MANUAL_SAVE_PREFERENCES = superjsonStringify({ autoSave: false });
 const CRDT_MODULE_DOCUMENT = '/src/modules/CrdtDocument/models/CrdtRootLineage.ts';
 const CRDT_DATABASE_NAME = 'sourdaw-crdt-docs';
+// Restated from src: Project/repositories/project/storageSupport.ts (DB_NAME/STORE_NAME),
+// Project/models/ProjectData.ts (RECENT_PROJECTS_KEY) and the private binding schema in
+// Project/repositories/project/projectDirectoryBinding.ts.
+const PROJECT_DATABASE_NAME = 'sourdaw-projects';
+const PROJECT_STORE_NAME = 'projects';
+const RECENT_PROJECTS_KEY = 'sourdaw-recent-projects';
+const DIRECTORY_BINDING_DATABASE_NAME = 'sourdaw-project-directory-bindings';
+const DIRECTORY_BINDING_STORE_NAME = 'directories';
 
 test.use({ serviceWorkers: 'block' });
 
@@ -432,7 +440,127 @@ async function clearCrdtDatabase(page: Page): Promise<void> {
     }, CRDT_DATABASE_NAME);
 }
 
-async function openSavedProjectInFreshPage(page: Page, name: string) {
+async function recentProjectKey(page: Page, name: string): Promise<string> {
+    return page.evaluate(
+        ({ name, recentProjectsKey }) => {
+            const entries: unknown = JSON.parse(localStorage.getItem(recentProjectsKey) ?? '[]');
+            if (!Array.isArray(entries)) {
+                throw new Error('The recent-projects index is unreadable');
+            }
+            for (const entry of entries) {
+                if (
+                    typeof entry === 'object' &&
+                    entry !== null &&
+                    'name' in entry &&
+                    'key' in entry &&
+                    entry.name === name &&
+                    typeof entry.key === 'string'
+                ) {
+                    return entry.key;
+                }
+            }
+            throw new Error(`No recent project entry is named ${name}`);
+        },
+        { name, recentProjectsKey: RECENT_PROJECTS_KEY }
+    );
+}
+
+async function deleteProjectRecord(page: Page, databaseName: string, storeName: string, key: string): Promise<void> {
+    await page.evaluate(
+        async ({ databaseName, storeName, key }) => {
+            await new Promise<void>((resolve, reject) => {
+                const request = indexedDB.open(databaseName);
+                request.onerror = () => reject(request.error ?? new Error(`${databaseName} could not be opened`));
+                request.onsuccess = () => {
+                    const database = request.result;
+                    if (!database.objectStoreNames.contains(storeName)) {
+                        database.close();
+                        resolve();
+                        return;
+                    }
+                    const transaction = database.transaction(storeName, 'readwrite');
+                    transaction.objectStore(storeName).delete(key);
+                    transaction.oncomplete = () => {
+                        database.close();
+                        resolve();
+                    };
+                    transaction.onerror = () => reject(transaction.error ?? new Error(`Could not delete ${key}`));
+                    transaction.onabort = () => reject(transaction.error ?? new Error(`Could not delete ${key}`));
+                };
+            });
+        },
+        { databaseName, storeName, key }
+    );
+}
+
+/**
+ * The fresh realm must reopen the project from its folder, never from the
+ * named snapshot `loadRecentProject` falls back to when the handle is gone.
+ * Drop both the live CRDT copy and the saved snapshot, force a normal
+ * launch-screen boot (no `last` bookmark), and prove the folder's manifest and
+ * document are readable before the click.
+ */
+async function prepareFreshRealmForFolderReopen(page: Page, appRootUrl: string, name: string): Promise<string> {
+    await page.goto(new URL(CRDT_MODULE_DOCUMENT, appRootUrl).toString());
+    const key = await recentProjectKey(page, name);
+    await clearCrdtDatabase(page);
+    await deleteProjectRecord(page, PROJECT_DATABASE_NAME, PROJECT_STORE_NAME, key);
+    await deleteProjectRecord(page, DIRECTORY_BINDING_DATABASE_NAME, DIRECTORY_BINDING_STORE_NAME, 'last');
+    const source = await page.evaluate(
+        async ({ key }) => {
+            const bindingModule = await import('/src/modules/Project/repositories/project/projectDirectoryBinding.ts');
+            const binding = await bindingModule.projectDirectoryBinding.loadProjectDirectoryBinding(`recent:${key}`);
+            if (!binding) {
+                throw new Error('The fresh realm lost the project folder binding');
+            }
+            const directory = await bindingModule.projectDirectoryBinding.openProjectDirectory(
+                binding.root,
+                binding.projectId,
+                false
+            );
+            const { projectDirectory } = await import('/src/modules/Project/repositories/project/projectDirectory.ts');
+            const content = await projectDirectory.read(directory, binding.projectId);
+            if (content.document.byteLength === 0) {
+                throw new Error('The project folder holds no document');
+            }
+            return { projectId: binding.projectId, documentBytes: content.document.byteLength };
+        },
+        { key }
+    );
+    expect(source.documentBytes).toBeGreaterThan(0);
+    return key;
+}
+
+/**
+ * A handle restored from a previous session loses its permission grant; the
+ * browser re-asks during the user's gesture. The persistent profile keeps the
+ * grant, so downgrade the reported state to force the re-request path.
+ */
+async function installLostFolderGrant(page: Page): Promise<void> {
+    await page.addInitScript(() => {
+        const prototype = FileSystemDirectoryHandle.prototype;
+        const queryPermission = prototype.queryPermission;
+        prototype.queryPermission = async function (options?: FileSystemHandlePermissionDescriptor) {
+            const state = await queryPermission.call(this, options);
+            return state === 'granted' ? 'prompt' : state;
+        };
+        prototype.requestPermission = async function () {
+            const key = '__sourdawFolderGrantRequests';
+            Reflect.set(window, key, Number(Reflect.get(window, key) ?? 0) + 1);
+            return 'granted';
+        };
+    });
+}
+
+async function folderGrantRequestCount(page: Page): Promise<number> {
+    return page.evaluate(() => Number(Reflect.get(window, '__sourdawFolderGrantRequests') ?? 0));
+}
+
+async function openSavedProjectInFreshPage(
+    page: Page,
+    name: string,
+    { loseGrant = false }: { loseGrant?: boolean } = {}
+) {
     const browserContext = page.context();
     const appRootUrl = new URL('/', page.url()).toString();
     await page.close();
@@ -440,14 +568,16 @@ async function openSavedProjectInFreshPage(page: Page, name: string) {
     const realm = await browserContext.newPage();
     const assertRealmOffline = await blockExternalRequests(realm);
     try {
-        await realm.goto(new URL(CRDT_MODULE_DOCUMENT, appRootUrl).toString());
-        await clearCrdtDatabase(realm);
+        await prepareFreshRealmForFolderReopen(realm, appRootUrl, name);
         await assertRealmOffline();
     } finally {
         await realm.close();
     }
 
     const reopenedPage = await browserContext.newPage();
+    if (loseGrant) {
+        await installLostFolderGrant(reopenedPage);
+    }
     const assertOffline = await blockExternalRequests(reopenedPage);
     // Attached before the navigation so a first-paint timeout here — the wait
     // that red in #4781's second case — diagnoses itself from the console.
@@ -460,6 +590,9 @@ async function openSavedProjectInFreshPage(page: Page, name: string) {
     await wait_for_workspace_ready(reopenedPage);
     const projectName = reopenedPage.getByTestId('project-name');
     await expect(projectName).toHaveText(name, { timeout: 30_000 });
+    if (loseGrant) {
+        expect(await folderGrantRequestCount(reopenedPage)).toBeGreaterThan(0);
+    }
     return { assertOffline, page: reopenedPage };
 }
 
@@ -491,11 +624,18 @@ test.describe('Offline project smoke', () => {
             await startBlankProject(page);
             await assertOffline();
 
-            const reopened = await openSavedProjectInFreshPage(page, 'Smoke Persistence');
+            let reopened = await openSavedProjectInFreshPage(page, 'Smoke Persistence');
             try {
                 await expect(reopened.page.getByTestId('project-name')).toHaveText('Smoke Persistence');
                 await expect(trackList(reopened.page).getByText('MIDI', { exact: true })).toBeVisible();
                 await reopened.assertOffline();
+
+                // A restored handle lapses its grant between sessions; the user's click must be
+                // able to re-ask for it and still reopen the folder bytes.
+                reopened = await openSavedProjectInFreshPage(reopened.page, 'Smoke Persistence', {
+                    loseGrant: true,
+                });
+                await expect(reopened.page.getByTestId('project-name')).toHaveText('Smoke Persistence');
             } finally {
                 await reopened.page.close();
             }
