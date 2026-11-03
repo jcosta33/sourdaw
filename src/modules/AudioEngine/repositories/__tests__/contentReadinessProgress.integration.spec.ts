@@ -17,6 +17,7 @@ import {
 } from '#/modules/Levain/useCases';
 
 import { setAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
+import { importWorkletProcessor } from '../../testing/importWorkletProcessor';
 import { installWorkletGlobals } from '../../testing/wasmViewGrowthHarness';
 import { computeLevainZoneTables } from '../../transformers/computeLevainZoneTables';
 import { buildLevainZoneTables } from '../../useCases/buildLevainZoneTables';
@@ -232,7 +233,7 @@ async function installRealShipment(stall?: 'builder' | 'zone-ack' | 'owner-zone-
         readFileSync(resolve(process.cwd(), 'public/wasm/daw-dsp/daw_dsp_bg.wasm'))
     );
     const { registry } = installWorkletGlobals<RealProcessor>();
-    await import('../../worklets/levainProcessor');
+    await importWorkletProcessor('levain-processor');
     realProcessorConstructor ??= registry.get('levain-processor');
     const Constructor = realProcessorConstructor;
     if (!Constructor) {
