@@ -14,7 +14,11 @@ function serializeProjectMidiCC(cc: RuntimeCC): ProjectMidiCC {
 }
 
 function serializeProjectMidiPitchBend(pb: RuntimePitchBend): ProjectMidiPitchBend {
-    return { beat: pb.beat, value: pb.value, channel: pb.channel };
+    const serialized: ProjectMidiPitchBend = { beat: pb.beat, value: pb.value, channel: pb.channel };
+    if (pb.channelScoped === true) {
+        serialized.channelScoped = true;
+    }
+    return serialized;
 }
 
 /** Serialize the runtime MIDI store into the `.sourdaw` MIDI block. */

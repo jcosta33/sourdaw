@@ -1,5 +1,6 @@
 import { clampMidiData7, clampVelocity, DEFAULT_NOTE_PROBABILITY, DEFAULT_NOTE_VELOCITY } from '#/utils/midiData';
 
+import { pitchBendLaneKey } from './pitchBendLaneKey';
 import {
     carriedBendReturnBeat,
     carriedBendReturnIdKey,
@@ -518,6 +519,12 @@ type SplitEventsInput<TRow extends SplitEventRow> = {
     existingRightEvents: readonly TRow[];
     /** Rows that share a key share one controller lane; the lane's value in force at the cut is carried per key. */
     laneKey: (event: TRow) => string;
+    /**
+     * Whether the rows carried onto the right clip's origin keep the order they were recorded in (by beat, rows on
+     * one beat in source order) rather than the order their lanes first appear. A player that reads the last of them that reaches a note needs it (pitch
+     * bend, whose lanes overlap); a controller lane's carry is the only one of its lane.
+     */
+    carriesInRecordedOrder?: boolean;
     idPrefix: string;
     stateMessages?: StateMessageCarry<TRow>;
 };
@@ -600,6 +607,14 @@ function registeredParameterCarry(bends: RightClipBends): StateMessageCarry<Midi
     };
 }
 
+function inRecordedOrder<TCarry extends { event: { beat: number }; sourceIndex: number }>(
+    carries: readonly TCarry[]
+): TCarry[] {
+    return carries.toSorted(
+        (left, right) => left.event.beat - right.event.beat || left.sourceIndex - right.sourceIndex
+    );
+}
+
 /**
  * Partitions recorded controller events at the cut the way notes are: the left
  * clip keeps what precedes the kept range, the deleted window is dropped, and
@@ -624,6 +639,7 @@ function splitSourceEvents<TRow extends SplitEventRow>({
     command,
     existingRightEvents,
     laneKey,
+    carriesInRecordedOrder = false,
     idPrefix,
     stateMessages,
 }: SplitEventsInput<TRow>): SplitEventsResult<TRow> {
@@ -674,14 +690,14 @@ function splitSourceEvents<TRow extends SplitEventRow>({
         moved,
         createId: createRightId,
     }) ?? { origin: [], beforeMoved: [] };
-    const carriedFromBefore: TRow[] = [];
-    const carried: TRow[] = [];
-    for (const [key, { event, sourceIndex }] of inForceAtCut) {
-        if (!lanesStartingAtOrigin.has(key)) {
-            carriedFromBefore.push(event);
-            carried.push({ ...event, id: createRightId(sourceIndex), beat: 0 });
-        }
-    }
+    const carries = [...inForceAtCut].flatMap(([key, carry]) => (lanesStartingAtOrigin.has(key) ? [] : [carry]));
+    const orderedCarries = carriesInRecordedOrder ? inRecordedOrder(carries) : carries;
+    const carriedFromBefore = orderedCarries.map(({ event }) => event);
+    const carried = orderedCarries.map(({ event, sourceIndex }) => ({
+        ...event,
+        id: createRightId(sourceIndex),
+        beat: 0,
+    }));
 
     return {
         status: 'ready',
@@ -756,7 +772,8 @@ function transformSplit(
         events: sourcePitchBends,
         command,
         existingRightEvents: existingRightPitchBends,
-        laneKey: (event) => `${event.channel}`,
+        laneKey: pitchBendLaneKey,
+        carriesInRecordedOrder: true,
         idPrefix: 'pb-split',
     });
     if (pitchBends.status === 'rejected') {

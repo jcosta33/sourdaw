@@ -82,3 +82,12 @@ causes stay unknown unless direct lifecycle or network-initiator evidence distin
    initiates stay absent until release); after release require actual App render issuance and bootstrap
    observation. Do not infer quiescence from missing UI or capability markers, fixed microtask counts or an unrelated
    hung-import case. The cold stylesheet lesson stays in `test-timing-and-isolation.md` probe 2.
+8. **Terminal App recovery must retain both rejection causes (#5874).** The initial App catch and the terminal
+   rejection continuation discarded their arguments, so a second failed graph could leave no original reason for
+   diagnosis. Reject the two actual App attempts with distinct original values and require the single terminal
+   failure to be logged with an `AggregateError` cause whose errors retain both values by identity and order; keep
+   their original error classes, the same manual fallback and no automatic navigation. A successful same-specifier
+   retry emits no terminal report; rendering exceptions belong to React's error path and bootstrap rejection keeps
+   its identity-transition failure route. This observation does not identify the cancellation actor or establish
+   that a retry repairs every transport failure. Exercise desktop reset ordering and saved audio/MIDI, PCM and
+   Undo/Redo preservation independently of error reporting.
