@@ -1,0 +1,14 @@
+src/modules/AudioEngine/repositories/__tests__/contentReadinessProgress.integration.spec.ts
+  h_beb54bf43b47b7 20,236
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4adb72f1748f1504acb0960ec2a55fdc9f497a98",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
