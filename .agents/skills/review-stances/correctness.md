@@ -6,10 +6,10 @@ or siblings rely on. A behavior-risk stance matching no more specific file carri
 with a more specific match never carries it in addition. Each probe names the failure mode, the input,
 state or mutation to run, and the check that must go red. Report the concrete break or none.
 
-Split out by defect class (a stance matching one carries that file, not this one): saved projects and replay in
-`saved-project-replay.md`; audio, timing and format laws in `audio-timing-format-laws.md`; AI action bridge, prompt
-segmentation and request authority in `ai-request-authority.md`; MIDI note correlation and expression ordering in
-`midi-note-correlation.md`; trusted scripts and delivery in `trusted-script-delivery.md`.
+Split out by defect class (a stance matching one carries that file, not this one): saved projects, saved history and
+imports in `project-integrity.md`; audio, MIDI, AudioParam timing and format laws in `audio-timing-format-laws.md`; AI
+action bridge, prompt segmentation and request authority in `ai-request-authority.md`; trusted scripts, delivery and
+shared Git publication in `trusted-script-delivery.md`.
 
 ## Standing probes
 

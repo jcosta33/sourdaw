@@ -1,7 +1,13 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 
-import { buildCoverageMap, parseCoverageRecord, specsPerFile, summarizeCoverageMap } from '../e2eCoverageMap';
+import {
+    buildCoverageMap,
+    parseCoverageRecord,
+    recordsProblem,
+    specsPerFile,
+    summarizeCoverageMap,
+} from '../e2eCoverageMap';
 import { type CoverageEntry, type CoverageRecord, executedSourceFiles } from '../e2eCoverageRecord';
 
 const COMMIT = 'a'.repeat(40);
@@ -123,6 +129,33 @@ describe('buildCoverageMap', () => {
         ['an executed file absent from the commit', () => build([record('alpha', ['src/new.ts'])]), 'src/new.ts'],
     ])('refuses %s', (_name, run, message) => {
         expect(run).toThrow(message);
+    });
+});
+
+describe('recordsProblem', () => {
+    it.each([
+        ['no records', [], 'no coverage records were written'],
+        [
+            'only incomplete or unpassed records',
+            [
+                record('alpha', ['src/a.ts'], { complete: false }),
+                record('beta', ['src/b.ts'], { status: 'failed' }),
+                record('mid', [], { complete: false, status: 'timedOut' }),
+            ],
+            'none of 3 coverage records is complete and passed',
+        ],
+    ])('refuses a shard with %s', (_, records: CoverageRecord[], problem) => {
+        expect(recordsProblem(records)).toBe(problem);
+    });
+
+    it('accepts a shard with one complete, passed record among broken ones', () => {
+        expect(
+            recordsProblem([
+                record('alpha', ['src/a.ts'], { complete: false }),
+                record('beta', [], { status: 'failed' }),
+                record('zeta', []),
+            ])
+        ).toBeNull();
     });
 });
 

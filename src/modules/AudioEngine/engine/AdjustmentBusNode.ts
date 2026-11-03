@@ -1,14 +1,13 @@
 import { type AdjustmentEffectType } from '#/modules/Arrangement/stores';
 
-import { applyParams } from '../useCases/deviceResolvers/applyParams';
-import { createBuiltinDeviceNode } from '../useCases/deviceResolvers/createBuiltinDeviceNode';
-
+import type { BuiltinDeviceNodeFactory } from '../models/EngineDeviceCollaborators';
 import type { OfflineDeviceNode } from '../models/OfflineDeviceNode';
 
 export type AdjustmentBusDeps = {
     context: BaseAudioContext;
     effectType: AdjustmentEffectType;
     parameters: Record<string, number>;
+    builtinDevices: BuiltinDeviceNodeFactory;
 };
 
 export type AdjustmentBusRuntimeResources = {
@@ -107,6 +106,7 @@ export class AdjustmentBusNode {
     public readonly outputNode: GainNode;
     private readonly context: BaseAudioContext;
     private readonly effectType: AdjustmentEffectType;
+    private readonly builtinDevices: BuiltinDeviceNodeFactory;
     private readonly wetGain: GainNode;
     private readonly dryGain: GainNode;
     private readonly deviceNode: OfflineDeviceNode | null;
@@ -118,6 +118,7 @@ export class AdjustmentBusNode {
     constructor(deps: AdjustmentBusDeps) {
         this.context = deps.context;
         this.effectType = deps.effectType;
+        this.builtinDevices = deps.builtinDevices;
 
         const ctx = this.context;
         this.inputNode = ctx.createGain();
@@ -158,7 +159,7 @@ export class AdjustmentBusNode {
             return { deviceNode: null, panNode: null };
         }
 
-        const deviceNode = createBuiltinDeviceNode({ context: this.context, deviceType });
+        const deviceNode = this.builtinDevices.createBuiltinDeviceNode({ context: this.context, deviceType });
         if (!deviceNode) {
             this.inputNode.connect(this.wetGain);
             this.wetGain.connect(this.outputNode);
@@ -166,7 +167,7 @@ export class AdjustmentBusNode {
         }
 
         const translated = translateParams(this.effectType, parameters);
-        applyParams(deviceNode, deviceType, translated);
+        this.builtinDevices.applyParams(deviceNode, deviceType, translated);
 
         this.inputNode.connect(deviceNode.inputNode);
         deviceNode.outputNode.connect(this.wetGain);
@@ -255,7 +256,7 @@ export class AdjustmentBusNode {
         if (!deviceType) {
             return;
         }
-        applyParams(this.deviceNode, deviceType, translateParams(this.effectType, parameters));
+        this.builtinDevices.applyParams(this.deviceNode, deviceType, translateParams(this.effectType, parameters));
     }
 
     public hasSource(source: AudioNode): boolean {

@@ -1,22 +1,21 @@
 # Lesson library: test and evidence validity
 
-A test, check or piece of evidence is invalid when it passes without observing its subject: its entry
-point is never admitted, its oracle is computed by the code under test, a double stands in for the
-boundary that would fail, its fixture never holds the deciding input, or its verdict depends on
-timing, ambient state or work the case does not own. Each probe answers the baseline question from
-the Review section of root `AGENTS.md` (what must break for this check to fail, and does it observe
-what its name claims?) and carries its baseline mechanical probe unrestated: revert the behavioral
-hunk or apply one targeted mutation, run the named spec, and a remaining green fails the round. Run
-mutations only on a committed head through [reviewer isolation](README.md#reviewer-isolation). Report
-a probe that cannot run with its exact mutation, named check and limitation, never as passed.
+A test, check or piece of evidence is invalid when it passes without observing its subject: its entry point is never
+admitted, it drives a helper the production caller bypasses, its oracle is computed by the code under test, its pin
+cannot fail alone, or its fixture never holds the deciding input. Each probe answers the baseline question from the
+Review section of root `AGENTS.md` (what must break for this check to fail, and does it observe what its name claims?)
+and carries its baseline mechanical probe unrestated: revert the behavioral hunk or apply one targeted mutation, run
+the named spec, and a remaining green fails the round. Run mutations only on a committed head through [reviewer
+isolation](README.md#reviewer-isolation). Report a probe that cannot run with its exact mutation, named check and
+limitation, never as passed.
 
 To record an escape, cite its pull request on the probe whose wording would have caught it. Add a
 probe only for a failure mode none of these names; retire one only when a named check enforces it.
 
 Split out by defect class (a stance matching one carries that file, not this one): timing, deadlines, fixture state
 and interleaving in `test-timing-and-isolation.md`; single-place observation and replaced boundaries in
-`test-observation-scope.md`; maintained end-to-end specs in `maintained-e2e-specs.md`; release and provenance drift
-in `release-provenance-drift.md`.
+`test-observation-scope.md`; maintained end-to-end specs and their serving setup in `maintained-e2e-specs.md`;
+release and provenance drift in `release-provenance-drift.md`.
 
 ## Standing probes
 
@@ -64,21 +63,7 @@ in `release-provenance-drift.md`.
    unchanged before its refusal feedback. Replacing an atomic path with a per-member loop must fail.
    (#3905, #2648, #1049, #5277, #5339, #4128, #2811, #2083, #5643, #5254, #5247, #5215, #474, #5798, #5565)
 
-4. **A test double cannot fail the way the real boundary does.**
-   Probe: type each mock from the exported callable and return its complete current result, so a
-   stale owner result cannot pose as tested recovery. Fake a host receiver-sensitively, so an unbound
-   method call throws. Derive fixtures from the producer's definition (live schema, upload-name
-   template, the query the adapter emits), never from the consumer's regex or a hand-written response.
-   Replace call spies and mocked authority with the real owner, and keep real state apart from any
-   read projection that could hide it. Mutate what the double hid (drop `this`, change the result
-   shape, add a segment, write outside the barrel, omit a still-present remote record from reads) and
-   require the case to fail. Beside a valid commit, inject each extra write through the real store (a
-   duplicate barrel action, an unrelated entity, a wrong value on an authorized field); with a real
-   controller, fail the actual storage write once and repeat the cancellation. Read logged errors even
-   when every assertion passes.
-   (#2097, #4496, #1949, #5705, #4577, #5649, #474, #2597, #4271, #2811, #5639, #2035)
-
-5. **The oracle is computed by the code under test.**
+4. **The oracle is computed by the code under test.**
    Probe: take each expected value from an independent source and write it as a literal stating its
    source: the consumer's boundary (`JSON.stringify` byte length against the provider ceiling), the
    documented contract (an inclusive billing total), independent arithmetic (seconds from a tempo
@@ -89,7 +74,7 @@ in `release-provenance-drift.md`.
    the thing observed, not from what the code currently produces.
    (#4491, #4393, #5239, #5437, #5723, #5243, #5323, #5495, #5578)
 
-6. **A pin cannot fail on its own.**
+5. **A pin cannot fail on its own.**
    Probe: mutate the input each added assertion reads, neighbours as shipped, and require it to fail
    alone; run it alone and after its preceding cases, since cached registration can mask a guard.
    Shapes that observe nothing: a pin after one already fixing the value, a relation with slack, a
@@ -98,7 +83,7 @@ in `release-provenance-drift.md`.
    Select every `expect\([^)]*\|\|` hit and mutate each arm away; each arm must redden.
    (#4491, #4473, #5091, #5227)
 
-7. **Equality in the oracle differs from equality at the boundary.**
+6. **Equality in the oracle differs from equality at the boundary.**
    Probe: compare with the boundary's semantics. For optional fields use `toStrictEqual` or
    `Object.hasOwn`: absent stays absent, explicit `undefined` is distinct, a defined zero survives.
    Cross a fresh projection with reordered keys and a replaced projection object holding equal values:
@@ -107,7 +92,7 @@ in `release-provenance-drift.md`.
    isolation. Swapping in the looser or stricter comparison must fail the case.
    (#638, #1874, #2169, #471, #645, #5649)
 
-8. **The fixture never holds the deciding input.**
+7. **The fixture never holds the deciding input.**
    Probe: name the mutation that would get the rule wrong, place the deciding input where it errs, and
    require the unchanged case to fail when the fix is reverted. Escaped inputs: equal start and end
    timestamps plus a one-unit-narrower enclosure for every nesting comparison; first versus last event
@@ -128,7 +113,7 @@ in `release-provenance-drift.md`.
    cannot carry it.
    (#4068, #805, #5199, #4987, #2078, #4897, #5209, #4986, #2055, #5858, #2079, #4128, #5274, #4630, #939)
 
-9. **A spec or report diff launders behavior or strands its sites.**
+8. **A spec or report diff launders behavior or strands its sites.**
    Probe: for a spec-only red-to-green diff, read the product code each hunk observes and decide stale
    spec versus laundered defect. Under a preservation claim, a rewritten expected value is a
    contradiction to raise; recheck unchanged assertions in touched spec files and run the nearest
@@ -142,8 +127,6 @@ in `release-provenance-drift.md`.
 
 ## Retired lessons
 
-Relocated, not retired: linked automation followers reaching the sampler (#931, #4392) in `saved-control-projection.md`; billed usage and provider-wire level fields (#4407, #2648, #4393, #4392) in `provider-egress.md`; recovery receipts and lock release (#5111, #3342) in `review-authorization.md`; canvas fresh paint (#5780, #5247) in `rendered-ui-layout.md`; the optimizer-reload HMR fence (#5874) in `e2e-server-provenance.md`; App import reattempt (#3356) in `startup-entry-availability.md`; rewrite destination ancestry (#4271) in `git-notes-preimage.md`.
-
 - Listing `vi.mock` barrel factories break when a diff adds a barrel export or import → enforced by `pnpm test:barrel-mocks` (`scripts/checkBarrelMockCoverage.ts`), Validation › Types and contracts › Barrel mock coverage
 - A Vitest-green spec is not type evidence → enforced by `pnpm typecheck:test`, `pnpm typecheck:scripts` and `pnpm typecheck:e2e` in Validation › Types and contracts
 - Rust-only changes skipped campaign fixture freshness → enforced by `scripts/__tests__/agentCampaignHarness.spec.ts` "records each fixture as the tree actually holds it" (the digest-mismatch assertion), which Validation › Types and contracts › Campaign fixture freshness runs, with that step's wiring pinned by `scripts/__tests__/healthGatesWorkflow.spec.ts` "requires campaign fixture freshness for Rust-only changes"
@@ -154,3 +137,15 @@ Relocated, not retired: linked automation followers reaching the sampler (#931, 
 - A single-head view hid concurrent checkpoint-only descendants (#5681) → enforced by `src/modules/CrdtDocument/useCases/__tests__/projectRevisionMatchesLiveIgnoringCommandCheckpoint.spec.ts` "accepts checkpoint-only descendants of both captured root heads" and "rejects a branch project edit hidden by a captured sibling conflict winner", plus `src/modules/AiRuntime/useCases/__tests__/concurrentCheckpointApproval.spec.ts` "executes the original approval exactly once and retains its receipt and undo after checkpoint-only sync" and "refuses conflicting whole-map checkpoints without applying or rebinding the original approval"
 - A projected Off erased committed On intent across an aborted repair (#5286) → enforced by `src/modules/Transport/useCases/__tests__/repairRuntimeGraphFromProject.optimisticRestore.integration.spec.ts` "rearms committed On when Off is projected %s and then aborted" (lesson owned by `project-integrity.md`)
 - A held removal hid a committed retarget from runtime owners (#5283) → enforced by `src/modules/AudioEngine/repositories/audioRecorder/__tests__/removeTrackInputMonitoring.integration.spec.ts` "retires a hidden On owner after a committed selector change before its shared-input removal commits" (lesson owned by `project-integrity.md`)
+
+## Relocated
+
+- A test double that cannot fail the way the real boundary does (#2097, #4496, #1949, #5705, #4577, #5649, #474,
+  #2597, #4271, #2811, #5639, #2035) → `test-observation-scope.md` probe 6.
+- Linked automation followers reaching the sampler (#931, #4392) → `command-entry-and-state-oracles.md` probe 3.
+- Billed usage and provider-wire level fields (#4407, #2648, #4393, #4392) → `provider-egress.md` probes 5 and 6.
+- Recovery receipts and lock release (#5111, #3342) → `review-authorization.md` probes 7 and 8.
+- Canvas fresh paint (#5780, #5247) → `rendered-ui-layout.md` probe 4.
+- The optimizer-reload HMR fence (#5874) → `maintained-e2e-specs.md` probe 8.
+- App import reattempt (#3356) → `startup-entry-availability.md` probe 4.
+- Rewrite destination ancestry (#4271) → `trusted-script-delivery.md` probe 6.

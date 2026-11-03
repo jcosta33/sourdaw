@@ -341,11 +341,12 @@ function isQualifiedPlatformWorker(expression: ts.Expression): boolean {
 export function completeRuntimeGraph(
     root: string,
     graph: readonly SourceNode[]
-): { graph: SourceNode[]; opaqueSources: ReadonlySet<string> } {
+): { graph: SourceNode[]; opaqueSources: ReadonlySet<string>; workerEntries: ReadonlySet<string> } {
     const { modules } = reverseGraph(graph);
     const extra = new Map<string, Set<string>>();
     const publicAssets = new Set<string>();
     const opaqueSources = new Set<string>();
+    const workerEntries = new Set<string>();
     const addEdge = (source: string, target: string): void => {
         const dependencies = extra.get(source) ?? new Set<string>();
         dependencies.add(target);
@@ -387,6 +388,7 @@ export function completeRuntimeGraph(
                         opaqueSources.add(path);
                     } else {
                         addEdge(path, target);
+                        workerEntries.add(target);
                     }
                 }
             }
@@ -420,7 +422,51 @@ export function completeRuntimeGraph(
             return { ...module, dependencies };
         }),
         opaqueSources,
+        workerEntries,
     };
+}
+
+// Vite starts a worker or audio worklet from a `?worker`, `?worker&url` or `?url`
+// import of a script: the import yields its URL, and the module runs off the page.
+const SCRIPT_SOURCE = /\.(?:[cm]?[jt]sx?)$/;
+
+function isOffPageScriptImport(dependency: SourceNode['dependencies'][number]): boolean {
+    return (
+        dependency.module?.includes('?') === true &&
+        dependency.resolved.startsWith('src/') &&
+        SCRIPT_SOURCE.test(dependency.resolved)
+    );
+}
+
+/**
+ * Every source a worker or audio worklet can load: the `new Worker(new URL(...))`
+ * targets, the scripts imported by URL, and everything they import. Page coverage
+ * never observes these threads. An opaque runtime edge could start any file, so it
+ * leaves the set unproven.
+ */
+export function offPageSources(runtime: RuntimeGraph): ReadonlySet<string> {
+    if (runtime.opaqueSources.size > 0) {
+        throw new Error(`opaque runtime dependency: ${[...runtime.opaqueSources].sort()[0]}`);
+    }
+    const modules = new Map(runtime.graph.map((module) => [module.source, module]));
+    const pending = [...runtime.workerEntries];
+    for (const module of runtime.graph) {
+        pending.push(...module.dependencies.filter(isOffPageScriptImport).map((dependency) => dependency.resolved));
+    }
+    const reached = new Set<string>();
+    while (pending.length > 0) {
+        const path = pending.pop()!;
+        if (reached.has(path)) {
+            continue;
+        }
+        reached.add(path);
+        for (const dependency of modules.get(path)?.dependencies ?? []) {
+            if (/^(?:src|public)\//.test(dependency.resolved)) {
+                pending.push(dependency.resolved);
+            }
+        }
+    }
+    return reached;
 }
 
 function affectedOwners(
@@ -500,13 +546,16 @@ export function selectAffectedE2e(
     }
 }
 
-export async function loadAffectedE2e(
-    root: string,
-    changedSources: readonly string[],
-    availableSpecs: readonly string[]
-): Promise<AffectedSelection> {
+export type RuntimeGraph = {
+    kind: 'graph';
+    graph: SourceNode[];
+    opaqueSources: ReadonlySet<string>;
+    workerEntries: ReadonlySet<string>;
+};
+
+/** The resolved production file graph with its syntax-visible runtime edges, or why it cannot be trusted. */
+export async function loadRuntimeGraph(root: string): Promise<RuntimeGraph | { kind: 'full'; reason: string }> {
     try {
-        const manifest: unknown = JSON.parse(readFileSync(resolve(root, 'scripts/e2eSuiteOwners.json'), 'utf8'));
         const configPath = resolve(root, 'tsconfig.json');
         const config = ts.getParsedCommandLineOfConfigFile(
             configPath,
@@ -571,7 +620,24 @@ export async function loadAffectedE2e(
         if (typeof parsed !== 'object' || parsed === null || !('modules' in parsed) || !Array.isArray(parsed.modules)) {
             return { kind: 'full', reason: 'malformed dependency graph' };
         }
-        const completed = completeRuntimeGraph(root, parsed.modules as SourceNode[]);
+        return { kind: 'graph', ...completeRuntimeGraph(root, parsed.modules as SourceNode[]) };
+    } catch (error) {
+        return { kind: 'full', reason: error instanceof Error ? error.message : 'dependency graph failed' };
+    }
+}
+
+export async function loadAffectedE2e(
+    root: string,
+    changedSources: readonly string[],
+    availableSpecs: readonly string[],
+    runtime?: RuntimeGraph | { kind: 'full'; reason: string }
+): Promise<AffectedSelection> {
+    try {
+        const manifest: unknown = JSON.parse(readFileSync(resolve(root, 'scripts/e2eSuiteOwners.json'), 'utf8'));
+        const completed = runtime ?? (await loadRuntimeGraph(root));
+        if (completed.kind === 'full') {
+            return completed;
+        }
         return selectAffectedE2e(changedSources, availableSpecs, manifest, completed.graph, (path) =>
             completed.opaqueSources.has(path)
         );

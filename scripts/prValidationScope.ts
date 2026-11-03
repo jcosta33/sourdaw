@@ -6,10 +6,13 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { assertCollectedBrowserInventory } from './e2eCollectorInventory.ts';
 import { partitionByDuration, readSpecDurations, type SpecDurations } from './e2eShardPartition.ts';
-import { readCheckoutDiff } from './prValidationScopeCheckout.ts';
+import { parseChangedPaths, parseChangedRecords, readCheckoutDiff } from './prValidationScopeCheckout.ts';
 import { isPlaywrightCollected, isVitestCollected } from './vitestCollectionPatterns.ts';
 
-import type { AffectedSelection } from './e2eAffectedGraph.ts';
+import type { AffectedSelection, RuntimeGraph } from './e2eAffectedGraph.ts';
+import type { CoverageSelection } from './e2eCoverageSelection.ts';
+
+export { parseChangedPaths } from './prValidationScopeCheckout.ts';
 
 export const SMOKE_SPEC = 'tests/e2e/smoke.spec.ts';
 
@@ -228,32 +231,6 @@ function isRegularFile(path: string): boolean {
     }
 }
 
-export function parseChangedPaths(diff: string): string[] {
-    if (diff === '') {
-        throw new Error('Changed-path diff is empty');
-    }
-    const fields = diff.split('\0');
-    if (fields.pop() !== '') {
-        throw new Error('Changed-path diff must be NUL terminated');
-    }
-    const paths = new Set<string>();
-    for (let index = 0; index < fields.length;) {
-        const status = fields[index++];
-        if (status === undefined || !/^(?:[AMDUT]|[RC]\d+)$/.test(status)) {
-            throw new Error(`Unsupported diff status: ${status}`);
-        }
-        const count = /^[RC]/.test(status) ? 2 : 1;
-        for (let offset = 0; offset < count; offset++) {
-            const path = fields[index++];
-            if (!path || path.startsWith('/') || path.split('/').includes('..')) {
-                throw new Error('Invalid changed path');
-            }
-            paths.add(path);
-        }
-    }
-    return [...paths].sort();
-}
-
 function packageHasModifiedStatus(diff: string): boolean {
     const fields = diff.split('\0');
     let modified = false;
@@ -353,10 +330,13 @@ function browserMatrix(specs: readonly string[], durations: SpecDurations): Brow
     };
 }
 
+const FULL_COVERAGE_REASON = 'product, shared, deleted, renamed, or unclassified dependency; full browser coverage';
+
 function browserPathSelection(
     path: string,
     available: ReadonlySet<string>,
-    affected?: AffectedSelection
+    affected?: AffectedSelection,
+    coverage?: CoverageSelection
 ): { specs: readonly string[]; browserAi: boolean; broad: boolean; reason: string } {
     if (isSpec(path) && available.has(path)) {
         return {
@@ -374,11 +354,15 @@ function browserPathSelection(
             reason: `affected feature owners: ${affected.owners.join(', ')}`,
         };
     }
+    const covered = coverage?.kind === 'specs' ? coverage.paths.find((entry) => entry.path === path) : undefined;
+    if (covered !== undefined) {
+        return { specs: covered.specs, browserAi: covered.browserAi, broad: false, reason: covered.reason };
+    }
     return {
         specs: [],
         browserAi: true,
         broad: true,
-        reason: 'product, shared, deleted, renamed, or unclassified dependency; full browser coverage',
+        reason: coverage?.kind === 'full' ? `${FULL_COVERAGE_REASON}; ${coverage.reason}` : FULL_COVERAGE_REASON,
     };
 }
 
@@ -394,7 +378,8 @@ export function selectValidationPlan(
     availableSpecs: readonly string[],
     durations: SpecDurations = new Map(),
     packageScriptOnly = false,
-    affected?: AffectedSelection
+    affected?: AffectedSelection,
+    coverage?: CoverageSelection
 ): ValidationPlan {
     if (paths.length === 0) {
         throw new Error('Changed path list is empty');
@@ -438,7 +423,7 @@ export function selectValidationPlan(
             continue;
         }
         browser = true;
-        const selection = browserPathSelection(path, available, affected);
+        const selection = browserPathSelection(path, available, affected, coverage);
         for (const spec of selection.specs) {
             selected.add(spec);
         }
@@ -527,13 +512,21 @@ export function canNarrow(input: {
     );
 }
 
+type RuntimeGraphResult = RuntimeGraph | { kind: 'full'; reason: string };
+
 async function affectedFromCheckout(
     root: string,
     base: string,
     head: string,
     diff: string,
-    specs: readonly string[]
-): Promise<{ paths: string[]; packageScriptOnly: boolean; affected?: AffectedSelection }> {
+    specs: readonly string[],
+    coverageMap: { path: string | undefined; createdAt: string | undefined }
+): Promise<{
+    paths: string[];
+    packageScriptOnly: boolean;
+    affected?: AffectedSelection;
+    coverage?: CoverageSelection;
+}> {
     const paths = parseChangedPaths(diff);
     const packageScriptOnly = paths.includes('package.json') && isOperationalPackageScriptChange(diff, base, head);
     const productPaths = productPathsOf(paths, specs, packageScriptOnly);
@@ -548,21 +541,53 @@ async function affectedFromCheckout(
             'public',
             'scripts/e2eSuiteOwners.json',
             'scripts/e2eAffectedGraph.ts',
+            'scripts/e2eCoverageSelection.ts',
             'tsconfig.json',
         ],
         { cwd: root, encoding: 'utf8' }
     );
     const cleanGraphInputs = graphInputsDirty.status === 0 && graphInputsDirty.stdout === '';
+    // Owner narrowing and coverage selection read one shared graph, built at most once.
+    let runtime: Promise<RuntimeGraphResult> | undefined;
+    const loadRuntime = async (): Promise<RuntimeGraphResult> => {
+        runtime ??= import('./e2eAffectedGraph.ts').then(({ loadRuntimeGraph }) => loadRuntimeGraph(root));
+        return runtime;
+    };
     let affected: AffectedSelection | undefined;
     if (cleanGraphInputs && canNarrow({ productPaths, candidateDiff: diff, integrationDiff: '' })) {
         try {
             const { loadAffectedE2e } = await import('./e2eAffectedGraph.ts');
-            affected = await loadAffectedE2e(root, productPaths, specs);
+            affected = await loadAffectedE2e(root, productPaths, specs, await loadRuntime());
         } catch {
             affected = { kind: 'full', reason: 'dependency graph helper unavailable' };
         }
     }
-    return { paths, packageScriptOnly, affected };
+    // Without a configured map path (a local run), the coverage rule is not in play at all.
+    if (productPaths.length === 0 || affected?.kind === 'narrow' || coverageMap.path === undefined) {
+        return { paths, packageScriptOnly, affected };
+    }
+    if (!cleanGraphInputs) {
+        return { paths, packageScriptOnly, affected, coverage: { kind: 'full', reason: 'selection inputs are dirty' } };
+    }
+    const product = new Set(productPaths);
+    let coverage: CoverageSelection;
+    try {
+        const { loadCoverageSelection } = await import('./e2eCoverageSelection.ts');
+        coverage = await loadCoverageSelection({
+            root,
+            base,
+            head,
+            changes: parseChangedRecords(diff).filter((record) => product.has(record.path)),
+            availableSpecs: specs,
+            map: coverageMap,
+            now: new Date(),
+            loadRuntime,
+        });
+    } catch (error) {
+        const message = error instanceof Error ? error.message : 'unknown error';
+        coverage = { kind: 'full', reason: `coverage selection failed: ${message}` };
+    }
+    return { paths, packageScriptOnly, affected, coverage };
 }
 
 async function main(): Promise<void> {
@@ -585,11 +610,18 @@ async function main(): Promise<void> {
     }
     const { checkout, firstParent, diff } = readCheckoutDiff(root, base, head);
     const specs = listSpecs(root);
-    const { paths, packageScriptOnly, affected } = await affectedFromCheckout(root, firstParent, checkout, diff, specs);
+    const { paths, packageScriptOnly, affected, coverage } = await affectedFromCheckout(
+        root,
+        firstParent,
+        checkout,
+        diff,
+        specs,
+        { path: process.env.E2E_COVERAGE_MAP, createdAt: process.env.E2E_COVERAGE_MAP_CREATED_AT }
+    );
     console.log(
         JSON.stringify({ eventBase: base, candidateHead: head, integrationFirstParent: firstParent, checkout })
     );
-    const plan = selectValidationPlan(paths, specs, readSpecDurations(), packageScriptOnly, affected);
+    const plan = selectValidationPlan(paths, specs, readSpecDurations(), packageScriptOnly, affected, coverage);
     if (affected?.kind === 'full') {
         plan.reasons.push({ path: 'affected graph', reason: affected.reason });
     }

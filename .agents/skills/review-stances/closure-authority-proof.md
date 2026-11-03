@@ -2,7 +2,8 @@
 
 Use this file for a stance that attacks whether a destructive closure (closing a superseded pull request,
 admitting a historical stack, removing a merged lane) rests on a complete observation bound to the right
-identity, head and revision, rather than on a present-tense ref match, a split read, or a missing field. Each
+identity, head and revision, rather than on a present-tense ref match, a split read, a missing field, or a Git
+pathname whose framing or components were reinterpreted before the deletion decision. Each
 probe names the failure, the input, and the check that must go red. The supersession probes are controlled
 native-adapter or source reproductions, not claims of live or `main` occurrence; they bound client composition,
 not later remote changes or a server-side compare-and-swap. Historical reviewer prompts and tiers are
@@ -101,3 +102,25 @@ unestablished unless a probe says otherwise.
     responses with missing and unsupported author refusals; never substitute a mutable login or silently admit
     absent identity. Restoring direct `Actor.id` must fail the emitted-query regression and the read-only live
     query.
+11. **Git pathnames that authorize deletion are NUL-framed and captured raw (#1802 `d3cfd6f01d`, #5655, #2954).**
+    `lane:remove` split `git ls-files --ignored --directory` on lines; Git C-quotes a pathname containing a line
+    feed, so the `.agents/` protection missed the quoted record while its `/dist/` component matched the generic
+    disposable rule, and `lane:remove` and `lane:strand` admitted deletion (#2954 NUL-framed `lane:prune` but left
+    the removal reader). The first #5655 repair added `-z` but both shell captures still called `stdout.trim()`,
+    turning a first record `<line feed>dist/receipt.json` into the different, disposable `dist/receipt.json`.
+    Read every deletion-authorizing Git pathname stream with `-z` through an explicit raw-stdout capture (non-path
+    output keeps its trimming and error handling) and split on NUL before classification. In a real disposable
+    Git fixture ignore `.agents/records<line feed>/dist/receipt.json` and a leading-line-feed ignored file (each
+    beside a tracked or unignored sibling so Git reports the exact path), a tracked `dist/receipt.json` sentinel
+    and an ordinary ignored `node_modules/` directory. Feed the actual ignored adapter to `removeLane` and
+    `strandLane` with fake mutation ports: both refuse before unlock, worktree removal, receipt write or branch
+    deletion, while `node_modules/` stays admitted; `lane:prune` selects only `node_modules/` and preserves the
+    protected data and the sentinel. Replacing NUL framing with line splitting, or either reader with trimmed
+    stdout, must fail the corresponding real-Git test.
+12. **Git pathname components stay opaque (#5655).** The shared `disposableIgnored` classifier replaced each
+    backslash with `/`, but Git's `-z` contract emits the pathname verbatim and a POSIX backslash is a filename
+    character, so an ignored regular file literally named `node_modules\\receipt.json` passed the
+    `node_modules/` component rule; removal and stranding admitted deletion and pruning deleted the leaf. Split
+    only on the slash Git emits and never convert backslashes before applying disposable rules. Keep direct
+    cases for backslash-only lookalikes and slash-delimited controls, plus a real Git fixture with the literal
+    backslash leaf: removal and stranding refuse before mutation, and pruning preserves the file.

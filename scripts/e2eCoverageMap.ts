@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -14,6 +14,7 @@ import { listSpecs } from './prValidationScope.ts';
  * consumer never narrows on evidence that was not collected.
  *
  *   node scripts/e2eCoverageMap.ts --records <dir> --commit <sha> --out e2e-coverage-map.json
+ *   node scripts/e2eCoverageMap.ts --check-records <dir>
  */
 
 export const COVERAGE_MAP_FORMAT = 'e2e-coverage-map-v1';
@@ -65,6 +66,20 @@ export function parseCoverageRecord(text: string, source: string): CoverageRecor
 
 function contributes(record: CoverageRecord): boolean {
     return record.complete && record.status === 'passed';
+}
+
+/**
+ * Why one shard's records prove nothing, or null when at least one test contributed coverage.
+ * A fixture broken for every test still writes one incomplete record per test.
+ */
+export function recordsProblem(records: readonly CoverageRecord[]): string | null {
+    if (records.length === 0) {
+        return 'no coverage records were written';
+    }
+    if (!records.some(contributes)) {
+        return `none of ${records.length} coverage records is complete and passed`;
+    }
+    return null;
 }
 
 export function buildCoverageMap(input: {
@@ -160,6 +175,9 @@ export function summarizeCoverageMap(map: CoverageMap): string {
 }
 
 function readRecords(directory: string): CoverageRecord[] {
+    if (!existsSync(directory)) {
+        return [];
+    }
     const recordFiles = readdirSync(directory, { recursive: true, withFileTypes: true }).filter(
         (entry) => entry.isFile() && entry.name.endsWith('.json')
     );
@@ -185,10 +203,28 @@ function readBlobs(root: string, commit: string): Map<string, string> {
     return blobs;
 }
 
+function checkRecords(directory: string): void {
+    const records = readRecords(directory);
+    const problem = recordsProblem(records);
+    if (problem !== null) {
+        throw new Error(`Unusable E2E coverage records in ${directory}: ${problem}`);
+    }
+    console.log(`${records.filter(contributes).length} of ${records.length} coverage records are complete and passed`);
+}
+
 function main(): void {
     const { values } = parseArgs({
-        options: { records: { type: 'string' }, commit: { type: 'string' }, out: { type: 'string' } },
+        options: {
+            records: { type: 'string' },
+            commit: { type: 'string' },
+            out: { type: 'string' },
+            'check-records': { type: 'string' },
+        },
     });
+    if (values['check-records'] !== undefined) {
+        checkRecords(values['check-records']);
+        return;
+    }
     const { records: directory, commit, out } = values;
     if (!directory || !out || !commit || !/^[0-9a-f]{40}$/.test(commit)) {
         throw new Error('Usage: --records <dir> --commit <40-hex sha> --out <file>');

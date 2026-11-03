@@ -788,8 +788,9 @@ jobs:
         run: node scripts/verifyPlaywrightRuntime.ts 1.64.1
 
       # Test failures leave this step green because each failing test writes a
-      # record the map always selects. Infrastructure failure still fails it:
-      # a shard that wrote no record at all proves nothing.
+      # record the map always selects. The step fails unless at least one
+      # record in the shard is complete and passed: a shard without one, such
+      # as when the coverage fixture breaks for every test, proves nothing.
       - name: Run shard with coverage
         env:
           SHARD: ${{ matrix.shard }}
@@ -798,10 +799,9 @@ jobs:
           export SOURDAW_E2E_COVERAGE_DIR="$PWD/e2e-coverage"
           status=0
           pnpm test:e2e --shard="$SHARD/12" --reporter=line || status=$?
-          records=$(find "$SOURDAW_E2E_COVERAGE_DIR" -type f -name '*.json' 2>/dev/null | wc -l)
-          printf 'Playwright exited with status %s; %s coverage records written\n' "$status" "$records"
-          if [ "$records" -eq 0 ]; then
-            printf '::error title=No coverage records::Shard %s wrote no coverage records.\n' "$SHARD"
+          printf 'Playwright exited with status %s\n' "$status"
+          if ! node scripts/e2eCoverageMap.ts --check-records "$SOURDAW_E2E_COVERAGE_DIR"; then
+            printf '::error title=Unusable coverage records::Shard %s wrote no complete, passed coverage record.\n' "$SHARD"
             exit 1
           fi
 

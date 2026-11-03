@@ -1,7 +1,8 @@
 # Lesson library: test timing and isolation
 
 A test is invalid when its verdict depends on elapsed time, a deadline paid for unobserved work, state leaked between
-cases or from the environment, or a single terminal observation that hides an interleaving window or a repeated call.
+cases or from the environment (an optional native binary the CI install skips included), or a single terminal
+observation that hides an interleaving window or a repeated call.
 Split out of `test-validity.md`.
 Each probe answers the baseline question from the Review section of root `AGENTS.md` (what must break for this
 check to fail, and does it observe what its name claims?) and carries its baseline mechanical probe unrestated:
@@ -70,3 +71,14 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    projectors that return null or throw and no configured initial value. A failed initialization must
    replay its original error to later requests with no second construction or ready reply.
    (#2357, #4420, #5615, #5639, #4586, #5677, #2747, #5461, #5091, #5556, #5520, #806, #576, #5227, #187)
+
+5. **The spec collects only where an optional native binary happens to be installed.**
+   Probe: trace the subject's import graph through every native package import (`electron`, native audio or
+   plugin bindings) and mock only the native boundary before importing the subject, keeping real project modules
+   and their asserted values in the graph. Run the exact spec in an install-script-free environment where the
+   native package entry cannot run: it must collect and execute assertions without evaluating that entry, since a
+   cached host binary conceals a CI install that skips native downloads. `windowCloseCoordinator.spec.ts` imported
+   `APP_TITLE` from `protocol.ts`, which imports `electron`, and failed collection with `Electron failed to
+install correctly` on hosted unit2 (run 40195635280 at `fd9e41a4b3`); mock only `electron`, keep `protocol.ts`,
+   `APP_TITLE`, the coordinator and an assertion for each coordinator state transition real.
+   (#3141)

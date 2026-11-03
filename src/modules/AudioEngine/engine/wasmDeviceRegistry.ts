@@ -13,9 +13,7 @@ import { getFaustModuleLatencyMs, isFaustModule } from '#/modules/PluginHost/use
 
 import { type BuiltinDeviceNode } from '../models/AudioEngineState';
 import { type DeviceRuntimeLiveFacts } from '../models/BuiltinDeviceRuntime';
-import { createFaustDeviceNode } from '../useCases/deviceResolvers/createFaustDeviceNode';
-import { clearReportedLatency } from '../useCases/latencyCompensation/compensation/clearReportedLatency';
-import { reportLatency } from '../useCases/latencyCompensation/compensation/reportLatency';
+import { type WasmDeviceRuntimeCollaborators } from '../models/EngineDeviceCollaborators';
 
 import { getAudioDeviceRuntimeSink } from './audioDeviceRuntimeSink';
 import {
@@ -51,6 +49,8 @@ export type WasmDeviceCreateDeps = {
     deviceType: string;
     parameterIds?: readonly string[];
     transportSAB?: SharedArrayBuffer;
+    /** Faust builds and latency reports, which the engine's owner supplies. */
+    collaborators: WasmDeviceRuntimeCollaborators;
     isCurrent?: () => boolean;
     signal?: AbortSignal;
     /** Returns false when the owner rejected and destroyed a stale loaded node. */
@@ -748,7 +748,7 @@ const proofChamberDescriptor: WasmDeviceDescriptor = {
     requiresContent: false,
     matches: isProofChamberDevice,
     runtime: effectRuntime({ kind: 'reported-when-ready' }),
-    create({ context, deviceId, deviceType, signal, onLoaded }) {
+    create({ context, collaborators, deviceId, deviceType, signal, onLoaded }) {
         const pendingParams: Array<[string, number]> = [];
         const placeholder = loadingBypassNode(context, deviceId, deviceType);
         placeholder.nativeDspControls = {
@@ -779,13 +779,13 @@ const proofChamberDescriptor: WasmDeviceDescriptor = {
                         setBypass: result.setBypass,
                         destroy: () => {
                             result.destroy();
-                            clearReportedLatency(deviceId);
+                            collaborators.clearReportedLatency(deviceId);
                         },
                     },
                     nativeDspControls: { setParam: result.setParam, setBypass: result.setBypass },
                 });
                 if (accepted !== false) {
-                    reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
+                    collaborators.reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
                 }
                 return;
             })
@@ -814,6 +814,7 @@ const glutenDescriptor: WasmDeviceDescriptor = {
     },
     create({
         context,
+        collaborators,
         trackId,
         deviceId,
         deviceType,
@@ -849,7 +850,7 @@ const glutenDescriptor: WasmDeviceDescriptor = {
             } catch (error) {
                 logger.warn(`[WebAudioEngine] ${deviceType} runtime cleanup failed: ${String(error)}`);
             }
-            clearReportedLatency(deviceId);
+            collaborators.clearReportedLatency(deviceId);
             getAudioDeviceRuntimeSink().deleteGlutenMeters(deviceId);
         };
         const onRuntimeFailure = (message: string): void => {
@@ -888,7 +889,7 @@ const glutenDescriptor: WasmDeviceDescriptor = {
                         phaseCorr: data.phaseCorr,
                         latency: data.latency,
                     });
-                    reportLatency(deviceId, (data.latency / context.sampleRate) * 1000);
+                    collaborators.reportLatency(deviceId, (data.latency / context.sampleRate) * 1000);
                 });
                 const loadedNode: BuiltinDeviceNode = {
                     deviceId,
@@ -903,7 +904,7 @@ const glutenDescriptor: WasmDeviceDescriptor = {
                         setBypass: result.setBypass,
                         destroy: () => {
                             result.destroy();
-                            clearReportedLatency(deviceId);
+                            collaborators.clearReportedLatency(deviceId);
                             getAudioDeviceRuntimeSink().deleteGlutenMeters(deviceId);
                         },
                     },
@@ -933,6 +934,7 @@ const crustDescriptor: WasmDeviceDescriptor = {
     runtime: effectRuntime({ kind: 'reported-dynamically' }),
     create({
         context,
+        collaborators,
         trackId,
         deviceId,
         deviceType,
@@ -969,7 +971,7 @@ const crustDescriptor: WasmDeviceDescriptor = {
             } catch (error) {
                 logger.warn(`[WebAudioEngine] ${deviceType} runtime cleanup failed: ${String(error)}`);
             }
-            clearReportedLatency(deviceId);
+            collaborators.clearReportedLatency(deviceId);
             getAudioDeviceRuntimeSink().deleteCrustMeters(deviceId);
         };
         const onRuntimeFailure = (message: string): void => {
@@ -1006,13 +1008,13 @@ const crustDescriptor: WasmDeviceDescriptor = {
                 // Report the delay the engine starts with before any parameter
                 // lands, then again whenever a parameter moves it.
                 const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
-                reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
+                collaborators.reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
 
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
                 }
                 result.onLatencyChanged((latency) => {
-                    reportLatency(deviceId, (latency / context.sampleRate) * 1000);
+                    collaborators.reportLatency(deviceId, (latency / context.sampleRate) * 1000);
                 });
                 result.onMeterData((data) => {
                     getAudioDeviceRuntimeSink().updateCrustMeters(deviceId, data);
@@ -1030,7 +1032,7 @@ const crustDescriptor: WasmDeviceDescriptor = {
                         setBypass: result.setBypass,
                         destroy: () => {
                             result.destroy();
-                            clearReportedLatency(deviceId);
+                            collaborators.clearReportedLatency(deviceId);
                             getAudioDeviceRuntimeSink().deleteCrustMeters(deviceId);
                         },
                     },
@@ -1060,6 +1062,7 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
     runtime: effectRuntime({ kind: 'reported-dynamically' }),
     create({
         context,
+        collaborators,
         trackId,
         deviceId,
         deviceType,
@@ -1101,7 +1104,7 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
             }
             replaceRuntimeFailure?.(publishedNode, placeholder);
             publishedResult.destroy();
-            clearReportedLatency(deviceId);
+            collaborators.clearReportedLatency(deviceId);
             getAudioDeviceRuntimeSink().updateBacteriaMeters(deviceId, {
                 inputDb: 0,
                 outputDb: 0,
@@ -1155,7 +1158,7 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                     return;
                 }
                 const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
-                reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
+                collaborators.reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
 
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
@@ -1164,7 +1167,7 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                     result.setModAssignments(pendingModAssignments);
                 }
                 result.onLatencyChanged((latency) => {
-                    reportLatency(deviceId, (latency / context.sampleRate) * 1000);
+                    collaborators.reportLatency(deviceId, (latency / context.sampleRate) * 1000);
                 });
                 result.onMeterData((data) => {
                     getAudioDeviceRuntimeSink().updateBacteriaMeters(deviceId, data);
@@ -1195,7 +1198,7 @@ const bacteriaDescriptor: WasmDeviceDescriptor = {
                         reset: result.reset,
                         destroy: () => {
                             result.destroy();
-                            clearReportedLatency(deviceId);
+                            collaborators.clearReportedLatency(deviceId);
                             getAudioDeviceRuntimeSink().updateBacteriaMeters(deviceId, {
                                 inputDb: 0,
                                 outputDb: 0,
@@ -1234,6 +1237,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
     runtime: effectRuntime({ kind: 'reported-dynamically' }),
     create({
         context,
+        collaborators,
         trackId,
         deviceId,
         deviceType,
@@ -1331,7 +1335,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                     return;
                 }
                 const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
-                reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
+                collaborators.reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
 
                 for (const pending of pendingParams) {
                     if (pending.kind === 'scheduled') {
@@ -1344,7 +1348,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                     result.setPatch(pendingPatch);
                 }
                 result.onLatencyChanged((latency) => {
-                    reportLatency(deviceId, (latency / context.sampleRate) * 1000);
+                    collaborators.reportLatency(deviceId, (latency / context.sampleRate) * 1000);
                 });
                 result.onMeterData((data) => {
                     getAudioDeviceRuntimeSink().updateGrinderTelemetry(deviceId, {
@@ -1379,7 +1383,7 @@ const grinderDescriptor: WasmDeviceDescriptor = {
                             try {
                                 result.destroy();
                             } finally {
-                                clearReportedLatency(deviceId);
+                                collaborators.clearReportedLatency(deviceId);
                             }
                         },
                     },
@@ -1408,6 +1412,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
     runtime: effectRuntime({ kind: 'reported-dynamically' }),
     create({
         context,
+        collaborators,
         trackId,
         deviceId,
         deviceType,
@@ -1458,7 +1463,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
             } catch (cleanupError) {
                 logger.warn(`[WebAudioEngine] ${deviceType} cleanup failed: ${String(cleanupError)}`);
             }
-            clearReportedLatency(deviceId);
+            collaborators.clearReportedLatency(deviceId);
             try {
                 getAudioDeviceRuntimeSink().unregisterProofDevice(deviceId);
             } catch {
@@ -1531,7 +1536,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     return;
                 }
                 const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
-                reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
+                collaborators.reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
                 const runtimeSink = getAudioDeviceRuntimeSink();
                 try {
                     runtimeSink.registerProofDevice({
@@ -1549,7 +1554,7 @@ const proofDescriptor: WasmDeviceDescriptor = {
                     runtimeSink.syncProofPatch(deviceId);
 
                     result.onLatencyChanged((latency) => {
-                        reportLatency(deviceId, (latency / context.sampleRate) * 1000);
+                        collaborators.reportLatency(deviceId, (latency / context.sampleRate) * 1000);
                     });
                     result.onMeterData((data) => {
                         runtimeSink.updateProofMeters(deviceId, data);
@@ -1787,7 +1792,7 @@ const faustDescriptor: WasmDeviceDescriptor = {
         notes: { availability: 'runtime-dependent' },
         latency: { kind: 'runtime-dependent' },
     },
-    create({ context, deviceId, deviceType, isCurrent, signal, onLoaded }) {
+    create({ context, collaborators, deviceId, deviceType, isCurrent, signal, onLoaded }) {
         type PendingParam = { kind: 'param'; name: string; value: number; time?: number };
         type PendingKey = {
             kind: 'keyOn' | 'keyOff';
@@ -1806,7 +1811,8 @@ const faustDescriptor: WasmDeviceDescriptor = {
                 pending.push({ kind: 'keyOff', channel, pitch, velocity, time }),
             destroy: () => {},
         };
-        const loadPromise = createFaustDeviceNode(context, deviceType)
+        const loadPromise = collaborators
+            .createFaustDeviceNode(context, deviceType)
             .then((result) => {
                 if (!result) {
                     return;
@@ -1824,7 +1830,7 @@ const faustDescriptor: WasmDeviceDescriptor = {
                 // here, before any parameter lands. Without this the Brick-Wall
                 // Limiter's look-ahead delay was unreported and its track slid
                 // against every other one; see `getFaustModuleLatencyMs`.
-                reportLatency(deviceId, getFaustModuleLatencyMs(deviceType));
+                collaborators.reportLatency(deviceId, getFaustModuleLatencyMs(deviceType));
                 for (const event of pending) {
                     if (event.kind === 'param') {
                         if (event.time !== undefined) {
@@ -1857,13 +1863,13 @@ const faustDescriptor: WasmDeviceDescriptor = {
                         allNotesOff: () => controls.setParam('gate', 0),
                         destroy: () => {
                             controls.destroy?.();
-                            clearReportedLatency(deviceId);
+                            collaborators.clearReportedLatency(deviceId);
                             detachFaustMeterBridge(deviceId, result.nodes[0]);
                         },
                     },
                 });
                 if (accepted === false) {
-                    clearReportedLatency(deviceId);
+                    collaborators.clearReportedLatency(deviceId);
                     return;
                 }
                 // A Faust device's bargraphs (the LUFS Meter's momentary and
@@ -1888,7 +1894,7 @@ const kneadDescriptor: WasmDeviceDescriptor = {
     requiresContent: false,
     matches: isKneadDevice,
     runtime: effectRuntime({ kind: 'pdc-default-zero' }),
-    create({ context, deviceId, deviceType, transportSAB, signal, onLoaded }) {
+    create({ context, collaborators, deviceId, deviceType, transportSAB, signal, onLoaded }) {
         const pendingParams: Array<[string, number | number[]]> = [];
         // `AudioEngine.syncKneadState` fans out to every device node on the
         // strip with no readiness gate, so a loading Knead is a reachable
@@ -1937,7 +1943,7 @@ const kneadDescriptor: WasmDeviceDescriptor = {
                 // shift. Report it so PDC offsets the track; without this the vocal
                 // sat ~43 ms behind the mix on three shipped templates.
                 const initialLatency = typeof readyData.latency === 'number' ? readyData.latency : 0;
-                reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
+                collaborators.reportLatency(deviceId, (initialLatency / context.sampleRate) * 1000);
 
                 for (const [name, value] of pendingParams) {
                     result.setParam(name, value);
@@ -1954,7 +1960,7 @@ const kneadDescriptor: WasmDeviceDescriptor = {
                 // so this is the reachable teardown path.
                 const destroy = (): void => {
                     result.destroy();
-                    clearReportedLatency(deviceId);
+                    collaborators.clearReportedLatency(deviceId);
                 };
                 onLoaded({
                     deviceId,

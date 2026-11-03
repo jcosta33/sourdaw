@@ -12,7 +12,7 @@ companions to `project-integrity.md` live here and in `input-monitoring-ownershi
 Scope here: transport start, stop, seek, punch and recording-take lifetimes. Split out by defect class (a stance
 matching one carries that file, not this one): strip, device, engine and settlement lifetimes in
 `runtime-instance-lifetimes.md`; collaboration teardown and receive-side sync in `collaboration-teardown.md`;
-recording first frame, rings, stop fence and artifact identity in `recording-session-ownership.md`.
+recording first frame, rings, stop fence and artifact identity in `input-monitoring-ownership.md`.
 
 ## Standing probes
 
@@ -157,14 +157,6 @@ recording first frame, rings, stop fence and artifact identity in `recording-ses
     already-applied host response. Native output peaks supplement; they cannot count all attacks/releases or prove
     zero callback refusals when the wire omits those counters.
 
-## Relocated
-
-- Editor WebSocket loss vs acceptance document lifetime, entry recovery that must not navigate a running document
-  (#5595), and first paint concealing started bootstrap effects (#3356): `startup-entry-availability.md`.
-- Input-monitoring and capture-ownership lessons (keyed acquisition #4394/#4423, refused Off, track removal, #5011,
-  disconnect faults #4485/#5376, held-removal owners #5283, Undo restoration and every #5091 head): see
-  `input-monitoring-ownership.md`.
-
 ## Retired lessons
 
 - Early scheduler callbacks publishing future deadlines (#955) -> enforced by
@@ -175,3 +167,12 @@ recording first frame, rings, stop fence and artifact identity in `recording-ses
   "stops posting ticks after a stop message". Receiver guards in
   `useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts` "ignores non-tick and malformed tick worker
   messages" and "ignores a queued tick from a retired scheduler generation".
+
+## Relocated
+
+- Editor WebSocket loss vs acceptance document lifetime, entry recovery that must not navigate a running document
+  (#5595), and first paint concealing started bootstrap effects (#3356): `startup-entry-availability.md` probes 1, 3
+  and 7.
+- Input-monitoring and capture-ownership lessons (keyed acquisition #4394/#4423, refused Off, track removal, #5011,
+  disconnect faults #4485/#5376, held-removal owners #5283, Undo restoration and every #5091 head): see
+  `input-monitoring-ownership.md` probes 1 to 9.

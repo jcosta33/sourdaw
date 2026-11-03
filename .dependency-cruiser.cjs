@@ -14,6 +14,9 @@
 //      every contract-folder file, baseline-compared like a cruise, so a private
 //      models/repositories/transformers symbol reaches a contract surface only
 //      through a registered publication — dependency edges cannot see re-exports)
+//   6) the module tier register (static module-pair edges checked against
+//      .dependency-cruiser.module-tiers.cjs, plus every module-level cycle,
+//      which file-level no-circular cannot see)
 // ----------------------------------------------------------------------------
 // Sourdaw TypeScript module architecture enforcement
 //
@@ -620,8 +623,10 @@ module.exports = {
             name: 'module-runtime-no-worker-imports',
             severity: 'error',
             comment:
-                'Use cases, repositories, stores, handlers, and presentations must not import Worker internals. ' +
-                'The engine-owned Worker client is the only application entrypoint for a Worker module.',
+                'Use cases, repositories, stores, handlers, and presentations must not import Worker internals, ' +
+                'including a Vite ?worker import. They start a Worker with new Worker(new URL(..., import.meta.url)), ' +
+                'which is a URL reference rather than an import edge, so the worker spawns gate in ' +
+                'scripts/check-dependency-boundaries.mjs checks that every such target lives in a workers/ folder.',
             from: {
                 path: '^src/modules/[^/]+/(useCases|repositories|stores|handlers|presentations)/.+' + SOURCE_FILE_RE,
             },
@@ -639,6 +644,22 @@ module.exports = {
             },
             to: {
                 path: '^(src/helpers/|src/utils/desktopBridge\\.ts$)|/@tauri-apps/',
+            },
+        },
+
+        {
+            name: 'engine-no-own-application-layers',
+            severity: 'error',
+            comment:
+                "engine/ is the runtime layer below its own module's use cases: it must not import that module's " +
+                'useCases/, handlers/, or repositories/. Whoever builds an engine object passes those collaborators in ' +
+                "(constructor deps, factory options, or a composition-root port). Foreign modules' contract barrels " +
+                'remain governed by cross-module-index-only.',
+            from: {
+                path: '^src/modules/([^/]+)/engine/.+' + SOURCE_FILE_RE,
+            },
+            to: {
+                path: '^src/modules/$1/(useCases|handlers|repositories)/.+' + SOURCE_FILE_RE,
             },
         },
 

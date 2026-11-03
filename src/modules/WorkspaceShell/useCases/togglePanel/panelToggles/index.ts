@@ -30,7 +30,6 @@ export { openInspector } from './openInspector';
 export { openMixer } from './openMixer';
 export { openVirtualKeyboard } from './openVirtualKeyboard';
 export { setSnapValue } from './setSnapValue';
-export { setSoloMode } from './setSoloMode';
 export { setTrackListWidth } from './setTrackListWidth';
 export { setVirtualKeyboardOctave } from './setVirtualKeyboardOctave';
 export { setVirtualKeyboardVelocity } from './setVirtualKeyboardVelocity';
