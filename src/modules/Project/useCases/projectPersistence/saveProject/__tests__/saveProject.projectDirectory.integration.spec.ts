@@ -755,6 +755,21 @@ describe('project directory save and cold Recent open', () => {
         const archived = readProjectOriginalMediaArchive(JSON.parse(archiveText));
         expect(Array.from(archived?.media.get(clip.assetHash) ?? [])).toEqual(Array.from(originalBytes));
 
+        // Save re-retains the original from the resident Blob. Drop that durable owner record before
+        // the session reset so the cold reopen below can only rebuild it from the folder's media file.
+        const coldTransfer = collaboration.getAssetTransfer();
+        if (!coldTransfer) {
+            throw new Error('Expected the pre-reset project asset runtime');
+        }
+        expect(await coldTransfer.releaseDurableAsset(clip.assetHash)).toMatchObject({
+            status: 'released',
+            assetRemoved: true,
+        });
+        await expect(coldTransfer.reopenDurableAsset(clip.assetHash)).resolves.toMatchObject({
+            status: 'failed',
+            reason: expect.stringMatching(/^(asset-not-owned|missing-asset)$/),
+        });
+
         audio.clearRuntimeCachedAudioBuffers();
         crdt.resetCrdtProjectAuthority('Blank');
         helpers.resetModuleStoresToDefault();
@@ -815,8 +830,19 @@ describe('project directory save and cold Recent open', () => {
         expect(await project.loadRecentProject(project.getProjectSnapshotKey(createdAt))).toBe('failed');
         expect(projectStores.projectStore.value?.projectId).toBe(blankProjectId);
         expect(arrangementStores.trackStore.value?.tracks).toEqual(blankTracks);
-        mediaDirectory.files.set(mediaName, originalBytes);
-        expect(await project.loadRecentProject(project.getProjectSnapshotKey(createdAt))).toBe('committed');
+        // The load reactivates every restored original and throws if one is not owned, so no peer
+        // or library lookup can stand in for the folder bytes the emptied store no longer holds.
+        const { PeerConnectionManager } = await import('#/modules/Collaboration/repositories/peerConnection');
+        const broadcast = vi.spyOn(PeerConnectionManager.prototype, 'broadcastCrdtSync');
+        try {
+            mediaDirectory.files.set(mediaName, originalBytes);
+            expect(await project.loadRecentProject(project.getProjectSnapshotKey(createdAt))).toBe('committed');
+            expect(broadcast).not.toHaveBeenCalledWith(
+                expect.objectContaining({ data: expect.stringContaining('asset.request') })
+            );
+        } finally {
+            broadcast.mockRestore();
+        }
         const reopenedRoot = crdt.getCrdtDoc(crdt.DOC_PREFIX_ROOT);
         if (!reopenedRoot) {
             throw new Error('Expected reopened Automerge authority');
@@ -828,8 +854,11 @@ describe('project directory save and cold Recent open', () => {
         const reopened = arrangementStores.trackStore.value?.tracks.flatMap((track) => track.clips)[0];
         expect(reopened?.audioBufferId).toBe(clip.audioBufferId);
         expect(audio.getCachedAudioBuffer({ bufferId: clip.audioBufferId })?.getChannelData(0)[1]).toBeCloseTo(0.5, 3);
-        const asset = await collaboration.getAssetTransfer()?.reopenDurableAsset(clip.assetHash);
-        expect(asset?.status).toBe('opened');
+        const reopenedAsset = await collaboration.getAssetTransfer()?.reopenDurableAsset(clip.assetHash);
+        if (reopenedAsset?.status !== 'opened') {
+            throw new Error('Expected the folder original to be durable after the cold reopen');
+        }
+        expect(Array.from(new Uint8Array(await reopenedAsset.blob.arrayBuffer()))).toEqual(Array.from(originalBytes));
 
         audio.clearRuntimeCachedAudioBuffers();
         crdt.resetCrdtProjectAuthority('Boot blank');
