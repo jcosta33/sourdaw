@@ -257,6 +257,13 @@ describe('coverage-map selection narrows', () => {
             });
         });
 
+        it('selects the mapped specs when the PR reverts a body drift back to the map version', () => {
+            const selection = select({
+                [FEED]: { base: ownEdit, head: FEED_BASE, baseBlob: 'b'.repeat(40), mapText: FEED_BASE },
+            });
+            expect(selectedSpecs(selection)).toEqual([SPEC('alpha'), SPEC('delta'), SPEC('fresh'), SPEC('gamma')]);
+        });
+
         it('keeps an inert verdict when neither the PR nor the drift changes behaviour', () => {
             const selection = select({
                 [FEED]: { base: DOCUMENTED, head: FEED_BASE, baseBlob: 'b'.repeat(40), mapText: FEED_BASE },
