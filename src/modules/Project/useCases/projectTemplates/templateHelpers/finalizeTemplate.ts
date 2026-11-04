@@ -6,7 +6,7 @@ import { syncArrangement } from '../../demoProjects/demoUtils/syncArrangement';
 import { projectLoadEpoch } from '../../projectPersistence/helpers/runProjectLoadTransaction';
 
 import { commitVcaGroups } from './commitVcaGroups';
-import { reportDeviceReadinessWhenSettled } from './reportDeviceReadiness';
+import { reportDeviceReadinessWhenSettled } from './reportDeviceReadinessWhenSettled';
 
 import type { Track } from '#/modules/Arrangement/stores';
 import type { VcaGroupHandle } from './createVca';
