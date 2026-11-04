@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_889d99350aa3b2::t_ffe5edfdc07af4 9081-9148
+src/modules/AiRuntime/useCases/agentReference/clipProtectionReading.ts
+  s_889d99350aa3b2::t_8e4b59041d872f 7,98-102,142
+src/modules/AiRuntime/useCases/agentReference/readProtectionSlots.ts
+  s_889d99350aa3b2::t_cc0855977ae865 52-53,215,309
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a54f09275a7c849e128fa1ec98a074745b15d33f",
+  "prompts": {},
+  "sessions": {
+    "s_889d99350aa3b2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_889d99350aa3b2",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
