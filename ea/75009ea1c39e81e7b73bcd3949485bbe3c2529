@@ -1,0 +1,20 @@
+src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts
+  h_beb54bf43b47b7 36
+src/modules/Project/useCases/projectTemplates/templateHelpers/finalizeTemplate.ts
+  h_beb54bf43b47b7 9
+src/modules/Project/useCases/projectTemplates/templateHelpers/reportDeviceReadiness.ts
+  h_beb54bf43b47b7 7-10
+src/modules/Project/useCases/projectTemplates/templateHelpers/reportDeviceReadinessWhenSettled.ts
+  h_beb54bf43b47b7 1-21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ea75009ea1c39e81e7b73bcd3949485bbe3c2529",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
