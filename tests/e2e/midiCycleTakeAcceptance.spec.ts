@@ -2,8 +2,9 @@
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { expect, test, type BrowserContext, type Page } from '@playwright/test';
+import { type BrowserContext, type Page } from '@playwright/test';
 
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace, wait_for_launch_first_paint, wait_for_workspace_ready } from './e2eUtils';
 import { attach_first_paint_console, CAPABILITIES_MARKER, wait_for_console_marker } from './firstPaintDiagnostics';
 

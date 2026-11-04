@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 async function openYeast(page: import('@playwright/test').Page): Promise<void> {
@@ -22,7 +21,10 @@ async function openYeast(page: import('@playwright/test').Page): Promise<void> {
     }
     await search.fill('yeast');
     await page.waitForTimeout(500);
-    await page.getByRole('button', { name: /^Yeast/i }).first().click();
+    await page
+        .getByRole('button', { name: /^Yeast/i })
+        .first()
+        .click();
     await page.waitForTimeout(1500);
 }
 
@@ -40,7 +42,10 @@ test.describe('Yeast MIDI FX rack — deep', () => {
         await page.waitForTimeout(400);
         await expect(page.getByText(/No processors yet/i)).toBeVisible();
 
-        await page.getByRole('button', { name: /\+ Arpeggiator/i }).first().click();
+        await page
+            .getByRole('button', { name: /\+ Arpeggiator/i })
+            .first()
+            .click();
         await page.waitForTimeout(500);
 
         // The processor mounts and the rack read reports it as Live (not Bypass).
@@ -72,7 +77,10 @@ test.describe('Yeast MIDI FX rack — deep', () => {
 
         // The Sprout shelf exposes "+ <Processor>" chips. Adding one mounts it
         // in the rack and removes the empty-state message.
-        await page.getByRole('button', { name: /\+ Scale Quantizer/i }).first().click();
+        await page
+            .getByRole('button', { name: /\+ Scale Quantizer/i })
+            .first()
+            .click();
         await page.waitForTimeout(500);
 
         await expect(page.getByText(/No processors yet/i)).toHaveCount(0);

@@ -386,7 +386,7 @@ type TestAutomationState = {
     lanes: Array<{ trackId: string; parameterId: string; enabled: boolean }>;
 };
 
-type TestWorkspaceState = {
+type TestSoloModeState = {
     soloMode: 'sip' | 'pfl';
 };
 
@@ -426,7 +426,7 @@ type ExportDialogMocks = {
     useStore: ReturnType<typeof vi.fn<(store: TestStore<unknown>, defaultValue?: unknown) => unknown>>;
     clipSelectionStore: TestStore<TestClipSelectionState>;
     automationStore: TestStore<TestAutomationState>;
-    workspaceStore: TestStore<TestWorkspaceState>;
+    soloModeStore: TestStore<TestSoloModeState>;
     writeNativeAudioMixdownFile: ReturnType<
         typeof vi.fn<(input: { bytes: Uint8Array; format: string; selectedFilePath: string }) => Promise<void>>
     >;
@@ -449,7 +449,7 @@ const mocks = vi.hoisted((): ExportDialogMocks => {
         value: { marqueeSelection: null },
     };
     const automationStore: TestStore<TestAutomationState> = { value: { lanes: [] } };
-    const workspaceStore: TestStore<TestWorkspaceState> = { value: { soloMode: 'sip' } };
+    const soloModeStore: TestStore<TestSoloModeState> = { value: { soloMode: 'sip' } };
     const midiStore: TestStore<TestMidiState> = { value: { notesByClipId: {} } };
 
     return {
@@ -473,7 +473,7 @@ const mocks = vi.hoisted((): ExportDialogMocks => {
         useStore: vi.fn((store: TestStore<unknown>, defaultValue?: unknown) => store.value ?? defaultValue),
         clipSelectionStore,
         automationStore,
-        workspaceStore,
+        soloModeStore,
         writeNativeAudioMixdownFile: vi.fn(),
         exportStems: vi.fn(),
         selectNativeAudioExportDirectory: vi.fn(),
@@ -507,6 +507,8 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     trackStore: mocks.trackStore,
     defaultClipSelectionState: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null },
     clipSelectionStore: mocks.clipSelectionStore,
+    defaultSoloModeState: { soloMode: 'sip' },
+    soloModeStore: mocks.soloModeStore,
     // Not exercised by this spec — stubbed only because this spec's module graph
     // reaches these transitively (through unrelated use cases that share the
     // barrel) and the widened barrel-mock-coverage gate (`stores`) treats every
@@ -563,11 +565,6 @@ vi.mock('#/modules/Automation/stores', () => ({
     automationStore: mocks.automationStore,
     // Not exercised by this spec — stubbed for the same reason as above.
     modulationStore: { value: null },
-}));
-
-vi.mock('#/modules/WorkspaceShell/stores', () => ({
-    defaultWorkspaceState: { soloMode: 'sip' },
-    workspaceStore: mocks.workspaceStore,
 }));
 
 // Export assertions spy through the `mocks.*` bindings below; every other

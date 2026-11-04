@@ -112,6 +112,7 @@ export type OfflineChannelBendProjector = (input: {
             value: number;
             beat: number;
             channel: number;
+            channelScoped?: boolean;
             sourceRecordedBeat?: number;
         }[];
         /** Original frozen rows and their pass offset, present together only for a selected source window. */
@@ -119,7 +120,15 @@ export type OfflineChannelBendProjector = (input: {
         sourceBeatOffset?: number;
     }[];
     frameAtBeat: (beat: number) => number;
-}) => readonly { beat: number; frame: number; recordedBeat: number; value: number; rangeSemitones: number }[];
+}) => readonly {
+    beat: number;
+    frame: number;
+    recordedBeat: number;
+    value: number;
+    rangeSemitones: number;
+    channel: number;
+    channelScoped: boolean;
+}[];
 
 export const offlineMidiEventProjectorState: {
     createProjector: OfflineMidiEventProjectorFactory | null;

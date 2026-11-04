@@ -1,5 +1,6 @@
 import type { AudioPreviewIntent } from './AudioPreviewIntent';
 import type { BuiltinLufsMeterReader, BuiltinLufsMeterReading } from './BuiltinLufsMeterReader';
+import type { EngineUseCaseCollaborators } from './EngineDeviceCollaborators';
 import type {
     RuntimeGraphDeltaResult,
     RuntimeGraphProjectRevisionValidator,
@@ -538,6 +539,8 @@ export type AudioEngine = {
     setRuntimeGraphProjectRevisionValidator(validator: RuntimeGraphProjectRevisionValidator | null): void;
     /** Composition-owned exact topology authority; AudioEngine never reads project state directly. */
     setRuntimeGraphTopologyValidator(validator: RuntimeGraphTopologyValidator | null): void;
+    /** Composition-owned use-case collaborators the live graph writes through; null unwires them. */
+    setUseCaseDeviceCollaborators(collaborators: EngineUseCaseCollaborators | null): void;
     /** Validated, immutable graph command applied only at the main-thread graph boundary. */
     applyRuntimeGraphDelta(delta: unknown): RuntimeGraphDeltaResult;
     /** Rehydration-only baseline; validates one complete strip before publishing it. */

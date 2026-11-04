@@ -1,12 +1,14 @@
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { expect, type Locator, type Page, type TestInfo } from '@playwright/test';
+import { type Locator, type Page, type TestInfo } from '@playwright/test';
 import { stringify } from 'superjson';
 
 import { type AppAction } from '../../src/utils/handlerContract';
 
+import { chooseProjectDirectory } from './chosenProjectDirectory';
 import { test } from './compiledPersistenceTest';
+import { expect } from './e2eTest';
 import { enable_direct_e2e_viewport, launch_new_project } from './e2eUtils';
 
 const ROOT = realpathSync(fileURLToPath(new URL('../../', import.meta.url)));
@@ -310,6 +312,7 @@ function requireMirror(
 }
 
 async function save(page: Page, requireWitness = true): Promise<void> {
+    await chooseProjectDirectory(page);
     await palette(page, 'Save Project');
     await expect(page.locator('[title="Unsaved changes"]')).toHaveCount(0, { timeout: STEP_TIMEOUT });
     if (requireWitness) {

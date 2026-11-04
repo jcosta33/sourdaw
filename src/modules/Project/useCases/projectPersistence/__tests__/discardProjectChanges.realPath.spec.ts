@@ -114,6 +114,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    reconcileSessionUndoForProject: vi.fn(() => {
+        throw new Error('Unexpected reconcileSessionUndoForProject in this fixture');
+    }),
     commitRedoInverseCapture: vi.fn(),
     readUndoEntryForInverse: vi.fn<typeof import('#/modules/Command/useCases').readUndoEntryForInverse>(() => null),
 
@@ -135,6 +138,7 @@ vi.mock('#/modules/CrdtDocument/useCases', async () => {
         '#/modules/CrdtDocument/useCases'
     );
     return {
+        ...actual,
         commandSourcePublicationMatches: actual.commandSourcePublicationMatches,
         stageCommandSourcePublication: actual.stageCommandSourcePublication,
         hasForeignPendingProjectWrites: actual.hasForeignPendingProjectWrites,

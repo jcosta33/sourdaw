@@ -1,5 +1,6 @@
-import { test, expect, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
+import { test, expect } from './e2eTest';
 import { setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 // The "Drum Bus" track and its Gluten device "Drum Glue" come from the Pop Song

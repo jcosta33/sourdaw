@@ -1,7 +1,7 @@
 # Review stances
 
-This directory is a lesson library keyed by defect class: the standing probes, escape lessons,
-and shared principles that bind them.
+This directory is a lesson library keyed by defect class: the standing probes that catch each
+class, and the shared principles that bind them.
 
 ## Stance derivation and the lesson library
 
@@ -32,7 +32,19 @@ in addition; a stance matching no file dispatches without one. An escape attache
 whose probes participate in what would have caught it, or mints a new file for a defect class
 none covers.
 
-Release tracked-set drift lessons live in `test-validity.md`.
+Every stance file opens with a short lead naming its defect class, then `## Standing probes` as its
+first section: a numbered list of five to fifteen probes, each naming the failure mode, the input or
+state to drive, the check that must go red, and the mutation that must fail it where the source
+lesson established one, with cited issue and PR numbers inline. Keep a file within about 200 lines.
+Fold an escape into the probe whose wording would have caught it, keeping its concrete inputs and
+mutation and dropping the narrative; add a probe only for a failure mode none names. Retire a lesson
+only when a named test or rule enforces it, and record that test or rule under `## Retired lessons`.
+A class that cannot carry five honest probes folds into the closest file whose class contains it,
+whose lead then names the absorbed class; one that no file contains stays separate and says why
+under `## Scope`. When a probe or lesson moves to another file, leave a pointer to its new home (file
+and probe number) in a `## Relocated` section, the last section of the file it left.
+
+Release tracked-set drift lessons live in `release-provenance-drift.md`.
 
 ## Reviewer isolation
 

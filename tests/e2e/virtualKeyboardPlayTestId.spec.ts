@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 test.describe('Virtual keyboard interaction', () => {

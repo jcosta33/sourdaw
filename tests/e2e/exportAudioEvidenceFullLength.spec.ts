@@ -1,11 +1,10 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
-import { expect, test } from '@playwright/test';
-
 import { isBuiltE2eShardRun } from '../../scripts/e2eServerIdentity';
 
 import { analyzePcmWav } from './analyzePcmWav';
+import { expect, test } from './e2eTest';
 import { LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 import { expectNebulaMixQuality, watchExportRun } from './exportAudioEvidenceHarness';
 import { installFilePickerCapture } from './exportFilePickerCapture';
@@ -45,7 +44,7 @@ test('exports the complete Nebula Drift mix as a stereo WAV', async ({ page }, t
         await page.keyboard.press(isMac ? 'Meta+Shift+E' : 'Control+Shift+E');
         const dialog = page.getByRole('dialog').filter({ hasText: /The Bakery/i });
         await expect(dialog).toBeVisible();
-        await expect(dialog.getByRole('checkbox', { name: /WAV/i })).toHaveAttribute('aria-checked', 'true');
+        await expect(dialog.getByTestId('export-format-wav')).toHaveAttribute('aria-checked', 'true');
         await expect(dialog.getByRole('checkbox', { name: 'MP3 Lossy crust', exact: true })).toHaveAttribute(
             'aria-checked',
             'false'

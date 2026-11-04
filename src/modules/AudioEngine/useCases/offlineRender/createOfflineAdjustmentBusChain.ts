@@ -1,4 +1,5 @@
 import { AdjustmentBusNode } from '../../engine/AdjustmentBusNode';
+import { engineDeviceCollaborators } from '../engineDeviceCollaborators';
 
 import { type OfflineAdjustmentDspLayerPlan } from './offlineAdjustmentLayers';
 
@@ -31,6 +32,7 @@ export function createOfflineAdjustmentBusChain(input: {
             context: input.context,
             effectType: layer.effectType,
             parameters: layer.parameters,
+            builtinDevices: engineDeviceCollaborators,
         });
         // Live's `createBus` seeds the blend when the bus is created; the
         // wrapper keeps the same call on the offline time constant so the

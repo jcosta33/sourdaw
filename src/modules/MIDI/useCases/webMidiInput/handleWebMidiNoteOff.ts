@@ -446,11 +446,14 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             noteData.velocity ?? DEFAULT_NOTE_VELOCITY
         );
 
+        // The note keeps the channel it sounded on, so stored playback bends it
+        // only by that channel's recorded wheel, as the live input did.
+        const channelNote = { ...midiNote, channel: noteData.channel };
         if (!getMpeEnabled()) {
-            deps.appendRecordedMidiNote({ clipId, note: midiNote });
+            deps.appendRecordedMidiNote({ clipId, note: channelNote });
             return;
         }
-        const recordedNote = withRecordedNoteExpression(midiNote, noteData, secondsToBeats);
+        const recordedNote = withRecordedNoteExpression(channelNote, noteData, secondsToBeats);
         deps.appendRecordedMidiNote({ clipId, note: recordedNote });
     };
 });

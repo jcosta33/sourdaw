@@ -1,5 +1,6 @@
-import { test, expect, type Page, type Locator } from '@playwright/test';
+import { type Page, type Locator } from '@playwright/test';
 
+import { test, expect } from './e2eTest';
 import { add_midi_track, launch_new_project, setupWorkspace } from './e2eUtils';
 
 async function openEditorDock(page: Page): Promise<void> {

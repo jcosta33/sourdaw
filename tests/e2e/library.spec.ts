@@ -1,7 +1,6 @@
 import { fileURLToPath } from 'node:url';
 
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { launch_from_template, setupWorkspace } from './e2eUtils';
 
 // A small bundled WAV fixture — imported through the Browser's file input so a

@@ -1,5 +1,5 @@
-import { test, expect } from '@playwright/test';
-
+import { chooseProjectDirectory } from './chosenProjectDirectory';
+import { test, expect } from './e2eTest';
 import { launch_from_template, launch_new_project, setupWorkspace } from './e2eUtils';
 
 async function openPalette(page: import('@playwright/test').Page): Promise<void> {
@@ -50,6 +50,7 @@ test.describe('Command palette — New Project from a loaded template', () => {
     });
 
     test('New Project command clears the template tracks', async ({ page }) => {
+        await chooseProjectDirectory(page);
         const trackList = page.getByRole('grid', { name: /Track list/i }).first();
         const rowsBefore = await trackList.getByRole('row').count();
         expect(rowsBefore).toBeGreaterThan(1);

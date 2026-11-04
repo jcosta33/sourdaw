@@ -104,7 +104,7 @@ When a committed command must update another module's transient state such as Pr
 
 **Why:** capturing from the live pre-batch state restores the wrong value on grouped undo and redo.
 
-**Enforced by:** review only (probe in `review-stances/project-integrity.md`).
+**Enforced by:** review only (probe in `review-stances/replay-authority.md`).
 
 ## References
 
@@ -112,4 +112,4 @@ When a committed command must update another module's transient state such as Pr
 - [docs/architecture/01-system.md](../../../docs/architecture/01-system.md) — canonical state-category taxonomy (§6).
 - [docs/architecture/03-typescript-module.md](../../../docs/architecture/03-typescript-module.md) — stores as contract surfaces.
 - [docs/04-events.md](../../../docs/04-events.md) — event contracts vs commands.
-- Review probes for this area: `../review-stances/project-integrity.md` (command entry, identity-scoped replay, grouped inverses) and `../review-stances/asset-cache-publication.md` (durable ownership, async cache admission, prepared settlement).
+- Review probes for this area: `../review-stances/command-entry-and-state-oracles.md` (command entry) and `../review-stances/replay-authority.md` (identity-scoped replay, grouped inverses) and `../review-stances/asset-cache-publication.md` (durable ownership, async cache admission, prepared settlement).

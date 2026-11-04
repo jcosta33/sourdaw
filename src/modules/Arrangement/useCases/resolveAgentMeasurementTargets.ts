@@ -1,8 +1,8 @@
 import { sidechainStore } from '#/modules/Routing/stores';
-import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { type Track } from '../models/Track';
 import { deriveEffectiveAudibility, type EffectiveAudibility } from '../stores/effectiveAudibility';
+import { soloModeStore } from '../stores/soloModeStore';
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../stores/trackEligibility';
 import { trackStore } from '../stores/trackStore';
 
@@ -54,7 +54,7 @@ function readLiveAudibility(tracks: Track[]): EffectiveAudibility {
     );
     return deriveEffectiveAudibility({
         tracks,
-        soloMode: workspaceStore.value?.soloMode ?? 'sip',
+        soloMode: soloModeStore.value?.soloMode ?? 'sip',
         stripTrackIds,
     });
 }

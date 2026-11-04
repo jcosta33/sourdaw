@@ -3,10 +3,10 @@ import {
     deriveEffectiveAudibility,
     deriveVcaMultiplier,
     getVcaGroupsState,
+    soloModeStore,
     trackStore,
     type Track,
 } from '#/modules/Arrangement/stores';
-import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
 import { type AudioGraphCommand, type AudioGraphCommandBatch } from '../../models/AudioGraphBackend';
@@ -68,7 +68,7 @@ function readSessionTopology(): Readonly<{
     );
     const { soloGatedByTrackId } = deriveEffectiveAudibility({
         tracks: projectTracks,
-        soloMode: workspaceStore.value?.soloMode ?? 'sip',
+        soloMode: soloModeStore.value?.soloMode ?? 'sip',
         stripTrackIds,
     });
     const vcaGroups = getVcaGroupsState();

@@ -4,11 +4,31 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { projectLoadFailureStore } from '../../../stores/projectLoadFailureStore';
 import { projectStore } from '../../../stores/projectStore';
 import { pickFiles } from '../../fileDialog';
+import { collectProjectOriginalHashes } from '../helpers/collectProjectOriginalHashes';
+import { isHydratableProjectData } from '../helpers/isHydratableProjectData';
+import { normalizeLegacyProjectData } from '../helpers/normalizeLegacyProjectData';
 import { runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
 import { pendingProjectReplacements } from '../pendingProjectReplacements';
+import { projectOriginalMediaPort } from '../projectOriginalMediaPort';
 import { saveProjectBeforeReplacement } from '../saveProject/saveProjectBeforeReplacement';
 
 import { applyImportedProjectData } from './applyImportedProjectData';
+import { readProjectOriginalMediaArchive } from './readProjectOriginalMediaArchive';
+
+function requireMatchingArchiveProjectId(
+    data: unknown,
+    archive: NonNullable<ReturnType<typeof readProjectOriginalMediaArchive>>
+): string {
+    if (!isHydratableProjectData(data) || !data.meta.projectId) {
+        throw new Error('Project archive has no stable identity');
+    }
+    const expected = new Set(collectProjectOriginalHashes(data));
+    const described = new Set([...archive.media.keys(), ...archive.unavailable]);
+    if (expected.size !== described.size || [...expected].some((hash) => !described.has(hash))) {
+        throw new Error('Project archive originals differ from its clip references');
+    }
+    return data.meta.projectId;
+}
 
 export async function pickAndImportProjectFile(): Promise<boolean> {
     const paths = await pickFiles({
@@ -46,9 +66,20 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
             return false;
         }
         const data: unknown = JSON.parse(content);
+        const archive = readProjectOriginalMediaArchive(data);
+        // Normalize once: a legacy file mints its project identity here, and the archive restore and
+        // the committed replacement must own originals under the same identity.
+        const normalized = normalizeLegacyProjectData(data);
+        if (archive) {
+            const projectId = requireMatchingArchiveProjectId(normalized, archive);
+            await projectOriginalMediaPort.restore(projectId, archive.media, isStillChosen);
+            if (!isStillChosen()) {
+                return false;
+            }
+        }
 
         const imported = await applyImportedProjectData({
-            data,
+            data: normalized,
             outgoingProject,
             shouldProceed: isStillChosen,
             transaction,
@@ -70,6 +101,13 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
             }
             notifyUser('Invalid project file format', 'error');
             return false;
+        }
+        if (archive && isHydratableProjectData(normalized) && normalized.meta.projectId) {
+            await projectOriginalMediaPort.activate(
+                normalized.meta.projectId,
+                [...archive.media.keys()],
+                isStillChosen
+            );
         }
         return true;
     } catch (error) {

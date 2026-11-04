@@ -53,6 +53,8 @@ import {
     PITCH_RAIL_WIDTH,
     getVisiblePitches,
     getPianoRollExtentBeats,
+    getPianoRollContentHeight,
+    getPianoRollRowTop,
 } from '../../helpers/pianoRollConstants';
 import { projectPianoRollTakeNotes, type PianoRollTakeNotes } from '../../helpers/projectPianoRollTakeNotes';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
@@ -522,8 +524,11 @@ export const PianoRoll = ({
                     }}
                 >
                     {/* Piano keys sidebar */}
-                    <DawSideRail className="sticky left-0 z-10" style={{ width: PITCH_RAIL_WIDTH }}>
-                        <DawGridHeaderCell className="px-0" style={{ height: RULER_HEIGHT }} />
+                    <DawSideRail
+                        className="sticky left-0 z-10"
+                        style={{ width: PITCH_RAIL_WIDTH, height: getPianoRollContentHeight(visiblePitches.length) }}
+                    >
+                        <DawGridHeaderCell className="absolute inset-x-0 top-0 px-0" style={{ height: RULER_HEIGHT }} />
                         {visiblePitches.map((pitch, row) => {
                             const noteIndex = pitch % 12;
                             const isBlack = [1, 3, 6, 8, 10].includes(noteIndex);
@@ -532,13 +537,13 @@ export const PianoRoll = ({
                                 <div
                                     key={row}
                                     className={cn(
-                                        'flex items-center justify-end pr-1 text-[10px]',
+                                        'absolute inset-x-0 flex items-center justify-end pr-1 text-[10px]',
                                         isBlack
                                             ? 'bg-surface-base text-muted-foreground/40'
                                             : 'text-muted-foreground/60',
                                         isInScale && 'text-accent-primary/80 font-bold'
                                     )}
-                                    style={{ height: ROW_HEIGHT }}
+                                    style={{ top: getPianoRollRowTop(row), height: ROW_HEIGHT }}
                                 >
                                     {KEY_NAMES[noteIndex]}
                                     {Math.floor(pitch / 12) - 1}

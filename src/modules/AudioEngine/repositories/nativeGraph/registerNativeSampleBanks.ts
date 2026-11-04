@@ -84,6 +84,7 @@ async function stageBank(
 ): Promise<void> {
     const { bank } = lease;
     await transport.beginLevainBank({ bankKey, instrumentId: bank.instrumentId });
+    lease.reportActivity?.();
     for (const sample of bank.samples) {
         await transport.registerLevainSample({
             bankKey,
@@ -92,6 +93,7 @@ async function stageBank(
             channels: sample.channels,
             pcm: sample.pcm,
         });
+        lease.reportActivity?.();
     }
     await transport.commitLevainBank({
         bankKey,
@@ -105,6 +107,7 @@ async function stageBank(
             legatoTransitions: bank.legatoTransitions,
         },
     });
+    lease.reportActivity?.();
 }
 
 async function registerBank(

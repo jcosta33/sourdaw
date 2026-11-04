@@ -1,8 +1,9 @@
-import { expect, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
 import { DIRECT_E2E_VIEWPORT_NAME } from '../../src/app/resolveAppComposition';
 
+import { expect } from './e2eTest';
 import { attach_first_paint_console, format_first_paint_timeout_diagnosis } from './firstPaintDiagnostics';
 
 export const LAUNCH_SCREEN_NAME = 'Sourdaw — start a project';

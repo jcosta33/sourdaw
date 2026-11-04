@@ -59,6 +59,9 @@ export { getTrackEligibility, shouldCreateLiveTrackStrip } from './trackEligibil
 // closing the store-vs-engine solo split without duplicating the math (OE-4).
 export { deriveEffectiveAudibility, hasActiveSolo } from './effectiveAudibility';
 export type { EffectiveAudibility, EffectiveAudibilityInput } from './effectiveAudibility';
+export { soloModeStore, defaultSoloModeState } from './soloModeStore';
+export type { SoloModeState } from './soloModeStore';
+export type { SoloMode } from './effectiveAudibility';
 
 export { adjustmentLayerStore, EFFECT_PRESETS, LAYER_COLORS } from './adjustmentLayer';
 export type {

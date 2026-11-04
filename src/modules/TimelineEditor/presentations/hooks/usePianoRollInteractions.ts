@@ -60,6 +60,8 @@ import {
     type PianoRollMenu,
     INITIAL_DRAG_STATE,
     getVisiblePitches,
+    getPianoRollRowAtY,
+    getPianoRollRowTop,
 } from '../helpers/pianoRollConstants';
 import { type PianoRollTakeNotes } from '../helpers/projectPianoRollTakeNotes';
 
@@ -661,7 +663,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         if (rawY < RULER_HEIGHT) {
             return;
         }
-        const noteY = rawY - RULER_HEIGHT;
+        const noteY = rawY - getPianoRollRowTop(0);
         const hit = hitTest(x, noteY);
 
         if (hit) {
@@ -759,9 +761,9 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 return;
             }
 
-            const row = Math.floor(noteY / ROW_HEIGHT);
             const visiblePitches = getVisiblePitches(scaleType, scaleRoot, isFolded);
-            if (row >= 0 && row < visiblePitches.length) {
+            const row = getPianoRollRowAtY(rawY, visiblePitches.length);
+            if (row !== null) {
                 // R-A12: snap to nearest scale degree when constrainToScale is active
                 const pitch = snapToScalePitch(visiblePitches[row]!);
                 if (pitch >= 0 && pitch < 128) {
@@ -856,7 +858,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             }
             const rect = canvas.getBoundingClientRect();
             const hx = contentX(event.clientX, rect);
-            const hy = event.clientY - rect.top - RULER_HEIGHT;
+            const hy = event.clientY - rect.top - getPianoRollRowTop(0);
             if (hy >= 0) {
                 const hit = hitTest(hx, hy);
                 setHoverCursor(
@@ -959,7 +961,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         }
         const rect = canvas.getBoundingClientRect();
         const x = contentX(event.clientX, rect);
-        const noteY = event.clientY - rect.top - RULER_HEIGHT;
+        const noteY = event.clientY - rect.top - getPianoRollRowTop(0);
 
         if (drag.mode === 'rubber-band') {
             rubberBandRef.current = {
@@ -988,10 +990,10 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                     ctx.setLineDash([4, 3]);
                     ctx.beginPath();
                     const p0 = lassoPathRef.current[0]!;
-                    ctx.moveTo(p0.x, p0.y + RULER_HEIGHT);
+                    ctx.moveTo(p0.x, p0.y + getPianoRollRowTop(0));
                     for (let index = 1; index < lassoPathRef.current.length; index++) {
                         const pt = lassoPathRef.current[index]!;
-                        ctx.lineTo(pt.x, pt.y + RULER_HEIGHT);
+                        ctx.lineTo(pt.x, pt.y + getPianoRollRowTop(0));
                     }
                     ctx.stroke();
                     ctx.setLineDash([]);
@@ -1500,7 +1502,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         if (rawY < RULER_HEIGHT) {
             return;
         }
-        const hit = hitTest(x, rawY - RULER_HEIGHT);
+        const hit = hitTest(x, rawY - getPianoRollRowTop(0));
         if (hit) {
             if (editFrozen(hit.note.id, null)) {
                 return;

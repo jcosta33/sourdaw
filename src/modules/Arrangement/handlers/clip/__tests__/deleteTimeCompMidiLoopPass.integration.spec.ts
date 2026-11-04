@@ -226,11 +226,13 @@ describe('Delete Time through a comped MIDI loop pass (#5112)', () => {
             [rightClip.id, 10, 14],
         ]);
         // The comp re-key rides with the delete: both fragments resolve their
-        // pass-2 media — the left fragment enters the recording at its own
-        // start (media origin 0), the right at the pass depth (media origin 2).
+        // pass-2 media. The delete freezes the take, so both count its loop
+        // occurrences from where its source's first beat sounds: 0 on the left,
+        // and on the right 0 moved back by the two deleted beats, so beat 10
+        // keeps the occurrence beat 12 had.
         expect(resolvedFragments()).toEqual([
             [8, 10, 0],
-            [10, 14, 2],
+            [10, 14, -2],
         ]);
         // The issue's store check, inverted into the contract: the left
         // fragment holds the pass-2 notes its comp region plays (media [8,10))

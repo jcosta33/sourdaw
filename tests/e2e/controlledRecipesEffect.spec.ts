@@ -1,6 +1,5 @@
-import { expect, test } from '@playwright/test';
-
 import { admitLoopbackProvider } from './admitLoopbackProvider';
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 import { literalWholeRequestIntake, startScriptedToolProvider, type ScriptedToolRequest } from './scriptedToolProvider';
 

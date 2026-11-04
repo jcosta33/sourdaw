@@ -4,9 +4,8 @@ import { DawTransportCluster } from '#/components/daw/DawTransportCluster';
 import { Button } from '#/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
-
-import { type SoloMode } from '../../../models/WorkspaceState';
-import { setSoloMode } from '../../../useCases/togglePanel/panelToggles/setSoloMode';
+import { type SoloMode } from '#/modules/Arrangement/stores';
+import { setSoloMode } from '#/modules/Arrangement/useCases';
 
 const SOLO_MODES: { value: SoloMode; label: string; description: string }[] = [
     {

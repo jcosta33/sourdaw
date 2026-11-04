@@ -1,5 +1,4 @@
-import { expect, test } from '@playwright/test';
-
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const effectiveWidths = [1440, 1200, 1024, 819, 683, 640, 512, 410, 341, 320, 256];

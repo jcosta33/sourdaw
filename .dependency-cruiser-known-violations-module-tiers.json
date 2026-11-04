@@ -1,0 +1,369 @@
+[
+  {
+    "type": "module-cycle",
+    "members": [
+      "Arrangement",
+      "AudioEngine",
+      "Automation",
+      "Bacteria",
+      "Collaboration",
+      "Command",
+      "ControlSurface",
+      "CrdtDocument",
+      "Crumbs",
+      "Crust",
+      "ElasticAudio",
+      "Fermenter",
+      "Gluten",
+      "GrandBoule",
+      "Grinder",
+      "Knead",
+      "Levain",
+      "MIDI",
+      "Project",
+      "Proof",
+      "Routing",
+      "SampleLibrary",
+      "Toaster",
+      "Transport",
+      "Tuner",
+      "WorkspaceShell",
+      "Yeast"
+    ]
+  },
+  {
+    "type": "module-tier",
+    "from": "AiRuntime",
+    "to": "WorkspaceShell"
+  },
+  {
+    "type": "module-tier",
+    "from": "Arrangement",
+    "to": "Collaboration"
+  },
+  {
+    "type": "module-tier",
+    "from": "Arrangement",
+    "to": "Fermenter"
+  },
+  {
+    "type": "module-tier",
+    "from": "Arrangement",
+    "to": "SampleLibrary"
+  },
+  {
+    "type": "module-tier",
+    "from": "Arrangement",
+    "to": "Synth"
+  },
+  {
+    "type": "module-tier",
+    "from": "Arrangement",
+    "to": "WorkspaceShell"
+  },
+  {
+    "type": "module-tier",
+    "from": "AudioEngine",
+    "to": "Arrangement"
+  },
+  {
+    "type": "module-tier",
+    "from": "AudioEngine",
+    "to": "Automation"
+  },
+  {
+    "type": "module-tier",
+    "from": "AudioEngine",
+    "to": "ControlRoom"
+  },
+  {
+    "type": "module-tier",
+    "from": "AudioEngine",
+    "to": "Crumbs"
+  },
+  {
+    "type": "module-tier",
+    "from": "AudioEngine",
+    "to": "CvGate"
+  },
+  {
+    "type": "module-tier",
+    "from": "AudioEngine",
+    "to": "ElasticAudio"
+  },
+  {
+    "type": "module-tier",
+    "from": "AudioEngine",
+    "to": "Fermenter"
+  },
+  {
+    "type": "module-tier",
+    "from": "AudioEngine",
+    "to": "Grinder"
+  },
+  {
+    "type": "module-tier",
+    "from": "AudioEngine",
+    "to": "MIDI"
+  },
+  {
+    "type": "module-tier",
+    "from": "AudioEngine",
+    "to": "Routing"
+  },
+  {
+    "type": "module-tier",
+    "from": "AudioEngine",
+    "to": "Synth"
+  },
+  {
+    "type": "module-tier",
+    "from": "AudioEngine",
+    "to": "Transport"
+  },
+  {
+    "type": "module-tier",
+    "from": "AudioEngine",
+    "to": "Yeast"
+  },
+  {
+    "type": "module-tier",
+    "from": "BrowserAi",
+    "to": "MIDI"
+  },
+  {
+    "type": "module-tier",
+    "from": "Command",
+    "to": "Arrangement"
+  },
+  {
+    "type": "module-tier",
+    "from": "Command",
+    "to": "Automation"
+  },
+  {
+    "type": "module-tier",
+    "from": "Command",
+    "to": "Transport"
+  },
+  {
+    "type": "module-tier",
+    "from": "Command",
+    "to": "WorkspaceShell"
+  },
+  {
+    "type": "module-tier",
+    "from": "CommandInterface",
+    "to": "Onboarding"
+  },
+  {
+    "type": "module-tier",
+    "from": "CommandInterface",
+    "to": "WorkspaceShell"
+  },
+  {
+    "type": "module-tier",
+    "from": "CrdtDocument",
+    "to": "Arrangement"
+  },
+  {
+    "type": "module-tier",
+    "from": "CrdtDocument",
+    "to": "Automation"
+  },
+  {
+    "type": "module-tier",
+    "from": "CrdtDocument",
+    "to": "ControlSurface"
+  },
+  {
+    "type": "module-tier",
+    "from": "CrdtDocument",
+    "to": "CvGate"
+  },
+  {
+    "type": "module-tier",
+    "from": "CrdtDocument",
+    "to": "Knead"
+  },
+  {
+    "type": "module-tier",
+    "from": "CrdtDocument",
+    "to": "MIDI"
+  },
+  {
+    "type": "module-tier",
+    "from": "CrdtDocument",
+    "to": "Project"
+  },
+  {
+    "type": "module-tier",
+    "from": "CrdtDocument",
+    "to": "Routing"
+  },
+  {
+    "type": "module-tier",
+    "from": "CrdtDocument",
+    "to": "Transport"
+  },
+  {
+    "type": "module-tier",
+    "from": "CrdtDocument",
+    "to": "Yeast"
+  },
+  {
+    "type": "module-tier",
+    "from": "ElasticAudio",
+    "to": "WorkspaceShell"
+  },
+  {
+    "type": "module-tier",
+    "from": "GrandBoule",
+    "to": "WorkspaceShell"
+  },
+  {
+    "type": "module-tier",
+    "from": "MIDI",
+    "to": "ControlSurface"
+  },
+  {
+    "type": "module-tier",
+    "from": "MIDI",
+    "to": "GrandBoule"
+  },
+  {
+    "type": "module-tier",
+    "from": "MIDI",
+    "to": "Levain"
+  },
+  {
+    "type": "module-tier",
+    "from": "MIDI",
+    "to": "Synth"
+  },
+  {
+    "type": "module-tier",
+    "from": "MIDI",
+    "to": "WorkspaceShell"
+  },
+  {
+    "type": "module-tier",
+    "from": "MIDI",
+    "to": "Yeast"
+  },
+  {
+    "type": "module-tier",
+    "from": "Project",
+    "to": "Bacteria"
+  },
+  {
+    "type": "module-tier",
+    "from": "Project",
+    "to": "ControlSurface"
+  },
+  {
+    "type": "module-tier",
+    "from": "Project",
+    "to": "Crumbs"
+  },
+  {
+    "type": "module-tier",
+    "from": "Project",
+    "to": "Crust"
+  },
+  {
+    "type": "module-tier",
+    "from": "Project",
+    "to": "CvGate"
+  },
+  {
+    "type": "module-tier",
+    "from": "Project",
+    "to": "Fermenter"
+  },
+  {
+    "type": "module-tier",
+    "from": "Project",
+    "to": "Gluten"
+  },
+  {
+    "type": "module-tier",
+    "from": "Project",
+    "to": "GrandBoule"
+  },
+  {
+    "type": "module-tier",
+    "from": "Project",
+    "to": "Grinder"
+  },
+  {
+    "type": "module-tier",
+    "from": "Project",
+    "to": "Levain"
+  },
+  {
+    "type": "module-tier",
+    "from": "Project",
+    "to": "Proof"
+  },
+  {
+    "type": "module-tier",
+    "from": "Project",
+    "to": "SampleLibrary"
+  },
+  {
+    "type": "module-tier",
+    "from": "Project",
+    "to": "Toaster"
+  },
+  {
+    "type": "module-tier",
+    "from": "Project",
+    "to": "Tuner"
+  },
+  {
+    "type": "module-tier",
+    "from": "Project",
+    "to": "WorkspaceShell"
+  },
+  {
+    "type": "module-tier",
+    "from": "Project",
+    "to": "Yeast"
+  },
+  {
+    "type": "module-tier",
+    "from": "Setlist",
+    "to": "WorkspaceShell"
+  },
+  {
+    "type": "module-tier",
+    "from": "Transport",
+    "to": "Collaboration"
+  },
+  {
+    "type": "module-tier",
+    "from": "Transport",
+    "to": "Crumbs"
+  },
+  {
+    "type": "module-tier",
+    "from": "Transport",
+    "to": "Fermenter"
+  },
+  {
+    "type": "module-tier",
+    "from": "Transport",
+    "to": "Synth"
+  },
+  {
+    "type": "module-tier",
+    "from": "Transport",
+    "to": "Toaster"
+  },
+  {
+    "type": "module-tier",
+    "from": "Transport",
+    "to": "Yeast"
+  }
+]

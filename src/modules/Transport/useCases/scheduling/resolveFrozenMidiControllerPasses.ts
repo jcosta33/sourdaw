@@ -1,4 +1,4 @@
-import { isFrozenMidiTakeSource, projectFrozenMidiTakeWindow } from '#/modules/MIDI/stores';
+import { frozenMidiTakeRepeats, isFrozenMidiTakeSource, projectFrozenMidiTakeWindow } from '#/modules/MIDI/stores';
 
 import { type resolvePlayedMidiClips } from './resolvePlayedMidiClips';
 
@@ -13,20 +13,17 @@ export function resolveFrozenMidiControllerPasses(clip: PlayedClip) {
     if (!isFrozenMidiTakeSource(source)) {
         throw new Error('Invalid frozen MIDI take source');
     }
-    const span = source.sourceEndBeat - source.sourceEntryBeat;
-    const first = Math.max(0, Math.floor((clip.startBeat - source.phaseHeadBeat - span) / source.passLengthBeats) + 1);
-    const last = Math.ceil((clip.endBeat - source.phaseHeadBeat) / source.passLengthBeats);
     const passes = [];
-    for (let index = first; index < last; index++) {
-        const passHead = source.phaseHeadBeat + index * source.passLengthBeats;
-        const startBeat = Math.max(passHead, clip.startBeat);
-        const endBeat = Math.min(passHead + span, clip.endBeat);
+    for (const repeat of frozenMidiTakeRepeats(source, clip, clip.startBeat, clip.endBeat)) {
+        const startBeat = Math.max(repeat.startBeat, clip.startBeat);
+        const endBeat = Math.min(repeat.endBeat, clip.endBeat);
         if (startBeat >= endBeat) {
             continue;
         }
         const value = projectFrozenMidiTakeWindow({
             source,
-            absoluteOccurrenceIndex: index,
+            fragment: clip,
+            absoluteOccurrenceIndex: repeat.absoluteOccurrenceIndex,
             fromBeat: clip.startBeat,
             toBeat: clip.endBeat,
         });
@@ -38,7 +35,7 @@ export function resolveFrozenMidiControllerPasses(clip: PlayedClip) {
             controlChanges: [...value.controlChanges, ...value.closingControlChanges],
             pitchBends: value.pitchBends,
             sourceControlChanges: source.rows.controlChanges.value,
-            sourceBeatOffset: passHead - source.sourceEntryBeat,
+            sourceBeatOffset: repeat.passHeadBeat - source.sourceEntryBeat,
         });
     }
     return passes;

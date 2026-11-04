@@ -1,6 +1,6 @@
 # Arrangement module — Agent Guidelines
 
-Owns arrangement tracks, clips, comping/take lanes, markers, sections, VCA groups, adjustment layers, scratch pads, track alternatives, mixer snapshots, and device chain topology; does not own audio DSP graph execution (AudioEngine), raw MIDI notes (MIDI), parameter automation curves (Automation), or playback clock transport (Transport).
+Owns arrangement tracks, clips, comping/take lanes, markers, sections, VCA groups, adjustment layers, scratch pads, track alternatives, mixer snapshots, solo mode, and device chain topology; does not own audio DSP graph execution (AudioEngine), raw MIDI notes (MIDI), parameter automation curves (Automation), or playback clock transport (Transport).
 
 ## Public Contract Surface
 
@@ -10,6 +10,7 @@ Public surface: `useCases/index.ts`, `stores/index.ts`, `events/index.ts`, `pres
 
 - **Track & Clip Aggregate:** `trackStore` maintains the hierarchical track list (audio, MIDI, bus, folder, return), device chains, and clip placements.
 - **Audibility Projection:** `deriveEffectiveAudibility` projects authoritative solo/mute states into per-track audibility maps consumed by the offline renderer and mixer UI without duplicating logic.
+- **Solo Mode:** `soloModeStore` holds the session's SIP/AFL/PFL mode beside the solo logic that reads it; live playback and offline render read it from here. `setSoloMode` is its only writer, and `syncSoloModePreference` mirrors the persisted Preferences `soloMode` into it. The store itself is memory-only.
 - **Freeze & Bounce Pipeline:** Tracks offline freeze/bounce state and invalidation staleness (`initStalenessDetection`, `cleanupUnusedFreezeFiles`).
 - **Comping & Take Management:** Multi-take slicing and comp region resolution (`resolveClipsWithComping`).
 - **Adjustment Layers & Scratch Pad:** Non-destructive bus-level effect overlays and sandbox arrangement sections.

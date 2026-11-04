@@ -12,6 +12,7 @@ import { getArrangementHandlers, getPluginById, setDeviceParameter } from '#/mod
 import {
     audioEngine,
     getAudioContext,
+    initEngineDeviceCollaborators,
     isDeviceCarriedByNativeSession,
     updateDeviceParam,
 } from '#/modules/AudioEngine/useCases';
@@ -290,6 +291,7 @@ function sliderTrack(): HTMLElement {
 }
 
 describe('Inspector continuous parameter gestures through real history', () => {
+    initEngineDeviceCollaborators();
     beforeEach(async () => {
         engineWrites.length = 0;
         afterEngineWrite = null;

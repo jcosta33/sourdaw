@@ -32,8 +32,8 @@ import {
 
 import { projectStore } from '../../../stores/projectStore';
 import { createFreshProjectMetadata } from '../../createFreshProjectMetadata';
-import { projectLoadEpoch } from '../../projectPersistence/helpers/runProjectLoadTransaction';
-import { reportDeviceReadiness } from '../../projectTemplates/templateHelpers/reportDeviceReadiness';
+import { committedProject } from '../../projectPersistence/helpers/committedProjectAuthority';
+import { reportDeviceReadinessWhenSettled } from '../../projectTemplates/templateHelpers/reportDeviceReadinessWhenSettled';
 import { applyPreset } from '../demoUtils/applyPreset';
 import { createMidiClip } from '../demoUtils/createMidiClip';
 import { note } from '../demoUtils/note';
@@ -2342,6 +2342,10 @@ export async function demo5_NebulaDrift(): Promise<void> {
     projectStore.set(projectMetadata);
 
     ensureTrackStrips();
-    const originatingEpoch = projectLoadEpoch.current;
-    reportDeviceReadiness(await waitForDevices(), originatingEpoch);
+    // Same rule as finalizeTemplate: report readiness behind the workspace, so a
+    // progressing Levain admission cannot hold this app action (and the launch
+    // overlay) open until the bank commits. Capture the committed generation so
+    // the report is suppressed once the user leaves this project.
+    const committedGeneration = committedProject.generation;
+    reportDeviceReadinessWhenSettled(waitForDevices(), committedGeneration);
 }

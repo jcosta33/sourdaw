@@ -3246,6 +3246,7 @@
             "id": "AC005-DEV-QUESTION-1",
             "promptClass": "question",
             "class": "answer-exact",
+            "questionKind": "descriptive",
             "prompt": "What tempo is this song at?",
             "providerTurns": [
                 {
@@ -3292,6 +3293,7 @@
             "id": "AC005-DEV-QUESTION-2",
             "promptClass": "question",
             "class": "answer-exact",
+            "questionKind": "descriptive",
             "prompt": "How many buses are in this session?",
             "providerTurns": [
                 {
@@ -3344,6 +3346,7 @@
             "id": "AC005-DEV-QUESTION-3",
             "promptClass": "question",
             "class": "answer-exact",
+            "questionKind": "descriptive",
             "prompt": "Where's the Lead Vocal fader set?",
             "providerTurns": [
                 {
@@ -3384,6 +3387,179 @@
                         "name": "Lead Vocal",
                         "gain": 1
                     }
+                }
+            }
+        },
+        {
+            "id": "AC005-DEV-QUESTION-4",
+            "promptClass": "question",
+            "class": "answer-exact",
+            "questionKind": "suggestion",
+            "prompt": "What would you do to the snare to give it more punch?",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "answer-catalog",
+                    "scopeTrack": "Snare"
+                },
+                {
+                    "kind": "recipe",
+                    "id": "recipe",
+                    "descriptors": ["punchy"],
+                    "targetName": "Snare",
+                    "limit": 1
+                },
+                {
+                    "kind": "answer",
+                    "id": "answer",
+                    "args": {
+                        "intakeCallId": "intake",
+                        "statements": [
+                            {
+                                "kind": "recipe",
+                                "callId": "recipe",
+                                "recipeId": "drums-punchy"
+                            }
+                        ]
+                    }
+                }
+            ],
+            "oracle": {
+                "kind": "answer",
+                "text": "The catalog recipe “Transient passes, body compresses” describes “punchy” (“produces”). These are authored suggestions, not measurements of this project. Prerequisites: “The source still has its transients; a pre-limited loop has nothing left to let through.”. Contraindications: “Skip when a fast peak limiter already sits ahead of this point.”; “Skip on brushed or very soft playing, where the body is all there is.”. Authored parameter windows: “Threshold” -20–-12 “dB”; “Ratio” 3–5 “:1”; “Attack” 20–30 “ms”; “Release” 60–120 “ms”; “Makeup” 3–6 “dB”. Choose Propose this to prepare it for “Snare” as a proposal, using the middle of each authored window; nothing changes until you approve it.",
+                "recipe": {
+                    "recipeId": "drums-punchy",
+                    "targetName": "Snare"
+                },
+                "suggestion": {
+                    "recipeId": "drums-punchy",
+                    "targetId": "track-snare"
+                }
+            }
+        },
+        {
+            "id": "AC005-DEV-QUESTION-5",
+            "promptClass": "question",
+            "class": "answer-exact",
+            "questionKind": "suggestion",
+            "prompt": "How could I make the lead vocal warmer?",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "answer-catalog",
+                    "scopeTrack": "Lead Vocal"
+                },
+                {
+                    "kind": "recipe",
+                    "id": "recipe",
+                    "descriptors": ["warmer"],
+                    "targetName": "Lead Vocal",
+                    "role": "vocal",
+                    "limit": 1
+                },
+                {
+                    "kind": "answer",
+                    "id": "answer",
+                    "args": {
+                        "intakeCallId": "intake",
+                        "statements": [
+                            {
+                                "kind": "recipe",
+                                "callId": "recipe",
+                                "recipeId": "vocal-warm"
+                            }
+                        ]
+                    }
+                }
+            ],
+            "oracle": {
+                "kind": "answer",
+                "text": "The catalog recipe “Chest-register lift with a softened upper shelf” describes “warm” (“produces”). These are authored suggestions, not measurements of this project. Prerequisites: “The vocal track already carries a high-pass or has no room rumble below 80 Hz.”. Contraindications: “Skip when the vocal already reads congested between 200 Hz and 400 Hz; clear that first.”; “Skip when the arrangement relies on the vocal to carry the top of the mix.”. Authored parameter windows: “Low Freq” 140–180 “Hz”; “Low Gain” 1.5–3 “dB”; “High Freq” 9000–12000 “Hz”; “High Gain” -2.5–-0.5 “dB”. Choose Propose this to prepare it for “Lead Vocal” as a proposal, using the middle of each authored window; nothing changes until you approve it.",
+                "recipe": {
+                    "recipeId": "vocal-warm",
+                    "targetName": "Lead Vocal"
+                },
+                "suggestion": {
+                    "recipeId": "vocal-warm",
+                    "targetId": "track-lead-vocal"
+                }
+            }
+        },
+        {
+            "id": "AC005-DEV-QUESTION-6",
+            "promptClass": "question",
+            "class": "answer-exact",
+            "questionKind": "measured",
+            "prompt": "How loud is the master in the chorus?",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "answer-measured",
+                    "target": { "kind": "master" },
+                    "rangeName": "Chorus",
+                    "topics": ["level"]
+                },
+                {
+                    "kind": "measure",
+                    "id": "measure",
+                    "target": { "kind": "master" },
+                    "rangeName": "Chorus"
+                },
+                {
+                    "kind": "metric-answer",
+                    "id": "answer",
+                    "intakeCallId": "intake",
+                    "measureCallId": "measure",
+                    "target": { "kind": "master" },
+                    "metrics": ["integratedLoudness", "rms"]
+                }
+            ],
+            "oracle": {
+                "kind": "answer",
+                "text": "Over “Chorus” (beats 48–80), Master output integrated loudness is -10.45 LUFS (exact).\n\nOver “Chorus” (beats 48–80), Master output RMS level is -13.47 dBFS (exact).",
+                "measurement": {
+                    "target": { "kind": "master" },
+                    "rangeName": "Chorus",
+                    "metrics": { "integratedLoudness": -10.45, "rms": -13.47 }
+                }
+            }
+        },
+        {
+            "id": "AC005-DEV-QUESTION-7",
+            "promptClass": "question",
+            "class": "answer-exact",
+            "questionKind": "measured",
+            "prompt": "What are the peak and RMS levels on the snare during the verse?",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "answer-measured",
+                    "target": { "kind": "track", "name": "Snare" },
+                    "rangeName": "Verse",
+                    "topics": ["level"]
+                },
+                {
+                    "kind": "measure",
+                    "id": "measure",
+                    "target": { "kind": "track", "name": "Snare" },
+                    "rangeName": "Verse"
+                },
+                {
+                    "kind": "metric-answer",
+                    "id": "answer",
+                    "intakeCallId": "intake",
+                    "measureCallId": "measure",
+                    "target": { "kind": "track", "name": "Snare" },
+                    "metrics": ["truePeak", "rms"]
+                }
+            ],
+            "oracle": {
+                "kind": "answer",
+                "text": "Over “Verse” (beats 16–48), “Snare” true peak is -27.95 dBTP (exact).\n\nOver “Verse” (beats 16–48), “Snare” RMS level is -30.97 dBFS (exact).",
+                "measurement": {
+                    "target": { "kind": "track", "name": "Snare" },
+                    "rangeName": "Verse",
+                    "metrics": { "truePeak": -27.95, "rms": -30.97 }
                 }
             }
         }

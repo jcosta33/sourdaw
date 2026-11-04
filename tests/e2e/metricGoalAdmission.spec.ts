@@ -1,8 +1,9 @@
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
 import { advertisedAnswerCandidateId } from '../../src/modules/AiRuntime/useCases/__tests__/answerWireFixture';
 
 import { admitLoopbackProvider } from './admitLoopbackProvider';
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 import { startScriptedToolProvider, type ScriptedToolRequest } from './scriptedToolProvider';
 

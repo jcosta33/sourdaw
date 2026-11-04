@@ -4,9 +4,10 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
+import { type Locator, type Page, type TestInfo } from '@playwright/test';
 import { stringify } from 'superjson';
 
+import { expect, test } from './e2eTest';
 import {
     enable_direct_e2e_viewport,
     launch_new_project,
@@ -739,7 +740,18 @@ async function importSourceFixture(page: Page, wav: Buffer, filename: string): P
     const chooser = page.waitForEvent('filechooser');
     await page.getByRole('menuitem', { name: /Import Audio/i }).click();
     await (await chooser).setFiles({ name: filename, mimeType: 'audio/wav', buffer: wav });
-    await expect.poll(async () => (await readSnapshot(page)).raw.clips.length).toBe(1);
+    // The menu import is fire-and-forget and stages the original before it commits, so the clip is
+    // legitimately absent on the first poll; readSnapshot throws when it is, and expect.poll fails
+    // on a thrown error, so count the absence instead of letting the wait abort.
+    await expect
+        .poll(async () => {
+            try {
+                return (await readSnapshot(page)).raw.clips.length;
+            } catch {
+                return 0;
+            }
+        })
+        .toBe(1);
     return readSnapshot(page);
 }
 

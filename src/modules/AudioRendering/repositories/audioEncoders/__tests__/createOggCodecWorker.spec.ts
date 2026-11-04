@@ -1,10 +1,14 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    deferred,
+    OggCodecTestWorker,
+    toneSource,
+    useRealOggWorkerTransport,
+} from '../../../testing/oggCodecTestWorker';
 import { audioBufferToOpus } from '../opusEncoder';
 import { audioBufferToVorbis } from '../vorbisEncoder';
-
-import { deferred, OggCodecTestWorker, toneSource, useRealOggWorkerTransport } from './oggCodecTestWorker';
 
 beforeEach(useRealOggWorkerTransport);
 afterEach(() => vi.unstubAllGlobals());
