@@ -1,0 +1,44 @@
+src/modules/Command/useCases/__tests__/moveHistoryToStep.integration.spec.ts
+  s_fec7059b7a251c::t_8a1eeb81d155bc 5
+  s_55244eb93b97d1::t_32c9c1d91fab26 4,11-15,86,100,127-128,144-145,162,171,177-178,190-192,207-209,214-226
+src/modules/Command/useCases/__tests__/moveHistoryToStep.spec.ts
+  s_ba80576e6f5cb5::t_ff62632c80a416 3,92,105,111,117,130,144,153,159,167-168,175,191,208,213-245
+src/modules/Command/useCases/__tests__/moveHistoryToStepStepping.spec.ts
+  s_ba80576e6f5cb5::t_ba09b9635b4a4c 7,13-14,17,100,129,149
+src/modules/Command/useCases/undo.ts
+  s_ba80576e6f5cb5::t_abf662c7433e88 391-392
+src/modules/Command/useCases/undoRedo.ts
+  s_ba80576e6f5cb5::t_5be1143c9a9529 9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b6b369dc8ce7dd7c1ce573aa2ae9841d033b0dc8",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
