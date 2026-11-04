@@ -1,0 +1,16 @@
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetCrdtProjectWithTransportStopped.spec.ts
+  h_beb54bf43b47b7 27,86,88,91,99-101,149,153-154,175,194
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/reportDeviceReadiness.spec.ts
+  h_beb54bf43b47b7 82-85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f592d512edfd0f91882534038bb3f071afcc273c",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
