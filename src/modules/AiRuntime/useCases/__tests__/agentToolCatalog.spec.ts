@@ -154,6 +154,53 @@ describe('agent tool catalog', () => {
         expect(indexSchema?.function.parameters.properties).not.toHaveProperty('names');
     });
 
+    it('publishes every filter the project owner admits on project.query, with its types and bounds', () => {
+        const projectQuery = getAgentToolCatalogSchemas().find((schema) => schema.function.name === 'project.query');
+        const filters = projectQuery?.function.parameters.properties.filters;
+        const stringBound = { type: 'string', minLength: 1, maxLength: 256 };
+
+        expect(filters).toEqual({
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+                stableId: stringBound,
+                exactName: stringBound,
+                fuzzyName: stringBound,
+                kind: stringBound,
+                tag: stringBound,
+                role: stringBound,
+                parentId: stringBound,
+                sectionId: stringBound,
+                deviceType: stringBound,
+                deviceCategory: stringBound,
+                routeFromId: stringBound,
+                routeToId: stringBound,
+                assetType: stringBound,
+                selected: { type: 'boolean' },
+                locked: { type: 'boolean' },
+                muted: { type: 'boolean' },
+                soloed: { type: 'boolean' },
+                hasAutomation: { type: 'boolean' },
+                startBeat: { type: 'number' },
+                endBeat: { type: 'number' },
+                minInferredConfidence: { type: 'number', minimum: 0, maximum: 1 },
+                contentType: { type: 'string', enum: ['audio', 'midi'] },
+            },
+        });
+    });
+
+    it('admits a published filter and still refuses an unknown key or a wrong-typed value', () => {
+        const parameters = getAgentToolCatalogSchemas().find((schema) => schema.function.name === 'project.query')
+            ?.function.parameters;
+        const call = (filters: Record<string, unknown>) => ({ type: 'object', filters });
+
+        expect(matchesJsonSchema(call({ exactName: 'Lead Vocal' }), parameters)).toBe(true);
+        expect(matchesJsonSchema(call({ unknownFilter: 'x' }), parameters)).toBe(false);
+        expect(matchesJsonSchema(call({ startBeat: '4' }), parameters)).toBe(false);
+        expect(matchesJsonSchema(call({ minInferredConfidence: 1.5 }), parameters)).toBe(false);
+        expect(matchesJsonSchema(call({ contentType: 'video' }), parameters)).toBe(false);
+    });
+
     it('publishes a bounded decline contract that cannot smuggle a batch past the proposal tool', () => {
         const declineSchema = getAgentToolCatalogSchemas().find(
             (schema) => schema.function.name === COMMAND_BATCH_DECLINE_TOOL_NAME

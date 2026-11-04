@@ -23,6 +23,7 @@ import { agentResourceLimitsStore } from '../../../stores/agentResourceLimitsSto
 import { estimateConservativePromptTokens } from '../../../transformers/estimateConservativePromptTokens';
 import { serializeWebLlmToolPlanningPrompt } from '../../../transformers/serializeWebLlmToolPlanningPrompt';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
+import { getAgentToolCatalogSchemas } from '../../agentToolCatalog';
 import {
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
     ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
@@ -238,6 +239,48 @@ describe('generateToolPlanningOutcome', () => {
             state: 'ready',
             backend: 'cloud',
             modelId: 'hosted-model',
+        });
+    });
+
+    describe('project.query filters on a non-strict hosted provider', () => {
+        function projectQuerySchemas(): ToolSchema[] {
+            return getAgentToolCatalogSchemas().filter((schema) => schema.function.name === 'project.query');
+        }
+
+        function replyWithQueryArguments(queryArguments: Record<string, unknown>): void {
+            mocks.backendChain.value = ['cloud'];
+            mocks.generateCloudToolCalls.mockResolvedValue({
+                providerRequestId: null,
+                calls: [{ id: 'query-call', name: 'project.query', arguments: queryArguments }],
+                strictToolSchemas: false,
+                usage: null,
+            });
+        }
+
+        it('admits a filter the owner publishes', async () => {
+            replyWithQueryArguments({ type: 'object', filters: { exactName: 'Lead Vocal' } });
+
+            await expect(
+                generateToolPlanningOutcome('system', 'find the lead vocal', projectQuerySchemas())
+            ).resolves.toMatchObject({
+                status: 'complete',
+                toolCalls: [
+                    { name: 'project.query', arguments: { type: 'object', filters: { exactName: 'Lead Vocal' } } },
+                ],
+            });
+        });
+
+        // A schema-invalid reply is refused at provider admission, before the application loop runs,
+        // so the model gets no tool receipt to correct itself with: the attempt fails.
+        it.each([
+            { label: 'an unknown filter key', filters: { unknownFilter: 'x' } },
+            { label: 'a wrong-typed filter value', filters: { startBeat: '4' } },
+        ])('fails the attempt for $label instead of returning a recoverable tool error', async ({ filters }) => {
+            replyWithQueryArguments({ type: 'object', filters });
+
+            await expect(
+                generateToolPlanningOutcome('system', 'find the lead vocal', projectQuerySchemas())
+            ).rejects.toThrow('The model provider request failed.');
         });
     });
 

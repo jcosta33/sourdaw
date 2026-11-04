@@ -1,7 +1,7 @@
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { getAgentMeasurementMetricIds } from '#/modules/AudioAnalysis/useCases';
 import { getDeclarativeTransformDocumentSchema } from '#/modules/Command/useCases';
-import { getProjectProtocolContracts } from '#/modules/Project/useCases';
+import { getProjectProtocolContracts, getSemanticProjectQueryFiltersSchema } from '#/modules/Project/useCases';
 import { MIDI_TRANSFORM_MAX_NOTES } from '#/utils/midiNoteBatchLimits';
 
 import {
@@ -103,7 +103,7 @@ function getProjectQuerySchema(): ToolSchema {
         'Read bounded, revision-bearing project facts. Query calls must be returned alone; use their receipts in a later planning turn.',
         {
             type: { type: 'string', enum: queryTypes },
-            filters: { type: 'object', additionalProperties: false },
+            filters: getSemanticProjectQueryFiltersSchema(),
             page: {
                 type: 'object',
                 properties: {

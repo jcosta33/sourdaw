@@ -406,8 +406,8 @@ describe('compactWebLlmToolSchema', () => {
             {
                 label: 'project.query with a filter it does not list',
                 tool: 'project.query',
-                refused: { type: projectQueryType(), filters: { exactName: 'Kick' } },
-                admitted: { type: projectQueryType(), filters: {} },
+                refused: { type: projectQueryType(), filters: { unknownFilter: 'Kick' } },
+                admitted: { type: projectQueryType(), filters: { exactName: 'Kick' } },
             },
             {
                 label: 'command.batch.decline clarify with one question more than it takes',
