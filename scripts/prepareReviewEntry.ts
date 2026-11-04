@@ -15,7 +15,6 @@ import {
 } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
 import { parsePrepareReviewArgs, prepareReview, shellPort } from './prepareReview.ts';
-import { resolveSemanticReviewContext, shellSemanticReviewContextPort } from './semanticReviewContext.ts';
 import { snapshotImportSpecifiers } from './trustedGithubWriteBootstrap.ts';
 
 function localImportClosure(entryFile: string, readFile: (path: string) => string): readonly string[] {
@@ -115,20 +114,7 @@ async function main(): Promise<number> {
             cwd: primaryRoot,
         });
         assertRequiredRepository(repository);
-        const port = {
-            ...shellPort(auth.session),
-            semanticCiJson: (pr: number, headSha: string): string =>
-                JSON.stringify(
-                    resolveSemanticReviewContext(
-                        pr,
-                        headSha,
-                        shellSemanticReviewContextPort(auth.session, primaryRoot)
-                    ),
-                    null,
-                    4
-                ),
-        };
-        prepareReview(parsed.number, port);
+        prepareReview(parsed.number, shellPort(auth.session));
         return 0;
     } finally {
         auth.session.dispose();

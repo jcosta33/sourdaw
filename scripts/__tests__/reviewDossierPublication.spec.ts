@@ -8,7 +8,7 @@ import {
     serializeReviewDossier,
 } from '../reviewDossier.ts';
 import { buildDossier } from '../reviewDossierChain.ts';
-import { buildReviewDossier, persistedReviewDossier } from '../reviewDossierPublication.ts';
+import { buildReviewDossier, persistedReviewDossier, recoverReviewDossier } from '../reviewDossierPublication.ts';
 import {
     acceptedFindings,
     completedStances,
@@ -46,7 +46,9 @@ const DRAWS: readonly ReviewDraw[] = [
     { stance: 'probe that never fails', reviewerModel: 'model-two', tier: 'standard', outcome: 'clean' },
 ];
 
-const COMMENT = { path: 'scripts/reviewDossierPublication.ts', line: 42, side: 'RIGHT' } as const;
+const LOCATION = { path: 'scripts/reviewDossierPublication.ts', line: 42, side: 'RIGHT' } as const;
+const SOURCE = { stance: DRAWS[0]!.stance, reviewerModel: DRAWS[0]!.reviewerModel };
+const COMMENT = { ...LOCATION, sources: [SOURCE] };
 
 const COMPLETED_STANCES: readonly ReviewDossierEvent[] = [
     {
@@ -88,7 +90,7 @@ function historicalRecord(published: boolean): unknown {
     const events: ReviewDossierEvent[] = [
         { ...COMPLETED_STANCES[0]!, exhaustion: 'every other harness was down' } as ReviewDossierEvent,
         COMPLETED_STANCES[1]!,
-        { kind: 'finding-accepted', findingId: 'comment-0', ...COMMENT },
+        { kind: 'finding-accepted', findingId: 'comment-0', ...LOCATION },
         { kind: 'finding-discarded', findingId: 'style-nit', stance: 'correctness', reason: 'personal style' },
     ];
     if (published) {
@@ -152,6 +154,71 @@ describe('buildReviewDossier', () => {
         expect(result.dossier.recommendation).toBe('request-changes');
     });
 
+    it('requires explicit sources for a freshly derived accepted finding', () => {
+        expect(() => build({ comments: [LOCATION] })).toThrow(/comment 0 requires sources/u);
+    });
+
+    it('binds independent duplicate detections to exact stance and model pairs, regardless of draw order', () => {
+        const second = { ...DRAWS[0]!, reviewerModel: 'model-three' };
+        const sources = [SOURCE, { stance: second.stance, reviewerModel: second.reviewerModel }];
+        const comments = [{ ...LOCATION, sources }];
+        const first = build({ draws: [...DRAWS, second], comments });
+        const reversed = build({ draws: [second, ...DRAWS].reverse(), comments });
+
+        expect(acceptedFindings(first.dossier)).toEqual([{ findingId: 'comment-0', ...LOCATION, sources }]);
+        expect(acceptedFindings(reversed.dossier)).toEqual(acceptedFindings(first.dossier));
+        expect(serializeReviewDossier(parseReviewDossier(JSON.parse(first.canonical)))).toBe(first.canonical);
+    });
+
+    it.each([
+        [
+            'unknown stance',
+            { ...SOURCE, stance: 'uncompleted stance' },
+            /source.*does not name a completed findings draw/u,
+        ],
+        [
+            'unknown model on a completed stance',
+            { ...SOURCE, reviewerModel: 'unknown-model' },
+            /source.*does not name a completed findings draw/u,
+        ],
+        [
+            'clean draw',
+            { stance: DRAWS[1]!.stance, reviewerModel: DRAWS[1]!.reviewerModel },
+            /source.*does not name a completed findings draw/u,
+        ],
+    ])('refuses an accepted finding attributed to %s', (_label, source, message) => {
+        expect(() => build({ comments: [{ ...LOCATION, sources: [source] }] })).toThrow(message);
+    });
+
+    it('does not credit a clean model draw just because another model found a defect on that stance', () => {
+        const clean = { ...DRAWS[0]!, reviewerModel: 'clean-model', outcome: 'clean' as const };
+        expect(() =>
+            build({
+                draws: [...DRAWS, clean],
+                comments: [{ ...LOCATION, sources: [{ stance: clean.stance, reviewerModel: clean.reviewerModel }] }],
+            })
+        ).toThrow(/source.*does not name a completed findings draw/u);
+    });
+
+    it('refuses replay with changed or missing same-head attribution', () => {
+        const second = { ...DRAWS[0]!, reviewerModel: 'model-three' };
+        const draws = [...DRAWS, second];
+        const persisted = appendReviewDossierEvents(build({ draws }).dossier, [
+            { kind: 'review-published', reviewId: 5272945685 },
+        ]);
+        const changed = [{ ...LOCATION, sources: [{ stance: second.stance, reviewerModel: second.reviewerModel }] }];
+
+        expect(() => build({ persisted, draws, comments: changed })).toThrow(/accepted finding 0 sources mismatch/u);
+        expect(() => build({ persisted, draws, comments: [LOCATION] })).toThrow(/accepted finding 0 sources mismatch/u);
+        expect(build({ persisted, draws }).canonical).toBe(serializeReviewDossier(persisted));
+    });
+
+    it('does not retrofit sources onto a published historical finding', () => {
+        expect(() => build({ persisted: historicalRecord(true) })).toThrow(/accepted finding 0 sources mismatch/u);
+        const replay = build({ persisted: historicalRecord(true), comments: [LOCATION] });
+        expect(acceptedFindings(replay.dossier)[0]).not.toHaveProperty('sources');
+    });
+
     it('writes none of the retired semantic-review fields into a derived record', () => {
         const record = JSON.parse(build().canonical) as Record<string, unknown>;
 
@@ -191,7 +258,7 @@ describe('buildReviewDossier', () => {
 
     it('replays a published historical record unchanged, whatever draws the document carries', () => {
         const persisted = historicalRecord(true);
-        const result = build({ persisted, draws: [DRAWS[1]!] });
+        const result = build({ persisted, draws: [DRAWS[1]!], comments: [LOCATION] });
 
         expect(result.fromPersisted).toBe(true);
         expect(result.canonical).toBe(serializeReviewDossier(parseReviewDossier(persisted)));
@@ -201,12 +268,10 @@ describe('buildReviewDossier', () => {
         expect(discardedDispositions(result.dossier)).toHaveLength(1);
     });
 
-    it('falls back to an unpublished historical record when the document carries no draws', () => {
-        const persisted = historicalRecord(false);
-        const result = build({ persisted, draws: undefined });
-
-        expect(result.fromPersisted).toBe(true);
-        expect(completedStances(result.dossier).map((draw) => draw.stance)).toEqual(['correctness', 'test-validity']);
+    it('refuses fresh source-absent findings over an unpublished historical record without draws', () => {
+        expect(() => build({ persisted: historicalRecord(false), draws: undefined, comments: [LOCATION] })).toThrow(
+            /comment 0 requires sources/u
+        );
     });
 
     it('refuses a fresh document without draws when no persisted record exists', () => {
@@ -232,11 +297,11 @@ describe('buildReviewDossier', () => {
             /publication riskClasses mismatch/u,
         ],
     ])('refuses a persisted record rebound from the plan on %s', (_label, plan, message) => {
-        expect(() => build({ plan, persisted: historicalRecord(true) })).toThrow(message);
+        expect(() => build({ plan, persisted: historicalRecord(true), comments: [LOCATION] })).toThrow(message);
     });
 
     it('refuses a replay whose comments drifted from the recorded findings', () => {
-        const moved = { ...COMMENT, line: 43 };
+        const moved = { ...LOCATION, line: 43 };
 
         expect(() => build({ persisted: historicalRecord(true), comments: [moved] })).toThrow(
             /accepted finding 0 .* does not match review comment/u
@@ -245,7 +310,7 @@ describe('buildReviewDossier', () => {
 
     it('refuses a replay whose event disagrees with the recorded recommendation', () => {
         expect(() =>
-            build({ persisted: historicalRecord(true), comments: [COMMENT], recommendation: 'approve' })
+            build({ persisted: historicalRecord(true), comments: [LOCATION], recommendation: 'approve' })
         ).toThrow(/publication recommendation mismatch/u);
     });
 
@@ -254,6 +319,43 @@ describe('buildReviewDossier', () => {
         expect(persistedReviewDossier([])).toBeUndefined();
         expect(persistedReviewDossier({ format: 'dossier-input-v1' })).toBeUndefined();
         expect(persistedReviewDossier(historicalRecord(false))?.format).toBe('dossier-v1');
+    });
+});
+
+describe('recovered landed review dossier', () => {
+    function recover(overrides: Partial<BuildInput> = {}) {
+        return recoverReviewDossier({
+            plan: PLAN,
+            persisted: historicalRecord(false),
+            draws: DRAWS,
+            evidence: EVIDENCE,
+            comments: [LOCATION],
+            recommendation: 'request-changes',
+            ...overrides,
+        });
+    }
+
+    it.each([{ draws: DRAWS }, { draws: undefined }])(
+        'reuses an exact unpublished historical record without inferring sources, draws=$draws',
+        ({ draws }) => {
+            const result = recover({ draws });
+            expect(result.fromPersisted).toBe(true);
+            expect(result.canonical).toBe(serializeReviewDossier(parseReviewDossier(historicalRecord(false))));
+            expect(acceptedFindings(result.dossier)[0]).not.toHaveProperty('sources');
+        }
+    );
+
+    it('refuses changed source attribution while reusing a historical record', () => {
+        expect(() => recover({ comments: [COMMENT] })).toThrow(/accepted finding 0 sources mismatch/u);
+    });
+
+    it('still verifies plan and comment correspondence on the recovery route', () => {
+        expect(() => recover({ plan: { ...PLAN, headSha: 'c'.repeat(40) } })).toThrow(/publication headSha mismatch/u);
+        expect(() => recover({ comments: [{ ...LOCATION, line: 43 }] })).toThrow(/does not match review comment/u);
+    });
+
+    it('requires fresh sources when no verified persisted recovery record exists', () => {
+        expect(() => recover({ persisted: undefined })).toThrow(/comment 0 requires sources/u);
     });
 });
 

@@ -3,7 +3,7 @@ import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { RECIPE_EXPANSION_MAX_COMMANDS } from '../models/RecipeExpansionLimits';
 
 import { countRecipeExpansionCommands } from './countRecipeExpansionCommands';
-import { getProjectContext } from './getProjectContext';
+import { getProjectContext, type ProjectContextTrack } from './getProjectContext';
 import { type RecipeDiscoveryInput } from './parseRecipeDiscoveryInput';
 import {
     FOLDER_TARGET_WARNING,
@@ -168,8 +168,14 @@ function describeAcceptedTerms(catalog: MixRecipeCatalog): string {
  * argument overrides it; either way, an existing target's device chain still
  * excludes a recipe whose `edit` step names a device type the chain lacks,
  * because retuning a device that is not there is not an executable move.
+ *
+ * The tracks default to the live project's; a caller holding the context a request was planned
+ * against passes that read instead, so discovery and the request see one project.
  */
-export function discoverMixRecipes(input: RecipeDiscoveryInput): DiscoverMixRecipesResult {
+export function discoverMixRecipes(
+    input: RecipeDiscoveryInput,
+    tracks: readonly ProjectContextTrack[] = getProjectContext().tracks
+): DiscoverMixRecipesResult {
     const catalog = getMixRecipeCatalog();
     const terms = input.descriptors.map((raw) => {
         const term = normalizeDescriptorTerm(raw);
@@ -183,7 +189,7 @@ export function discoverMixRecipes(input: RecipeDiscoveryInput): DiscoverMixReci
 
     const resolution = resolveRecipeTarget({
         catalog,
-        tracks: getProjectContext().tracks,
+        tracks,
         targetId: input.targetId,
         roleArgument: input.role,
     });

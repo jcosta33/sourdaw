@@ -78,7 +78,8 @@ vi.mock('../saveProject/saveProject', () => ({ saveProject: takeMocks.saveProjec
 // newProject imports clearRuntimeCachedAudioBuffers, forgetProjectLatchedPedals and resetAudioGraph.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     cancelPendingAudioBufferImport: vi.fn(),
-    clearRuntimeCachedAudioBuffers: vi.fn(),
+    clearRuntimeCachedAudioBuffers:
+        vi.fn<typeof import('#/modules/AudioEngine/useCases').clearRuntimeCachedAudioBuffers>(),
     forgetProjectLatchedPedals: vi.fn(),
     resetAudioGraph: vi.fn(),
 }));
@@ -176,6 +177,7 @@ describe('newProject injectable', () => {
         unsavedClosedTakes.acknowledgeAll();
         takeMocks.saveProject.mockResolvedValue(true);
         pluginHostMocks.unloadPlugin.mockResolvedValue(undefined);
+        vi.mocked(clearRuntimeCachedAudioBuffers).mockReset().mockResolvedValue(undefined);
         resetMocks.finalize.mockReset();
         resetMocks.finalize.mockResolvedValue('finalized');
         resetMocks.resetCrdtProject.mockReset();
@@ -245,8 +247,35 @@ describe('newProject injectable', () => {
             throw new Error('expected removeProjectJson, clearRuntimeCachedAudioBuffers, and clearUndoHistory calls');
         }
 
-        expect(clear_audio_buffers_order).toBeGreaterThan(remove_project_json_order);
+        expect(clear_audio_buffers_order).toBeLessThan(remove_project_json_order);
         expect(clear_audio_buffers_order).toBeLessThan(clear_undo_history_order);
+    });
+
+    it('awaits material retirement before durable identity removal and history transition', async () => {
+        const retirement = createDeferred<void>();
+        vi.mocked(clearRuntimeCachedAudioBuffers).mockReturnValueOnce(retirement.promise);
+        const activation = newProject('Retiring Project');
+        await vi.waitFor(() => expect(clearRuntimeCachedAudioBuffers).toHaveBeenCalledOnce());
+        try {
+            expect(resetCrdtProject).toHaveBeenCalledOnce();
+            expect(removeProjectJson).not.toHaveBeenCalled();
+            expect(clearUndoHistory).not.toHaveBeenCalled();
+            expect(projectActionHistoryToStore).not.toHaveBeenCalled();
+            expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
+            expect(resetMocks.finalize).not.toHaveBeenCalled();
+            expect(startCrdtAutoSave).not.toHaveBeenCalled();
+        } finally {
+            retirement.resolve(undefined);
+        }
+        await expect(activation).resolves.toBe(true);
+        expect(removeProjectJson).toHaveBeenCalledOnce();
+        expect(clearUndoHistory).toHaveBeenCalledOnce();
+        expect(vi.mocked(clearRuntimeCachedAudioBuffers).mock.invocationCallOrder[0]!).toBeLessThan(
+            vi.mocked(removeProjectJson).mock.invocationCallOrder[0]!
+        );
+        expect(vi.mocked(removeProjectJson).mock.invocationCallOrder[0]!).toBeLessThan(
+            vi.mocked(clearUndoHistory).mock.invocationCallOrder[0]!
+        );
     });
 
     it('mints unique canonical identities for projects created in the same millisecond', async () => {
@@ -798,5 +827,29 @@ describe('newProject injectable', () => {
 
         expect(projectStore.value?.projectId).not.toBe(firstProjectId);
         expect(projectStore.value).toMatchObject({ name: 'Second Project', identityPersistencePending: false });
+    });
+
+    it('awaits outgoing native material completion before committed store publication', async () => {
+        const entered = createDeferred<void>();
+        const retirement = createDeferred<void>();
+        vi.mocked(clearRuntimeCachedAudioBuffers).mockImplementationOnce(() => {
+            entered.resolve();
+            return retirement.promise;
+        });
+        const opening = newProject('After native readers');
+        await entered.promise;
+        expect(resetCrdtProject).toHaveBeenCalled();
+        expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
+        expect(resetMocks.finalize).not.toHaveBeenCalled();
+        retirement.resolve();
+        await expect(opening).resolves.toBe(true);
+        expect(projectStore.value?.name).toBe('After native readers');
+    });
+
+    it('keeps committed incoming authority and reports an asynchronous native retirement failure', async () => {
+        vi.mocked(clearRuntimeCachedAudioBuffers).mockRejectedValueOnce(new Error('native last reader timed out'));
+        await expect(newProject('Committed despite native failure')).resolves.toBe(true);
+        expect(projectStore.value?.name).toBe('Committed despite native failure');
+        expect(resetMocks.finalize).toHaveBeenCalledOnce();
     });
 });

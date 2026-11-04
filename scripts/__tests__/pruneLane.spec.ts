@@ -96,6 +96,58 @@ describe('prune argument parsing', () => {
 });
 
 describe('lane pruning', () => {
+    it('keeps a tracked sentinel when the first ignored pathname starts with a line feed', () => {
+        const repository = mkdtempSync(join(tmpdir(), 'sourdaw-lane-prune-leading-'));
+        const lane = join(repository, '.agents/worktrees/feature');
+        const protectedDirectory = join(lane, '\ndist');
+        const protectedFile = join(protectedDirectory, 'receipt.json');
+        const sentinel = join(lane, 'dist/receipt.json');
+        const git = (args: string[]) => execFileSync('git', args, { cwd: lane, encoding: 'utf8' }).trim();
+        try {
+            mkdirSync(protectedDirectory, { recursive: true });
+            mkdirSync(join(lane, 'dist'), { recursive: true });
+            mkdirSync(join(lane, 'node_modules'), { recursive: true });
+            git(['init', '-b', 'main']);
+            git(['config', 'user.name', 'Fixture']);
+            git(['config', 'user.email', 'fixture@example.com']);
+            writeFileSync(join(lane, '.gitignore'), 'receipt.json\nnode_modules/\n');
+            writeFileSync(join(protectedDirectory, 'keep.txt'), 'tracked sibling\n');
+            writeFileSync(protectedFile, 'must survive\n');
+            writeFileSync(sentinel, 'tracked sentinel\n');
+            writeFileSync(join(lane, 'node_modules/output.js'), 'disposable\n');
+            git(['add', '-f', '.gitignore', '\ndist/keep.txt', 'dist/receipt.json']);
+            git(['commit', '-m', 'fixture']);
+
+            const ignored = shellPort().ignored(lane);
+            const deleted: string[] = [];
+            const { port } = fakePort();
+            const safePort: LanePrunePort = {
+                ...port,
+                worktrees: () => [
+                    worktree({ path: repository, branch: 'main' }),
+                    worktree({ path: lane, locked: true, lockReason: AUTHOR_LOCK_REASON }),
+                ],
+                currentDirectory: () => repository,
+                ignored: () => ignored,
+                deleteEntry: (owner, entry) => {
+                    expect(owner).toBe(lane);
+                    deleted.push(entry);
+                    rmSync(resolve(owner, entry), { recursive: true, force: true });
+                },
+            };
+
+            pruneTarget(lane, safePort);
+
+            expect(existsSync(sentinel)).toBe(true);
+            expect(existsSync(protectedFile)).toBe(true);
+            expect(deleted).toEqual(['node_modules/']);
+            expect(existsSync(join(lane, 'node_modules'))).toBe(false);
+            expect(ignored).toContain('\ndist/receipt.json');
+        } finally {
+            rmSync(repository, { recursive: true, force: true });
+        }
+    });
+
     it('deletes exactly the disposable ignored artifacts and nothing else', () => {
         const { port, deleted } = fakePort({
             ignored: [
@@ -325,12 +377,12 @@ describe('prunes a real worktree without touching git state', () => {
             git(['config', 'user.email', 'fixture@example.com']);
             writeFileSync(
                 join(repository, '.gitignore'),
-                'node_modules/\ntarget/\ndist/\n.env\nelectron/out/\nrelease/desktop/\n'
+                '*.json\nnode_modules/\ntarget/\ndist/\n.env\nelectron/out/\nrelease/desktop/\n'
             );
             writeFileSync(join(repository, 'tracked.txt'), 'fixture\n');
             mkdirSync(join(repository, 'release'), { recursive: true });
             writeFileSync(join(repository, 'release/desktop-runtime-material.json'), '{}\n');
-            git(['add', '.']);
+            git(['add', '-f', '.']);
             git(['commit', '-m', 'fixture']);
             mkdirSync(join(repository, '.agents/worktrees'), { recursive: true });
             git(['worktree', 'add', lane, '-b', 'feat/work']);
@@ -363,9 +415,11 @@ describe('prunes a real worktree without touching git state', () => {
             mkdirSync(join(lane, 'release/desktop'), { recursive: true });
             writeFileSync(join(lane, 'release/desktop/Sourdaw.zip'), 'generated\n');
             writeFileSync(join(lane, '.env'), 'SECRET=keep\n');
+            writeFileSync(join(lane, 'node_modules\\receipt.json'), 'user data\n');
 
             const deleted = pruneTarget(resolvedLane, port);
 
+            expect(existsSync(join(lane, 'node_modules\\receipt.json'))).toBe(true);
             expect(deleted).toEqual(['dist/', 'electron/out/', 'node_modules/', 'release/desktop/', 'target/']);
             expect(existsSync(join(lane, 'node_modules'))).toBe(false);
             expect(existsSync(join(lane, 'target'))).toBe(false);

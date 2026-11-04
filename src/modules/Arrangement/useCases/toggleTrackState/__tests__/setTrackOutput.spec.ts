@@ -238,6 +238,35 @@ describe('setTrackOutput', () => {
         );
         expect(didWrite).toBe(true);
     });
+    it('routes MIDI to a return with scheduler instruments excluded from both runtime endpoints', () => {
+        const source = {
+            id: 'midi',
+            kind: 'midi',
+            devices: [{ id: 'synth', type: 'builtin-synth', parameterValues: {} }],
+        };
+        const target = { id: 'return', kind: 'bus', devices: [{ id: 'drums', type: 'drum-kit', parameterValues: {} }] };
+        mocks.getTrackById.mockImplementation((id: string) => (id === source.id ? source : target));
+        mocks.getAllTracks.mockReturnValue([source, target]);
+        mocks.updateTrack.mockImplementation(
+            (
+                _id: string,
+                patch: (track: typeof source & { outputId: string }) => typeof source & { outputId: string }
+            ) => {
+                expect(patch({ ...source, outputId: 'master' })).toEqual({ ...source, outputId: 'return' });
+            }
+        );
+        expect(setTrackOutput('midi', 'return')).toBe(true);
+        expect(mocks.updateTrack).toHaveBeenCalledOnce();
+        expect(mocks.applyRuntimeGraphDelta).toHaveBeenCalledWith(
+            expect.objectContaining({
+                nodes: [
+                    { id: 'midi', kind: 'midi', devices: [] },
+                    { id: 'return', kind: 'bus', devices: [] },
+                ],
+                edges: [{ kind: 'output', sourceId: 'midi', targetId: 'return' }],
+            })
+        );
+    });
 });
 vi.mock('#/modules/Arrangement/repositories/track/getTrackById', () => ({
     getTrackById: mocks.getTrackById,

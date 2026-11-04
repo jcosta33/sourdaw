@@ -512,6 +512,7 @@ describe('application-owned tool loop', () => {
             'agent.catalog.discover',
             'agent.command-index.search',
             'analysis.compareReference',
+            'analysis.detectTransients',
             'analysis.measure',
             'analysis.request',
             'answer.respond',

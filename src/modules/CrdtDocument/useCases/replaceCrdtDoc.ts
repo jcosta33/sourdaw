@@ -7,6 +7,7 @@ import { type DocId } from './crdtDocumentTypes';
 export type ReplaceCrdtDocInput = {
     id: DocId;
     doc: Doc<unknown>;
+    snapshotTransaction?: object;
 };
 
 /**
@@ -17,5 +18,5 @@ export type ReplaceCrdtDocInput = {
  * `replaceCrdtDocInLineage`, which leaves the identity epoch unchanged.
  */
 export function replaceCrdtDoc(input: ReplaceCrdtDocInput): void {
-    automergeRepository.replaceDoc(input.id, input.doc);
+    automergeRepository.replaceDoc(input.id, input.doc, input.snapshotTransaction);
 }

@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { canonicalJson } from '#/utils/canonicalDigest';
 import { resolveLoopAnchoredStartBeat } from '#/utils/clipLoopOrigin';
 
+import { type DeviceStateChunk } from '../../../models/Track';
 import { type AdjustmentLayerState, type AdjustmentLayer } from '../../../stores/adjustmentLayer';
 import { type TrackStoreState, type Track, type Clip } from '../../../stores/trackStore';
 import { restoreAdjustmentLayerMutation } from '../restoreAdjustmentLayerMutation';
@@ -191,6 +193,37 @@ describe('restoreAdjustmentLayerMutation', () => {
         expect(newState?.tracks[0]?.freezeState.status).toBe('frozen');
     });
 
+    it('restores a stale track whose device carries a state chunk when its signature is unchanged', () => {
+        // The device's persisted chunk is render state the signature must
+        // round-trip: the mirror appends the same slot production does, so the
+        // expected signature computed here matches the live one the mutation
+        // compares against and the stale track restores.
+        const track = makeTrack('t1', 'stale');
+        track.devices = [
+            {
+                id: 'd1',
+                name: 'Gain',
+                type: 'gain',
+                parameterValues: { gain: 1 },
+                bypassed: false,
+                deviceState: { version: 1, data: { temperament: 2, enabled: true } },
+            },
+        ];
+        mocks.trackValue.value = { tracks: [track], selectedTrackId: null, ghostClips: [] };
+        mocks.layerValue.value = { layers: [] };
+        const sourceSignature = createTrackFreezeSourceSignatureFor(track);
+        const payload: RestorePayload = {
+            layers: [],
+            expectedLayersFingerprint: JSON.stringify([]),
+            freezeTransitions: [{ trackId: 't1', previousStatus: 'frozen', expectedSourceSignature: sourceSignature }],
+        };
+
+        restoreAdjustmentLayerMutation(payload);
+
+        const newState = mocks.trackSet.mock.calls[0]?.[0] as TrackStoreState | undefined;
+        expect(newState?.tracks[0]?.freezeState.status).toBe('frozen');
+    });
+
     it('leaves a stale track stale when its source signature changed since the transition was recorded', () => {
         const track = makeTrack('t1', 'stale');
         mocks.trackValue.value = { tracks: [track], selectedTrackId: null, ghostClips: [] };
@@ -273,7 +306,13 @@ describe('restoreAdjustmentLayerMutation', () => {
 // unchanged-signature case above, which is how format drift gets caught.
 function createTrackFreezeSourceSignatureFor(source: {
     clips: Clip[];
-    devices: { id: string; type: string; parameterValues: Record<string, number>; bypassed: boolean }[];
+    devices: {
+        id: string;
+        type: string;
+        parameterValues: Record<string, number>;
+        bypassed: boolean;
+        deviceState?: DeviceStateChunk;
+    }[];
 }): string {
     const clipSignatures = [...source.clips]
         .sort((a, b) => a.startBeat - b.startBeat || a.id.localeCompare(b.id))
@@ -312,7 +351,24 @@ function createTrackFreezeSourceSignatureFor(source: {
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([name, value]) => `${name}=${value}`)
             .join(',');
-        return `${device.id}:${device.type}:${parameters}:${device.bypassed}`;
+        return `${device.id}:${device.type}:${parameters}:${device.bypassed}${deviceStateSignatureSlotFor(device.deviceState)}`;
     });
     return `${clipSignatures.join('|')}||${deviceSignatures.join('|')}`;
+}
+
+// The deviceState slot a device entry appends when it carries a state chunk:
+// a leading delimiter plus the chunk serialized through the same
+// key-sorting canonicalJson the production signature serializes with, so a
+// present chunk can never collide with an absent one and key insertion order
+// never leaks. Mirrors production's `deviceStateSignature` for the
+// raw-serialization branch this file's devices exercise; the Grand Boule
+// family's decoded projection is production-side canonicalization pinned by
+// createTrackFreezeSourceSignature.spec.ts — a chunk on a device of that
+// family here diverges and fails the unchanged-signature case, which is this
+// mirror's drift contract working.
+function deviceStateSignatureSlotFor(deviceState: DeviceStateChunk | undefined): string {
+    if (deviceState === undefined) {
+        return '';
+    }
+    return `:${canonicalJson(deviceState)}`;
 }

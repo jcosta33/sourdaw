@@ -16,9 +16,23 @@ const MODEL_ID = 'sourdaw-e2e-loopback';
 const MAX_REQUEST_BYTES = 1_024 * 1_024;
 
 type LoopbackOpenAiProviderOptions = {
-    /** Assistant text the endpoint streams back for every chat completion. */
+    /** Assistant text the endpoint streams back for ordinary chat completions. */
     reply?: string;
+    /** Explicit tool calls served in order to non-streaming completion requests. */
+    toolCalls?: readonly { id: string; name: string; arguments: Record<string, unknown> }[];
 };
+
+/** A project read followed by an answer that cites that read's actual receipt. */
+export function createLoopbackAnswerToolCalls(reply: string): NonNullable<LoopbackOpenAiProviderOptions['toolCalls']> {
+    return [
+        { id: 'loopback-query', name: 'project_query', arguments: { type: 'project-summary' } },
+        {
+            id: 'loopback-answer',
+            name: 'answer_respond',
+            arguments: { text: reply, evidenceCallIds: ['loopback-query'] },
+        },
+    ];
+}
 
 export type LoopbackOpenAiProvider = {
     /** OpenAI-compatible base URL, e.g. `http://127.0.0.1:41234/v1`. */
@@ -84,6 +98,8 @@ function streamChatCompletion(response: ServerResponse, reply: string): void {
 function createRequestListener(provider: {
     reply: string;
     completionRequests: string[];
+    toolCalls?: LoopbackOpenAiProviderOptions['toolCalls'];
+    nextToolCall: number;
 }): (request: IncomingMessage, response: ServerResponse) => void {
     return (request, response) => {
         if (request.method === 'OPTIONS') {
@@ -101,6 +117,43 @@ function createRequestListener(provider: {
         readRequestBody(request)
             .then((body) => {
                 provider.completionRequests.push(body);
+                const requestBody: unknown = provider.toolCalls === undefined ? null : JSON.parse(body);
+                if (
+                    provider.toolCalls !== undefined &&
+                    typeof requestBody === 'object' &&
+                    requestBody !== null &&
+                    'stream' in requestBody &&
+                    requestBody.stream === false
+                ) {
+                    const call = provider.toolCalls[provider.nextToolCall++];
+                    if (call === undefined) {
+                        sendJson(response, 500, { error: { message: 'Loopback tool script exhausted' } });
+                        return;
+                    }
+                    sendJson(response, 200, {
+                        id: 'chatcmpl-sourdaw-e2e',
+                        object: 'chat.completion',
+                        model: MODEL_ID,
+                        choices: [
+                            {
+                                index: 0,
+                                finish_reason: 'tool_calls',
+                                message: {
+                                    role: 'assistant',
+                                    content: null,
+                                    tool_calls: [
+                                        {
+                                            id: call.id,
+                                            type: 'function',
+                                            function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                                        },
+                                    ],
+                                },
+                            },
+                        ],
+                    });
+                    return;
+                }
                 streamChatCompletion(response, provider.reply);
             })
             .catch((error: unknown) => {
@@ -126,7 +179,12 @@ function listenOnLoopback(server: Server): Promise<number> {
 export async function startLoopbackOpenAiProvider(
     options: LoopbackOpenAiProviderOptions = {}
 ): Promise<LoopbackOpenAiProvider> {
-    const state = { reply: options.reply ?? 'Loopback provider reply.', completionRequests: [] as string[] };
+    const state = {
+        reply: options.reply ?? 'Loopback provider reply.',
+        completionRequests: [] as string[],
+        toolCalls: options.toolCalls,
+        nextToolCall: 0,
+    };
     const server = createServer(createRequestListener(state));
     const port = await listenOnLoopback(server);
     return {

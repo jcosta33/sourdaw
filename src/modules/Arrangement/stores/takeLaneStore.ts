@@ -6,6 +6,7 @@ import {
 
 import { type CompRegion, type Take, type TakeLane } from '../models/TakeLane';
 
+import { isValidTakePlacement } from './isValidTakePlacement';
 import {
     appendTakeLaneWriteJournal,
     captureTakeLaneWriteJournal,
@@ -45,10 +46,6 @@ function is_finite_non_negative_number(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
-function is_finite_number(value: unknown): value is number {
-    return typeof value === 'number' && Number.isFinite(value);
-}
-
 function is_unknown_array(value: unknown): value is unknown[] {
     return Array.isArray(value);
 }
@@ -86,31 +83,7 @@ function is_valid_take(value: unknown): value is Take {
         value.endBeat >= value.startBeat &&
         'selected' in value &&
         typeof value.selected === 'boolean' &&
-        // A take without the field reads at its clip's origin; a take with a
-        // malformed one is dropped whole, like any other malformed take field.
-        (!('sourceOffsetBeats' in value) || is_finite_non_negative_number(value.sourceOffsetBeats)) &&
-        is_valid_pass_placement(value)
-    );
-}
-
-/**
- * A placed pass carries its anchor and its depth together, and only beside the
- * media depth that marks it a pass. A pass recorded ahead of its media sounds
- * before the media begins, so its anchor may be negative; its material lies
- * inside the recording, so its depth may not.
- */
-function is_valid_pass_placement(value: object): boolean {
-    const hasAnchor = 'passAnchorSeconds' in value;
-    const hasDepth = 'passDepthSeconds' in value;
-    if (!hasAnchor && !hasDepth) {
-        return true;
-    }
-    return (
-        hasAnchor &&
-        hasDepth &&
-        'sourceOffsetBeats' in value &&
-        is_finite_number(value.passAnchorSeconds) &&
-        is_finite_non_negative_number(value.passDepthSeconds)
+        isValidTakePlacement(value)
     );
 }
 

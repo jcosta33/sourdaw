@@ -391,6 +391,12 @@ export const shellCli: OpenLaneCli = {
             fail('scripts/stackedLanes.ts is not available from origin/main');
         }
         assertTrustedExecutingBlob('scripts/stackedLanes.ts', helper, helperBlob);
+        const markerReader = fileURLToPath(new URL('./laneStackForkMarkers.ts', import.meta.url));
+        const markerReaderBlob = originMainBlob('scripts/laneStackForkMarkers.ts', cwd);
+        if (markerReaderBlob === undefined) {
+            fail('scripts/laneStackForkMarkers.ts is not available from origin/main');
+        }
+        assertTrustedExecutingBlob('scripts/laneStackForkMarkers.ts', markerReader, markerReaderBlob);
     },
     createPort: (cwd) => shellPort(spawnCapture, spawnRun, cwd),
 };

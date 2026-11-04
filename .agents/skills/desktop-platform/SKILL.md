@@ -56,7 +56,7 @@ Frontend desktop I/O belongs only in module-root `src/modules/<M>/repositories/`
 
 ### 5. Empirically verify the FFI bridge
 
-There is **no** binding-generation pipeline — Cargo does not regenerate frontend types. When changing native commands, events, or state models, align hand-maintained invoke call sites and DTOs, then prove it with `pnpm cargo:test --package sourdaw-native <filter>`, `pnpm typecheck`, and `pnpm test:run electron/__tests__/commands.spec.ts` (signature and argument-order parity lives there).
+There is **no** binding-generation pipeline — Cargo does not regenerate frontend types. When changing native commands, events, or state models, align hand-maintained invoke call sites and DTOs, then verify with `pnpm cargo:test --package sourdaw-native <filter>`, the pull request's CI TypeScript typechecks, and `pnpm test:run electron/__tests__/commands.spec.ts` (signature and argument-order parity lives there).
 
 **Why:** serialization mismatches are invisible to a mental model and only surface at the compiler or the parity spec.
 

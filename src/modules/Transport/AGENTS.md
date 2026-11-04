@@ -34,6 +34,8 @@ Playback lifecycle and control (play, stop, seek, record, overdub), playhead pos
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-pnpm vitest run src/modules/Transport
+pnpm test:run <changed-spec>
 ```

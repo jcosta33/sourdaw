@@ -270,6 +270,7 @@ describe('app main first paint', () => {
         mocks.onNotification = null;
         Reflect.deleteProperty(window, 'sourdaw');
         window.name = '';
+        document.documentElement.removeAttribute('data-sourdaw-entry-started');
         document.body.innerHTML = '<div id="root"></div>';
         mocks.resolveAppComposition.mockReturnValue('application');
         try {
@@ -290,6 +291,12 @@ describe('app main first paint', () => {
     // Runs first so no prior main import leaves async renderApplication on a stale #root.
 
     it('exposes app-shell before css, react-dom, and first-paint imports resolve', async () => {
+        document.getElementById('root')!.innerHTML = '<main id="entry-startup">Starting Sourdaw</main>';
+        mocks.resolveAppComposition.mockImplementation(() => {
+            expect(document.documentElement.hasAttribute('data-sourdaw-entry-started')).toBe(true);
+            expect(document.getElementById('entry-startup')).toBeNull();
+            return 'application';
+        });
         mocks.criticalPathImportPending = true;
         mocks.criticalPathImportPromise = new Promise<Record<string, never>>((resolve) => {
             mocks.criticalPathImportRelease = () => resolve({});

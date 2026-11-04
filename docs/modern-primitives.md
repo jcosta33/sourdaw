@@ -18,9 +18,8 @@ memory-efficient DAW state.
 
 The primitives below assume a **TypeScript 6.0** and **Rust 1.85+** toolchain as the
 floor. If the project pins an older toolchain, treat the affected primitive as out of
-scope rather than introducing a build break. Resolve and run the affected toolchain checks
-(`pnpm typecheck`, `pnpm deps:validate`, `pnpm build`, `pnpm lint <files>`, or
-`pnpm test:run <path>`) before relying on any swap —
+scope rather than introducing a build break. Verify TypeScript typechecks, lint, module boundaries,
+and builds in PR CI. Run a focused local test (`pnpm test:run <path>`) before relying on any swap —
 a stabilized primitive on paper is still a build break if the project's version is
 below the floor.
 

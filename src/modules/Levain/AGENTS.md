@@ -23,6 +23,8 @@ Orchestral multi-sample acoustic instrument engine (strings, brass, woodwinds, p
 
 ## Verification
 
-- `pnpm vitest run src/modules/Levain`
-- `cargo test --package daw-dsp -- levain`
-- `pnpm deps:validate`
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
+- `pnpm test:run <changed-spec>`
+- `pnpm cargo:test --package daw-dsp levain`
+- PR CI checks module boundaries; inspect that result after cross-module changes.

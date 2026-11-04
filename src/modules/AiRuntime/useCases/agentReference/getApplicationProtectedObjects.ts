@@ -18,15 +18,9 @@ import { getMutedEmptyTrackDeletionScope } from './getMutedEmptyTrackDeletionSco
 import { getSharedVocalFxBusesPromptScope } from './getSharedVocalFxBusesPromptScope';
 import { getSidechainRoutingPromptScope } from './getSidechainRoutingPromptScope';
 import { getSyncopatedArpeggioPromptScope } from './getSyncopatedArpeggioPromptScope';
+import { readExplicitProtections } from './readExplicitProtections';
 
 export type ApplicationProtectedObject = { id: string; name: string };
-
-function normalizeText(value: string): string {
-    return value
-        .toLocaleLowerCase()
-        .replaceAll(/[^\p{L}\p{N}]+/gu, ' ')
-        .trim();
-}
 
 /** Derives every protected object from application state, actions, and workflow semantics. */
 export function getApplicationProtectedObjects(input: {
@@ -37,23 +31,19 @@ export function getApplicationProtectedObjects(input: {
     workflowCapabilityId?: WorkflowCapabilityId;
 }): ApplicationProtectedObject[] {
     const { actions, context, prompt, wholeProjectVibeMixPlan, workflowCapabilityId } = input;
-    const protectedScopes = [
-        ...prompt.matchAll(/\b(?:leave|leaving|keep|keeping|preserve|preserving)\s+(.+?)\s+unchanged\b/giu),
-    ].flatMap((match) => (match[1] ? [normalizeText(match[1])] : []));
+    const readProtections = readExplicitProtections(prompt, context);
     const excludedFrozenTrackIds = new Set(
         getBulkDeviceInsertionTrackScope(prompt, context)?.excludedFrozenTrackIds ?? []
     );
     const structurallyProtectedTrackIds = new Set(
         getMutedEmptyTrackDeletionScope(prompt, context)?.protectedTrackIds ?? []
     );
-    const protectedTracks = context.tracks.filter((track) => {
-        const normalizedName = normalizeText(track.name);
-        return (
+    const protectedTracks = context.tracks.filter(
+        (track) =>
             excludedFrozenTrackIds.has(track.id) ||
             structurallyProtectedTrackIds.has(track.id) ||
-            protectedScopes.some((scope) => ` ${scope} `.includes(` ${normalizedName} `))
-        );
-    });
+            readProtections.namedTrackIds.includes(track.id)
+    );
     const deviceParameterScope = getDeviceParameterPromptScope(prompt, context);
     const protectedParameters = deviceParameterScope
         ? deviceParameterScope.protectedParameters.map((parameter) => {
@@ -121,11 +111,15 @@ export function getApplicationProtectedObjects(input: {
     const syncopatedArpeggioProtections =
         syncopatedArpeggioScope?.status === 'request' ? syncopatedArpeggioScope.protectedObjects : [];
     const explicitClipProtection = getExplicitClipProtection(prompt, context);
+    const readProtectedTracks = new Set(
+        readProtections.protectedTrackIds.filter((id) => !readProtections.namedTrackIds.includes(id))
+    );
     const protections = [
         ...(actions.some((action) => action.type === 'importStemSet')
             ? context.tracks.map(({ id, name }) => ({ id, name }))
             : []),
         ...protectedTracks.map(({ id, name }) => ({ id, name })),
+        ...context.tracks.filter((track) => readProtectedTracks.has(track.id)).map(({ id, name }) => ({ id, name })),
         ...explicitClipProtection.clips,
         ...protectedParameters,
         ...planProtections,

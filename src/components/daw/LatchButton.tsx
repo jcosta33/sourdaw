@@ -30,7 +30,7 @@ export function LatchButton({
         cyan: 'text-accent-cyan drop-shadow-[0_0_4px_var(--color-accent-cyan)]',
         mint: 'text-accent-mint drop-shadow-[0_0_4px_var(--color-accent-mint)]',
         amber: 'text-state-solo drop-shadow-[0_0_4px_var(--color-state-solo)]',
-        red: 'text-state-record drop-shadow-[0_0_5px_var(--color-state-record)]',
+        red: 'text-accent-red drop-shadow-[0_0_5px_var(--color-state-record)]',
         neutral: 'text-text-primary',
     };
 

@@ -40,6 +40,8 @@ vi.mock('#/infra/store/useStore', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     getExecutableAppActionEffect: vi.fn(() => null),
+    // Unread graph stub: disclosure's project-identity import also reaches reset helpers.
+    resetActionReplayAuthority: vi.fn(),
     executeAppAction: vi.fn(),
     executeUserAppAction: vi.fn(),
     executeAppActionBatch: vi.fn(() => Promise.resolve({ status: 'committed', actions: [] })),
@@ -79,7 +81,7 @@ function renderDampKnobAt(damping: number): HTMLElement {
     const engineState: ProofChamberEngineState = { ...DEFAULT_PARAMS, algorithm: 'plate', damping };
     const chamberState = {
         activeInstanceId: DEVICE_ID,
-        instances: { [DEVICE_ID]: { id: DEVICE_ID, isBypassed: false, uiLevel: 1, engineState } },
+        instances: { [DEVICE_ID]: { id: DEVICE_ID, isBypassed: false, uiLevel: 5, engineState } },
     };
     vi.mocked(useStore).mockImplementation((_store, defaultValue) => {
         if (typeof defaultValue === 'object' && defaultValue !== null && 'instances' in defaultValue) {

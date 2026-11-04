@@ -8,12 +8,11 @@ export type OpenFileOptions = {
     multiple?: boolean;
 };
 
-// ---------------------------------------------------------------------------
-// Browser fallback
-// ---------------------------------------------------------------------------
+/** Browser selections carry no native path grant, including cancellation after a rejected native opening. */
+export type OpenFileSelection = string[] | { kind: 'browser-files'; files: File[] | null };
 
-export function openViaBrowser(options: OpenFileOptions): Promise<string[] | null> {
-    return new Promise((resolve) => {
+export function openViaBrowser(options: OpenFileOptions): Promise<File[] | null> {
+    return new Promise((resolve, reject) => {
         const input = document.createElement('input');
         input.type = 'file';
         input.multiple = options.multiple ?? false;
@@ -23,7 +22,7 @@ export function openViaBrowser(options: OpenFileOptions): Promise<string[] | nul
         }
 
         let settled = false;
-        function settle(value: string[] | null): void {
+        function settle(value: File[] | null): void {
             if (settled) {
                 return;
             }
@@ -48,11 +47,11 @@ export function openViaBrowser(options: OpenFileOptions): Promise<string[] | nul
                 settle(null);
                 return;
             }
-            const paths: string[] = [];
+            const files: File[] = [];
             for (let index = 0; index < input.files.length; index++) {
-                paths.push(input.files[index]!.name);
+                files.push(input.files[index]!);
             }
-            settle(paths);
+            settle(files);
         });
 
         input.addEventListener('cancel', () => {
@@ -61,6 +60,14 @@ export function openViaBrowser(options: OpenFileOptions): Promise<string[] | nul
 
         window.addEventListener('focus', onFocus);
 
-        input.click();
+        try {
+            input.click();
+        } catch (error) {
+            if (!settled) {
+                settled = true;
+                window.removeEventListener('focus', onFocus);
+                reject(error);
+            }
+        }
     });
 }

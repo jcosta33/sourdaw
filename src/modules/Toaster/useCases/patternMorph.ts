@@ -24,6 +24,7 @@ function lerpStep(alpha: Step, b: Step, time: number): Step {
         retriggerCount: time < 0.5 ? alpha.retriggerCount : b.retriggerCount,
         condition: time < 0.5 ? alpha.condition : b.condition,
         paramLocks: time < 0.5 ? alpha.paramLocks : b.paramLocks,
+        soundLock: time < 0.5 ? alpha.soundLock : b.soundLock,
     };
 }
 

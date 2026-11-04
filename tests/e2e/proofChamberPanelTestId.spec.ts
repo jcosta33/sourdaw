@@ -36,7 +36,6 @@ test.describe('ProofChamber (Dutch Oven) panel — add device and drive a knob',
 
         const devices_before = await inspector.getByRole('button', { name: /^Bypass /i }).count();
         await page.getByRole('menuitem', { name: /^Dutch Oven$/ }).click();
-        await page.waitForTimeout(800);
 
         // The add mounts a Dutch Oven device card: the Bypass-button count
         // rises by one and a `Bypass Dutch Oven` toggle appears — the same
@@ -52,14 +51,23 @@ test.describe('ProofChamber (Dutch Oven) panel — add device and drive a knob',
         await inspector.getByText('Dutch Oven', { exact: false }).first().click();
         const sizeKnob = page.getByRole('slider', { name: 'Size' }).first();
         await expect(sizeKnob).toBeVisible({ timeout: 10_000 });
+        const disclosure = page.getByRole('group', { name: 'Effect control detail' });
+        await expect(disclosure.getByRole('button', { name: 'play', exact: true })).toHaveAttribute(
+            'aria-pressed',
+            'true'
+        );
+        await expect(page.getByRole('slider', { name: 'Width', exact: true })).toHaveCount(0);
+        await disclosure.getByRole('button', { name: 'build', exact: true }).click();
+        await expect(page.getByRole('slider', { name: 'Width', exact: true })).toBeVisible();
+        await expect(sizeKnob).toBeVisible();
+        await disclosure.getByRole('button', { name: 'play', exact: true }).click();
+        await expect(page.getByRole('slider', { name: 'Width', exact: true })).toHaveCount(0);
 
         // Focus the knob, press ArrowUp, and assert aria-valuenow increases —
         // the same state-change pattern as deviceKnobKeyboardTestId.spec.ts:31.
         await sizeKnob.focus();
         const before = Number(await sizeKnob.getAttribute('aria-valuenow'));
         await page.keyboard.press('ArrowUp');
-        await page.waitForTimeout(200);
-        const after = Number(await sizeKnob.getAttribute('aria-valuenow'));
-        expect(after).toBeGreaterThan(before);
+        await expect.poll(async () => Number(await sizeKnob.getAttribute('aria-valuenow'))).toBeGreaterThan(before);
     });
 });

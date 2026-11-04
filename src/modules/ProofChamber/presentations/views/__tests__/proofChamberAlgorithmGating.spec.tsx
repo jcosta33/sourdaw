@@ -45,6 +45,8 @@ vi.mock('#/infra/store/useStore', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     getExecutableAppActionEffect: vi.fn(() => null),
+    // Unread graph stub: disclosure's project-identity import also reaches reset helpers.
+    resetActionReplayAuthority: vi.fn(),
     executeAppAction: vi.fn(),
     executeUserAppAction: vi.fn(),
     executeAppActionBatch: vi.fn(() => Promise.resolve({ status: 'committed', actions: [] })),
@@ -182,7 +184,7 @@ function renderPanel(algorithm: ProofChamberAlgorithm, overrides: Partial<ProofC
     };
     MOCKED_CHAMBER_STORE_STATE = {
         activeInstanceId: DEVICE_ID,
-        instances: { [DEVICE_ID]: { id: DEVICE_ID, isBypassed: false, uiLevel: 1, engineState } },
+        instances: { [DEVICE_ID]: { id: DEVICE_ID, isBypassed: false, uiLevel: 5, engineState } },
     };
     render(<ProofChamberPanel deviceId={DEVICE_ID} />);
     // The Decay EQ overlay is behind a view toggle that starts closed, and its

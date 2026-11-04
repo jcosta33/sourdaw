@@ -27,7 +27,7 @@ import {
     parseReviewDossier,
 } from './reviewDossier.ts';
 import { serializeReviewDossier } from './reviewDossierChain.ts';
-import { buildReviewDossier, persistedReviewDossier } from './reviewDossierPublication.ts';
+import { buildReviewDossier, persistedReviewDossier, recoverReviewDossier } from './reviewDossierPublication.ts';
 import {
     acceptedFindings,
     completedStances,
@@ -223,20 +223,17 @@ function bundleRecordedPublicationId(bundle: string, port: PublishReviewPort): n
     return publishedReviewId(parseReviewDossier(value));
 }
 
-/**
- * Fresh reviewer publications derive and persist the head-bound record before the POST (ADR 0054).
- * The orchestrator's acceptance document is not a review round record, so it never reaches here. A
- * fresh plan-carrying round must meet the plan's draw floor; an exact replay and a recovered binding
- * of a review that already landed are exempt.
- */
-export function prepareReviewDossierPublication(input: {
+type DossierPublicationContext = {
     number: number;
     head: string;
     bundle: string;
     document: ReviewDocument;
     port: PublishReviewPort;
-    recovered?: boolean;
-}): void {
+};
+
+function readReviewDossierBuildInput(
+    input: DossierPublicationContext
+): Parameters<typeof buildReviewDossier>[0] | undefined {
     const planPath = join(input.bundle, REVIEW_RISK_PLAN_NAME);
     const planRead = readBundleFile(input.port, planPath);
     if (!planRead.present) {
@@ -246,24 +243,33 @@ export function prepareReviewDossierPublication(input: {
             fail(`missing review risk plan at ${planPath}; the bundle manifest records generating it`);
         }
         logIgnoredCallerDocuments(input.bundle, undefined, input.port);
-        return;
+        return undefined;
     }
     const plan = parseReviewRiskPlan(planRead.value);
     assertReviewRiskPlanBindsBundle(input.number, input.head, plan, input.bundle);
     assertReviewEvidenceClaimsSafe(input.document);
     const dossierRead = readBundleFile(input.port, join(input.bundle, REVIEW_DOSSIER_NAME));
     logIgnoredCallerDocuments(input.bundle, dossierRead, input.port);
-    const publication = buildReviewDossier({
+    return {
         plan,
         persisted: dossierRead.present ? dossierRead.value : undefined,
         draws: input.document.draws,
         evidence: input.document.evidence?.claims ?? [],
         comments: input.document.comments,
         recommendation: input.document.event === 'APPROVE' ? 'approve' : 'request-changes',
-    });
-    if (publishedReviewId(publication.dossier) === undefined && input.recovered !== true) {
-        assertReviewRiskPlanMatchesDiff(plan, input.bundle, input.port);
-        assertReviewDrawFloor(plan, completedStances(publication.dossier));
+    };
+}
+
+/** Fresh plan-carrying publications derive their record and meet the draw floor before any POST. */
+export function prepareReviewDossierPublication(input: DossierPublicationContext): void {
+    const buildInput = readReviewDossierBuildInput(input);
+    if (buildInput === undefined) {
+        return;
+    }
+    const publication = buildReviewDossier(buildInput);
+    if (publishedReviewId(publication.dossier) === undefined) {
+        assertReviewRiskPlanMatchesDiff(buildInput.plan, input.bundle, input.port);
+        assertReviewDrawFloor(buildInput.plan, completedStances(publication.dossier));
     }
     persistCanonicalReviewDossier(publication, input.bundle, input.port);
 }
@@ -476,7 +482,14 @@ export function recordRecoveredPublicationBindings(
         recordPublicationBindings(number, head, document, reviewId, port);
         return;
     }
-    prepareReviewDossierPublication({ number, head, bundle, document, port, recovered: true });
+    // Both recovery callers arrive only after journal binding and two stable exact reviewer reads.
+    // Keep historical unknown attribution here; fresh publication never selects this path.
+    const buildInput = readReviewDossierBuildInput({ number, head, bundle, document, port });
+    if (buildInput === undefined) {
+        fail(`review risk plan disappeared while binding recovered review ${reviewId}`);
+    }
+    const recovered = recoverReviewDossier(buildInput);
+    persistCanonicalReviewDossier(recovered, bundle, port);
     recordPublicationBindings(
         number,
         head,

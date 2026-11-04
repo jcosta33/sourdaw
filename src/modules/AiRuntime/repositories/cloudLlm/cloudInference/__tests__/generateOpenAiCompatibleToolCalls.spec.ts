@@ -330,6 +330,27 @@ describe('generateOpenAiCompatibleToolCalls', () => {
         });
     });
 
+    it.each([true, false])('carries the production recipe reference with compatible strict=%s', async (strict) => {
+        const tool = getPlanningProviderToolSchemas().find((entry) => entry.function.name === 'analysis.measure');
+        if (tool === undefined) {
+            throw new Error('Missing analysis.measure');
+        }
+        const body = (await requestBodyFor({ ...runtime, strict_tool_schemas: strict }, AUTO_TOOL_CHOICE, [tool])) as {
+            tools: Array<{ function: { strict?: boolean; parameters: Record<string, unknown> } }>;
+        };
+        const wire = body.tools[0]?.function;
+        expect(wire?.strict).toBe(strict ? true : undefined);
+        expect(wire?.parameters).toHaveProperty(
+            ['properties', 'recipeCallId', 'type'],
+            strict ? ['string', 'null'] : 'string'
+        );
+        if (strict) {
+            expect(wire?.parameters.required).toEqual(expect.arrayContaining(['proposal', 'recipeCallId']));
+        } else {
+            expect(wire?.parameters).toEqual(tool.function.parameters);
+        }
+    });
+
     it('advertises encoded proposal leaves only for strict-compatible endpoints', async () => {
         const canonical = getPlanningProviderToolSchemas().find(
             (schema) => schema.function.name === 'command.batch.propose'

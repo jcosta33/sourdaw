@@ -272,15 +272,15 @@ describe('saved audio collection race', () => {
             throw new Error('Expected the real import path to publish an audio clip.');
         }
 
-        const censusObserved = deferred<readonly string[]>();
+        const censusObserved = deferred<Awaited<ReturnType<typeof project.collectDurableOwnedAudioBufferIds>>>();
         const releaseCapturedCensus = deferred<void>();
         const milestones: string[] = [];
         audio.configureDurableAudioBufferOwnership(async () => {
-            const realOwnedIds = await project.collectDurableOwnedAudioBufferIds();
-            milestones.push(`census:${realOwnedIds.join(',')}`);
-            censusObserved.resolve(realOwnedIds);
+            const census = await project.collectDurableOwnedAudioBufferIds();
+            milestones.push(`census:${census.ids.join(',')}`);
+            censusObserved.resolve(census);
             await releaseCapturedCensus.promise;
-            return realOwnedIds;
+            return census;
         });
 
         let collection: Promise<number> | undefined;
@@ -288,7 +288,7 @@ describe('saved audio collection race', () => {
         try {
             reportStage('census:start');
             collection = audio.garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 });
-            await expect(censusObserved.promise).resolves.toEqual([]);
+            await expect(censusObserved.promise).resolves.toMatchObject({ ids: [bufferId] });
             reportStage('census:done');
 
             reportStage('save:queued');
@@ -311,6 +311,7 @@ describe('saved audio collection race', () => {
             reportStage('collection:release');
             releaseCapturedCensus.resolve();
             const deletedCount = await collection;
+            expect(deletedCount).toBe(0);
             console.info('[savedAudioCollectionRace] collection:deletedCount', deletedCount);
             reportStage('collection:done');
 
@@ -331,7 +332,7 @@ describe('saved audio collection race', () => {
 
             if (!saved) {
                 expect(namedJson).toBeNull();
-                expect(milestones).toEqual(['census:']);
+                expect(milestones).toEqual([`census:${bufferId}`]);
                 return;
             }
 
@@ -348,7 +349,7 @@ describe('saved audio collection race', () => {
                 trackStore.value?.tracks.flatMap((track) => track.clips).some((clip) => clip.audioBufferId === bufferId)
             ).toBe(false);
             expect(audio.getCachedAudioBuffer({ bufferId })).toBeNull();
-            expect(milestones).toEqual(['census:', 'save:Project A', 'transition:Project B']);
+            expect(milestones).toEqual([`census:${bufferId}`, 'save:Project A', 'transition:Project B']);
             reportStage('postTransitionRawRead:start');
             const storedAfterTransition = await readStoredValue(audioDatabase, AUDIO_BUFFER_STORE_NAME, bufferId);
             console.info(

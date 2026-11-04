@@ -5,7 +5,13 @@ import { Row } from '#/components/layout';
 import { useStore } from '#/infra/store/useStore';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { addMidiCC, removeMidiCC, moveMidiCC, restoreMidiCCPoints } from '#/modules/MIDI/useCases';
+import {
+    addMidiCC,
+    removeMidiCC,
+    moveMidiCC,
+    restoreMidiCCPoints,
+    revisitHandEditedCCReturns,
+} from '#/modules/MIDI/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 import { type MidiCC } from '../../../models/MidiNoteViewTypes';
@@ -23,6 +29,56 @@ type MidiLaneStoreState = {
     ccByClipId: Record<string, MidiCC[]>;
     pitchBendByClipId: Record<string, unknown[]>;
 };
+
+function readCCRows(clipId: string): readonly MidiCC[] {
+    return midiStore.value?.ccByClipId[clipId] ?? [];
+}
+
+function sameCCRow(first: MidiCC, second: MidiCC): boolean {
+    return (
+        first.id === second.id &&
+        first.controller === second.controller &&
+        first.value === second.value &&
+        first.beat === second.beat &&
+        first.channel === second.channel
+    );
+}
+
+/** Undo only this transition's writes while retaining rows changed independently since it committed. */
+function restoreChangedCCRows(clipId: string, before: readonly MidiCC[], after: readonly MidiCC[]): void {
+    const beforeById = new Map(before.map((row) => [row.id, row]));
+    const afterById = new Map(after.map((row) => [row.id, row]));
+    const currentById = new Map(readCCRows(clipId).map((row) => [row.id, row]));
+    // Compare only ids present on both sides: inserted or removed rows shift indexes
+    // without changing a surviving row's order relative to the other survivors.
+    const previousStanding = before.filter((row) => afterById.has(row.id));
+    const nextStanding = after.filter((row) => beforeById.has(row.id));
+    const reorderedIds = new Set(
+        previousStanding.filter((row, index) => row.id !== nextStanding[index]?.id).map((row) => row.id)
+    );
+    const removedIds = new Set<string>();
+    for (const row of after) {
+        const previous = beforeById.get(row.id);
+        if (previous && sameCCRow(previous, row) && !reorderedIds.has(row.id)) {
+            continue;
+        }
+        const current = currentById.get(row.id);
+        if (current && sameCCRow(current, row)) {
+            removeMidiCC(clipId, row.id);
+            removedIds.add(row.id);
+        }
+    }
+    const restored = before.filter((row) => {
+        const committed = afterById.get(row.id);
+        if (!committed) {
+            return !currentById.has(row.id);
+        }
+        return (!sameCCRow(row, committed) || reorderedIds.has(row.id)) && removedIds.has(row.id);
+    });
+    if (restored.length > 0) {
+        restoreMidiCCPoints(clipId, restored, before);
+    }
+}
 
 export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactElement => {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -63,32 +119,17 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         const value = Math.round(Math.max(0, Math.min(127, ((height - y - 4) / (height - 8)) * 127)));
 
         const channel = 0;
-        // addMidiCC dedupes EVERY point sitting at the clicked (beat, channel,
-        // controller) key — including rows the gesture did not mean to replace —
-        // so undo removes the gesture's written point, then re-inserts the
-        // captured pre-click rows by id (#4840). The capture is key-scoped, not
-        // the whole clip: undo restores only the gesture's own displaced rows,
-        // so a row deleted elsewhere between the gesture and the undo stays
-        // deleted. It must sit before the add — the add is what removes these
-        // rows.
-        const preClickPoints = allCc.filter(
-            (context: MidiCC) =>
-                context.beat === beat && context.channel === channel && context.controller === controller
-        );
+        // Capture the actual row transition: returned families can reuse ids or shrink,
+        // while a gesture on another controller may not touch them at all.
+        let beforeChange = readCCRows(clipId);
         const cc = addMidiCC(clipId, controller, value, beat, channel);
-        // Redo must re-create the clicked point under the SAME id: a fresh id would
-        // leave the undo side removing an id the store no longer holds.
+        let afterChange = readCCRows(clipId);
         const redo = (): void => {
+            beforeChange = readCCRows(clipId);
             addMidiCC(clipId, cc.controller, cc.value, cc.beat, cc.channel, cc.id);
+            afterChange = readCCRows(clipId);
         };
-        pushUndoEntry(
-            'Add CC point',
-            () => {
-                removeMidiCC(clipId, cc.id);
-                restoreMidiCCPoints(clipId, preClickPoints);
-            },
-            redo
-        );
+        pushUndoEntry('Add CC point', () => restoreChangedCCRows(clipId, beforeChange, afterChange), redo);
     };
 
     const handlePointPointerDown = (ccId: string, event: PointerEvent<HTMLDivElement>) => {
@@ -124,10 +165,33 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
             if (finalPoint && (finalPoint.beat !== origBeat || finalPoint.value !== origValue)) {
                 const finalBeat = finalPoint.beat;
                 const finalValue = finalPoint.value;
+                // Moving a hand point off or along a clip's head changes what its returns must restore, so
+                // both the head it left and the one it joined are revisited on commit and redo.
+                // Undo restores their captured rows because a revisit is not an inverse.
+                const edited = { editedController: finalPoint.controller, editedRowId: finalPoint.id };
+                const revisitBothEnds = (): void => {
+                    revisitHandEditedCCReturns(clipId, { channel: finalPoint.channel, beat: origBeat }, edited);
+                    revisitHandEditedCCReturns(clipId, { channel: finalPoint.channel, beat: finalBeat }, edited);
+                };
+                // Only the dragged row predates the gesture. Other rows are captured now,
+                // so an independent edit made during the drag never becomes part of its inverse.
+                let beforeChange = readCCRows(clipId).map((row) => {
+                    if (row.id === ccId) {
+                        return { ...row, beat: origBeat, value: origValue };
+                    }
+                    return row;
+                });
+                revisitBothEnds();
+                let afterChange = readCCRows(clipId);
                 pushUndoEntry(
                     'Move CC point',
-                    () => moveMidiCC(clipId, ccId, origBeat, origValue),
-                    () => moveMidiCC(clipId, ccId, finalBeat, finalValue)
+                    () => restoreChangedCCRows(clipId, beforeChange, afterChange),
+                    () => {
+                        beforeChange = [...readCCRows(clipId)];
+                        moveMidiCC(clipId, ccId, finalBeat, finalValue);
+                        revisitBothEnds();
+                        afterChange = readCCRows(clipId);
+                    }
                 );
             }
         };
@@ -148,13 +212,21 @@ export const CCLane = ({ clipId, controller, beatWidth }: CCLaneProps): ReactEle
         }
         const point = points.find((param) => param.id === ccId);
         if (point) {
-            // Undo re-inserts just the removed point by id: a sibling sharing its
-            // key survives, and rows other controllers hold are never overwritten.
+            const head = { channel: point.channel, beat: point.beat };
+            const edited = { editedController: point.controller, editedRowId: point.id };
+            let beforeChange = readCCRows(clipId);
             removeMidiCC(clipId, ccId);
+            revisitHandEditedCCReturns(clipId, head, edited);
+            let afterChange = readCCRows(clipId);
             pushUndoEntry(
                 'Remove CC point',
-                () => restoreMidiCCPoints(clipId, [point]),
-                () => removeMidiCC(clipId, ccId)
+                () => restoreChangedCCRows(clipId, beforeChange, afterChange),
+                () => {
+                    beforeChange = readCCRows(clipId);
+                    removeMidiCC(clipId, ccId);
+                    revisitHandEditedCCReturns(clipId, head, edited);
+                    afterChange = readCCRows(clipId);
+                }
             );
         } else {
             removeMidiCC(clipId, ccId);

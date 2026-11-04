@@ -12,6 +12,7 @@
 # entry is that feed is left out. The system configuration is never edited.
 #
 # Usage: bash scripts/aptWithoutMicrosoftFeed.sh <command> [argument...]
+#        bash scripts/aptWithoutMicrosoftFeed.sh --deadline 8m -- <command> [argument...]
 #
 # Exits with the command's own status, so an apt failure stays fatal. Refuses
 # with status 2, before running the command, when a source file mixes the feed
@@ -103,6 +104,12 @@ summarize_sources() {
   ' "$2"
 }
 
+hosted_deadline=''
+if [ "${1:-}" = --deadline ]; then
+  [ "$#" -ge 4 ] && [ "${3:-}" = -- ] || refuse 'usage: --deadline <duration> -- <command> [argument...]'
+  hosted_deadline=$2
+  shift 3
+fi
 [ "$#" -gt 0 ] || refuse 'usage: aptWithoutMicrosoftFeed.sh <command> [argument...]'
 
 SOURCE_LIST=''
@@ -111,7 +118,14 @@ eval "$(apt-config shell SOURCE_LIST Dir::Etc::sourcelist/f SOURCE_PARTS Dir::Et
 [ -n "$SOURCE_LIST" ] && [ -n "$SOURCE_PARTS" ] || refuse 'apt-config named no source list locations'
 
 work=$(mktemp -d)
-trap 'rm -rf -- "$work"' EXIT
+finish() {
+  if [ -e "$work/retain" ]; then
+    printf 'aptWithoutMicrosoftFeed: retained evidence=%s\n' "$work" >&2
+  else
+    rm -rf -- "$work"
+  fi
+}
+trap finish EXIT
 mkdir "$work/sources.list.d"
 signed_entries=0
 
@@ -157,6 +171,16 @@ EFFECTIVE_PARTS=''
 eval "$(APT_CONFIG="$work/apt.conf" apt-config shell EFFECTIVE_LIST Dir::Etc::sourcelist/f EFFECTIVE_PARTS Dir::Etc::sourceparts/d)"
 if [ "$EFFECTIVE_LIST" != "$work/sources.list" ] || [ "${EFFECTIVE_PARTS%/}" != "$work/sources.list.d" ]; then
   refuse "apt does not read the filtered sources (it reads $EFFECTIVE_LIST and $EFFECTIVE_PARTS)"
+fi
+
+if [ -n "$hosted_deadline" ]; then
+  STATUS_FILE=''
+  eval "$(APT_CONFIG="$work/apt.conf" apt-config shell STATUS_FILE Dir::State::status/f)"
+  [ -n "$STATUS_FILE" ] || refuse 'apt-config named no dpkg status location'
+  exec_status=0
+  APT_CONFIG="$work/apt.conf" /usr/bin/python3 scripts/hostedAptInstall.py \
+    "$hosted_deadline" "$work" "$STATUS_FILE" -- "$@" || exec_status=$?
+  exit "$exec_status"
 fi
 
 status=0

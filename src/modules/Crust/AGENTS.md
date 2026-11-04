@@ -23,6 +23,8 @@ Mastering limiter, saturator, and multiband dynamic peak controller (brickwall l
 
 ## Verification
 
-- `pnpm vitest run src/modules/Crust`
-- `cargo test --package daw-dsp -- crust`
-- `pnpm deps:validate`
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
+- `pnpm test:run <changed-spec>`
+- `pnpm cargo:test --package daw-dsp crust`
+- PR CI checks module boundaries; inspect that result after cross-module changes.

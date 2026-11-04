@@ -643,6 +643,37 @@ describe('executeAppAction', () => {
         expect(mocks.recordActionHistoryMetadata).toHaveBeenCalled();
     });
 
+    it.each(['project', 'runtime'] as const)(
+        'keeps device runtime authority ephemeral in the %s single-action context',
+        async (kind) => {
+            const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'select' } };
+            const authority = {
+                trackId: 'track-1',
+                deviceId: 'device-1',
+                paramId: 'gain',
+                owner: Symbol('preview'),
+                isCurrent: () => false,
+            };
+            const handlerOptions: CreateMockHandlerInput<SetEditingToolAction> = {};
+            if (kind === 'runtime') {
+                handlerOptions.executionKind = 'runtime';
+                handlerOptions.undoable = false;
+            }
+            const handler = create_mock_handler<SetEditingToolAction>(handlerOptions);
+            const prepareAbort = vi.fn((_action: AppAction, _context?: HandlerValidationContext) => () => undefined);
+            handler.prepareAbort = prepareAbort;
+            registerHandlerMap({ [action.type]: handler });
+            await executeAppAction(action, { deviceParameterRuntimeAuthority: authority });
+            const [executed, context] = handler.execute.mock.calls[0] ?? [];
+            expect(executed).toEqual(action);
+            expect(context?.deviceParameterRuntimeAuthority).toBe(authority);
+            expect(JSON.stringify(executed)).not.toContain('deviceParameterRuntimeAuthority');
+            if (kind === 'project') {
+                expect(prepareAbort.mock.calls[0]?.[1]?.deviceParameterRuntimeAuthority).toBe(authority);
+            }
+        }
+    );
+
     it('passes the final materialized action, cancellation signal, and deferred-work observer to project handlers', async () => {
         const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'select' } };
         const controller = new AbortController();

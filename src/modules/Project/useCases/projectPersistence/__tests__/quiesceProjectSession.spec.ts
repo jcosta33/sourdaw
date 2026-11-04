@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const runtime = vi.hoisted(() => ({
     stopPlayback: vi.fn(),
     resetAudioGraph: vi.fn(),
+    clearRuntimeCachedAudioBuffers:
+        vi.fn<typeof import('#/modules/AudioEngine/useCases').clearRuntimeCachedAudioBuffers>(),
     disarmRetrospectiveCapture: vi.fn(),
     unloadPlugin: vi.fn(),
     repairRuntimeGraphFromProject: vi.fn(),
@@ -18,6 +20,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     resetAudioGraph: runtime.resetAudioGraph,
+    clearRuntimeCachedAudioBuffers: runtime.clearRuntimeCachedAudioBuffers,
     disarmRetrospectiveCapture: runtime.disarmRetrospectiveCapture,
 }));
 vi.mock('#/modules/PluginHost/useCases', () => ({
@@ -29,6 +32,7 @@ describe('quiesceProjectSession', () => {
         vi.resetModules();
         runtime.stopPlayback.mockReset();
         runtime.resetAudioGraph.mockReset();
+        runtime.clearRuntimeCachedAudioBuffers.mockReset().mockResolvedValue(undefined);
         runtime.disarmRetrospectiveCapture.mockReset();
         runtime.unloadPlugin.mockReset();
         runtime.repairRuntimeGraphFromProject.mockReset();
@@ -43,6 +47,9 @@ describe('quiesceProjectSession', () => {
     it('stops playback, drops the live graph, then unloads project plugin instances', async () => {
         const order: string[] = [];
         runtime.stopPlayback.mockImplementation(async () => order.push('stop'));
+        runtime.clearRuntimeCachedAudioBuffers.mockImplementation(async () => {
+            order.push('materials');
+        });
         runtime.resetAudioGraph.mockImplementation(() => order.push('graph'));
         runtime.unloadPlugin.mockImplementation(async () => order.push('plugins'));
 
@@ -54,7 +61,54 @@ describe('quiesceProjectSession', () => {
             })
         ).resolves.toBe('success');
 
-        expect(order).toEqual(['stop', 'commit', 'graph', 'plugins']);
+        expect(order).toEqual(['stop', 'commit', 'materials', 'graph', 'plugins']);
+        expect(runtime.clearRuntimeCachedAudioBuffers).toHaveBeenCalledWith({ retainRuntimeBuffers: true });
+    });
+
+    it('awaits material retirement after the destructive handshake and before graph or plugin teardown', async () => {
+        let releaseRetirement!: () => void;
+        runtime.clearRuntimeCachedAudioBuffers.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    releaseRetirement = resolve;
+                })
+        );
+        const committed = vi.fn(async () => true);
+        const { quiesceProjectSession } = await import('../quiesceProjectSession');
+        const quiescing = quiesceProjectSession(31, committed);
+        await vi.waitFor(() => expect(runtime.clearRuntimeCachedAudioBuffers).toHaveBeenCalledOnce());
+        try {
+            expect(committed).toHaveBeenCalledOnce();
+            expect(committed.mock.invocationCallOrder[0]!).toBeLessThan(
+                runtime.clearRuntimeCachedAudioBuffers.mock.invocationCallOrder[0]!
+            );
+            expect(runtime.beginProjectSessionPluginRetirement).toHaveBeenCalledOnce();
+            expect(runtime.beginProjectSessionPluginRetirement.mock.invocationCallOrder[0]!).toBeLessThan(
+                runtime.clearRuntimeCachedAudioBuffers.mock.invocationCallOrder[0]!
+            );
+            expect(runtime.resetAudioGraph).not.toHaveBeenCalled();
+            expect(runtime.retire).not.toHaveBeenCalled();
+            expect(runtime.unloadPlugin).not.toHaveBeenCalled();
+        } finally {
+            releaseRetirement();
+        }
+        await expect(quiescing).resolves.toBe('success');
+        expect(runtime.resetAudioGraph).toHaveBeenCalledOnce();
+        expect(runtime.retire).toHaveBeenCalledOnce();
+    });
+
+    it('repairs a refused material retirement before graph or plugin teardown', async () => {
+        runtime.clearRuntimeCachedAudioBuffers.mockRejectedValueOnce(new Error('material reader still active'));
+        const { quiesceProjectSession } = await import('../quiesceProjectSession');
+
+        await expect(quiesceProjectSession(32, async () => true)).resolves.toBe('rejected');
+
+        expect(runtime.resetAudioGraph).not.toHaveBeenCalled();
+        expect(runtime.retire).not.toHaveBeenCalled();
+        expect(runtime.unloadPlugin).not.toHaveBeenCalled();
+        expect(runtime.reopen).toHaveBeenCalledOnce();
+        expect(runtime.repairRuntimeGraphFromProject).toHaveBeenCalledOnce();
+        await expect(quiesceProjectSession(33, async () => true)).resolves.toBe('success');
     });
 
     it('fails closed before destructive teardown and repairs the reusable runtime after plugin unload rejection', async () => {

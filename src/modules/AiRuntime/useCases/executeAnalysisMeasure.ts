@@ -83,7 +83,7 @@ function read(receipt: ApplicationToolReceipt): AnalysisMeasureRead {
  *
  * The receipt carries figures and each render's content address, never
  * samples; the render itself stays in AudioRendering's measurement retention.
- * A `preview` subject renders a proposed list in isolation beside the project
+ * A `preview` subject renders a semantic list or retained recipe in isolation beside the project
  * and returns, besides the receipt, the commands it measured for a proposal
  * to adopt; a `project` subject returns its receipt alone, as it always has.
  */
@@ -107,7 +107,7 @@ export async function executeAnalysisMeasure(input: ExecuteAnalysisMeasureInput)
             ...input,
             preview: input.preview,
             parsed: parsed.value,
-            proposal: subject.proposal,
+            source: subject,
         });
     }
     const measured = await measureProjectScope(input, parsed.value);

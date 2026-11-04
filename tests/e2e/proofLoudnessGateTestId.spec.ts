@@ -31,19 +31,31 @@ test.describe('Proof limiter section true-peak ceiling — keyboard response', (
         await page.waitForTimeout(800);
         await expect(inspector.getByRole('button', { name: /^Bypass Proof$/i })).toBeVisible();
         await inspector.getByText('Proof', { exact: false }).first().click();
-        await expect(page.getByRole('slider', { name: 'Mission limiter ceiling' })).toBeVisible({
+        await expect(
+            page
+                .getByRole('region', { name: 'Play controls', exact: true })
+                .getByRole('slider', { name: 'Mission limiter ceiling' })
+        ).toBeVisible({
             timeout: 15_000,
         });
 
         // Descend to the Level 3 "Build" desk depth where ProofLimiterSection lives.
-        await page.getByRole('button', { name: 'Build Modules', exact: true }).click();
+        await page
+            .getByRole('group', { name: 'Effect control detail' })
+            .getByRole('button', { name: 'build', exact: true })
+            .click();
         await expect(
-            page.getByRole('slider', { name: 'Limiter ceiling', exact: true })
+            page
+                .getByRole('region', { name: 'Build controls', exact: true })
+                .getByRole('slider', { name: 'Limiter ceiling', exact: true })
         ).toBeVisible({ timeout: 15_000 });
     });
 
     test('ArrowUp increments aria-valuenow', async ({ page }) => {
-        const ceiling = page.getByRole('slider', { name: 'Limiter ceiling', exact: true }).first();
+        const ceiling = page
+            .getByRole('region', { name: 'Build controls', exact: true })
+            .getByRole('slider', { name: 'Limiter ceiling', exact: true })
+            .first();
         await ceiling.focus();
 
         const before = Number(await ceiling.getAttribute('aria-valuenow'));

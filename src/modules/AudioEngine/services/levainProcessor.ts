@@ -68,7 +68,10 @@
  * `dispose`, which it answers with `disposed` and starts the drain, and
  * `beginSampleBank` and `releaseRetiredBank`, which it answers by posting its
  * `error` again, so a host that began listening after the fault still learns
- * that no answer will come.
+ * that no answer will come. A fault before internal initialization also refuses
+ * a later `init` with that original error: partial WASM creation is not retried.
+ * A terminal buffered-replay fault follows internal initialization, so a later
+ * `init` is silent even though no healthy `ready` was posted.
  *
  * ADR 0052's Message contract tables every answer by state.
  */
@@ -315,8 +318,14 @@ class LevainProcessor extends AudioWorkletProcessor {
             if (this._disposed) {
                 return;
             }
-            if (this._faulted && (msg.type === 'beginSampleBank' || msg.type === 'releaseRetiredBank')) {
-                this._answerAfterFault();
+            if (this._faulted) {
+                if (
+                    msg.type === 'beginSampleBank' ||
+                    msg.type === 'releaseRetiredBank' ||
+                    (msg.type === 'init' && !this._ready)
+                ) {
+                    this._answerAfterFault();
+                }
                 return;
             }
             try {
@@ -335,21 +344,27 @@ class LevainProcessor extends AudioWorkletProcessor {
                     this._handleMessage(msg);
                 }
             } catch (error) {
-                // Same policy as the process() catch below, deliberately.
-                // A throw here is an OOM, a malformed message, or a wasm trap
-                // left by an earlier panic — and a trap arrives with no message
-                // at all, so the three are not distinguishable from this side.
-                // Sample-bank failures are transactional and reject only that
-                // load. Throws elsewhere mean the instance can no longer be
-                // trusted and fault it permanently.
-                console.error('LevainProcessor error:', error);
-                if (this._bankRole) {
-                    this._rejectBankLoad(error);
-                } else {
-                    this._faultWithError(error);
+                if (msg.type === 'init') {
+                    wasmModule = null;
                 }
+                this._handleMessageError(error);
             }
         };
+    }
+
+    _handleMessageError(error: unknown): void {
+        // A throw here is an OOM, a malformed message, or a wasm trap
+        // left by an earlier panic — and a trap arrives with no message
+        // at all, so the three are not distinguishable from this side.
+        // Sample-bank failures are transactional and reject only that
+        // load. Throws elsewhere mean the instance can no longer be
+        // trusted and fault it permanently.
+        console.error('LevainProcessor error:', error);
+        if (this._bankRole) {
+            this._rejectBankLoad(error);
+        } else {
+            this._faultWithError(error);
+        }
     }
 
     _initWasm(wasmModule: WebAssembly.Module): void {
@@ -358,10 +373,18 @@ class LevainProcessor extends AudioWorkletProcessor {
         this._instance = new LevainInstance(sampleRate, 64);
         this._ready = true;
 
-        for (const msg of this._pendingMessages) {
-            this._handleMessage(msg);
-        }
+        const pendingMessages = this._pendingMessages;
         this._pendingMessages = [];
+        for (const msg of pendingMessages) {
+            try {
+                this._handleMessage(msg);
+            } catch (error) {
+                this._handleMessageError(error);
+            }
+            if (this._faulted) {
+                return;
+            }
+        }
 
         this.port.postMessage({ type: 'ready' });
     }
@@ -513,6 +536,7 @@ class LevainProcessor extends AudioWorkletProcessor {
     _faultWithError(error: unknown): void {
         this._faulted = true;
         this._faultMessage = error instanceof Error ? error.message : String(error);
+        this._pendingMessages.length = 0;
         this._leaveBankLoad(error);
         this.port.postMessage({ type: 'error', message: this._faultMessage });
     }

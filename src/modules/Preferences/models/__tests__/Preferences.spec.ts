@@ -6,6 +6,7 @@ import {
     TRACK_HEIGHT_VALUES,
     defaultPreferences,
     gridSnapBeats,
+    normalizeElasticTransientSensitivity,
 } from '../Preferences';
 
 describe('gridSnapBeats', () => {
@@ -100,6 +101,29 @@ describe('defaultPreferences', () => {
         expect(defaultPreferences.gridSubdivision).toBe('1/4');
         expect(defaultPreferences.theme).toBe('dark');
     });
+
+    it('defaults Elastic transient sensitivity to 50%', () => {
+        expect(defaultPreferences.elasticTransientSensitivity).toBe(0.5);
+    });
+});
+
+describe('normalizeElasticTransientSensitivity', () => {
+    it.each([
+        [0, 0],
+        [0.82, 0.82],
+        [1, 1],
+        [-0.3, 0],
+        [1.7, 1],
+    ])('normalizes %s to %s', (input, expected) => {
+        expect(normalizeElasticTransientSensitivity(input)).toBe(expected);
+    });
+
+    it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, '0.82', null])(
+        'uses the default for nonfinite or nonnumeric %s',
+        (input) => {
+            expect(normalizeElasticTransientSensitivity(input)).toBe(0.5);
+        }
+    );
 });
 
 describe('TRACK_HEIGHT_VALUES', () => {

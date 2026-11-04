@@ -62,6 +62,7 @@ import {
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
+    ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
 } from '../agentToolCatalog';
@@ -98,6 +99,12 @@ type HostedTurnRequest = {
     history: HostedTurnHistory;
     budgetNote: string;
     messageDataCategories?: readonly AgentDataCategory[];
+    /** Application-owned catalog admission from this loop, never read from provider text. */
+    transientOnsetsDiscovered?: true;
+    /** The composed receipt text is complete before its bounded local rendering. */
+    localReceiptContextComplete?: boolean;
+    /** Application-selected ceiling; absent callers retain the configured planning budget. */
+    maxOutputTokens?: number;
 };
 
 /**
@@ -522,6 +529,11 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                 if (signal?.aborted) {
                     throw createToolPlanningAbortError();
                 }
+                if (backend === 'webllm' && hostedTurn?.localReceiptContextComplete === false) {
+                    throw createProviderAttemptAdmissionError(
+                        'Application tool receipts exceeded the bounded text context budget.'
+                    );
+                }
                 const strictHostedProposalWire = backend === 'cloud' && usesStrictCloudToolSchemas();
                 let providerTools = strictHostedProposalWire
                     ? toolSchemas.map(getHostedProposalWireToolSchema)
@@ -538,7 +550,8 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                         (tool) =>
                             tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME &&
                             !WEBLLM_APPLICATION_TOOL_NAMES.has(tool.function.name) &&
-                            tool.function.name !== ANALYSIS_COMPARE_REFERENCE_TOOL_NAME
+                            tool.function.name !== ANALYSIS_COMPARE_REFERENCE_TOOL_NAME &&
+                            tool.function.name !== ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME
                     );
                     const selectedActionTools = selectExecutableAppActionToolSchemasForPrompt({
                         toolSchemas: actionTools,
@@ -553,9 +566,14 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                             (tool) => tool.function.name
                         )
                     );
-                    const promptActionTools = selectedActionTools.filter(
-                        (tool) => !mandatoryToolNames.has(tool.function.name)
-                    );
+                    const discoveredOnsetTool =
+                        hostedTurn?.transientOnsetsDiscovered === true
+                            ? toolSchemas.find((tool) => tool.function.name === ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME)
+                            : undefined;
+                    const promptActionTools = [
+                        ...(discoveredOnsetTool === undefined ? [] : [discoveredOnsetTool]),
+                        ...selectedActionTools,
+                    ].filter((tool) => !mandatoryToolNames.has(tool.function.name));
                     const mandatoryTools = [...workflowSelectionTools, ...applicationTools, ...workflowActionTools];
                     providerTools = [
                         ...mandatoryTools,
@@ -584,7 +602,11 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                               requestId,
                           })
                         : undefined;
-                const maxOutputTokens = readAgentResourceLimits().maxModelOutputTokens;
+                const configuredMaxOutputTokens = readAgentResourceLimits().maxModelOutputTokens;
+                const maxOutputTokens = Math.min(
+                    configuredMaxOutputTokens,
+                    hostedTurn?.maxOutputTokens ?? configuredMaxOutputTokens
+                );
                 // Native replay starts at the first recorded turn, which every hosted turn now
                 // becomes: in practice only the run's opening turn arrives with an empty history.
                 // Before that first record there is nothing to hand back, and the composed user

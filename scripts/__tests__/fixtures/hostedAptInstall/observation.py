@@ -1,0 +1,96 @@
+"""Exercise the controller's fresh manager observation after a cgroup read race."""
+
+import importlib.util
+from pathlib import Path
+import subprocess
+import tempfile
+import unittest
+from unittest.mock import patch
+
+spec = importlib.util.spec_from_file_location('hosted', 'scripts/hostedAptInstall.py')
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+
+class ObservationTest(unittest.TestCase):
+    def run_controller(self, second, reads):
+        invocation = 'a' * 32
+        shows = []
+        actions = []
+        clock = iter(range(1000))
+
+        def manager(action, *args):
+            actions.append(action)
+            if action != 'show':
+                return ''
+            unit = args[0]
+            fields = {
+                'Id': unit, 'Description': f'Sourdaw hosted apt {unit}',
+                'InvocationID': invocation, 'LoadState': 'loaded', 'Type': 'exec',
+                'ExitType': 'cgroup', 'RemainAfterExit': 'yes', 'CollectMode': 'inactive',
+                'KillMode': 'control-group', 'RuntimeMaxUSec': '1s',
+                'ActiveState': 'active', 'SubState': 'exited', 'Result': 'success',
+                'ExecMainCode': '1', 'ExecMainStatus': '0',
+                'ControlGroup': f'/system.slice/{unit}',
+            }
+            if shows:
+                fields.update(second)
+            shows.append(fields)
+            return '\n'.join(f'{key}={value}' for key, value in fields.items())
+
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(module, 'manager', side_effect=manager), \
+                patch.object(module, 'package_state', return_value='clean'), \
+                patch.object(module, 'version_ok', return_value=True), \
+                patch.object(module.os, 'geteuid', return_value=0), \
+                patch.object(module.sys, 'platform', 'linux'), \
+                patch.object(module.Path, 'is_file', return_value=True), \
+                patch.object(module.Path, 'read_text', side_effect=reads), \
+                patch.object(module, 'report_log'), \
+                patch.object(module, 'command', return_value=subprocess.CompletedProcess([], 0, '', '')), \
+                patch.object(module.time, 'monotonic', side_effect=lambda: next(clock)), \
+                patch.object(module.time, 'sleep'):
+            try:
+                outcome = module.run('1s', Path(directory), '/private/status', ['true'])
+            except module.Unproven as error:
+                outcome = str(error)
+        return outcome, shows, actions
+
+    def test_missing_path_needs_fresh_positive_witness(self):
+        outcome, shows, actions = self.run_controller({'ControlGroup': ''}, [FileNotFoundError()])
+        self.assertEqual(outcome, 0)
+        self.assertGreaterEqual(len(shows), 2)
+        self.assertEqual(shows[0]['InvocationID'], shows[1]['InvocationID'])
+        self.assertIn('stop', actions)
+
+    def test_fresh_empty_cgroup_is_also_a_witness(self):
+        outcome, shows, actions = self.run_controller({}, [FileNotFoundError(), 'populated 0\n'])
+        self.assertEqual(outcome, 0)
+        self.assertGreaterEqual(len(shows), 2)
+        self.assertEqual(shows[0]['InvocationID'], shows[1]['InvocationID'])
+        self.assertIn('stop', actions)
+
+    def test_missing_path_alone_never_proves_drain(self):
+        outcome, shows, actions = self.run_controller({}, lambda: (_ for _ in ()).throw(FileNotFoundError()))
+        self.assertIn('bounded observation limit', outcome)
+        self.assertGreater(len(shows), 1)
+        self.assertNotIn('stop', actions)
+
+    def test_changed_invocation_fails_closed(self):
+        outcome, _, actions = self.run_controller({'InvocationID': 'b' * 32}, [FileNotFoundError()])
+        self.assertIn('invocation changed or disappeared', outcome)
+        self.assertNotIn('stop', actions)
+
+    def test_disappeared_unit_fails_closed(self):
+        outcome, _, actions = self.run_controller({'Id': ''}, [FileNotFoundError()])
+        self.assertIn('identity changed or disappeared', outcome)
+        self.assertNotIn('stop', actions)
+
+    def test_unreadable_cgroup_fails_closed(self):
+        outcome, _, actions = self.run_controller({}, [FileNotFoundError(), PermissionError('denied')])
+        self.assertIn('cgroup status unavailable', outcome)
+        self.assertNotIn('stop', actions)
+
+
+if __name__ == '__main__':
+    unittest.main()

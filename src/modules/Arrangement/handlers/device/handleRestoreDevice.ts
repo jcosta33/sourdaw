@@ -33,7 +33,7 @@ function restoreDeviceGuardMatches(action: RestoreDeviceAction, context?: Handle
 export const handleRestoreDevice = createHandler<'restoreDevice'>({
     canReapplyAfterDivergence: (action) => action.payload.expectedDeviceIds !== undefined,
     validate: restoreDeviceGuardMatches,
-    execute: (action) => {
+    execute: (action, context) => {
         const currentTrack = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.trackId);
         const currentDeviceIds = currentTrack?.devices.map((device) => device.id);
         const batchRestoreDevices = action.payload.batchRestoreDevices ?? [];
@@ -48,13 +48,17 @@ export const handleRestoreDevice = createHandler<'restoreDevice'>({
                 !currentDeviceIds?.includes(candidate.deviceId)
         ).length;
         const insertionIndex = action.payload.deviceIndex - missingEarlierSiblingCount;
+        const restoreOptions: Parameters<typeof restoreDevice>[1] = { deferRuntimeEffects: true };
+        if (context) {
+            restoreOptions.batchContext = context;
+        }
         const outcome = restoreDevice(
             {
                 trackId: action.payload.trackId,
                 deviceSnapshot: action.payload.deviceSnapshot,
                 deviceIndex: insertionIndex,
             },
-            { deferRuntimeEffects: true }
+            restoreOptions
         );
         if (outcome === 'conflict') {
             return { status: 'conflict' };

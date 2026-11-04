@@ -41,8 +41,18 @@ test.describe('Device Panels & Inspector', () => {
         const closePanel = page.getByRole('button', { name: 'Close Grinder' });
         await expect(closePanel).toBeVisible();
 
-        // Interact with a core parameter of the expanded panel: switch to the Amp
-        // section and confirm its labelled knobs render.
+        const gain = page.getByRole('slider', { name: 'Gain', exact: true });
+        await expect(gain).toBeVisible();
+        await expect(gain).toHaveAttribute('aria-valuenow', '5');
+        await gain.press('ArrowDown');
+        await expect(gain).toHaveAttribute('aria-valuenow', '4.9');
+
+        const detail = page.getByRole('group', { name: 'Effect control detail' });
+        const shape = detail.getByRole('button', { name: 'shape', exact: true });
+        await shape.click();
+        await expect(shape).toHaveAttribute('aria-pressed', 'true');
+
+        // Shape reveals the Amp section and its tone-stack response.
         const ampTab = page.getByRole('button', { name: 'Amp', exact: true });
         await expect(ampTab).toBeVisible();
         await ampTab.click();
@@ -64,7 +74,10 @@ test.describe('Device Panels & Inspector', () => {
 
     test('Can toggle the Inspector panel', async ({ page }) => {
         // Add a new Audio track to populate the inspector
-        const addAudioButton = page.locator('button').filter({ hasText: 'Audio' }).filter({ hasText: 'Record or import' });
+        const addAudioButton = page
+            .locator('button')
+            .filter({ hasText: 'Audio' })
+            .filter({ hasText: 'Record or import' });
         await addAudioButton.waitFor({ state: 'visible' });
         await addAudioButton.click();
 

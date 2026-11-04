@@ -90,12 +90,22 @@ export type Pattern = {
     }>;
 };
 
+export type MorphState = {
+    enabled: boolean;
+    targetPatternId: string | null;
+    position: number;
+};
+
+export const DEFAULT_MORPH_STATE: MorphState = { enabled: false, targetPatternId: null, position: 0 };
+
 export type ToasterKit = {
     version: number;
     name: string;
     pads: PadState[];
     patterns: Pattern[];
     activePatternId: string;
+    // Optional for older presets; project hydration supplies the default.
+    morph?: MorphState;
     swing: number; // 0-1
     masterGain: number; // 0-2
     reverbMix: number; // 0-1
@@ -220,11 +230,9 @@ export function createDefaultPattern(numPads: number): Pattern {
 /**
  * Return a kit with `activePatternId` switched to `patternId`, or the same kit
  * unchanged when `patternId` does not name a pattern that exists. The model
- * carries a multi-`patterns` array (used by pattern morph and meant to back a
- * pattern-switch affordance), but nothing was ever able to change which one is
- * active — `activePatternId` was only set by `createDefaultKit`/`loadKit`. This
- * is the pure switch that backs that affordance; the guard keeps a stray id
- * from pointing the live sequencer/exporter at a non-existent pattern.
+ * carries multiple patterns, and the selected pattern is the editable A source.
+ * The guard keeps a stray id from pointing playback or export at a missing
+ * pattern. Selecting B for editing disables morph until A is selected again.
  */
 export function withActivePatternId(kit: ToasterKit, patternId: string): ToasterKit {
     if (kit.activePatternId === patternId) {
@@ -233,7 +241,30 @@ export function withActivePatternId(kit: ToasterKit, patternId: string): Toaster
     if (!kit.patterns.some((pattern) => pattern.id === patternId)) {
         return kit;
     }
-    return { ...kit, activePatternId: patternId };
+    const morph = getValidMorphState(kit);
+    return {
+        ...kit,
+        activePatternId: patternId,
+        morph: patternId === morph.targetPatternId ? { ...morph, enabled: false } : morph,
+    };
+}
+
+export function getValidMorphState(kit: ToasterKit): MorphState {
+    const morph = kit.morph;
+    const targetPatternId =
+        typeof morph?.targetPatternId === 'string' &&
+        kit.patterns.some((pattern) => pattern.id === morph.targetPatternId)
+            ? morph.targetPatternId
+            : null;
+    let position = 0;
+    if (typeof morph?.position === 'number' && Number.isFinite(morph.position)) {
+        position = Math.max(0, Math.min(1, morph.position));
+    }
+    return {
+        enabled: morph?.enabled === true && targetPatternId !== null && targetPatternId !== kit.activePatternId,
+        targetPatternId,
+        position,
+    };
 }
 
 /**
@@ -252,6 +283,7 @@ export function createDefaultKit(): ToasterKit {
         pads: Array.from({ length: numPads }, (_, index) => createDefaultPad(index)),
         patterns: [createDefaultPattern(numPads)],
         activePatternId: 'A1',
+        morph: structuredClone(DEFAULT_MORPH_STATE),
         swing: 0,
         masterGain: 1,
         reverbMix: 0.15,

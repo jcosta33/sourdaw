@@ -5,10 +5,16 @@ import { automationStore } from '#/modules/Automation/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { tempoMapStore, timeSignatureMapStore } from '#/modules/Transport/stores';
 
-import { CURRENT_PROJECT_VERSION, type ProjectData, type ProjectTrack } from '../../../../models/ProjectData';
+import {
+    CURRENT_PROJECT_VERSION,
+    deriveProjectIdFromMeta,
+    type ProjectData,
+    type ProjectTrack,
+} from '../../../../models/ProjectData';
 import { arrangementStore, defaultArrangementStoreState } from '../../../../stores/arrangementStore';
 import { collectProjectAudioBufferIds } from '../collectProjectAudioBufferIds';
 import { hydrateArrangementStoreFromProjectData } from '../hydrateArrangementStoreFromProjectData';
+import { isHydratableProjectData } from '../isHydratableProjectData';
 
 function projectTrack(id: string, bufferId: string, useRuntimeAlias = false): ProjectTrack {
     const clip = {
@@ -252,5 +258,80 @@ describe('hydrateArrangementStoreFromProjectData', () => {
         expect(arrangementStore.value?.activeArrangementId).toBe('first');
         expect(trackStore.value?.tracks.map((track) => track.id)).toEqual(['first-track']);
         expect(collectProjectAudioBufferIds({ data })).toEqual(['first-buffer']);
+    });
+});
+
+describe('project take admission and hydration', () => {
+    it.each(['top-level', 'saved arrangement', 'saved arrangement fallback'])(
+        'retains selected legacy and placed passes through %s hydration',
+        (route) => {
+            const data = projectData();
+            data.meta.projectId = deriveProjectIdFromMeta(data.meta);
+            const track = projectTrack('take-track', 'take-buffer');
+            data.arrangement.tracks = [track];
+            const take = {
+                id: 'legacy',
+                clipId: track.clips[0]!.id,
+                name: 'Legacy',
+                startBeat: 0,
+                endBeat: 4,
+                selected: true,
+            };
+            const takes = [
+                take,
+                { ...take, id: 'offset-only', sourceOffsetBeats: 0 },
+                { ...take, id: 'placed', sourceOffsetBeats: 4, passAnchorSeconds: -2, passDepthSeconds: 2 },
+            ];
+            const takeLanes = {
+                lanes: [
+                    {
+                        id: 'take-lane',
+                        trackId: track.id,
+                        takes,
+                        activeCompRegions: takes.map((item, index) => ({
+                            startBeat: index,
+                            endBeat: index + 1,
+                            takeId: item.id,
+                        })),
+                    },
+                ],
+            };
+            if (route !== 'saved arrangement') {
+                data.takeLanes = takeLanes;
+            }
+            if (route !== 'top-level') {
+                data.arrangements = [
+                    {
+                        id: 'saved',
+                        name: 'Saved',
+                        tracks: { tracks: [track], selectedTrackId: track.id },
+                    },
+                ];
+                if (route === 'saved arrangement') {
+                    data.arrangements[0]!.takeLanes = takeLanes;
+                }
+                data.activeArrangementId = 'saved';
+            }
+            const serialized = JSON.stringify(data);
+            const roundtrip: unknown = JSON.parse(serialized);
+            expect(isHydratableProjectData(roundtrip)).toBe(true);
+            if (!isHydratableProjectData(roundtrip)) {
+                throw new Error('Valid take project rejected');
+            }
+            hydrateArrangementStoreFromProjectData({ data: roundtrip, preserveSavedArrangements: true });
+            expect(trackStore.value?.tracks[0]?.clips[0]?.id).toBe(take.clipId);
+            expect(takeLaneStore.value).toEqual(takeLanes);
+            expect(arrangementStore.value?.arrangements[0]?.takeLanes).toEqual(takeLanes);
+        }
+    );
+    afterEach(() => {
+        arrangementStore.set(structuredClone(defaultArrangementStoreState));
+        trackStore.set({ tracks: [], selectedTrackId: null });
+        automationStore.set({ lanes: [] });
+        midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        tempoMapStore.set({ changes: [] });
+        timeSignatureMapStore.set({ changes: [] });
+        markerStore.set({ markers: [], sections: [] });
+        takeLaneStore.set({ lanes: [] });
     });
 });

@@ -96,12 +96,19 @@ describe('importSclFile native wire', () => {
         await importSclFile();
 
         expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith('parse_scl', [content, 69, 440]);
-        expect(mocks.projectStore.set).toHaveBeenCalledExactlyOnceWith({
+        expect(mocks.projectStore.set).toHaveBeenCalledTimes(2);
+        expect(mocks.projectStore.set).toHaveBeenNthCalledWith(1, {
             ...initialProject,
+            tuning: { name: 'Demo', frequencies: [220, 440, 880] },
+        });
+        expect(mocks.projectStore.set).toHaveBeenNthCalledWith(2, {
+            ...initialProject,
+            dirty: true,
             tuning: { name: 'Demo', frequencies: [220, 440, 880] },
         });
         expect(mocks.projectStore.value).toEqual({
             ...initialProject,
+            dirty: true,
             tuning: { name: 'Demo', frequencies: [220, 440, 880] },
         });
         expect(mocks.notifyUser).toHaveBeenCalledExactlyOnceWith(

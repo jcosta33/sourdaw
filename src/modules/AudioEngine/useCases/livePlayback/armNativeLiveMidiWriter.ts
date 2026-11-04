@@ -1,17 +1,12 @@
 /**
  * Open a pass of live MIDI over the span the session is playing (#3892).
  *
- * ── Where a pass begins, and why a loop is one span ───────────────────────
- *
- * A pass begins at the playhead, because an entry stamped behind it is counted
- * late and never delivered (`record_late_midi_notes`). A loop is the one case
- * that reaches further back: `Scheduler::frames_until_loop_end` wraps only a
- * playhead already below the region's end, so entering a region partway through
- * still plays the region entire from the first wrap on — and since the engine
- * does not consume an entry, the region sent once is the region every later
- * pass replays. So a looping pass takes the region from its start, or from the
- * playhead when the musician entered it from before, and sends the whole thing
- * here rather than windowing it.
+ * A looping pass projects the whole region but only admits a capacity-bounded
+ * window ahead of the entry position, including the region head when that
+ * window crosses the seam. The native store replays retained entries, while
+ * the pump clears spent trail and replenishes missing upcoming entries.
+ * Each admitted on reserves its real off even beyond that horizon: a later
+ * rewrite must remove an off for the native engine to record release debt.
  *
  * ── Where a non-looping pass ends, and why nowhere ────────────────────────
  *
@@ -60,17 +55,16 @@
 import { logger } from '#/infra/logger/appLogger';
 import { type Track } from '#/modules/Arrangement/stores';
 
-import { type AudioGraphCommand, type AudioGraphDeviceTarget } from '../../models/AudioGraphBackend';
+import { type AudioGraphDeviceTarget, type AudioGraphMidiNoteEvent } from '../../models/AudioGraphBackend';
 
-import { admitMidiEvents } from './admitMidiEvents';
 import { applyMidiBatch } from './applyMidiBatch';
+import { loopMidiWindowBatch } from './loopMidiWindowBatch';
 import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import {
-    MIDI_WINDOW_SECONDS,
     nativeLiveMidiWriter,
+    type LiveMidiFrameGroup,
     type LiveMidiWriterPass,
     type LiveMidiWriterTarget,
-    type MidiAdmission,
     type MidiWriterBatch,
 } from './nativeLiveMidiWriterState';
 import { type LiveMidiProgrammeExclusion, type LiveMidiSpan } from './projectLiveMidiProgramme';
@@ -107,10 +101,50 @@ export type ArmNativeLiveMidiWriterInput = Readonly<{
 
 type PassSpan = LiveMidiSpan & Readonly<{ looping: boolean }>;
 
+/** Prepare once per arm; every later tick visits only indexed windows and residents. */
+function indexLoopMidiFrames(
+    events: readonly AudioGraphMidiNoteEvent[],
+    sampleRate: number
+): readonly LiveMidiFrameGroup[] {
+    const groups: { frame: number; firstEventIndex: number; endEventIndex: number }[] = [];
+    for (const [index, event] of events.entries()) {
+        const frame = Math.round(event.time * sampleRate);
+        const previous = groups.at(-1);
+        if (previous?.frame === frame) {
+            previous.endEventIndex = index + 1;
+        } else {
+            groups.push({ frame, firstEventIndex: index, endEventIndex: index + 1 });
+        }
+    }
+    return groups;
+}
+
+/** Projection resolves same-key overlaps before emitting this ordered programme. */
+function indexLoopMidiNotePartners(events: readonly AudioGraphMidiNoteEvent[]): readonly (number | undefined)[] {
+    const partners: (number | undefined)[] = Array.from({ length: events.length }, () => undefined);
+    const open = new Map<number, number>();
+    for (const [index, event] of events.entries()) {
+        const key = event.channel * 128 + event.note;
+        if (event.isNoteOn) {
+            open.set(key, index);
+            continue;
+        }
+        const onset = open.get(key);
+        if (onset !== undefined) {
+            partners[onset] = index;
+            partners[index] = onset;
+            open.delete(key);
+        }
+    }
+    return partners;
+}
+
 function passSpan(input: ArmNativeLiveMidiWriterInput): PassSpan {
     const { loopRegion, loopEnabled } = nativeLiveGraphSession;
     if (!loopEnabled || !loopRegion || input.positionSeconds >= loopRegion.endSeconds) {
-        return { startSeconds: input.positionSeconds, endSeconds: Number.POSITIVE_INFINITY, looping: false };
+        // Keep the source identity of already-sounding notes so a rewrite can
+        // reserve their real releases. The window admits no past note-ons.
+        return { startSeconds: 0, endSeconds: Number.POSITIVE_INFINITY, looping: false };
     }
     return {
         startSeconds: Math.min(input.positionSeconds, loopRegion.startSeconds),
@@ -174,28 +208,34 @@ function recordAbandonedTargets(
 
 /** The opening batch: every target's store wiped, then filled to the horizon. */
 function openingBatch(pass: LiveMidiWriterPass, positionSeconds: number): MidiWriterBatch {
-    // A looping pass is sent whole: the wrap replays what the store already
-    // holds, and windowing inside a region would need a behind-clear that
-    // deletes exactly what the next wrap is going to play.
-    const horizonSeconds = pass.looping ? Number.POSITIVE_INFINITY : positionSeconds + MIDI_WINDOW_SECONDS;
-    const commands: AudioGraphCommand[] = [];
-    const admissions: MidiAdmission[] = [];
-    for (const slot of pass.targets) {
-        // Cleared even when nothing is admitted: this target's store may hold
-        // the previous pass's notes while this one owes it none.
-        commands.push({ kind: 'clear-midi', target: slot.target, fromTime: 0, toTime: null });
-        const admitted = admitMidiEvents(slot, { horizonSeconds, heldAfterClear: 0 });
-        if (admitted > 0) {
-            commands.push({
-                kind: 'schedule-midi',
-                target: slot.target,
-                probabilitySeed: pass.probabilitySeed,
-                notes: slot.events.slice(slot.cursor, slot.cursor + admitted),
-            });
+    return loopMidiWindowBatch(pass, positionSeconds, null, true);
+}
+
+function prepareLoopMidi(
+    events: readonly AudioGraphMidiNoteEvent[],
+    positionSeconds: number,
+    sampleRate: number
+): Pick<LiveMidiWriterTarget, 'loopFrameGroups' | 'loopNotePartners' | 'loopOpeningNoteOffIndices'> {
+    const partners = indexLoopMidiNotePartners(events);
+    const position = Math.round(positionSeconds * sampleRate);
+    const spanningOffs: number[] = [];
+    for (const [index, event] of events.entries()) {
+        const partner = partners[index];
+        const onset = partner === undefined ? undefined : events[partner];
+        if (
+            !event.isNoteOn &&
+            onset &&
+            Math.round(event.time * sampleRate) >= position &&
+            Math.round(onset.time * sampleRate) < position
+        ) {
+            spanningOffs.push(index);
         }
-        admissions.push({ slot, admitted, heldAfter: admitted });
     }
-    return { commands, admissions };
+    return {
+        loopFrameGroups: indexLoopMidiFrames(events, sampleRate),
+        loopNotePartners: partners,
+        loopOpeningNoteOffIndices: spanningOffs,
+    };
 }
 
 export async function armNativeLiveMidiWriter(input: ArmNativeLiveMidiWriterInput): Promise<void> {
@@ -227,9 +267,11 @@ export async function armNativeLiveMidiWriter(input: ArmNativeLiveMidiWriterInpu
         entrySeconds: input.positionSeconds,
         looping: span.looping,
         loopRegion: span.looping ? nativeLiveGraphSession.loopRegion : null,
+        lastLoopWraps: null,
         // The opening batch wipes each store whole, so the trail starts at the
         // head of the timeline and walks forward from there.
         lastClearedBeforeSeconds: 0,
+        openingPending: true,
         refusalReported: false,
         targets: programme.targets.map((entry): LiveMidiWriterTarget => {
             const device = input.stripTracks
@@ -240,8 +282,10 @@ export async function armNativeLiveMidiWriter(input: ArmNativeLiveMidiWriterInpu
                 deviceName: device?.name ?? entry.target.deviceId,
                 trackName: trackNameById.get(entry.target.trackId) ?? entry.target.trackId,
                 events: entry.events,
+                ...prepareLoopMidi(entry.events, input.positionSeconds, input.sampleRate),
                 cursor: 0,
                 held: 0,
+                heldEventIndices: [],
                 saturationReported: false,
             };
         }),

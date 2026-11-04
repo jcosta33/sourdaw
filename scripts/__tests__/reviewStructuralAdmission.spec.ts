@@ -21,7 +21,7 @@ function plan(riskClasses: ReviewRiskClass[]): ReviewRiskPlan {
 function draws(count: number, tier: CompletedReviewStance['modelTier'] = 'standard'): CompletedReviewStance[] {
     return Array.from({ length: count }, (_, index) => ({
         stance: `risk ${index}`,
-        reviewerModel: `model-${index}`,
+        reviewerModel: 'gpt-6-luna',
         modelTier: tier,
         outcome: 'clean',
     }));
@@ -60,16 +60,22 @@ describe('assertReviewDrawFloor', () => {
     });
 
     it.each(['native-security', 'realtime-audio', 'undo'] as const)(
-        'refuses a %s plan whose draws carry no strongest tier',
+        'admits a %s specialist plan with standard draws at its unchanged stance floor',
         (riskClass) => {
-            expect(() => assertReviewDrawFloor(plan([riskClass]), draws(3))).toThrow(
-                `review.json draws need at least one strongest-tier draw for the ${riskClass} risk plan`
-            );
+            expect(() => assertReviewDrawFloor(plan([riskClass]), draws(3))).not.toThrow();
+            expect(() => assertReviewDrawFloor(plan([riskClass]), draws(2))).toThrow(/requires at least 3/u);
         }
     );
 
-    it('admits a specialist plan with one strongest draw among its stances', () => {
+    it('refuses a fresh effective round with strongest metadata from an unpublished historical dossier', () => {
         const mixed = [...draws(2), { ...draws(1, 'strongest')[0]!, stance: 'escaped secret' }];
-        expect(() => assertReviewDrawFloor(plan(['native-security', 'undo']), mixed)).not.toThrow();
+        expect(() => assertReviewDrawFloor(plan(['native-security', 'undo']), mixed)).toThrow(/economy or standard/u);
+    });
+
+    it('refuses a fresh effective round with a premium model from an unpublished historical dossier', () => {
+        const mixed = [...draws(2), { ...draws(1)[0]!, stance: 'escaped secret', reviewerModel: 'claude-opus-4.5' }];
+        expect(() => assertReviewDrawFloor(plan(['native-security']), mixed)).toThrow(
+            /permitted low-cost review model/u
+        );
     });
 });

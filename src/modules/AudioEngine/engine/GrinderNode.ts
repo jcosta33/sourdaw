@@ -59,6 +59,7 @@ export type GrinderNodeResult = {
     disconnect: () => void;
     destroy: () => void;
     ready: Promise<Record<string, unknown>>;
+    completeOfflineSetup?: () => Promise<void>;
 };
 
 const CONTROL_DEADLINE_FRAMES = 128;
@@ -99,6 +100,42 @@ function toAudioParamTime(context: BaseAudioContext, sampleFrame: number | undef
         return context.currentTime;
     }
     return Math.max(context.currentTime, sampleFrame / context.sampleRate);
+}
+
+function matchesOfflineSetupReady(
+    data: object,
+    expected: RuntimeDeviceControlTarget | undefined,
+    generation: number,
+    sequence: number
+): boolean {
+    const target = 'target' in data ? data.target : undefined;
+    const correlation = 'correlation' in data ? data.correlation : undefined;
+    if (
+        !expected ||
+        !('schemaVersion' in data) ||
+        data.schemaVersion !== 1 ||
+        !('sampleFrame' in data) ||
+        data.sampleFrame !== 0 ||
+        !('type' in data) ||
+        data.type !== 'ready' ||
+        !target ||
+        typeof target !== 'object' ||
+        !('trackId' in target) ||
+        target.trackId !== expected.trackId ||
+        !('deviceId' in target) ||
+        target.deviceId !== expected.deviceId ||
+        !('deviceType' in target) ||
+        target.deviceType !== expected.deviceType ||
+        !correlation ||
+        typeof correlation !== 'object' ||
+        !('workletGeneration' in correlation) ||
+        correlation.workletGeneration !== generation ||
+        !('controlSequence' in correlation) ||
+        correlation.controlSequence !== sequence
+    ) {
+        return false;
+    }
+    return true;
 }
 
 export function isGrinderDevice(deviceType: string): boolean {
@@ -166,7 +203,8 @@ export async function createGrinderNode(
     // sample-frame contract and is posted in call order without coalescing.
     const pendingParamPosts = new Map<string, PendingParamPost>();
     let paramFlushRafId: number | null = null;
-    const canCoalesce = typeof requestAnimationFrame === 'function';
+    const offline = typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext;
+    const canCoalesce = !offline && typeof requestAnimationFrame === 'function';
     const workletGeneration = allocateWorkletControlGeneration();
     const fallbackControlTarget = controlTarget
         ? Object.freeze({
@@ -177,6 +215,10 @@ export async function createGrinderNode(
           })
         : undefined;
     let nextControlSequence = 1;
+    let setupHandshake: ReturnType<typeof createReadyHandshake> | null = null;
+    let setupSequence = 0;
+    let setupPromise: Promise<void> | undefined;
+    let runtimeError: Error | null = null;
 
     const postFallbackControl = (name: string, pending: PendingParamPost): void => {
         if (!fallbackControlTarget || nextControlSequence > Number.MAX_SAFE_INTEGER) {
@@ -259,8 +301,8 @@ export async function createGrinderNode(
             return;
         }
         if (!canCoalesce) {
-            // No rAF (offline render / non-DOM host): apply at the next safe
-            // boundary instead of stranding the already validated control.
+            // An offline render can finish before the window's next frame.
+            // Post now so setup never depends on UI animation scheduling.
             postFallbackControl(name, pending);
             return;
         }
@@ -270,10 +312,32 @@ export async function createGrinderNode(
 
     const handshake = createReadyHandshake({ pluginName: 'GrinderNode' });
     node.port.onmessage = (event: MessageEvent<unknown>) => {
+        const data = event.data;
+        if (data && typeof data === 'object' && 'type' in data && data.type === 'error') {
+            runtimeError = new Error('message' in data ? String(data.message) : 'GrinderNode processor failed');
+            setupHandshake?.reject(runtimeError);
+        }
+        if (data && typeof data === 'object' && 'phase' in data && data.phase === 'offline-grinder-setup') {
+            if (!setupHandshake) {
+                return;
+            }
+            if (!matchesOfflineSetupReady(data, fallbackControlTarget, workletGeneration, setupSequence)) {
+                setupHandshake.reject(new Error('GrinderNode offline setup acknowledgement is invalid'));
+                return;
+            }
+            setupHandshake.onMessage(event);
+            return;
+        }
         const outcome = handshake.onMessage(event);
         if (outcome === 'other') {
-            const data = event.data as Record<string, unknown>;
-            if (data && data.type === LATENCY_CHANGED_MESSAGE_TYPE && typeof data.latency === 'number') {
+            if (
+                data &&
+                typeof data === 'object' &&
+                'type' in data &&
+                data.type === LATENCY_CHANGED_MESSAGE_TYPE &&
+                'latency' in data &&
+                typeof data.latency === 'number'
+            ) {
                 reportLatencyChange(data.latency);
             }
             return;
@@ -291,6 +355,51 @@ export async function createGrinderNode(
         }
     };
     const readyPromise = handshake.promise;
+    if (offline) {
+        node.onprocessorerror = () => {
+            runtimeError = new Error('GrinderNode offline processor failed');
+            handshake.reject(runtimeError);
+            setupHandshake?.reject(runtimeError);
+        };
+    }
+
+    const completeOfflineSetup = (): Promise<void> => {
+        if (destroyed || runtimeError) {
+            return Promise.reject(runtimeError ?? new Error('GrinderNode destroyed before offline setup completed'));
+        }
+        if (setupPromise) {
+            return setupPromise;
+        }
+        if (!fallbackControlTarget) {
+            return Promise.reject(new Error('GrinderNode offline setup requires a control target'));
+        }
+        // MessagePort delivery can wait until the first offline suspend. Reuse
+        // the bounded ready/error handshake to observe consumption before the
+        // strategy returns and its caller can start the render.
+        const pending = createReadyHandshake({ pluginName: 'GrinderNode offline setup' });
+        setupHandshake = pending;
+        setupSequence = nextControlSequence - 1;
+        setupPromise = pending.promise
+            .then(() => undefined)
+            .finally(() => {
+                setupHandshake = null;
+            });
+        try {
+            node.port.postMessage({
+                schemaVersion: 1,
+                command: 'complete-offline-grinder-setup',
+                target: {
+                    trackId: fallbackControlTarget.trackId,
+                    deviceId: fallbackControlTarget.deviceId,
+                    deviceType: fallbackControlTarget.deviceType,
+                },
+                correlation: { workletGeneration, controlSequence: setupSequence },
+            });
+        } catch (error) {
+            pending.reject(error instanceof Error ? error : new Error(String(error)));
+        }
+        return setupPromise;
+    };
 
     if (fallbackControlTarget) {
         node.port.postMessage(
@@ -309,7 +418,7 @@ export async function createGrinderNode(
     }
     node.port.postMessage({ type: 'init' });
 
-    return {
+    const result: GrinderNodeResult = {
         workletNode: node,
         setParam(name: string, value: number, sampleFrame?: number) {
             if (Number.isFinite(value)) {
@@ -378,6 +487,7 @@ export async function createGrinderNode(
                 return;
             }
             destroyed = true;
+            setupHandshake?.reject(new Error('GrinderNode destroyed during offline setup'));
             if (meterRafId !== null) {
                 cancelAnimationFrame(meterRafId);
                 meterRafId = null;
@@ -402,4 +512,8 @@ export async function createGrinderNode(
         },
         ready: readyPromise,
     };
+    if (offline) {
+        result.completeOfflineSetup = completeOfflineSetup;
+    }
+    return result;
 }

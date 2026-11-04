@@ -12,7 +12,8 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type AudioGraphStripState } from '../../../models/AudioGraphBackend';
+import { type AudioGraphCommand, type AudioGraphStripState } from '../../../models/AudioGraphBackend';
+import { buildDeviceChain } from '../../buildDeviceChain';
 
 vi.mock('../../buildDeviceChain', () => ({
     buildDeviceChain: vi.fn(async (_ctx, devices, inputNode, outputNode) => {
@@ -78,6 +79,41 @@ function backendUnderTest(): {
 }
 
 describe('createWebAudioOfflineBackend', () => {
+    it('refuses live device cancellation and VCA controls before any earlier command mutates the graph', async () => {
+        const controls: AudioGraphCommand[] = [
+            {
+                kind: 'write-device-parameter',
+                target: { kind: 'device-parameter', trackId: 't', deviceId: 'd', parameterId: '7' },
+                write: { shape: 'hold', time: 1 },
+            },
+            { kind: 'set-strip-vca-multiplier', trackId: 't', multiplier: 0.5 },
+        ];
+        for (const control of controls) {
+            const { backend, master } = backendUnderTest();
+            const result = await backend.apply({
+                schemaVersion: 1,
+                commands: [
+                    {
+                        kind: 'create-track-strip',
+                        trackId: 't',
+                        name: 'Member',
+                        state: REST,
+                        devices: [
+                            { id: 'd', name: 'Device', type: 'builtin-gain', bypassed: false, parameterValues: {} },
+                        ],
+                        honorMuted: true,
+                        contributesAudio: true,
+                    },
+                    control,
+                ],
+            });
+            expect(result.application).toBe('not-applied');
+            expect(buildDeviceChain).not.toHaveBeenCalled();
+            expect(master.gain?.value).toBe(1);
+            backend.dispose();
+        }
+    });
+
     beforeEach(() => {
         vi.clearAllMocks();
     });

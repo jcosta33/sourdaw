@@ -22,7 +22,7 @@ const ensure_track_strip = vi.hoisted(() => vi.fn());
 const apply_note_expression = vi.hoisted(() => vi.fn());
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
-    audioEngine: { context: audio_clock },
+    audioEngine: { context: audio_clock, ensureTrackStrip: ensure_track_strip },
     applyNoteExpression: apply_note_expression,
     getDefaultBendRangeSemitones: () => 48,
     getCompensationDelay: () => 0,
@@ -117,6 +117,7 @@ describe('event-time recording beat (#4875)', () => {
         setMpeEnabledInternal(false);
         tempoMapStore.set({ changes: [] });
         playheadWrapCountRef.current = 0;
+        playheadClockRef.hold = null;
         ensure_track_strip.mockReset();
         ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
         performance_now = vi.spyOn(performance, 'now').mockReturnValue(NOW_MS);
@@ -126,6 +127,7 @@ describe('event-time recording beat (#4875)', () => {
         restoreTransport?.();
         restoreTransport = null;
         playheadWrapCountRef.current = 0;
+        playheadClockRef.hold = null;
         performance_now.mockRestore();
     });
 
@@ -138,6 +140,28 @@ describe('event-time recording beat (#4875)', () => {
         // 120 BPM: 50 ms before beat 2.2 is beat 2.1 — the stale capture
         // recorded 2.2, dating the note half a 16th late.
         expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(2.1, 9);
+    });
+
+    it('holds a delayed physical onset at the requested Play beat while admission spans a tempo switch', async () => {
+        playTransport({ isLooping: true, loopStart: 4, loopEnd: 12, playheadPosition: 8 });
+        tempoMapStore.set({
+            changes: [
+                { id: 'old-tempo', beat: 0, tempo: 300, curve: 'instant' },
+                { id: 'held-tempo', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        playheadClockRef.beat = 0;
+        playheadClockRef.audioTimeSeconds = 0;
+        playheadClockRef.hold = { generation: 12, beat: 8 };
+        setGestureClockSource({
+            getAudioTimeSeconds: () => audio_clock.currentTime,
+            readNativeCursorBeats: () => null,
+        });
+        await dispatch([0x91, 60, 100], 1000);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBe(8);
+        expect(ensure_track_strip).toHaveBeenCalledExactlyOnceWith('track-1');
+        expect(playheadWrapCountRef.current).toBe(0);
+        expect(playheadClockRef.beat).toBe(0);
     });
 
     it('integrates the tempo map between the event instant and now', async () => {

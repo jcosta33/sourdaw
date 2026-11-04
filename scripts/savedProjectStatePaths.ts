@@ -1,8 +1,6 @@
 /**
- * One surface registry for saved-project state and undo, shared by the review risk policy
- * (`reviewRiskPolicy.ts`) and the semantic review's three project-state rules
- * (`semanticReview/rules.ts`), so the two can no longer disagree about which paths carry that
- * responsibility. The registry holds each surface once, tagged with the view(s) it belongs to:
+ * One surface registry for saved-project state and undo used by the review risk policy.
+ * The registry holds each surface once, tagged with the view(s) it belongs to:
  *
  * - `undo` — the risk policy's `undo` risk class. Its scope is unchanged from the policy's original
  *   predicate, except that the `undo` marker now matches a path word rather than a bare substring

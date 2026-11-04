@@ -1,6 +1,6 @@
 /**
  * Driving the packaged app's agent workspace through its own UI: admitting
- * the loopback provider in Preferences, streaming one explain-mode answer
+ * the loopback provider in Preferences, completing one tool-backed explain answer
  * back from it, raising a proposal from the chat composer, then confirming,
  * comparing and reverting it from the workspace's own controls.
  *
@@ -152,10 +152,10 @@ async function openChatComposer(page: Page): Promise<Locator> {
  * resolved by the compound fast path before any provider is called — so
  * without this step nothing in the run would reach the endpoint, and the
  * packaged `connect-src` policy and the desktop hosted-provider branch would
- * go unexercised. Explain mode has no fast path: the reply in the chat log is
- * the endpoint's own, and the served request count says so from the other end.
+ * go unexercised. Explain uses the shared tool-planning route, so check the
+ * endpoint requests and the evidence disclosed by the completed answer.
  */
-async function streamChatAnswer(page: Page, provider: LoopbackOpenAiProvider): Promise<string> {
+async function completeChatAnswer(page: Page, provider: LoopbackOpenAiProvider): Promise<string> {
     const composer = await openChatComposer(page);
     await page.locator('[aria-label="Agent execution mode"]').selectOption('explain');
 
@@ -166,11 +166,39 @@ async function streamChatAnswer(page: Page, provider: LoopbackOpenAiProvider): P
         .filter({ hasText: provider.reply })
         .waitFor({ state: 'visible', timeout: STEP_TIMEOUT_MS });
 
-    const served = provider.completionRequests.length;
-    if (served === 0) {
-        throw new Error(`the chat log shows the reply but the endpoint served completionRequests=${String(served)}`);
+    const [firstBody, secondBody] = provider.completionRequests;
+    if (provider.completionRequests.length !== 2 || firstBody === undefined || secondBody === undefined) {
+        throw new Error(`expected two tool-planning requests, saw ${String(provider.completionRequests.length)}`);
     }
-    return `completionRequests=${String(served)}; reply streamed`;
+    const first = JSON.parse(firstBody) as { model: string; tools: Array<{ function: { name: string } }> };
+    const second = JSON.parse(secondBody) as {
+        model: string;
+        tools: Array<{ function: { name: string } }>;
+        messages: Array<{ role: string; tool_call_id?: string; content: string }>;
+    };
+    const receipt = second.messages.find(
+        (message) => message.role === 'tool' && message.tool_call_id === 'loopback-query'
+    );
+    if (
+        first.model !== provider.model ||
+        second.model !== provider.model ||
+        !first.tools.some((tool) => tool.function.name === 'project_query') ||
+        !second.tools.some((tool) => tool.function.name === 'answer_respond') ||
+        receipt === undefined
+    ) {
+        throw new Error('the endpoint requests did not carry the expected tools and query receipt');
+    }
+    const result = JSON.parse(receipt.content) as { callId: string; toolName: string; status: string };
+    if (result.callId !== 'loopback-query' || result.toolName !== 'project.query' || result.status !== 'success') {
+        throw new Error('the endpoint did not receive a successful correlated project query receipt');
+    }
+    const conversation = page.getByRole('log', { name: 'Chat conversation' });
+    await conversation.getByRole('button', { name: /Evidence/ }).click({ timeout: STEP_TIMEOUT_MS });
+    await conversation
+        .getByRole('list', { name: 'Evidence' })
+        .getByText('project.query')
+        .waitFor({ state: 'visible', timeout: STEP_TIMEOUT_MS });
+    return 'two tool-planning requests; completed answer cites the successful project query';
 }
 
 /** Sends the multi-action prompt in apply mode; returns the pre-prompt track count. */
@@ -286,8 +314,8 @@ export async function driveAgentWorkspaceProof(page: Page, provider: LoopbackOpe
         await recordStep(
             steps,
             'workspace',
-            'stream a chat answer from the admitted loopback endpoint',
-            () => streamChatAnswer(page, provider),
+            'complete a tool-backed chat answer from the admitted loopback endpoint',
+            () => completeChatAnswer(page, provider),
             2 * STEP_TIMEOUT_MS
         );
 

@@ -25,6 +25,8 @@ AI-assisted musical pattern generation (chords, melodies, drum patterns, basslin
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-pnpm vitest run src/modules/AiGeneration
+pnpm test:run <changed-spec>
 ```

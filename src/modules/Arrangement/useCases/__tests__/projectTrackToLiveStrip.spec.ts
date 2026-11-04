@@ -189,6 +189,145 @@ describe('projectTrackToLiveStrip', () => {
         expect(onExternalPluginActivation).toHaveBeenCalledWith(expect.any(Promise));
     });
 
+    it('replays the captured device after initialization replaces the current project projection', () => {
+        const track = createTrack({ id: 'audio-1', name: 'Audio', kind: 'audio' });
+        const device = {
+            id: 'plugin-1',
+            name: 'Plugin',
+            type: 'external-plugin',
+            bypassed: true,
+            parameterValues: { cutoff: 2400 },
+            externalPluginId: 'captured-plugin',
+            externalInstanceId: 'captured-instance',
+            externalStateChunk: 'captured-state',
+        };
+        track.devices = [device];
+        trackStore.set({ tracks: [track], selectedTrackId: null });
+        mocks.initializeTrackStripFromSnapshot.mockImplementationOnce(() => {
+            trackStore.set({
+                tracks: [{ ...track, devices: [{ ...device, bypassed: false, parameterValues: { cutoff: 1000 } }] }],
+                selectedTrackId: null,
+            });
+            return {
+                acceptance: 'accepted',
+                application: 'applied',
+                correlation: { appRevision: 0, projectRevision: 'project-revision-1' },
+                runtimeRevision: 1,
+            };
+        });
+        const onExternalPluginActivation = vi.fn();
+
+        projectTrackToLiveStrip({
+            trackId: track.id,
+            activateDormantExternalPlugins: true,
+            onExternalPluginActivation,
+        });
+
+        expect(mocks.activateExternalPlugin).toHaveBeenCalledExactlyOnceWith({
+            pluginId: 'captured-plugin',
+            instanceId: 'captured-instance',
+            stateChunk: 'captured-state',
+            onLatencyMs: expect.any(Function),
+        });
+        expect(mocks.updateDeviceParam).toHaveBeenCalledExactlyOnceWith(track.id, device.id, 'cutoff', 2400);
+        expect(mocks.updateDeviceBypass).toHaveBeenCalledExactlyOnceWith(track.id, device.id, true);
+        const replayOrder = [
+            mocks.activateExternalPlugin,
+            onExternalPluginActivation,
+            mocks.updateDeviceParam,
+            mocks.updateDeviceBypass,
+            mocks.wireSidechainRoutes,
+        ].map((call) => call.mock.invocationCallOrder[0]);
+        expect(replayOrder).toEqual([...replayOrder].sort((left, right) => (left ?? 0) - (right ?? 0)));
+    });
+
+    it('projects only the current device controls without rebuilding or changing the strip', () => {
+        const track = createTrack({ id: 'audio-1', name: 'Audio', kind: 'audio' });
+        track.sends = [{ busId: 'bus-1', level: 0.4, preFader: true }];
+        track.devices = [
+            {
+                id: 'plugin-1',
+                name: 'Plugin',
+                type: 'external-plugin',
+                bypassed: true,
+                parameterValues: { cutoff: 1000 },
+                externalPluginId: 'current-plugin',
+                externalInstanceId: 'current-instance',
+                externalStateChunk: 'current-state',
+            },
+            { id: 'other-device', name: 'Other', type: 'delay', bypassed: false, parameterValues: { mix: 0.5 } },
+        ];
+        trackStore.set({ tracks: [track], selectedTrackId: null });
+        const onExternalPluginActivation = vi.fn();
+
+        const result = projectTrackToLiveStrip({
+            mode: 'device-controls',
+            trackId: track.id,
+            deviceId: 'plugin-1',
+            activateDormantExternalPlugins: true,
+            onExternalPluginActivation,
+        });
+
+        expect(result).toBeUndefined();
+        expect(mocks.activateExternalPlugin).toHaveBeenCalledExactlyOnceWith({
+            pluginId: 'current-plugin',
+            instanceId: 'current-instance',
+            stateChunk: 'current-state',
+            onLatencyMs: expect.any(Function),
+        });
+        expect(onExternalPluginActivation).toHaveBeenCalledWith(expect.any(Promise));
+        expect(mocks.updateDeviceParam.mock.calls).toEqual([[track.id, 'plugin-1', 'cutoff', 1000]]);
+        expect(mocks.updateDeviceBypass.mock.calls).toEqual([[track.id, 'plugin-1', true]]);
+        expect(mocks.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
+        expect(mocks.addDeviceToStrip).not.toHaveBeenCalled();
+        expect(mocks.setTrackGain).not.toHaveBeenCalled();
+        expect(mocks.setTrackPan).not.toHaveBeenCalled();
+        expect(mocks.setTrackMute).not.toHaveBeenCalled();
+        expect(mocks.setTrackSoloGate).not.toHaveBeenCalled();
+        expect(mocks.setSend).not.toHaveBeenCalled();
+        expect(mocks.wireSidechainRoutes).not.toHaveBeenCalled();
+        expect(trackStore.value?.tracks).toEqual([track]);
+    });
+
+    it.each([
+        'missing-device',
+        'other-owner',
+        'duplicate-device',
+        'duplicate-owner',
+        'dormant-owner',
+        'ineligible-owner',
+    ])('refuses device-controls projection for %s', (state) => {
+        const track = createTrack({ id: 'owner', name: 'Owner', kind: 'audio' });
+        const other = createTrack({ id: 'other', name: 'Other', kind: 'audio' });
+        const device = { id: 'device', name: 'Delay', type: 'delay', bypassed: false, parameterValues: { mix: 0.5 } };
+        track.devices = [device];
+        const tracks = [track, other];
+        if (state === 'missing-device') {
+            track.devices = [];
+        } else if (state === 'other-owner') {
+            track.devices = [];
+            other.devices = [device];
+        } else if (state === 'duplicate-device') {
+            other.devices = [device];
+        } else if (state === 'duplicate-owner') {
+            other.id = track.id;
+        } else if (state === 'dormant-owner') {
+            track.kind = 'folder';
+        } else {
+            Object.defineProperty(track, 'kind', { value: 'vca' });
+        }
+        trackStore.set({ tracks, selectedTrackId: null });
+
+        projectTrackToLiveStrip({ mode: 'device-controls', trackId: track.id, deviceId: device.id });
+
+        expect(mocks.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
+        expect(mocks.activateExternalPlugin).not.toHaveBeenCalled();
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+        expect(mocks.updateDeviceBypass).not.toHaveBeenCalled();
+        expect(mocks.setSend).not.toHaveBeenCalled();
+        expect(mocks.wireSidechainRoutes).not.toHaveBeenCalled();
+    });
+
     it('keeps solo-safe and solo-bus upstream tracks audible while muting unrelated tracks', () => {
         const target = createTrack({ id: 'target', name: 'Target', kind: 'audio' });
         const soloedBus = createTrack({ id: 'bus', name: 'Bus', kind: 'bus' });
@@ -478,5 +617,23 @@ describe('projectTrackToLiveStrip', () => {
             ['audio-1', 'crust-1', 'style', 2],
             ['audio-1', 'crust-1', 'algorithm', 6],
         ]);
+    });
+    it.each(['builtin-synth', 'drum-kit'])('initializes source and routed target without %s nodes', (type) => {
+        const source = createTrack({ id: 'midi', name: 'MIDI', kind: 'midi' });
+        source.devices = [{ id: 'source-instrument', type, name: 'Instrument', bypassed: false, parameterValues: {} }];
+        source.outputId = 'return';
+        const target = createTrack({ id: 'return', name: 'Return', kind: 'bus' });
+        target.devices = [{ id: 'target-instrument', type, name: 'Instrument', bypassed: false, parameterValues: {} }];
+        trackStore.set({ tracks: [source, target], selectedTrackId: source.id });
+        projectTrackToLiveStrip({ trackId: source.id });
+        expect(mocks.initializeTrackStripFromSnapshot).toHaveBeenCalledWith(
+            expect.objectContaining({
+                nodes: [
+                    { id: 'midi', kind: 'midi', devices: [] },
+                    { id: 'return', kind: 'bus', devices: [] },
+                ],
+            })
+        );
+        expect(trackStore.value?.tracks.map((track) => track.devices[0]?.type)).toEqual([type, type]);
     });
 });

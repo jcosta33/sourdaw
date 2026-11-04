@@ -15,6 +15,7 @@ vi.mock('../../latencyCompensation/compensation/getCompensationDelay', () => ({
     getCompensationDelay: vi.fn(() => 0),
 }));
 
+import { withNativeTimelineMaterialTransport } from '../../../repositories/nativeGraph/__tests__/withNativeTimelineMaterialTransport';
 import {
     type MapGraphBatchInput,
     type NativeGraphTransport,
@@ -29,7 +30,7 @@ class StubAudioBuffer {
     readonly numberOfChannels: number;
     readonly sampleRate: number;
     readonly duration: number;
-    private readonly channels: Float32Array[];
+    private readonly channels: Float32Array<ArrayBuffer>[];
 
     constructor(options: { length: number; numberOfChannels: number; sampleRate: number }) {
         this.length = options.length;
@@ -39,7 +40,7 @@ class StubAudioBuffer {
         this.channels = Array.from({ length: options.numberOfChannels }, () => new Float32Array(options.length));
     }
 
-    getChannelData(channel: number): Float32Array {
+    getChannelData(channel: number): Float32Array<ArrayBuffer> {
         const data = this.channels[channel];
         if (!data) {
             throw new Error(`StubAudioBuffer has no channel ${String(channel)}`);
@@ -47,7 +48,7 @@ class StubAudioBuffer {
         return data;
     }
 
-    copyToChannel(source: Float32Array, channel: number): void {
+    copyToChannel(source: Float32Array<ArrayBuffer>, channel: number): void {
         this.getChannelData(channel).set(source);
     }
 }
@@ -108,7 +109,7 @@ function capturingTransport(frames: number): {
             return Promise.resolve({ acceptance: 'accepted', application: 'applied', reports: [] });
         },
     };
-    return { transport, commands };
+    return { transport: withNativeTimelineMaterialTransport(transport), commands };
 }
 
 describe('renderOfflineWithNativeEngine — routing', () => {

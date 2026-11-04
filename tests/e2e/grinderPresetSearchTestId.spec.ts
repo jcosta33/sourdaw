@@ -6,10 +6,7 @@ import { launch_new_project, setupWorkspace } from './e2eUtils';
 // Grinder device through the Add-device menu, then double-click the device
 // card to expand its panel (path mirrored from devicePanels.spec.ts).
 async function openGrinderPanel(page: import('@playwright/test').Page): Promise<void> {
-    const addAudioButton = page
-        .locator('button')
-        .filter({ hasText: 'Audio' })
-        .filter({ hasText: 'Record or import' });
+    const addAudioButton = page.locator('button').filter({ hasText: 'Audio' }).filter({ hasText: 'Record or import' });
     await addAudioButton.waitFor({ state: 'visible' });
     await addAudioButton.click();
 
@@ -73,5 +70,60 @@ test.describe('Grinder preset search — filtering narrows the preset list', () 
         await presetSearch.fill('');
         await expect(shownReadout).toHaveText(`${beforeCount} shown`);
         await expect(presetButtons.filter({ hasText: 'Clean Twin' })).toBeVisible();
+    });
+
+    test('named tiers reveal cumulative sections and preserve an edited tone through panel reopen', async ({
+        page,
+    }) => {
+        const selector = page.getByRole('group', { name: 'Effect control detail' });
+        const sections = page.getByRole('group', { name: 'Grinder sections' });
+        await expect(selector.getByRole('button', { name: 'play', exact: true })).toHaveAttribute(
+            'aria-pressed',
+            'true'
+        );
+        const gain = page.getByRole('slider', { name: 'Gain', exact: true });
+        await expect(gain).toBeVisible();
+        const original = Number(await gain.getAttribute('aria-valuenow'));
+        await gain.focus();
+        await gain.press('ArrowRight');
+        await expect.poll(async () => Number(await gain.getAttribute('aria-valuenow'))).toBeGreaterThan(original);
+        const edited = await gain.getAttribute('aria-valuenow');
+        if (edited === null) {
+            throw new Error('Grinder Gain did not expose its edited value');
+        }
+
+        for (const [index, tier] of ['play', 'shape', 'build', 'route', 'lab'].entries()) {
+            await selector.getByRole('button', { name: tier, exact: true }).click();
+            await expect(selector.getByRole('button', { name: tier, exact: true })).toHaveAttribute(
+                'aria-pressed',
+                'true'
+            );
+            for (const [name, floor] of [
+                ['Browse', 0],
+                ['Amp', 1],
+                ['Drive', 2],
+                ['Cab', 3],
+                ['Neural', 3],
+                ['Lab', 4],
+            ] as const) {
+                await expect(sections.getByRole('button', { name, exact: true })).toHaveCount(index >= floor ? 1 : 0);
+            }
+        }
+
+        await sections.getByRole('button', { name: 'Amp', exact: true }).click();
+        await expect(page.getByRole('slider', { name: 'Presence', exact: true })).toBeVisible();
+        await expect(gain).toHaveAttribute('aria-valuenow', edited);
+        await selector.getByRole('button', { name: 'play', exact: true }).click();
+        await expect(page.getByRole('slider', { name: 'Presence', exact: true })).toHaveCount(0);
+        await expect(gain).toHaveAttribute('aria-valuenow', edited);
+        await page.getByRole('button', { name: 'Close Grinder', exact: true }).click();
+        await page.getByText('Grinder', { exact: true }).dblclick();
+        await expect(selector.getByRole('button', { name: 'play', exact: true })).toHaveAttribute(
+            'aria-pressed',
+            'true'
+        );
+        await selector.getByRole('button', { name: 'shape', exact: true }).click();
+        await expect(page.getByRole('slider', { name: 'Presence', exact: true })).toBeVisible();
+        await expect(gain).toHaveAttribute('aria-valuenow', edited);
     });
 });

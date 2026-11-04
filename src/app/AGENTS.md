@@ -19,7 +19,8 @@ Application composition root: dependency registration, DI container initializati
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-pnpm deps:validate
-pnpm test:run src/app/__tests__/
+pnpm test:run <changed-spec>
 ```

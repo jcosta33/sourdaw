@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 
+import { getPluginById } from '#/modules/Arrangement/useCases';
+
 import type { DeviceParameterView } from '../../../../../models/PluginDescriptorViewTypes';
 import type { Device } from '../../../../../models/TrackViewTypes';
 import type { DeviceLayoutProps } from '../../deviceLayoutRegistry';
@@ -21,7 +23,8 @@ vi.mock('#/components/daw/visualizers/CompressorCurve', () => ({
     CompressorCurve: (props: unknown) => mockCompressorCurve(props),
 }));
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     setDeviceParameter: vi.fn(),
 }));
 
@@ -39,19 +42,14 @@ vi.mock('../../SectionHeader', () => ({
 
 const PARAM_IDS = ['comp-threshold', 'comp-ratio', 'comp-attack', 'comp-release', 'comp-knee', 'comp-makeup'];
 
-const makeParam = (id: string): DeviceParameterView => ({
-    id,
-    deviceId: 'device-1',
-    name: id,
-    type: 'float',
-    value: 0,
-    defaultValue: 0,
-    minValue: 0,
-    maxValue: 1,
-    unit: '',
-    automatable: true,
-    hasAutomation: false,
-});
+const makeParam = (id: string): DeviceParameterView => {
+    const deviceType = id.startsWith('sc-comp-') ? 'builtin-sidechain-compressor' : 'builtin-compressor';
+    const parameter = getPluginById(deviceType)?.parameters.find((candidate) => candidate.id === id);
+    if (!parameter) {
+        throw new Error(`Missing real ${deviceType}/${id} descriptor`);
+    }
+    return parameter;
+};
 
 const makeDevice = (overrides: Partial<Device> = {}): Device => ({
     id: 'device-1',
@@ -117,5 +115,68 @@ describe('CompressorLayout', () => {
                 makeup: 4,
             })
         );
+    });
+
+    it('renders every real sidechain parameter and uses its actual threshold family', () => {
+        const parameters = getPluginById('builtin-sidechain-compressor')?.parameters;
+        if (!parameters) {
+            throw new Error('Missing real Sidechain Compressor descriptor');
+        }
+        render(
+            <Layout
+                device={makeDevice({ type: 'builtin-sidechain-compressor' })}
+                trackId="track-1"
+                parameters={parameters}
+            />
+        );
+        expect(screen.getAllByTestId('param-control').map((element) => element.textContent)).toEqual([
+            'sc-comp-threshold',
+            'sc-comp-ratio',
+            'sc-comp-attack',
+            'sc-comp-release',
+            'sc-comp-makeup',
+        ]);
+        expect(mockCompressorCurve).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                threshold: -20,
+                ratio: 4,
+                knee: 0,
+                makeup: 0,
+                onGestureStart: expect.any(Function),
+                onGestureCommit: expect.any(Function),
+                onGestureCancel: expect.any(Function),
+            })
+        );
+    });
+
+    it('reads only real sidechain values and keeps its characteristic hard knee', () => {
+        const ids = ['sc-comp-threshold', 'sc-comp-ratio', 'sc-comp-attack', 'sc-comp-release', 'sc-comp-makeup'];
+        render(
+            <Layout
+                device={makeDevice({
+                    type: 'builtin-sidechain-compressor',
+                    parameterValues: {
+                        'sc-comp-threshold': -32,
+                        'sc-comp-ratio': 9,
+                        'sc-comp-makeup': 5,
+                        'comp-threshold': -1,
+                        'comp-ratio': 2,
+                        'comp-knee': 12,
+                        'comp-makeup': 20,
+                    },
+                })}
+                trackId="track-1"
+                parameters={ids.map(makeParam)}
+            />
+        );
+        expect(mockCompressorCurve).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                threshold: -32,
+                ratio: 9,
+                knee: 0,
+                makeup: 5,
+            })
+        );
+        expect(screen.getAllByTestId('param-control')).toHaveLength(5);
     });
 });

@@ -2,7 +2,10 @@ import {
     getVersionedCommandBatchIdempotentReplay,
     refreshVersionedCommandBatchForApproval,
 } from '#/modules/Command/useCases';
-import { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from '#/modules/CrdtDocument/useCases';
+import {
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
+    settlePendingProjectWritesAndCaptureRevision,
+} from '#/modules/CrdtDocument/useCases';
 
 import { type ChatActionConfirmationStatus } from '../../models/Chat';
 import { chatStore, updateChatMessage } from '../../stores/chatStore';
@@ -17,6 +20,7 @@ import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { admitCommittedSectionRenderRetry } from './admitCommittedSectionRenderRetry';
 import { confirmationTerminalSettlement } from './confirmationTerminalSettlement';
 import { type CommandVerifiedBatchReceipt } from './confirmedBatchOutcomeSupport';
+import { readApprovedProtectionFailure } from './readApprovedProtectionFailure';
 import { revalidateApprovedMatchSelectors } from './revalidateApprovedMatchSelectors';
 
 type ApprovalDivergence = Extract<
@@ -235,10 +239,25 @@ async function resolveConfirmationAdmission(input: {
         return { status: 'handled', result: { status: 'not_pending', currentStatus: confirmation.status } };
     }
 
+    // The receipt lookup can yield while a local store queues another write.
+    // Drain those writes before comparing the proposal with live project truth.
+    settlePendingProjectWritesAndCaptureRevision();
     const hasPriorVerifiedBatchReceipt = priorVerifiedBatchReceipt !== null;
     const recoveringPendingEffects =
         priorVerifiedBatchReceipt?.outcome === 'partially-committed' &&
         priorVerifiedBatchReceipt.pendingEffects.length > 0;
+    if (!hasPriorVerifiedBatchReceipt) {
+        const protectionFailure = readApprovedProtectionFailure(confirmation);
+        if (protectionFailure !== null) {
+            return {
+                status: 'handled',
+                result: await confirmationTerminalSettlement.invalidateForProjectChange(
+                    confirmation,
+                    protectionFailure
+                ),
+            };
+        }
+    }
     if (
         !hasPriorVerifiedBatchReceipt &&
         !projectRevisionMatchesLiveIgnoringCommandCheckpoint(confirmation.projectRevision)

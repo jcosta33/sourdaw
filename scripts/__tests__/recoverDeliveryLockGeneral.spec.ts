@@ -19,6 +19,7 @@ const CRASHED_PID = 424_242;
 const HEAD = 'c'.repeat(40);
 const REF = `refs/sourdaw/delivery/pr-${NUMBER}`;
 const RECOVERING_FENCE = { kind: 'pid', pid: process.pid, startedAt: 'recovering-process' } as const;
+const RECOVERY_GUIDANCE = `Rerun the original operation for PR #${NUMBER} with its original bound inputs. Lock recovery does not certify completion or authorize delivery.`;
 
 function git(root: string, args: string[], input?: string): string {
     return execFileSync('git', args, {
@@ -158,7 +159,7 @@ describe('deliver --recover-lock on a journaled delivery owner', () => {
             ).resolves.toBe(0);
             expect(log.mock.calls.map(([line]) => line)).toEqual([
                 `delivery-lock-recovered:${NUMBER}:${ownerOid}:OPEN`,
-                `pnpm deliver ${NUMBER}`,
+                RECOVERY_GUIDANCE,
             ]);
             expect(() => git(root, ['rev-parse', '--verify', REF])).toThrow();
             expect(recoveryReceipt(root, ownerOid)).toMatchObject({
@@ -175,6 +176,46 @@ describe('deliver --recover-lock on a journaled delivery owner', () => {
             removeTemporaryRoot(root);
         }
     });
+
+    it.each(['open', 'closed'])(
+        'guides original-operation replay for a shared owner recovered from %s',
+        async (state) => {
+            const root = temporaryRoot();
+            const ownerOid = initialize(root, journaledOwner('remote-mutation-attempted', 1));
+            const observed = remoteState({ state });
+            const first = harness(root, [observed, observed]);
+            const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+            try {
+                await expect(
+                    runDeliverCli(['--recover-lock', String(NUMBER), '--owner', ownerOid], {
+                        recovery: first.dependencies,
+                    })
+                ).resolves.toBe(0);
+                expect(log.mock.calls.map(([line]) => line)).toEqual([
+                    `delivery-lock-recovered:${NUMBER}:${ownerOid}:${state.toUpperCase()}`,
+                    RECOVERY_GUIDANCE,
+                ]);
+                expect(first.remoteReads()).toBe(2);
+                expect(() => git(root, ['rev-parse', '--verify', REF])).toThrow();
+                log.mockClear();
+                const replay = harness(root, []);
+                await expect(
+                    runDeliverCli(['--recover-lock', String(NUMBER), '--owner', ownerOid], {
+                        recovery: replay.dependencies,
+                    })
+                ).resolves.toBe(0);
+                expect(log.mock.calls.map(([line]) => line)).toEqual([
+                    `delivery-lock-recovered:${NUMBER}:${ownerOid}:${state.toUpperCase()}`,
+                    RECOVERY_GUIDANCE,
+                ]);
+                expect(replay.remoteReads()).toBe(0);
+                expect(replay.authentications()).toBe(0);
+            } finally {
+                log.mockRestore();
+                removeTemporaryRoot(root);
+            }
+        }
+    );
 
     it.each([AUTHOR_BOT_NODE_ID, ORCHESTRATOR_USER_NODE_ID])(
         'records a historical authorized merger %s after remote writes',
@@ -279,7 +320,7 @@ describe('deliver --recover-lock on a journaled delivery owner', () => {
 
             expect(log.mock.calls.map(([line]) => line)).toEqual([
                 `delivery-lock-recovered:${NUMBER}:${ownerOid}:OPEN`,
-                `pnpm deliver ${NUMBER}`,
+                RECOVERY_GUIDANCE,
             ]);
             expect(replay.remoteReads()).toBe(0);
             expect(replay.authentications()).toBe(0);

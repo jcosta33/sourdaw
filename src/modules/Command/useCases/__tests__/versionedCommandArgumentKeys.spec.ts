@@ -194,3 +194,22 @@ describe('versionedCommandArgumentKeys — dense array admission (#4938)', () =>
         ).toBe(true);
     });
 });
+
+describe('versionedCommandArgumentKeys — guarded solo replay (#5643)', () => {
+    it('admits the expected solo state in persisted soloTrack arguments', () => {
+        expect(
+            validateVersionedCommandArguments('soloTrack', {
+                trackId: 'track-a',
+                soloed: true,
+                expectedSoloed: false,
+            })
+        ).toBe(true);
+        expect(
+            validateVersionedCommandArguments('soloTrack', {
+                trackId: 'track-a',
+                soloed: true,
+                expectedSoloed: 'false',
+            })
+        ).toBe(false);
+    });
+});

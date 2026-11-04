@@ -414,6 +414,7 @@ class GrinderProcessor extends AudioWorkletProcessor {
     _fallbackControlGeneration: number | null = null;
     _fallbackControlTarget: FallbackControlTarget | null = null;
     _lastFallbackControlSequence = 0;
+    _hasFallbackControlSequenceGap = false;
     /** Digest of the model already parsed into the instance — the re-load gate's state. */
     _loadedNeuralModelDigest: LoadedNeuralModelDigest = { current: null };
     _pendingFallbackControls: Array<ScheduledFallbackControl | null> = Array.from(
@@ -449,6 +450,8 @@ class GrinderProcessor extends AudioWorkletProcessor {
                     this._sabView = new Float32Array(msg.sab, msg.byteOffset, 32);
                     this._sabSeqView = new Int32Array(msg.sab, msg.byteOffset, 32);
                 } else if (this._initializeFallbackControl(msg)) {
+                    return;
+                } else if (this._completeOfflineSetup(msg)) {
                     return;
                 } else if (this._handleFallbackControl(msg)) {
                     return;
@@ -498,7 +501,50 @@ class GrinderProcessor extends AudioWorkletProcessor {
         });
         this._fallbackControlGeneration = message.correlation.workletGeneration;
         this._lastFallbackControlSequence = 0;
+        this._hasFallbackControlSequenceGap = false;
         this._pendingFallbackControls.fill(null);
+        return true;
+    }
+
+    _completeOfflineSetup(message: UnknownRecord): boolean {
+        if (message.command !== 'complete-offline-grinder-setup') {
+            return false;
+        }
+        const target = this._fallbackControlTarget;
+        if (
+            !this._ready ||
+            this._faulted ||
+            this._instance === null ||
+            currentFrame !== 0 ||
+            target === null ||
+            this._hasFallbackControlSequenceGap ||
+            !hasOnlyKeys(message, ['schemaVersion', 'command', 'target', 'correlation']) ||
+            message.schemaVersion !== 1 ||
+            !isRecord(message.target) ||
+            !hasOnlyKeys(message.target, ['trackId', 'deviceId', 'deviceType']) ||
+            message.target.trackId !== target.trackId ||
+            message.target.deviceId !== target.deviceId ||
+            message.target.deviceType !== target.deviceType ||
+            !isRecord(message.correlation) ||
+            !hasOnlyKeys(message.correlation, ['workletGeneration', 'controlSequence']) ||
+            message.correlation.workletGeneration !== this._fallbackControlGeneration ||
+            !isNonNegativeSafeInteger(message.correlation.controlSequence) ||
+            message.correlation.controlSequence !== this._lastFallbackControlSequence ||
+            this._pendingFallbackControls.some((control) => control !== null)
+        ) {
+            throw new Error('Grinder offline setup was not completely consumed before rendering');
+        }
+        this.port.postMessage({
+            type: 'ready',
+            phase: 'offline-grinder-setup',
+            schemaVersion: 1,
+            sampleFrame: currentFrame,
+            target: { trackId: target.trackId, deviceId: target.deviceId, deviceType: target.deviceType },
+            correlation: {
+                workletGeneration: this._fallbackControlGeneration,
+                controlSequence: this._lastFallbackControlSequence,
+            },
+        });
         return true;
     }
 
@@ -545,6 +591,8 @@ class GrinderProcessor extends AudioWorkletProcessor {
         if (!immediate && (!scheduled || targetFrame > deadlineFrame)) {
             return true;
         }
+        this._hasFallbackControlSequenceGap ||=
+            message.correlation.controlSequence !== this._lastFallbackControlSequence + 1;
         this._lastFallbackControlSequence = message.correlation.controlSequence;
         if (scheduled && currentFrame > deadlineFrame) {
             return true;
@@ -604,6 +652,8 @@ class GrinderProcessor extends AudioWorkletProcessor {
         ) {
             return true;
         }
+        this._hasFallbackControlSequenceGap ||=
+            message.correlation.controlSequence !== this._lastFallbackControlSequence + 1;
         this._lastFallbackControlSequence = message.correlation.controlSequence;
         const oldLatency = this._instance.get_latency_samples();
         applyNeuralPatch(this._instance, message.patch, this._loadedNeuralModelDigest);

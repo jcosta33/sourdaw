@@ -38,6 +38,7 @@ import {
 } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { getPendingEffectRecoveryPolicy } from '../models/GetPendingEffectRecoveryPolicy';
+import { type BoundRequestProtections, type ProposalProtectionFacts } from '../models/ProposalGroundingBasis';
 import {
     THREAD_COMMIT_STANDINGS,
     type ThreadCommitStanding,
@@ -1239,6 +1240,69 @@ function readAgentRunBatchScheduleSlice(value: unknown): AgentRunBatchScheduleSl
         : { position, commandCount, targetIds, serializedSlice };
 }
 
+function readProtectionFacts(value: unknown): ProposalProtectionFacts | null {
+    if (!isRecord(value)) {
+        return null;
+    }
+    const protectedUnchanged = readCollection(value.protectedUnchanged, (candidate) => {
+        if (!isRecord(candidate)) {
+            return null;
+        }
+        const id = readString(candidate.id);
+        const name = readBlankableText(candidate.name);
+        if (id === null || name === null) {
+            return null;
+        }
+        return { id, name };
+    });
+    const protectedControls = readCollection(value.protectedControls, (candidate) => {
+        if (!isRecord(candidate)) {
+            return null;
+        }
+        const trackId = readString(candidate.trackId);
+        const operations = readStringArray(candidate.operations);
+        if (trackId === null || operations === null) {
+            return null;
+        }
+        const control: ProposalProtectionFacts['protectedControls'][number] = { trackId, operations };
+        if (candidate.exceptOperations !== undefined) {
+            const exceptOperations = readStringArray(candidate.exceptOperations);
+            if (exceptOperations === null) {
+                return null;
+            }
+            control.exceptOperations = exceptOperations;
+        }
+        return control;
+    });
+    if (protectedUnchanged === null || protectedControls === null) {
+        return null;
+    }
+    return { protectedUnchanged, protectedControls };
+}
+
+function readBoundRequestProtections(value: unknown): BoundRequestProtections | null {
+    if (!isRecord(value)) {
+        return null;
+    }
+    const request = readString(value.request);
+    const facts = readProtectionFacts(value.facts);
+    const resolvedTrackClauses = readCollection(value.resolvedTrackClauses, (candidate) => {
+        if (!isRecord(candidate) || request === null) {
+            return null;
+        }
+        const start = readNonNegativeInteger(candidate.start);
+        const end = readNonNegativeInteger(candidate.end);
+        if (start === null || end === null || start >= end || end > request.length) {
+            return null;
+        }
+        return { start, end };
+    });
+    if (request === null || facts === null || resolvedTrackClauses === null) {
+        return null;
+    }
+    return { request, facts, resolvedTrackClauses };
+}
+
 /**
  * A schedule is read whole or not at all: its slices must number its batches 1..total in order, and
  * its position must name one of them, or a restored run could propose a batch out of sequence.
@@ -1259,6 +1323,10 @@ function readAgentRunBatchSchedule(value: unknown): AgentRunBatchSchedule | null
             : (AGENT_TRUST_CEILINGS.find((ceiling) => ceiling === value.trustCeiling) ?? undefined);
     const serializedProviderProposal =
         value.serializedProviderProposal === null ? null : readSerializedSlice(value.serializedProviderProposal);
+    let requestProtections: BoundRequestProtections | null | undefined;
+    if (value.requestProtections !== undefined) {
+        requestProtections = readBoundRequestProtections(value.requestProtections);
+    }
     const slices = readCollection(value.slices, readAgentRunBatchScheduleSlice);
     if (
         scheduleId === null ||
@@ -1277,7 +1345,7 @@ function readAgentRunBatchSchedule(value: unknown): AgentRunBatchSchedule | null
     ) {
         return null;
     }
-    return {
+    const schedule: AgentRunBatchSchedule = {
         schemaVersion: 1,
         scheduleId,
         position,
@@ -1288,6 +1356,10 @@ function readAgentRunBatchSchedule(value: unknown): AgentRunBatchSchedule | null
         serializedProviderProposal,
         slices,
     };
+    if (requestProtections !== undefined && requestProtections !== null) {
+        schedule.requestProtections = requestProtections;
+    }
+    return schedule;
 }
 
 function readAgentRunPlan(value: unknown, fallbackScope: AgentRun['scope']): AgentRunPlan | null | undefined {

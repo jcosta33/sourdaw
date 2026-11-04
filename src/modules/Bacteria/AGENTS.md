@@ -26,6 +26,8 @@ Multiband creative multi-effects framework (crossover filtering, multi-model dis
 
 ## Verification
 
-- `pnpm vitest run src/modules/Bacteria`
-- `cargo test --package daw-dsp -- bacteria`
-- `pnpm deps:validate`
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
+- `pnpm test:run <changed-spec>`
+- `pnpm cargo:test --package daw-dsp bacteria`
+- PR CI checks module boundaries; inspect that result after cross-module changes.

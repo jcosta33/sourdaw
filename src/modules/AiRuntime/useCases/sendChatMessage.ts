@@ -1,41 +1,15 @@
-import { logger } from '#/infra/logger/appLogger';
-import { settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
-
 import { createAiRuntimeError } from '../errors/AiRuntimeError';
 import { type AgentExecutionMode, type AgentTrustCeiling } from '../models/AgentExecutionMode';
-import { describeAgentRunCreationRefusal } from '../models/AgentResourceLimits';
 import { type AgentRunBudgets, type AgentRunDecisionResume } from '../models/AgentRun';
-import { type RunnableAiBackend } from '../models/LlmOrchestrationTypes';
-import { type ModelProviderName } from '../models/ModelProviderProtocol';
-import { getCloudProviderInfo } from '../repositories/cloudLlm/getCloudProviderInfo';
 import { isCloudAvailable } from '../repositories/cloudLlm/isCloudAvailable';
-import { getActiveModelId } from '../repositories/webLlm/getActiveModelId';
 import { getLlmEngine } from '../repositories/webLlm/getLlmEngine';
 import { aiBackendPreferenceStore } from '../stores/aiBackendPreferenceStore';
-import { chatStore, setChatGenerating } from '../stores/chatStore';
+import { chatStore } from '../stores/chatStore';
 
 import { type executeImmediatePromptCommand } from './agentRequestOrchestration/executeImmediatePromptCommand';
 import { orchestratePromptChatRequest } from './agentRequestOrchestration/orchestratePromptChatRequest';
-import { settleAgentRunWorkLeaseSafely } from './agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
-import { streamExplainChatResponse } from './agentRequestOrchestration/streamExplainChatResponse';
-import { agentRunLifecycle } from './agentRunLifecycle';
-import { agentRunWorkLease } from './agentRunWorkLease';
 import { resolveBackend } from './llmOrchestration/backendResolution/helpers';
 import { resolveAgentExecutionMode } from './resolveAgentExecutionMode';
-
-function getBackendModelId(backend: RunnableAiBackend): string {
-    if (backend === 'cloud') {
-        return getCloudProviderInfo()?.model ?? 'cloud';
-    }
-    return getActiveModelId();
-}
-
-function getModelProviderName(backend: RunnableAiBackend): ModelProviderName {
-    if (backend === 'webllm') {
-        return backend;
-    }
-    return getCloudProviderInfo()?.provider ?? 'openai-compatible';
-}
 
 type SendChatMessageOptions = {
     mode?: AgentExecutionMode;
@@ -60,89 +34,20 @@ export async function sendChatMessage(
         return undefined;
     }
     const interactionMode = resolveAgentExecutionMode({ chatMode: state.chatMode, requestedMode: options?.mode });
-    const backend = resolveBackend({
-        operation: interactionMode === 'explain' ? 'text' : 'tools',
-        modality: 'text',
-        streaming: interactionMode === 'explain',
-    });
-
-    if (interactionMode !== 'explain') {
-        return orchestratePromptChatRequest({ userText, requestedRoute, backend, interactionMode, options });
-    }
-
-    // Explain streams from one selected backend. Prompt mode can admit a
-    // deterministic plan even when no provider route is available.
-    if (backend === 'none') {
-        throw createAiRuntimeError(
-            'No AI backend available. Configure a hosted provider in the desktop app or use a WebGPU-capable browser.'
-        );
-    }
-    if (backend === 'webllm' && !getLlmEngine()) {
-        throw createAiRuntimeError('AI Engine is not initialized or not supported on this device.');
-    }
-    if (backend === 'cloud' && !isCloudAvailable()) {
-        throw createAiRuntimeError('Hosted AI is not configured.');
-    }
-
-    const runId = `agent-run-${crypto.randomUUID()}`;
-    const admission = agentRunLifecycle.create({
-        runId,
-        request: userText,
-        mode: interactionMode,
-        createdRevision: settlePendingProjectWritesAndCaptureRevision(),
-        requestedRoute,
-        selectedRouteId: `${backend}:${getModelProviderName(backend)}:${getBackendModelId(backend)}`,
-        scope: options?.scope,
-        grants: options?.grants,
-        budgets: options?.budgets,
-        resume: options?.resume,
-    });
-    if (admission.status === 'hard-limit-reached') {
-        throw createAiRuntimeError(describeAgentRunCreationRefusal(admission.reason));
-    }
-    agentRunLifecycle.transitionPhase({ runId, phase: 'planning' });
-    const providerWorkId = 'provider-response';
-    const providerReceiptIdentity = `provider:${backend}:${runId}`;
-    const providerLeaseResult = agentRunWorkLease.claim({
-        runId,
-        workId: providerWorkId,
-        ownerKind: 'provider',
-        cleanupOwner: 'provider-adapter',
-        idempotencyKey: providerReceiptIdentity,
-        receiptIdentity: providerReceiptIdentity,
-        idempotent: false,
-        retriable: true,
-    });
-    if (providerLeaseResult.status !== 'claimed') {
-        throw new Error(`Agent provider work could not be claimed: ${providerLeaseResult.status}`);
-    }
-    const providerLease = providerLeaseResult.lease;
-    try {
-        options?.onResumedRunAdmitted?.(runId);
-    } catch (error) {
-        settleAgentRunWorkLeaseSafely({
-            lease: providerLease,
-            terminalState: 'failed',
-            evidence: 'none',
-            settle: agentRunWorkLease.settle,
-            reportFailure: (settlementError) =>
-                logger.error(new Error('Resumed provider work lease settlement failed', { cause: settlementError })),
-        });
-        try {
-            agentRunLifecycle.transitionPhase({ runId, phase: 'failed' });
-        } catch (lifecycleError) {
-            logger.error(new Error('Resumed agent run lifecycle persistence failed', { cause: lifecycleError }));
+    const backend = resolveBackend({ operation: 'tools', modality: 'text', streaming: false });
+    // Explain has no deterministic action fallback, so unavailable providers fail before admission.
+    if (interactionMode === 'explain') {
+        if (backend === 'none') {
+            throw createAiRuntimeError(
+                'No AI backend available. Configure a hosted provider in the desktop app or use a WebGPU-capable browser.'
+            );
         }
-        throw error;
+        if (backend === 'webllm' && !getLlmEngine()) {
+            throw createAiRuntimeError('AI Engine is not initialized or not supported on this device.');
+        }
+        if (backend === 'cloud' && !isCloudAvailable()) {
+            throw createAiRuntimeError('Hosted AI is not configured.');
+        }
     }
-
-    setChatGenerating(true);
-    return streamExplainChatResponse({
-        userText,
-        runId,
-        backend,
-        providerLease,
-        providerReceiptIdentity,
-        providerWorkId,
-    });
+    return orchestratePromptChatRequest({ userText, requestedRoute, backend, interactionMode, options });
 }

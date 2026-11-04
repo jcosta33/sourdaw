@@ -1,8 +1,4 @@
-import {
-    reconcileAutoInputMonitoring,
-    startInputMonitoring,
-    stopTrackInputMonitoring,
-} from '#/modules/AudioEngine/useCases';
+import { reconcileAutoInputMonitoring, startInputMonitoring } from '#/modules/AudioEngine/useCases';
 
 import { getTrackById } from '../../repositories/track/getTrackById';
 import { updateTrack } from '../../repositories/track/updateTrack';
@@ -34,13 +30,10 @@ export function toggleInputMonitoring(trackId: string): void {
     const newValue = INPUT_MONITORING_CYCLE[track.inputMonitoring];
     updateTrack(trackId, (time) => ({ ...time, inputMonitoring: newValue }));
 
-    // 'on' starts hardware monitoring and 'off' stops it for this track only;
-    // 'auto' belongs to the Auto owner, which opens or closes the edge from arm
-    // and transport state. Other tracks' monitor edges are untouched.
+    // Reconciliation holds an admitted On edge through an optimistic Off and
+    // releases it when the project commits. Auto still follows arm and transport.
     if (newValue === 'on') {
         void startInputMonitoring(trackId, track.inputId);
-    } else if (newValue === 'off') {
-        stopTrackInputMonitoring(trackId);
     } else {
         reconcileAutoInputMonitoring();
     }

@@ -27,12 +27,16 @@ test.describe('ProofChamber tail knobs — keyboard response', () => {
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
         await inspector.getByRole('button', { name: 'Add device' }).click();
         await page.getByRole('menuitem', { name: /^Dutch Oven$/ }).click();
-        await page.waitForTimeout(800);
         await expect(inspector.getByRole('button', { name: /^Bypass Dutch Oven$/i })).toBeVisible();
 
         // Open the panel by clicking the device card text.
         await inspector.getByText('Dutch Oven', { exact: false }).first().click();
         await expect(page.getByRole('slider', { name: 'Size' })).toBeVisible({ timeout: 15_000 });
+        await page
+            .getByRole('group', { name: 'Effect control detail' })
+            .getByRole('button', { name: 'lab', exact: true })
+            .click();
+        await expect(page.getByRole('button', { name: 'lab', exact: true })).toHaveAttribute('aria-pressed', 'true');
     });
 
     test('Hi Cut knob responds to keyboard', async ({ page }) => {
@@ -41,9 +45,7 @@ test.describe('ProofChamber tail knobs — keyboard response', () => {
         await hiCut.focus();
         const before = Number(await hiCut.getAttribute('aria-valuenow'));
         await page.keyboard.press('ArrowUp');
-        await page.waitForTimeout(200);
-        const after = Number(await hiCut.getAttribute('aria-valuenow'));
-        expect(after).toBeGreaterThan(before);
+        await expect.poll(async () => Number(await hiCut.getAttribute('aria-valuenow'))).toBeGreaterThan(before);
     });
 
     test('Lo Cut knob responds to keyboard', async ({ page }) => {
@@ -52,9 +54,7 @@ test.describe('ProofChamber tail knobs — keyboard response', () => {
         await loCut.focus();
         const before = Number(await loCut.getAttribute('aria-valuenow'));
         await page.keyboard.press('ArrowUp');
-        await page.waitForTimeout(200);
-        const after = Number(await loCut.getAttribute('aria-valuenow'));
-        expect(after).toBeGreaterThan(before);
+        await expect.poll(async () => Number(await loCut.getAttribute('aria-valuenow'))).toBeGreaterThan(before);
     });
 
     test('Damp knob responds to keyboard', async ({ page }) => {
@@ -63,9 +63,7 @@ test.describe('ProofChamber tail knobs — keyboard response', () => {
         await damp.focus();
         const before = Number(await damp.getAttribute('aria-valuenow'));
         await page.keyboard.press('ArrowUp');
-        await page.waitForTimeout(200);
-        const after = Number(await damp.getAttribute('aria-valuenow'));
-        expect(after).toBeGreaterThan(before);
+        await expect.poll(async () => Number(await damp.getAttribute('aria-valuenow'))).toBeGreaterThan(before);
     });
 
     // Gravity is bipolar (-1..1, step 0.01, default 0.5). RotaryKnob's clamp
@@ -79,11 +77,9 @@ test.describe('ProofChamber tail knobs — keyboard response', () => {
         await expect(gravity).toBeVisible({ timeout: 5000 });
         await gravity.focus();
         await page.keyboard.press('Home');
-        await page.waitForTimeout(200);
+        await expect(gravity).toHaveAttribute('aria-valuenow', '-1');
         const before = Number(await gravity.getAttribute('aria-valuenow'));
         await page.keyboard.press('ArrowUp');
-        await page.waitForTimeout(200);
-        const after = Number(await gravity.getAttribute('aria-valuenow'));
-        expect(after).toBeGreaterThan(before);
+        await expect.poll(async () => Number(await gravity.getAttribute('aria-valuenow'))).toBeGreaterThan(before);
     });
 });

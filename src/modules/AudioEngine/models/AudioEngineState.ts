@@ -1,3 +1,4 @@
+import type { AudioPreviewIntent } from './AudioPreviewIntent';
 import type { BuiltinLufsMeterReader, BuiltinLufsMeterReading } from './BuiltinLufsMeterReader';
 import type {
     RuntimeGraphDeltaResult,
@@ -519,6 +520,9 @@ export type AudioEngine = {
     resetPlaybackLatencyStats(): void;
     dispose(): Promise<void>;
     resetGraph(): void;
+    /** Main-thread cancellation ownership; currentness alone does not certify listening isolation. */
+    beginAudioPreviewIntent(): AudioPreviewIntent;
+    beginExclusiveAudioPreviewIntent(): AudioPreviewIntent;
     /** Monotonic live-graph revision used to reject stale compiled deltas. */
     getRuntimeGraphRevision(): number;
     /** Composition-owned freshness authority; AudioEngine never reads project state directly. */

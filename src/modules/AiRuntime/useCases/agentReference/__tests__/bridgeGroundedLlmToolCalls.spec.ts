@@ -8940,3 +8940,36 @@ describe('bridgeGroundedLlmToolCalls', () => {
         }
     });
 });
+
+describe('protected control ownership', () => {
+    const drumBus = createTrack({ id: 'bus-drums', name: 'Drum Bus', kind: 'bus' });
+    const context = { ...projectContext, tracks: [...projectContext.tracks, drumBus] };
+    const route = { name: 'setTrackOutput', arguments: { trackId: vocals.id, outputId: drumBus.id } };
+
+    it('allows routing into a bus whose own output is protected', () => {
+        expect(bridge([route], 'route Vocals to Drum Bus', context).actions).toEqual([
+            { type: route.name, payload: { ...route.arguments, expectedOutputId: vocals.outputId } },
+        ]);
+        expect(bridge([route], 'route Vocals to Drum Bus but leave the Drum Bus output alone', context)).toEqual({
+            actions: [{ type: route.name, payload: { ...route.arguments, expectedOutputId: vocals.outputId } }],
+            rejections: [],
+        });
+    });
+
+    it.each(['Vocals', 'Drum Bus'])('refuses changing the protected %s output itself', (name) => {
+        const trackId = name === 'Vocals' ? vocals.id : drumBus.id;
+        const result = bridge(
+            [{ name: 'setTrackOutput', arguments: { trackId, outputId: master.id } }],
+            `route ${name} to Master but leave the ${name} output alone`,
+            context
+        );
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain(`"${name}"`);
+    });
+
+    it('keeps whole destination protection distinct from its own output facet', () => {
+        const result = bridge([route], 'route Vocals to Drum Bus but leave Drum Bus alone', context);
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('Drum Bus');
+    });
+});

@@ -134,6 +134,19 @@ function executionGuardsMatch(
     );
 }
 
+function runtimeAuthorityForParameter(
+    action: { payload: { deviceId: string; paramId: string } },
+    context?: HandlerValidationContext
+) {
+    const authority = context?.deviceParameterRuntimeAuthority;
+    const owner = resolveDeviceTarget(action).owner;
+    return authority?.trackId === owner?.id &&
+        authority?.deviceId === action.payload.deviceId &&
+        authority.paramId === action.payload.paramId
+        ? authority
+        : undefined;
+}
+
 function handleGuardedSetDeviceParameter(
     action: {
         payload: {
@@ -150,9 +163,13 @@ function handleGuardedSetDeviceParameter(
     if (!executionGuardsMatch(action) || !nativeUnitMatches(action)) {
         return { status: 'conflict' as const };
     }
+    const runtimeAuthority = runtimeAuthorityForParameter(action, context);
     const didWrite = setDeviceParameter(action.payload.deviceId, action.payload.paramId, action.payload.value, {
         ...(action.payload.deleteParameter ? { deleteParameter: true } : {}),
-        ...(context?.executionMode === 'isolated-preview' ? { projectOnly: true } : {}),
+        ...(context?.executionMode === 'isolated-preview' || (runtimeAuthority && !runtimeAuthority.isCurrent())
+            ? { projectOnly: true }
+            : {}),
+        ...(runtimeAuthority ? { runtimeOwner: runtimeAuthority.owner } : {}),
         automationRecordingPolicy: action.payload.automationRecordingPolicy,
     });
     return toHandlerExecutionResult(didWrite);
@@ -210,7 +227,8 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
         action.payload.expectedDeviceIds !== undefined &&
         action.payload.expectedValuePresent !== undefined,
     validate: (action, context) => executionGuardsMatch(action, context) && nativeUnitMatches(action, context),
-    prepareAbort: (action) => {
+    prepareAbort: (action, context) => {
+        const runtimeAuthority = runtimeAuthorityForParameter(action, context);
         // A suppressed edit cannot reach the recording maps, so snapshotting and
         // restoring them would only be able to discard a pass some other writer
         // legitimately owns. The runtime parameter rollback below is unaffected:
@@ -230,7 +248,7 @@ export const handleSetDeviceParameter = createHandler<'setDeviceParameter'>({
         return () => {
             const effects: Array<() => void> = rollbackAutomationRecording ? [rollbackAutomationRecording] : [];
             const runtimeRollbackValue = previousValue ?? defaultValue;
-            if (owner && runtimeRollbackValue !== undefined) {
+            if (owner && runtimeRollbackValue !== undefined && (!runtimeAuthority || runtimeAuthority.isCurrent())) {
                 effects.unshift(() => {
                     try {
                         updateDeviceParam(

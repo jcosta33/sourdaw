@@ -94,4 +94,4 @@ I/O (storage, Web Audio setup, desktop bridge calls) belongs in the module-root 
 ## References
 
 - [docs/architecture/03-typescript-module.md](../../../docs/architecture/03-typescript-module.md) — module anatomy, contract barrels, layering.
-- `.dependency-cruiser.cjs` + `scripts/check-dependency-boundaries.mjs` — cache-free exact debt ratchet. Run `pnpm deps:validate`.
+- `.dependency-cruiser.cjs` + `scripts/check-dependency-boundaries.mjs` — cache-free exact debt ratchet. PR CI runs `pnpm deps:validate`; inspect that result after cross-module changes.

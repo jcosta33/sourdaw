@@ -1213,6 +1213,7 @@ describe('parsePromptToActions', () => {
             markerSignatures: [],
             sectionSignatures: [],
             prompt: 'make the project faster',
+            protectionFacts: { protectedUnchanged: [], protectedControls: [] },
         });
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 128 } }]);
         expect(result.executionMode).toBe('atomic');

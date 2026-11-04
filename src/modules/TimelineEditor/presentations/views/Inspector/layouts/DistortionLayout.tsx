@@ -5,9 +5,9 @@ import { type ReactElement } from 'react';
 
 import { DistortionCurve } from '#/components/daw/visualizers/DistortionCurve';
 import { Grid, Row, Stack } from '#/components/layout';
-import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
+import { useDeviceParameterGesture } from '../../../hooks/useDeviceParameterGesture';
 import { type DeviceLayoutProps, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
 import { SectionHeader } from '../SectionHeader';
@@ -27,24 +27,53 @@ const Param = ({
     </SurfaceCard>
 );
 
+type CurveValues = { drive: number; tone: number; mix: number };
+
+const InteractiveDistortionCurve = ({
+    param,
+    device,
+    trackId,
+    ...values
+}: Pick<DeviceLayoutProps, 'device' | 'trackId'> & { param: P } & CurveValues): ReactElement => {
+    const gesture = useDeviceParameterGesture({ param, device, trackId });
+    return (
+        <DistortionCurve
+            {...values}
+            drive={gesture.value}
+            width={160}
+            height={130}
+            onParamChange={(_id, value) => gesture.change(value, true)}
+            onGestureStart={() => gesture.startGesture()}
+            isGestureCurrent={gesture.isGestureCurrent}
+            onGestureCommit={() => gesture.settleGesture()}
+            onGestureCancel={() => gesture.cancel()}
+        />
+    );
+};
+
 const DistortionLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElement => {
     const pv = device.parameterValues;
-    const change = (id: string, value: number): void => {
-        setDeviceParameter(device.id, id, value);
+    const driveParameter = parameters.find((param) => param.id === 'dist-drive');
+    const curveValues = {
+        drive: pv['dist-drive'] ?? 20,
+        tone: pv['dist-tone'] ?? 4000,
+        mix: pv['dist-mix'] ?? 0.5,
     };
 
     return (
         <Stack gap={3}>
             <SectionHeader title="Waveshaper" />
             <Row align="stretch" justify="center">
-                <DistortionCurve
-                    drive={pv['dist-drive'] ?? 20}
-                    tone={pv['dist-tone'] ?? 4000}
-                    mix={pv['dist-mix'] ?? 0.5}
-                    width={160}
-                    height={130}
-                    onParamChange={change}
-                />
+                {driveParameter ? (
+                    <InteractiveDistortionCurve
+                        {...curveValues}
+                        param={driveParameter}
+                        device={device}
+                        trackId={trackId}
+                    />
+                ) : (
+                    <DistortionCurve {...curveValues} width={160} height={130} />
+                )}
             </Row>
             <SectionHeader title="Controls" />
             <Grid cols={2} gap={2}>

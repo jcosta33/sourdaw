@@ -16,6 +16,7 @@ import {
     isJsxSelfClosingElement,
     isNamedImports,
     isOmittedExpression,
+    isObjectLiteralExpression,
     isParameter,
     isPropertyAssignment,
     isSatisfiesExpression,
@@ -285,7 +286,7 @@ describe('VCA activation quarantine', () => {
         }
     });
 
-    it('keeps the legacy assignment reader mounted with exact live writer calls', () => {
+    it('keeps the legacy assignment reader mounted with exact live user actions', () => {
         const inspector = parsedSource('src/modules/TimelineEditor/presentations/views/Inspector/TrackInspector.tsx');
         const reader = parsedSource('src/modules/TimelineEditor/presentations/views/Inspector/TrackVcaSection.tsx');
         const mountedReader = importedBinding(inspector, './TrackVcaSection', 'TrackVcaSection');
@@ -295,9 +296,51 @@ describe('VCA activation quarantine', () => {
 
         expect(jsxMountCount(inspector, mountedReader)).toBe(1);
         expect(callWithIdentifierArgumentsCount(reader, useStoreBinding, [storeBinding, defaultStateBinding])).toBe(1);
-        for (const writer of ['createVcaGroup', 'assignToVca', 'removeFromVca'] as const) {
-            const writerBinding = importedBinding(reader, '#/modules/Arrangement/useCases', writer);
-            expect(callCount(reader, writerBinding)).toBe(1);
+        const dispatch = importedBinding(reader, '#/modules/Command/useCases', 'executeUserAppAction');
+        const calls = visit(
+            reader,
+            (node) => isCallExpression(node) && isIdentifier(node.expression) && node.expression.text === dispatch
+        );
+        expect(calls).toHaveLength(3);
+        for (const action of ['createVcaGroup', 'assignToVca', 'removeFromVca'] as const) {
+            const matchingCalls = calls.filter((node) => {
+                if (!isCallExpression(node) || node.arguments.length !== 2) {
+                    return false;
+                }
+                const argument = node.arguments[0];
+                const options = node.arguments[1];
+                if (
+                    !argument ||
+                    !isObjectLiteralExpression(argument) ||
+                    !options ||
+                    !isObjectLiteralExpression(options)
+                ) {
+                    return false;
+                }
+                const admission = options.properties.filter(
+                    (property) =>
+                        isPropertyAssignment(property) &&
+                        isIdentifier(property.name) &&
+                        property.name.text === 'shouldExecute'
+                );
+                if (admission.length !== 1) {
+                    return false;
+                }
+                const types = argument.properties.filter(
+                    (property) =>
+                        isPropertyAssignment(property) && isIdentifier(property.name) && property.name.text === 'type'
+                );
+                return (
+                    types.length === 1 &&
+                    types.some(
+                        (property) =>
+                            isPropertyAssignment(property) &&
+                            isStringLiteral(property.initializer) &&
+                            property.initializer.text === action
+                    )
+                );
+            });
+            expect(matchingCalls).toHaveLength(1);
         }
     });
 

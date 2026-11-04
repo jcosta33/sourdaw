@@ -173,4 +173,14 @@ describe('syncNativeTimelineSamples', () => {
         expect(mocks.warn).not.toHaveBeenCalled();
         expect(mocks.debug).toHaveBeenCalledWith(expect.stringContaining('no desktop runtime'));
     });
+
+    it('does not admit a queued prime after its subscription is closed', async () => {
+        unsubscribe = syncNativeTimelineSamples();
+        notifyProjectChanged();
+        unsubscribe();
+        unsubscribe = null;
+        // Await the queued subscriber flush itself; no polling or fixed drain count.
+        await Promise.resolve();
+        expect(mocks.prime).not.toHaveBeenCalled();
+    });
 });

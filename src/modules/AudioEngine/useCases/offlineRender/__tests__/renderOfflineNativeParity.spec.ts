@@ -92,12 +92,15 @@ import { type TransportState } from '#/modules/Transport/stores';
 import { NATIVE_ADDON_FILE } from '../../../../../../electron/native';
 import {
     type AudioGraphApplyResult,
+    type AudioGraphCommand,
     type AudioGraphParameterWrite,
     type AudioGraphStripParameterTarget,
     type AudioGraphWriteParameterCommand,
 } from '../../../models/AudioGraphBackend';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
+import { nativeTimelineMaterialLeases } from '../../../repositories/nativeGraph/nativeTimelineMaterialLeases';
 import { type NativeGraphWireBatch } from '../../../repositories/nativeGraph/serializeAudioGraphCommand';
+import { serializeAudioGraphCommandBatch } from '../../../repositories/nativeGraph/serializeAudioGraphCommandBatch';
 import { offlinePpqEndpointProjectorState } from '../../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { armNativeLiveAutomationWriter } from '../../livePlayback/armNativeLiveAutomationWriter';
 import { disarmNativeLiveAutomationWriter } from '../../livePlayback/disarmNativeLiveAutomationWriter';
@@ -175,6 +178,7 @@ vi.mock('../../../repositories/nativeGraph/probeNativeGraphTransport', () => ({
 
 vi.mock('../../../stores/audioBufferCache', () => ({
     audioBufferCache: {
+        readRuntimeMaterialPublication: () => undefined,
         get: (id: string) => mocks.audioBuffers.get(id),
         has: (id: string) => mocks.audioBuffers.has(id),
         set: () => undefined,
@@ -185,7 +189,7 @@ vi.mock('#/modules/Automation/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Automation/stores')>();
     return {
         ...actual,
-        automationStore: { value: { lanes: mocks.lanes } },
+        automationStore: { value: { lanes: mocks.lanes }, subscribe: actual.automationStore.subscribe },
     };
 });
 
@@ -193,6 +197,15 @@ vi.mock('#/modules/Automation/stores', async (importOriginal) => {
 
 /** The napi surface the in-process transport drives — `SourdawNative` in `addon/mod.rs`. */
 type NativeHostAddon = {
+    timelineSampleLifecycle: (request: unknown) => Promise<unknown>;
+    registerTimelineMaterial: (
+        lease: string,
+        sampleId: string,
+        version: string,
+        sampleRate: number,
+        channels: number,
+        pcm: Uint8Array
+    ) => Promise<unknown>;
     registerTimelineSample: (
         sampleId: string,
         sampleRate: number,
@@ -252,6 +265,16 @@ const capturedRenders: CapturedRender[] = [];
  */
 function inProcessNativeTransport(host: NativeHostAddon): NativeGraphTransport {
     return {
+        timelineSampleLifecycle: (request) => host.timelineSampleLifecycle(request),
+        registerTimelineMaterial: (input) =>
+            host.registerTimelineMaterial(
+                input.lease,
+                input.sampleId,
+                input.version,
+                input.sampleRate,
+                input.channels,
+                NodeBuffer.from(input.pcm)
+            ),
         async registerTimelineSample(input) {
             return host.registerTimelineSample(
                 input.sampleId,
@@ -298,7 +321,7 @@ class StubAudioBuffer {
     readonly numberOfChannels: number;
     readonly sampleRate: number;
     readonly duration: number;
-    private readonly channels: Float32Array[];
+    private readonly channels: Float32Array<ArrayBuffer>[];
 
     constructor(options: { length: number; numberOfChannels: number; sampleRate: number }) {
         this.length = options.length;
@@ -308,7 +331,7 @@ class StubAudioBuffer {
         this.channels = Array.from({ length: options.numberOfChannels }, () => new Float32Array(options.length));
     }
 
-    getChannelData(channel: number): Float32Array {
+    getChannelData(channel: number): Float32Array<ArrayBuffer> {
         const data = this.channels[channel];
         if (!data) {
             throw new Error(`StubAudioBuffer has no channel ${String(channel)}`);
@@ -316,7 +339,7 @@ class StubAudioBuffer {
         return data;
     }
 
-    copyToChannel(source: Float32Array, channel: number): void {
+    copyToChannel(source: Float32Array<ArrayBuffer>, channel: number): void {
         this.getChannelData(channel).set(source);
     }
 }
@@ -548,9 +571,37 @@ function fixtureRenderContext(busShape: BusShape = {}, audioTrackPan?: number): 
 }
 
 /** Distinct material per clip, so a cross-wired track cannot null by luck. */
-function fixtureMaterial(): { matA: HarnessAudioBuffer; matB: HarnessAudioBuffer } {
-    const matA = createFixtureAudioBuffer({ frames: MATERIAL_FRAMES, sampleRate: SAMPLE_RATE });
-    const matB = createFixtureAudioBuffer({ frames: MATERIAL_FRAMES, sampleRate: SAMPLE_RATE });
+function nativeAudioBuffer(material: HarnessAudioBuffer): AudioBuffer {
+    const channels = Array.from({ length: material.numberOfChannels }, (_, channelIndex) => {
+        const channel: Float32Array<ArrayBuffer> = new Float32Array(material.length);
+        channel.set(material.getChannelData(channelIndex));
+        return channel;
+    });
+    const getChannelData = (channelNumber: number): Float32Array<ArrayBuffer> => {
+        const channel = channels[channelNumber];
+        if (!channel) {
+            throw new Error(`Native fixture has no channel ${String(channelNumber)}`);
+        }
+        return channel;
+    };
+    return {
+        length: material.length,
+        sampleRate: material.sampleRate,
+        duration: material.duration,
+        numberOfChannels: material.numberOfChannels,
+        getChannelData,
+        copyFromChannel(destination, channelNumber, bufferOffset = 0) {
+            destination.set(getChannelData(channelNumber).subarray(bufferOffset, bufferOffset + destination.length));
+        },
+        copyToChannel(source, channelNumber, bufferOffset = 0) {
+            getChannelData(channelNumber).set(source, bufferOffset);
+        },
+    };
+}
+
+function fixtureMaterial(): { matA: AudioBuffer; matB: AudioBuffer } {
+    const matA = nativeAudioBuffer(createFixtureAudioBuffer({ frames: MATERIAL_FRAMES, sampleRate: SAMPLE_RATE }));
+    const matB = nativeAudioBuffer(createFixtureAudioBuffer({ frames: MATERIAL_FRAMES, sampleRate: SAMPLE_RATE }));
     for (let channel = 0; channel < matB.numberOfChannels; channel++) {
         const data = matB.getChannelData(channel);
         const scale = channel === 0 ? -0.8 : 0.65;
@@ -566,9 +617,9 @@ function fixtureMaterial(): { matA: HarnessAudioBuffer; matB: HarnessAudioBuffer
  * (#3773). Both engines receive a single channel, so the pan law each applies
  * to it is what the parity leg measures.
  */
-function toMono(material: HarnessAudioBuffer): HarnessAudioBuffer {
+function toMono(material: HarnessAudioBuffer): AudioBuffer {
     const channel = material.getChannelData(0);
-    return { ...material, numberOfChannels: 1, getChannelData: () => channel };
+    return nativeAudioBuffer({ ...material, numberOfChannels: 1, getChannelData: () => channel });
 }
 
 // ── Running one leg ────────────────────────────────────────────────────────
@@ -729,7 +780,9 @@ describe('renderOffline — native/web export parity (#2225)', () => {
         const { matA, matB } = fixtureMaterial();
         mocks.audioBuffers.clear();
         mocks.audioBuffers.set('mat-a', matA);
+        nativeTimelineMaterialLeases.ownSnapshot('mat-a', matA);
         mocks.audioBuffers.set('mat-b', matB);
+        nativeTimelineMaterialLeases.ownSnapshot('mat-b', matB);
         mocks.lanes.length = 0;
         mocks.lanes.push(...fixtureLanes());
         mocks.renderContext = fixtureRenderContext();
@@ -763,6 +816,89 @@ describe('renderOffline — native/web export parity (#2225)', () => {
         () => {
             expect(nativeAddonPresent).toBe(false);
         }
+    );
+
+    it.runIf(nativeAddonPresent)(
+        'renders canceled device A identically to its replacement reference while VCA and B remain active',
+        async () => {
+            const host = requireNativeHost();
+            const material = Float32Array.from({ length: 16_384 }, (_, index) => 0.2 * Math.sin(index * 0.07));
+            await host.registerTimelineSample('hold-vca-source', SAMPLE_RATE, 1, NodeBuffer.from(material.buffer));
+            const base: AudioGraphCommand[] = [
+                {
+                    kind: 'create-track-strip',
+                    trackId: 'hold-track',
+                    name: 'Hold',
+                    state: { gain: 1, pan: 0, muted: false, soloGated: false, vcaMultiplier: 0 },
+                    devices: [
+                        { id: 'hold-device', name: 'Knead', type: 'knead', bypassed: false, parameterValues: {} },
+                    ],
+                    honorMuted: true,
+                    contributesAudio: true,
+                },
+                {
+                    kind: 'schedule-clip',
+                    playback: {
+                        trackId: 'hold-track',
+                        source: { sourceId: 'hold-vca-source' },
+                        startTime: 0,
+                        sourceOffsetSeconds: 0,
+                        durationSeconds: material.length / SAMPLE_RATE,
+                        playbackRate: 1,
+                        gain: 1,
+                        fade: { microFadeSeconds: 0 },
+                    },
+                },
+                { kind: 'set-strip-vca-multiplier', trackId: 'hold-track', multiplier: 0.5 },
+                {
+                    kind: 'write-parameter',
+                    target: { kind: 'track-fader', trackId: 'hold-track' },
+                    write: { shape: 'step', time: 0, value: 1 },
+                },
+            ];
+            const target = {
+                kind: 'device-parameter',
+                trackId: 'hold-track',
+                deviceId: 'hold-device',
+                parameterId: 'shift_semitones',
+            } as const;
+            const stale: AudioGraphCommand = {
+                kind: 'write-device-parameter',
+                target,
+                write: { shape: 'step', time: 0.04, value: 9 },
+            };
+            const replacement: AudioGraphCommand[] = [
+                { kind: 'write-device-parameter', target, write: { shape: 'step', time: 0.02, value: 0 } },
+                {
+                    kind: 'write-device-parameter',
+                    target: { ...target, parameterId: 'retune_speed_ms' },
+                    write: { shape: 'step', time: 0.05, value: 25 },
+                },
+            ];
+            const render = (commands: readonly AudioGraphCommand[]) =>
+                host.renderGraphOffline(
+                    serializeAudioGraphCommandBatch({ schemaVersion: 1, commands }),
+                    material.length,
+                    SAMPLE_RATE
+                );
+            const canceled = await render([
+                ...base,
+                stale,
+                { kind: 'write-device-parameter', target, write: { shape: 'hold', time: 0.02 } },
+                ...replacement,
+            ]);
+            const reference = await render([...base, ...replacement]);
+            const uncanceled = await render([...base, stale, ...replacement]);
+            expect(canceled).toEqual(reference);
+            expect(canceled).not.toEqual(uncanceled);
+            const bytes = new DataView(canceled.buffer, canceled.byteOffset, canceled.byteLength);
+            expect(
+                Array.from({ length: canceled.byteLength / 4 }, (_, index) => bytes.getFloat32(index * 4, true)).some(
+                    (value) => Math.abs(value) > 0.001
+                )
+            ).toBe(true);
+        },
+        30_000
     );
 
     it.runIf(nativeAddonPresent)(
@@ -865,8 +1001,12 @@ describe('renderOffline — native/web export parity (#2225)', () => {
         'renders mono clips panned $name the same way on both engines',
         async ({ name, storedPan }) => {
             const { matA, matB } = fixtureMaterial();
-            mocks.audioBuffers.set('mat-a', toMono(matA));
-            mocks.audioBuffers.set('mat-b', toMono(matB));
+            const monoA = toMono(matA);
+            mocks.audioBuffers.set('mat-a', monoA);
+            nativeTimelineMaterialLeases.ownSnapshot('mat-a', monoA);
+            const monoB = toMono(matB);
+            mocks.audioBuffers.set('mat-b', monoB);
+            nativeTimelineMaterialLeases.ownSnapshot('mat-b', monoB);
             mocks.lanes.length = 0;
             mocks.lanes.push(...fixtureLanes().filter((candidate) => candidate.parameterId !== 'pan'));
             mocks.renderContext = fixtureRenderContext({}, storedPan);
@@ -946,23 +1086,44 @@ describe('renderOffline — native/web export parity (#2225)', () => {
                     ],
                 })
             );
-            mocks.probe.transport = inProcessNativeTransport(requireNativeHost());
-            await runLeg('native');
-            const [render] = capturedRenders;
-            if (!render) {
-                throw new Error('the native leg rendered nothing to compare against');
-            }
             const sparseEndSeconds = 0.1 * SECONDS_PER_BEAT;
             expect(sparseEndSeconds).toBeLessThan(AUTOMATION_WINDOW_SECONDS);
 
-            const written = await runLiveAutomationPass({ endSeconds: RENDER_SECONDS });
             const host = requireNativeHost();
-            const fromExport = await host.renderGraphOffline(render.batch, render.frames, render.sampleRate);
-            const fromWriter = await host.renderGraphOffline(
-                withWriterAutomation(render, written),
-                render.frames,
-                render.sampleRate
-            );
+            const transport = inProcessNativeTransport(host);
+            const comparison: {
+                rendered?: Readonly<{
+                    render: CapturedRender;
+                    fromExport: Uint8Array;
+                    fromWriter: Uint8Array;
+                }>;
+            } = {};
+            mocks.probe.transport = {
+                ...transport,
+                async renderGraphOffline(input: Parameters<NativeGraphTransport['renderGraphOffline']>[0]) {
+                    // Both renders borrow the backend's admitted lease, before
+                    // renderOffline's finally disposes that backend.
+                    const fromExport = await transport.renderGraphOffline(input);
+                    const render: CapturedRender = {
+                        batch: input.batch,
+                        frames: input.frames,
+                        sampleRate: input.sampleRate,
+                    };
+                    const written = await runLiveAutomationPass({ endSeconds: RENDER_SECONDS });
+                    const fromWriter = await host.renderGraphOffline(
+                        withWriterAutomation(render, written),
+                        render.frames,
+                        render.sampleRate
+                    );
+                    comparison.rendered = { render, fromExport, fromWriter };
+                    return fromExport;
+                },
+            };
+            await runLeg('native');
+            if (!comparison.rendered) {
+                throw new Error('the native leg rendered nothing to compare against');
+            }
+            const { render, fromExport, fromWriter } = comparison.rendered;
 
             const result = nullTest({
                 a: toRenderedBuffer(fromExport, render),

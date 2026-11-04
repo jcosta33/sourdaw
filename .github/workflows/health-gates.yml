@@ -111,6 +111,7 @@ jobs:
     needs: scope
     uses: ./.github/workflows/validation.yml
     with:
+      mode: full
       browser: ${{ needs.scope.outputs.browser == 'true' }}
       profile: ${{ needs.scope.outputs.profile }}
 

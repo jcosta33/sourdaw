@@ -9,6 +9,7 @@ import {
     SMF_META_EVENT,
     SMF_META_END_OF_TRACK,
     SMF_META_SET_TEMPO,
+    SMF_META_TIME_SIGNATURE,
     SMF_META_TRACK_NAME,
     SMF_NOTE_OFF_STATUS,
     SMF_NOTE_ON_STATUS,
@@ -37,12 +38,14 @@ describe('SMF wire-byte parity between SmfConstants and the import worker', () =
         expect(SMF_META_TRACK_NAME).toBe(0x03);
         expect(SMF_META_END_OF_TRACK).toBe(0x2f);
         expect(SMF_META_SET_TEMPO).toBe(0x51);
+        expect(SMF_META_TIME_SIGNATURE).toBe(0x58);
     });
 
     it('decodes every status byte with the exact spelling SmfConstants owns', () => {
         expect(WORKER_SOURCE).toContain(`statusByte === ${hex(SMF_META_EVENT)}`);
         expect(WORKER_SOURCE).toContain(`metaType === ${hex(SMF_META_TRACK_NAME)}`);
         expect(WORKER_SOURCE).toContain(`metaType === ${hex(SMF_META_SET_TEMPO)}`);
+        expect(WORKER_SOURCE).toContain(`metaType === ${hex(SMF_META_TIME_SIGNATURE)}`);
         expect(WORKER_SOURCE).toContain(`eventType === ${hex(SMF_NOTE_ON_STATUS)}`);
         expect(WORKER_SOURCE).toContain(`eventType === ${hex(SMF_NOTE_OFF_STATUS)}`);
         expect(WORKER_SOURCE).toContain(`eventType === ${hex(SMF_CONTROL_CHANGE_STATUS)}`);

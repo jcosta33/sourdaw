@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export type IssueFormField = {
@@ -36,11 +36,23 @@ const TEMPLATE_ALIASES: Record<string, string> = {
     'change-plan': 'change_plan',
 };
 
+const FEATURES_PROJECT = 'Sourdaw Features';
+const FEATURES_ROUTE_LABEL = 'project:features';
+const FEATURES_PROJECT_PATTERN = /^Sourdaw Features$/iu;
+const NON_FEATURES_PROJECT_PATTERNS = [/^Sourdaw Bugs$/iu, /^Sourdaw Refactors$/iu];
+const NON_FEATURES_TEMPLATES = new Set(['bug_report', 'change_plan']);
+
+function isProject(project: string | undefined, pattern: RegExp): boolean {
+    // gh resolves project titles with Go EqualFold, which shares Unicode simple folding with /iu.
+    return project !== undefined && pattern.test(project);
+}
+
 const USAGE =
     'pnpm issue:file <template> --title <title> --fields <json> [--create] [--milestone <value>] [--project <value>]';
 
 export function resolveTemplatePath(templatesDir: string, name: string): string {
-    const stem = TEMPLATE_ALIASES[name] ?? name;
+    const canonicalName = name.toLowerCase();
+    const stem = TEMPLATE_ALIASES[canonicalName] ?? canonicalName;
     const path = join(templatesDir, `${stem}.yml`);
     if (!existsSync(path)) {
         fail(`unknown issue template: ${name}`);
@@ -151,6 +163,16 @@ export function renderIssueSubmission(
     };
 }
 
+function routeIssueSubmission(submission: IssueSubmission, project: string | undefined): IssueSubmission {
+    if (isProject(project, FEATURES_PROJECT_PATTERN) && !submission.labels.includes(FEATURES_ROUTE_LABEL)) {
+        return { ...submission, labels: [...submission.labels, FEATURES_ROUTE_LABEL] };
+    }
+    if (NON_FEATURES_PROJECT_PATTERNS.some((pattern) => isProject(project, pattern))) {
+        return { ...submission, labels: submission.labels.filter((label) => label !== FEATURES_ROUTE_LABEL) };
+    }
+    return submission;
+}
+
 export function parseCliArgs(args: string[]): {
     help: boolean;
     create: boolean;
@@ -202,6 +224,9 @@ export function parseCliArgs(args: string[]): {
                 fail('duplicate option: --project');
             }
             project = optionValue(flag, value);
+            if (/[",\r\n]/.test(project)) {
+                fail('--project accepts one project title');
+            }
             index += 1;
             continue;
         }
@@ -444,11 +469,18 @@ export function runCli(argv: string[], runGh: GhRunner = spawnGh): number {
             fail(`usage: ${USAGE}`);
         }
         const templatesDir = join(dirname(fileURLToPath(import.meta.url)), '..', '.github/ISSUE_TEMPLATE');
-        const form = parseIssueForm(readFileSync(resolveTemplatePath(templatesDir, parsed.template), 'utf8'));
-        const submission = renderIssueSubmission(form, {
-            title: parsed.title,
-            fields: readFields(parsed.fieldsPath),
-        });
+        const templatePath = resolveTemplatePath(templatesDir, parsed.template);
+        if (
+            isProject(parsed.project, FEATURES_PROJECT_PATTERN) &&
+            NON_FEATURES_TEMPLATES.has(basename(templatePath, '.yml'))
+        ) {
+            fail(`${parsed.template} cannot target ${FEATURES_PROJECT}`);
+        }
+        const form = parseIssueForm(readFileSync(templatePath, 'utf8'));
+        const submission = routeIssueSubmission(
+            renderIssueSubmission(form, { title: parsed.title, fields: readFields(parsed.fieldsPath) }),
+            parsed.project
+        );
         if (!parsed.create) {
             process.stdout.write(`${JSON.stringify(submission, null, 2)}\n`);
             return 0;

@@ -340,6 +340,7 @@ describe('agent tool catalog', () => {
             'render.request',
             'analysis.request',
             'analysis.measure',
+            'analysis.detectTransients',
             'analysis.compareReference',
             'recipe.discover',
             'recipe.expand',

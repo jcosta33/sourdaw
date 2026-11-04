@@ -13,6 +13,8 @@ import { getFinalFeatureHandlers } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction } from '#/modules/Command/useCases';
 import { createCrdtDoc, getCrdtDoc, registerCrdtStorageRuntime, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
+import { preferencesStore } from '#/modules/Preferences/stores';
+import { resetPreferences } from '#/modules/Preferences/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import {
     type ConfirmPayload,
@@ -89,6 +91,7 @@ function rawWarpState(clipId = CLIP_ID): WarpState {
 
 describe('locked transient markers through the real Elastic editor', () => {
     beforeEach(() => {
+        resetPreferences();
         configureAutomergeStoragePort(null);
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
@@ -132,6 +135,7 @@ describe('locked transient markers through the real Elastic editor', () => {
     });
 
     afterEach(() => {
+        resetPreferences();
         cleanup();
         vi.restoreAllMocks();
         clearHandlerRegistry();
@@ -177,7 +181,7 @@ describe('locked transient markers through the real Elastic editor', () => {
             key: 'ArrowRight',
         });
 
-        expect(elasticAudioStore.value?.sensitivity).toBe(0.51);
+        expect(preferencesStore.value?.elasticTransientSensitivity).toBe(0.51);
         expect(elasticAudioStore.value?.detected).toBe(false);
         await waitFor(() => expect(elasticAudioStore.value?.detected).toBe(true));
         flushAutomergeStorageWrites();

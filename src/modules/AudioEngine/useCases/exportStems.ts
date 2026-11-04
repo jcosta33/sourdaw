@@ -8,6 +8,7 @@ import { sidechainStore } from '#/modules/Routing/stores';
 
 import { createExportError } from '../errors/ExportError';
 import { isFaustDeviceExportError } from '../errors/FaustDeviceExportError';
+import { isOfflineGrinderSetupError } from '../errors/OfflineGrinderSetupError';
 import { clampRenderFrameCount } from '../repositories/clampRenderFrameCount';
 import { connectOfflineSidechainRoutes } from '../repositories/offlineRouting/connectOfflineSidechainRoutes';
 import { makeOfflineFrameScheduler } from '../repositories/offlineScheduler/makeOfflineFrameScheduler';
@@ -511,7 +512,12 @@ export const exportStems: ExportStemsFn = async function exportStems(
             try {
                 await renderStem(track, index);
             } catch (error) {
-                if (consumerFailed || isStemExportCancelled() || isFaustDeviceExportError(error)) {
+                if (
+                    consumerFailed ||
+                    isStemExportCancelled() ||
+                    isFaustDeviceExportError(error) ||
+                    isOfflineGrinderSetupError(error)
+                ) {
                     throw error;
                 }
                 const reason = error instanceof Error ? error.message : String(error);

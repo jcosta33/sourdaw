@@ -20,6 +20,10 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    trackStore: { value: null },
+    resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
+        () => ({ status: 'missing' })
+    ),
     resolveEligibleDeviceWriteTarget: mocks.resolveEligibleDeviceWriteTarget,
     clampDeviceParamWrite: mocks.clampDeviceParamWrite,
 }));

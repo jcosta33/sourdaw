@@ -25,6 +25,7 @@ import {
 
 import { type MidiStoreState, midiStore } from '../../stores/midiStore';
 import { downloadMidiFile } from '../../useCases/exportMidiFile';
+import { readMidiFile } from '../../useCases/importMidiFile';
 
 import '../midiImportWorker';
 
@@ -163,6 +164,49 @@ describe('importMidiFile serialized owner integration', () => {
 
     afterAll(() => {
         workerGlobal.postMessage = originalPostMessage;
+    });
+
+    it('carries a conductor-only timing map through real bytes, worker, and public reader', async () => {
+        const track = (body: number[]) => [0x4d, 0x54, 0x72, 0x6b, 0, 0, 0, body.length, ...body];
+        const conductor = track([
+            0, 0xff, 0x51, 3, 0x07, 0xa1, 0x21, 0x92, 0x60, 0xff, 0x58, 4, 3, 2, 24, 8, 0, 0xff, 0x2f, 0,
+        ]);
+        const notes = track([0, 0x99, 60, 100, 0, 0xb9, 64, 127, 0x83, 0x60, 0x89, 60, 0, 0, 0xff, 0x2f, 0]);
+        const bytes = new Uint8Array([0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 1, 0, 2, 1, 0xe0, ...conductor, ...notes]);
+
+        const result = await readMidiFile(new File([bytes], 'conductor.mid', { type: 'audio/midi' }));
+        expect(result).toMatchObject({ declaredTrackCount: 2, truncated: false });
+        expect(result.timing).toEqual({
+            format: 1,
+            ticksPerBeat: 480,
+            complete: true,
+            events: [
+                {
+                    kind: 'tempo',
+                    tick: 0,
+                    beat: 0,
+                    sourceTrackIndex: 0,
+                    eventOrdinal: 0,
+                    microsecondsPerQuarterNote: 500001,
+                },
+                {
+                    kind: 'meter',
+                    tick: 2400,
+                    beat: 5,
+                    sourceTrackIndex: 0,
+                    eventOrdinal: 1,
+                    numerator: 3,
+                    denominatorExponent: 2,
+                    clocksPerClick: 24,
+                    notated32ndsPerQuarter: 8,
+                },
+            ],
+        });
+        expect(result.tracks).toHaveLength(1);
+        expect(result.tracks[0]).toMatchObject({
+            notes: [{ pitch: 60, startBeat: 0, duration: 1, channel: 9 }],
+            ccs: [{ controller: 64, value: 127, beat: 0, channel: 9 }],
+        });
     });
 
     it('preserves overlapping same-pitch note channels and CC fields from exported bytes', async () => {

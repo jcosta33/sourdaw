@@ -1,4 +1,3 @@
-import { spawn, type ChildProcess } from 'node:child_process';
 import {
     existsSync,
     type linkSync,
@@ -13,7 +12,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { delimiter, join, resolve } from 'node:path';
+import { delimiter, join } from 'node:path';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
@@ -42,6 +41,8 @@ import {
     type WriteGuardFailureReceiptPorts,
 } from '../resourceGuard';
 import { parseArgs as parseLintArgs } from '../runLint';
+
+import { readSignalAcknowledgement, startSignalFixture } from './fixtures/resourceGuardSignalHarness';
 
 function fixtureRoot(label: string): string {
     return mkdtempSync(join(tmpdir(), `sourdaw-resource-${label}-`));
@@ -91,18 +92,6 @@ async function killAndWait(pid: number | undefined): Promise<void> {
         return;
     }
     await waitUntil(() => !isAlive(pid));
-}
-
-async function waitForClose(child: ChildProcess, timeoutMs = 2_000): Promise<number | null> {
-    if (child.exitCode !== null) {
-        return child.exitCode;
-    }
-    return Promise.race([
-        new Promise<number | null>((resolve) => child.once('close', resolve)),
-        new Promise<never>((_resolve, reject) =>
-            setTimeout(() => reject(new Error('child close timed out')), timeoutMs)
-        ),
-    ]);
 }
 
 // Each real guarded command ends in a storage file proof that can spend its whole
@@ -487,64 +476,190 @@ describe('resource enforcement', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         }
     }, 10_000);
 
-    it('escalates a repeated signal and waits for child cleanup', async () => {
-        const root = fixtureRoot('signal');
-        const pidPath = join(root, 'pid');
-        let guard: ChildProcess | undefined;
-        let childPid: number | undefined;
-        try {
-            const childEnv: NodeJS.ProcessEnv = { ...process.env, [RESOURCE_ROOT_ENV]: root };
-            delete childEnv[RESOURCE_SESSION_ENV];
-            let guardStderr = '';
-            guard = spawn(
-                process.execPath,
-                [
-                    resolve('scripts/resourceGuard.ts'),
-                    '--profile',
-                    'focused',
-                    '--max-rss-mib',
-                    '512',
-                    '--',
-                    process.execPath,
-                    '-e',
-                    `require('node:fs').writeFileSync(${JSON.stringify(pidPath)}, String(process.pid)); process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)`,
-                ],
-                { cwd: root, env: childEnv, stdio: ['ignore', 'ignore', 'pipe'] }
-            );
-            guard.stderr?.on('data', (chunk: Buffer) => {
-                guardStderr = `${guardStderr}${chunk.toString()}`.slice(-8_192);
+    for (const acknowledgement of ['ready', 'first-term'] as const) {
+        it(`does not admit a partial ${acknowledgement} acknowledgement`, async () => {
+            const fixture = startSignalFixture({
+                root: fixtureRoot('staged-signal'),
+                stagedAcknowledgement: acknowledgement,
             });
             try {
-                await waitUntil(() => existsSync(pidPath));
-            } catch (error) {
-                const reservationsRoot = join(root, 'sourdaw-validation.reservations');
-                const reservations = existsSync(reservationsRoot)
-                    ? readdirSync(reservationsRoot)
-                          .slice(0, 8)
-                          .map(
-                              (name) => `${name}: ${readFileSync(join(reservationsRoot, name), 'utf8').slice(0, 1_024)}`
-                          )
-                    : [];
-                throw new Error(
-                    `${error instanceof Error ? error.message : String(error)}; guard exit=${guard.exitCode}; stderr=${guardStderr}; admission=${JSON.stringify(reservations)}`,
-                    { cause: error }
+                if (acknowledgement === 'first-term') {
+                    await fixture.barrier(() => existsSync(fixture.readyPath) && fixture.child() !== undefined);
+                    fixture.guard.kill('SIGTERM');
+                }
+                await fixture.barrier(() => existsSync(join(fixture.root, 'publication-staged')));
+                const pending = readdirSync(fixture.root).find(
+                    (name) => name.startsWith(`${acknowledgement}.json.`) && name.endsWith('.pending')
                 );
+                expect(pending).toBeDefined();
+                expect(readFileSync(join(fixture.root, pending!), 'utf8')).toBe('{');
+                const recordPath = join(fixture.root, `${acknowledgement}.json`);
+                expect(readSignalAcknowledgement(recordPath)).toBeUndefined();
+                writeFileSync(join(fixture.root, 'admit-publication'), 'admit');
+                await fixture.barrier(() => existsSync(recordPath) && fixture.child() !== undefined);
+                const child = fixture.child()!;
+                expect(readSignalAcknowledgement(recordPath)).toEqual(
+                    acknowledgement === 'ready'
+                        ? { pid: child.pid, tmp: child.tempDirectory }
+                        : { pid: child.pid, tempExists: true }
+                );
+            } finally {
+                const cleanup = await fixture.cleanup();
+                expect(cleanup, cleanup.diagnostic).toMatchObject({ removedRoot: true, childExitProved: true });
             }
-            const recordedPid = Number(readFileSync(pidPath, 'utf8'));
-            childPid = recordedPid;
-            guard.kill('SIGTERM');
-            await new Promise((resolve) => setTimeout(resolve, 50));
-            guard.kill('SIGTERM');
-            const code = await waitForClose(guard);
+        });
+    }
 
-            expect(code).toBe(143);
-            expect(() => process.kill(recordedPid, 0)).toThrow();
+    for (const holdIdentity of [false, true]) {
+        it(`retains failed-ready storage while child exit is unproved with ${holdIdentity ? 'unknown' : 'known'} identity`, async () => {
+            const fixture = startSignalFixture({
+                root: fixtureRoot('failed-ready-signal'),
+                stagedAcknowledgement: 'ready',
+                holdAbort: true,
+                holdIdentity,
+            });
+            try {
+                await fixture.barrier(
+                    () =>
+                        existsSync(join(fixture.root, 'publication-staged')) &&
+                        (holdIdentity || fixture.child() !== undefined)
+                );
+                await expect(
+                    fixture.barrier(() => {
+                        throw new Error('controlled failed-ready admission');
+                    })
+                ).rejects.toThrow('controlled failed-ready admission');
+                expect(readSignalAcknowledgement(fixture.readyPath)).toBeUndefined();
+                expect(fixture.child() === undefined).toBe(holdIdentity);
+                const child = fixture.child();
+                const cleanup = await fixture.cleanup();
+                expect(cleanup).toMatchObject({ removedRoot: false, childExitProved: false });
+                expect(cleanup.diagnostic).toContain(`signal fixture retained at ${fixture.root}`);
+                expect(existsSync(fixture.root)).toBe(true);
+                expect(fixture.hasEvent('storage-released')).toBe(false);
+                expect(isAlive(fixture.unrelated.pid!)).toBe(false);
+                if (child !== undefined) {
+                    expect(isAlive(child.pid)).toBe(true);
+                    expect(existsSync(child.tempDirectory)).toBe(true);
+                } else {
+                    expect(fixture.messages.find((message) => message.event === 'abort-held')).toMatchObject({
+                        childKnown: true,
+                        tempExists: true,
+                    });
+                }
+                fixture.send('publish-identity');
+                await fixture.barrier(() => fixture.child() !== undefined);
+                fixture.send('admit-abort');
+                expect(await fixture.completion).toBe(143);
+            } finally {
+                const cleanup = await fixture.cleanup();
+                expect(cleanup, cleanup.diagnostic).toMatchObject({ removedRoot: true, childExitProved: true });
+            }
+        });
+    }
+
+    it('cleans a resistant child through fallback when repeated-signal handling is suppressed', async () => {
+        const fixture = startSignalFixture({ root: fixtureRoot('suppressed-repeat-signal') });
+        try {
+            await fixture.barrier(() => existsSync(fixture.readyPath) && fixture.child() !== undefined);
+            const child = fixture.child()!;
+            expect(fixture.guard.kill('SIGTERM')).toBe(true);
+            await fixture.barrier(() => existsSync(fixture.termPath) && fixture.hasEvent('fallback-scheduled'));
+            expect(readSignalAcknowledgement(fixture.termPath)).toEqual({ pid: child.pid, tempExists: true });
+            fixture.send('suppress-repeat');
+            await fixture.barrier(() => fixture.hasEvent('repeat-suppression-installed'));
+            expect(fixture.guard.kill('SIGTERM')).toBe(true);
+            await fixture.barrier(() => fixture.hasEvent('repeated-signal-suppressed'));
+            expect(isAlive(child.pid)).toBe(true);
+            expect(fixture.hasEvent('fallback-invoked')).toBe(false);
+            expect(fixture.hasEvent('storage-release-entered')).toBe(false);
+            const cleanup = await fixture.cleanup();
+            expect(cleanup, cleanup.diagnostic).toMatchObject({ removedRoot: true, childExitProved: true });
+            expect(fixture.messages.filter((message) => message.event === 'fallback-invoked')).toHaveLength(1);
+            expect(await fixture.completion).toBe(143);
+            expect(() => process.kill(child.pid, 0)).toThrow();
+            expect(isAlive(fixture.unrelated.pid!)).toBe(false);
         } finally {
-            guard?.kill('SIGKILL');
-            await killAndWait(childPid);
-            rmSync(root, { recursive: true, force: true });
+            if (!fixture.isClosed()) {
+                fixture.send('admit-fallback');
+                fixture.send('release-storage');
+                await fixture.completion;
+            }
+            const cleanup = await fixture.cleanup();
+            expect(cleanup, cleanup.diagnostic).toMatchObject({ removedRoot: true, childExitProved: true });
         }
     });
+
+    for (const repeatedSignal of [true, false]) {
+        const name = repeatedSignal
+            ? 'escalates a repeated signal and waits for child cleanup'
+            : 'keeps a resistant child alive until the held fallback is admitted without a repeated signal';
+        it(name, async () => {
+            const fixture = startSignalFixture({ root: fixtureRoot('signal') });
+            try {
+                await fixture.barrier(
+                    () =>
+                        existsSync(fixture.readyPath) &&
+                        existsSync(fixture.unrelatedPath) &&
+                        fixture.child() !== undefined
+                );
+                const child = fixture.child()!;
+                expect(readSignalAcknowledgement(fixture.readyPath)).toEqual({
+                    pid: child.pid,
+                    tmp: child.tempDirectory,
+                });
+                expect(isAlive(child.pid)).toBe(true);
+                expect(existsSync(child.tempDirectory)).toBe(true);
+                expect(fixture.guard.kill('SIGTERM')).toBe(true);
+                await fixture.barrier(() => existsSync(fixture.termPath) && fixture.hasEvent('fallback-scheduled'));
+                expect(readSignalAcknowledgement(fixture.termPath)).toEqual({ pid: child.pid, tempExists: true });
+                expect(fixture.messages.filter((message) => message.event === 'fallback-scheduled')).toEqual([
+                    { event: 'fallback-scheduled', capturedTimers: 1 },
+                ]);
+                if (repeatedSignal) {
+                    expect(fixture.guard.kill('SIGTERM')).toBe(true);
+                } else {
+                    fixture.send('inspect');
+                    await fixture.barrier(() => fixture.hasEvent('inspection'));
+                    expect(isAlive(child.pid)).toBe(true);
+                    expect(fixture.hasEvent('storage-release-entered')).toBe(false);
+                    expect(fixture.hasEvent('fallback-invoked')).toBe(false);
+                    fixture.send('admit-fallback');
+                }
+                await fixture.barrier(() => fixture.hasEvent('storage-release-entered'));
+                expect(fixture.messages.find((message) => message.event === 'storage-release-entered')).toEqual({
+                    event: 'storage-release-entered',
+                    pid: child.pid,
+                    startedAt: child.startedAt,
+                    treeStopped: true,
+                    tempExists: true,
+                    fallbackAdmitted: !repeatedSignal,
+                });
+                expect(fixture.hasEvent('fallback-invoked')).toBe(!repeatedSignal);
+                expect(() => process.kill(child.pid, 0)).toThrow();
+                expect(isAlive(fixture.unrelated.pid!)).toBe(true);
+                expect(existsSync(child.tempDirectory)).toBe(true);
+                expect(fixture.isClosed()).toBe(false);
+                expect(fixture.hasEvent('storage-released')).toBe(false);
+                fixture.send('release-storage');
+                expect(await fixture.completion).toBe(143);
+                expect(fixture.messages).toContainEqual({
+                    event: 'storage-released',
+                    removed: true,
+                    treeStopped: true,
+                    pid: child.pid,
+                    startedAt: child.startedAt,
+                });
+                expect(fixture.hasEvent('fallback-cleared')).toBe(true);
+                expect(existsSync(child.tempDirectory)).toBe(false);
+                expect(() => process.kill(child.pid, 0)).toThrow();
+                expect(isAlive(fixture.unrelated.pid!)).toBe(true);
+            } finally {
+                const cleanup = await fixture.cleanup();
+                expect(cleanup, cleanup.diagnostic).toMatchObject({ removedRoot: true, childExitProved: true });
+            }
+        });
+    }
 
     it('kills commands that exceed the RSS cap', async () => {
         const result = await runIsolatedGuardedCommand({
@@ -903,6 +1018,30 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         },
         { profile: 'extended' as const, command: 'node', args: ['typecheck:test'], expected: 4 * 1024 ** 3 },
         { profile: 'focused' as const, command: 'pnpm', args: ['constructor'], expected: 4 * 1024 ** 3 },
+        {
+            profile: 'focused' as const,
+            command: 'pnpm',
+            args: ['exec', 'eslint', 'scripts/resourceGuard.ts'],
+            expected: 4608 * 1024 ** 2,
+        },
+        {
+            profile: 'focused' as const,
+            command: 'pnpm',
+            args: ['--config.verify-deps-before-run=false', 'exec', 'eslint', 'scripts/resourceGuard.ts'],
+            expected: 4608 * 1024 ** 2,
+        },
+        {
+            profile: 'focused' as const,
+            command: 'pnpm',
+            args: ['--filter-prod', 'sourdaw', 'exec', 'eslint', 'scripts/resourceGuard.ts'],
+            expected: 4608 * 1024 ** 2,
+        },
+        {
+            profile: 'focused' as const,
+            command: 'pnpm',
+            args: ['--filter-prod=sourdaw', 'exec', 'eslint', 'scripts/resourceGuard.ts'],
+            expected: 4608 * 1024 ** 2,
+        },
         { profile: 'focused' as const, command: 'pnpm', args: ['deps:validate'], expected: 6.5 * 1024 ** 3 },
         { profile: 'broad' as const, command: 'pnpm', args: ['run', 'deps:validate'], expected: 6.5 * 1024 ** 3 },
         { profile: 'focused' as const, command: 'pnpm', args: ['test:e2e'], expected: 5.5 * 1024 ** 3 },
@@ -1007,6 +1146,17 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
             expect(e2eResult.code).toBe(0);
             expect(e2eResult.maxRssBytes).toBe(5.5 * 1024 ** 3);
 
+            const execResult = await runIsolatedGuardedCommand({
+                command: 'pnpm',
+                args: ['exec', 'eslint', 'scripts/resourceGuard.ts'],
+                profile: 'focused',
+                cwd: root,
+                env: shimEnv,
+                availableMemoryBytes: abundantMemoryBytes,
+            });
+            expect(execResult.code).toBe(0);
+            expect(execResult.maxRssBytes).toBe(4608 * 1024 ** 2);
+
             const otherResult = await runIsolatedGuardedCommand({
                 command: 'pnpm',
                 args: ['other'],
@@ -1029,6 +1179,58 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
             });
             expect(explicitResult.code).toBe(0);
             expect(explicitResult.maxRssBytes).toBe(5 * 1024 ** 3);
+
+            const explicitExecResult = await runIsolatedGuardedCommand({
+                command: 'pnpm',
+                args: ['exec', 'eslint', 'scripts/resourceGuard.ts'],
+                profile: 'focused',
+                cwd: root,
+                maxRssBytes: 2048 * 1024 ** 2,
+                env: shimEnv,
+                availableMemoryBytes: abundantMemoryBytes,
+            });
+            expect(explicitExecResult.code).toBe(0);
+            expect(explicitExecResult.maxRssBytes).toBe(2048 * 1024 ** 2);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('reserves the resolved exec budget during memory admission', async () => {
+        const root = fixtureRoot('exec-budget-reservation');
+        try {
+            writeFileSync(join(root, 'pnpm'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+            const shimEnv = { ...process.env, PATH: `${root}${delimiter}${process.env.PATH ?? ''}` };
+            let memorySamples = 0;
+            let reservedRssBytes: number | undefined;
+
+            const result = await runGuardedCommand({
+                command: 'pnpm',
+                args: ['exec', 'eslint', 'scripts/resourceGuard.ts'],
+                profile: 'focused',
+                cwd: root,
+                env: shimEnv,
+                admissionRoot: root,
+                storageRoot: join(root, 'storage'),
+                memorySampler: () => {
+                    memorySamples += 1;
+                    if (memorySamples === 2) {
+                        const reservationsRoot = join(root, 'sourdaw-validation.reservations');
+                        const reservation = readdirSync(reservationsRoot).find((name) => name.endsWith('.json'));
+                        if (reservation !== undefined) {
+                            const owner = JSON.parse(readFileSync(join(reservationsRoot, reservation), 'utf8')) as {
+                                reservedRssBytes?: number;
+                            };
+                            reservedRssBytes = owner.reservedRssBytes;
+                        }
+                    }
+                    return abundantMemoryBytes;
+                },
+            });
+
+            expect(result.code).toBe(0);
+            expect(result.maxRssBytes).toBe(4608 * 1024 ** 2);
+            expect(reservedRssBytes).toBe(4608 * 1024 ** 2);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }
@@ -1062,6 +1264,8 @@ describe('pnpmScriptName', () => {
             args: ['--config.foo=bar', '--dir', '/tmp', '--silent', 'run', 'typecheck:test'],
             expected: 'typecheck:test',
         },
+        { command: 'pnpm', args: ['--filter-prod', 'sourdaw', 'exec', 'eslint'], expected: 'exec' },
+        { command: 'pnpm', args: ['--filter-prod=sourdaw', 'exec', 'eslint'], expected: 'exec' },
         { command: 'pnpm', args: ['--silent'], expected: undefined },
         { command: 'pnpm', args: ['--filter', 'sourdaw'], expected: undefined },
         { command: 'pnpm', args: ['--'], expected: undefined },

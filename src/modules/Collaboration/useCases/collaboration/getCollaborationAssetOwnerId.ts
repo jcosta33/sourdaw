@@ -1,11 +1,16 @@
+import { startAssetBitmapLifecycle } from '../assetBitmapLifecycle';
+
 type CollaborationAssetOwnershipProvider = {
     captureOwnerId: () => string | undefined;
 };
 
 let provider: CollaborationAssetOwnershipProvider | null = null;
+let stopBitmapLifecycle: (() => void) | undefined;
 
 export function configureCollaborationAssetOwner(nextProvider: CollaborationAssetOwnershipProvider): void {
+    stopBitmapLifecycle?.();
     provider = nextProvider;
+    stopBitmapLifecycle = startAssetBitmapLifecycle();
 }
 
 export const collaborationAssetOwnership = {

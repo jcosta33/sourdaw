@@ -12,7 +12,12 @@ import { type ActionCommandGraph } from '../../models/ActionCommandGraph';
 import { type CreativeRequestAuthority } from '../../models/CreativeInterpretation';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../../models/LlmActionLimits';
 import { type ProjectContext } from '../../models/ProjectContext';
-import { type ProposalGroundingBasis, type ProposalGroundingCommand } from '../../models/ProposalGroundingBasis';
+import {
+    type BoundRequestProtections,
+    type ProposalGroundingBasis,
+    type ProposalGroundingCommand,
+    type ProposalProtectionFacts,
+} from '../../models/ProposalGroundingBasis';
 import { type RetainedCommandSet } from '../../models/RetainedCompilation';
 import {
     SEMANTIC_CLIP_MAX_BEATS,
@@ -78,7 +83,6 @@ import {
     SPENT_CREATION_BUDGET_PREFIX,
 } from './creativeAuthorityReasons';
 import { type CoordinatedTrackList, findCoordinatedTrackLists } from './findCoordinatedTrackLists';
-import { findTargetOwnerTrackIds } from './findTargetOwnerTrackIds';
 import { getApplicationProtectedObjects } from './getApplicationProtectedObjects';
 import { getArticulationTransferPromptScope } from './getArticulationTransferPromptScope';
 import {
@@ -152,6 +156,8 @@ import { isAgentReferenceCapabilityCandidate } from './isAgentReferenceCapabilit
 import { isBatchLocalDeviceParameterTarget } from './isBatchLocalDeviceParameterTarget';
 import { projectBatchLocalCreation } from './projectBatchLocalCreation';
 import { proposalCommandShape } from './proposalCommandShape';
+import { proposalProtection } from './proposalProtection';
+import { readExplicitProtections } from './readExplicitProtections';
 import { readStoredCardRemoval } from './readStoredCardRemoval';
 import { refinementCardCommands } from './refinementCardCommands';
 import { refinementClauseReader } from './refinementClauseReader';
@@ -179,6 +185,13 @@ type BridgeGroundedLlmToolCallsInput = {
      * request does; present, a call may inherit a pending command instead of grounding in this text.
      */
     refinementBasis?: ProposalGroundingBasis;
+    /**
+     * Restrictions the pending card resolved when it was admitted, whether or not a command-aligned
+     * grounding basis can be carried by this batch.
+     */
+    protectionFacts?: ProposalProtectionFacts;
+    /** Complete binding for replay of the same already-admitted request, never a new refinement. */
+    requestProtections?: BoundRequestProtections;
 };
 
 type GroundToolCallInput = {
@@ -205,6 +218,7 @@ type GroundToolCallInput = {
     declaredBindingsByCallIndex: ReadonlyMap<number, BatchLocalCreationBinding>;
     index: number;
     prompt: string;
+    requestProtections?: BoundRequestProtections;
     plannedActionNames: readonly string[];
     sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[];
     sameActionCallCount: number;
@@ -4169,6 +4183,9 @@ function compiledTargetRefusalReason(authority: CompiledTargetAuthority, argumen
     if (authority.status === 'admitted') {
         return null;
     }
+    if (authority.reason === 'protected-or-excluded') {
+        return `Compiled target ${argument} is protected or excluded`;
+    }
     return `Compiled target ${argument} is not authorized by the user request`;
 }
 
@@ -4545,6 +4562,7 @@ function groundToolCall({
     declaredBindingsByCallIndex,
     index,
     prompt,
+    requestProtections,
     plannedActionNames,
     resolvedTargetOverrides,
     sameActionAssertedArguments,
@@ -4837,6 +4855,7 @@ function groundToolCall({
                     compilerExcludedIds,
                     context,
                     prompt,
+                    requestProtections,
                     referenceResolved: false,
                     selectorTerms: compiledSelectorTerms,
                     valueTexts: batchWrittenValueTexts,
@@ -4972,6 +4991,7 @@ function groundToolCall({
                       context,
                       dependencyId: typeof dependencyValue === 'string' ? dependencyValue : undefined,
                       prompt,
+                      requestProtections,
                       referenceResolved: false,
                       selectorTerms: compiledSelectorTerms,
                       targetIds: compilerTargetOverride.stableIds,
@@ -6065,10 +6085,7 @@ function getActionTouchedIds(
     payload: Readonly<Record<string, unknown>>,
     context: ProjectContext
 ): string[] {
-    const owners = proposalCommandShape
-        .targetObjects(actionType, payload)
-        .flatMap((target) => findTargetOwnerTrackIds(target.capability, target.id, context));
-    return [...new Set([...proposalCommandShape.objectIds(actionType, payload), ...owners])];
+    return proposalCommandShape.touchedObjectIds(actionType, payload, context);
 }
 
 function getRefinementProtectedObjects(input: {
@@ -6078,11 +6095,100 @@ function getRefinementProtectedObjects(input: {
     removed: ReadonlyArray<{ id: string; name: string }>;
 }): Array<{ id: string; name: string }> {
     const { basis, context, prompt } = input;
+    // A basis that records its protections keeps what each request protected when it was grounded; one
+    // that predates the record reads its sources against the live project, as it always did.
+    const sourceProtections =
+        basis.protectedControls === undefined
+            ? basis.sources.map((source) =>
+                  getApplicationProtectedObjects({ actions: [], context, prompt: source.text })
+              )
+            : [];
     return unionProtectedObjects(
         basis.protectedUnchanged,
-        ...basis.sources.map((source) => getApplicationProtectedObjects({ actions: [], context, prompt: source.text })),
+        ...sourceProtections,
         getApplicationProtectedObjects({ actions: [], context, prompt }),
         input.removed
+    );
+}
+
+/** The first protected whole object an action touches. */
+function findChangedObject(
+    actions: BridgeGroundedLlmToolCallsResult['actions'],
+    protectedObjects: ReadonlyArray<{ id: string; name: string }>,
+    context: ProjectContext
+): { id: string; name: string } | null {
+    for (const action of actions) {
+        const payload: unknown = 'payload' in action ? action.payload : undefined;
+        const payloadRecord =
+            typeof payload === 'object' && payload !== null ? Object.fromEntries(Object.entries(payload)) : {};
+        const touched = new Set(getActionTouchedIds(action.type, payloadRecord, context));
+        const hit = protectedObjects.find((object) => touched.has(object.id));
+        if (hit !== undefined) {
+            return hit;
+        }
+    }
+    return null;
+}
+
+/** The first track whose protected operations an action performs. */
+function findChangedControl(
+    actions: BridgeGroundedLlmToolCallsResult['actions'],
+    controls: ReadonlyArray<{ trackId: string; actionTypes: readonly string[]; exceptActionTypes?: readonly string[] }>,
+    context: ProjectContext
+): { id: string; name: string } | null {
+    return proposalProtection.findChange(
+        actions,
+        {
+            protectedUnchanged: [],
+            protectedControls: controls.map(({ trackId, actionTypes, exceptActionTypes }) => {
+                const control: ProposalProtectionFacts['protectedControls'][number] = {
+                    trackId,
+                    operations: [...actionTypes],
+                };
+                if (exceptActionTypes !== undefined) {
+                    control.exceptOperations = [...exceptActionTypes];
+                }
+                return control;
+            }),
+        },
+        context
+    );
+}
+
+/**
+ * What the chain leaves alone beyond the protected objects: the operations each earlier request kept,
+ * as recorded when it was grounded, and the tracks and operations this refinement's own text keeps, read
+ * against the live project.
+ */
+function getRefinementReadProtections(
+    basis: ProposalGroundingBasis,
+    context: ProjectContext,
+    prompt: string
+): { controls: ReturnType<typeof readRecordedControls>; namedTracks: Array<{ id: string; name: string }> } {
+    const current = readExplicitProtections(prompt, context);
+    const earlier = readRecordedControls(basis, context);
+    return {
+        controls: [...earlier, ...current.protectedControls],
+        namedTracks: context.tracks.filter((track) => current.namedTrackIds.includes(track.id)),
+    };
+}
+
+/** The operations a card's requests protected, as recorded when it was grounded, or read from its sources. */
+function readRecordedControls(
+    basis: ProposalGroundingBasis,
+    context: ProjectContext
+): ReturnType<typeof readExplicitProtections>['protectedControls'] {
+    return (
+        basis.protectedControls?.map(({ trackId, operations, exceptOperations }) => {
+            const control: ReturnType<typeof readExplicitProtections>['protectedControls'][number] = {
+                trackId,
+                actionTypes: operations,
+            };
+            if (exceptOperations !== undefined) {
+                control.exceptActionTypes = exceptOperations;
+            }
+            return control;
+        }) ?? basis.sources.flatMap((source) => readExplicitProtections(source.text, context).protectedControls)
     );
 }
 
@@ -6091,17 +6197,8 @@ function findProtectedChange(
     protectedObjects: ReadonlyArray<{ id: string; name: string }>,
     context: ProjectContext
 ): string | null {
-    for (const action of actions) {
-        const payload: unknown = 'payload' in action ? action.payload : undefined;
-        const payloadRecord =
-            typeof payload === 'object' && payload !== null ? Object.fromEntries(Object.entries(payload)) : {};
-        const touched = new Set(getActionTouchedIds(action.type, payloadRecord, context));
-        const hit = protectedObjects.find((object) => touched.has(object.id));
-        if (hit !== undefined) {
-            return `Refined proposal changes "${hit.name}", which the request chain leaves unchanged`;
-        }
-    }
-    return null;
+    const hit = findChangedObject(actions, protectedObjects, context);
+    return hit === null ? null : `Refined proposal changes "${hit.name}", which the request chain leaves unchanged`;
 }
 
 /** The pending commands of one type and full target tuple. */
@@ -6622,7 +6719,16 @@ function bridgeRefinedLlmToolCalls(
         return comparativeOutcome;
     }
     const protectedChange = findProtectedChange(routed.actions, protectedObjects, context);
-    return protectedChange === null ? routed : refuseRefinement(protectedChange);
+    if (protectedChange !== null) {
+        return refuseRefinement(protectedChange);
+    }
+    const readProtections = getRefinementReadProtections(basis, context, prompt);
+    const changedRead =
+        findChangedObject(routed.actions, readProtections.namedTracks, context) ??
+        findChangedControl(routed.actions, readProtections.controls, context);
+    return changedRead === null
+        ? routed
+        : refuseRefinement(`Refined proposal changes "${changedRead.name}", which the request chain leaves unchanged`);
 }
 
 type ReadRemovals = Extract<ReturnType<typeof refinementClauseReader.removals>, { status: 'read' }>;
@@ -6884,9 +6990,69 @@ function groundInheritedRefinement(route: {
 }
 
 export function bridgeGroundedLlmToolCalls(input: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
+    if (input.requestProtections !== undefined && input.requestProtections.request !== input.prompt) {
+        return refuseProtectedRequest('Stored protections belong to a different request');
+    }
     if (input.refinementBasis !== undefined) {
         return bridgeRefinedLlmToolCalls(input, input.refinementBasis);
     }
+    return refuseWhenProtectionIsUnresolved(input, bridgeOriginalRequestToolCalls(input));
+}
+
+/**
+ * An explicit protection holding a concrete reference that binds to no object (a quoted or
+ * capitalized name nothing carries, a position, a selection phrase with nothing selected) cannot be
+ * enforced, so a request holding one grounds nothing: an incomplete protection is a rejection, never
+ * an empty permission set. A protection that names a VCA group keeps its member tracks, and one that
+ * resolves through the selected track keeps that track, or only the control it names. A refinement
+ * reads its protections in its own closed grammar, which asks about any it cannot bind.
+ */
+function refuseWhenProtectionIsUnresolved(
+    input: BridgeGroundedLlmToolCallsInput,
+    grounded: BridgeGroundedLlmToolCallsResult
+): BridgeGroundedLlmToolCallsResult {
+    if (grounded.actions.length === 0) {
+        return grounded;
+    }
+    const { context } = input;
+    if (input.requestProtections !== undefined) {
+        const changed = proposalProtection.findChange(grounded.actions, input.requestProtections.facts, context);
+        if (changed !== null) {
+            return refuseProtectedRequest(`Request changes "${changed.name}", which a protection in it leaves alone`);
+        }
+        return grounded;
+    }
+    const protections = readExplicitProtections(input.prompt, context);
+    if (protections.unresolved.length > 0) {
+        const references = protections.unresolved.map((reference) => `"${reference}"`).join(', ');
+        return refuseProtectedRequest(
+            `Protection names ${references}, which resolves to no track, clip, device or group, so the request is refused`
+        );
+    }
+    const wholeTracks = context.tracks.filter((track) => protections.protectedTrackIds.includes(track.id));
+    const recordedControls = (input.protectionFacts?.protectedControls ?? []).map(
+        ({ trackId, operations, exceptOperations }) => ({
+            trackId,
+            actionTypes: operations,
+            ...(exceptOperations === undefined ? {} : { exceptActionTypes: exceptOperations }),
+        })
+    );
+    const changedTrack =
+        findChangedObject(
+            grounded.actions,
+            [...wholeTracks, ...(input.protectionFacts?.protectedUnchanged ?? [])],
+            context
+        ) ?? findChangedControl(grounded.actions, [...protections.protectedControls, ...recordedControls], context);
+    return changedTrack === null
+        ? grounded
+        : refuseProtectedRequest(`Request changes "${changedTrack.name}", which a protection in it leaves alone`);
+}
+
+function refuseProtectedRequest(reason: string): BridgeGroundedLlmToolCallsResult {
+    return { actions: [], rejections: [rejection(0, '<batch>', reason)] };
+}
+
+function bridgeOriginalRequestToolCalls(input: BridgeGroundedLlmToolCallsInput): BridgeGroundedLlmToolCallsResult {
     const main = bridgeWithoutReferencedLevelPhrases(input);
     if (main.rejections.length === 0) {
         return main;
@@ -6931,6 +7097,7 @@ function bridgeUnrefinedLlmToolCalls(
         projectRevision,
         workflowCapabilityId,
         creativeAuthority,
+        requestProtections,
     }: BridgeGroundedLlmToolCallsInput,
     catalog: GroundingCatalog
 ): BridgeGroundedLlmToolCallsResult {
@@ -6951,12 +7118,37 @@ function bridgeUnrefinedLlmToolCalls(
         };
     }
     if (transformCalls.length > 0 || compilerEvidence !== undefined) {
-        const clipProtection = getExplicitClipProtection(prompt, context);
-        const protectedIds = new Set(
-            getApplicationProtectedObjects({ actions: [], context, prompt }).map((object) => object.id)
-        );
-        const targetIds = getCompiledTransformTargetIds(calls, context);
-        if (!clipProtection.complete || targetIds.some((id) => protectedIds.has(id))) {
+        // A schedule replays the exact admitted source. Its clip completeness and resolved track
+        // clauses were already checked; only command membership and live execution state change.
+        let complete = true;
+        let protectedObjects = requestProtections?.facts.protectedUnchanged;
+        if (requestProtections === undefined) {
+            const trackProtections = readExplicitProtections(prompt, context);
+            if (trackProtections.unresolved.length > 0) {
+                const references = trackProtections.unresolved.map((reference) => `"${reference}"`).join(', ');
+                return refuseProtectedRequest(
+                    `Protection names ${references}, which resolves to no track, clip, device or group, so the request is refused`
+                );
+            }
+            let clipProtection = getExplicitClipProtection(prompt, context);
+            if (!clipProtection.complete) {
+                // Removing a following track clause can extend an earlier exclusion, so keep any complete source parse.
+                const clipPrompt = trackProtections.resolvedTrackClauses.reduce(
+                    (text, { start, end }) => `${text.slice(0, start)}${' '.repeat(end - start)}${text.slice(end)}`,
+                    prompt
+                );
+                clipProtection = getExplicitClipProtection(clipPrompt, context);
+            }
+            complete = clipProtection.complete;
+            protectedObjects = getApplicationProtectedObjects({ actions: [], context, prompt });
+        }
+        const protectedIds = new Set(protectedObjects?.map((object) => object.id));
+        let protectionCalls = calls;
+        if (compilerEvidence !== undefined) {
+            protectionCalls = transformCalls;
+        }
+        const targetIds = getCompiledTransformTargetIds(protectionCalls, context);
+        if (!complete || targetIds.some((id) => protectedIds.has(id))) {
             return {
                 actions: [],
                 rejections: [
@@ -7759,6 +7951,7 @@ function bridgeUnrefinedLlmToolCalls(
                 catalog,
                 compiledSelectorTerms: compiledSelectorTermsByCallIndex.get(index),
                 compilerExcludedIds,
+                requestProtections,
                 context: prospectiveContext,
                 ...(creativeAdmission === undefined ? {} : { creativeAdmission }),
                 ...(creativeAuthority === undefined ? {} : { creativeAuthorityMode: creativeAuthority.mode }),

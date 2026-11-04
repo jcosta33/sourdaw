@@ -36,14 +36,25 @@ test.describe('Proof Build EQ band knobs — keyboard response', () => {
 
         // The panel mounts at desk depth 1 (Play). Drop to depth 3 (Build)
         // where the EQ band knobs render.
-        await page.getByRole('button', { name: 'Build Modules' }).click();
-        await expect(page.getByRole('slider', { name: /EQ .* gain/i }).first()).toBeVisible({
+        await page
+            .getByRole('group', { name: 'Effect control detail' })
+            .getByRole('button', { name: 'build', exact: true })
+            .click();
+        await expect(
+            page
+                .getByRole('region', { name: 'Build controls', exact: true })
+                .getByRole('slider', { name: /EQ .* gain/i })
+                .first()
+        ).toBeVisible({
             timeout: 15_000,
         });
     });
 
     test('ArrowUp raises the first EQ gain knob aria-valuenow', async ({ page }) => {
-        const gain = page.getByRole('slider', { name: /EQ .* gain/i }).first();
+        const gain = page
+            .getByRole('region', { name: 'Build controls', exact: true })
+            .getByRole('slider', { name: /EQ .* gain/i })
+            .first();
         await gain.focus();
 
         const before = Number(await gain.getAttribute('aria-valuenow'));
@@ -55,7 +66,10 @@ test.describe('Proof Build EQ band knobs — keyboard response', () => {
     });
 
     test('ArrowUp raises the first EQ frequency knob aria-valuenow', async ({ page }) => {
-        const frequency = page.getByRole('slider', { name: /EQ .* frequency/i }).first();
+        const frequency = page
+            .getByRole('region', { name: 'Build controls', exact: true })
+            .getByRole('slider', { name: /EQ .* frequency/i })
+            .first();
         await frequency.focus();
 
         const before = Number(await frequency.getAttribute('aria-valuenow'));

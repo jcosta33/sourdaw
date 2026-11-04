@@ -1,4 +1,9 @@
-const FORCED_TOOL_CHOICE_REJECTING_PREFIXES = ['claude-fable-5-1', 'claude-mythos-5-1'] as const;
+const FORCED_TOOL_CHOICE_REJECTING_PREFIXES = [
+    'claude-fable-5-1',
+    'claude-mythos-5-1',
+    'claude-opus-5-5',
+    'claude-sonnet-5-5',
+] as const;
 
 /**
  * Whether the model refuses a forced `tool_choice` on a Messages request. These families

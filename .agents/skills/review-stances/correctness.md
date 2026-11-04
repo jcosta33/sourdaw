@@ -11,6 +11,24 @@ have caught it. Keep each lesson short enough to paste into a dispatch. A behavi
 matching no more specific file carries this file; a stance with a more specific match never
 carries it in addition.
 
+### Explicit preservation must retain its whole owner and every forbidden operation
+
+Issue [#5339](https://github.com/jcosta33/sourdaw/issues/5339) reports an unresolved protection admitting
+the requested edit. PR [#5277](https://github.com/jcosta33/sourdaw/pull/5277) introduced the coordinated
+level suite, including a Strings restriction expected to refuse; that test introduction does not
+prove the defect's introduction. The earliest introducing revision and historical review stance or
+tier remain unproven. The proven coverage gap is an owner-and-route preservation probe.
+
+Attack a reserved selection phrase colliding with a display name, a missing quoted compound owner
+containing a real name, a title-cased quality beside a real missing-object control, and an unclosed
+VCA quality beside its strict protection. A whole-track fader exception must permit gain while
+refusing pan and rename, including commands touching owned objects through canonical owner checks.
+Retain the exact selected identity through pending-card refinement and compiled replacement after
+selection moves. Independent clauses and later positive protections must restrict exceptions,
+never combine them into wider permission. Inspect the recorded basis and actual proposal scope.
+Any compatibility mask must prove full consumption of the original clause; a known control beside
+an unknown clip or unread suffix must not discharge the residual restriction.
+
 ## Standing probes
 
 - Read the full unit the diff touches at head — the function, its callers, its callee contracts —
@@ -68,6 +86,22 @@ carries it in addition.
 
 ## Lessons from escapes
 
+### 2026-10-25 — a protected clip or control became a whole track (introduced by PR #2811)
+
+PR [#2811](https://github.com/jcosta33/sourdaw/pull/2811)
+(`beb59d2e74a4d98992b692ff07a40635db22ee39`) inferred whole-track protection from a track name
+contained in raw unchanged text. With a Bass track owning a Bass Verse clip, `leave Bass Verse
+unchanged` could protect the whole track and block a sibling clip edit. `leave Bass fader
+unchanged` requires control-facet authority rather than whole-track authority. The historical
+review stance, prompt and tier are unestablished.
+
+Use canonical whole-owner facts. When a track and a clip or device share the exact name Bass,
+retain actual track candidates conservatively while leaving the mixed original range unconsumed
+for generic non-track admission. Probe the real producer, initial recorded facts, a permitted
+sibling clip edit, and later admission against a frozen whole owner's actual descendants.
+Independent `leave Bass alone` and structural or frozen roots must remain whole restrictions
+beside a separately protected clip.
+
 ### 2026-10-24 — a fenced transaction had no native process-tool admission (introduced by PR #5639)
 
 PR #5639 serialized supersession with the shared fenced owner, but its package command still
@@ -113,6 +147,24 @@ Probe a real guarded child and owned payload with the first release refused and 
 direct and claimed release permitted. Assert exact owner and claim removal alongside the
 reported reason and output. Persistent refusal must still report retention, and an earlier
 process or resource failure must remain a failure after storage removal.
+
+### DAWproject diagnostics missed unconsumed source and partial mixer losses
+
+PR #5656 delivered a bounded import-warning slice, but named source constructs and inexact
+retained content remained silent. The original introduction of the broader population gap and
+historical reviewer prompts and tiers are unestablished. Review of #5795 found a rejected
+structure-level Channel reference whose named Notes descendant also vanished, and an invalid
+retained Volume that fell back without a partial-loss warning. The missed input was the full
+source population and the actual reader's fallback, not just the named incident.
+
+Enumerate the legal source grammar and account for every preserved, omitted or partially retained
+semantic element, including independently named descendants under rejected owners. Exercise real
+import bytes and assert each warning's source identity, owner, order and cardinality beside playable
+siblings. For retained mixer values, test explicit malformed, nonnumeric, nonfinite, empty and
+whitespace-only attributes against the actual parser and fallback; require truthful partial-loss
+warnings while preserving the existing musical mapping. Pair absent values, valid defaults and
+supported finite values, including zero, as quiet controls. Remove each accounting or partial-warning
+branch and require its corresponding unchanged case to fail.
 
 ### 2026-10-11 — a requested crop anchor displaced render history (PR #5323 review repair)
 
@@ -217,9 +269,8 @@ and `ci` limits on a change set wide enough that the total binds — several col
 sources they cover, with a deleted, an over-ceiling and a credentialed path — and compare the planned
 units, their own and context regions, the reasons and their sides against the merge base. Compare
 fixture against fixture, never aggregate counts, and treat a reallocation the probe measures as the
-finding rather than as a disclosed limitation. `scripts/semanticReview/__tests__/semanticReview.spec.ts`
-now pins the case (`ranks a covered source with the spec that covers it...`), and disabling the
-`specCovered` arm still has to redden the two pairwise cases.
+finding rather than as a disclosed limitation. The semantic-review feature and its pairwise cases
+were retired; retain this probe for any future evidence allocation system.
 
 ### 2026-09-27 — a declaration recogniser that refused eight grammar-legal forms as computed loads (escaped via PR #4775; measured in review of #4828; fix handed to #4835)
 
@@ -379,6 +430,10 @@ deliver that thing to the stub, drive each with the smallest project that hits i
 that device, nothing else) and require either the new carrier to take it or a notice that names
 why not. Then find the product's own standing consumers of that path — the nightly harness
 project, the smoke set — and run them through the same rule.
+
+### A lossless encoder must use the format's residual grammar
+
+Commit `1d27112e9ac94295f965b35ec8856a07023f63cc` introduced FLAC Rice quotients as one bits terminated by zero, opposite RFC 9639's zero bits terminated by one. No associated introducing PR or historical private review prompt or tier is established. Compare real encoded residuals through the shipped decoder against the originating PCM at both 16 and 24 bits, including STREAMINFO MD5 and decoder warnings. Require the unchanged named parity case to fail when the unary polarity fix is reverted; format metadata alone cannot establish lossless decoding.
 
 ### 2026-09-06 — a new device body admitted against the engine's vocabulary, never against the record its producer sends (escaped via 07102e912)
 
@@ -643,4 +698,10 @@ PR #5243 removed `defaultTempo` from `scheduleTrackAutomation` consistently — 
 
 Blind spot: delivery validation treats the reviewed head as the merged content. When the base tip advances after the last run — same-file base changes especially — the squash tree is a textual combine no run typechecked, and per-file affected selection cannot see an intra-file leftover it did not diff.
 
-Probe: before merging, when the base tip has moved since the head's last Gate, verify the actual merge ref (base tip + head) compiles — `pnpm typecheck` and `typecheck:e2e` — not just the head. Reverting the base-side hunk or the head-side removal must each fail to compile in the combined tree when the other side stays, which is what no validated run observed here.
+Probe: before merging, when the base tip has moved since the head's last Gate, require fresh CI evidence that covers the resulting base-plus-head tree, not just the earlier head. Reverting either contributing hunk should make that combined-tree typecheck fail, which is what no validated run observed here.
+
+### 2026-10-27 — device deltas assumed live eligibility meant an initialized strip (introduced by PR #2083)
+
+PR #2083 made device edits require an exact live before-chain. MIDI import publishes a track with its default Synth after boot's strip projection, so a lawful Remove Synth before first Play commits project truth and then fails against an absent strip. Its public review caught project-only folders but did not cover an uninitialized live-eligible MIDI track; historical private prompts, models and tiers are unavailable. Play/Stop warming masked the missing admission. Undo also has to change the existing live chain, rather than send an initialization snapshot that can only accept an already matching strip.
+
+Probe the real import, Command/CRDT/history and engine boundary with a completed import, an actually absent strip and no Play gesture. Require clean removal, exact authoritative final topology, and identity-preserving Undo/Redo. Exercise cold add/remove/reorder and grouped final-chain composition; refuse an existing mismatched strip, stale or unrelated project divergence and duplicate ownership. Inject initialization rejection and require committed failure with no later parameter writes. Revert the missing-strip admission and require the cold Command regression to fail. UI admission must require the Remove Synth control unconditionally and click it before first Play.

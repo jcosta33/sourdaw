@@ -72,10 +72,14 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     getGainEnvelopeSeries: vi.fn(),
     readMusicalRange: vi.fn(),
     gainEnvelopeStore: { value: { envelopes: {} }, subscribe: vi.fn() },
+    vcaGroupStore: { value: { groups: [] }, subscribe: vi.fn(() => () => {}) },
     setWarpState: vi.fn(),
     getStoredWarpState: vi.fn(),
     warpStateStore: { value: { states: {} }, subscribe: vi.fn() },
     trackStore: { value: null },
+    resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
+        () => ({ status: 'missing' })
+    ),
     defaultTrackState: { tracks: [] },
     // A barrel factory replaces the whole module, so every member anything in
     // this spec's graph imports has to be present here — Automation's range

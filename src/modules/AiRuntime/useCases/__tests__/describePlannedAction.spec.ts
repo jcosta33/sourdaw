@@ -9,7 +9,9 @@ const mocks = vi.hoisted(() => ({
     },
 }));
 
-vi.mock('#/modules/Arrangement/stores', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    sanitizeTrackSnapshot: (await importOriginal<typeof import('#/modules/Arrangement/stores')>())
+        .sanitizeTrackSnapshot,
     readMusicalRangeInputs: vi.fn(() => []),
     getGainEnvelopeSeries: vi.fn(),
     clipHasActiveGainEnvelope: vi.fn(),

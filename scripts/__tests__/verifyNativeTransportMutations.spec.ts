@@ -1,4 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, watch, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -57,7 +58,11 @@ function fixture() {
     const sourcePath = join(root, 'source.rs');
     const evidencePath = join(root, 'evidence');
     writeFileSync(sourcePath, source);
-    return { sourcePath, evidencePath };
+    return {
+        sourcePath,
+        evidencePath,
+        build: async (): Promise<NativeTestResult> => ({ code: 0, signal: null, output: 'Finished test profile\n' }),
+    };
 }
 
 describe('native transport source mutations', () => {
@@ -274,6 +279,26 @@ function fileReceipt(root: string, name: string) {
 }
 
 describe('owned command process-group completion', () => {
+    it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY, 1.5, 2_147_483_648])(
+        'refuses an invalid deadline before spawning: %s',
+        (timeoutMs) => {
+            const spawnPort = vi.fn(() => {
+                throw new Error('Invalid deadline must not spawn');
+            });
+            expect(() =>
+                runCommand(
+                    process.execPath,
+                    [],
+                    tmpdir(),
+                    process.env,
+                    { spawn: spawnPort, setTimeout, clearTimeout, process },
+                    { timeoutMs }
+                )
+            ).toThrow('positive timer-safe integer');
+            expect(spawnPort).not.toHaveBeenCalled();
+        }
+    );
+
     it('settles a timed-out owned child only after provisional inspection EPERM becomes ESRCH', async () => {
         vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
         let phase: 'alive' | 'eperm' | 'absent' = 'alive';
@@ -609,6 +634,347 @@ describe('owned command process-group completion', () => {
 });
 
 describe('source restoration and completed observable', () => {
+    it('compiles a cold candidate beyond the execution deadline before running its named cases', async () => {
+        const options = fixture();
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        const signals = vi.spyOn(process, 'kill');
+        const owned: { child?: ChildProcess; closed?: Promise<unknown> } = {};
+        let ready: (() => void) | undefined;
+        const started = new Promise<void>((resolve) => {
+            ready = resolve;
+        });
+        let compiled: string | undefined;
+        const builds: string[] = [];
+        let calls = 0;
+        const boundedCommand: (
+            command: string,
+            args: string[],
+            cwd: string,
+            env: NodeJS.ProcessEnv,
+            ports: Parameters<typeof runCommand>[4],
+            settings: { timeoutMs: number }
+        ) => ReturnType<typeof runCommand> = runCommand;
+        const compile = (timeoutMs: number) =>
+            boundedCommand(
+                process.execPath,
+                [
+                    '-e',
+                    "process.on('SIGUSR1', () => { process.stdout.write('compiled'); process.exit(0); }); process.stdout.write('compiling-ready'); setInterval(() => {}, 1000);",
+                ],
+                tmpdir(),
+                process.env,
+                {
+                    spawn: (command, args, configuration) => {
+                        const child = spawn(command, args, configuration);
+                        owned.child = child;
+                        owned.closed = once(child, 'close');
+                        child.stdout.once('data', () => ready?.());
+                        return child;
+                    },
+                    setTimeout,
+                    clearTimeout,
+                    process,
+                },
+                { timeoutMs }
+            );
+        const controls = {
+            ...options,
+            build: async () => {
+                const current = readFileSync(options.sourcePath, 'utf8');
+                builds.push(current);
+                let result: NativeTestResult;
+                if (builds.length === 1) {
+                    result = await compile(600_000);
+                } else {
+                    result = { code: 0, signal: null, output: 'Finished test profile\n' };
+                }
+                if (result.code === 0 && result.failure === undefined) {
+                    compiled = current;
+                }
+                return result;
+            },
+            runCase: async (spec: string) => {
+                calls += 1;
+                const current = readFileSync(options.sourcePath, 'utf8');
+                if (compiled !== current) {
+                    return compile(180_000);
+                }
+                if (current === source) {
+                    return passing(spec);
+                }
+                if (current.includes('if false {')) {
+                    return failing(spec, spec.includes('tempo') ? 'a tempo of 0 is refused' : 'a 0/4 meter is refused');
+                }
+                if (current.includes('kept.iter_mut().find(')) {
+                    return failing(spec, 'a repeat is refused');
+                }
+                return failing(spec, spec.startsWith('every_') ? 'tempo at frame' : 'assertion `left == right` failed');
+            },
+        };
+        const completed = verifyTransportMutations(controls).then(
+            (proof) => ({ proof, error: undefined }),
+            (error: unknown) => ({ proof: undefined, error })
+        );
+        try {
+            await started;
+            vi.advanceTimersByTime(180_000);
+            expect(signals.mock.calls.filter(([, signal]) => signal !== 0)).toEqual([]);
+            vi.advanceTimersByTime(1_000);
+            if (owned.child?.pid === undefined) {
+                throw new Error('Compiler fixture did not start');
+            }
+            process.kill(owned.child.pid, 'SIGUSR1');
+            const result = await completed;
+            expect(result.error).toBeUndefined();
+            expect(result.proof?.cases).toHaveLength(21);
+            expect(result.proof?.builds).toHaveLength(5);
+            for (const build of result.proof?.builds ?? []) {
+                expect(build).toMatchObject({ deadlineMs: 600_000, status: 'passed', code: 0, signal: null });
+                expect(build.durationMs).toBeGreaterThanOrEqual(0);
+                expect(Number.isFinite(build.durationMs)).toBe(true);
+                expect(existsSync(join(options.evidencePath, build.log))).toBe(true);
+            }
+            expect(result.proof?.builds.map((build) => build.sourceDigest)).toEqual(
+                builds.map((current) => createHash('sha256').update(current).digest('hex'))
+            );
+            expect(calls).toBe(21);
+            expect(builds).toEqual([
+                source,
+                mutateTransportSource(source, 'adjacent-keep-first'),
+                mutateTransportSource(source, 'malformed-hidden-by-collapse'),
+                mutateTransportSource(source, 'nonadjacent-frame-fold'),
+                source,
+            ]);
+            expect(readFileSync(options.sourcePath, 'utf8')).toBe(source);
+        } finally {
+            owned.child?.kill('SIGKILL');
+            await owned.closed;
+            await vi.advanceTimersByTimeAsync(50);
+            await completed;
+        }
+    });
+
+    it.each(['compile-error', 'timeout', 'output-limit', 'interrupted', 'child-start-failed'])(
+        'records and refuses mutant compilation after %s without counting a killed mutation',
+        async (failure) => {
+            const options = fixture();
+            let buildCalls = 0;
+            let caseCalls = 0;
+            const output = failing(
+                'tempo_segments_under_one_frame_apart_install_as_the_later_one',
+                'assertion `left == right` failed'
+            ).output;
+            await expect(
+                verifyTransportMutations({
+                    ...options,
+                    build: async (timeoutMs) => {
+                        expect(timeoutMs).toBe(600_000);
+                        buildCalls += 1;
+                        if (buildCalls === 1) {
+                            return options.build();
+                        }
+                        expect(readFileSync(options.sourcePath, 'utf8')).toBe(
+                            mutateTransportSource(source, 'adjacent-keep-first')
+                        );
+                        const result: NativeTestResult = {
+                            code: 101,
+                            signal: null,
+                            output,
+                        };
+                        if (failure !== 'compile-error') {
+                            result.failure = failure;
+                        }
+                        return result;
+                    },
+                    runCase: async (spec) => {
+                        caseCalls += 1;
+                        return passing(spec);
+                    },
+                })
+            ).rejects.toThrow('Native compilation failed: adjacent-keep-first');
+            expect(buildCalls).toBe(2);
+            expect(caseCalls).toBe(7);
+            expect(readFileSync(options.sourcePath, 'utf8')).toBe(source);
+            expect(JSON.parse(readFileSync(join(options.evidencePath, 'cases.json'), 'utf8'))).toHaveLength(7);
+            const builds = JSON.parse(readFileSync(join(options.evidencePath, 'builds.json'), 'utf8'));
+            expect(builds).toMatchObject([
+                { phase: 'baseline', status: 'passed' },
+                { phase: 'adjacent-keep-first', status: 'failed', code: 101, signal: null, deadlineMs: 600_000 },
+            ]);
+            expect(readFileSync(join(options.evidencePath, 'adjacent-keep-first-build.log'), 'utf8')).toBe(output);
+        }
+    );
+
+    it.each(['compilation', 'execution'])(
+        'bounds hung %s independently and restores only after the owned command ends',
+        async (phase) => {
+            const options = fixture();
+            vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+            const signals = vi.spyOn(process, 'kill');
+            const owned: { child?: ChildProcess; closed?: Promise<unknown> } = {};
+            let ready: (() => void) | undefined;
+            const started = new Promise<void>((resolve) => {
+                ready = resolve;
+            });
+            const hang = (timeoutMs?: number) =>
+                runCommand(
+                    process.execPath,
+                    ['-e', "process.stdout.write('compiler-or-test-started'); setInterval(() => {}, 1000);"],
+                    tmpdir(),
+                    process.env,
+                    {
+                        spawn: (command, args, configuration) => {
+                            const child = spawn(command, args, configuration);
+                            owned.child = child;
+                            owned.closed = once(child, 'close');
+                            child.stdout.once('data', () => ready?.());
+                            return child;
+                        },
+                        setTimeout,
+                        clearTimeout,
+                        process,
+                    },
+                    { timeoutMs }
+                );
+            let buildCalls = 0;
+            let caseCalls = 0;
+            const completed = verifyTransportMutations({
+                ...options,
+                build: async (timeoutMs) => {
+                    buildCalls += 1;
+                    return phase === 'compilation' && buildCalls === 2 ? hang(timeoutMs) : options.build();
+                },
+                runCase: async (spec) => {
+                    caseCalls += 1;
+                    return phase === 'execution' ? hang() : passing(spec);
+                },
+            }).then(
+                () => undefined,
+                (error: unknown) => error
+            );
+            try {
+                await started;
+                const current = readFileSync(options.sourcePath, 'utf8');
+                expect(current).toBe(
+                    phase === 'compilation' ? mutateTransportSource(source, 'adjacent-keep-first') : source
+                );
+                const deadlineMs = phase === 'compilation' ? 600_000 : 180_000;
+                vi.advanceTimersByTime(deadlineMs - 1);
+                expect(signals.mock.calls.filter(([, signal]) => signal !== 0)).toEqual([]);
+                vi.advanceTimersByTime(1);
+                expect(readFileSync(options.sourcePath, 'utf8')).toBe(current);
+                await owned.closed;
+                await vi.advanceTimersByTimeAsync(50);
+                const error = await completed;
+                expect(error).toBeInstanceOf(Error);
+                expect(error).toMatchObject({
+                    message: expect.stringContaining(
+                        phase === 'compilation' ? 'Native compilation failed:' : 'Incomplete owning test execution:'
+                    ),
+                });
+                expect(readFileSync(options.sourcePath, 'utf8')).toBe(source);
+                expect(buildCalls).toBe(phase === 'compilation' ? 2 : 1);
+                expect(caseCalls).toBe(phase === 'compilation' ? 7 : 1);
+                expect(signals.mock.calls.filter(([pid, signal]) => pid < 0 && signal !== 0)).toEqual([
+                    [-owned.child!.pid!, 'SIGTERM'],
+                ]);
+                if (phase === 'compilation') {
+                    expect(JSON.parse(readFileSync(join(options.evidencePath, 'builds.json'), 'utf8'))).toMatchObject([
+                        { phase: 'baseline', status: 'passed' },
+                        { phase: 'adjacent-keep-first', status: 'failed', failure: 'timeout', signal: 'SIGTERM' },
+                    ]);
+                    expect(readFileSync(join(options.evidencePath, 'adjacent-keep-first-build.log'), 'utf8')).toBe(
+                        'compiler-or-test-started'
+                    );
+                }
+                expect(vi.getTimerCount()).toBe(0);
+            } finally {
+                owned.child?.kill('SIGKILL');
+                await owned.closed;
+                await vi.advanceTimersByTimeAsync(50);
+                await completed;
+            }
+        }
+    );
+
+    it('retains mutant source and raw compiler output when build ownership cannot be confirmed', async () => {
+        const options = fixture();
+        vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+        let groupPresent = true;
+        const signal = vi.fn((_pid: number, requested: string | number | undefined): true => {
+            if (requested === 0) {
+                throw Object.assign(new Error('group observation'), {
+                    code: groupPresent ? 'EIO' : 'ESRCH',
+                    errno: -5,
+                });
+            }
+            return true;
+        });
+        let closed: (() => void) | undefined;
+        const commandClosed = new Promise<void>((resolve) => {
+            closed = resolve;
+        });
+        let buildCalls = 0;
+        let caseCalls = 0;
+        const completed = verifyTransportMutations({
+            ...options,
+            build: async (timeoutMs) => {
+                buildCalls += 1;
+                if (buildCalls === 1) {
+                    return options.build();
+                }
+                return runCommand(
+                    process.execPath,
+                    ['-e', "process.stdout.write('partial compiler output')"],
+                    tmpdir(),
+                    process.env,
+                    {
+                        spawn: (command, args, configuration) => {
+                            const child = spawn(command, args, configuration);
+                            child.once('close', () => closed?.());
+                            return child;
+                        },
+                        setTimeout,
+                        clearTimeout,
+                        process: {
+                            kill: signal,
+                            once: process.once.bind(process),
+                            removeListener: process.removeListener.bind(process),
+                        },
+                    },
+                    { timeoutMs }
+                );
+            },
+            runCase: async (spec) => {
+                caseCalls += 1;
+                return passing(spec);
+            },
+        }).then(
+            () => undefined,
+            (error: unknown) => error
+        );
+        try {
+            await commandClosed;
+            await vi.advanceTimersByTimeAsync(10_000);
+            expect(await completed).toBeInstanceOf(NativeCommandOwnershipError);
+            expect(buildCalls).toBe(2);
+            expect(caseCalls).toBe(7);
+            expect(readFileSync(options.sourcePath, 'utf8')).toBe(mutateTransportSource(source, 'adjacent-keep-first'));
+            expect(JSON.parse(readFileSync(join(options.evidencePath, 'builds.json'), 'utf8'))).toMatchObject([
+                { phase: 'baseline', status: 'passed' },
+                { phase: 'adjacent-keep-first', status: 'ownership-unconfirmed', ownershipDiagnostic: { code: 'EIO' } },
+            ]);
+            expect(readFileSync(join(options.evidencePath, 'adjacent-keep-first-build.log'), 'utf8')).toBe(
+                'partial compiler output'
+            );
+            expect(vi.getTimerCount()).toBe(0);
+        } finally {
+            groupPresent = false;
+            await vi.advanceTimersByTimeAsync(50);
+            await completed;
+        }
+    });
+
     it.each(['EIO', 'EPERM'])(
         'retains the mutated source and refuses proof when bounded %s ownership confirmation is exhausted',
         async (code) => {

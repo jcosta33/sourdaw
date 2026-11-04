@@ -15,16 +15,47 @@ export async function streamExportToNative(input: {
     checkCancelled: () => void;
 }) {
     const tokens: string[] = [];
+    const pendingBegins = new Set<Promise<string>>();
     const names = new Set<string>();
     const completed = new Set<string>();
     const tokenByName = new Map<string, string>();
     const pairs = new Map<string, string>();
     let closed = false;
+    let closing = false;
+    let abortPending: Promise<void> | undefined;
     let fileOpen = false;
+    const checkOpen = () => {
+        input.checkCancelled();
+        if (closed || closing) {
+            throw new Error('Export cancelled');
+        }
+    };
+    const abort = async () => {
+        if (closed) {
+            return;
+        }
+        if (abortPending) {
+            await abortPending;
+            return;
+        }
+        closing = true;
+        const pending = (async () => {
+            await Promise.allSettled(pendingBegins);
+            await abortExportFiles([...tokens]);
+            tokens.length = 0;
+            closed = true;
+        })();
+        abortPending = pending;
+        try {
+            await pending;
+        } finally {
+            abortPending = undefined;
+        }
+    };
     return {
         async beginFile(name: string) {
-            input.checkCancelled();
-            if (closed || fileOpen || names.has(name) || /[\\/]/u.test(name)) {
+            checkOpen();
+            if (fileOpen || names.has(name) || /[\\/]/u.test(name)) {
                 throw new Error('Invalid export entry order or name.');
             }
             const extension = name.slice(name.lastIndexOf('.'));
@@ -34,11 +65,25 @@ export async function streamExportToNative(input: {
             } else {
                 path = input.selectedFilePath?.replace(/\.[a-z0-9]+$/iu, extension);
             }
+            checkOpen();
             if (!path) {
                 throw new Error('No native export destination was selected.');
             }
-            const token = await beginExportFile(path);
-            tokens.push(token);
+            const beginning = beginExportFile(path).then((token) => {
+                tokens.push(token);
+                return token;
+            });
+            pendingBegins.add(beginning);
+            let token: string;
+            try {
+                token = await beginning;
+                checkOpen();
+            } catch (error) {
+                await abort();
+                throw error;
+            } finally {
+                pendingBegins.delete(beginning);
+            }
             names.add(name);
             tokenByName.set(name, token);
             fileOpen = true;
@@ -46,13 +91,15 @@ export async function streamExportToNative(input: {
                 writer: {
                     checkCancelled: input.checkCancelled,
                     async write(bytes: Uint8Array) {
-                        input.checkCancelled();
+                        checkOpen();
                         await appendExportFile(token, bytes);
+                        checkOpen();
                     },
                 },
                 async finish() {
-                    input.checkCancelled();
+                    checkOpen();
                     await sealExportFile(token);
+                    checkOpen();
                     fileOpen = false;
                     completed.add(name);
                 },
@@ -71,8 +118,8 @@ export async function streamExportToNative(input: {
             pairs.set(audioName, reportName);
         },
         async commit(onCommitBegin: () => void) {
-            input.checkCancelled();
-            if (closed || fileOpen || tokens.length === 0) {
+            checkOpen();
+            if (fileOpen || tokens.length === 0) {
                 throw new Error('Export has no completed files.');
             }
             if (
@@ -95,12 +142,6 @@ export async function streamExportToNative(input: {
             await commitExportFiles(commitTokens);
             closed = true;
         },
-        async abort() {
-            if (closed) {
-                return;
-            }
-            await abortExportFiles(tokens);
-            closed = true;
-        },
+        abort,
     };
 }

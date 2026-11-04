@@ -19,6 +19,11 @@ vi.mock('#/utils/desktopBridge', () => ({
     desktopListen: desktopListenMock,
 }));
 
+vi.mock('#/utils/desktopRuntime', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/utils/desktopRuntime')>()),
+    isDesktopRuntime: () => true,
+}));
+
 vi.mock('../../persistInputId', () => ({
     persistInputId: persistInputIdMock,
 }));

@@ -1,7 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+await vi.hoisted(async () => {
+    const { createMockAudioContext, createMockAudioNode } = await import('#/helpers/__tests__/audioContext.mock');
+    // The real engine captures its context before a cold bus strip is created.
+    vi.stubGlobal('AudioContext', createMockAudioContext);
+    vi.stubGlobal('AudioWorkletNode', function MockAudioWorkletNode(this: object) {
+        Object.assign(this, createMockAudioNode('audio-worklet'));
+    });
+});
+
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import {
+    audioEngine,
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
 } from '#/modules/AudioEngine/useCases';
@@ -64,6 +74,7 @@ const BUS_ID = 'bus-ai-00000000-0000-4000-8000-000000000001';
 describe('compound bus AppAction batch', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        audioEngine.resetGraph();
         configureRuntimeGraphProjectRevisionValidator(
             (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
         );
@@ -84,6 +95,8 @@ describe('compound bus AppAction batch', () => {
     });
 
     afterEach(() => {
+        vi.restoreAllMocks();
+        audioEngine.resetGraph();
         configureRuntimeGraphProjectRevisionValidator(null);
         configureRuntimeGraphTopologyValidator(null);
         clearUndoHistory();
@@ -92,9 +105,11 @@ describe('compound bus AppAction batch', () => {
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
+        vi.unstubAllGlobals();
     });
 
     it('creates and targets one stable bus identity inside a compensable atomic batch', async () => {
+        const initialize = vi.spyOn(audioEngine, 'initializeTrackStripFromSnapshot');
         const actions = [
             { type: 'createBus', payload: { name: 'Vocal Plate', busId: BUS_ID } },
             { type: 'addDevice', payload: { trackId: BUS_ID, deviceType: 'builtin-reverb' } },
@@ -125,13 +140,19 @@ describe('compound bus AppAction batch', () => {
         expect(bus?.devices[0]?.id).toMatch(/^device-/u);
         expect(bus?.devices[0]?.type).toBe('builtin-reverb');
         expect(vocals?.sends).toEqual([{ busId: BUS_ID, level: 0.25, preFader: false }]);
-        expect(runtimeMocks.applyRuntimeGraphDelta).toHaveBeenCalledWith(
+        expect(initialize).toHaveBeenCalledExactlyOnceWith(
             expect.objectContaining({
-                command: 'replace-track-device-chain',
-                operation: 'add-device',
-                after: expect.objectContaining({ id: BUS_ID }),
+                nodes: [
+                    expect.objectContaining({
+                        id: BUS_ID,
+                        devices: [expect.objectContaining({ id: bus?.devices[0]?.id, type: 'builtin-reverb' })],
+                    }),
+                ],
             })
         );
+        expect(audioEngine.getTrackStrip(BUS_ID)?.deviceNodes.map((device) => device.deviceId)).toEqual([
+            bus?.devices[0]?.id,
+        ]);
         expect(runtimeMocks.engineSetSend).toHaveBeenCalledWith('track-vocals', BUS_ID, 0.25, false);
     });
 });

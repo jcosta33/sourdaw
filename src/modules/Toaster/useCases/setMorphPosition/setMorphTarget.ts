@@ -1,15 +1,19 @@
-import { toasterStore } from '../../stores/toasterStore';
+import { getValidMorphState } from '../../models/ToasterKit';
 
-export function setMorphTarget(deviceId: string, patternId: string | null): void {
-    const state = toasterStore.value?.[deviceId];
-    if (!state) {
-        return;
-    }
-    toasterStore.set({
-        ...toasterStore.value,
-        [deviceId]: {
-            ...state,
-            morph: { ...state.morph, targetPatternId: patternId, enabled: patternId !== null },
-        },
+import { commitToasterMorphKitChange } from './commitToasterMorphKitChange';
+
+export async function setMorphTarget(deviceId: string, patternId: string | null): Promise<boolean> {
+    return commitToasterMorphKitChange(deviceId, (kit) => {
+        if (
+            patternId !== null &&
+            (patternId === kit.activePatternId || !kit.patterns.some((pattern) => pattern.id === patternId))
+        ) {
+            return null;
+        }
+        const morph = getValidMorphState(kit);
+        if (morph.targetPatternId === patternId) {
+            return null;
+        }
+        return { ...kit, morph: { ...morph, targetPatternId: patternId, enabled: false } };
     });
 }

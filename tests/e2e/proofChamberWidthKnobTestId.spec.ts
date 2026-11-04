@@ -24,12 +24,16 @@ test.describe('ProofChamber Width knob — keyboard response', () => {
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
         await inspector.getByRole('button', { name: 'Add device' }).click();
         await page.getByRole('menuitem', { name: /^Dutch Oven$/ }).click();
-        await page.waitForTimeout(800);
         await expect(inspector.getByRole('button', { name: /^Bypass Dutch Oven$/i })).toBeVisible();
 
         // Open the panel by clicking the device card text.
         await inspector.getByText('Dutch Oven', { exact: false }).first().click();
         await expect(page.getByRole('slider', { name: 'Size' })).toBeVisible({ timeout: 15_000 });
+        await page
+            .getByRole('group', { name: 'Effect control detail' })
+            .getByRole('button', { name: 'build', exact: true })
+            .click();
+        await expect(page.getByRole('button', { name: 'build', exact: true })).toHaveAttribute('aria-pressed', 'true');
     });
 
     test('Width knob responds to keyboard', async ({ page }) => {
@@ -38,8 +42,6 @@ test.describe('ProofChamber Width knob — keyboard response', () => {
         await width.focus();
         const before = Number(await width.getAttribute('aria-valuenow'));
         await page.keyboard.press('ArrowUp');
-        await page.waitForTimeout(200);
-        const after = Number(await width.getAttribute('aria-valuenow'));
-        expect(after).toBeGreaterThan(before);
+        await expect.poll(async () => Number(await width.getAttribute('aria-valuenow'))).toBeGreaterThan(before);
     });
 });

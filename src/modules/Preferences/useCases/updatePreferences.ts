@@ -1,7 +1,12 @@
-import { setSoloMode } from '#/modules/WorkspaceShell/useCases';
-
-import { defaultPreferences, normalizeUiScale, type Preferences } from '../models/Preferences';
+import {
+    defaultPreferences,
+    normalizeElasticTransientSensitivity,
+    normalizeUiScale,
+    type Preferences,
+} from '../models/Preferences';
 import { preferencesStore } from '../stores/preferencesStore';
+
+import { soloModePreferenceEvents } from './helpers/soloModePreferenceEvents';
 
 type UpdatePreferencesInput = {
     patch: Partial<Preferences>;
@@ -14,6 +19,11 @@ export function updatePreferences({ patch }: UpdatePreferencesInput): void {
         ...patch,
         ...(patch.uiScale === undefined ? {} : { uiScale: normalizeUiScale(patch.uiScale) }),
     };
+    if (patch.elasticTransientSensitivity !== undefined) {
+        next_preferences.elasticTransientSensitivity = normalizeElasticTransientSensitivity(
+            patch.elasticTransientSensitivity
+        );
+    }
 
     // `trySet`, not `set`. This runs from click handlers, and a refused write
     // used to throw out of one synchronously — `registerGlobalErrorHandlers`
@@ -23,8 +33,9 @@ export function updatePreferences({ patch }: UpdatePreferencesInput): void {
     // The change applies now; the adapter reports the loss of durability once
     // per session, so this path stays silent per write. See #1557.
     preferencesStore.trySet(next_preferences);
-
     if (patch.soloMode !== undefined) {
-        setSoloMode(patch.soloMode);
+        void soloModePreferenceEvents.emit('preferences.soloModeApplied', {
+            soloMode: next_preferences.soloMode,
+        });
     }
 }

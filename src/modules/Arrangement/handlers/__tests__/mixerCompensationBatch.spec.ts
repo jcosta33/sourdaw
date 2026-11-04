@@ -5,7 +5,7 @@ import {
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
 } from '#/modules/AudioEngine/useCases';
-import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
+import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     executeAppAction,
@@ -18,6 +18,7 @@ import {
 import {
     captureProjectRevision,
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
 } from '#/modules/CrdtDocument/useCases';
@@ -175,23 +176,104 @@ describe('agent mixer batches with required compensation', () => {
         expect(vocals()?.soloed).toBe(true);
     });
 
-    it('turns undo into a conflict after a later solo edit, leaving the whole group applied', async () => {
+    it('consumes a guarded target-equal solo inverse without writing and reaches older history', async () => {
+        await executeAppAction({ type: 'soloTrack', payload: { trackId: REVERB_ID, soloed: true } });
         await commitAgentBatch([
+            { type: 'soloTrack', payload: { trackId: VOCALS_ID, soloed: true, expectedSoloed: false } },
+        ]);
+        soloTrackExclusive(REVERB_ID);
+
+        const projectRevision = captureProjectRevision();
+        const rootDocument = JSON.stringify(getCrdtDoc('root'));
+        const trackState = trackStore.value;
+
+        await expect(undo()).resolves.toEqual({ headConsumed: true });
+        expect(captureProjectRevision()).toBe(projectRevision);
+        expect(JSON.stringify(getCrdtDoc('root'))).toBe(rootDocument);
+        expect(trackStore.value).toBe(trackState);
+        expect(vocals()?.soloed).toBe(false);
+        expect(trackStore.value?.tracks.find((track) => track.id === REVERB_ID)?.soloed).toBe(true);
+        expect(notifyUserMock).not.toHaveBeenCalled();
+
+        await expect(undo()).resolves.toEqual({ headConsumed: true });
+        expect(captureProjectRevision()).not.toBe(projectRevision);
+        expect(JSON.stringify(getCrdtDoc('root'))).not.toBe(rootDocument);
+        expect(trackStore.value?.tracks.find((track) => track.id === REVERB_ID)?.soloed).toBe(false);
+        expect(notifyUserMock).not.toHaveBeenCalled();
+    });
+
+    it('admits a fresh target-equal guarded solo as a no-op without changing project or history', async () => {
+        const projectRevision = captureProjectRevision();
+        const rootDocument = JSON.stringify(getCrdtDoc('root'));
+        const trackState = trackStore.value;
+        const history = undoStore.value;
+
+        const result = await commitAgentBatch([
+            { type: 'soloTrack', payload: { trackId: VOCALS_ID, soloed: false, expectedSoloed: true } },
+        ]);
+
+        expect(result).toMatchObject({ status: 'no-op' });
+        expect(captureProjectRevision()).toBe(projectRevision);
+        expect(JSON.stringify(getCrdtDoc('root'))).toBe(rootDocument);
+        expect(trackStore.value).toBe(trackState);
+        expect(undoStore.value).toBe(history);
+        expect(vocals()?.soloed).toBe(false);
+        expect(notifyUserMock).not.toHaveBeenCalled();
+    });
+
+    it('undoes a valid send while skipping a guarded solo inverse whose target already holds', async () => {
+        const result = await commitAgentBatch([
             { type: 'setSend', payload: { trackId: VOCALS_ID, busId: REVERB_ID, level: 0.5 } },
             { type: 'soloTrack', payload: { trackId: VOCALS_ID, soloed: true, expectedSoloed: false } },
         ]);
+        expect(result).toMatchObject({ status: 'committed' });
+        soloTrackExclusive(REVERB_ID);
+        const soloGateCalls = runtimeMocks.engineSetTrackSoloGate.mock.calls.length;
+
+        await expect(undo()).resolves.toEqual({ headConsumed: true });
+
+        expect(reverbSendLevel()).toBe(0.25);
+        expect(vocals()?.soloed).toBe(false);
+        expect(trackStore.value?.tracks.find((track) => track.id === REVERB_ID)?.soloed).toBe(true);
+        expect(runtimeMocks.engineSetTrackSoloGate).toHaveBeenCalledTimes(soloGateCalls);
+        expect(notifyUserMock).not.toHaveBeenCalled();
+    });
+
+    it('consumes a guarded target-equal redo without writing', async () => {
+        await commitAgentBatch([
+            { type: 'soloTrack', payload: { trackId: VOCALS_ID, soloed: true, expectedSoloed: false } },
+        ]);
+        await expect(undo()).resolves.toEqual({ headConsumed: true });
         await executeAppAction(
-            { type: 'soloTrack', payload: { trackId: VOCALS_ID, soloed: false, expectedSoloed: true } },
+            { type: 'soloTrack', payload: { trackId: VOCALS_ID, soloed: true, expectedSoloed: false } },
             { skipUndo: true }
         );
 
-        await expect(undo()).resolves.toEqual({ headConsumed: false });
-        expect(notifyUserMock).toHaveBeenCalledWith(
-            'Cannot undo "Agent mix change": project state has changed',
-            'warning'
-        );
+        const projectRevision = captureProjectRevision();
+        const rootDocument = JSON.stringify(getCrdtDoc('root'));
+        const trackState = trackStore.value;
 
-        expect(reverbSendLevel()).toBe(0.5);
+        await redo();
+
+        expect(captureProjectRevision()).toBe(projectRevision);
+        expect(JSON.stringify(getCrdtDoc('root'))).toBe(rootDocument);
+        expect(trackStore.value).toBe(trackState);
+        expect(undoStore.value?.future).toEqual([]);
+        expect(vocals()?.soloed).toBe(true);
+        expect(notifyUserMock).not.toHaveBeenCalled();
+    });
+
+    it('refuses guarded solos when the planned state disagrees or the track is missing', async () => {
+        const mismatched = await commitAgentBatch([
+            { type: 'soloTrack', payload: { trackId: VOCALS_ID, soloed: true, expectedSoloed: true } },
+        ]);
+        expect(mismatched).toMatchObject({ status: 'conflicted' });
+        expect(vocals()?.soloed).toBe(false);
+
+        const missingTarget = await commitAgentBatch([
+            { type: 'soloTrack', payload: { trackId: 'missing-track', soloed: true, expectedSoloed: false } },
+        ]);
+        expect(missingTarget).toMatchObject({ status: 'rejected' });
         expect(vocals()?.soloed).toBe(false);
     });
 

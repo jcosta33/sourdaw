@@ -1,8 +1,9 @@
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     CONFIRM_USAGE,
@@ -28,6 +29,8 @@ import {
     type ConfirmReviewRepairsPort,
 } from '../confirmReviewRepairs.ts';
 import { AUTHOR_BOT_NODE_ID, REVIEWER_BOT_NODE_ID, type GhSession } from '../githubAppIdentity.ts';
+import { withPullRequestMutationLock, type PullRequestMutationSerialization } from '../pullRequestMutationLock.ts';
+import { runRecoverDeliveryLockCli } from '../recoverDeliveryLock.ts';
 import {
     confirmClientMutationId,
     parseReviewRepairReply,
@@ -1889,6 +1892,12 @@ function fakeDependencies(
     const events: string[] = [];
     const dependencies: ConfirmReviewRepairsCoordinatorDependencies = {
         primaryRoot: () => '/repo',
+        serialize: async (_root, _number, operation) =>
+            operation({
+                ownerOid: 'unit-owner',
+                markRemoteMutationAttempt: () => undefined,
+                registerSuccessfulCompletion: () => undefined,
+            }),
         authenticateReviewer: async (primaryRoot) => {
             events.push(`auth:${primaryRoot}`);
             return {
@@ -1964,11 +1973,287 @@ describe('runConfirmReviewRepairsCli', () => {
 describe('defaultConfirmReviewRepairsCoordinatorDependencies', () => {
     it('should bind the reviewer role and the module confirm function', () => {
         const dependencies = defaultConfirmReviewRepairsCoordinatorDependencies();
+        expect(dependencies.serialize).toBe(withPullRequestMutationLock);
         expect(dependencies.confirm).toBe(confirmReviewRepairs);
     });
 
     it('should bind reviewer authentication to the confirm adapter, whose mint is the confirm set', () => {
         const dependencies = defaultConfirmReviewRepairsCoordinatorDependencies();
         expect(dependencies.authenticateReviewer).toBe(authenticateConfirmReviewer);
+    });
+});
+
+function lockGit(root: string, args: string[]): string {
+    return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+}
+
+function mutationFixture() {
+    const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-mutation-'));
+    lockGit(root, ['init', '--quiet']);
+    const serialize: PullRequestMutationSerialization = (directory, number, operation) =>
+        withPullRequestMutationLock(directory, number, operation, {
+            ownerFence: { kind: 'pid', pid: process.pid, startedAt: 'controlled-review-owner' },
+        });
+    return { root, serialize };
+}
+
+function deferredBoundary() {
+    let release: () => void = () => undefined;
+    const promise = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    return { promise, release };
+}
+
+async function recoverReviewMutation(root: string, ownerOid: string) {
+    const reads = vi.fn(() => ({ state: 'open' as const, head: HEAD, merged: false, receipts: [] }));
+    const auth = vi.fn(async () => ({
+        minted: { actorNodeId: AUTHOR_BOT_NODE_ID },
+        session: { configDir: root, env: {}, dispose: () => undefined },
+    }));
+    const dependencies = {
+        trustedLauncher: { primaryRoot: root, gitPath: 'git', ghPath: 'gh' },
+        authenticateAuthor: auth,
+        repositoryName: () => 'jcosta33/sourdaw',
+        readJournaledRemoteState: reads,
+        ownerFenceIsLive: () => false,
+        currentOwnerFence: () => ({ kind: 'pid' as const, pid: process.pid, startedAt: 'controlled-recovery-owner' }),
+    };
+    await expect(runRecoverDeliveryLockCli([String(PR), '--owner', ownerOid], dependencies)).resolves.toBe(0);
+    expect(reads).toHaveBeenCalledTimes(2);
+    expect(auth).toHaveBeenCalledTimes(1);
+    reads.mockClear();
+    auth.mockClear();
+    await expect(runRecoverDeliveryLockCli([String(PR), '--owner', ownerOid], dependencies)).resolves.toBe(0);
+    expect(reads).not.toHaveBeenCalled();
+    expect(auth).not.toHaveBeenCalled();
+}
+
+describe('serialized reviewer confirmation transaction', () => {
+    // The global Trace2 git-ai observer writes .git/ai after Git returns; keep disposable repos private.
+    beforeEach(() => vi.stubEnv('GIT_TRACE2_EVENT', '0'));
+    afterEach(() => vi.unstubAllEnvs());
+    it('refuses a same-PR competitor before auth and posts once after release and replay', async () => {
+        const { root, serialize } = mutationFixture();
+        const entered = deferredBoundary();
+        const resume = deferredBoundary();
+        const { port, mutations } = fakePort(HEAD, [subjectThread()]);
+        const { dependencies } = fakeDependencies({
+            primaryRoot: () => root,
+            serialize,
+            confirm: confirmReviewRepairs,
+            port: () => port,
+        });
+        const authenticate = dependencies.authenticateReviewer;
+        const first = coordinateConfirmReviewRepairs(PR, HEAD, {
+            ...dependencies,
+            authenticateReviewer: async (directory) => {
+                entered.release();
+                await resume.promise;
+                return authenticate(directory);
+            },
+        });
+        try {
+            await entered.promise;
+            const competitorAuth = vi.fn(authenticate);
+            const competitorPort = vi.fn(() => port);
+            await expect(
+                coordinateConfirmReviewRepairs(PR, HEAD, {
+                    ...dependencies,
+                    authenticateReviewer: competitorAuth,
+                    port: competitorPort,
+                })
+            ).rejects.toThrow(`PR #${PR} is already being delivered`);
+            expect(competitorAuth).not.toHaveBeenCalled();
+            expect(competitorPort).not.toHaveBeenCalled();
+            await expect(
+                coordinateConfirmReviewRepairs(PR + 1, HEAD, {
+                    ...dependencies,
+                    confirm: () => ({ resolved: [] }),
+                })
+            ).resolves.toBeUndefined();
+        } finally {
+            resume.release();
+            await first;
+        }
+        try {
+            await coordinateConfirmReviewRepairs(PR, HEAD, dependencies);
+            expect(mutations.map((entry) => entry.kind)).toEqual(['post', 'resolve']);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it.each(['post', 'resolve', 'resolve-existing'] as const)(
+        'retains an ambiguous %s owner and recovers for descendant replay without a second post',
+        async (failure) => {
+            const { root, serialize } = mutationFixture();
+            let liveHead = HEAD;
+            let fails = true;
+            const initial = subjectThread();
+            if (failure === 'resolve-existing') {
+                initial.replies.push({
+                    id: 9800,
+                    body: renderConfirmationReply(recordFor()),
+                    authorNodeId: REVIEWER_BOT_NODE_ID,
+                });
+            }
+            const {
+                port: base,
+                mutations,
+                logs,
+                threads,
+            } = fakePort(
+                HEAD,
+                [initial],
+                (commit, target) =>
+                    ([HEAD, MOVED_HEAD].includes(target) && [HEAD, COMMIT, REVIEWED_HEAD].includes(commit)) ||
+                    (commit === REVIEWED_HEAD && target === COMMIT)
+            );
+            const port: ConfirmReviewRepairsPort = {
+                ...base,
+                pullRequestHead: () => liveHead,
+                postConfirmation: (...args) => {
+                    base.postConfirmation(...args);
+                    if (failure === 'post' && fails) {
+                        fails = false;
+                        throw new Error('post transport failed');
+                    }
+                },
+                resolve: (...args) => {
+                    if (failure !== 'post' && fails) {
+                        fails = false;
+                        throw new Error('resolve transport failed');
+                    }
+                    base.resolve(...args);
+                },
+            };
+            const { dependencies } = fakeDependencies({
+                primaryRoot: () => root,
+                serialize,
+                port: () => port,
+                confirm: confirmReviewRepairs,
+            });
+            try {
+                let refusal: unknown;
+                try {
+                    await coordinateConfirmReviewRepairs(PR, HEAD, dependencies);
+                } catch (error) {
+                    refusal = error;
+                }
+                const ownerOid = lockGit(root, ['rev-parse', '--verify', `refs/sourdaw/delivery/pr-${PR}`]);
+                expect(String(refusal)).toContain(
+                    failure === 'post' ? 'post transport failed' : 'resolve transport failed'
+                );
+                expect(String(refusal)).toContain(`pnpm deliver --recover-lock ${PR} --owner ${ownerOid}`);
+                expect(JSON.parse(lockGit(root, ['cat-file', 'blob', ownerOid]))).toMatchObject({
+                    version: 4,
+                    mutation: { phase: 'remote-mutation-attempted', epoch: 1 },
+                });
+                await recoverReviewMutation(root, ownerOid);
+                liveHead = MOVED_HEAD;
+                await coordinateConfirmReviewRepairs(PR, MOVED_HEAD, dependencies);
+                expect(mutations.map((entry) => entry.kind)).toEqual(
+                    failure === 'resolve-existing' ? ['resolve'] : ['post', 'resolve']
+                );
+                expect(
+                    threads
+                        .get(THREAD)
+                        ?.replies.filter(
+                            (reply) => reply.authorNodeId === REVIEWER_BOT_NODE_ID && reply.id !== ROOT_COMMENT_ID
+                        )
+                ).toHaveLength(1);
+                expect(logs).toContain(`repair-confirmation-replayed:${PR}:${THREAD}`);
+                expect(() => lockGit(root, ['rev-parse', '--verify', `refs/sourdaw/delivery/pr-${PR}`])).toThrow();
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        }
+    );
+
+    it('recovers a remotely applied resolve after its response is lost and replays without any write', async () => {
+        const { root, serialize } = mutationFixture();
+        let liveHead = HEAD;
+        const { port: base, mutations, threads } = fakePort(HEAD, [subjectThread()]);
+        const postConfirmation = vi.fn(base.postConfirmation);
+        const resolve = vi.fn((...args: Parameters<ConfirmReviewRepairsPort['resolve']>) => {
+            base.resolve(...args);
+            throw new Error('resolve response lost after remote apply');
+        });
+        const attempts = vi.fn();
+        const observedSerialize: PullRequestMutationSerialization = (directory, number, operation) =>
+            serialize(directory, number, async (boundary) => {
+                const markAttempt = boundary.markRemoteMutationAttempt;
+                boundary.markRemoteMutationAttempt = () => {
+                    attempts();
+                    markAttempt();
+                };
+                return operation(boundary);
+            });
+        const port: ConfirmReviewRepairsPort = {
+            ...base,
+            pullRequestHead: () => liveHead,
+            postConfirmation,
+            resolve,
+        };
+        const { dependencies } = fakeDependencies({
+            primaryRoot: () => root,
+            serialize: observedSerialize,
+            port: () => port,
+            confirm: confirmReviewRepairs,
+        });
+        try {
+            let refusal: unknown;
+            try {
+                await coordinateConfirmReviewRepairs(PR, HEAD, dependencies);
+            } catch (error) {
+                refusal = error;
+            }
+            expect(threads.get(THREAD)?.resolved).toBe(true);
+            expect(mutations.map((entry) => entry.kind)).toEqual(['post', 'resolve']);
+            expect(attempts).toHaveBeenCalledTimes(2);
+            const ownerOid = lockGit(root, ['rev-parse', '--verify', `refs/sourdaw/delivery/pr-${PR}`]);
+            expect(String(refusal)).toContain('resolve response lost after remote apply');
+            expect(String(refusal)).toContain(`pnpm deliver --recover-lock ${PR} --owner ${ownerOid}`);
+            expect(JSON.parse(lockGit(root, ['cat-file', 'blob', ownerOid]))).toMatchObject({
+                version: 4,
+                mutation: { phase: 'remote-mutation-attempted', epoch: 1 },
+            });
+            await recoverReviewMutation(root, ownerOid);
+            liveHead = MOVED_HEAD;
+            attempts.mockClear();
+            await expect(coordinateConfirmReviewRepairs(PR, MOVED_HEAD, dependencies)).resolves.toBeUndefined();
+            expect(attempts).not.toHaveBeenCalled();
+            expect(postConfirmation).toHaveBeenCalledTimes(1);
+            expect(resolve).toHaveBeenCalledTimes(1);
+            expect(mutations.map((entry) => entry.kind)).toEqual(['post', 'resolve']);
+            expect(() => lockGit(root, ['rev-parse', '--verify', `refs/sourdaw/delivery/pr-${PR}`])).toThrow();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('releases an unattempted owner after whole-batch refusal without posting or resolving', async () => {
+        const { root, serialize } = mutationFixture();
+        const { port, mutations } = fakePort(HEAD, [
+            subjectThread(),
+            subjectThread({
+                thread: SECOND_THREAD,
+                rootCommentId: SECOND_ROOT_COMMENT_ID,
+            }),
+        ]);
+        const { dependencies } = fakeDependencies({
+            primaryRoot: () => root,
+            serialize,
+            port: () => port,
+            confirm: confirmReviewRepairs,
+        });
+        try {
+            await expect(coordinateConfirmReviewRepairs(PR, HEAD, dependencies)).rejects.toThrow(REFUSED_MESSAGE);
+            expect(mutations).toEqual([]);
+            expect(() => lockGit(root, ['rev-parse', '--verify', `refs/sourdaw/delivery/pr-${PR}`])).toThrow();
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
     });
 });

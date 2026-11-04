@@ -149,6 +149,20 @@ describe('review dossier chain', () => {
         expect(dossier.headDigest).not.toBe(GENESIS_DIGEST);
     });
 
+    it('keeps the pre-attribution accepted event digest unchanged when sources are absent', () => {
+        expect(
+            reviewDossierEventDigest({
+                kind: 'finding-accepted',
+                findingId: 'finding-1',
+                path: 'scripts/reviewDossier.ts',
+                line: 42,
+                side: 'RIGHT',
+                sequence: 0,
+                previousDigest: GENESIS_DIGEST,
+            })
+        ).toBe('a7cd299a59dcc95ce5f6011a766e1008b82dbd03969b05c2cea697388c3eec3c');
+    });
+
     it('should cover the payload, sequence and predecessor in the event digest', () => {
         const event: ReviewDossierEvent = {
             kind: 'stance-completed',
@@ -220,6 +234,49 @@ describe('derived views', () => {
         expect(acceptedFindings(validDossier())).toEqual([
             { findingId: 'finding-1', path: 'scripts/reviewDossier.ts', line: 42, side: 'RIGHT' },
         ]);
+    });
+
+    it('carries explicit finding sources through the event digest and accepted view', () => {
+        const sources = [{ stance: 'correctness', reviewerModel: 'model-correctness' }];
+        const events = BASE_EVENTS.map((event) => (event.kind === 'finding-accepted' ? { ...event, sources } : event));
+        const dossier = assembleWith({ events });
+        const canonical = serializeReviewDossier(dossier);
+
+        expect(acceptedFindings(dossier)[0]).toMatchObject({ sources });
+        expect(recordAt(dossier, 1).digest).not.toBe(recordAt(validDossier(), 1).digest);
+        expect(serializeReviewDossier(parseReviewDossier(JSON.parse(canonical)))).toBe(canonical);
+    });
+
+    it('refuses unknown and clean source pairs when reading a dossier', () => {
+        for (const source of [
+            { stance: 'correctness', reviewerModel: 'foreign-model' },
+            { stance: 'test-validity', reviewerModel: 'model-test-validity' },
+        ]) {
+            const dossier = cloneDossier();
+            Object.assign(recordAt(dossier, 1), { sources: [source] });
+            expect(() => parseReviewDossier(dossier)).toThrow(/source.*does not name a completed findings draw/u);
+        }
+    });
+
+    it('refuses malformed and unsafe persisted sources before trusting their digest', () => {
+        for (const sources of [[], [{ stance: 'correctness', reviewerModel: `ghp_${'A'.repeat(24)}` }]]) {
+            const dossier = cloneDossier();
+            Object.assign(recordAt(dossier, 1), { sources });
+            expect(() => parseReviewDossier(dossier)).toThrow(/sources.*(?:non-empty|GitHub token)/u);
+        }
+    });
+
+    it('detects source tampering even when the replacement names another findings draw', () => {
+        const second = { ...SECOND_CORRECTNESS_STANCE, outcome: 'blocker-found' as const };
+        const sources = [{ stance: 'correctness', reviewerModel: 'model-correctness' }];
+        const events = [...BASE_EVENTS, second].map((event) =>
+            event.kind === 'finding-accepted' ? { ...event, sources } : event
+        );
+        const dossier = assembleWith({ events });
+        Object.assign(recordAt(dossier, 1), {
+            sources: [{ stance: second.stance, reviewerModel: second.reviewerModel }],
+        });
+        expect(() => parseReviewDossier(dossier)).toThrow(/event 1 digest does not match its payload/u);
     });
 
     it('should report discarded dispositions from finding-discarded events', () => {

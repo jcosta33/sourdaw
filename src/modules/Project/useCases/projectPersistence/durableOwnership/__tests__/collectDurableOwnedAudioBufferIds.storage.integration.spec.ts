@@ -14,6 +14,10 @@ type SubjectModules = {
     readNamedProjectJson: typeof import('../../../../repositories/project/readNamedProjectJson').readNamedProjectJson;
     writeNamedProjectJsonByKey: typeof import('../../../../repositories/project/writeNamedProjectJsonByKey').writeNamedProjectJsonByKey;
     storageSupport: typeof import('../../../../repositories/project/storageSupport').storageSupport;
+    projectStore: typeof import('../../../../stores/projectStore').projectStore;
+    arrangementStore: typeof import('../../../../stores/arrangementStore').arrangementStore;
+    projectLoadFailureStore: typeof import('../../../../stores/projectLoadFailureStore').projectLoadFailureStore;
+    trackStore: typeof import('#/modules/Arrangement/stores').trackStore;
 };
 
 const PROJECT_DATABASE_NAME = 'sourdaw-projects';
@@ -77,17 +81,25 @@ function makeAudioBuffer(sample: number): AudioBuffer {
 }
 
 async function importSubjectModules(): Promise<SubjectModules> {
-    const [subject, readNamed, writeNamed, storage] = await Promise.all([
+    const [subject, readNamed, writeNamed, storage, project, arrangements, failure, tracks] = await Promise.all([
         import('../collectDurableOwnedAudioBufferIds'),
         import('../../../../repositories/project/readNamedProjectJson'),
         import('../../../../repositories/project/writeNamedProjectJsonByKey'),
         import('../../../../repositories/project/storageSupport'),
+        import('../../../../stores/projectStore'),
+        import('../../../../stores/arrangementStore'),
+        import('../../../../stores/projectLoadFailureStore'),
+        import('#/modules/Arrangement/stores'),
     ]);
     return {
         collectDurableOwnedAudioBufferIds: subject.collectDurableOwnedAudioBufferIds,
         readNamedProjectJson: readNamed.readNamedProjectJson,
         writeNamedProjectJsonByKey: writeNamed.writeNamedProjectJsonByKey,
         storageSupport: storage.storageSupport,
+        projectStore: project.projectStore,
+        arrangementStore: arrangements.arrangementStore,
+        projectLoadFailureStore: failure.projectLoadFailureStore,
+        trackStore: tracks.trackStore,
     };
 }
 
@@ -172,7 +184,15 @@ describe('collectDurableOwnedAudioBufferIds storage integration', () => {
         installation = installTransactionalIndexedDb();
         getProjectDatabase = captureProjectDatabase();
         modules = await importSubjectModules();
-    });
+        const project = modules.projectStore.value;
+        if (!project) {
+            throw new Error('Expected default project metadata');
+        }
+        modules.projectStore.set({ ...project, loading: false });
+        modules.trackStore.set({ tracks: [], selectedTrackId: null });
+        modules.arrangementStore.set({ arrangements: [], activeArrangementId: 'active' });
+        modules.projectLoadFailureStore.set(null);
+    }, 30_000);
 
     afterEach(async () => {
         resetAudioOwnership?.();
@@ -188,7 +208,9 @@ describe('collectDurableOwnedAudioBufferIds storage integration', () => {
         const snapshot = currentFormatSnapshot('buffer-unreadable-owner');
         await modules.writeNamedProjectJsonByKey(key, snapshot);
         await modules.storageSupport.initializeIndexedDb();
-        await expect(modules.collectDurableOwnedAudioBufferIds()).resolves.toEqual(['buffer-unreadable-owner']);
+        await expect(modules.collectDurableOwnedAudioBufferIds()).resolves.toMatchObject({
+            ids: ['buffer-unreadable-owner'],
+        });
 
         const projectDatabase = getProjectDatabase();
         if (!projectDatabase) {
@@ -210,7 +232,7 @@ describe('collectDurableOwnedAudioBufferIds storage integration', () => {
         const key = getProjectSnapshotKey(CREATED_AT);
         const bufferId = 'buffer-provider-abort';
         await modules.writeNamedProjectJsonByKey(key, currentFormatSnapshot(bufferId));
-        await expect(modules.collectDurableOwnedAudioBufferIds()).resolves.toEqual([bufferId]);
+        await expect(modules.collectDurableOwnedAudioBufferIds()).resolves.toMatchObject({ ids: [bufferId] });
 
         const [audio, { audioBufferCache }] = await Promise.all([
             import('#/modules/AudioEngine/useCases'),

@@ -223,6 +223,13 @@ async function commitNewProject({
         }
     }
 
+    try {
+        await clearRuntimeCachedAudioBuffers();
+    } catch (error) {
+        degraded = true;
+        logger.warn('[newProject] Committed native material retirement failed:', error);
+    }
+
     runCommittedStep('action history projection', projectActionHistoryToStore);
     runCommittedStep('module store reset', () => resetModuleStoresToDefault({ createNewMidiProbabilitySeed: true }));
     runCommittedStep('arrangement reset', () => arrangementStore.set(structuredClone(defaultArrangementStoreState)));
@@ -247,7 +254,6 @@ async function commitNewProject({
         });
     });
     runCommittedStep('project cache removal', removeProjectJson);
-    runCommittedStep('runtime audio buffer reset', clearRuntimeCachedAudioBuffers);
     runCommittedStep('undo history reset', clearUndoHistory);
 
     try {

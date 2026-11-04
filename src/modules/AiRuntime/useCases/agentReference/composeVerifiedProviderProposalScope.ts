@@ -2,6 +2,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { type AgentRunScope } from '../../models/AgentRun';
 import { type ProjectContext } from '../../models/ProjectContext';
+import { type ProposalProtectionFacts } from '../../models/ProposalGroundingBasis';
 import { type WorkflowCapabilityId } from '../../models/WorkflowCapability';
 import { type ArbitraryCommandListEvidence } from '../compileArbitraryCommandList';
 import { getPlannedActionTargetRanges } from '../getPlannedActionTargetRanges';
@@ -31,6 +32,7 @@ export function composeVerifiedProviderProposalScope(input: {
     appOwnedTargetIds?: readonly string[];
     context: ProjectContext;
     prompt: string;
+    requestProtectionFacts?: ProposalProtectionFacts;
     workflowCapabilityId: WorkflowCapabilityId | undefined;
 }): AgentRunScope | undefined {
     const targetRanges = getPlannedActionTargetRanges(input.actions);
@@ -38,12 +40,15 @@ export function composeVerifiedProviderProposalScope(input: {
     if (workflowScope !== undefined) {
         return workflowScope;
     }
-    const applicationProtectedTargetIds = getApplicationProtectedObjects({
-        actions: input.actions,
-        context: input.context,
-        prompt: input.prompt,
-        workflowCapabilityId: input.workflowCapabilityId,
-    }).map((object) => object.id);
+    const applicationProtectedObjects =
+        input.requestProtectionFacts?.protectedUnchanged ??
+        getApplicationProtectedObjects({
+            actions: input.actions,
+            context: input.context,
+            prompt: input.prompt,
+            workflowCapabilityId: input.workflowCapabilityId,
+        });
+    const applicationProtectedTargetIds = applicationProtectedObjects.map((object) => object.id);
     const resolvedTargetIds = input.compilerEvidence?.providerKnownTargetIds;
     if (resolvedTargetIds === undefined && input.appOwnedTargetIds === undefined) {
         return undefined;

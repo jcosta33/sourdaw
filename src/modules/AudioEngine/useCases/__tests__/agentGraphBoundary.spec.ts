@@ -23,9 +23,14 @@ const previewSeamMocks = vi.hoisted(() => ({
 // `cachePreviewAudioBuffer.ts`/`playCachedAudioBufferPreview.ts`, so this test
 // controls exactly what "the live context" is without touching the app
 // singleton (`audioEngine`) other tests in this file construct directly.
-vi.mock('../engineAccess/getAudioContext', () => ({
-    getAudioContext: previewSeamMocks.getAudioContext,
-}));
+vi.mock('../engineAccess/getAudioContext', async () => {
+    const { createAudioPreviewIntents } = await import('../../services/audioPreview/createAudioPreviewIntents');
+    const intents = createAudioPreviewIntents();
+    return {
+        getAudioContext: previewSeamMocks.getAudioContext,
+        audioEngine: { beginAudioPreviewIntent: () => intents.beginOrdinary() },
+    };
+});
 vi.mock('../scheduling/createBufferSource', () => ({
     createBufferSource: previewSeamMocks.createBufferSource,
 }));
@@ -579,6 +584,7 @@ describe('agent runtime graph boundary — preview isolation from offline render
         const livePreviewSource = {
             buffer: null as unknown,
             connect: vi.fn(),
+            disconnect: vi.fn(),
             start: vi.fn(),
             stop: vi.fn(),
             onended: null as (() => void) | null,
@@ -601,20 +607,27 @@ describe('agent runtime graph boundary — preview isolation from offline render
         const bufferId = cachePreviewAudioBuffer({ audio: new Float32Array([0.1, 0.2, 0.3, 0.4]), sampleRate: 48_000 });
         const playback = playCachedAudioBufferPreview({ bufferId, onEnded: () => {} });
         expect(playback).not.toBeNull();
+        if (!playback) {
+            throw new Error('Expected live preview playback.');
+        }
         expect(livePreviewSource.connect).toHaveBeenCalledWith(livePreviewDestination);
 
         vi.stubGlobal('OfflineAudioContext', RecordingOfflineAudioContext);
 
-        await renderOffline(4);
+        try {
+            await renderOffline(4);
 
-        // Vacuity guard: the strip-building loop this case exists to exercise
-        // must itself have connected something — `createOfflineTrackStrip`'s
-        // internal chain plus its `set-track-output` route to master — counted
-        // only from nodes created *after* the master gain, so the master's own
-        // unconditional wiring to `offlineCtx.destination` cannot satisfy this
-        // on its own the way it did before the strip actually built.
-        expect(offlineConnectsAfterMasterGain).toBeGreaterThan(0);
-        expect(recordedOfflineConnectArgs).not.toContain(livePreviewSource);
-        expect(recordedOfflineConnectArgs).not.toContain(livePreviewDestination);
+            // Vacuity guard: the strip-building loop this case exists to exercise
+            // must itself have connected something — `createOfflineTrackStrip`'s
+            // internal chain plus its `set-track-output` route to master — counted
+            // only from nodes created *after* the master gain, so the master's own
+            // unconditional wiring to `offlineCtx.destination` cannot satisfy this
+            // on its own the way it did before the strip actually built.
+            expect(offlineConnectsAfterMasterGain).toBeGreaterThan(0);
+            expect(recordedOfflineConnectArgs).not.toContain(livePreviewSource);
+            expect(recordedOfflineConnectArgs).not.toContain(livePreviewDestination);
+        } finally {
+            playback.stop();
+        }
     });
 });

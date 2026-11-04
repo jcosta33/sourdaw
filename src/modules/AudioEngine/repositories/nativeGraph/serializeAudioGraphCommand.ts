@@ -55,7 +55,6 @@ import {
     type AudioGraphSetDeviceModAssignmentsCommand,
     type AudioGraphSetDeviceParametersCommand,
     type AudioGraphSetTransportCommand,
-    type AudioGraphStepWrite,
     type AudioGraphStripParameterTarget,
     type AudioGraphStripState,
     type AudioGraphWriteDeviceParameterCommand,
@@ -136,7 +135,12 @@ export type NativeGraphWireCommand =
     | Readonly<{ kind: 'insert-device'; trackId: string; device: NativeGraphWireDevice; index: number }>
     | Readonly<{ kind: 'remove-device'; trackId: string; deviceId: string }>
     | Readonly<{ kind: 'write-parameter'; target: AudioGraphStripParameterTarget; write: AudioGraphParameterWrite }>
-    | Readonly<{ kind: 'write-device-parameter'; target: AudioGraphDeviceParameterTarget; write: AudioGraphStepWrite }>
+    | Readonly<{
+          kind: 'write-device-parameter';
+          target: AudioGraphDeviceParameterTarget;
+          write: AudioGraphWriteDeviceParameterCommand['write'];
+      }>
+    | Readonly<{ kind: 'set-strip-vca-multiplier'; trackId: string; multiplier: number }>
     | Readonly<{
           kind: 'set-device-parameters';
           trackId: string;
@@ -472,6 +476,8 @@ export function serializeAudioGraphCommand(command: AudioGraphCommand): NativeGr
             return { kind: 'set-monitor-shadow', shadowed: command.shadowed };
         case 'set-master-gain':
             return { kind: 'set-master-gain', gain: command.gain };
+        case 'set-strip-vca-multiplier':
+            return { kind: 'set-strip-vca-multiplier', trackId: command.trackId, multiplier: command.multiplier };
     }
     // Unreachable while the switch covers the union. Typed `never` so a command
     // added to the contract fails the typecheck here rather than crossing the

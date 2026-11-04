@@ -15,13 +15,20 @@ export const handleSoloTrack = createHandler<'soloTrack'>({
     // on one and overwrite a solo the user set since.
     validate: (action, context) => {
         const currentSoloed = getPlannedTrackState(context, action.payload.trackId)?.soloed;
-        return action.payload.expectedSoloed === undefined || currentSoloed === action.payload.expectedSoloed;
+        // Grouped undo/redo validates before its no-op check, so an already-held
+        // target must pass this guard to consume history without writing.
+        return (
+            action.payload.expectedSoloed === undefined ||
+            currentSoloed === action.payload.expectedSoloed ||
+            currentSoloed === action.payload.soloed
+        );
     },
     execute: (action) => {
-        if (
-            action.payload.expectedSoloed !== undefined &&
-            liveSoloed(action.payload.trackId) !== action.payload.expectedSoloed
-        ) {
+        const currentSoloed = liveSoloed(action.payload.trackId);
+        if (currentSoloed === action.payload.soloed) {
+            return { status: 'no-write' };
+        }
+        if (action.payload.expectedSoloed !== undefined && currentSoloed !== action.payload.expectedSoloed) {
             return { status: 'conflict' };
         }
         soloTrack(action.payload.trackId, action.payload.soloed);
@@ -29,10 +36,7 @@ export const handleSoloTrack = createHandler<'soloTrack'>({
     },
     isNoop: (action) => {
         const currentSoloed = liveSoloed(action.payload.trackId);
-        return (
-            (action.payload.expectedSoloed === undefined || currentSoloed === action.payload.expectedSoloed) &&
-            currentSoloed === action.payload.soloed
-        );
+        return currentSoloed === action.payload.soloed;
     },
     describe: (action, context) => {
         // `describe` runs for every action in a batch before any `execute`, so a

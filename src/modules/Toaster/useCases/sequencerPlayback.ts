@@ -11,8 +11,8 @@ import { type Pattern } from '../models/ToasterKit';
 import { toasterStore, type ToasterState } from '../stores/toasterStore';
 
 import { cancelScheduledToasterHits } from './cancelScheduledToasterHits';
+import { getEffectiveToasterPattern } from './getEffectiveToasterPattern';
 import { getSequencerPlaybackState } from './getSequencerPlaybackState';
-import { morphPatterns } from './patternMorph';
 import { projectToasterPatternGroove } from './projectToasterPatternGroove';
 import { projectToasterStepEvents } from './projectToasterStepEvents';
 import { scheduleToasterHit } from './scheduleToasterHit';
@@ -132,18 +132,11 @@ export function runSequencerTick({ deviceId, currentStep, bpm }: RunSequencerTic
     }
     seqState.lastBpm = currentBpm;
 
-    const sourcePattern = state.kit.patterns.find((param) => param.id === state.kit.activePatternId);
-    if (!sourcePattern) {
+    const effective = getEffectiveToasterPattern(state.kit);
+    if (!effective) {
         return;
     }
-
-    let pattern: Pattern = sourcePattern;
-    if (state.morph.enabled && state.morph.targetPatternId) {
-        const targetPattern = state.kit.patterns.find((param) => param.id === state.morph.targetPatternId);
-        if (targetPattern) {
-            pattern = morphPatterns(sourcePattern, targetPattern, state.morph.position);
-        }
-    }
+    const { sourcePattern, pattern } = effective;
 
     if (!Number.isFinite(pattern.stepsPerBar) || pattern.stepsPerBar <= 0) {
         stopSequencer(deviceId);

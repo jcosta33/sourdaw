@@ -2673,9 +2673,9 @@ describe('declared parameter range agrees with the knob that drives it', () => {
             // shape as GrandBoule's, so it stays unbound rather than guessed.
             'native-scoring': 1,
             fermenter: 8,
-            // Zero, not twelve: the four kit knobs now bind. The old twelve was
-            // the scanner failing, not the panel.
-            toaster: 0,
+            // The morph position in ToasterPanel is persisted kit state, not a
+            // DSP descriptor parameter, so its range input has no parameter id.
+            toaster: 1,
             levain: 1,
             gluten: 0,
             // The one pre-existing blind knob, plus the two XY morph crosshair

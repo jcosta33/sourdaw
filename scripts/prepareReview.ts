@@ -50,8 +50,6 @@ export type PrepareReviewPort = {
     reviews?: (number: number) => PublicReview[];
     reviewComments?: (number: number) => PublicReviewComment[];
     installBundle: (destination: string, files: Record<string, string>) => void;
-    /** The full text of `semantic-ci.json`, written by `prepareReview` with exactly one trailing newline. */
-    semanticCiJson: (pr: number, headSha: string) => string;
     log: (message: string) => void;
 };
 
@@ -185,7 +183,6 @@ export function prepareReview(number: number, port: PrepareReviewPort): string {
             4
         )}\n`,
         'pr.md': `# ${pullRequest.title}\n\n${pullRequest.body ?? ''}\n`,
-        'semantic-ci.json': `${port.semanticCiJson(pullRequest.number, pullRequest.headRefOid)}\n`,
         'contracts/AGENTS.md': agents,
         'contracts/CLAUDE.md': claude,
     };
@@ -367,7 +364,7 @@ export function installBundleAtomically(
     }
 }
 
-export function shellPort(session: GhSession, cwd: string = process.cwd()): Omit<PrepareReviewPort, 'semanticCiJson'> {
+export function shellPort(session: GhSession, cwd: string = process.cwd()): PrepareReviewPort {
     const primaryRoot = resolvePrimaryRoot(
         (command, args, directory) => spawnCapture(command, args, { cwd: directory }),
         cwd

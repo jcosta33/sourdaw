@@ -5,6 +5,7 @@ import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases'
 import { canonicalJson } from '#/utils/canonicalDigest';
 
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
+import { AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS } from '../models/AgentContext';
 import { REMOTE_EVIDENCE_AGENT_DATA_CATEGORIES } from '../models/AgentDataPolicy';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
@@ -19,6 +20,11 @@ import { type MeasuredPreview } from '../models/MeasuredPreview';
 import { type MeasurementAdmitter } from '../models/MeasurementBudget';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
 import { type PlanningOutcome } from '../models/PlanningOutcome';
+import {
+    type PlanningProfile,
+    READONLY_ANSWER_MAX_OUTPUT_TOKENS,
+    READONLY_ANSWER_TERMINAL_NAMES,
+} from '../models/PlanningProfile';
 import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
 import { type RetainedCompilation } from '../models/RetainedCompilation';
 import { type RuntimeAction } from '../models/RuntimeAction';
@@ -42,8 +48,10 @@ import {
 } from '../transformers/promptParser/parsing';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 import { admitProposalRefinement, validateRefinedProposalActions } from '../validators/admitProposalRefinement';
+import { matchesJsonSchema } from '../validators/matchesJsonSchema';
 
 import { admitCreativeInterpretation } from './admitCreativeInterpretation';
+import { admitPerceptualGoalDecline } from './admitPerceptualGoalDecline';
 import { bridgeStemImportPlan } from './agentReference/bridgeStemImportPlan';
 import { getArticulationTransferPromptScope } from './agentReference/getArticulationTransferPromptScope';
 import { getBackingVocalPlatePromptScope } from './agentReference/getBackingVocalPlatePromptScope';
@@ -57,6 +65,8 @@ import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRou
 import { getSyncopatedArpeggioPromptScope } from './agentReference/getSyncopatedArpeggioPromptScope';
 import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
 import { proposalCommandShape } from './agentReference/proposalCommandShape';
+import { proposalProtection } from './agentReference/proposalProtection';
+import { readExplicitProtections } from './agentReference/readExplicitProtections';
 import { readStoredCardRemoval } from './agentReference/readStoredCardRemoval';
 import { agentRunLifecycle } from './agentRunLifecycle';
 import {
@@ -78,6 +88,7 @@ import { executeAnalysisMeasure } from './executeAnalysisMeasure';
 import { executeRecipeExpansion } from './executeRecipeExpansion';
 import { executeReferenceMeasurement } from './executeReferenceMeasurement';
 import { executeTransformCompile } from './executeTransformCompile';
+import { executeTransientOnsetRead } from './executeTransientOnsetRead';
 import { getCompiledTransformTargetIds } from './getCompiledTransformTargetIds';
 import { getPlanningProviderToolSchemas } from './getPlanningProviderToolSchemas';
 import { type ProjectContext } from './getProjectContext';
@@ -109,6 +120,7 @@ type ParsePromptToActionsInput = {
         rejectionEvidence?: PlanningRejectionEvidence;
     };
     providerPlanning?: 'enabled' | 'disabled';
+    profile?: PlanningProfile;
     onMeasurementAttempt?: MeasurementAdmitter;
     /** The chat thread's earlier turns, which the planner reads as its `thread_context` section. */
     thread?: ThreadContext | null;
@@ -499,46 +511,50 @@ const planPromptIntent = inject({ logger })(
             providerPlanning = 'enabled',
             onMeasurementAttempt,
             thread,
+            profile,
         }: ParsePromptToActionsInput): Promise<IntentResult> {
+            const readonly = profile === 'readonly-answer';
             const normalized = prompt.toLowerCase().trim();
             const trimmedPrompt = prompt.trim();
 
-            const deniedActionType = findDeniedPromptIntent(normalized);
-            if (deniedActionType !== null) {
-                return {
-                    actions: [],
-                    rawText: prompt,
-                    requiresConfirmation: false,
-                    rejectionReason: `Action ${deniedActionType} cannot be executed by AI because it does not report completion.`,
-                };
-            }
-
-            // A chat request that continues, re-targets or undoes the thread's last commit compiles from
-            // the committed batch, never from a provider re-deriving its values.
-            if (thread !== undefined) {
-                const continuation = createLastCommitContinuationResult(prompt, context, thread);
-                if (continuation !== null) {
-                    return continuation;
+            if (!readonly) {
+                const deniedActionType = findDeniedPromptIntent(normalized);
+                if (deniedActionType !== null) {
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        rejectionReason: `Action ${deniedActionType} cannot be executed by AI because it does not report completion.`,
+                    };
                 }
-            }
 
-            // 2. Try complete executable preset commands via unique exact match
-            const presetCtx = buildPresetContext(context);
-            const presetResult = tryPresetMatch(normalized, presetCtx);
-            if (presetResult.length > 0) {
-                return createFastPathResult({ actions: presetResult, context, prompt });
-            }
+                // A chat request that continues, re-targets or undoes the thread's last commit compiles from
+                // the committed batch, never from a provider re-deriving its values.
+                if (thread !== undefined) {
+                    const continuation = createLastCommitContinuationResult(prompt, context, thread);
+                    if (continuation !== null) {
+                        return continuation;
+                    }
+                }
 
-            // 3. Try parameterized patterns (need value extraction)
-            const paramResult = tryParameterizedPath(trimmedPrompt, context);
-            if (paramResult.length > 0) {
-                return createFastPathResult({ actions: paramResult, context, prompt });
-            }
+                // 2. Try complete executable preset commands via unique exact match
+                const presetCtx = buildPresetContext(context);
+                const presetResult = tryPresetMatch(normalized, presetCtx);
+                if (presetResult.length > 0) {
+                    return createFastPathResult({ actions: presetResult, context, prompt });
+                }
 
-            // 4. Try compound fast path (multi-track creation etc.)
-            const compoundResult = tryCompoundFastPath(trimmedPrompt, context);
-            if (compoundResult !== null) {
-                return createFastPathResult({ actions: compoundResult, context, prompt });
+                // 3. Try parameterized patterns (need value extraction)
+                const paramResult = tryParameterizedPath(trimmedPrompt, context);
+                if (paramResult.length > 0) {
+                    return createFastPathResult({ actions: paramResult, context, prompt });
+                }
+
+                // 4. Try compound fast path (multi-track creation etc.)
+                const compoundResult = tryCompoundFastPath(trimmedPrompt, context);
+                if (compoundResult !== null) {
+                    return createFastPathResult({ actions: compoundResult, context, prompt });
+                }
             }
 
             if (signal?.aborted) {
@@ -560,61 +576,85 @@ const planPromptIntent = inject({ logger })(
             let applicationToolReceiptFields: { applicationToolReceipts?: IntentResult['applicationToolReceipts'] } =
                 {};
             try {
-                const drumRoutingScope = getDrumRoutingPromptScope(context, projectRevision);
-                const drumRenderComparisonScope = getDrumRenderComparisonPromptScope(context, projectRevision);
-                const drumPreviewBranchesScope = getDrumPreviewBranchesPromptScope(context, projectRevision);
-                const midiOverlapTransformScope = getMidiOverlapTransformPromptScope(context, projectRevision);
-                const backingVocalPlateScope = getBackingVocalPlatePromptScope(context, projectRevision);
-                const bassProcessingCopyScope = getBassProcessingCopyPromptScope(context, projectRevision);
-                const articulationTransferScope = getArticulationTransferPromptScope(context, projectRevision);
+                const drumRoutingScope = readonly ? null : getDrumRoutingPromptScope(context, projectRevision);
+                const drumRenderComparisonScope = readonly
+                    ? null
+                    : getDrumRenderComparisonPromptScope(context, projectRevision);
+                const drumPreviewBranchesScope = readonly
+                    ? null
+                    : getDrumPreviewBranchesPromptScope(context, projectRevision);
+                const midiOverlapTransformScope = readonly
+                    ? null
+                    : getMidiOverlapTransformPromptScope(context, projectRevision);
+                const backingVocalPlateScope = readonly
+                    ? null
+                    : getBackingVocalPlatePromptScope(context, projectRevision);
+                const bassProcessingCopyScope = readonly
+                    ? null
+                    : getBassProcessingCopyPromptScope(context, projectRevision);
+                const articulationTransferScope = readonly
+                    ? null
+                    : getArticulationTransferPromptScope(context, projectRevision);
                 const articulationTransferCapability =
-                    articulationTransferScope.status === 'request' ? articulationTransferScope.capability : undefined;
+                    articulationTransferScope?.status === 'request' ? articulationTransferScope.capability : undefined;
                 const drumRoutingCapability =
-                    drumRoutingScope.status === 'request' ? drumRoutingScope.capability : undefined;
+                    drumRoutingScope?.status === 'request' ? drumRoutingScope.capability : undefined;
                 const drumRenderComparisonCapability =
-                    drumRenderComparisonScope.status === 'request' ? drumRenderComparisonScope.capability : undefined;
+                    drumRenderComparisonScope?.status === 'request' ? drumRenderComparisonScope.capability : undefined;
                 const drumPreviewBranchesCapability =
-                    drumPreviewBranchesScope.status === 'request' ? drumPreviewBranchesScope.capability : undefined;
+                    drumPreviewBranchesScope?.status === 'request' ? drumPreviewBranchesScope.capability : undefined;
                 const midiOverlapTransformCapability =
-                    midiOverlapTransformScope.status === 'request' ? midiOverlapTransformScope.capability : undefined;
+                    midiOverlapTransformScope?.status === 'request' ? midiOverlapTransformScope.capability : undefined;
                 const backingVocalPlateCapability =
-                    backingVocalPlateScope.status === 'request' ? backingVocalPlateScope.capability : undefined;
+                    backingVocalPlateScope?.status === 'request' ? backingVocalPlateScope.capability : undefined;
                 const bassProcessingCopyCapability =
-                    bassProcessingCopyScope.status === 'request' ? bassProcessingCopyScope.capability : undefined;
-                const sidechainRoutingScope = getSidechainRoutingPromptScope(prompt, context, projectRevision);
+                    bassProcessingCopyScope?.status === 'request' ? bassProcessingCopyScope.capability : undefined;
+                const sidechainRoutingScope = readonly
+                    ? null
+                    : getSidechainRoutingPromptScope(prompt, context, projectRevision);
                 const sidechainRoutingCapability =
-                    sidechainRoutingScope.status === 'request' ? sidechainRoutingScope.capability : undefined;
-                const sharedVocalFxBusesScope = getSharedVocalFxBusesPromptScope(context, projectRevision);
+                    sidechainRoutingScope?.status === 'request' ? sidechainRoutingScope.capability : undefined;
+                const sharedVocalFxBusesScope = readonly
+                    ? null
+                    : getSharedVocalFxBusesPromptScope(context, projectRevision);
                 const sharedVocalFxBusesCapability =
-                    sharedVocalFxBusesScope.status === 'request' ? sharedVocalFxBusesScope.capability : undefined;
-                const syncopatedArpeggioScope = getSyncopatedArpeggioPromptScope(context, projectRevision);
+                    sharedVocalFxBusesScope?.status === 'request' ? sharedVocalFxBusesScope.capability : undefined;
+                const syncopatedArpeggioScope = readonly
+                    ? null
+                    : getSyncopatedArpeggioPromptScope(context, projectRevision);
                 const syncopatedArpeggioCapability =
-                    syncopatedArpeggioScope.status === 'request' ? syncopatedArpeggioScope.capability : undefined;
-                const wholeProjectVibeMixCapability = getWholeProjectVibeMixScope(context, projectRevision)?.capability;
-                const creativeCatalog = prepareCreativeInterpretationCatalog({
-                    prompt,
-                    context,
-                    projectRevision: projectRevision ?? '',
-                });
+                    syncopatedArpeggioScope?.status === 'request' ? syncopatedArpeggioScope.capability : undefined;
+                const wholeProjectVibeMixCapability = readonly
+                    ? undefined
+                    : getWholeProjectVibeMixScope(context, projectRevision)?.capability;
+                const creativeCatalog = readonly
+                    ? undefined
+                    : prepareCreativeInterpretationCatalog({
+                          prompt,
+                          context,
+                          projectRevision: projectRevision ?? '',
+                      });
                 const providerToolSchemas = [
-                    ...getPlanningProviderToolSchemas(),
-                    createCreativeInterpretationToolSchema(creativeCatalog),
+                    ...(readonly ? getPlanningProviderToolSchemas(profile) : getPlanningProviderToolSchemas()),
+                    ...(creativeCatalog === undefined ? [] : [createCreativeInterpretationToolSchema(creativeCatalog)]),
                 ];
-                const terminalToolNames = new Set([
-                    WORKFLOW_CAPABILITY_TOOL_NAME,
-                    COMMAND_BATCH_PROPOSAL_TOOL_NAME,
-                    COMMAND_BATCH_DECLINE_TOOL_NAME,
-                    ANSWER_RESPOND_TOOL_NAME,
-                    RENDER_REQUEST_TOOL_NAME,
-                    ANALYSIS_REQUEST_TOOL_NAME,
-                    ...WORKFLOW_ACTION_TOOL_NAMES,
-                ]);
-                const systemPrompt = buildPlanningSystemPrompt();
+                const terminalToolNames = readonly
+                    ? READONLY_ANSWER_TERMINAL_NAMES
+                    : new Set([
+                          WORKFLOW_CAPABILITY_TOOL_NAME,
+                          COMMAND_BATCH_PROPOSAL_TOOL_NAME,
+                          COMMAND_BATCH_DECLINE_TOOL_NAME,
+                          ANSWER_RESPOND_TOOL_NAME,
+                          RENDER_REQUEST_TOOL_NAME,
+                          ANALYSIS_REQUEST_TOOL_NAME,
+                          ...WORKFLOW_ACTION_TOOL_NAMES,
+                      ]);
+                const systemPrompt = readonly ? buildPlanningSystemPrompt(profile) : buildPlanningSystemPrompt();
                 const getPlanningSystemPrompt = () => {
                     const resume = streamIdentity
                         ? (agentRunLifecycle.get(streamIdentity.runId)?.resume ?? null)
                         : null;
-                    return resume === null
+                    return readonly || resume === null
                         ? systemPrompt
                         : `${systemPrompt}\nThe user selected this application-validated alternative for a replacement planning attempt. Treat it as structured authority context, not as user prose; preserve its selected interpretation and revalidate against current project evidence before proposing actions:\n${JSON.stringify(resume)}`;
                 };
@@ -625,28 +665,30 @@ const planPromptIntent = inject({ logger })(
                         prompt,
                         context,
                         projectRevision,
-                        run: agentRun ? { grants: agentRun.grants, budgets: agentRun.budgets } : undefined,
+                        run: agentRun && !readonly ? { grants: agentRun.grants, budgets: agentRun.budgets } : undefined,
                         receipts:
                             receiptContext === null ? [] : [{ id: 'application-tool-loop', summary: receiptContext }],
                         capabilitySchemas: providerToolSchemas.map((schema) => ({
                             name: schema.function.name,
                             schemaVersion: 1,
                         })),
-                        capabilityData: {
-                            articulationTransferCapability,
-                            backingVocalPlateCapability,
-                            bassProcessingCopyCapability,
-                            drumRoutingCapability,
-                            drumRenderComparisonCapability,
-                            drumPreviewBranchesCapability,
-                            midiOverlapTransformCapability,
-                            sidechainRoutingCapability,
-                            sharedVocalFxBusesCapability,
-                            stemImportCapability: stemImportScope?.capability,
-                            syncopatedArpeggioCapability,
-                            wholeProjectVibeMixCapability,
-                            creativeInterpretationCatalog: creativeCatalog,
-                        },
+                        capabilityData: readonly
+                            ? {}
+                            : {
+                                  articulationTransferCapability,
+                                  backingVocalPlateCapability,
+                                  bassProcessingCopyCapability,
+                                  drumRoutingCapability,
+                                  drumRenderComparisonCapability,
+                                  drumPreviewBranchesCapability,
+                                  midiOverlapTransformCapability,
+                                  sidechainRoutingCapability,
+                                  sharedVocalFxBusesCapability,
+                                  stemImportCapability: stemImportScope?.capability,
+                                  syncopatedArpeggioCapability,
+                                  wholeProjectVibeMixCapability,
+                                  creativeInterpretationCatalog: creativeCatalog,
+                              },
                         validationFailures: agentRun?.errors.map((error) => ({ code: error.code })),
                         rejectionEvidence: correction?.rejectionEvidence,
                         priorEvidence: agentRun?.contextEvidence,
@@ -674,10 +716,74 @@ const planPromptIntent = inject({ logger })(
                 // provider turn that echoes receipt text back cannot restate it as its own authority.
                 let creativeAuthority: CreativeRequestAuthority | undefined;
                 const transformSnapshot =
-                    projectRevision === undefined || projectRevision === ''
+                    readonly || projectRevision === undefined || projectRevision === ''
                         ? null
                         : projectDeclarativeTransformSnapshot(context, projectRevision);
+                const transientRead =
+                    readonly || projectRevision === undefined || projectRevision === ''
+                        ? undefined
+                        : executeTransientOnsetRead({ projectRevision, signal, admit: onMeasurementAttempt });
+                // Measurements require the revision the run read.
+                const createMeasurement = (): Parameters<typeof runApplicationOwnedToolLoop>[0]['measurement'] => {
+                    if (projectRevision === undefined || projectRevision === '') {
+                        return undefined;
+                    }
+                    if (readonly) {
+                        return {
+                            toolName: ANALYSIS_MEASURE_TOOL_NAME,
+                            revision: projectRevision,
+                            execute: (call, { callId, turn, signal: loopSignal }) =>
+                                executeAnalysisMeasure({
+                                    call,
+                                    callId,
+                                    turn,
+                                    projectRevision,
+                                    sections: context.sections ?? [],
+                                    signal: loopSignal,
+                                    admit: onMeasurementAttempt,
+                                }),
+                        };
+                    }
+                    return {
+                        toolName: ANALYSIS_MEASURE_TOOL_NAME,
+                        // The reference comparison renders the project the same way, so it
+                        // spends the same one measurement per turn.
+                        companionToolNames: [ANALYSIS_COMPARE_REFERENCE_TOOL_NAME],
+                        revision: projectRevision,
+                        execute: (call, { callId, turn, signal: loopSignal, retainedCompilations }) =>
+                            call.name === ANALYSIS_COMPARE_REFERENCE_TOOL_NAME
+                                ? executeReferenceMeasurement({
+                                      call,
+                                      callId,
+                                      turn,
+                                      projectRevision,
+                                      sections: context.sections ?? [],
+                                      signal: loopSignal,
+                                      admit: onMeasurementAttempt,
+                                  })
+                                : executeAnalysisMeasure({
+                                      call,
+                                      callId,
+                                      turn,
+                                      projectRevision,
+                                      sections: context.sections ?? [],
+                                      signal: loopSignal,
+                                      admit: onMeasurementAttempt,
+                                      // A preview is compiled and grounded against what an adopting
+                                      // proposal is: this run's read model, request and authority.
+                                      preview: {
+                                          context,
+                                          retainedCompilations,
+                                          prompt,
+                                          runId: streamIdentity?.runId ?? 'preview-measurement',
+                                          readCreativeAuthority: () => creativeAuthority,
+                                      },
+                                  }),
+                    };
+                };
                 const planningOutcome = await runApplicationOwnedToolLoop({
+                    transientOnsetRead: transientRead,
+                    textReceiptCharacterBudget: AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS,
                     loopId: `planning-${crypto.randomUUID()}`,
                     limits: {
                         maxCallsPerTurn: MAX_LLM_ACTIONS_PER_BATCH + 2,
@@ -685,6 +791,16 @@ const planPromptIntent = inject({ logger })(
                     },
                     terminalToolNames,
                     signal,
+                    declineAdmission:
+                        creativeCatalog === undefined
+                            ? undefined
+                            : (decline) =>
+                                  admitPerceptualGoalDecline({
+                                      decline,
+                                      prompt,
+                                      context,
+                                      unresolvedExplicitReferences: creativeCatalog.unresolvedExplicitReferences,
+                                  }),
                     transform:
                         transformSnapshot === null
                             ? undefined
@@ -717,81 +833,51 @@ const planPromptIntent = inject({ logger })(
                                           revision: transformSnapshot.revision,
                                       }),
                               },
-                    interpretation: {
-                        toolName: CREATIVE_INTERPRETATION_TOOL_NAME,
-                        admit: (call) => {
-                            const admission = admitCreativeInterpretation({
-                                catalog: creativeCatalog,
-                                call,
-                                projectRevision: projectRevision ?? '',
-                            });
-                            if (admission.status !== 'admitted') {
-                                return admission;
-                            }
-                            creativeAuthority = admission.authority;
-                            return {
-                                status: 'admitted',
-                                receipt: {
-                                    data: {
-                                        authorityId: admission.authority.authorityId,
-                                        mode: admission.authority.mode,
-                                        targets: admission.authority.targets,
-                                        editDimensions: admission.authority.editDimensions,
-                                        prohibitions: admission.authority.prohibitions,
-                                        creationSlots: admission.authority.creationSlots,
-                                    },
-                                    summary: 'Creative interpretation admitted.',
-                                },
-                            };
-                        },
-                    },
-                    // A measurement is bound to the revision the run read; without one it could only
-                    // ever report the project stale, so the tool stays unavailable to the run.
-                    measurement:
-                        projectRevision === undefined || projectRevision === ''
+                    interpretation:
+                        creativeCatalog === undefined
                             ? undefined
                             : {
-                                  toolName: ANALYSIS_MEASURE_TOOL_NAME,
-                                  // The reference comparison renders the project the same way, so it
-                                  // spends the same one measurement per turn.
-                                  companionToolNames: [ANALYSIS_COMPARE_REFERENCE_TOOL_NAME],
-                                  revision: projectRevision,
-                                  execute: (call, { callId, turn, signal: loopSignal }) =>
-                                      call.name === ANALYSIS_COMPARE_REFERENCE_TOOL_NAME
-                                          ? executeReferenceMeasurement({
-                                                call,
-                                                callId,
-                                                turn,
-                                                projectRevision,
-                                                sections: context.sections ?? [],
-                                                signal: loopSignal,
-                                                admit: onMeasurementAttempt,
-                                            })
-                                          : executeAnalysisMeasure({
-                                                call,
-                                                callId,
-                                                turn,
-                                                projectRevision,
-                                                sections: context.sections ?? [],
-                                                signal: loopSignal,
-                                                admit: onMeasurementAttempt,
-                                                // A preview is compiled and grounded against what an adopting
-                                                // proposal is: this run's read model, request and authority.
-                                                preview: {
-                                                    context,
-                                                    prompt,
-                                                    runId: streamIdentity?.runId ?? 'preview-measurement',
-                                                    readCreativeAuthority: () => creativeAuthority,
-                                                },
-                                            }),
+                                  toolName: CREATIVE_INTERPRETATION_TOOL_NAME,
+                                  admit: (call) => {
+                                      const admission = admitCreativeInterpretation({
+                                          catalog: creativeCatalog,
+                                          call,
+                                          projectRevision: projectRevision ?? '',
+                                      });
+                                      if (admission.status !== 'admitted') {
+                                          return admission;
+                                      }
+                                      creativeAuthority = admission.authority;
+                                      return {
+                                          status: 'admitted',
+                                          receipt: {
+                                              data: {
+                                                  authorityId: admission.authority.authorityId,
+                                                  mode: admission.authority.mode,
+                                                  targets: admission.authority.targets,
+                                                  editDimensions: admission.authority.editDimensions,
+                                                  prohibitions: admission.authority.prohibitions,
+                                                  creationSlots: admission.authority.creationSlots,
+                                              },
+                                              summary: 'Creative interpretation admitted.',
+                                          },
+                                      };
+                                  },
                               },
-                    requestTurn: async ({ receiptContext, directive, history, budgetNote }) => {
+                    measurement: createMeasurement(),
+                    requestTurn: async ({
+                        receiptContext,
+                        directive,
+                        history,
+                        budgetNote,
+                        transientOnsetsDiscovered,
+                    }) => {
                         const planningContext =
                             receiptContext === null ? initialPlanningContext : buildPlanningContext(receiptContext);
                         if (!planningContext.authorityComplete) {
                             throw new Error('Provider planning cannot continue with incomplete relevant authority.');
                         }
-                        return generateToolPlanningOutcome(
+                        const turn = await generateToolPlanningOutcome(
                             getPlanningSystemPrompt(),
                             planningContext.message,
                             providerToolSchemas,
@@ -805,9 +891,14 @@ const planPromptIntent = inject({ logger })(
                             // receipts as its own earlier turns; only a local backend reads the text
                             // form above, which restates them inside the prompt.
                             {
+                                ...(readonly ? { maxOutputTokens: READONLY_ANSWER_MAX_OUTPUT_TOKENS } : {}),
                                 firstUserMessage: initialPlanningContext.message,
                                 history,
                                 budgetNote,
+                                transientOnsetsDiscovered,
+                                localReceiptContextComplete:
+                                    receiptContext === null ||
+                                    receiptContext.length <= AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS,
                                 // Measured deltas in the thread context are figures, which the
                                 // hosted request declares as the evidence category it admits.
                                 ...(initialPlanningContext.hostedThreadCarriesMeasurement
@@ -816,8 +907,28 @@ const planPromptIntent = inject({ logger })(
                             },
                             planningContext.localMessage
                         );
+                        // Admit the complete turn before the loop can dispatch even its first safe read.
+                        if (readonly && turn.status === 'complete') {
+                            if (
+                                turn.toolCalls.length === 0 ||
+                                turn.proposal !== null ||
+                                turn.toolCalls.some((call) => {
+                                    const schema = providerToolSchemas.find((tool) => tool.function.name === call.name);
+                                    return (
+                                        schema === undefined ||
+                                        !matchesJsonSchema(call.arguments, schema.function.parameters)
+                                    );
+                                })
+                            ) {
+                                return {
+                                    status: 'rejected',
+                                    reason: 'Explain refused a tool turn outside its read-only profile.',
+                                };
+                            }
+                        }
+                        return turn;
                     },
-                });
+                }).finally(() => transientRead?.dispose());
                 applicationToolReceiptFields =
                     planningOutcome.receipts.length === 0
                         ? {}
@@ -894,6 +1005,15 @@ const planPromptIntent = inject({ logger })(
                         planningOutcome: { kind: 'answer', ...planningOutcome.answer },
                     };
                 }
+                if (readonly) {
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        ...applicationToolReceiptFields,
+                        rejectionReason: 'Explain requires an admitted answer or decline.',
+                    };
+                }
                 const providerProposal =
                     planningOutcome.proposal ?? extractAgentPlanProposal(planningOutcome.toolCalls);
                 const proposedBatch = planningOutcome.toolCalls.find(
@@ -928,6 +1048,8 @@ const planPromptIntent = inject({ logger })(
                     refinement.status === 'refines' ? getPendingActionConfirmation(refinement.confirmationId) : null;
                 const refinedBasis =
                     refinedCard?.status === 'proposed' ? refinedCard.approvalSnapshot.groundingBasis : undefined;
+                const refinedProtections =
+                    refinedCard?.status === 'proposed' ? refinedCard.approvalSnapshot.protectionFacts : undefined;
                 const selectedIds = proposedBatch?.arguments.compiledCallIds;
                 const selectedCompilations = Array.isArray(selectedIds)
                     ? selectedIds.flatMap((callId) =>
@@ -1124,6 +1246,26 @@ const planPromptIntent = inject({ logger })(
                             context,
                             createdObject: proposalCommandShape.createdObject,
                             readRemoval: readStoredCardRemoval,
+                            ...(refinedProtections === undefined
+                                ? {}
+                                : {
+                                      protection: {
+                                          facts: refinedProtections,
+                                          readTouchedObjectIds: (
+                                              type: string,
+                                              payload: Readonly<Record<string, unknown>>
+                                          ) => proposalCommandShape.touchedObjectIds(type, payload, context),
+                                          readControlOwnerIds: (
+                                              type: string,
+                                              payload: Readonly<Record<string, unknown>>
+                                          ) => proposalCommandShape.controlOwnerIds(type, payload, context),
+                                          readControlOperations: (
+                                              type: string,
+                                              payload: Readonly<Record<string, unknown>>,
+                                              trackId: string
+                                          ) => proposalCommandShape.controlOperations(type, payload, context, trackId),
+                                      },
+                                  }),
                         });
                         if (preservation.status === 'refused') {
                             return {
@@ -1160,6 +1302,7 @@ const planPromptIntent = inject({ logger })(
                     creativeAuthority,
                     providerProposal,
                     ...(refinedBasis === undefined ? {} : { refinementBasis: refinedBasis }),
+                    ...(refinedProtections === undefined ? {} : { refinementProtections: refinedProtections }),
                 });
                 if (grounded.status === 'rejected') {
                     return {
@@ -1185,6 +1328,36 @@ const planPromptIntent = inject({ logger })(
                     };
                 }
                 if (grounded.status === 'grounded') {
+                    if (batchSchedule !== undefined && compiledList.compilerEvidence !== undefined) {
+                        const changed = proposalProtection.findChange(
+                            compiledList.compilerEvidence.commands.map((command) => ({
+                                type: command.name,
+                                payload: command.arguments,
+                            })),
+                            grounded.protectionFacts,
+                            context
+                        );
+                        if (changed !== null) {
+                            return {
+                                actions: [],
+                                rawText: prompt,
+                                requiresConfirmation: false,
+                                ...applicationToolReceiptFields,
+                                rejectionReason: `Provider action rejected: scheduled request changes protected ${changed.name} (${changed.id}).`,
+                            };
+                        }
+                    }
+                    let scheduledProtections: IntentResult['batchSchedule'];
+                    if (batchSchedule !== undefined) {
+                        scheduledProtections = {
+                            ...batchSchedule,
+                            requestProtections: {
+                                request: prompt,
+                                facts: structuredClone(grounded.protectionFacts),
+                                resolvedTrackClauses: readExplicitProtections(prompt, context).resolvedTrackClauses,
+                            },
+                        };
+                    }
                     // Grounding against the card's basis already held every pending command to an
                     // explicit removal; only a card without one is checked against its stored batch.
                     if (refinement.status === 'refines' && grounded.refinement === undefined) {
@@ -1196,6 +1369,15 @@ const planPromptIntent = inject({ logger })(
                             context,
                             createdObject: proposalCommandShape.createdObject,
                             readRemoval: readStoredCardRemoval,
+                            protection: {
+                                facts: grounded.protectionFacts,
+                                readTouchedObjectIds: (type, payload) =>
+                                    proposalCommandShape.touchedObjectIds(type, payload, context),
+                                readControlOwnerIds: (type, payload) =>
+                                    proposalCommandShape.controlOwnerIds(type, payload, context),
+                                readControlOperations: (type, payload, trackId) =>
+                                    proposalCommandShape.controlOperations(type, payload, context, trackId),
+                            },
                         });
                         if (preservation.status === 'refused') {
                             return {
@@ -1228,10 +1410,11 @@ const planPromptIntent = inject({ logger })(
                         ...(measuredPreview === null ? {} : { measuredPreview }),
                         ...(grounded.providerProposal === null ? {} : { providerProposal: grounded.providerProposal }),
                         ...creativeAuthorityFields,
-                        ...(batchSchedule === undefined ? {} : { batchSchedule }),
-                        ...(grounded.groundingBasis === undefined || batchSchedule !== undefined
+                        ...(scheduledProtections === undefined ? {} : { batchSchedule: scheduledProtections }),
+                        ...(grounded.groundingBasis === undefined || scheduledProtections !== undefined
                             ? {}
                             : { groundingBasis: grounded.groundingBasis }),
+                        protectionFacts: grounded.protectionFacts,
                         ...(grounded.refinement === undefined
                             ? {}
                             : {

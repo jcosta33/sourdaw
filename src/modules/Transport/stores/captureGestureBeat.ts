@@ -58,6 +58,9 @@ export function captureGestureBeat(): number {
         // the position in force.
         return transport.playheadPosition;
     }
+    if (playheadClockRef.hold !== null) {
+        return Math.max(0, playheadClockRef.hold.beat);
+    }
 
     const source = getGestureClockSource();
     if (!source) {

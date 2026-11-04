@@ -87,12 +87,9 @@ jobs:
       # download of the .deb, then `apt-get install`. A stalled mirror or
       # download otherwise holds the job to its limit with no measurement
       # (run 37790613173 sat 13m53s in the download before failing). The whole
-      # install therefore runs as root under a root-side `timeout`, which a
-      # runner-user timeout could not do: it cannot signal a sudo'd child. As
-      # root, `timeout` signals its whole process group, so apt and curl die
-      # with it; the kill-after ends a TERM grace that a surviving child would
-      # otherwise outlive. A timed-out attempt is a failed one and the loop
-      # continues. The browser lands in /opt/google/chrome, where the
+      # install therefore runs as root in an owned systemd cgroup with a
+      # manager deadline that includes apt and curl descendants. The browser
+      # lands in /opt/google/chrome, where the
       # measurement harness finds it through `channel: 'chrome'`.
       #
       # The install script's apt runs inherit APT_CONFIG, so they read every
@@ -110,22 +107,11 @@ jobs:
       # step took 16s to 83s (median 23s), so 5m is more than three times the
       # slowest healthy install while failing a genuine stall within minutes.
       #
-      # Limit: three timed-out attempts take 3 x (5m + 15s) plus 15s of backoff,
-      # 16 minutes, inside this step's 20. The job's limit holds that together
-      # with the longest observed time of every other step, 423s across 52
-      # successful runs (24 minutes in all), at 30.
+      # One root install owns its full process lifetime under the 5m deadline.
       - name: Install Google Chrome
         timeout-minutes: 20
         run: |
-          for attempt in 1 2 3; do
-            if sudo env "PATH=$PATH" timeout --kill-after=15s 5m bash scripts/aptWithoutMicrosoftFeed.sh node_modules/.bin/playwright install --force chrome; then
-              break
-            fi
-            if [ "$attempt" -eq 3 ]; then
-              exit 1
-            fi
-            sleep $((attempt * 5))
-          done
+          sudo env "PATH=$PATH" bash scripts/aptWithoutMicrosoftFeed.sh --deadline 5m -- node_modules/.bin/playwright install --force chrome
 
       - name: Verify committed WASM artifacts
         run: pnpm wasm:verify

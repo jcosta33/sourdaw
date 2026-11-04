@@ -21,6 +21,7 @@ import { agentRunExecutionSettlement } from './agentRunExecutionSettlement';
 import { confirmationTerminalSettlement } from './confirmationTerminalSettlement';
 import { type CommandVerifiedBatchReceipt } from './confirmedBatchOutcomeSupport';
 import { getRenderReceiptAdmissionFailure } from './getRenderReceiptAdmissionFailure';
+import { readApprovedProtectionFailure } from './readApprovedProtectionFailure';
 
 type BeginConfirmedCommandExecutionInput = {
     confirmation: PendingAppActionConfirmation;
@@ -84,6 +85,10 @@ function getApprovalPreflightFailure(
     });
     if (validation.status === 'invalid') {
         return { reason: validation.reason, stale: validation.stale };
+    }
+    const protectionFailure = readApprovedProtectionFailure(confirmation);
+    if (protectionFailure !== null) {
+        return { reason: protectionFailure, stale: true };
     }
     const protectedAffectedIds = getProtectedAffectedIds(confirmation.actions, approved.protectedUnchanged);
     if (protectedAffectedIds.length > 0) {

@@ -4,7 +4,7 @@ Proof is a mastering chain: equaliser, four-band dynamics, stereo imager, harmon
 limiter, plus delivery targets and loudness meters. Reach for it on a mix bus or a master when the
 job is a finish, not a single effect.
 
-The panel is labelled **Mastering desk**. It opens on **Play**.
+The panel is labelled **Mastering desk**. New devices open on **Play**.
 
 **Type** Audio effect · **Category** Mastering · **Load from** Sidebar → Effects → Proof
 
@@ -28,10 +28,13 @@ The panel is labelled **Mastering desk**. It opens on **Play**.
 
 ## Play, Shape, Build, Route, Lab
 
-The five chips in the rail change how much of the panel you see. They do not bypass the chain. The
-device opens on **Play**. The choice is this session only — it is not stored in the project.
+The shared **Play · Shape · Build · Route · Lab** selector in the rail changes how much of the panel
+you see. Every tier keeps the earlier sections available; scroll within the desk to reach the
+additional controls. Lowering detail hides controls without changing their settings or bypassing the
+chain. Each Proof instance saves its own choice in the project and restores it when you reopen it.
+A device with no saved choice opens on **Play**.
 
-| Chip      | Heading           | What you get                                                                                                            |
+| Tier      | Heading           | Added controls                                                                                                          |
 | --------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | **Play**  | **Target desk**   | Target list, Input / Output LUFS, **Ceiling**.                                                                          |
 | **Shape** | **Chain shape**   | The five modules as a strip you can switch off, an **IN** meter at the start, peak meters between them, and four knobs. |

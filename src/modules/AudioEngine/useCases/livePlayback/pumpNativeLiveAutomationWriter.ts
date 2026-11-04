@@ -45,10 +45,16 @@
 
 import { logger } from '#/infra/logger/appLogger';
 
-import { type AudioGraphApplyResult, type AudioGraphParameterWrite } from '../../models/AudioGraphBackend';
+import {
+    type AudioGraphApplyResult,
+    type AudioGraphCommand,
+    type AudioGraphParameterTarget,
+    type AudioGraphParameterWrite,
+} from '../../models/AudioGraphBackend';
 import { automationWriteCommand } from '../offlineRender/automationWriteCommand';
 
 import { carryQueuedStamps } from './carryQueuedStamps';
+import { changedStripControls } from './changedStripControls';
 import { isEngineNotRenderingRefusal } from './engineNotRenderingRefusal';
 import {
     AUTOMATION_QUEUE_CAPACITY,
@@ -92,6 +98,8 @@ type Admission = Readonly<{
     slot: LiveAutomationWriterTarget;
     writes: readonly AudioGraphParameterWrite[];
     queued: readonly LiveAutomationQueuedStamp[];
+    cursorAdvance: number;
+    newStamps: readonly LiveAutomationQueuedStamp[];
 }>;
 
 /** `seconds_to_frames` in `graph.rs`, which is what every stamp is compared as. */
@@ -314,12 +322,12 @@ function anchorStampsAtAdmission(
 function ledgerGroup(slot: LiveAutomationWriterTarget): string {
     const { target } = slot;
     if (target.kind === 'device-parameter') {
-        return `device:${target.trackId}:${target.deviceId}`;
+        return `device:${encodeURIComponent(target.trackId)}:${encodeURIComponent(target.deviceId)}`;
     }
     if (target.kind === 'track-send-level') {
-        return `${target.kind}:${target.trackId}:${target.busId}`;
+        return `${target.kind}:${encodeURIComponent(target.trackId)}:${encodeURIComponent(target.busId)}`;
     }
-    return `${target.kind}:${target.trackId}`;
+    return `${target.kind}:${encodeURIComponent(target.trackId)}`;
 }
 
 /** How deep the engine's queue for this slot's group is allowed to get. */
@@ -363,6 +371,8 @@ type SlotDraft = {
     slot: LiveAutomationWriterTarget;
     writes: AudioGraphParameterWrite[];
     queued: readonly LiveAutomationQueuedStamp[];
+    cursorAdvance: number;
+    newStamps: LiveAutomationQueuedStamp[];
 };
 
 /** The one engine queue a group's slots are all charged against. */
@@ -397,18 +407,27 @@ function admitSlotWrite(input: {
     // What the group holds once this slot's own cancellations are taken: the
     // other slots' depths, plus what survives here.
     const groupDepth = (ledger.depths.get(ledger.group) ?? 0) - draft.queued.length + surviving.length;
-    if (groupDepth >= ledger.ceiling) {
+    const cost =
+        (draft.slot.target.kind === 'device-parameter' && write.shape === 'hold') ||
+        draft.slot.target.kind === 'track-solo-gate' ||
+        draft.slot.target.kind === 'track-mute-gate'
+            ? 0
+            : 1;
+    if (cost > 0 && groupDepth >= ledger.ceiling) {
         return false;
     }
-    ledger.depths.set(ledger.group, groupDepth + 1);
-    draft.queued = [...surviving, stamp];
+    ledger.depths.set(ledger.group, groupDepth + cost);
+    draft.queued = cost === 0 ? surviving : [...surviving, stamp];
+    if (cost > 0) {
+        draft.newStamps.push(stamp);
+    }
     draft.writes.push(write);
     return true;
 }
 
 /** The write this slot would offer next, or `null` once it owes none before the horizon. */
 function nextDueWrite(draft: SlotDraft, horizon: number): AudioGraphParameterWrite | null {
-    const write = draft.slot.writes[draft.slot.cursor + draft.writes.length];
+    const write = draft.slot.writes[draft.slot.cursor + draft.cursorAdvance];
     if (!write || writeStartSeconds(write) >= horizon) {
         return null;
     }
@@ -448,6 +467,7 @@ function admitSlotInCurveOrder(input: {
         if (!write || !admitSlotWrite({ draft, write, ledger, sampleRate })) {
             return;
         }
+        draft.cursorAdvance += 1;
     }
 }
 
@@ -480,6 +500,7 @@ function admitGroupInDueOrder(input: {
         if (!admitSlotWrite({ draft: due.draft, write: due.write, ledger, sampleRate })) {
             return countStillDue(drafts, horizon);
         }
+        due.draft.cursorAdvance += 1;
     }
 }
 
@@ -531,13 +552,34 @@ function reportSaturation(pass: LiveAutomationWriterPass, group: string, unserve
  * takes its curve in order; a group of several shares the ceiling in due-time
  * order (see {@link admitGroupInDueOrder}).
  */
-function admitWindow(input: { pass: LiveAutomationWriterPass; positionSeconds: number }): readonly Admission[] {
+function admitWindow(input: {
+    pass: LiveAutomationWriterPass;
+    positionSeconds: number;
+    holds: readonly AudioGraphParameterTarget[];
+}): readonly Admission[] {
     const { pass } = input;
     const horizon = input.positionSeconds + AUTOMATION_WINDOW_SECONDS;
     const depths = queuedByGroup(pass);
     const drafts = pass.targets
         .filter(engineStillHoldsSlotDevice)
-        .map((slot): SlotDraft => ({ slot, writes: [], queued: slot.queued }));
+        .map((slot): SlotDraft => ({ slot, writes: [], queued: slot.queued, cursorAdvance: 0, newStamps: [] }));
+    for (const target of input.holds) {
+        const draft = drafts.find((row) => targetKey(row.slot.target) === targetKey(target));
+        if (!draft) {
+            continue;
+        }
+        const ledger = { group: ledgerGroup(draft.slot), ceiling: groupCeiling(draft.slot), depths };
+        if (
+            !admitSlotWrite({
+                draft,
+                write: { shape: 'hold', time: input.positionSeconds },
+                ledger,
+                sampleRate: pass.sampleRate,
+            })
+        ) {
+            throw new Error('automation-queue-capacity: live Hold has no mirrored headroom');
+        }
+    }
     for (const [group, groupDrafts] of draftsByLedgerGroup(drafts)) {
         const first = groupDrafts[0];
         if (!first) {
@@ -596,6 +638,165 @@ function reportRefusal(pass: LiveAutomationWriterPass, reason: string): void {
     logger.warn(`[AudioEngine] live automation batch refused: ${reason}`);
 }
 
+type Projection = NonNullable<LiveAutomationWriterPass['inputs']['pending']>;
+type Refresh = Readonly<{
+    working: LiveAutomationWriterPass;
+    projection: Projection | null;
+    holds: readonly AudioGraphParameterTarget[];
+    controls: readonly AudioGraphCommand[];
+    inheritedStripControls: NonNullable<LiveAutomationWriterPass['inputs']['inheritedStripControls']>;
+}>;
+
+function targetKey(target: AudioGraphParameterTarget): string {
+    if (target.kind === 'device-parameter') {
+        return JSON.stringify([target.kind, target.trackId, target.deviceId, target.parameterId]);
+    }
+    if (target.kind === 'track-send-level') {
+        return JSON.stringify([target.kind, target.trackId, target.busId]);
+    }
+    return JSON.stringify([target.kind, target.trackId]);
+}
+
+/** Read over fixed reference spans, so a moving playhead is never mistaken for an edit. */
+function observeProjection(pass: LiveAutomationWriterPass): void {
+    const { inputs } = pass;
+    if (inputs.revision === inputs.acceptedRevision || inputs.pending?.revision === inputs.revision) {
+        return;
+    }
+    inputs.pending = {
+        revision: inputs.revision,
+        reference: inputs.readTargets(inputs.referenceSpan),
+        loop: inputs.loopSpan ? inputs.readTargets(inputs.loopSpan) : null,
+        strips: inputs.readStrips(),
+    };
+}
+
+function changedCurveTargets(
+    before: readonly LiveAutomationWriterTarget[],
+    after: readonly LiveAutomationWriterTarget[]
+): Map<string, AudioGraphParameterTarget> {
+    const old = new Map(
+        before
+            .filter((slot) => slot.writes.length > 0)
+            .map((slot) => [targetKey(slot.target), JSON.stringify(slot.writes)])
+    );
+    const next = new Map(
+        after
+            .filter((slot) => slot.writes.length > 0)
+            .map((slot) => [targetKey(slot.target), JSON.stringify(slot.writes)])
+    );
+    return new Map(
+        [...before, ...after]
+            .filter((slot) => old.get(targetKey(slot.target)) !== next.get(targetKey(slot.target)))
+            .map((slot) => [targetKey(slot.target), slot.target])
+    );
+}
+
+function refreshTargets(
+    before: readonly LiveAutomationWriterTarget[],
+    fresh: readonly LiveAutomationWriterTarget[],
+    changed: ReadonlyMap<string, AudioGraphParameterTarget>
+): LiveAutomationWriterTarget[] {
+    const next = new Map(fresh.map((slot) => [targetKey(slot.target), slot]));
+    const result = before.map((slot) => {
+        const key = targetKey(slot.target);
+        if (!changed.has(key)) {
+            return slot;
+        }
+        return { target: slot.target, writes: next.get(key)?.writes ?? [], cursor: 0, queued: slot.queued };
+    });
+    const keys = new Set(before.map((slot) => targetKey(slot.target)));
+    for (const slot of fresh) {
+        if (changed.has(targetKey(slot.target)) && !keys.has(targetKey(slot.target))) {
+            result.push(slot);
+            keys.add(targetKey(slot.target));
+        }
+    }
+    // A pending apply may introduce a lane that is removed before re-arm.
+    // Its inherited cancellation still needs a slot even with no current curve.
+    for (const [key, target] of changed) {
+        if (!keys.has(key)) {
+            result.push({ target, writes: [], cursor: 0, queued: [] });
+        }
+    }
+    return result;
+}
+
+function prepareRefresh(pass: LiveAutomationWriterPass, positionSeconds: number): Refresh {
+    observeProjection(pass);
+    const projection = pass.inputs.pending;
+    if (!projection) {
+        return { working: pass, projection: null, holds: [], controls: [], inheritedStripControls: [] };
+    }
+    const changed = changedCurveTargets(pass.inputs.reference, projection.reference);
+    for (const [key, target] of changedCurveTargets(pass.loopTargets ?? [], projection.loop ?? [])) {
+        changed.set(key, target);
+    }
+    for (const target of pass.inputs.inheritedHolds) {
+        changed.set(targetKey(target), target);
+    }
+    const { controls, faders, submitted } = changedStripControls({
+        before: pass.inputs.strips,
+        after: projection.strips,
+        inherited: pass.inputs.inheritedStripControls ?? [],
+        positionSeconds,
+    });
+    for (const trackId of faders) {
+        const target = { kind: 'track-fader', trackId } as const;
+        changed.set(targetKey(target), target);
+    }
+    const span = { ...pass.inputs.referenceSpan, startSeconds: positionSeconds };
+    const fresh = changed.size > 0 ? pass.inputs.readTargets(span) : [];
+    for (const target of changed.values()) {
+        if (target.kind !== 'track-fader') {
+            continue;
+        }
+        const { trackId } = target;
+        const existing = fresh.find((slot) => slot.target.kind === 'track-fader' && slot.target.trackId === trackId);
+        if (!existing) {
+            // Hold retains the automated value. A removed/off lane, including
+            // an obligation inherited through re-arm, restores the stored base.
+            const strip = projection.strips.get(trackId);
+            if (strip) {
+                fresh.push({
+                    target,
+                    writes: [{ shape: 'step', time: positionSeconds, value: strip.gain }],
+                    queued: [],
+                    cursor: 0,
+                });
+            }
+        }
+    }
+    return {
+        projection,
+        controls,
+        inheritedStripControls: submitted,
+        holds: [...changed.values()],
+        working: {
+            ...pass,
+            targets: refreshTargets(pass.targets, fresh, changed),
+            loopTargets: projection.loop ? refreshTargets(pass.loopTargets ?? [], projection.loop, changed) : null,
+        },
+    };
+}
+
+function commitProjection(pass: LiveAutomationWriterPass, refresh: Refresh): void {
+    const { projection } = refresh;
+    if (!projection) {
+        return;
+    }
+    pass.targets = refresh.working.targets;
+    pass.loopTargets = refresh.working.loopTargets;
+    pass.inputs.reference = projection.reference;
+    pass.inputs.strips = projection.strips;
+    pass.inputs.acceptedRevision = projection.revision;
+    pass.inputs.inheritedHolds = [];
+    pass.inputs.inheritedStripControls = [];
+    if (pass.inputs.pending?.revision === projection.revision) {
+        pass.inputs.pending = null;
+    }
+}
+
 export async function pumpNativeLiveAutomationWriter(input: PumpNativeLiveAutomationWriterInput): Promise<void> {
     const pass = nativeLiveAutomationWriter.pass;
     const backend = nativeLiveGraphSession.backend;
@@ -603,6 +804,7 @@ export async function pumpNativeLiveAutomationWriter(input: PumpNativeLiveAutoma
     if (!pass || !backend || input.writerEpoch !== epoch) {
         return;
     }
+    observeProjection(pass);
     if (nativeLiveAutomationWriter.inFlightEpoch === epoch) {
         return;
     }
@@ -613,15 +815,8 @@ export async function pumpNativeLiveAutomationWriter(input: PumpNativeLiveAutoma
     takeLoopSeam({ pass, positionSeconds: input.positionSeconds, loopWraps: input.loopWraps });
     releaseLanded(pass, input.positionSeconds, input.loopWraps, input.batchesApplied);
 
-    const admissions = admitWindow({ pass, positionSeconds: input.positionSeconds });
-    if (admissions.length === 0) {
-        return;
-    }
-    // This tick sends a batch, and a batch admission is the only moment the
-    // engine's ledger runs its release proof: anchor what this snapshot — the
-    // one that windows the send — can prove drained.
-    anchorStampsAtAdmission(pass, input.loopWraps, input.batchesApplied);
-
+    let refresh: Refresh | null = null;
+    let admissions: readonly Admission[] = [];
     nativeLiveAutomationWriter.inFlightEpoch = epoch;
     try {
         // Queued on the session's own chain, like every other command that
@@ -631,17 +826,48 @@ export async function pumpNativeLiveAutomationWriter(input: PumpNativeLiveAutoma
             // The pass can end while this work waits its turn — a seek
             // queued ahead of it re-arms, and these writes then describe a
             // region the engine has already been moved out of.
-            if (nativeLiveAutomationWriter.epoch !== epoch) {
+            if (
+                nativeLiveAutomationWriter.epoch !== epoch ||
+                nativeLiveAutomationWriter.pass !== pass ||
+                nativeLiveGraphSession.backend !== backend
+            ) {
                 return null;
             }
-            return backend.apply({
-                schemaVersion: 1,
-                commands: admissions.flatMap(({ slot, writes }) =>
+            refresh = prepareRefresh(pass, input.positionSeconds);
+            admissions = admitWindow({
+                pass: refresh.working,
+                positionSeconds: input.positionSeconds,
+                holds: refresh.holds,
+            });
+            const commands = [
+                ...refresh.controls,
+                ...admissions.flatMap(({ slot, writes }) =>
                     writes.map((write) => automationWriteCommand(slot.target, write))
                 ),
+            ];
+            if (commands.length === 0) {
+                commitProjection(pass, refresh);
+                return null;
+            }
+            anchorStampsAtAdmission(refresh.working, input.loopWraps, input.batchesApplied);
+            // Re-arm can replace this pass before apply answers. Its submitted
+            // curve may still land, even if project truth has already reverted.
+            // Keep its cancellation duties until the accepted projection commits.
+            pass.inputs.inheritedHolds = refresh.holds;
+            // Controls own no curve slot. Carry their identities separately so
+            // a successor restores current truth even after an edit reverts.
+            pass.inputs.inheritedStripControls = refresh.inheritedStripControls;
+            return backend.apply({
+                schemaVersion: 1,
+                commands,
             });
         });
-        if (result === null || nativeLiveAutomationWriter.epoch !== epoch) {
+        if (
+            result === null ||
+            nativeLiveAutomationWriter.epoch !== epoch ||
+            nativeLiveAutomationWriter.pass !== pass ||
+            nativeLiveGraphSession.backend !== backend
+        ) {
             return;
         }
         reportAttachedPlugins(result);
@@ -656,16 +882,19 @@ export async function pumpNativeLiveAutomationWriter(input: PumpNativeLiveAutoma
         // the engine's own account of the strips it touched — folding them in
         // keeps the chain record answering to the newest observation there is.
         recordNativeChains(result.reports);
-        for (const { slot, writes, queued } of admissions) {
-            slot.cursor += writes.length;
-            // The batch's own stamps — the tail of what the admission queued,
-            // one per write it carried — learn their fence now:
+        for (const { slot, cursorAdvance, queued, newStamps } of admissions) {
+            slot.cursor += cursorAdvance;
+            // Only newly charged stamps learn this fence. Device Hold and
+            // immediate gates own no slot, and old survivors keep their fence:
             // `admitted_batch` is the number the engine gave this admission,
             // and the seam anchor waits for a snapshot that has drained it.
-            for (const stamp of queued.slice(queued.length - writes.length)) {
+            for (const stamp of newStamps) {
                 stamp.admittedBatch = result.admittedBatch ?? null;
             }
             slot.queued = [...queued];
+        }
+        if (refresh) {
+            commitProjection(pass, refresh);
         }
     } catch (error) {
         // A thrown apply is a bridge fault, not a decision about the writes:

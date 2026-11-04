@@ -43,7 +43,14 @@ import {
     resolvePrimaryRoot,
 } from './githubAppIdentity.ts';
 import { fail } from './prContract.ts';
-import { disposableIgnored, inside, parseWorktrees, resolveLaneTarget, type Worktree } from './removeLane.ts';
+import {
+    disposableIgnored,
+    inside,
+    parseWorktrees,
+    resolveLaneTarget,
+    type ShellCaptureOptions,
+    type Worktree,
+} from './removeLane.ts';
 
 export const PRUNE_USAGE =
     'usage: pnpm lane:prune <worktree-path> | pnpm lane:prune --all | pnpm lane:prune --stale-days <days>';
@@ -237,13 +244,13 @@ export function pruneFleet(port: LanePrunePort, staleDays?: number): FleetPruneO
 }
 
 export type PruneShell = {
-    capture: (command: string, args: string[]) => string;
+    capture: (command: string, args: string[], options?: ShellCaptureOptions) => string;
 };
 
 /** The machine-wide `lsof` listing outgrows spawnSync's 1 MiB default, which would fail with ENOBUFS. */
 const CAPTURE_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
 
-export function capture(command: string, args: string[]): string {
+export function capture(command: string, args: string[], options?: ShellCaptureOptions): string {
     const result = spawnSync(command, args, {
         cwd: process.cwd(),
         encoding: 'utf8',
@@ -256,7 +263,7 @@ export function capture(command: string, args: string[]): string {
     if (result.status !== 0) {
         throw new Error(result.stderr.trim() || `${command} failed with exit ${result.status ?? 'signal'}`);
     }
-    return result.stdout.trim();
+    return options?.preserveStdout === true ? result.stdout : result.stdout.trim();
 }
 
 export function shellPort(shell: PruneShell = { capture }): LanePrunePort {
@@ -294,16 +301,11 @@ export function shellPort(shell: PruneShell = { capture }): LanePrunePort {
         // `-z` is the byte-faithful form: no quoting, so an unusual path can never be misread.
         ignored: (path) =>
             shell
-                .capture('git', [
-                    '-C',
-                    path,
-                    'ls-files',
-                    '--others',
-                    '--ignored',
-                    '--exclude-standard',
-                    '--directory',
-                    '-z',
-                ])
+                .capture(
+                    'git',
+                    ['-C', path, 'ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'],
+                    { preserveStdout: true }
+                )
                 .split('\0')
                 .filter((entry) => entry !== ''),
         deleteEntry: (lane, entry) => {

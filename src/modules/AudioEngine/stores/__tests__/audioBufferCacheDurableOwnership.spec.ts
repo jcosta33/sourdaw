@@ -129,6 +129,147 @@ describe('audioBufferCache durable ownership', () => {
         vi.restoreAllMocks();
     });
 
+    describe('currentness-bearing ownership census', () => {
+        it('does not evict the runtime source when its witness changes during the delete commit', async () => {
+            let current = true;
+            routes.setDurableAudioBufferOwnershipProvider(async () => ({ ids: [], isCurrent: () => current }));
+            routes.audioBufferCache.set('freeze-runtime', residentAudioBufferWithSample(0.6), { freezeProjectId: 200 });
+            const receipt = await routes.audioBufferCache.ensureDurable(['freeze-runtime']);
+            expect(receipt.status).toBe('durable');
+            if (receipt.status !== 'durable') {
+                throw new Error('Expected durable runtime source');
+            }
+            receipt.release();
+            controls.pauseWriteSettlements();
+            const collection = routes.audioBufferCache.garbageCollectFreezeFiles({
+                activeIds: new Set(),
+                projectId: 200,
+            });
+            await vi.waitFor(() => expect(controls.pendingWriteSettlementCount()).toBe(1));
+            current = false;
+            controls.releaseNextWriteSettlement();
+            await collection;
+
+            // The bounded fence cannot reverse an admitted disk commit. It can
+            // refuse the later runtime eviction under a stale owner snapshot.
+            expect(controls.committed.has('freeze-runtime')).toBe(false);
+            expect(routes.audioBufferCache.has('freeze-runtime')).toBe(true);
+        });
+
+        it('aborts earlier queued age deletions when the legacy record read invalidates the census', async () => {
+            seedOrdinaryEntry(controls, 'modern', THIRTY_ONE_DAYS_AGO);
+            controls.committed.set('legacy', ordinaryRecord(THIRTY_ONE_DAYS_AGO));
+            let legacyRead = false;
+            const get = controls.committed.get.bind(controls.committed);
+            vi.spyOn(controls.committed, 'get').mockImplementation((key) => {
+                if (key === 'legacy') {
+                    legacyRead = true;
+                }
+                return get(key);
+            });
+            routes.setDurableAudioBufferOwnershipProvider(async () => ({ ids: [], isCurrent: () => !legacyRead }));
+
+            const deleted = await routes.garbageCollectCachedAudioBuffersByAge({ maxAgeDays: 30 });
+
+            expect(legacyRead).toBe(true);
+            expect(deleted).toBe(0);
+            expect(controls.committed.has('modern')).toBe(true);
+            expect(controls.committed.has('legacy')).toBe(true);
+        });
+
+        for (const operation of ['remove', 'clear'] as const) {
+            it(`${operation} refuses a census invalidated during its checkpoint read`, async () => {
+                seedOrdinaryEntry(controls, 'unowned', NOW);
+                let checkpointRead = false;
+                const keys = controls.committedCheckpointRetentions.keys.bind(controls.committedCheckpointRetentions);
+                vi.spyOn(controls.committedCheckpointRetentions, 'keys').mockImplementation(() => {
+                    checkpointRead = true;
+                    return keys();
+                });
+                routes.setDurableAudioBufferOwnershipProvider(async () => ({
+                    ids: [],
+                    isCurrent: () => !checkpointRead,
+                }));
+                if (operation === 'remove') {
+                    routes.audioBufferCache.remove('unowned');
+                } else {
+                    routes.audioBufferCache.clear();
+                }
+                await lockManager.locks.request(
+                    'sourdaw:project-audio-storage',
+                    { mode: 'exclusive' },
+                    async () => undefined
+                );
+                expect(checkpointRead).toBe(true);
+                expect(controls.committed.has('unowned')).toBe(true);
+                expect(controls.committedMeta.has('unowned')).toBe(true);
+            });
+        }
+
+        for (const collector of ['freeze', 'age', 'size'] as const) {
+            async function collect(): Promise<void> {
+                if (collector === 'freeze') {
+                    await routes.audioBufferCache.garbageCollectFreezeFiles({ activeIds: new Set(), projectId: 200 });
+                } else if (collector === 'age') {
+                    await routes.garbageCollectCachedAudioBuffersByAge({ maxAgeDays: 30 });
+                } else {
+                    await routes.garbageCollectCachedAudioBuffersBySize({ maxSizeBytes: 0 });
+                }
+            }
+
+            function seed(): void {
+                seedOrdinaryEntry(controls, 'freeze-owned', THIRTY_ONE_DAYS_AGO);
+                seedOrdinaryEntry(controls, 'freeze-orphan', THIRTY_ONE_DAYS_AGO);
+                controls.committedMeta.set('freeze-owned', {
+                    lastAccessed: THIRTY_ONE_DAYS_AGO,
+                    sizeInBytes: 100,
+                    freezeProjectId: 200,
+                });
+                controls.committedMeta.set('freeze-orphan', {
+                    lastAccessed: THIRTY_ONE_DAYS_AGO,
+                    sizeInBytes: 100,
+                    freezeProjectId: 200,
+                });
+            }
+
+            it(`${collector} consumes a current typed census and still deletes the orphan`, async () => {
+                seed();
+                routes.setDurableAudioBufferOwnershipProvider(async () => ({
+                    ids: ['freeze-owned'],
+                    isCurrent: () => true,
+                }));
+                await collect();
+                expect(controls.committed.has('freeze-owned')).toBe(true);
+                expect(controls.committed.has('freeze-orphan')).toBe(false);
+            });
+
+            for (const invalidation of ['stale', 'throwing'] as const) {
+                it(`${collector} refuses a ${invalidation} witness after the asynchronous metadata census`, async () => {
+                    seed();
+                    let metadataRead = false;
+                    const get = controls.committedMeta.get.bind(controls.committedMeta);
+                    vi.spyOn(controls.committedMeta, 'get').mockImplementation((key) => {
+                        metadataRead = true;
+                        return get(key);
+                    });
+                    routes.setDurableAudioBufferOwnershipProvider(async () => ({
+                        ids: [],
+                        isCurrent: () => {
+                            if (metadataRead && invalidation === 'throwing') {
+                                throw new Error('Owner state became unreadable during the metadata request');
+                            }
+                            return !metadataRead;
+                        },
+                    }));
+                    await collect();
+                    expect(metadataRead).toBe(true);
+                    expect(controls.committed.has('freeze-owned')).toBe(true);
+                    expect(controls.committed.has('freeze-orphan')).toBe(true);
+                });
+            }
+        }
+    });
+
     describe('production age sweep', () => {
         // The two entries are identical except for durable ownership, so only
         // the ownership guard can produce the split this asserts.

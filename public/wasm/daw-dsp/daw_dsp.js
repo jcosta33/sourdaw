@@ -2229,6 +2229,7 @@ export class ProofInstance {
         wasm.proofinstance_reset_integrated(this.__wbg_ptr);
     }
     /**
+     * Unknown or malformed targets leave the current DSP state untouched.
      * @param {string} name
      * @param {number} value
      */

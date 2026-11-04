@@ -21,6 +21,8 @@ Interactive command palette UI, keyboard shortcut mappings and rebindings, comma
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-pnpm vitest run src/modules/CommandInterface
+pnpm test:run <changed-spec>
 ```

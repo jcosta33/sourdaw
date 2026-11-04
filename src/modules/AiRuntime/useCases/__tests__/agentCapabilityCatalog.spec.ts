@@ -101,6 +101,21 @@ describe('agent capability catalog', () => {
         );
     });
 
+    it('discovers the callable transient read in both the catalog and capability receipt', async () => {
+        expect(applicationSurfaceEntries().find((entry) => entry.name === 'analysis.detectTransients')).toMatchObject({
+            id: 'analysis.detectTransients',
+            availability: 'available',
+            version: null,
+            evidence: {
+                surface: 'application-tool',
+                owner: 'AiRuntime',
+                callable: true,
+                declaredAvailability: 'available',
+            },
+        });
+        expect(await readCapabilityReceiptOperationNames()).toContain('analysis.detectTransients');
+    });
+
     it('copies each protocol contract operation with its contract identity and published version', () => {
         const entries = getAgentCapabilityCatalog([QUERY_CONTRACT, DISCOVERY_CONTRACT, ADAPTER_CONTRACT]).entries;
 

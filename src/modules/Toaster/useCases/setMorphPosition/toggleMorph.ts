@@ -1,15 +1,13 @@
-import { toasterStore } from '../../stores/toasterStore';
+import { getValidMorphState } from '../../models/ToasterKit';
 
-export function toggleMorph(deviceId: string): void {
-    const state = toasterStore.value?.[deviceId];
-    if (!state) {
-        return;
-    }
-    toasterStore.set({
-        ...toasterStore.value,
-        [deviceId]: {
-            ...state,
-            morph: { ...state.morph, enabled: !state.morph.enabled },
-        },
+import { commitToasterMorphKitChange } from './commitToasterMorphKitChange';
+
+export async function toggleMorph(deviceId: string): Promise<boolean> {
+    return commitToasterMorphKitChange(deviceId, (kit) => {
+        const morph = getValidMorphState(kit);
+        if (!morph.targetPatternId || morph.targetPatternId === kit.activePatternId) {
+            return null;
+        }
+        return { ...kit, morph: { ...morph, enabled: !morph.enabled } };
     });
 }

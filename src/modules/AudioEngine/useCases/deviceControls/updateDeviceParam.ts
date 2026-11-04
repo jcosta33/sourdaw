@@ -3,6 +3,7 @@ import { clampDeviceParamWrite } from '#/modules/Arrangement/stores';
 import { audioEngine } from '../../repositories/createWebAudioEngine';
 
 import { nativeBuiltinWriteTarget } from './nativeBuiltinWriteTarget';
+import { withDeviceParameterRuntimeWriteOwner } from './withDeviceParameterRuntimeWriteOwner';
 import { writeNativeBuiltinParameters } from './writeNativeBuiltinParameters';
 
 /**
@@ -30,9 +31,17 @@ import { writeNativeBuiltinParameters } from './writeNativeBuiltinParameters';
  * engine-named door of a built-in whose controls are not `parameterValues`
  * entries share one send path.
  */
-export function updateDeviceParam(trackId: string, deviceId: string, paramId: string, value: number): void {
+export function updateDeviceParam(
+    trackId: string,
+    deviceId: string,
+    paramId: string,
+    value: number,
+    runtimeOwner?: symbol
+): void {
     const clamped = clampDeviceParamWrite({ deviceId, paramId, value });
-    audioEngine.updateDeviceParam(trackId, deviceId, paramId, clamped);
+    withDeviceParameterRuntimeWriteOwner(trackId, deviceId, paramId, runtimeOwner, () => {
+        audioEngine.updateDeviceParam(trackId, deviceId, paramId, clamped);
+    });
     const body = nativeBuiltinWriteTarget(trackId, deviceId);
     if (body) {
         writeNativeBuiltinParameters(trackId, deviceId, { [body.parameterName(paramId)]: clamped });

@@ -19,7 +19,8 @@ Cross-cutting technical infrastructure: audio latency-profile preferences, Audio
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-pnpm deps:validate
-pnpm test:run src/infra/
+pnpm test:run <changed-spec>
 ```

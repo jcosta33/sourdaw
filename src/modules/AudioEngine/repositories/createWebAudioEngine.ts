@@ -30,6 +30,7 @@ import {
     type RuntimeGraphTrackStripInitializationDelta,
     type RuntimeGraphTopologyValidator,
 } from '../models/RuntimeGraphDelta';
+import { createAudioPreviewIntents } from '../services/audioPreview/createAudioPreviewIntents';
 import bitcrusherRateProcessorUrl from '../services/bitcrusherRateProcessor.ts?worker&url';
 import { compileRuntimeGraphDelta } from '../services/compileRuntimeGraphDelta';
 import { matchesRuntimeDeviceChainTopology } from '../services/matchesRuntimeDeviceChainTopology';
@@ -405,6 +406,8 @@ class AudioEngineImpl implements AudioEngine {
     private initializationCancellation: PromiseWithResolvers<never> | null = null;
     private initializationGeneration = 0;
     private disposed = false;
+    private previewIntents = createAudioPreviewIntents();
+    private previewResetDepth = 0;
     private disposalPromise: Promise<void> | null = null;
     private lastInitError: Error | null = null;
     private lastResumeError: Error | null = null;
@@ -2644,7 +2647,28 @@ class AudioEngineImpl implements AudioEngine {
         });
     }
 
+    public beginAudioPreviewIntent() {
+        return this.previewIntents.beginOrdinary();
+    }
+
+    public beginExclusiveAudioPreviewIntent() {
+        return this.previewIntents.beginExclusive();
+    }
+
     public resetGraph(): void {
+        this.previewResetDepth++;
+        try {
+            runAllEffects([() => this.previewIntents.dispose(), () => this.resetProjectGraph()]);
+        } finally {
+            this.previewResetDepth--;
+            // Nested teardown and its callbacks cannot reopen the outgoing preview lifetime.
+            if (this.previewResetDepth === 0 && !this.disposed) {
+                this.previewIntents = createAudioPreviewIntents();
+            }
+        }
+    }
+
+    private resetProjectGraph(): void {
         this.withheldDeviceNotices.clear();
         // The carried set names tracks of the project being torn down; a strip
         // ensured for the next one must not inherit a closed gate from it.

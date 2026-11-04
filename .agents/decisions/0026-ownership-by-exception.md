@@ -101,6 +101,8 @@ pipeline runs, so the DORA evidence for three or fewer active branches, measured
 does not bound them; lanes that do not stack on one another stay write-disjoint, including
 generated artifacts and pinned digests their changes feed.
 
+Amended 2026-10-24 by the owner: at most five live lanes, superseding the four above.
+
 ## Consequences
 
 The owner stops hearing about anything reversible. Encountered rot stops accumulating in docs,

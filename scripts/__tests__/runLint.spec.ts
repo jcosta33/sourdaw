@@ -1,3 +1,8 @@
+import { spawnSync } from 'node:child_process';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -159,5 +164,46 @@ describe('ensureServerDependencies', () => {
         expect(() => ensureServerDependencies(['server'], '/repo', existsSyncMock, spawnSyncMock as any)).toThrow(
             'failed to install server dependencies for linting'
         );
+    });
+});
+
+describe('lint entrypoint phase reporting', () => {
+    function runLint(failingEngine = '') {
+        const directory = mkdtempSync(join(tmpdir(), 'run-lint-test-'));
+        try {
+            const executable = join(directory, 'pnpm');
+            writeFileSync(executable, '#!/bin/sh\necho "$2 output"\nif [ "$2" = "$FAIL_ENGINE" ]; then exit 2; fi\n');
+            chmodSync(executable, 0o755);
+            return spawnSync(process.execPath, [resolve('scripts/runLint.ts'), 'src/a.ts'], {
+                encoding: 'utf8',
+                env: { ...process.env, PATH: directory, FAIL_ENGINE: failingEngine },
+            });
+        } finally {
+            rmSync(directory, { recursive: true, force: true });
+        }
+    }
+
+    it('reports each subprocess in order around its output', () => {
+        const result = runLint();
+
+        expect(result.status).toBe(0);
+        expect(result.stderr).toBe('');
+        expect(result.stdout).toMatch(
+            /^lint: oxlint started\noxlint output\nlint: oxlint passed \(\d+ ms\)\nlint: eslint started\neslint output\nlint: eslint passed \(\d+ ms\)\n$/
+        );
+    });
+
+    it.each(['oxlint', 'eslint'])('reports %s failure and retains the original error', (engine) => {
+        const result = runLint(engine);
+
+        expect(result.status).toBe(1);
+        expect(result.stderr).toBe(`${engine} failed\n`);
+        expect(result.stdout).toMatch(
+            new RegExp(`lint: ${engine} started\\n${engine} output\\nlint: ${engine} failed \\(\\d+ ms\\)`)
+        );
+        expect(result.stdout).not.toContain(`lint: ${engine} passed`);
+        if (engine === 'oxlint') {
+            expect(result.stdout).not.toContain('eslint');
+        }
     });
 });

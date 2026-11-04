@@ -23,6 +23,8 @@ Import and export interchange translation between Sourdaw internal project state
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-pnpm vitest run src/modules/DawInterchange
+pnpm test:run <changed-spec>
 ```

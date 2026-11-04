@@ -85,3 +85,84 @@ test.describe('Control Surface — MIDI Learn', () => {
         await expect(idleButtons.nth(1)).toHaveAttribute('aria-pressed', 'false');
     });
 });
+
+test.describe('MIDI Learn keyboard activation', () => {
+    test('Enter and Space leave MIDI Learn idle when the browser input API is absent', async ({ page }) => {
+        await page.addInitScript(() => {
+            Reflect.deleteProperty(navigator, 'requestMIDIAccess');
+            Reflect.deleteProperty(Navigator.prototype, 'requestMIDIAccess');
+        });
+        await page.reload();
+        await expect(page.evaluate(() => 'requestMIDIAccess' in navigator)).resolves.toBe(false);
+
+        await setupWorkspace(page);
+        await launch_new_project(page);
+        await page.keyboard.press(`${MOD}+k`);
+        await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add MIDI Track');
+        await page.getByRole('option', { name: 'Add MIDI Track' }).click();
+
+        const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
+        const unavailableButtons = inspector.getByRole('button', {
+            name: /^MIDI Learn\. MIDI input is not supported in this browser/,
+        });
+        await expect(inspector).toBeVisible();
+        await expect(unavailableButtons).toHaveCount(2);
+
+        const gainLearn = unavailableButtons.first();
+        await gainLearn.focus();
+        await expect(gainLearn).toBeFocused();
+        await page.keyboard.press('Enter');
+        await expect(gainLearn).toHaveAttribute('aria-pressed', 'false');
+        await expect(inspector.getByRole('button', { name: 'Listening for MIDI CC...' })).toHaveCount(0);
+
+        await gainLearn.focus();
+        await expect(gainLearn).toBeFocused();
+        await page.keyboard.press('Space');
+        await expect(gainLearn).toHaveAttribute('aria-pressed', 'false');
+        await expect(inspector.getByRole('button', { name: 'Listening for MIDI CC...' })).toHaveCount(0);
+    });
+
+    test('Space starts MIDI Learn and Enter cancels it when the browser input API is present', async ({ page }) => {
+        await page.addInitScript(() => {
+            Object.defineProperty(navigator, 'requestMIDIAccess', {
+                configurable: true,
+                value: async () => {
+                    throw new Error('This capability check must not request MIDI access');
+                },
+            });
+        });
+        await page.reload();
+        await expect(page.evaluate(() => 'requestMIDIAccess' in navigator)).resolves.toBe(true);
+
+        await setupWorkspace(page);
+        await launch_new_project(page);
+        await page.keyboard.press(`${MOD}+k`);
+        await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add MIDI Track');
+        await page.getByRole('option', { name: 'Add MIDI Track' }).click();
+
+        const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
+        const idleButtons = inspector.getByRole('button', { name: 'MIDI Learn' });
+        await expect(idleButtons).toHaveCount(2);
+
+        const gainLearn = idleButtons.first();
+        await gainLearn.focus();
+        await expect(gainLearn).toBeFocused();
+        await page.keyboard.press('Space');
+
+        const listening = inspector.getByRole('button', { name: 'Listening for MIDI CC...' });
+        await expect(listening).toHaveCount(1);
+        await expect(listening).toHaveAttribute('aria-pressed', 'true');
+        const panLearn = inspector.getByRole('button', { name: 'MIDI Learn' });
+        await expect(panLearn).toHaveCount(1);
+        await expect(panLearn).toHaveAttribute('aria-pressed', 'false');
+
+        await listening.focus();
+        await expect(listening).toBeFocused();
+        await page.keyboard.press('Enter');
+        await expect(inspector.getByRole('button', { name: 'Listening for MIDI CC...' })).toHaveCount(0);
+        const idleAgain = inspector.getByRole('button', { name: 'MIDI Learn' });
+        await expect(idleAgain).toHaveCount(2);
+        await expect(idleAgain.nth(0)).toHaveAttribute('aria-pressed', 'false');
+        await expect(idleAgain.nth(1)).toHaveAttribute('aria-pressed', 'false');
+    });
+});

@@ -53,7 +53,11 @@ import { driveAgentWorkspaceProof, type ProofStep } from './desktopAgentWorkspac
 import { emptyDiagnostics, printDiagnostics } from './desktopLatencyDiagnostics.ts';
 import { DEFAULT_APP_PATH } from './desktopLatencyReadings.ts';
 import { machineProvenance, readPayloadIdentity, writeRecord, type PayloadIdentity } from './desktopLatencyRecord.ts';
-import { startLoopbackOpenAiProvider, type LoopbackOpenAiProvider } from './loopbackOpenAiProvider.ts';
+import {
+    createLoopbackAnswerToolCalls,
+    startLoopbackOpenAiProvider,
+    type LoopbackOpenAiProvider,
+} from './loopbackOpenAiProvider.ts';
 import { launchPackagedApp } from './packagedAppSession.ts';
 
 const EXIT_PROVEN = 0;
@@ -213,7 +217,10 @@ async function main(): Promise<number> {
     }
     process.stdout.write(`app payload       sha256:${payload.sha256} mtime:${payload.mtime}\n`);
 
-    const provider = await startLoopbackOpenAiProvider({ reply: REPLY });
+    const provider = await startLoopbackOpenAiProvider({
+        reply: REPLY,
+        toolCalls: createLoopbackAnswerToolCalls(REPLY),
+    });
     process.stdout.write(`provider          ${provider.baseUrl} (model ${provider.model})\n`);
 
     const profileDir = mkdtempSync(join(tmpdir(), PROFILE_DIR_PREFIX));

@@ -50,7 +50,10 @@ const devServerProjects: Project[] = [
     },
 ];
 const devServerWebServer: WebServer = {
-    command: `pnpm dev --mode e2e --port ${port} --strictPort`,
+    command: `node scripts/e2eDevServer.ts ${port}`,
+    stdout: 'pipe',
+    stderr: 'pipe',
+    gracefulShutdown: { signal: 'SIGTERM', timeout: 5_000 },
     url: e2eOrigin(port),
     reuseExistingServer: !env.CI,
 };
@@ -78,7 +81,7 @@ function builtShardWebServers(): WebServer[] {
     const servers: WebServer[] = [
         {
             // The build is part of server startup, so the wait covers it.
-            command: `pnpm exec vite build --mode e2e && pnpm exec vite preview --mode e2e --port ${port} --strictPort`,
+            command: `pnpm exec vite build --mode e2e && pnpm exec vite preview --mode e2e --host 127.0.0.1 --port ${port} --strictPort`,
             url: e2eOrigin(port),
             timeout: 600_000,
             reuseExistingServer: false,
@@ -87,7 +90,10 @@ function builtShardWebServers(): WebServer[] {
     if (shardNeedsDevServer) {
         const companionPort = devServerPort();
         servers.push({
-            command: `pnpm dev --mode e2e --port ${companionPort} --strictPort`,
+            command: `node scripts/e2eDevServer.ts ${companionPort}`,
+            stdout: 'pipe',
+            stderr: 'pipe',
+            gracefulShutdown: { signal: 'SIGTERM', timeout: 5_000 },
             url: e2eOrigin(companionPort),
             reuseExistingServer: false,
         });

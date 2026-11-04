@@ -8,7 +8,11 @@
  * unreachable maps it rather than the list restating it.
  */
 
-import { ANALYSIS_REQUEST_TOOL_NAME, RENDER_REQUEST_TOOL_NAME } from './AgentToolCatalogNames';
+import {
+    ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME,
+    ANALYSIS_REQUEST_TOOL_NAME,
+    RENDER_REQUEST_TOOL_NAME,
+} from './AgentToolCatalogNames';
 
 export type AgentCapabilityAvailability = 'available' | 'proposal-only' | 'deferred';
 
@@ -27,6 +31,7 @@ export const APPLICATION_OWNED_CAPABILITY_OPERATIONS: readonly AgentCapabilityOp
     { name: 'command.approval', callable: false, owner: 'Command', availability: 'available' },
     { name: RENDER_REQUEST_TOOL_NAME, callable: true, owner: 'AiRuntime', availability: 'proposal-only' },
     { name: ANALYSIS_REQUEST_TOOL_NAME, callable: true, owner: 'AiRuntime', availability: 'proposal-only' },
+    { name: ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME, callable: true, owner: 'AiRuntime', availability: 'available' },
 ];
 
 /** Whether a caller can reach the operation at all, from the owner's declared state. */

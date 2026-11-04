@@ -203,6 +203,17 @@ impl LookaheadLimiter {
         }
     }
 
+    #[cfg(test)]
+    pub(super) fn parameter_value(&self, name: &str) -> Option<f32> {
+        Some(match name {
+            "lim_bypass" => u8::from(self.bypassed) as f32,
+            "lim_ceiling" => self.ceiling_db,
+            "lim_release" => -1000.0 / (self.release_coeff.ln() * self.sample_rate),
+            "lim_lookahead" => self.lookahead_samples as f32 * 1000.0 / self.sample_rate,
+            _ => return None,
+        })
+    }
+
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
             // Takes the gain off the signal, not the look-ahead delay out

@@ -20,6 +20,15 @@ describe('replaceCrdtDoc', () => {
         replaceCrdtDoc({ id: 'root', doc });
 
         expect(automergeRepository.replaceDoc).toHaveBeenCalledTimes(1);
-        expect(automergeRepository.replaceDoc).toHaveBeenCalledWith('root', doc);
+        expect(automergeRepository.replaceDoc).toHaveBeenCalledWith('root', doc, undefined);
+    });
+
+    it('passes the snapshot owner through to the repository', () => {
+        const doc = { _state: {} } as unknown as import('@automerge/automerge').Doc<unknown>;
+        const snapshotTransaction = {};
+
+        replaceCrdtDoc({ id: 'root', doc, snapshotTransaction });
+
+        expect(automergeRepository.replaceDoc).toHaveBeenCalledWith('root', doc, snapshotTransaction);
     });
 });

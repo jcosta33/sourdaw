@@ -19,10 +19,26 @@ type SubjectModules = {
     addToRecentProjects: typeof import('../../../recentProjects/addToRecentProjects').addToRecentProjects;
     getRecentProjects: typeof import('../../../recentProjects/helpers').getRecentProjects;
     removeFromRecentProjects: typeof import('../../../recentProjects/removeFromRecentProjects').removeFromRecentProjects;
+    projectStore: typeof import('../../../../stores/projectStore').projectStore;
+    arrangementStore: typeof import('../../../../stores/arrangementStore').arrangementStore;
+    projectLoadFailureStore: typeof import('../../../../stores/projectLoadFailureStore').projectLoadFailureStore;
+    trackStore: typeof import('#/modules/Arrangement/stores').trackStore;
 };
 
 async function importSubjectModules(): Promise<SubjectModules> {
-    const [subject, storage, writeNamed, readNamed, addToRecent, recentHelpers, removeFromRecent] = await Promise.all([
+    const [
+        subject,
+        storage,
+        writeNamed,
+        readNamed,
+        addToRecent,
+        recentHelpers,
+        removeFromRecent,
+        project,
+        arrangements,
+        failure,
+        tracks,
+    ] = await Promise.all([
         import('../collectDurableOwnedAudioBufferIds'),
         import('../../../../repositories/project/storageSupport'),
         import('../../../../repositories/project/writeNamedProjectJsonByKey'),
@@ -30,6 +46,10 @@ async function importSubjectModules(): Promise<SubjectModules> {
         import('../../../recentProjects/addToRecentProjects'),
         import('../../../recentProjects/helpers'),
         import('../../../recentProjects/removeFromRecentProjects'),
+        import('../../../../stores/projectStore'),
+        import('../../../../stores/arrangementStore'),
+        import('../../../../stores/projectLoadFailureStore'),
+        import('#/modules/Arrangement/stores'),
     ]);
     return {
         collectDurableOwnedAudioBufferIds: subject.collectDurableOwnedAudioBufferIds,
@@ -39,13 +59,18 @@ async function importSubjectModules(): Promise<SubjectModules> {
         addToRecentProjects: addToRecent.addToRecentProjects,
         getRecentProjects: recentHelpers.getRecentProjects,
         removeFromRecentProjects: removeFromRecent.removeFromRecentProjects,
+        projectStore: project.projectStore,
+        arrangementStore: arrangements.arrangementStore,
+        projectLoadFailureStore: failure.projectLoadFailureStore,
+        trackStore: tracks.trackStore,
     };
 }
 
 // The enumeration must speak for actually-persisted projects, so every test
 // here writes its snapshot through the real repository path saveProject uses
 // (`writeNamedProjectJsonByKey` into real fake-indexeddb transactions) and
-// reads nothing from in-memory state.
+// reads named ownership through durable storage. The ready open project is
+// empty unless a test explicitly gives it live ownership.
 
 const PROJECT_A_CREATED_AT = 1_700_000_000_000;
 const PROJECT_B_CREATED_AT = 1_700_000_100_000;
@@ -217,6 +242,10 @@ function projectDataFixture({
 let modules: SubjectModules;
 let installation: TransactionalIndexedDbInstallation;
 
+async function collectOwnedIds(): Promise<readonly string[]> {
+    return (await modules.collectDurableOwnedAudioBufferIds()).ids;
+}
+
 function projectSnapshotForPersistence(name: string, createdAt: number, data: ProjectData): ProjectData {
     return {
         ...data,
@@ -243,7 +272,15 @@ describe('collectDurableOwnedAudioBufferIds', () => {
         window.localStorage.clear();
         installation = installTransactionalIndexedDb();
         modules = await importSubjectModules();
-    });
+        const project = modules.projectStore.value;
+        if (!project) {
+            throw new Error('Expected default project metadata');
+        }
+        modules.projectStore.set({ ...project, loading: false });
+        modules.trackStore.set({ tracks: [], selectedTrackId: null });
+        modules.arrangementStore.set({ arrangements: [], activeArrangementId: 'active' });
+        modules.projectLoadFailureStore.set(null);
+    }, 30_000);
 
     afterEach(async () => {
         await installation.dispose();
@@ -252,20 +289,83 @@ describe('collectDurableOwnedAudioBufferIds', () => {
     });
 
     it('returns an empty set when no project is persisted', async () => {
-        await expect(modules.collectDurableOwnedAudioBufferIds()).resolves.toEqual([]);
+        await expect(collectOwnedIds()).resolves.toEqual([]);
+    });
+
+    it('invalidates the local census when a pending track projection changes before its CRDT flush', async () => {
+        const census = await modules.collectDurableOwnedAudioBufferIds();
+        expect(census.isCurrent()).toBe(true);
+        modules.trackStore.set({ tracks: [], selectedTrackId: 'later-selection' });
+        expect(census.isCurrent()).toBe(false);
+    });
+
+    it('invalidates the local census when a stored arrangement changes', async () => {
+        const census = await modules.collectDurableOwnedAudioBufferIds();
+        modules.arrangementStore.set({ arrangements: [], activeArrangementId: 'replacement' });
+        expect(census.isCurrent()).toBe(false);
+    });
+
+    it('invalidates the census when CRDT content changes without replacing the owner stores or identity', async () => {
+        const crdt = await import('#/modules/CrdtDocument/useCases');
+        crdt.createCrdtDoc('owner-fence-probe');
+        const identity = crdt.captureProjectIdentity();
+        const tracks = modules.trackStore.value;
+        const arrangements = modules.arrangementStore.value;
+        const census = await modules.collectDurableOwnedAudioBufferIds();
+        crdt.mutateCrdtDoc({
+            id: 'owner-fence-probe',
+            changeFn: (doc) => {
+                doc.referenceRevision = 1;
+            },
+        });
+
+        expect(modules.trackStore.value).toBe(tracks);
+        expect(modules.arrangementStore.value).toBe(arrangements);
+        expect(crdt.captureProjectIdentity()).toBe(identity);
+        expect(census.isCurrent()).toBe(false);
+        crdt.removeCrdtDoc('owner-fence-probe');
+    });
+
+    it('refuses ownership while loading and invalidates a census from before loading', async () => {
+        const census = await modules.collectDurableOwnedAudioBufferIds();
+        const project = modules.projectStore.value;
+        if (!project) {
+            throw new Error('Expected project metadata');
+        }
+        modules.projectStore.set({ ...project, loading: true });
+        expect(census.isCurrent()).toBe(false);
+        await expect(modules.collectDurableOwnedAudioBufferIds()).rejects.toThrow(
+            'Open project audio ownership is unavailable'
+        );
+    });
+
+    it('refuses ownership after a failed load and invalidates the earlier census', async () => {
+        const census = await modules.collectDurableOwnedAudioBufferIds();
+        modules.projectLoadFailureStore.set({ projectName: 'Failed project', message: 'Document projection failed' });
+        expect(census.isCurrent()).toBe(false);
+        await expect(modules.collectDurableOwnedAudioBufferIds()).rejects.toThrow(
+            'Open project audio ownership is unavailable'
+        );
+    });
+
+    it('refuses an unknown track projection instead of treating it as unowned audio', async () => {
+        modules.trackStore.set(null);
+        await expect(modules.collectDurableOwnedAudioBufferIds()).rejects.toThrow(
+            'Open project audio ownership is unavailable'
+        );
     });
 
     it('does not treat the active project cache record as a named project', async () => {
         await modules.storageSupport.putIndexedDb(modules.storageSupport.primaryKey, '{not-json');
 
-        await expect(modules.collectDurableOwnedAudioBufferIds()).resolves.toEqual([]);
+        await expect(collectOwnedIds()).resolves.toEqual([]);
     });
 
     it('derives buffer ids from the persisted snapshots of every saved project, inactive ones included', async () => {
         await persistSavedProject('Saved A', PROJECT_A_CREATED_AT, projectDataFixture({ clips: [clip('buffer-a')] }));
         await persistSavedProject('Saved B', PROJECT_B_CREATED_AT, projectDataFixture({ clips: [clip('buffer-b')] }));
 
-        const owned = await modules.collectDurableOwnedAudioBufferIds();
+        const owned = await collectOwnedIds();
         expect([...owned].sort()).toEqual(['buffer-a', 'buffer-b']);
     });
 
@@ -294,7 +394,7 @@ describe('collectDurableOwnedAudioBufferIds', () => {
         expect(modules.getRecentProjects()).not.toContainEqual(expect.objectContaining({ key: oldestKey }));
         await expect(modules.readNamedProjectJson(oldestKey)).resolves.toBe(oldestSnapshot);
 
-        await expect(modules.collectDurableOwnedAudioBufferIds()).resolves.toContain('buffer-oldest');
+        await expect(collectOwnedIds()).resolves.toContain('buffer-oldest');
     });
 
     it('collects every current serialized reference section written by buildProjectData', async () => {
@@ -309,7 +409,7 @@ describe('collectDurableOwnedAudioBufferIds', () => {
             })
         );
 
-        const owned = await modules.collectDurableOwnedAudioBufferIds();
+        const owned = await collectOwnedIds();
         expect([...owned].sort()).toEqual([
             'buffer-active',
             'buffer-alternative',
@@ -329,15 +429,15 @@ describe('collectDurableOwnedAudioBufferIds', () => {
             PROJECT_B_CREATED_AT,
             projectDataFixture({ clips: [clip('buffer-shared')] })
         );
-        await expect(modules.collectDurableOwnedAudioBufferIds()).resolves.toEqual(['buffer-shared']);
+        await expect(collectOwnedIds()).resolves.toEqual(['buffer-shared']);
 
         modules.removeFromRecentProjects(keyA);
-        await expect(modules.collectDurableOwnedAudioBufferIds()).resolves.toEqual(['buffer-shared']);
+        await expect(collectOwnedIds()).resolves.toEqual(['buffer-shared']);
 
         modules.removeFromRecentProjects(keyB);
         await expect(modules.readNamedProjectJson(keyA)).resolves.not.toBeNull();
         await expect(modules.readNamedProjectJson(keyB)).resolves.not.toBeNull();
-        await expect(modules.collectDurableOwnedAudioBufferIds()).resolves.toEqual(['buffer-shared']);
+        await expect(collectOwnedIds()).resolves.toEqual(['buffer-shared']);
     });
 
     it('releases a project audio when its durable record is removed while the recent entry stays', async () => {
@@ -350,13 +450,13 @@ describe('collectDurableOwnedAudioBufferIds', () => {
 
         await modules.storageSupport.deleteIndexedDb(keyA);
 
-        await expect(modules.collectDurableOwnedAudioBufferIds()).resolves.toEqual([]);
+        await expect(collectOwnedIds()).resolves.toEqual([]);
     });
 
     it('skips a recents entry whose snapshot is absent', async () => {
         modules.addToRecentProjects('Never Saved', getProjectSnapshotKey(PROJECT_A_CREATED_AT));
 
-        await expect(modules.collectDurableOwnedAudioBufferIds()).resolves.toEqual([]);
+        await expect(collectOwnedIds()).resolves.toEqual([]);
     });
 
     it('rejects a legacy snapshot instead of treating it as current ownership data', async () => {

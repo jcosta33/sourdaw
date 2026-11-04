@@ -72,6 +72,7 @@ vi.mock('../agentReference/registerPreparedStemImportResources', () => ({
 }));
 
 import { AiProposalInvalidatedError } from '../../errors/AiProposalInvalidatedError';
+import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
 import { DEFAULT_AGENT_RESOURCE_LIMITS, describeAgentRunCreationRefusal } from '../../models/AgentResourceLimits';
 import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
 import { readAgentRunState } from '../../stores/agentRunStore';
@@ -329,6 +330,26 @@ describe('planPromptActions', () => {
         expect(agentRunLifecycle.get('agent-run-00000000-0000-0000-0000-000000000002')).toMatchObject({
             phase: 'cancelled',
             cancellation: { generation: 1 },
+        });
+    });
+
+    it('cancels an auto-created run when configuration changes during readonly planning', async () => {
+        const randomUuid = vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-0000-0000-000000000004');
+        const configurationChanged = new AiRuntimeConfigurationChangedError();
+        mocks.parsePromptToActions.mockRejectedValue(configurationChanged);
+
+        try {
+            await expect(planPromptActions({ prompt: 'Explain the project', profile: 'readonly-answer' })).rejects.toBe(
+                configurationChanged
+            );
+        } finally {
+            randomUuid.mockRestore();
+        }
+
+        expect(agentRunLifecycle.get('agent-run-00000000-0000-0000-0000-000000000004')).toMatchObject({
+            phase: 'cancelled',
+            cancellation: { generation: 1 },
+            errors: [expect.objectContaining({ category: 'cancellation' })],
         });
     });
 

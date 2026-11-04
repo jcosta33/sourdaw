@@ -21,6 +21,10 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    // Admission belongs to the caller; this helper imports its shape only.
+    isValidTakePlacement: vi.fn(() => {
+        throw new Error('Unexpected take placement admission in a helper lifecycle test');
+    }),
     markerStore: { set: mocks.markerStoreSet },
     trackStore: { set: mocks.trackStoreSet },
 }));

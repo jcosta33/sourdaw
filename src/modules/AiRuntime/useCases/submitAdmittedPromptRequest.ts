@@ -391,6 +391,7 @@ export async function submitAdmittedPromptRequest(
                 agentApproval: compiled.agentApproval,
                 affectedIds: [...authority.scope.targetIds],
                 protectedUnchanged: authority.scope.protectedTargetIds.map((id) => ({ id, name: id })),
+                protectionFacts: planned.result.protectionFacts,
                 matchSelectorPredicates: planned.result.matchSelectorPredicates,
                 adoptedRecipes: planned.result.adoptedRecipes,
                 measuredPreview: planned.result.measuredPreview,

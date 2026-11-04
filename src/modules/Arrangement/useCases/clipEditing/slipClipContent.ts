@@ -1,4 +1,4 @@
-import { shiftClipMidiNotes } from '#/modules/MIDI/useCases';
+import { prepareClipMidiRowCoordinateShift } from '#/modules/MIDI/useCases';
 import { resolveLoopedOffsetBeats } from '#/utils/clipLoopOrigin';
 
 import { updateClip } from '../updateClip';
@@ -8,7 +8,7 @@ import { slipWrapRowLiftBeats } from './slipWrapRowLiftBeats';
 /**
  * Slip clip content — slides internal content (audio or MIDI) within fixed boundaries.
  * Non-destructive: adjusts audioOffsetBeats (audio) or midiOffsetBeats (MIDI).
- * Note data and clip boundaries are untouched. Reports whether the write landed.
+ * Clip boundaries stay fixed; a raising MIDI wrap translates stored coordinates.
  *
  * A looped MIDI clip stores the offset's phase inside `[0, loopLength)` (the
  * same wrap the trim applies through the shared util) — a slip that crosses the
@@ -35,52 +35,61 @@ export function slipClipContent(
     clipId: string,
     type: 'audio' | 'midi',
     newOffset: number,
-    inverseRowShiftBeats?: number
+    inverseRowShiftBeats?: number,
+    rowCoordinates?: {
+        restore?: unknown;
+        refused?: boolean;
+        capture?: Extract<ReturnType<typeof prepareClipMidiRowCoordinateShift>, { status: 'prepared' }>['capture'];
+    }
 ): boolean {
-    return updateClip(clipId, (context) => {
-        if (type === 'audio') {
-            return { ...context, audioOffsetBeats: newOffset };
-        }
-        const loopEnabled = context.loopEnabled ?? false;
-        const clipDurationBeats = context.endBeat - context.startBeat;
-        const wrappedOffsetBeats = resolveLoopedOffsetBeats({
-            offsetBeats: newOffset,
-            loopEnabled,
-            clipDurationBeats,
-            configuredLoopLengthBeats: context.loopLength,
+    if (type === 'audio') {
+        return updateClip(clipId, (context) => ({ ...context, audioOffsetBeats: newOffset }));
+    }
+    const refused = new Error('The complete MIDI coordinate shift could not be applied');
+    let capture:
+        Extract<ReturnType<typeof prepareClipMidiRowCoordinateShift>, { status: 'prepared' }>['capture'] | undefined;
+    try {
+        const didWrite = updateClip(clipId, (context) => {
+            const loopEnabled = context.loopEnabled ?? false;
+            const clipDurationBeats = context.endBeat - context.startBeat;
+            const wrappedOffsetBeats = resolveLoopedOffsetBeats({
+                offsetBeats: newOffset,
+                loopEnabled,
+                clipDurationBeats,
+                configuredLoopLengthBeats: context.loopLength,
+            });
+            // Captured inverse offsets restore verbatim; fresh slips retain the
+            // existing asymmetric wrap law and lift rows only when phase rises.
+            const midiOffsetBeats = inverseRowShiftBeats !== undefined ? newOffset : wrappedOffsetBeats;
+            const beatDelta =
+                inverseRowShiftBeats ??
+                slipWrapRowLiftBeats({
+                    loopEnabled,
+                    clipDurationBeats,
+                    configuredLoopLengthBeats: context.loopLength,
+                    offsetBeats: newOffset,
+                });
+            if (!Number.isFinite(midiOffsetBeats)) {
+                throw refused;
+            }
+            const plan = prepareClipMidiRowCoordinateShift({ clipId, beatDelta, restore: rowCoordinates?.restore });
+            if (plan.status === 'refused' || !plan.apply()) {
+                throw refused;
+            }
+            capture = plan.capture;
+            return { ...context, midiOffsetBeats };
         });
-        // The recorded-inverse leg stores the captured figure verbatim: it is
-        // a restoration of the state the entry captured, not a fresh slip to
-        // re-wrap. A captured figure that is not a phase of the loop config at
-        // replay time — a legacy raw offset, or a phase a later loop-length
-        // change de-phased — would wrap to a different offset and the undo
-        // would write a state the pre-action clip never carried. The wrap
-        // stays a forward-write law: the next fresh slip wraps its own offset
-        // anyway, and every reader consumes the offset through
-        // `note.startBeat - midiOffsetBeats` relatives, never as a phase.
-        const midiOffsetBeats = inverseRowShiftBeats !== undefined ? newOffset : wrappedOffsetBeats;
-        const rowLiftBeats = slipWrapRowLiftBeats({
-            loopEnabled,
-            clipDurationBeats,
-            configuredLoopLengthBeats: context.loopLength,
-            offsetBeats: newOffset,
-        });
-        if (inverseRowShiftBeats !== undefined) {
-            // A recorded inverse is a restoration, never a fresh slip: its
-            // verbatim offset plus its recorded row shift is the whole replay
-            // — the captured state, byte-exact (#5198). Every inverse arrives
-            // keyed: new captures record `rowLiftBeats` always, zero
-            // included, and the undo seams' legacy normalizer keys the
-            // entries recorded before the field existed to the same verbatim
-            // restoration. A keyless dispatch is therefore always a fresh
-            // action, and only fresh slips take the forward wrap law below.
-            shiftClipMidiNotes(clipId, inverseRowShiftBeats);
-        } else if (rowLiftBeats !== 0) {
-            // The wrap lifted a negative figure to its positive phase; the
-            // stored rows ride the same lift. A non-zero lift is the only
-            // window-safe row shift a slip can carry.
-            shiftClipMidiNotes(clipId, rowLiftBeats);
+        if (didWrite && rowCoordinates && capture) {
+            rowCoordinates.capture = capture;
         }
-        return { ...context, midiOffsetBeats };
-    });
+        return didWrite;
+    } catch (error) {
+        if (error === refused) {
+            if (rowCoordinates) {
+                rowCoordinates.refused = true;
+            }
+            return false;
+        }
+        throw error;
+    }
 }

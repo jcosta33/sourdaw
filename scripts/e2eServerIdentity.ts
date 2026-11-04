@@ -47,7 +47,8 @@ export function resolveE2ePort(rawPort: string | undefined): number {
 }
 
 export function e2eOrigin(port: number): string {
-    return `http://localhost:${port}`;
+    // A hostname can select a separate IPv6 listener after Vite binds IPv4.
+    return `http://127.0.0.1:${port}`;
 }
 
 /** Response header carrying the serving checkout's absolute vite root. */

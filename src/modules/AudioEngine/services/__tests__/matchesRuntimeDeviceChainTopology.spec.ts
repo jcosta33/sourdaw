@@ -124,6 +124,35 @@ function createExpectedTopology(
 }
 
 describe('matchesRuntimeDeviceChainTopology', () => {
+    it.each([
+        'synth',
+        'builtin-synth',
+        'builtin-synth-strings',
+        'builtin-drum-kit',
+        'drum-kit',
+        'builtin-drum-machine-808',
+    ])('compares persistent nodes when the project also contains the note-scheduled %s family', (type) => {
+        const expected = createExpectedTopology('track-1', [
+            { id: 'note-instrument', type, parameterIds: ['level'] },
+            { id: 'eq-1', type: 'equalizer', parameterIds: ['frequency', 'gain'] },
+            { id: 'compressor-1', type: 'compressor', parameterIds: ['attack', 'ratio'] },
+        ]);
+
+        expect(matchesRuntimeDeviceChainTopology(createTrackStrip(), expected)).toBe(true);
+        expect(matchesRuntimeDeviceChainTopology(createTrackStrip('track-1', []), expected)).toBe(false);
+    });
+
+    it('keeps non-scheduled instruments and unknown device types in the required persistent topology', () => {
+        for (const type of ['fermenter', 'faust-instrument', 'external-plugin', 'unknown-device']) {
+            expect(
+                matchesRuntimeDeviceChainTopology(
+                    createTrackStrip('track-1', []),
+                    createExpectedTopology('track-1', [{ id: 'required-device', type, parameterIds: [] }])
+                )
+            ).toBe(false);
+        }
+    });
+
     it('returns true for an exact track and ordered device topology', () => {
         expect(matchesRuntimeDeviceChainTopology(createTrackStrip(), createExpectedTopology())).toBe(true);
     });

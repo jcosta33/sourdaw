@@ -3,12 +3,47 @@ import {
     type ProposalGroundingCall,
     type ProposalGroundingCommand,
     type ProposalGroundingSource,
+    type ProposalProtectionFacts,
 } from '../../models/ProposalGroundingBasis';
 import { unionProtectedObjects } from '../../transformers/unionProtectedObjects';
 
 import { proposalCommandShape } from './proposalCommandShape';
 
 type ProtectedObject = ProposalGroundingBasis['protectedUnchanged'][number];
+type ProtectedControl = NonNullable<ProposalGroundingBasis['protectedControls']>[number];
+
+/** Unions positive controls per track while retaining every independent whole-object restriction. */
+function unionProtectedControls(...groups: ReadonlyArray<readonly ProtectedControl[]>): ProtectedControl[] {
+    const byTrack = new Map<string, Set<string>>();
+    const complements: ProtectedControl[] = [];
+    for (const { trackId, operations, exceptOperations } of groups.flat()) {
+        if (exceptOperations !== undefined) {
+            // Independent restrictions remain independent: joining their exceptions would widen permission.
+            complements.push({ trackId, operations: [...operations], exceptOperations: [...exceptOperations] });
+            continue;
+        }
+        const known = byTrack.get(trackId);
+        if (known === undefined) {
+            byTrack.set(trackId, new Set(operations));
+        } else {
+            for (const operation of operations) {
+                known.add(operation);
+            }
+        }
+    }
+    return [
+        ...Array.from(byTrack, ([trackId, operations]) => ({ trackId, operations: [...operations] })),
+        ...complements,
+    ];
+}
+
+/** Immutable restrictions outlive any command-aligned grounding witness a card can carry. */
+export function unionProposalProtectionFacts(...groups: readonly ProposalProtectionFacts[]): ProposalProtectionFacts {
+    return {
+        protectedUnchanged: unionProtectedObjects(...groups.map((group) => group.protectedUnchanged)),
+        protectedControls: unionProtectedControls(...groups.map((group) => group.protectedControls)),
+    };
+}
 
 type GroundedCall = { name: string; arguments: Readonly<Record<string, unknown>> };
 
@@ -32,6 +67,7 @@ function createProposalGroundingBasis(input: {
     prompt: string;
     calls: readonly GroundedCall[];
     protectedUnchanged: readonly ProtectedObject[];
+    protectedControls: readonly ProtectedControl[];
 }): ProposalGroundingBasis {
     const calls = input.calls.map(toGroundingCall);
     return {
@@ -39,6 +75,7 @@ function createProposalGroundingBasis(input: {
         sources: [{ text: input.prompt, calls }],
         commands: calls.map((call, index) => toGroundingCommand(call, 0, index)),
         protectedUnchanged: unionProtectedObjects(input.protectedUnchanged),
+        protectedControls: unionProtectedControls(input.protectedControls),
     };
 }
 
@@ -55,6 +92,7 @@ function extendProposalGroundingBasis(input: {
     /** For each call, the previous basis command it inherits, or `null` when the refinement text grounded it. */
     inheritedCommandIndexes: ReadonlyArray<number | null>;
     protectedUnchanged: readonly ProtectedObject[];
+    protectedControls: readonly ProtectedControl[];
 }): ProposalGroundingBasis {
     const calls = input.calls.map(toGroundingCall);
     const newCalls = calls.filter((_call, index) => input.inheritedCommandIndexes[index] === null);
@@ -78,12 +116,17 @@ function extendProposalGroundingBasis(input: {
     const readSources = new Set([0, ...commands.map((command) => command.source)]);
     const keptSources = sources.flatMap((source, index) => (readSources.has(index) ? [{ source, index }] : []));
     const sourceIndexes = new Map(keptSources.map((kept, position) => [kept.index, position]));
-    return {
+    const extended: ProposalGroundingBasis = {
         rootText: input.previous.rootText,
         sources: keptSources.map((kept) => kept.source),
         commands: commands.map((command) => ({ ...command, source: sourceIndexes.get(command.source) ?? 0 })),
         protectedUnchanged: unionProtectedObjects(input.previous.protectedUnchanged, input.protectedUnchanged),
     };
+    // A basis that predates the record keeps reading its sources against the live project.
+    if (input.previous.protectedControls !== undefined) {
+        extended.protectedControls = unionProtectedControls(input.previous.protectedControls, input.protectedControls);
+    }
+    return extended;
 }
 
 /** How an ordinary card records what it was grounded in, and how a refinement of it extends that record. */

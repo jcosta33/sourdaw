@@ -9,6 +9,7 @@ export { NativeCommandOwnershipError, runCommand, type NativeTestResult } from '
 
 const SOURCE = 'crates/sourdaw-native/src/commands/engine_transport.rs';
 const PREFIX = 'commands::engine_transport::tests::';
+const BUILD_TIMEOUT_MS = 600_000;
 type TransportMutation = {
     name: string;
     replacements: ReadonlyArray<readonly [string, string]>;
@@ -48,6 +49,18 @@ const MUTATIONS: readonly TransportMutation[] = [
 ];
 
 type CaseRecord = { phase: string; spec: string; code: number | null; signal: string | null; log: string };
+type BuildRecord = {
+    phase: string;
+    sourceDigest: string;
+    deadlineMs: number;
+    durationMs: number;
+    status: 'running' | 'passed' | 'failed' | 'ownership-unconfirmed';
+    code: number | null;
+    signal: string | null;
+    failure?: string;
+    ownershipDiagnostic?: NativeTestResult['ownershipDiagnostic'];
+    log: string;
+};
 
 function digest(value: string): string {
     return createHash('sha256').update(value).digest('hex');
@@ -131,14 +144,67 @@ export function assertNativeTestResult(result: NativeTestResult, spec: string, p
     }
 }
 
+async function prepareNativeBuild(input: {
+    phase: string;
+    sourcePath: string;
+    evidencePath: string;
+    builds: BuildRecord[];
+    build: (timeoutMs: number) => Promise<NativeTestResult>;
+}): Promise<void> {
+    const record: BuildRecord = {
+        phase: input.phase,
+        sourceDigest: digest(readFileSync(input.sourcePath, 'utf8')),
+        deadlineMs: BUILD_TIMEOUT_MS,
+        durationMs: 0,
+        status: 'running',
+        code: null,
+        signal: null,
+        log: `${input.phase}-build.log`,
+    };
+    const save = () =>
+        writeFileSync(join(input.evidencePath, 'builds.json'), `${JSON.stringify(input.builds, null, 2)}\n`);
+    input.builds.push(record);
+    writeFileSync(join(input.evidencePath, record.log), '');
+    save();
+    const started = performance.now();
+    let result: NativeTestResult;
+    try {
+        result = await input.build(record.deadlineMs);
+    } catch (error) {
+        record.durationMs = performance.now() - started;
+        record.failure = error instanceof NativeCommandOwnershipError ? error.reason : 'child-command-rejected';
+        record.status = error instanceof NativeCommandOwnershipError ? 'ownership-unconfirmed' : 'failed';
+        if (error instanceof NativeCommandOwnershipError) {
+            record.ownershipDiagnostic = error.ownershipDiagnostic;
+            writeFileSync(join(input.evidencePath, record.log), error.output);
+        }
+        save();
+        throw error;
+    }
+    record.durationMs = performance.now() - started;
+    record.code = result.code;
+    record.signal = result.signal;
+    record.failure = result.failure;
+    record.ownershipDiagnostic = result.ownershipDiagnostic;
+    const passed = result.code === 0 && result.signal === null && result.failure === undefined;
+    record.status = passed ? 'passed' : 'failed';
+    writeFileSync(join(input.evidencePath, record.log), result.output);
+    save();
+    if (!passed) {
+        throw new Error(`Native compilation failed: ${input.phase}; ${JSON.stringify(record)}`);
+    }
+}
+
 /** This runner owns only the fixed transport contract; the host supplies isolated exact-head source. */
 export async function verifyTransportMutations(options: {
     sourcePath: string;
     evidencePath: string;
+    build: (timeoutMs: number) => Promise<NativeTestResult>;
     runCase: (spec: string) => Promise<NativeTestResult>;
-}): Promise<{ sourceDigest: string; restoredDigest: string; cases: CaseRecord[] }> {
+}): Promise<{ sourceDigest: string; restoredDigest: string; builds: BuildRecord[]; cases: CaseRecord[] }> {
     const original = readFileSync(options.sourcePath, 'utf8');
     const cases: CaseRecord[] = [];
+    const builds: BuildRecord[] = [];
     let ownershipFailure: NativeCommandOwnershipError | undefined;
     const restoreSource = () => {
         if (ownershipFailure !== undefined) {
@@ -159,16 +225,26 @@ export async function verifyTransportMutations(options: {
     for (const mutation of MUTATIONS) {
         mutateTransportSource(original, mutation.name);
     }
-    const run = async (phase: string, spec: string, panic?: string) => {
-        let result: NativeTestResult;
+    const runOwned = async (command: () => Promise<NativeTestResult>) => {
         try {
-            result = await options.runCase(spec);
+            return await command();
         } catch (error) {
             if (error instanceof NativeCommandOwnershipError) {
                 ownershipFailure = error;
             }
             throw error;
         }
+    };
+    const prepare = (phase: string) =>
+        prepareNativeBuild({
+            phase,
+            sourcePath: options.sourcePath,
+            evidencePath: options.evidencePath,
+            builds,
+            build: (timeoutMs) => runOwned(() => options.build(timeoutMs)),
+        });
+    const run = async (phase: string, spec: string, panic?: string) => {
+        const result = await runOwned(() => options.runCase(spec));
         const log = `${phase}-${spec}.log`;
         writeFileSync(join(options.evidencePath, log), result.output);
         cases.push({ phase, spec: `${PREFIX}${spec}`, code: result.code, signal: result.signal, log });
@@ -176,6 +252,7 @@ export async function verifyTransportMutations(options: {
         assertNativeTestResult(result, spec, panic);
     };
     try {
+        await prepare('baseline');
         for (const [spec] of allCases) {
             await run('baseline', spec);
         }
@@ -184,6 +261,7 @@ export async function verifyTransportMutations(options: {
             writeFileSync(join(options.evidencePath, `${mutation.name}.source.sha256`), `${digest(mutated)}\n`);
             writeFileSync(options.sourcePath, mutated);
             try {
+                await prepare(mutation.name);
                 for (const [spec, panic] of mutation.cases) {
                     await run(mutation.name, spec, panic);
                 }
@@ -192,6 +270,7 @@ export async function verifyTransportMutations(options: {
             }
             console.log(`native-transport-mutation ${mutation.name}: mutation-detected`);
         }
+        await prepare('restored');
         for (const [spec] of allCases) {
             await run('restored', spec);
         }
@@ -201,6 +280,7 @@ export async function verifyTransportMutations(options: {
         return {
             sourceDigest: digest(original),
             restoredDigest: digest(readFileSync(options.sourcePath, 'utf8')),
+            builds,
             cases,
         };
     } finally {
@@ -293,6 +373,15 @@ async function proveIsolatedTransport(context: {
     const proof = await verifyTransportMutations({
         sourcePath,
         evidencePath,
+        build: (timeoutMs) =>
+            runCommand(
+                'cargo',
+                ['test', '--locked', '--offline', '--package', 'sourdaw-native', '--lib', '--no-run'],
+                candidate,
+                { ...env, CARGO_TARGET_DIR: target, CARGO_NET_OFFLINE: 'true' },
+                undefined,
+                { timeoutMs }
+            ),
         runCase: (spec) =>
             runCommand(
                 'cargo',

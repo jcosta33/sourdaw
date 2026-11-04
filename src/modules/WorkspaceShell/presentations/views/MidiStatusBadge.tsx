@@ -6,6 +6,7 @@ import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 import { webMidiStore } from '#/modules/MIDI/stores';
+import { getPlatformCapabilities } from '#/utils/platformCapabilities';
 
 import { openPreferencesDialog } from '../../useCases/dialogs/openPreferencesDialog';
 
@@ -29,17 +30,29 @@ const truncateDeviceName = (name: string): string => {
 
 export const MidiStatusBadge = (): ReactElement | null => {
     const state = useStore(webMidiStore, defaultWebMidiState);
+    const midiDegradation = getPlatformCapabilities().degradations[0];
+    const selected = state.inputs.find((input) => input.id === state.selectedInputId) ?? null;
+    const connected = state.isSupported && state.enumerationError === null && selected !== null;
+    let label: string;
+    let tooltipText: string;
 
     if (!state.isSupported) {
-        return null;
+        label = 'MIDI unavailable';
+        if (state.enumerationError) {
+            tooltipText = `MIDI access failed: ${state.enumerationError}`;
+        } else {
+            tooltipText = midiDegradation?.message ?? 'MIDI access unavailable';
+        }
+    } else if (state.enumerationError) {
+        label = 'MIDI error';
+        tooltipText = `MIDI inputs could not be listed: ${state.enumerationError}`;
+    } else if (selected) {
+        label = truncateDeviceName(selected.name);
+        tooltipText = `MIDI: ${selected.name}${selected.manufacturer !== 'Unknown' ? ` (${selected.manufacturer})` : ''}`;
+    } else {
+        label = 'No MIDI';
+        tooltipText = 'No MIDI device connected';
     }
-
-    const selected = state.inputs.find((input) => input.id === state.selectedInputId) ?? null;
-    const connected = selected !== null;
-    const label = connected ? truncateDeviceName(selected.name) : 'No MIDI';
-    const tooltipText = connected
-        ? `MIDI: ${selected.name}${selected.manufacturer !== 'Unknown' ? ` (${selected.manufacturer})` : ''}`
-        : 'No MIDI device connected';
 
     return (
         <Tooltip>

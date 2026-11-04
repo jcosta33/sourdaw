@@ -38,21 +38,22 @@ const form = (pattern: RegExp, options: Partial<Omit<FormPattern, 'pattern'>> = 
     removalForm: options.removalForm ?? false,
 });
 
+/** The words a protection closes on after the object it keeps ("keep the Drum Bus unchanged"). */
+const CLOSING_PHRASE = String.raw`(?:unchanged|untouched|the\s+same|as\s+(?:it\s+)?is|as\s+proposed|the\s+way\s+it\s+is)`;
+
 /**
  * The closed protection forms, in normalized words, each stating its slot once and tried in order, so a
  * form opening with its verb is read before the forms opening with their object.
  */
 const PROTECTION_FORMS: readonly FormPattern[] = [
-    form(
-        /^(?:leave|leaving|keep|keeping|preserve|preserving)\s+(.+?)\s+(?:unchanged|untouched|the\s+same|as\s+(?:it\s+)?is|as\s+proposed|the\s+way\s+it\s+is)$/u
-    ),
+    form(new RegExp(String.raw`^(?:leave|leaving|keep|keeping|preserve|preserving)\s+(.+?)\s+${CLOSING_PHRASE}$`, 'u')),
     form(/^leaving\s+(.+?)\s+alone$/u, { leaveAlone: true }),
     form(/^leave\s+(.+?)\s+alone$/u, { leaveAlone: true, removalForm: true }),
+    form(/^leave\s+(.+?)\s+be$/u, { leaveAlone: true }),
     form(/^with\s+(.+?)\s+unchanged$/u),
-    form(/^(.+?)\s+should\s+stay\s+the\s+same$/u),
-    form(
-        /^(.+?)\s+(?:(?:stays|stay|remains|remain)\s+)?(?:untouched|unchanged|the\s+same|as\s+(?:it\s+)?is|the\s+way\s+it\s+is)$/u
-    ),
+    form(/^without\s+(?:touching|changing)\s+(.+)$/u),
+    form(/^(.+?)\s+should\s+(?:stay\s+the\s+same|not\s+change)$/u),
+    form(new RegExp(String.raw`^(.+?)\s+(?:(?:stays|stay|remains|remain)\s+)?${CLOSING_PHRASE}$`, 'u')),
     form(/^no\s+changes?\s+to\s+(.+)$/u),
     form(/^(?:keep|keeping)\s+(.+)$/u, { restOnly: true }),
 ];
@@ -214,6 +215,8 @@ function readsRestOfMix(words: string): boolean {
  * asked.
  */
 export const refinementProtectionForms = {
+    /** The closing words a protection takes after its object, as a regular expression source. */
+    closingPhrase: CLOSING_PHRASE,
     read: readProtection,
     readList: readProtectionList,
     readsRestOfMix,

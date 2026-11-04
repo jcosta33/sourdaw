@@ -157,7 +157,19 @@ const trackStripStub = {
 };
 
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRootIdentity: vi.fn<typeof import('#/modules/CrdtDocument/useCases').captureProjectRootIdentity>(
+        () => 'root-identity'
+    ),
+}));
 vi.mock('#/modules/Arrangement/stores', () => ({
+    adjustmentLayerStore: { value: null },
+    gainEnvelopeStore: { value: null },
+    getTrackEligibility: vi.fn(),
+    markerStore: { value: null },
+    vcaGroupStore: { value: null },
+    warpStateStore: { value: null },
+
     trackStore: {
         get value() {
             return trackStoreState.value;
@@ -204,7 +216,10 @@ vi.mock('../../../stores/tempoMapStore', () => ({
 }));
 vi.mock('../../../stores/timeSignatureMapStore', () => ({ timeSignatureMapStore: { value: { changes: [] } } }));
 vi.mock('#/modules/Toaster/stores', () => ({ toasterStore: { value: null } }));
-vi.mock('#/modules/Automation/stores', () => ({ automationStore: { value: null } }));
+vi.mock('#/modules/Automation/stores', () => ({
+    modulationStore: { value: null },
+    automationStore: { value: null },
+}));
 vi.mock('#/modules/Automation/useCases', () => ({
     startAutomationRecording: vi.fn(),
     stopAutomationRecording: vi.fn(),
@@ -230,8 +245,18 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
             sourceStartBeat: clip.startBeat,
         })),
     getSynthParamsForTrack: () => ({}),
+    takeOwnsRecordingRoot: vi.fn(() => true),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    analyzePitchForClip: vi.fn(),
+    ensureBusStrip: vi.fn(),
+    getEngineState: vi.fn(),
+    removeSend: vi.fn(),
+    setBusGain: vi.fn(),
+    setSend: vi.fn(),
+    unwireSidechainRoute: vi.fn(),
+    wireSidechainRoute: vi.fn(),
+
     startFaustNote: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     writeNativeBuiltinParameters: vi.fn(),
@@ -276,6 +301,8 @@ vi.mock('#/modules/Synth/useCases', () => ({
 }));
 vi.mock('#/modules/PluginHost/useCases', () => ({ isFaustInstrumentModule: () => false }));
 vi.mock('#/modules/Yeast/useCases', () => ({
+    hydrateYeastCrdtProjection: vi.fn(),
+
     processYeastMidi: vi.fn(),
     getYeastSchedulingLookahead: () => ({ earlyBeats: 0, lateBeats: 0 }),
 }));

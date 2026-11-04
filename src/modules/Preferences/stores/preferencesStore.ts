@@ -9,6 +9,7 @@ import {
     PREFERENCES_SCHEMA_VERSION,
     defaultPreferences,
     isAutoSaveIntervalMs,
+    normalizeElasticTransientSensitivity,
     normalizeUiScale,
     type Preferences,
 } from '../models/Preferences';
@@ -56,6 +57,7 @@ const PREFERENCES_SCHEMA: { [K in keyof Preferences]: (value: unknown) => boolea
     voiceCommandKey: (value) => typeof value === 'string',
     theme: isOneOf('dark', 'light'),
     uiScale: (value) => normalizeUiScale(value) === value,
+    elasticTransientSensitivity: (value) => normalizeElasticTransientSensitivity(value) === value,
     panelPlacementSidebar: isOneOf('left', 'right'),
     panelPlacementInspector: isOneOf('left', 'right'),
     panelPlacementChat: isOneOf('left', 'right'),

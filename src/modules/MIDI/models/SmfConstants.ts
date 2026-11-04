@@ -26,6 +26,9 @@ export const SMF_META_END_OF_TRACK = 0x2f;
 /** Meta-event type: set tempo (microseconds per quarter note). */
 export const SMF_META_SET_TEMPO = 0x51;
 
+/** Meta-event type: time signature (all four SMF payload bytes). */
+export const SMF_META_TIME_SIGNATURE = 0x58;
+
 /** Filename extension a downloaded MIDI file carries. */
 export const MIDI_FILE_EXTENSION = '.mid';
 

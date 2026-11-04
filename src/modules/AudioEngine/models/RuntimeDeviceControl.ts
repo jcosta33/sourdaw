@@ -3,6 +3,8 @@
  * cannot use a native AudioParam. This is runtime state, not project truth.
  */
 
+const MAX_ID_LENGTH = 128;
+
 /**
  * The one command this protocol carries: set a non-AudioParam control's value.
  * Declared once so the node senders, the compiling validator, and the worklet
@@ -10,6 +12,10 @@
  * ignored by every receiver.
  */
 export const SET_FALLBACK_PARAM_COMMAND = 'set-fallback-param';
+
+export function isRuntimeDeviceControlId(value: unknown): value is string {
+    return typeof value === 'string' && value.length > 0 && value.length <= MAX_ID_LENGTH;
+}
 
 export type RuntimeDeviceControl = Readonly<{
     schemaVersion: 1;

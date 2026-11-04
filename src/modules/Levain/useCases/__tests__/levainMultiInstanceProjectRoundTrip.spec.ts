@@ -1,5 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+await vi.hoisted(async () => {
+    const { createMockAudioContext, createMockAudioNode } = await import('#/helpers/__tests__/audioContext.mock');
+    // Device edits initialize real strips before the project is reopened.
+    vi.stubGlobal('AudioContext', createMockAudioContext);
+    vi.stubGlobal('AudioWorkletNode', function MockAudioWorkletNode(this: object) {
+        Object.assign(this, createMockAudioNode('audio-worklet'));
+    });
+});
+
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     clearRuntimeCachedAudioBuffers: vi.fn(),
@@ -29,6 +38,7 @@ import { createControlledLockManager } from '#/infra/testing/createControlledLoc
 import { installTransactionalIndexedDb } from '#/infra/testing/installTransactionalIndexedDb';
 import { persistDeviceParam, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, resetActionReplayAuthority } from '#/modules/Command/useCases';
 import { registerCrdtStorageRuntime, removeCrdtDoc, resetCrdtProjectAuthority } from '#/modules/CrdtDocument/useCases';
@@ -64,6 +74,7 @@ describe('two Levain patches across a named-project reopen', () => {
     let frameCallbacks: FrameRequestCallback[];
 
     beforeEach(async () => {
+        audioEngine.resetGraph();
         vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         frameCallbacks = [];
         vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
@@ -96,6 +107,7 @@ describe('two Levain patches across a named-project reopen', () => {
     });
 
     afterEach(async () => {
+        audioEngine.resetGraph();
         stopPersistence?.();
         clearUndoHistory();
         resetActionReplayAuthority();

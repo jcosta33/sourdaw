@@ -37,14 +37,24 @@ test.describe('Proof Build imager/exciter knobs — keyboard response', () => {
 
         // The panel mounts at desk depth 1 (Play). Drop to depth 3 (Build)
         // where the Imager and Exciter knobs render.
-        await page.getByRole('button', { name: 'Build Modules' }).click();
-        await expect(page.getByRole('slider', { name: /Imager .* width/i }).first()).toBeVisible({
+        await page
+            .getByRole('group', { name: 'Effect control detail' })
+            .getByRole('button', { name: 'build', exact: true })
+            .click();
+        await expect(
+            page
+                .getByRole('region', { name: 'Build controls', exact: true })
+                .getByRole('slider', { name: /Imager .* width/i })
+                .first()
+        ).toBeVisible({
             timeout: 15_000,
         });
     });
 
     test('ArrowUp raises the Imager Low-Mid width knob aria-valuenow', async ({ page }) => {
-        const width = page.getByRole('slider', { name: 'Imager Low-Mid width' });
+        const width = page
+            .getByRole('region', { name: 'Build controls', exact: true })
+            .getByRole('slider', { name: 'Imager Low-Mid width' });
         await width.focus();
 
         const before = Number(await width.getAttribute('aria-valuenow'));
@@ -56,7 +66,9 @@ test.describe('Proof Build imager/exciter knobs — keyboard response', () => {
     });
 
     test('ArrowUp raises the Exciter Hi-Mid drive knob aria-valuenow', async ({ page }) => {
-        const drive = page.getByRole('slider', { name: 'Exciter Hi-Mid drive' });
+        const drive = page
+            .getByRole('region', { name: 'Build controls', exact: true })
+            .getByRole('slider', { name: 'Exciter Hi-Mid drive' });
         await drive.focus();
 
         const before = Number(await drive.getAttribute('aria-valuenow'));

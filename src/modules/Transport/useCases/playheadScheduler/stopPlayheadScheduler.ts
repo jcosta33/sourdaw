@@ -8,7 +8,7 @@ import {
 import { stopAutomationRecording } from '#/modules/Automation/useCases';
 
 import { captureGestureBeat } from '../../stores/captureGestureBeat';
-import { playheadClockRef } from '../../stores/playheadClockRef';
+import { playheadClockRef, releasePlayheadClockHold } from '../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { forgetHeldNoteExpression } from '../scheduling/forgetHeldNoteExpression';
 import { releaseStoredControllers } from '../scheduling/releaseStoredControllers';
@@ -18,13 +18,14 @@ import { finalizeAutomaticRecording } from '../transportControls/finalizeAutomat
 import { schedulerSession, stopActiveSources } from './schedulerSession';
 
 export function stopPlayheadScheduler(): void {
-    schedulerSession.generation += 1;
     // The transport boundary the recorded automation pass must be committed
     // through: where the audible transport actually stands at this stop. Read
     // BEFORE any teardown resets the clock — every caller (stop, pause, seek)
     // reaches here while the position is still live, and each of them assigns
     // the next position only after this returns.
     const boundaryBeat = captureGestureBeat();
+    releasePlayheadClockHold(schedulerSession.generation);
+    schedulerSession.generation += 1;
     stopAutomationRecording(boundaryBeat);
     if (schedulerSession.worker) {
         schedulerSession.worker.postMessage({ type: 'stop' });

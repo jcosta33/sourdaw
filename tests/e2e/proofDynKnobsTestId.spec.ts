@@ -38,16 +38,24 @@ test.describe('Proof Build dynamics band knobs — keyboard response', () => {
 
         // The panel mounts at desk depth 1 (Play). Drop to depth 3 (Build)
         // where the multiband Dynamics section renders.
-        await page.getByRole('button', { name: 'Build Modules' }).click();
+        await page
+            .getByRole('group', { name: 'Effect control detail' })
+            .getByRole('button', { name: 'build', exact: true })
+            .click();
 
         // Gate on the section itself before asserting knob behaviour.
         await expect(
-            page.getByRole('button', { name: 'Dynamics module' })
+            page
+                .getByRole('region', { name: 'Build controls', exact: true })
+                .getByRole('button', { name: 'Dynamics module' })
         ).toBeVisible({ timeout: 15_000 });
     });
 
     test('ArrowUp raises a Dynamics band threshold slider', async ({ page }) => {
-        const threshold = page.getByRole('slider', { name: /Dynamics .* threshold/i }).first();
+        const threshold = page
+            .getByRole('region', { name: 'Build controls', exact: true })
+            .getByRole('slider', { name: /Dynamics .* threshold/i })
+            .first();
         await expect(threshold).toBeVisible();
         await threshold.focus();
 
@@ -60,7 +68,10 @@ test.describe('Proof Build dynamics band knobs — keyboard response', () => {
     });
 
     test('ArrowUp raises a Dynamics band ratio slider', async ({ page }) => {
-        const ratio = page.getByRole('slider', { name: /Dynamics .* ratio/i }).first();
+        const ratio = page
+            .getByRole('region', { name: 'Build controls', exact: true })
+            .getByRole('slider', { name: /Dynamics .* ratio/i })
+            .first();
         await expect(ratio).toBeVisible();
         await ratio.focus();
 

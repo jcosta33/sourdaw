@@ -24,6 +24,22 @@ decision must follow the producer's provenance, not the continued presence of on
   The old review may bind its publication, but it may authorize delivery only while the latest
   independent review is that same APPROVED review ID and no threads are unresolved. Cover a later
   change request, comment, dismissal, and different approval ID; retain the current-approval control.
+- Exercise a retired or legacy-only mutation command through its real trusted entry. Supply an
+  otherwise writable modern thread and sentinel authentication and GitHub ports; require refusal
+  before either port is used. An old pull-request number, a bare author `Done`, or a missing bundle
+  artifact must never restore author-side thread resolution.
+
+## Escape: PR #4411 left the author resolver callable for modern findings
+
+PR #4411 introduced author repair records and independent reviewer confirmation while retaining
+`review:resolve` for legacy roots. The retained resolver checked the PR, thread, OPEN state and
+current head, but never established legacy eligibility. Its existing tests exercised that resolver
+as a normal author mutation, so a modern reviewer finding still accepted author `Done` and resolution.
+The missing probe runs the actual trusted CLI entry with a modern OPEN/current-head finding and
+requires zero authentication, GitHub reads, replies and resolutions. Restoring the old implementation
+must make it fail. The retained evidence does not establish the historical review's exact stance
+or reviewer tier. Preserve historical repair-record readers separately from
+retired mutation authority.
 
 ## Review lesson: PR #5158 needed a later-review authority probe
 

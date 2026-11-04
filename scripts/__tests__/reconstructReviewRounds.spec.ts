@@ -43,6 +43,12 @@ const draws: ReviewDraw[] = [
     { stance: 'test-validity', reviewerModel: 'review-model', tier: 'standard', outcome: 'clean' },
 ];
 
+const findingsDraws: ReviewDraw[] = [
+    { stance: 'correctness', reviewerModel: 'review-model', tier: 'strongest', outcome: 'findings' },
+    draws[1]!,
+];
+const findingSources = [{ stance: 'correctness', reviewerModel: 'review-model' }];
+
 function repairRecord(rootCommentId: number, commit: string): ReviewRepairRecord {
     return {
         format: 'repair-v1',
@@ -479,9 +485,9 @@ describe('shadow comparison', () => {
         const { canonical } = buildReviewDossier({
             plan,
             persisted: undefined,
-            draws,
+            draws: comments.length === 0 ? draws : findingsDraws,
             evidence: [],
-            comments,
+            comments: comments.map((comment) => ({ ...comment, sources: findingSources })),
             recommendation: comments.length === 0 ? 'approve' : 'request-changes',
         });
         const bound = appendReviewDossierEvents(parseReviewDossier(JSON.parse(canonical)), [
@@ -633,9 +639,9 @@ describe('shadow comparison', () => {
         const { canonical } = buildReviewDossier({
             plan,
             persisted: undefined,
-            draws,
+            draws: findingsDraws,
             evidence: [],
-            comments: [{ path: 'scripts/target.ts', line: 5, side: 'RIGHT' }],
+            comments: [{ path: 'scripts/target.ts', line: 5, side: 'RIGHT', sources: findingSources }],
             recommendation: 'request-changes',
         });
         const bound = appendReviewDossierEvents(parseReviewDossier(JSON.parse(canonical)), [

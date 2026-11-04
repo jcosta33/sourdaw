@@ -24,7 +24,8 @@ Owns user interface presentations, canvas/DOM interaction renderers, piano roll 
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-pnpm vitest run src/modules/TimelineEditor
-pnpm deps:validate
+pnpm test:run <changed-spec>
 ```

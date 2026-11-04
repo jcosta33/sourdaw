@@ -3,6 +3,7 @@ import {
     AGENT_COMMAND_LEDGER_SCHEMA_VERSION,
     AGENT_COMMAND_LEDGER_UNCOVERED_CATEGORIES,
     AGENT_COMMAND_MINIMUM_WRITE_SET_RULE,
+    AGENT_COMMAND_READ_ONLY_LEDGER,
     assertPacketMatchesClosure,
     type AgentCommandLedgerCategory,
     type AgentCommandLedgerClosure,
@@ -26,6 +27,11 @@ type AgentCommandLedgerEntryDto = {
 type AgentCommandLedgerDto = {
     schemaVersion: number;
     entries: readonly AgentCommandLedgerEntryDto[];
+    /** Schema-1 values can predate read discovery; the live publisher below always includes it. */
+    readOnlyEntries?: readonly ((typeof AGENT_COMMAND_READ_ONLY_LEDGER)[number] & {
+        minimumWriteSet: false;
+        previewExecution: 'not-applicable';
+    })[];
     uncoveredCategories: readonly { category: AgentCommandLedgerCategory; packet: string; reason: string }[];
 };
 
@@ -56,6 +62,8 @@ function readPreviewExecution(operationId: string): AgentCommandLedgerEntryDto['
  * `getAppActionPreviewExecution`, so it reflects the handlers registered at call time, not a
  * static property of the ledger entry — the same operationId can answer differently across calls
  * if the caller registers or clears handler maps in between.
+ * The additive `readOnlyEntries` collection describes application reads separately, preserving
+ * the version-1 executable-command census and granting neither write nor preview authority.
  */
 export function getAgentCommandLedger(): AgentCommandLedgerDto {
     return {
@@ -64,6 +72,11 @@ export function getAgentCommandLedger(): AgentCommandLedgerDto {
             ...entry,
             minimumWriteSet: isMinimumWriteSet(entry.operationId),
             previewExecution: readPreviewExecution(entry.operationId),
+        })),
+        readOnlyEntries: AGENT_COMMAND_READ_ONLY_LEDGER.map((entry) => ({
+            ...entry,
+            minimumWriteSet: false,
+            previewExecution: 'not-applicable',
         })),
         uncoveredCategories: AGENT_COMMAND_LEDGER_UNCOVERED_CATEGORIES,
     };

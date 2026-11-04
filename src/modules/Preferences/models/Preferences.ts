@@ -74,12 +74,20 @@ export const PREFERENCES_SCHEMA_VERSION = 3;
 export const UI_SCALE_MIN = 0.5;
 export const UI_SCALE_MAX = 2;
 export const DEFAULT_UI_SCALE = 1;
+export const DEFAULT_ELASTIC_TRANSIENT_SENSITIVITY = 0.5;
 
 export function normalizeUiScale(value: unknown): number {
     if (typeof value !== 'number' || !Number.isFinite(value) || value < UI_SCALE_MIN || value > UI_SCALE_MAX) {
         return DEFAULT_UI_SCALE;
     }
     return value;
+}
+
+export function normalizeElasticTransientSensitivity(value: unknown): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return DEFAULT_ELASTIC_TRANSIENT_SENSITIVITY;
+    }
+    return Math.max(0, Math.min(1, value));
 }
 
 export type Preferences = {
@@ -96,6 +104,7 @@ export type Preferences = {
     voiceCommandKey: string;
     theme: 'dark' | 'light';
     uiScale: number;
+    elasticTransientSensitivity: number;
     panelPlacementSidebar: 'left' | 'right';
     panelPlacementInspector: 'left' | 'right';
     panelPlacementChat: 'left' | 'right';
@@ -125,6 +134,7 @@ export const defaultPreferences: Preferences = {
     voiceCommandKey: 'v',
     theme: 'dark',
     uiScale: DEFAULT_UI_SCALE,
+    elasticTransientSensitivity: DEFAULT_ELASTIC_TRANSIENT_SENSITIVITY,
     panelPlacementSidebar: 'left',
     panelPlacementInspector: 'right',
     panelPlacementChat: 'right',

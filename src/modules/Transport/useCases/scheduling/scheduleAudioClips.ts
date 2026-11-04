@@ -67,7 +67,8 @@ export function scheduleAudioClips(
     scheduledAudioClipsSet: Set<string>,
     scheduledFrozenTracks: Set<string>,
     activeAudioSources: AudioBufferSourceNode[],
-    transport: TransportState
+    transport: TransportState,
+    initialSchedulingAnchor?: number
 ): void {
     const tracks = trackStore.value?.tracks;
     if (!tracks) {
@@ -141,7 +142,8 @@ export function scheduleAudioClips(
                     accumulatedPosition,
                     activeAudioSources,
                     transport.tempo,
-                    floorsToWindowStart ? fromBeat : null
+                    floorsToWindowStart ? fromBeat : null,
+                    initialSchedulingAnchor
                 );
                 if (scheduled) {
                     scheduledFrozenTracks.add(frozenKey);
@@ -222,7 +224,7 @@ export function scheduleAudioClips(
             // rate the audio itself was rendered at.
             function beatToAudioTime(beat: number): number {
                 return (
-                    getCurrentTime() +
+                    (initialSchedulingAnchor ?? getCurrentTime()) +
                     secondsBetweenBeats(changes, accumulatedPosition, beat, transport.tempo) +
                     compensation
                 );
@@ -414,8 +416,11 @@ export function scheduleAudioClips(
                     // of the source's own start, the source begins there
                     // instead, holding the window's content.
                     let floorStartTime = segmentStartTime;
+                    if (initialSchedulingAnchor !== undefined) {
+                        floorStartTime = Math.max(floorStartTime, initialSchedulingAnchor + compensation);
+                    }
                     if (floorsToWindowStart && fromBeat > segmentStartBeat) {
-                        floorStartTime = beatToAudioTime(fromBeat);
+                        floorStartTime = Math.max(floorStartTime, beatToAudioTime(fromBeat));
                     }
                     const audibleStartTime = Math.max(soundStartTime, floorStartTime);
 

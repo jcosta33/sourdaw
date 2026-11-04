@@ -3,6 +3,7 @@
 
 export { updatePreferences } from './updatePreferences';
 export { resetPreferences } from './resetPreferences';
+export { onSoloModePreferenceApplied } from './onSoloModePreferenceApplied';
 export { setTrackHeight } from './setTrackHeight';
 export { setTimelineMinimapHeight } from './setTimelineMinimapHeight';
 export { gridSnapBeats } from './gridSnapBeats';

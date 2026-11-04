@@ -38,7 +38,10 @@ type HandlerConfig<ActionType extends AppAction['type']> = {
     materializeCommandArgumentsAt?: 'admission';
     validateMaterializedCommandArguments?: (payload: unknown) => boolean;
     validateSessionActionArguments?: (payload: unknown) => boolean;
-    prepareAbort?: (action: Extract<AppAction, { type: ActionType }>) => () => void | Promise<void>;
+    prepareAbort?: (
+        action: Extract<AppAction, { type: ActionType }>,
+        context?: HandlerValidationContext
+    ) => () => void | Promise<void>;
     /** See `ActionHandlerCommon.afterRedoReplay`; runs when a redo replays the entry this inverse inverts. */
     afterRedoReplay?: (action: Extract<AppAction, { type: ActionType }>) => void;
     isNoop?: (action: Extract<AppAction, { type: ActionType }>) => boolean;

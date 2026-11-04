@@ -15,6 +15,9 @@ import { nativeLiveAutomationWriter } from './nativeLiveAutomationWriterState';
  * pump still out on the bridge answer into a pass that no longer exists.
  */
 export function disarmNativeLiveAutomationWriter(): void {
+    for (const dispose of nativeLiveAutomationWriter.pass?.inputs.observers ?? []) {
+        dispose();
+    }
     nativeLiveAutomationWriter.epoch += 1;
     nativeLiveAutomationWriter.pass = null;
     // A re-read is owed by one pass, and this ends it. Left standing, the next

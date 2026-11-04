@@ -72,15 +72,15 @@ vi.mock('../../../engine/ProofNode', () => ({
     createProofNode: creators.createProofNode,
 }));
 vi.mock('../../../engine/ProofChamberNode', () => ({
-    isProofChamberDevice: (t: string) => t === 'proofChamber',
+    isProofChamberDevice: (t: string) => t === 'dutch-oven',
     createProofChamberNode: creators.createProofChamberNode,
 }));
 vi.mock('../../../engine/ScoringNode', () => ({
-    isScoringDevice: (t: string) => t === 'scoring',
+    isScoringDevice: (t: string) => t === 'native-scoring',
     createScoringNode: creators.createScoringNode,
 }));
 vi.mock('../../../engine/GrandBouleNode', () => ({
-    isGrandBouleDevice: (t: string) => t === 'grandBoule',
+    isGrandBouleDevice: (t: string) => t === 'grand-boule',
     createGrandBouleNode: creators.createGrandBouleNode,
 }));
 vi.mock('../../../engine/CrustNode', () => ({
@@ -250,9 +250,9 @@ describe('createNativeDspStrategy factory dispatch', () => {
         ['bacteria', 'createBacteriaNode'],
         ['grinder', 'createGrinderNode'],
         ['proof', 'createProofNode'],
-        ['proofChamber', 'createProofChamberNode'],
-        ['scoring', 'createScoringNode'],
-        ['grandBoule', 'createGrandBouleNode'],
+        ['dutch-oven', 'createProofChamberNode'],
+        ['native-scoring', 'createScoringNode'],
+        ['grand-boule', 'createGrandBouleNode'],
         ['knead', 'createKneadNode'],
     ] as const)('dispatches %s to the matching node creator', async (type, fnName) => {
         for (const [, fn] of Object.entries(creators)) {
@@ -312,6 +312,50 @@ describe('createNativeDspStrategy factory dispatch', () => {
         expect(setParam).toHaveBeenCalledWith('mix', 0.7);
     });
 
+    it('does not replay saved Proof A/B but keeps runtime A/B control available', async () => {
+        const setParam = vi.fn();
+        const seededProof = { workletNode: {} as AudioWorkletNode, ready: Promise.resolve({}), setParam };
+        vi.mocked(creators.createProofNode).mockResolvedValueOnce(seededProof);
+
+        const strategy = await createNativeDspStrategy(ctx, {
+            id: 'd-proof',
+            name: 'Proof',
+            type: 'proof',
+            bypassed: false,
+            parameterValues: { ab_bypass: 1, lim_ceiling: -6, input_gain: 3 },
+        });
+
+        expect(setParam).toHaveBeenCalledWith('lim_ceiling', -6);
+        expect(setParam).toHaveBeenCalledWith('input_gain', 3);
+        expect(setParam).not.toHaveBeenCalledWith('ab_bypass', 1);
+        expect(setParam.mock.calls).toEqual([
+            ['lim_ceiling', -6],
+            ['input_gain', 3],
+        ]);
+
+        strategy.setParam('ab_bypass', 1);
+        expect(setParam).toHaveBeenLastCalledWith('ab_bypass', 1);
+    });
+
+    it('preserves other devices saved parameter records including an A/B-named entry', async () => {
+        const setParam = vi.fn();
+        creators.createFermenterNode.mockResolvedValueOnce(make_dsp_node({ setParam }));
+
+        await createNativeDspStrategy(ctx, {
+            id: 'd-fermenter',
+            name: 'Fermenter',
+            type: 'fermenter',
+            bypassed: false,
+            parameterValues: { ab_bypass: 1, gain: 0.3, activeLayer: 2 },
+        });
+
+        expect(setParam.mock.calls).toEqual([
+            ['activeLayer', 2],
+            ['ab_bypass', 1],
+            ['gain', 0.3],
+        ]);
+    });
+
     it('seeds a grinder record neuralEnabled before engineMode whatever order the record was drawn in', async () => {
         // Both names write NeuralCapture's single engine_mode; replaying the
         // record in draw order let the boolean simplification overwrite the
@@ -328,6 +372,64 @@ describe('createNativeDspStrategy factory dispatch', () => {
             ['engineMode', 1],
             ['outputGain', 0],
         ]);
+    });
+
+    it('binds offline Grinder controls to the captured device and finite numeric keys', async () => {
+        const setParam = vi.fn();
+        const seededGrinder = {
+            workletNode: {} as AudioWorkletNode,
+            ready: Promise.resolve({}),
+            setParam,
+        };
+        creators.createGrinderNode.mockResolvedValueOnce(seededGrinder);
+        const device: Parameters<typeof createNativeDspStrategy>[1] = {
+            id: 'captured-grinder',
+            name: 'Grinder',
+            type: 'grinder',
+            bypassed: false,
+            parameterValues: {
+                engineMode: 1,
+                neuralEnabled: 1,
+                neuralCustomOutputTrim: 0.2,
+                invalid: Number.NaN,
+            },
+        };
+
+        await createNativeDspStrategy(ctx, device);
+
+        expect(creators.createGrinderNode).toHaveBeenLastCalledWith(ctx, undefined, undefined, {
+            trackId: 'offline-grinder-track',
+            deviceId: 'captured-grinder',
+            deviceType: 'grinder',
+            parameterIds: ['engineMode', 'neuralEnabled', 'neuralCustomOutputTrim'],
+        });
+        expect(setParam.mock.calls.slice(0, 3)).toEqual([
+            ['neuralEnabled', 1],
+            ['engineMode', 1],
+            ['neuralCustomOutputTrim', 0.2],
+        ]);
+    });
+
+    it.each([
+        ['gluten', 'createGlutenNode'],
+        ['crust', 'createCrustNode'],
+        ['bacteria', 'createBacteriaNode'],
+        ['proof', 'createProofNode'],
+        ['dutch-oven', 'createProofChamberNode'],
+        ['native-scoring', 'createScoringNode'],
+        ['knead', 'createKneadNode'],
+    ] as const)('keeps the %s factory on its context-only constructor', async (type, creator) => {
+        const device: Parameters<typeof createNativeDspStrategy>[1] = {
+            id: `offline-${type}`,
+            name: type,
+            type,
+            bypassed: false,
+            parameterValues: {},
+        };
+
+        await createNativeDspStrategy(ctx, device);
+
+        expect(creators[creator]).toHaveBeenLastCalledWith(ctx);
     });
 
     it('seeds a crust record style before algorithm so the exact pick lands last', async () => {
@@ -372,7 +474,7 @@ describe('createNativeDspStrategy factory dispatch', () => {
     it('turns an offline GrandBoule processor fault into a rejected strategy signal', async () => {
         creators.createGrandBouleNode.mockClear();
         const strategy = await createNativeDspStrategy(ctx, {
-            type: 'grandBoule',
+            type: 'grand-boule',
             parameterValues: {},
         } as never);
         const onFault = creators.createGrandBouleNode.mock.calls[0]?.[2];

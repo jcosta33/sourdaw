@@ -18,8 +18,10 @@
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-cargo test --package proof-chamber
+pnpm cargo:test --package proof-chamber <filter>
 pnpm wasm:proof-chamber
 pnpm wasm:verify
 ```

@@ -2,10 +2,12 @@ import { captureProjectRevision, settlePendingProjectWritesAndCaptureRevision } 
 import { canonicalJson } from '#/utils/canonicalDigest';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
+import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { type AgentRunCreationRefusalReason, describeAgentRunCreationRefusal } from '../models/AgentResourceLimits';
 import { getCreativeSelectionSnapshot } from '../models/CreativeInterpretation';
 import { type PlannedIntentResult } from '../models/IntentResult';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
+import { type PlanningProfile, guardReadonlyPlanningResult } from '../models/PlanningProfile';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
 import { type ThreadContext } from '../models/ThreadContext';
 
@@ -31,6 +33,7 @@ type PlanPromptActionsInput = {
     onProviderAttempt?: (input: ProviderAttemptAdmission) => ProviderAttemptAdmissionResult;
     onLocalWorkAttempt?: (input: { analysisCount: number; downloadBytes: number; storageBytes: number }) => boolean;
     providerPlanning?: 'enabled' | 'disabled';
+    profile?: PlanningProfile;
     /** The chat thread's state before this request; a request from outside a thread passes none. */
     thread?: ThreadContext | null;
 };
@@ -187,6 +190,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
         }
         await preparedStemImportCleanup.discardBestEffort(stemImportScope.actionSeed.stems);
     };
+    const profileOptions = input.profile === undefined ? {} : { profile: input.profile };
     let result;
     try {
         result = await parsePromptToActions({
@@ -200,7 +204,11 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
             providerPlanning: input.providerPlanning,
             onMeasurementAttempt,
             thread: input.thread,
+            ...profileOptions,
         });
+        if (input.profile === 'readonly-answer') {
+            result = guardReadonlyPlanningResult(result);
+        }
         const initialCreativeAuthority = result.creativeAuthority ?? null;
         const rejectionEvidence = result.rejectionEvidence;
         const correctableValidationFailure = isCorrectableRejection(result.rejectionReason);
@@ -278,9 +286,13 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                 providerPlanning: input.providerPlanning,
                 onMeasurementAttempt,
                 thread: input.thread,
+                ...profileOptions,
             });
         }
-        if (result.preparationRequest === 'stem-import') {
+        if (input.profile === 'readonly-answer') {
+            result = guardReadonlyPlanningResult(result);
+        }
+        if (input.profile !== 'readonly-answer' && result.preparationRequest === 'stem-import') {
             const preparedStemImport = await prepareStemImport(input.signal, input.onLocalWorkAttempt);
             if (preparedStemImport.status === 'cancelled') {
                 await settleAutoCreatedRun('completed');
@@ -316,6 +328,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                 providerPlanning: input.providerPlanning,
                 onMeasurementAttempt,
                 thread: input.thread,
+                ...profileOptions,
             });
         }
     } catch (error) {
@@ -325,7 +338,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
         let category: 'conflict' | 'cancellation' | 'provider' = 'provider';
         if (error instanceof AiProposalInvalidatedError) {
             category = 'conflict';
-        } else if (input.signal?.aborted) {
+        } else if (input.signal?.aborted || isAiRuntimeConfigurationChangedError(error)) {
             category = 'cancellation';
         }
         agentRunLifecycle.recordError({
@@ -339,7 +352,11 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
             }),
             terminal: category !== 'cancellation',
         });
-        await settleAutoCreatedRun('failed');
+        if (category === 'cancellation') {
+            await cancelAutoCreatedRun();
+        } else {
+            await settleAutoCreatedRun('failed');
+        }
         input.signal?.removeEventListener('abort', onAbort);
         throw error;
     }
@@ -347,7 +364,8 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
         await discardStemImportScope();
     }
 
-    const wholeProjectVibeMixScope = getWholeProjectVibeMixScope(context, projectRevision);
+    const wholeProjectVibeMixScope =
+        input.profile === 'readonly-answer' ? undefined : getWholeProjectVibeMixScope(context, projectRevision);
     const wholeProjectVibeMixAction = result.actions.find((action) => action.type === 'automateTrackGainRange');
     if (wholeProjectVibeMixScope && wholeProjectVibeMixAction) {
         result.wholeProjectVibeMixPlan = {

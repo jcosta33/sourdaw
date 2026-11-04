@@ -12,6 +12,7 @@ export type { UndoStoreState } from './undo-store-facade';
  * The label-only `undoStore` above is the UI projection. */
 export { undoStore as undoHistoryStore } from './undoStore';
 export type { UndoStoreState as UndoHistoryStoreState } from './undoStore';
+export { undoTreeStore } from './undoTree';
 
 export { registerHandlerMap, getHandlerMap, clearHandlerRegistry } from './handlerRegistry';
 export {

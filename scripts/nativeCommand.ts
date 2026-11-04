@@ -17,13 +17,15 @@ export type NativeTestResult = {
 export class NativeCommandOwnershipError extends Error {
     readonly reason: string;
     readonly ownershipDiagnostic?: OwnershipDiagnostic;
+    readonly output: string;
 
-    constructor(reason: string, cause?: unknown, ownershipDiagnostic?: OwnershipDiagnostic) {
+    constructor(reason: string, cause?: unknown, ownershipDiagnostic?: OwnershipDiagnostic, output = '') {
         const details = ownershipDiagnostic === undefined ? '' : `; ${JSON.stringify(ownershipDiagnostic)}`;
         super(`Native command ownership unconfirmed after SIGKILL: ${reason}${details}`, { cause });
         this.name = 'NativeCommandOwnershipError';
         this.reason = reason;
         this.ownershipDiagnostic = ownershipDiagnostic;
+        this.output = output;
     }
 }
 
@@ -139,11 +141,12 @@ function ownedProcessGroup(pid: number | undefined, processPort: Pick<NodeJS.Pro
         alive,
         terminate,
         result,
-        ownershipError: (reason: string) =>
+        ownershipError: (reason: string, output: string) =>
             new NativeCommandOwnershipError(
                 reason,
                 diagnostic === undefined ? provisional?.cause : cause,
-                diagnostic ?? provisional?.diagnostic
+                diagnostic ?? provisional?.diagnostic,
+                output
             ),
     };
 }
@@ -153,10 +156,11 @@ type NativeCommandObservation = {
     ports: NativeCommandPorts;
     resolve: (result: NativeTestResult) => void;
     reject: (error: NativeCommandOwnershipError) => void;
+    timeoutMs: number;
 };
 
 function observeNativeCommand(input: NativeCommandObservation): void {
-    const { child, ports, resolve, reject } = input;
+    const { child, ports, resolve, reject, timeoutMs } = input;
     const group = ownedProcessGroup(child.pid, ports.process);
     const buffers: Buffer[] = [];
     let size = 0;
@@ -217,7 +221,7 @@ function observeNativeCommand(input: NativeCommandObservation): void {
                 }
                 settled = true;
                 cleanup();
-                reject(group.ownershipError(failure ?? reason));
+                reject(group.ownershipError(failure ?? reason, Buffer.concat(buffers).toString('utf8')));
             }, 5_000);
         }, 5_000);
         waitForGroup();
@@ -225,7 +229,7 @@ function observeNativeCommand(input: NativeCommandObservation): void {
     const interrupt = () => stop('interrupted');
     ports.process.once('SIGINT', interrupt);
     ports.process.once('SIGTERM', interrupt);
-    const timeout = ports.setTimeout(() => stop('timeout'), 180_000);
+    const timeout = ports.setTimeout(() => stop('timeout'), timeoutMs);
     const collect = (buffer: Buffer) => {
         if (settled) {
             return;
@@ -257,10 +261,15 @@ export function runCommand(
     args: string[],
     cwd: string,
     env: NodeJS.ProcessEnv,
-    ports: NativeCommandPorts = { spawn: spawnNativeCommand, setTimeout, clearTimeout, process }
+    ports: NativeCommandPorts = { spawn: spawnNativeCommand, setTimeout, clearTimeout, process },
+    options: { timeoutMs?: number } = {}
 ): Promise<NativeTestResult> {
+    const timeoutMs = options.timeoutMs ?? 180_000;
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2_147_483_647) {
+        throw new Error('Native command timeout must be a positive timer-safe integer');
+    }
     return new Promise((resolve, reject) => {
         const child = ports.spawn(command, args, { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
-        observeNativeCommand({ child, ports, resolve, reject });
+        observeNativeCommand({ child, ports, resolve, reject, timeoutMs });
     });
 }

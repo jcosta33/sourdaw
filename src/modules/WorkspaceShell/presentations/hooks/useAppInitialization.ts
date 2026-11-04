@@ -30,10 +30,14 @@ import {
 } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { syncSoloModePreference } from '../../useCases/togglePanel/panelToggles/syncSoloModePreference';
+
 const FIRST_LOAD_HINT_KEY = 'wd:first-load-hint-shown';
 const FIRST_LOAD_HINT_DELAY_MS = 3000;
 
 export const useAppInitialization = (): void => {
+    useEffect(() => syncSoloModePreference(), []);
+
     useEffect(() => {
         // syncKneadToEngine, syncTransportMapsToNativeSession,
         // rearmNativeSessionAfterEngineRetire, syncNativeTimelineSamples,

@@ -16,7 +16,7 @@ import {
     type MeasurementRun,
 } from '../models/MeasurementBudget';
 import { type ProjectContext, type ProjectContextSection } from '../models/ProjectContext';
-import { type RetainedCommand } from '../models/RetainedCompilation';
+import { type RetainedCommand, type RetainedCompilation } from '../models/RetainedCompilation';
 import { type ToolCallResult } from '../models/ToolCallResult';
 import { readAgentResourceLimits } from '../stores/agentResourceLimitsStore';
 
@@ -46,10 +46,12 @@ type ExecutePreviewMeasurementInput = {
     /** The run's admission of this measurement's renders and reductions; absent outside a run, which spends no budget. */
     admit?: MeasurementAdmitter;
     parsed: ParsedArguments;
-    proposal: Readonly<Record<string, unknown>>;
+    source: Extract<ParsedArguments['subject'], { kind: 'preview' }>;
     /** The run's read model, request and authority, which the proposal is compiled and grounded against. */
     preview: {
         context: ProjectContext;
+        /** Snapshot of successful receipt-admitted compilations from earlier turns only. */
+        retainedCompilations?: readonly RetainedCompilation[];
         prompt: string;
         runId: string;
         /** The creative authority admitted so far in the run; read when the call executes. */
@@ -169,6 +171,16 @@ function artifactOf(target: RenderedTarget) {
     return { route: target.route, artifact: target.artifact };
 }
 
+function measuredPreviewWithSource(
+    base: Omit<MeasuredPreview, 'recipeSource'>,
+    recipeSource: MeasuredPreview['recipeSource']
+): MeasuredPreview {
+    if (recipeSource === undefined) {
+        return base;
+    }
+    return { ...base, recipeSource };
+}
+
 function successRead(
     input: ExecutePreviewMeasurementInput,
     rendered: RenderedPreview,
@@ -177,6 +189,7 @@ function successRead(
         beats: MeasuredPreview['range'];
         commands: readonly RetainedCommand[];
         batchContentHash: string;
+        recipeSource?: MeasuredPreview['recipeSource'];
         targets: MeasuredPreview['targets'];
         retentionWarnings: readonly string[];
     }
@@ -184,13 +197,16 @@ function successRead(
     const { parsed } = input;
     const { commands, batchContentHash, targets, retentionWarnings } = measured;
     const { startBeat, endBeat, sectionId } = measured.beats;
-    const measuredPreview: MeasuredPreview = {
-        scope: parsed.scope,
-        range: { startBeat, endBeat, sectionId },
-        targets,
-        batchContentHash,
-        revision: input.projectRevision,
-    };
+    const measuredPreview: MeasuredPreview = measuredPreviewWithSource(
+        {
+            scope: parsed.scope,
+            range: { startBeat, endBeat, sectionId },
+            targets,
+            batchContentHash,
+            revision: input.projectRevision,
+        },
+        measured.recipeSource
+    );
     const receipt: ApplicationToolReceipt = {
         schema: 'sourdaw.application-tool-receipt',
         schemaVersion: 1,
@@ -229,11 +245,40 @@ function successRead(
     return { receipt, commands, measuredPreview };
 }
 
+function sourceRecipe(input: ExecutePreviewMeasurementInput) {
+    const source = input.source;
+    if (!('recipeCallId' in source)) {
+        return undefined;
+    }
+    return input.preview.retainedCompilations?.find(
+        (entry): entry is Extract<RetainedCompilation, { kind: 'recipe' }> =>
+            entry.callId === source.recipeCallId && entry.kind === 'recipe' && entry.revision === input.projectRevision
+    );
+}
+
 function compileProposal(input: ExecutePreviewMeasurementInput) {
     try {
+        const recipe = sourceRecipe(input);
+        if ('recipeCallId' in input.source && recipe === undefined) {
+            return {
+                status: 'rejected' as const,
+                reason: 'The recipeCallId must name a successful earlier-turn recipe expansion admitted in this run at the measurement revision.',
+            };
+        }
+        let source: Parameters<typeof compilePreviewMeasurementProposal>[0]['source'] | null;
+        if ('proposal' in input.source) {
+            source = { proposal: input.source.proposal };
+        } else if (recipe !== undefined) {
+            source = { recipe };
+        } else {
+            source = null;
+        }
+        if (source === null) {
+            return { status: 'rejected' as const, reason: 'The preview has no admitted source.' };
+        }
         return compilePreviewMeasurementProposal({
             callId: input.callId,
-            proposal: input.proposal,
+            source,
             context: input.preview.context,
             prompt: input.preview.prompt,
             revision: input.projectRevision,
@@ -283,7 +328,12 @@ function renderedRenders(rendered: RenderedPreview) {
 async function renderAndReduce(
     input: ExecutePreviewMeasurementInput,
     preview: Extract<ReturnType<typeof previewVersionedCommandBatchEnvelope>, { status: 'previewed' }>,
-    measured: { beats: MeasuredPreview['range']; commands: readonly RetainedCommand[]; batchContentHash: string },
+    measured: {
+        beats: MeasuredPreview['range'];
+        commands: readonly RetainedCommand[];
+        batchContentHash: string;
+        recipeSource?: MeasuredPreview['recipeSource'];
+    },
     run: MeasurementRun
 ): Promise<AnalysisMeasureRead> {
     const rendered = await renderPreview(input, preview, measured.beats, run);
@@ -318,7 +368,7 @@ async function renderAndReduce(
 }
 
 /**
- * Measure a proposed semantic command list without applying it: compile and ground it as a
+ * Measure a semantic list or retained recipe without applying it: compile and ground it as a
  * proposal would be, preview the resulting batch in an isolated workspace, render the scope over
  * the same range for the live project and for that preview, and reduce both to figures and
  * per-metric deltas. The commands measured are returned for the loop to retain under this call id,
@@ -355,6 +405,7 @@ export async function executePreviewMeasurement(input: ExecutePreviewMeasurement
             {
                 beats: resolved.beats,
                 commands: compiled.commands,
+                recipeSource: compiled.recipeSource,
                 batchContentHash: digestCommandBatchContent(compiled.envelope),
             },
             started.run

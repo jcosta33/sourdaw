@@ -1,6 +1,12 @@
-import { trackStore } from '#/modules/Arrangement/stores';
-import { rearmInputMonitoring } from '#/modules/Arrangement/useCases';
-import { resetAudioGraph, stopAllScheduled, suspendAutoInputMonitoring } from '#/modules/AudioEngine/useCases';
+import { sanitizeTrackSnapshot } from '#/modules/Arrangement/stores';
+import {
+    rearmCommittedTrackInputMonitoring,
+    reconcileAutoInputMonitoring,
+    resetAudioGraph,
+    stopAllScheduled,
+    suspendAutoInputMonitoring,
+} from '#/modules/AudioEngine/useCases';
+import { captureProjectRootIdentity, DOC_PREFIX_ROOT, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
 import { retractEveryCrumbsEngineAttachment } from '#/modules/Crumbs/useCases';
 import { resetMidiState } from '#/modules/MIDI/useCases';
 import { resetExternalPluginRuntimeForGraphRebuild } from '#/modules/PluginHost/useCases';
@@ -14,7 +20,7 @@ import { startPlayheadScheduler } from './playheadScheduler/startPlayheadSchedul
 import { stopPlayheadScheduler } from './playheadScheduler/stopPlayheadScheduler';
 import { panicYeastRuntime } from './transportControls/panicYeastRuntime';
 
-async function rebuildRuntimeGraph(wasPlaying: boolean, resumePosition: number): Promise<void> {
+async function rebuildRuntimeGraph(wasPlaying: boolean, resumePosition: number, rootIdentity: string): Promise<void> {
     if (wasPlaying) {
         stopPlayheadScheduler();
         stopAllScheduled();
@@ -24,7 +30,13 @@ async function rebuildRuntimeGraph(wasPlaying: boolean, resumePosition: number):
         await panicYeastRuntime();
     }
 
+    if (captureProjectRootIdentity() !== rootIdentity) {
+        return;
+    }
     await resetExternalPluginRuntimeForGraphRebuild();
+    if (captureProjectRootIdentity() !== rootIdentity) {
+        return;
+    }
     // The repair does not release the engine: the reset above unloads the
     // hosted plugin runtime and nothing else, so every Crumbs instance the
     // engine holds stays attached across the rebuild. The mirror is emptied
@@ -45,11 +57,22 @@ async function rebuildRuntimeGraph(wasPlaying: boolean, resumePosition: number):
         throw new Error(`Runtime graph repair failed: ${pluginFailures.map(({ reason }) => reason).join('; ')}`);
     }
 
-    // The reset above released every monitor capture, so a track whose
-    // persisted intent is 'on' must start its monitor again against the strip
-    // the rebuild just produced. The shared law re-arms only 'on' tracks and
-    // settles every start so an individual refusal cannot fail the repair.
-    await rearmInputMonitoring(trackStore.value?.tracks ?? []);
+    if (captureProjectRootIdentity() !== rootIdentity) {
+        return;
+    }
+    // A pending version restore can project Off without changing committed On.
+    // Rearm from fresh project truth; the AudioEngine owner keeps permission and
+    // attachment fenced to that root even when a projection is not yet present.
+    const tracks = sanitizeTrackSnapshot(getCrdtDoc(DOC_PREFIX_ROOT)?.tracks).tracks;
+    reconcileAutoInputMonitoring();
+    await Promise.allSettled(
+        tracks
+            .filter((track) => track.inputMonitoring === 'on')
+            .map((track) => rearmCommittedTrackInputMonitoring(track.id))
+    );
+    if (captureProjectRootIdentity() !== rootIdentity) {
+        return;
+    }
 
     if (wasPlaying) {
         updateTransportState({ isPlaying: true, playheadPosition: resumePosition });
@@ -67,6 +90,7 @@ export async function repairRuntimeGraphFromProject(): Promise<void> {
     if (transport.isRecording) {
         throw new Error('Runtime graph repair is unavailable while recording');
     }
+    const rootIdentity = captureProjectRootIdentity();
     const wasPlaying = transport.isPlaying;
     const resumePosition = wasPlaying ? playheadPositionRef.current : transport.playheadPosition;
 
@@ -77,7 +101,7 @@ export async function repairRuntimeGraphFromProject(): Promise<void> {
     // the owner settle once, against the state the repair leaves behind.
     const resumeAutoInputMonitoring = suspendAutoInputMonitoring();
     try {
-        await rebuildRuntimeGraph(wasPlaying, resumePosition);
+        await rebuildRuntimeGraph(wasPlaying, resumePosition, rootIdentity);
     } finally {
         resumeAutoInputMonitoring();
     }

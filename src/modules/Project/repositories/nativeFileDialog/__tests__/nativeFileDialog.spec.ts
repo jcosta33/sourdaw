@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { isDesktopRuntime, readFileBytes } from '#/utils/desktopBridge';
 
@@ -16,7 +16,13 @@ vi.mock('../openViaNative', () => ({
 
 describe('nativeFileDialog', () => {
     beforeEach(() => {
-        vi.clearAllMocks();
+        vi.resetAllMocks();
+        vi.mocked(readFileBytes).mockResolvedValue(new Uint8Array([1, 2, 3]));
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
     });
 
     describe('pickFiles', () => {
@@ -45,6 +51,17 @@ describe('nativeFileDialog', () => {
             expect(readFileBytes).toHaveBeenCalledWith({ path: 'C:\\Users\\jose\\Samples\\kick.wav' });
         });
 
+        it('returns browser fallback Files without reading their names as paths', async () => {
+            vi.mocked(isDesktopRuntime).mockReturnValue(true);
+            const file = new File(['selected content'], 'fallback.wav');
+            vi.mocked(openViaNative).mockResolvedValue({ kind: 'browser-files', files: [file] });
+
+            const result = await pickFiles();
+
+            expect(result?.[0]).toBe(file);
+            expect(readFileBytes).not.toHaveBeenCalled();
+        });
+
         it('should reject native read failures after a native selection without opening a browser picker', async () => {
             vi.mocked(isDesktopRuntime).mockReturnValue(true);
             vi.mocked(openViaNative).mockResolvedValue(['/path/test.wav']);
@@ -59,24 +76,19 @@ describe('nativeFileDialog', () => {
             }
         });
 
-        it('should use browser fallback in the browser', () => {
+        it('should use browser fallback in the browser', async () => {
             vi.mocked(isDesktopRuntime).mockReturnValue(false);
-            const mockInput = {
-                click: vi.fn(),
-                addEventListener: vi.fn(),
-                type: '',
-            };
-            const createElementSpy = vi
-                .spyOn(document, 'createElement')
-                // @ts-expect-error the Electron DOM augmentation adds a createElement("webview") overload that returns WebviewTag
-                .mockReturnValue(mockInput as unknown as HTMLInputElement);
+            const click = vi.spyOn(HTMLInputElement.prototype, 'click').mockImplementation(function (
+                this: HTMLInputElement
+            ) {
+                this.dispatchEvent(new Event('cancel'));
+            });
 
-            try {
-                void pickFiles();
-                expect(mockInput.click).toHaveBeenCalled();
-            } finally {
-                createElementSpy.mockRestore();
-            }
+            await expect(pickFiles()).resolves.toBeNull();
+
+            expect(click).toHaveBeenCalledOnce();
+            expect(openViaNative).not.toHaveBeenCalled();
+            expect(readFileBytes).not.toHaveBeenCalled();
         });
 
         it('should resolve to null when focus returns without a change or cancel event', async () => {
