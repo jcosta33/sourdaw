@@ -1211,10 +1211,13 @@ describe('project directory save and cold Recent open', () => {
 
         const background = runtime.project.saveProject();
         expect(folder.selectionCalls).toBe(0);
-        await expect(background).resolves.toBe(false);
+        // A browser folder runtime with no offered or bound folder still saves the named project.
+        await expect(background).resolves.toBe(true);
+        expect(runtime.projectStores.projectStore.value?.dirty).toBe(false);
 
+        runtime.projectStores.projectStore.set({ ...runtime.projectStores.projectStore.value!, dirty: true });
         const { saveProjectBeforeReplacement } = await import('../saveProjectBeforeReplacement');
-        await expect(saveProjectBeforeReplacement()).resolves.toBe('stay');
+        await expect(saveProjectBeforeReplacement()).resolves.toBe('save-closed-takes');
         expect(folder.selectionCalls).toBe(0);
     }, 70_000);
 

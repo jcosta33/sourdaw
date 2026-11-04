@@ -119,6 +119,28 @@ async function captureRejectedPluginStates(): Promise<readonly string[]> {
     }
 }
 
+async function selectProjectDirectoryRoot(
+    projectId: string,
+    selectedRoot: Promise<FileSystemDirectoryHandle> | null
+): Promise<FileSystemDirectoryHandle | null> {
+    if (selectedRoot) {
+        try {
+            return await selectedRoot;
+        } catch (error) {
+            // A dismissed or unavailable picker is not a failed save: the named project save below
+            // is exactly what Save wrote before project folders existed, and a folder already bound
+            // to this project is still its folder of record.
+            logger.warn('[saveProject] Project folder was not selected:', error);
+        }
+    }
+    try {
+        return await loadProjectDirectoryRoot(projectId);
+    } catch (error) {
+        logger.warn('[saveProject] Project folder bookmark could not be read:', error);
+        return null;
+    }
+}
+
 async function commitProjectDirectory({
     projectId,
     createdAt,
@@ -136,9 +158,10 @@ async function commitProjectDirectory({
     audioDurabilityReceipt: AudioDurabilityReceipt;
     assertSnapshotContinuation: (receipt?: AudioDurabilityReceipt) => void;
 }): Promise<void> {
-    const root = selectedRoot ? await selectedRoot : await loadProjectDirectoryRoot(projectId);
+    const root = await selectProjectDirectoryRoot(projectId, selectedRoot);
     if (!root) {
-        throw new Error('[saveProject] Choose a project folder with Save before autosave can commit');
+        // No folder was offered, chosen or bound, so the named save is the whole save.
+        return;
     }
     assertSnapshotContinuation(audioDurabilityReceipt);
     const directory = await openProjectDirectory(root, projectId, true);

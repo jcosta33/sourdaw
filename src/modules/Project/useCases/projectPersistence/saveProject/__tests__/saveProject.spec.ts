@@ -249,6 +249,40 @@ describe('saveProject', () => {
         );
     });
 
+    it('clears the dirty state when an explicit save cannot open a folder picker', async () => {
+        const picker = vi.fn(() => Promise.reject(new DOMException('The user aborted a request.', 'AbortError')));
+        Object.defineProperty(window, 'showDirectoryPicker', { configurable: true, value: picker });
+        try {
+            await expect(saveProject({ requestFolderSelection: true })).resolves.toBe(true);
+
+            expect(picker).toHaveBeenCalledTimes(1);
+            expect(mocks.persistCrdtProject).toHaveBeenCalledTimes(1);
+            expect(mocks.writeNamedProjectJsonByKey).toHaveBeenCalledTimes(1);
+            expect(mocks.projectStoreSet).toHaveBeenLastCalledWith(expect.objectContaining({ dirty: false }));
+            expect(mocks.notifyUser).not.toHaveBeenCalled();
+        } finally {
+            Reflect.deleteProperty(window, 'showDirectoryPicker');
+        }
+    });
+
+    it('saves the named project when no folder is offered or bound', async () => {
+        const picker = vi.fn(() => {
+            throw new Error('Unexpected folder picker for a background save');
+        });
+        Object.defineProperty(window, 'showDirectoryPicker', { configurable: true, value: picker });
+        try {
+            await expect(saveProject()).resolves.toBe(true);
+
+            expect(picker).not.toHaveBeenCalled();
+            expect(mocks.persistCrdtProject).toHaveBeenCalledTimes(1);
+            expect(mocks.writeNamedProjectJsonByKey).toHaveBeenCalledTimes(1);
+            expect(mocks.projectStoreSet).toHaveBeenLastCalledWith(expect.objectContaining({ dirty: false }));
+            expect(mocks.notifyUser).not.toHaveBeenCalled();
+        } finally {
+            Reflect.deleteProperty(window, 'showDirectoryPicker');
+        }
+    });
+
     it('finishes identity migration before building a versioned snapshot', async () => {
         let finishMigration: (() => void) | undefined;
         mocks.migrateActiveProjectIdentity.mockReturnValue(
