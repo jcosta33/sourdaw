@@ -6,7 +6,7 @@ import { syncArrangement } from '../../demoProjects/demoUtils/syncArrangement';
 import { projectLoadEpoch } from '../../projectPersistence/helpers/runProjectLoadTransaction';
 
 import { commitVcaGroups } from './commitVcaGroups';
-import { reportDeviceReadiness } from './reportDeviceReadiness';
+import { reportDeviceReadinessWhenSettled } from './reportDeviceReadiness';
 
 import type { Track } from '#/modules/Arrangement/stores';
 import type { VcaGroupHandle } from './createVca';
@@ -43,5 +43,10 @@ export async function finalizeTemplate(input: FinalizeTemplateInput): Promise<vo
 
     const originatingEpoch = projectLoadEpoch.current;
     const { waitForDevices } = await import('#/modules/AudioEngine/useCases');
-    reportDeviceReadiness(await waitForDevices(), originatingEpoch);
+    // Content readiness continues behind the workspace: the project and its
+    // graph are committed above, and a progressing Levain admission refreshes
+    // the wait's own inactivity deadline for as long as it uploads. Holding this
+    // action for that would keep the launch overlay up with it, so report the
+    // cohort's failures when it settles instead.
+    reportDeviceReadinessWhenSettled(waitForDevices(), originatingEpoch);
 }

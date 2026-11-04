@@ -113,7 +113,7 @@ describe('finalizeTemplate', () => {
         vi.clearAllMocks();
     });
 
-    it('commits sidechain truth before yielding for device readiness', async () => {
+    it('commits sidechain truth before asking for device readiness', async () => {
         const readiness = Promise.withResolvers<{ status: 'ready'; devices: [] }>();
         mocks.waitForDevices.mockReturnValue(readiness.promise);
         const trigger = createTrack({ id: 'trigger', name: 'Trigger', kind: 'audio' });
@@ -151,6 +151,28 @@ describe('finalizeTemplate', () => {
         expect(readinessOrder).toBeGreaterThan(stripConstructionOrder);
     });
 
+    it('resolves the template while device readiness is still in flight', async () => {
+        const readiness = Promise.withResolvers<{
+            status: 'failed';
+            devices: [{ deviceId: string; status: 'failed'; stage: 'content' }];
+        }>();
+        mocks.waitForDevices.mockReturnValue(readiness.promise);
+
+        await expect(finalizeTemplate({ tracks: [] })).resolves.toBeUndefined();
+
+        expect(mocks.ensureTrackStrips).toHaveBeenCalledOnce();
+        expect(mocks.waitForDevices).toHaveBeenCalledOnce();
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+
+        readiness.resolve({
+            status: 'failed',
+            devices: [{ deviceId: 'levain-1', status: 'failed', stage: 'content' }],
+        });
+        await vi.waitFor(() =>
+            expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('levain-1'), 'warning')
+        );
+    });
+
     it('keeps committed template truth and reports failed devices without throwing', async () => {
         mocks.whenProjectIdentityTransitionDependenciesConfigured.mockResolvedValue(undefined);
         const currentProject = runProjectLoadTransaction();
@@ -166,7 +188,9 @@ describe('finalizeTemplate', () => {
 
         expect(mocks.setTrackState).toHaveBeenCalledOnce();
         expect(mocks.ensureTrackStrips).toHaveBeenCalledOnce();
-        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('levain-1'), 'warning');
+        await vi.waitFor(() =>
+            expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('levain-1'), 'warning')
+        );
     });
 
     it('does not report an obsolete cancelled cohort over the current project', async () => {
@@ -217,11 +241,19 @@ describe('finalizeTemplate', () => {
             expect(templateA.isCurrent()).toBe(false);
             expect(projectB.isCurrent()).toBe(true);
 
-            readiness.resolve(failedReadiness);
-            await completionA;
+            // The readiness report is detached from template finalization, so
+            // observe the callback reaching the epoch guard before asserting it
+            // stayed silent; `await completionA` no longer waits for it.
+            const isCurrent = vi.spyOn(projectLoadEpoch, 'isCurrent');
+            try {
+                readiness.resolve(failedReadiness);
+                await vi.waitFor(() => expect(isCurrent).toHaveBeenCalled());
 
-            expect(projectBEnteredRuntimeTransition).toBe(false);
-            expect(mocks.notifyUser).not.toHaveBeenCalled();
+                expect(projectBEnteredRuntimeTransition).toBe(false);
+                expect(mocks.notifyUser).not.toHaveBeenCalled();
+            } finally {
+                isCurrent.mockRestore();
+            }
         } finally {
             readiness.resolve(failedReadiness);
             releaseTemplateA();

@@ -33,7 +33,7 @@ import {
 import { projectStore } from '../../../stores/projectStore';
 import { createFreshProjectMetadata } from '../../createFreshProjectMetadata';
 import { projectLoadEpoch } from '../../projectPersistence/helpers/runProjectLoadTransaction';
-import { reportDeviceReadiness } from '../../projectTemplates/templateHelpers/reportDeviceReadiness';
+import { reportDeviceReadinessWhenSettled } from '../../projectTemplates/templateHelpers/reportDeviceReadiness';
 import { applyPreset } from '../demoUtils/applyPreset';
 import { createMidiClip } from '../demoUtils/createMidiClip';
 import { note } from '../demoUtils/note';
@@ -2343,5 +2343,8 @@ export async function demo5_NebulaDrift(): Promise<void> {
 
     ensureTrackStrips();
     const originatingEpoch = projectLoadEpoch.current;
-    reportDeviceReadiness(await waitForDevices(), originatingEpoch);
+    // Same rule as finalizeTemplate: report readiness behind the workspace, so a
+    // progressing Levain admission cannot hold this app action (and the launch
+    // overlay) open until the bank commits.
+    reportDeviceReadinessWhenSettled(waitForDevices(), originatingEpoch);
 }
