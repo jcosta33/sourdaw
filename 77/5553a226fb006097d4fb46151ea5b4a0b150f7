@@ -1,0 +1,18 @@
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.projectDirectory.integration.spec.ts
+  h_beb54bf43b47b7 1214-1216,1218,1220
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.spec.ts
+  h_beb54bf43b47b7 252-285
+src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts
+  h_beb54bf43b47b7 122-143,161,163-164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "775553a226fb006097d4fb46151ea5b4a0b150f7",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
