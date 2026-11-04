@@ -388,8 +388,8 @@ async function undoImpl(stepOverConflicts: boolean): Promise<UndoResult> {
     // edit that caused the conflict; the wedge above those runs is deliberate —
     // #2881's own limit, and between a blocked history and a clobbered edit,
     // blocked is recoverable. Anchor-targeted history sweeps
-    // (`undoToIndex`, via `stepOverConflicts: false`) never step: their target
-    // row names the entry the user clicked to KEEP, so a step there would undo
+    // (`moveHistoryToStep`, via `stepOverConflicts: false`) never step: their
+    // target names the entry the user clicked to KEEP, so a step there would undo
     // the row the sweep was pointed at. #2878 mirrors this for redo; see #3641
     // for the callback arc.
     for (;;) {
