@@ -1,0 +1,138 @@
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_0314bb17e5dee3::t_007f0f1a7abaed 278,317,321,458,470,479-488,590,610,749
+  s_0314bb17e5dee3::t_afa4817f62a457 283-286
+  s_0314bb17e5dee3::t_0301466b32ca72 31
+  s_0314bb17e5dee3::t_60532194f5d7a9 753
+  s_0314bb17e5dee3::t_a14fd1ff3c191b 345,360,395,608,755-761,764-765,768,771-775,778,782,784
+  s_0314bb17e5dee3::t_c52107032c3ec5 436,438-439
+  s_0314bb17e5dee3::t_81dc8d58460fd7 336-339
+  s_0314bb17e5dee3::t_25cabf7d37c6b0 221
+  s_0314bb17e5dee3::t_b74e4149468a3e 65-66,68-111,113-119,122-124,126-130,132,134-135,247,277,469,748
+  s_0314bb17e5dee3::t_790c6790be2cf4 136-196,199,201
+  s_0314bb17e5dee3::t_4f5df493768011 125
+  s_0314bb17e5dee3::t_3a378d7e90b7df 807
+  s_0314bb17e5dee3::t_b503c9642e120e 251-276,282,402,419,422,429,468,553,589,747
+  s_0314bb17e5dee3::t_5d9d8c63f9bb7d 280
+  s_0314bb17e5dee3::t_7593b2c40b2bf1 222-224
+  s_0314bb17e5dee3::t_3cdfb2595a6665 197-198
+  s_0314bb17e5dee3::t_591d43bd93e94d 200
+  s_0314bb17e5dee3::t_ae7ff55ece54d6 202-204,218-220
+  s_0314bb17e5dee3::t_6bf15975abaf09 225-227,244-246
+  s_0314bb17e5dee3::t_13952b16507d3a 248-250
+  s_0314bb17e5dee3::t_a867ee4fc5b4c3 279
+  s_0314bb17e5dee3::t_02c9170a0b34a2 281
+  s_0314bb17e5dee3::t_9ad281ea4db5b9 287-289,314-316
+  s_0314bb17e5dee3::t_007d1d88b19f0b 318-320
+  s_0314bb17e5dee3::t_d9cfc4af71a73c 322-324,333-335
+  s_0314bb17e5dee3::t_5cfa3d35096283 340-344
+  s_0314bb17e5dee3::t_1100dd03a0c4e8 346-348,357-359
+  s_0314bb17e5dee3::t_65fa59df031c35 361-363,392-394
+  s_0314bb17e5dee3::t_149b3a72c40d5c 396-401
+  s_0314bb17e5dee3::t_a052e08bbe63fb 403-405,416-418
+  s_0314bb17e5dee3::t_34389cc47fc62a 420-421
+  s_0314bb17e5dee3::t_5446ec1c2c7b70 423-428
+  s_0314bb17e5dee3::t_efacc75bda3199 430-435
+  s_0314bb17e5dee3::t_3f67b4cd29b2e6 437
+  s_0314bb17e5dee3::t_f8a0b65ef392da 440-442
+  s_0314bb17e5dee3::t_7fa8674ec530fd 459-460,465-467
+  s_0314bb17e5dee3::t_b94cc80968aefd 489-491,550-552
+  s_0314bb17e5dee3::t_322518ab892a1a 554-556,586-588
+  s_0314bb17e5dee3::t_1c8cef5e8ee405 591-593,605-607
+  s_0314bb17e5dee3::t_f30841d5ee1cfe 609
+  s_0314bb17e5dee3::t_a8c8189dc380c5 611-613
+  s_0314bb17e5dee3::t_a74216fc00cb8b 744-746
+  s_0314bb17e5dee3::t_cc0920a5adb9f8 750-752
+  s_0314bb17e5dee3::t_2318c82a728b3c 806
+  s_0314bb17e5dee3::t_f658911d84d17d 808
+  s_0314bb17e5dee3::t_fb26bb30c2f615 205-217,228-243,290-313,325-332,349-356,364-391,406-415,443-457,492-549,557-585,594-604,731-743
+  s_0314bb17e5dee3::t_69786c7fa4b342 67
+  s_0314bb17e5dee3::t_bb9391bc6fc156 461-464,471-477
+  s_0314bb17e5dee3::t_e008ce662a3ee3 478
+  s_f0cac04ac8b85d::t_f17f8568a0f964 112,120-121,131,133,676-681,712-729,754,769,774,806,808
+  s_e4e2e0fffb8fe4::t_25793823ca5c38 32
+  s_ba80576e6f5cb5::t_936eac6a33c2af 28,33
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClipsCompBoundaryStall.spec.ts
+  s_0314bb17e5dee3::t_ac7c23f707fbcf 3,5-6,24-29,38-48,60-61,70,86,94-98,100-105,124,128-131,134-138,141-146,155-175,179,183-185,199-210,212-224,227-238,240-255,257-279,286-329,331-347,349,351-353
+  s_0314bb17e5dee3::t_affb2e65ea965c 211
+  s_0314bb17e5dee3::t_772f48b9ccc240 226
+  s_0314bb17e5dee3::t_c2967037b47d72 149-154
+  s_0314bb17e5dee3::t_d8928e566265e2 350
+  s_0314bb17e5dee3::t_a711d790129b3f 348,516
+  s_0314bb17e5dee3::t_64858d226a41d3 1-2,4,7-10,15-23,30-37,49,52,54-59,62-69,71-85,87-93,99,106-123,125-127,132-133,139-140,147-148,176-178,180,182,186-198,225,256,517
+  s_0314bb17e5dee3::t_5eecf86cb74508 280-285
+  s_0314bb17e5dee3::t_d52cf9e5141ea2 330
+  s_0314bb17e5dee3::t_cdb699f8fac977 239
+  s_0314bb17e5dee3::t_496cd65618362e 354-439,484-515
+  s_0314bb17e5dee3::t_b871b4478f59cd 471-475,478,479-483
+  s_f0cac04ac8b85d::t_2822c447b183d1 50-51,53,181,440-470,476-477
+  s_0314bb17e5dee3::t_f0af26ddf13c8b 11-14
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClips.spec.ts
+  s_0314bb17e5dee3::t_659bdf04c9ace5 505-509,511,513
+.agents/skills/review-stances/audio-timing-format-laws.md
+  s_0314bb17e5dee3::t_a58b288ec0658b 3-4
+  s_0314bb17e5dee3::t_8eb4ae66c95439 69-81
+  s_0314bb17e5dee3::t_7cfc97f8623ccf 5-8
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/recordingCapturePlacement.integration.spec.ts
+  s_0314bb17e5dee3::t_2c9e8db92a3b01 77,137-138,693,695-701,703-712
+  s_824babd2b68d13::t_ec599487c6ee67 713-722
+src/modules/Transport/useCases/playheadScheduler/cutSource.ts
+  s_e4e2e0fffb8fe4::t_b211e690ed4284 2-21
+  s_ba80576e6f5cb5::t_c9be9ff3425ae3 1
+src/modules/Transport/useCases/playheadScheduler/schedulerSession.ts
+  s_e4e2e0fffb8fe4::t_7577fa7a371fcd 2-4,39,48
+  s_ba80576e6f5cb5::t_d26d4ca79f3f89 1
+src/modules/Transport/useCases/scheduling/scheduleFrozenTrack.ts
+  s_ba80576e6f5cb5::t_a31ee210b18e92 10
+src/modules/Transport/models/SourceWithFade.ts
+  s_ba80576e6f5cb5::t_a206574f525ad0 1-6
+src/modules/Transport/useCases/playheadScheduler/__tests__/schedulerSession.spec.ts
+  s_ba80576e6f5cb5::t_6a0dc0031a7576 3-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4754cb5e579b83234465176c97d29e509bc295e8",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_824babd2b68d13": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_824babd2b68d13",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_e4e2e0fffb8fe4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_e4e2e0fffb8fe4",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_f0cac04ac8b85d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_f0cac04ac8b85d",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
