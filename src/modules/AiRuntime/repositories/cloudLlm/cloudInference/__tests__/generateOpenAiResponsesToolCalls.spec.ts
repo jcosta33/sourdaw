@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { isHostedAiHttpStatusError } from '../../../../errors/HostedAiHttpStatusError';
 import { type ToolSchema } from '../../../../models/ToolDefinitions';
+import { getAgentToolCatalogSchemas } from '../../../../useCases/agentToolCatalog';
 import { getPlanningProviderToolSchemas } from '../../../../useCases/getPlanningProviderToolSchemas';
 import { getHostedProposalWireToolSchema } from '../../../../useCases/llmOrchestration/getHostedProposalWireToolSchema';
 import { compileProviderAdapterInstallation, OPENAI_RESPONSES_ADAPTER_ID } from '../../../providerAdapterRegistry';
@@ -147,8 +148,57 @@ describe('generateOpenAiResponsesToolCalls', () => {
                 },
             ],
         });
-        expect(result.calls).toMatchObject([
-            { name: 'analysis.measure', arguments: { recipeCallId: 'expand-1', proposal: null } },
+        expect(result.calls).toEqual([
+            {
+                id: 'measure-1',
+                name: 'analysis.measure',
+                arguments: {
+                    subject: 'preview',
+                    recipeCallId: 'expand-1',
+                    scope: { kind: 'master' },
+                    range: { startBeat: 0, endBeat: 8 },
+                },
+            },
+        ]);
+    });
+
+    it('reads the nulls a strict call sends for unset optional arguments as absent', async () => {
+        const projectQuery = getAgentToolCatalogSchemas().find((entry) => entry.function.name === 'project.query');
+        if (projectQuery === undefined) {
+            throw new Error('Missing project.query');
+        }
+        respondWith({
+            id: 'resp_query',
+            status: 'completed',
+            output: [
+                functionCall(
+                    'query-1',
+                    'project_query',
+                    JSON.stringify({
+                        type: 'object',
+                        filters: { exactName: 'Lead Vocal', muted: null },
+                        page: null,
+                        sinceRevision: null,
+                    })
+                ),
+            ],
+        });
+
+        const result = await generateOpenAiResponsesToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'find the lead vocal',
+            toolSchemas: [projectQuery],
+            maxOutputTokens: 8192,
+            directive: AUTO_TOOL_CHOICE,
+        });
+
+        expect(result.calls).toEqual([
+            {
+                id: 'query-1',
+                name: 'project.query',
+                arguments: { type: 'object', filters: { exactName: 'Lead Vocal' } },
+            },
         ]);
     });
 
