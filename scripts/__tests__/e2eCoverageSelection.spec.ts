@@ -76,7 +76,14 @@ const PANEL_BASE = `export function FeedPanel({ title }: { title: string }) {
 }
 `;
 
-type FileFixture = { base: string; head: string; baseBlob: string | null; mapBlob?: string | null };
+type FileFixture = {
+    base: string;
+    head: string;
+    baseBlob: string | null;
+    mapBlob?: string | null;
+    // The map version's text; absent means the object is unavailable.
+    mapText?: string;
+};
 
 function sourcesOf(files: Readonly<Record<string, FileFixture>>): CoverageSources {
     const file = (path: string): FileFixture => {
@@ -89,6 +96,7 @@ function sourcesOf(files: Readonly<Record<string, FileFixture>>): CoverageSource
     return {
         baseBlob: (path) => file(path).baseBlob,
         mapCommitBlob: (path) => file(path).mapBlob,
+        mapText: (path) => file(path).mapText,
         baseText: (path) => file(path).base,
         headText: (path) => file(path).head,
     };
@@ -222,6 +230,61 @@ describe('coverage-map selection narrows', () => {
             },
         });
         expect(selectedSpecs(selection)).toEqual(EXTRAS);
+    });
+
+    describe('drift since the map commit', () => {
+        const driftedBase = FEED_BASE.replace('items.slice(0, LIMIT)', 'items.slice(0, LIMIT + 1)');
+        const ownEdit = FEED_BASE.replace('clamp(item.id)', 'clamp(item.id + 1)');
+
+        it('selects the mapped specs when main drifted and the PR edited only bodies', () => {
+            const selection = select({
+                [FEED]: { base: driftedBase, head: ownEdit, baseBlob: 'b'.repeat(40), mapText: FEED_BASE },
+            });
+            expect(selectedSpecs(selection)).toEqual([SPEC('alpha'), SPEC('delta'), SPEC('fresh'), SPEC('gamma')]);
+        });
+
+        it('selects the mapped specs when the PR change is inert and only the drift is a body change', () => {
+            const selection = select({
+                [FEED]: {
+                    base: DOCUMENTED,
+                    head: `${DOCUMENTED}// note\n`,
+                    baseBlob: 'b'.repeat(40),
+                    mapText: FEED_BASE.replace('clamp(item.id)', 'clamp(item.id + 2)'),
+                },
+            });
+            expect(selection).toMatchObject({
+                paths: [{ reason: expect.stringContaining('function-body change executed by 2 mapped specs') }],
+            });
+        });
+
+        it('keeps an inert verdict when neither the PR nor the drift changes behaviour', () => {
+            const selection = select({
+                [FEED]: { base: DOCUMENTED, head: FEED_BASE, baseBlob: 'b'.repeat(40), mapText: FEED_BASE },
+            });
+            expect(selectedSpecs(selection)).toEqual(EXTRAS);
+        });
+
+        it('keeps the full suite when the PR edits a body but the top level drifted', () => {
+            const mapVersion = FEED_BASE.replace('LIMIT = 10', 'LIMIT = 20');
+            const selection = select({
+                [FEED]: { base: FEED_BASE, head: ownEdit, baseBlob: 'b'.repeat(40), mapText: mapVersion },
+            });
+            expect(selection).toMatchObject({ kind: 'full', reason: expect.stringContaining('change outside') });
+        });
+
+        it('selects only extras for an unmapped file whose map commit version differs by a body', () => {
+            const base = 'export function never(): number {\n    return 1;\n}\n';
+            const selection = select({
+                [NEVER]: {
+                    base: base.replace('return 1', 'return 2'),
+                    head: base.replace('return 1', 'return 3'),
+                    baseBlob: 'a'.repeat(40),
+                    mapBlob: 'b'.repeat(40),
+                    mapText: base,
+                },
+            });
+            expect(selectedSpecs(selection)).toEqual(EXTRAS);
+        });
     });
 
     it('treats a line break before a postfix increment in a body as a body change', () => {
@@ -376,14 +439,27 @@ describe('coverage-map selection stays full', () => {
         );
     });
 
-    it('for a file changed since the map commit', () => {
+    it('for a file whose top level changed since the map commit', () => {
+        const mapVersion = FEED_BASE.replace('LIMIT = 10', 'LIMIT = 20');
+        const fixture = {
+            ...feedEdit(FEED_BASE.replace('slice(0, LIMIT)', 'slice(1, LIMIT)')),
+            baseBlob: 'b'.repeat(40),
+            mapText: mapVersion,
+        };
+        expect(select({ [FEED]: fixture })).toEqual({
+            kind: 'full',
+            reason: `${FEED}: changed since the coverage map commit: change outside a function body at head line 5`,
+        });
+    });
+
+    it('for a file changed since the map commit whose map version is unavailable', () => {
         const fixture = {
             ...feedEdit(FEED_BASE.replace('slice(0, LIMIT)', 'slice(1, LIMIT)')),
             baseBlob: 'b'.repeat(40),
         };
         expect(select({ [FEED]: fixture })).toEqual({
             kind: 'full',
-            reason: `${FEED}: changed since the coverage map commit`,
+            reason: `${FEED}: changed since the coverage map commit, and the map version is unavailable`,
         });
     });
 

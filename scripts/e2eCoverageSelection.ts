@@ -37,6 +37,11 @@ export type CoverageSources = {
     baseBlob: (path: string) => string | null;
     /** The path's blob at the map commit: null when absent there, undefined when the commit is unavailable. */
     mapCommitBlob: (path: string) => string | null | undefined;
+    /**
+     * The path's text as the map recorded it: the blob the map entry names, or, with null, the
+     * file at the map commit. Undefined when that object is unavailable.
+     */
+    mapText: (path: string, recordedBlob: string | null) => string | undefined;
     baseText: (path: string) => string;
     headText: (path: string) => string;
 };
@@ -297,6 +302,8 @@ export function classifyChange(path: string, baseText: string, headText: string)
     return firstDifference(base.full, head.full) >= 0 ? { kind: 'body' } : { kind: 'inert' };
 }
 
+type NarrowVerdict = { kind: 'body' | 'inert' };
+
 const HISTORICAL = /^(?:D|T|R\d+|C\d+)$/;
 
 function isNarrowableSource(path: string): boolean {
@@ -325,20 +332,24 @@ export function coveragePrecheck(
     return null;
 }
 
-function staleness(path: string, map: CoverageMap, sources: CoverageSources): string | null {
-    const baseBlob = sources.baseBlob(path);
-    if (baseBlob === null) {
-        return `${path}: new since the merge-base`;
-    }
+type Drift = { kind: 'none' } | { kind: 'stale'; reason: string } | { kind: 'drifted'; mapBlob: string | null };
+
+// Whether the base differs from the version the map recorded, without reading any text.
+function driftSince(path: string, map: CoverageMap, sources: CoverageSources, baseBlob: string): Drift {
     const entry = map.files[path];
     if (entry !== undefined) {
-        return entry.blob === baseBlob ? null : `${path}: changed since the coverage map commit`;
+        return entry.blob === baseBlob ? { kind: 'none' } : { kind: 'drifted', mapBlob: entry.blob };
     }
     const mapBlob = sources.mapCommitBlob(path);
     if (mapBlob === undefined) {
-        return `${path}: absent from the coverage map and its commit is unavailable`;
+        return { kind: 'stale', reason: `${path}: absent from the coverage map and its commit is unavailable` };
     }
-    return mapBlob === baseBlob ? null : `${path}: absent from the coverage map and changed since its commit`;
+    if (mapBlob === baseBlob) {
+        return { kind: 'none' };
+    }
+    return mapBlob === null
+        ? { kind: 'stale', reason: `${path}: absent from the coverage map and changed since its commit` }
+        : { kind: 'drifted', mapBlob };
 }
 
 function changeVerdict(path: string, sources: CoverageSources): FileVerdict | string {
@@ -347,6 +358,54 @@ function changeVerdict(path: string, sources: CoverageSources): FileVerdict | st
     } catch (error) {
         return `${path}: ${error instanceof Error ? error.message : 'cannot be classified'}`;
     }
+}
+
+// The map attributed specs to its own version of the file; main has moved since, so what that
+// attribution still covers is decided by classifying the map version against the head.
+function driftVerdict(
+    path: string,
+    mapBlob: string | null,
+    recorded: boolean,
+    sources: CoverageSources
+): NarrowVerdict | string {
+    const prefix = `${path}: changed since the coverage map commit`;
+    try {
+        const text = sources.mapText(path, recorded ? mapBlob : null);
+        if (text === undefined) {
+            return `${prefix}, and the map version is unavailable`;
+        }
+        const verdict = classifyChange(path, text, sources.headText(path));
+        return verdict.kind === 'outside' ? `${prefix}: ${verdict.reason}` : verdict;
+    } catch (error) {
+        return `${prefix}: ${error instanceof Error ? error.message : 'cannot be classified'}`;
+    }
+}
+
+/** The PR's own change combined with the drift since the map: any outside change keeps the full suite. */
+function fileVerdict(path: string, map: CoverageMap, sources: CoverageSources): NarrowVerdict | string {
+    const baseBlob = sources.baseBlob(path);
+    if (baseBlob === null) {
+        return `${path}: new since the merge-base`;
+    }
+    const drift = driftSince(path, map, sources, baseBlob);
+    if (drift.kind === 'stale') {
+        return drift.reason;
+    }
+    const own = changeVerdict(path, sources);
+    if (typeof own === 'string') {
+        return own;
+    }
+    if (own.kind === 'outside') {
+        return `${path}: ${own.reason}`;
+    }
+    if (drift.kind === 'none') {
+        return own;
+    }
+    const sinceMap = driftVerdict(path, drift.mapBlob, path in map.files, sources);
+    if (typeof sinceMap === 'string') {
+        return sinceMap;
+    }
+    return own.kind === 'body' || sinceMap.kind === 'body' ? { kind: 'body' } : { kind: 'inert' };
 }
 
 function extraSpecs(map: CoverageMap, available: ReadonlySet<string>): string[] {
@@ -387,16 +446,9 @@ export function selectCoverageSpecs(input: CoverageSelectionInput): CoverageSele
                 reason: `${path}: loaded by a worker or audio worklet, which page coverage cannot see`,
             };
         }
-        const stale = staleness(path, map, input.sources);
-        if (stale !== null) {
-            return { kind: 'full', reason: stale };
-        }
-        const verdict = changeVerdict(path, input.sources);
+        const verdict = fileVerdict(path, map, input.sources);
         if (typeof verdict === 'string') {
             return { kind: 'full', reason: verdict };
-        }
-        if (verdict.kind === 'outside') {
-            return { kind: 'full', reason: `${path}: ${verdict.reason}` };
         }
         const fileSpecs =
             verdict.kind === 'body' ? (map.files[path]?.specs ?? []).map((index) => map.specs[index]!) : [];
@@ -433,11 +485,29 @@ function commitAvailable(root: string, commit: string): boolean {
     }
 }
 
+function mapObjectText(
+    root: string,
+    mapCommit: string,
+    mapCommitPresent: boolean,
+    path: string,
+    recordedBlob: string | null
+): string | undefined {
+    if (recordedBlob === null && !mapCommitPresent) {
+        return undefined;
+    }
+    try {
+        return git(root, ['cat-file', 'blob', recordedBlob ?? `${mapCommit}:${path}`]);
+    } catch {
+        return undefined;
+    }
+}
+
 export function gitCoverageSources(root: string, base: string, head: string, mapCommit: string): CoverageSources {
     const mapCommitPresent = commitAvailable(root, mapCommit);
     return {
         baseBlob: (path) => blobAt(root, base, path),
         mapCommitBlob: (path) => (mapCommitPresent ? blobAt(root, mapCommit, path) : undefined),
+        mapText: (path, recordedBlob) => mapObjectText(root, mapCommit, mapCommitPresent, path, recordedBlob),
         baseText: (path) => git(root, ['cat-file', 'blob', `${base}:${path}`]),
         headText: (path) => git(root, ['cat-file', 'blob', `${head}:${path}`]),
     };
