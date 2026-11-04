@@ -1,0 +1,174 @@
+.agents/skills/review-stances/collaboration-teardown.md
+  h_beb54bf43b47b7 48-54
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 130-137
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 29-33
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  h_beb54bf43b47b7 15-16
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  h_beb54bf43b47b7 57-58
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/answerOutcome.spec.ts
+  h_beb54bf43b47b7 23-24
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/orchestratePromptChatRequest.spec.ts
+  h_beb54bf43b47b7 47-48
+src/modules/Collaboration/useCases/__tests__/assetTransferLibrary.spec.ts
+  h_beb54bf43b47b7 336-518
+src/modules/Collaboration/useCases/__tests__/restoreProjectOriginalMedia.spec.ts
+  h_beb54bf43b47b7 1-213
+src/modules/Collaboration/useCases/activateProjectOriginalMedia.ts
+  h_beb54bf43b47b7 1-29
+src/modules/Collaboration/useCases/assetTransfer.ts
+  h_beb54bf43b47b7 391-393,395-397,409-411,413-415,427-495,1121-1142,1283-1285,1317,1318-1319,1320-1334,1379-1382
+src/modules/Collaboration/useCases/captureProjectOriginalMedia.ts
+  h_beb54bf43b47b7 1-54
+src/modules/Collaboration/useCases/index.ts
+  h_beb54bf43b47b7 9-11
+src/modules/Collaboration/useCases/restoreProjectOriginalMedia.ts
+  h_beb54bf43b47b7 1-74
+src/modules/CrdtDocument/useCases/__tests__/prepareExternalProjectDocument.spec.ts
+  h_beb54bf43b47b7 1-142
+src/modules/CrdtDocument/useCases/index.ts
+  h_beb54bf43b47b7 70-71
+src/modules/CrdtDocument/useCases/loadCrdtProject.ts
+  h_beb54bf43b47b7 8
+src/modules/CrdtDocument/useCases/prepareExternalProjectDocument.ts
+  h_beb54bf43b47b7 1-73
+src/modules/CrdtDocument/useCases/restoreActiveBranchSlot.ts
+  h_beb54bf43b47b7 1-23
+src/modules/Project/presentations/views/RecentProjectsMenu.tsx
+  h_beb54bf43b47b7 22,29,105,124-128,274-286
+src/modules/Project/presentations/views/__tests__/RecentProjectsMenu.spec.tsx
+  h_beb54bf43b47b7 10,59-62,231-242
+src/modules/Project/repositories/project/__tests__/projectDirectory.spec.ts
+  h_beb54bf43b47b7 1-154
+src/modules/Project/repositories/project/__tests__/projectDirectoryBinding.spec.ts
+  h_beb54bf43b47b7 1-171,172-181,182-183,184,185-196,197,198-204,205-218
+src/modules/Project/repositories/project/projectDirectory.ts
+  h_beb54bf43b47b7 1-469
+src/modules/Project/repositories/project/projectDirectoryBinding.ts
+  h_beb54bf43b47b7 1-148,149-157,158-202,203-214,215-228,229,230-233
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  h_beb54bf43b47b7 77-78,119-121,151-153
+src/modules/Project/useCases/__tests__/recentProjects.spec.ts
+  h_beb54bf43b47b7 76-78,84
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  h_beb54bf43b47b7 117-119,141
+src/modules/Project/useCases/projectPersistence/__tests__/loadProject.spec.ts
+  h_beb54bf43b47b7 119-120,238-327
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectDirtyTracking.integration.spec.ts
+  h_beb54bf43b47b7 92-93
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectMigratesTrimmedClipPassTakes.spec.ts
+  h_beb54bf43b47b7 90-91
+src/modules/Project/useCases/projectPersistence/__tests__/loadProjectPreservesSessionUndo.spec.ts
+  h_beb54bf43b47b7 111-112
+src/modules/Project/useCases/projectPersistence/__tests__/missingMediaOnLoad.spec.ts
+  h_beb54bf43b47b7 47,108-110,111-112,113-115
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.spec.ts
+  h_beb54bf43b47b7 1,5,10,13-15,18,37-41,53-58,101-161,164-168,176,187-234,357-360
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportSnapshotConsistency.integration.spec.ts
+  h_beb54bf43b47b7 15-23,65,74,81,244-248,252-254,266,267,339-404
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/pickAndImportProjectFile.spec.ts
+  h_beb54bf43b47b7 1,2,6,43-53,105-109,110-111,159-224,225-279,280-485,679-682
+src/modules/Project/useCases/projectPersistence/fileIO/applyImportedProjectData.ts
+  h_beb54bf43b47b7 1-4,11-12,46-55
+src/modules/Project/useCases/projectPersistence/fileIO/exportProjectFile.ts
+  h_beb54bf43b47b7 3,10,33,35-38,44-51
+src/modules/Project/useCases/projectPersistence/fileIO/pickAndImportProjectFile.ts
+  h_beb54bf43b47b7 7-9,12,16-31,69,70-71,72-74,75,76-79,82,105,106-110,111
+src/modules/Project/useCases/projectPersistence/fileIO/projectOriginalMediaArchive.ts
+  h_beb54bf43b47b7 1-3,4,5-27,28,29-43
+src/modules/Project/useCases/projectPersistence/fileIO/readProjectOriginalMediaArchive.ts
+  h_beb54bf43b47b7 1-59
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/collectProjectOriginalHashes.spec.ts
+  h_beb54bf43b47b7 1-88
+src/modules/Project/useCases/projectPersistence/helpers/collectProjectAllBufferIds.ts
+  h_beb54bf43b47b7 1-28
+src/modules/Project/useCases/projectPersistence/helpers/collectProjectFreezeOnlyBufferIds.ts
+  h_beb54bf43b47b7 1-28
+src/modules/Project/useCases/projectPersistence/helpers/collectProjectOriginalHashes.ts
+  h_beb54bf43b47b7 1-30
+src/modules/Project/useCases/projectPersistence/loadProject.ts
+  h_beb54bf43b47b7 4-11,14,23-24,26-29,36,38,40,43,45,48,49-53,54-55,56-59,61-63,64,65,67-68,70,77-80,81,83-88,89,90-105,113,115,116,117-142,154-158,173-179,181-183,188-205,235-237,240-269,281,318,319,320-324,348-352
+src/modules/Project/useCases/projectPersistence/newProject.ts
+  h_beb54bf43b47b7 14,300-311
+src/modules/Project/useCases/projectPersistence/openProjectDirectoryFromPicker.ts
+  h_beb54bf43b47b7 1-29,30-33,34-52,53-59,60-80
+src/modules/Project/useCases/projectPersistence/projectDirectoryRead.ts
+  h_beb54bf43b47b7 1-205
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.durability.spec.ts
+  h_beb54bf43b47b7 66-75,77-79
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.projectDirectory.integration.spec.ts
+  h_beb54bf43b47b7 1-10,11,13-277,13-14,278-279,280-282,283,284-285,286-287,288-294,295-304,305-317,318,319,320,321,322-325,326-408,409-413,414-459,460,461-539,540-542,543-591,592,593-608,609-613,614-652,653,654-790,791-796,797,798-802,803-862,863-864,865-877,878-880,881-882,883,884-885,886,887-897,898-902,903-948,949,950-1122,1123,1124-1166,1167,1168-1198,1199-1213,1214-1216,1217,1218,1219,1220,1221-1228,1234-1271,1272
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  h_beb54bf43b47b7 56-57,120-122,195-197
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.spec.ts
+  h_beb54bf43b47b7 73-82,84-86,252-285
+src/modules/Project/useCases/projectPersistence/saveProject/collectProjectDirectoryPcm.ts
+  h_beb54bf43b47b7 1-52
+src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts
+  h_beb54bf43b47b7 6,10-11,15,19-20,23,26-34,74-79,80,81-87,88,89,90-93,94,95-96,97-98,99-100,101-103,104-105,106-108,109-121,122-143,144-160,161,162,163-164,165-176,177-181,182-202,210-222,223,230,239-242,248,251,287,299,310,383-394
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  h_beb54bf43b47b7 123-125,140-141,289,291-294
+src/modules/Project/useCases/recentProjects/loadRecentProject.ts
+  h_beb54bf43b47b7 2,4,14-15,19-21,48-50,51,52-66,67,68-83,93,94-96,148
+tests/e2e/audioOwnership.native.spec.ts
+  h_beb54bf43b47b7 7-8,466
+tests/e2e/chosenProjectDirectory.ts
+  h_beb54bf43b47b7 1-24
+tests/e2e/launchFlows.spec.ts
+  h_beb54bf43b47b7 1,142
+tests/e2e/paletteCommandExecutionTestId.spec.ts
+  h_beb54bf43b47b7 1,53
+tests/e2e/persistedClipEditAcceptance.spec.ts
+  h_beb54bf43b47b7 9,315
+tests/e2e/projectMenuTestId.spec.ts
+  h_beb54bf43b47b7 3,40
+tests/e2e/projectSaveFlowTestId.spec.ts
+  h_beb54bf43b47b7 1,28,44
+tests/e2e/proofPanelTestId.spec.ts
+  h_beb54bf43b47b7 1,78-83,132-157,164-169,170-201,208-210,212-215,217-219
+tests/e2e/shortcutBehavioralE2E.spec.ts
+  h_beb54bf43b47b7 3,26
+tests/e2e/smoke.spec.ts
+  h_beb54bf43b47b7 1-5,24-31,279-431,443-445,446-451,452-568,576,583-585,598-600,615-631,632,633-636,637-643,644-647,688-719
+src/modules/Collaboration/useCases/__tests__/durableAssetOwnership.spec.ts
+  h_beb54bf43b47b7 3,236-269
+src/modules/Project/useCases/index.ts
+  h_beb54bf43b47b7 48
+src/modules/Project/useCases/projectPersistence/projectOriginalMediaPort.ts
+  h_beb54bf43b47b7 1-17,23-52
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.spec.ts
+  h_beb54bf43b47b7 1,3-18,21-39
+src/modules/Project/useCases/projectPersistence/__tests__/openProjectDirectoryFromPicker.spec.ts
+  h_beb54bf43b47b7 1-80
+src/modules/CommandInterface/useCases/commands/ProjectCommands.ts
+  h_beb54bf43b47b7 42
+src/modules/WorkspaceShell/handlers/workspace/handleSaveProject.ts
+  h_beb54bf43b47b7 7
+src/modules/WorkspaceShell/presentations/hooks/useAppEventHandlers.ts
+  h_beb54bf43b47b7 31
+src/modules/WorkspaceShell/presentations/hooks/useNativeApplicationMenu.ts
+  h_beb54bf43b47b7 156
+src/modules/WorkspaceShell/presentations/views/Transport/ProjectName.tsx
+  h_beb54bf43b47b7 61
+src/app/__tests__/bootstrap.spec.ts
+  h_beb54bf43b47b7 494,498,503,671
+src/app/bootstrap.ts
+  h_beb54bf43b47b7 242,450
+src/app/configureProjectOriginalMediaPort.ts
+  h_beb54bf43b47b7 1-18
+tests/e2e/tempoSourceTimeAcceptance.spec.ts
+  h_beb54bf43b47b7 743-754
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1d072952278c947ba7c1fa41e7a595b591cc5b4a",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
