@@ -1,0 +1,43 @@
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiResponsesToolCalls.spec.ts
+  s_f5b7135506ff1e::t_2e3862d175ae9d 5,151-201
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/readStrictCallsAsSourceArguments.spec.ts
+  s_91f8b522168bd8::t_a6a11bb0cc0d0c 1-278
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls.ts
+  s_ba80576e6f5cb5::t_8830129d53f1a7 23,272
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateOpenAiResponsesToolCalls.ts
+  s_ba80576e6f5cb5::t_a3d1e64e732e42 20,301
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/readStrictCallsAsSourceArguments.ts
+  s_ba80576e6f5cb5::t_23a2eed85f1594 1-107
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f1a6382748f9f23b2526ee8d9cd137ff6a5734bf",
+  "prompts": {},
+  "sessions": {
+    "s_91f8b522168bd8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea993bb3-f8f9-4703-aa93-ef8a806d9107",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_f5b7135506ff1e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f206df02-3793-452b-be4f-eaed5840e469",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
