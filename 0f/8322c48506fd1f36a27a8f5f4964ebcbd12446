@@ -1,0 +1,20 @@
+src/modules/Project/useCases/projectPersistence/helpers/runProjectLoadTransaction.ts
+  h_beb54bf43b47b7 43-46
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/finalizeTemplate.spec.ts
+  h_beb54bf43b47b7 245-247,250,255
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/reportDeviceReadiness.spec.ts
+  h_beb54bf43b47b7 1-67
+src/modules/Project/useCases/projectTemplates/templateHelpers/reportDeviceReadiness.ts
+  h_beb54bf43b47b7 11-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0f8322c48506fd1f36a27a8f5f4964ebcbd12446",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
