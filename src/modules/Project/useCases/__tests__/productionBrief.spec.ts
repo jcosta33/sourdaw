@@ -941,7 +941,7 @@ describe('production brief', () => {
             });
         const moveWideClipBeforeRange: AppAction = {
             type: 'moveClip',
-            payload: { clipId: 'clip-wide', startBeat: 20 },
+            payload: { clipId: 'clip-wide', trackId: 'track-takes', startBeat: 20 },
         };
 
         it('measures a move by the live clip length and ignores a clip only the stale active copy holds', () => {
