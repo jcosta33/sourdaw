@@ -209,8 +209,14 @@ test.describe('Proof device — add to chain', () => {
                 await reopened.evaluate(() => Number(Reflect.get(window, '__sourdawFolderGrantRequests') ?? 0))
             ).toBeGreaterThan(0);
 
+            // Track selection is transient and a folder reopen starts from no selection, so select
+            // the saved track explicitly and require its device chain before opening the device.
+            const restoredTrackList = reopened.getByRole('grid', { name: /Track list/i });
+            await restoredTrackList.getByText('MIDI', { exact: true }).click();
             const restoredInspector = reopened.getByRole('complementary', { name: 'Inspector panel' });
-            await restoredInspector.getByText('Proof', { exact: false }).first().click();
+            const restoredProof = restoredInspector.getByText('Proof', { exact: false }).first();
+            await expect(restoredProof).toBeVisible({ timeout: 15_000 });
+            await restoredProof.click();
             const restoredSelector = reopened.getByRole('group', { name: 'Effect control detail' });
             await expect(restoredSelector.getByRole('button', { name: 'lab', exact: true })).toHaveAttribute(
                 'aria-pressed',
