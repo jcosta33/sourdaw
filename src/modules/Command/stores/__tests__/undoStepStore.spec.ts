@@ -1,13 +1,33 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+
+import { AppActionConflictError } from '../../errors/AppActionExecutionError';
 import { type ActionUndoEntry, type CallbackUndoEntry } from '../../models/UndoEntry';
 import { clearUndoHistory } from '../../useCases/clearUndoHistory';
 import { moveHistoryToStep } from '../../useCases/moveHistoryToStep';
 import { pushUndoEntry } from '../../useCases/pushUndoEntry';
 import { REDO_NOT_APPLIED } from '../../useCases/redoResult';
 import { undo } from '../../useCases/undo';
+import { clearHandlerRegistry, registerHandlerMap } from '../handlerRegistry';
 import { undoStepStore } from '../undoStepStore';
 import { undoStore } from '../undoStore';
+
+const mocks = vi.hoisted(() => ({
+    executeAppAction: vi.fn<typeof import('../../useCases/executeAppAction').executeAppAction>(),
+    notifyUser: vi.fn<(message: string, level?: string) => void>(),
+}));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: mocks.notifyUser,
+}));
+
+// Only the forward replay is simulated, so a guarded handler's conflict can be
+// produced without a project; the stores, undo, redo and the registered
+// handlers' capability flags are real.
+vi.mock('../../useCases/executeAppAction', () => ({
+    executeAppAction: mocks.executeAppAction,
+}));
 
 type Applied = Set<string>;
 
@@ -196,5 +216,46 @@ describe('undoStepStore', () => {
     it('does not expose write methods', () => {
         expect(undoStepStore).not.toHaveProperty('set');
         expect(undoStepStore).not.toHaveProperty('update');
+    });
+});
+
+describe('history moves over a conflicted redo unit', () => {
+    beforeEach(() => {
+        clearUndoHistory();
+        clearHandlerRegistry();
+        registerHandlerMap(getArrangementHandlers());
+        mocks.executeAppAction.mockReset();
+        mocks.notifyUser.mockReset();
+        mocks.executeAppAction.mockImplementation(async (action) => {
+            if (action.type === 'setTrackGain') {
+                throw new AppActionConflictError('setTrackGain');
+            }
+        });
+    });
+
+    afterEach(() => {
+        clearHandlerRegistry();
+    });
+
+    function replayEntry(id: string, action: ActionUndoEntry['action']): ActionUndoEntry {
+        return { kind: 'action', id, label: id, timestamp: 0, source: 'manual', action, inverseAction: action };
+    }
+
+    it('stops at the conflicted target instead of stepping onto the unit behind it', async () => {
+        const base = replayEntry('base', { type: 'togglePlayback' });
+        const y = replayEntry('Y', {
+            type: 'setTrackGain',
+            payload: { trackId: 'track-1', gain: 0.5, expectedGain: 0.8 },
+        });
+        const z = replayEntry('Z', { type: 'setClipColor', payload: { clipId: 'clip-1', color: '#00ff00' } });
+        undoStore.set({ past: [base], future: [y, z] });
+
+        await moveHistoryToStep(stepNamed('futureSteps', 'Y').targetEntryId);
+
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+        expect(pastIds()).toEqual(['base']);
+        expect(undoStore.value?.future.map((entry) => entry.id)).toEqual(['Y', 'Z']);
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyUser).toHaveBeenCalledWith('Cannot redo "Y": project state has changed', 'warning');
     });
 });

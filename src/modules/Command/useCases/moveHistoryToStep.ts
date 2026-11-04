@@ -43,7 +43,7 @@ async function undoUntilNewest(entryId: string): Promise<void> {
     }
 }
 
-/** Redo until `entryId` is applied, or until redo drops it or stops progressing. */
+/** Redo until `entryId` is applied, or until redo drops it or applies nothing. */
 async function redoUntilApplied(entryId: string): Promise<void> {
     for (;;) {
         const state = undoStore.value;
@@ -51,10 +51,14 @@ async function redoUntilApplied(entryId: string): Promise<void> {
             return;
         }
         const pastBefore = state.past.length;
-        const futureBefore = state.future.length;
-        await redo();
+        // Never step over a conflicted unit: the unit behind it is one no row names.
+        await redo({ stepOverConflicts: false });
         const after = undoStore.value;
-        if (!after || (after.past.length === pastBefore && after.future.length === futureBefore)) {
+        // redo() reports nothing, but with step-over off one call applies at
+        // most the head unit, so a `past` that did not grow means that unit
+        // conflicted (any not-applied entries it purged first never reach
+        // `past`) and the target cannot be reached in order.
+        if (!after || after.past.length === pastBefore) {
             return;
         }
     }

@@ -325,7 +325,7 @@ async function stepOverConflictedRedoOrSettle({
     }
 }
 
-async function redoImpl(): Promise<void> {
+async function redoImpl(stepOverConflicts: boolean): Promise<void> {
     const stored = undoStore.value;
     if (!stored || stored.future.length === 0) {
         return;
@@ -359,6 +359,10 @@ async function redoImpl(): Promise<void> {
                 if (outcome.status === 'conflict') {
                     const label = undoEntryLabel(entry);
                     notifyUser(`Cannot redo "${label}": project state has changed`, 'warning');
+                    if (!stepOverConflicts) {
+                        settleWithoutRedo({ initialFuture: state.future, futureAtConflict: future });
+                        return;
+                    }
                     await stepOverConflictedRedoOrSettle({
                         initialFuture: state.future,
                         futureAtConflict: future,
@@ -384,6 +388,10 @@ async function redoImpl(): Promise<void> {
             // Nothing was written, so the entry stays at the head of `future`
             // and remains redoable; #2878 steps onto the unit behind it when
             // the gate admits that replay.
+            if (!stepOverConflicts) {
+                settleWithoutRedo({ initialFuture: state.future, futureAtConflict: future });
+                return;
+            }
             await stepOverConflictedRedoOrSettle({
                 initialFuture: state.future,
                 futureAtConflict: future,
@@ -409,6 +417,19 @@ async function redoImpl(): Promise<void> {
     }
 }
 
-export function redo(): Promise<void> {
-    return runUndoRedoExclusive(redoImpl);
+export type RedoOptions = {
+    /**
+     * Whether one keystroke may step over a conflicted unit onto a
+     * conflict-capable unit behind it (#2878). Defaults to `true` — every
+     * user-driven entry point wants the step. Step-targeted history moves pass
+     * `false`: the step they target names the entry to STOP at, so stepping
+     * over a conflicted unit there would redo a unit no history row names. With
+     * `false`, a conflicted unit leaves `past` unchanged, which is how such a
+     * move tells that nothing was applied.
+     */
+    readonly stepOverConflicts?: boolean;
+};
+
+export function redo(options: RedoOptions = {}): Promise<void> {
+    return runUndoRedoExclusive(() => redoImpl(options.stepOverConflicts ?? true));
 }

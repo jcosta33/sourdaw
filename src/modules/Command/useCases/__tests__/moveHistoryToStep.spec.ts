@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => {
     };
     return {
         undoStoreValue,
-        redo: vi.fn<() => Promise<void>>(),
+        redo: vi.fn<(options?: { stepOverConflicts?: boolean }) => Promise<void>>(),
         undo: vi.fn<() => Promise<UndoResult>>(),
         undoTreeMoveTo: vi.fn<(currentEntryId: string | null) => void>(),
     };
@@ -144,6 +144,8 @@ describe('moveHistoryToStep', () => {
         await moveHistoryToStep('three');
 
         expect(mocks.redo).toHaveBeenCalledTimes(2);
+        expect(mocks.redo).toHaveBeenNthCalledWith(1, { stepOverConflicts: false });
+        expect(mocks.redo).toHaveBeenNthCalledWith(2, { stepOverConflicts: false });
         expect(mocks.undo).not.toHaveBeenCalled();
         expect(mocks.undoStoreValue.value.past.map((entry) => entry.id)).toEqual(['one', 'two', 'three']);
     });
@@ -242,5 +244,49 @@ describe('moveHistoryToStep', () => {
 
         expect(mocks.redo).toHaveBeenCalledTimes(1);
         expect(mocks.undoStoreValue.value.future.map((entry) => entry.id)).toEqual(['four']);
+    });
+
+    it('should stop the backward sweep once the target itself has been undone', async () => {
+        // One undo() can consume more than the head — a group, or an entry the
+        // sweep never saw. Once the target is gone from `past` it can no longer
+        // become the newest applied entry, so the sweep must stop rather than
+        // keep undoing the history beneath it.
+        mockUndoConsumingHead();
+        mocks.undo.mockImplementationOnce(() => {
+            mocks.undoStoreValue.value = {
+                past: [actionEntry('one')],
+                future: [actionEntry('two'), actionEntry('three')],
+            };
+            return Promise.resolve({ headConsumed: true });
+        });
+        mocks.undoStoreValue.value = {
+            past: [actionEntry('one'), actionEntry('two'), actionEntry('three')],
+            future: [],
+        };
+
+        await moveHistoryToStep('two');
+
+        expect(mocks.undo).toHaveBeenCalledTimes(1);
+        expect(mocks.undoStoreValue.value.past.map((entry) => entry.id)).toEqual(['one']);
+    });
+
+    it('should stop the forward sweep when redo applies nothing even if it purged entries', async () => {
+        // A conflicted head unit, refused without step-over, leaves `past` as it
+        // was; redo may still have dropped not-applied entries ahead of it.
+        mocks.redo.mockImplementation(() => {
+            mocks.undoStoreValue.value = {
+                past: [actionEntry('one')],
+                future: [actionEntry('three')],
+            };
+            return Promise.resolve();
+        });
+        mocks.undoStoreValue.value = {
+            past: [actionEntry('one')],
+            future: [actionEntry('two'), actionEntry('three')],
+        };
+
+        await moveHistoryToStep('three');
+
+        expect(mocks.redo).toHaveBeenCalledTimes(1);
     });
 });
