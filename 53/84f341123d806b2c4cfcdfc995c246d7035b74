@@ -1,0 +1,30 @@
+src/modules/Project/useCases/demoProjects/nebulaDrift/__tests__/createNebulaDriftDemo.spec.ts
+  h_beb54bf43b47b7 119
+src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts
+  h_beb54bf43b47b7 35,2347-2350
+src/modules/Project/useCases/projectPersistence/helpers/committedProjectAuthority.ts
+  h_beb54bf43b47b7 1-18
+src/modules/Project/useCases/projectPersistence/helpers/resetCrdtProjectWithTransportStopped.ts
+  h_beb54bf43b47b7 9,99
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/finalizeTemplate.spec.ts
+  h_beb54bf43b47b7 5-8,247-249,252-255,258,263
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/reportDeviceReadiness.spec.ts
+  h_beb54bf43b47b7 4-7,30-43,51-52,56,58,60,65-82,84,86
+src/modules/Project/useCases/projectTemplates/templateHelpers/finalizeTemplate.ts
+  h_beb54bf43b47b7 6,44-50,52
+src/modules/Project/useCases/projectTemplates/templateHelpers/reportDeviceReadiness.ts
+  h_beb54bf43b47b7 3,9,11-16
+src/modules/Project/useCases/projectTemplates/templateHelpers/reportDeviceReadinessWhenSettled.ts
+  h_beb54bf43b47b7 12-14,16-19,21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5384f341123d806b2c4cfcdfc995c246d7035b74",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
