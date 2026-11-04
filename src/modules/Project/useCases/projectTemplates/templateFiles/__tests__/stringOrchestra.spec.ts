@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { sanitizeTrackSnapshot, trackStore } from '#/modules/Arrangement/stores';
-import { hydrateLevainStateFromProject, nativeBankKeyForLevainDeviceState } from '#/modules/Levain/useCases';
+import {
+    createLevainTemplateDeviceState,
+    hydrateLevainStateFromProject,
+    nativeBankKeyForLevainDeviceState,
+} from '#/modules/Levain/useCases';
 import { toStereoPan } from '#/utils/audioLevelLaw';
 
 import { handleCreateProjectFromTemplate } from '../../../../handlers/projectTemplate/handleCreateProjectFromTemplate';
@@ -12,11 +16,29 @@ import { getTemplates } from '../../templateDefinitions/getTemplates';
 
 import type { Track } from '#/modules/Arrangement/stores';
 
+const { templateCalls, seededStates } = vi.hoisted(() => ({
+    templateCalls: [] as string[],
+    seededStates: [] as Array<{ deviceId: string; state: unknown }>,
+}));
+
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+    return {
+        ...actual,
+        setDeviceState: vi.fn((input: Parameters<typeof actual.setDeviceState>[0]) => {
+            templateCalls.push('setDeviceState');
+            seededStates.push(structuredClone(input));
+            return actual.setDeviceState(input);
+        }),
+    };
+});
+
 vi.mock('../../templateHelpers/finalizeTemplate', async () => {
     const { trackStore } = await import('#/modules/Arrangement/stores');
     const { syncArrangement } = await import('../../../demoProjects/demoUtils/syncArrangement');
     return {
         finalizeTemplate: async ({ tracks, selectTrackId }: { tracks: Track[]; selectTrackId?: string }) => {
+            templateCalls.push('finalizeTemplate');
             trackStore.set({ tracks, selectedTrackId: selectTrackId ?? null });
             syncArrangement(tracks);
         },
@@ -122,6 +144,35 @@ describe('String Orchestra template', () => {
                 instrumentId: expected.instrumentId,
                 currentArticulation: 'sustain',
             });
+        }
+    });
+
+    it('seeds every section instrument before finalize registers the devices', async () => {
+        templateCalls.length = 0;
+        seededStates.length = 0;
+
+        await handleCreateProjectFromTemplate.execute({
+            type: 'createProjectFromTemplate',
+            payload: { templateId: 'string-orchestra' },
+        });
+
+        // Registration happens inside `finalizeTemplate` and rehydrates a Levain
+        // from project truth, so every identity seed must land before that call.
+        expect(templateCalls).toEqual([
+            'setDeviceState',
+            'setDeviceState',
+            'setDeviceState',
+            'setDeviceState',
+            'setDeviceState',
+            'finalizeTemplate',
+        ]);
+        expect(seededStates.map(({ deviceId }) => deviceId)).toEqual(
+            (trackStore.value?.tracks ?? [])
+                .filter((track) => track.kind === 'midi')
+                .map((track) => track.devices[0]?.id)
+        );
+        for (const [index, expected] of expectedSections.entries()) {
+            expect(seededStates[index]?.state).toEqual(createLevainTemplateDeviceState(expected.instrumentId));
         }
     });
 });
