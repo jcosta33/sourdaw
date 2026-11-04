@@ -11,10 +11,8 @@ import { digestCommandBatchContent } from './digestCommandBatchContent';
 import { unaccountedNumericRefusal } from './evaluateRequestNumericLiterals';
 import { type MetricGoal, type MetricGoalState } from './metricGoalContractTypes';
 import { objectiveMetricProjection } from './objectiveMetricProjection';
-import {
-    describePerceptualConstraintFailure,
-    perceptualConstraintCriterionMatches,
-} from './perceptualConstraints/perceptualConstraintInvariants';
+import { describePerceptualConstraintFailure } from './perceptualConstraints/describePerceptualConstraintFailure';
+import { perceptualConstraintCriterionMatches } from './perceptualConstraints/perceptualConstraintInvariants';
 
 type AdmissionInput = {
     state: MetricGoalState | null | undefined;
