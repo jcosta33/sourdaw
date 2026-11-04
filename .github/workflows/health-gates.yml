@@ -67,6 +67,11 @@ jobs:
     if: needs.admission.outputs.admitted == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Reading the nightly coverage map artifact needs actions: read.
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       profile: ${{ steps.plan.outputs.profile }}
       matrix: ${{ steps.plan.outputs.matrix }}
@@ -82,21 +87,33 @@ jobs:
       - name: Enable Corepack
         run: corepack enable
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
       - name: Set up Node
+        timeout-minutes: 3
+        continue-on-error: true
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.19.0
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
+      # Only the scheduled or dispatched nightly on main is trusted; any failure
+      # writes no map, and the planner then keeps the full browser suite.
+      - name: Fetch coverage map
+        id: coverage_map
+        env:
+          GH_TOKEN: ${{ github.token }}
+          E2E_COVERAGE_MAP: ${{ runner.temp }}/e2e-coverage-map.json
+        run: node scripts/fetchE2eCoverageMap.ts
       - name: Plan affected checks
         id: plan
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          E2E_COVERAGE_MAP: ${{ runner.temp }}/e2e-coverage-map.json
+          E2E_COVERAGE_MAP_CREATED_AT: ${{ steps.coverage_map.outputs.created-at }}
         run: node scripts/prValidationScope.ts plan
       - name: Upload scope manifest
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

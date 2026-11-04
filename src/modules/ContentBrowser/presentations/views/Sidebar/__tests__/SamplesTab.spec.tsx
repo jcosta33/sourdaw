@@ -62,6 +62,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     discardDecodedAudioFile: vi.fn(),
     getCachedAudioBuffer: vi.fn(),
+    playAudioBufferPreview: vi.fn(),
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),
     applyNoteExpression: vi.fn(),

@@ -37,6 +37,7 @@ type PendingActionProtectedObject = {
 };
 
 type PendingAgentRiskApproval = {
+    metricGoalState?: string | null;
     schemaVersion: 1;
     actionHashes: string[];
     sourceRevision: string;
@@ -123,6 +124,7 @@ type PendingActionApprovalSnapshot = {
      * It rides the approval snapshot rather than the Command envelope, whose contract stays closed.
      */
     measuredPreview?: MeasuredPreview;
+    metricGoalState?: string;
     /** Which of a run's successive batches this proposal is, present only when the request has more than one. */
     batchPosition?: PendingActionBatchPosition;
     /**
@@ -333,6 +335,7 @@ type ProposePendingActionConfirmationInput = {
     matchSelectorPredicates?: SemanticCommandListMatchSelectorRecord[];
     adoptedRecipes?: AdoptedRecipe[];
     measuredPreview?: MeasuredPreview;
+    metricGoalState?: string;
     batchPosition?: PendingActionBatchPosition;
     groundingBasis?: ProposalGroundingBasis;
     protectionFacts?: ProposalProtectionFacts;
@@ -380,6 +383,7 @@ export function proposePendingActionConfirmation(
         matchSelectorPredicates,
         adoptedRecipes: input.adoptedRecipes && structuredClone(input.adoptedRecipes),
         measuredPreview: input.measuredPreview && structuredClone(input.measuredPreview),
+        metricGoalState: input.metricGoalState,
         ...(input.batchPosition === undefined ? {} : { batchPosition: { ...input.batchPosition } }),
         ...(input.groundingBasis === undefined ? {} : { groundingBasis: structuredClone(input.groundingBasis) }),
         ...(input.protectionFacts === undefined ? {} : { protectionFacts: structuredClone(input.protectionFacts) }),
@@ -501,6 +505,7 @@ export function refreshPendingActionConfirmationApproval(
         approvalSnapshot: {
             ...current.approvalSnapshot,
             agentApproval: structuredClone(input.agentApproval),
+            metricGoalState: input.agentApproval.metricGoalState ?? undefined,
             commandBatch: structuredClone(input.commandBatch),
             commandEnvelopes: [...input.commandEnvelopes],
         },

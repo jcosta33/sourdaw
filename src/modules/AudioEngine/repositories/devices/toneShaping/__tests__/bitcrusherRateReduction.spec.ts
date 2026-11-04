@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { asBaseAudioContext, createMockAudioContext } from '../../../../../../helpers/__tests__/audioContext.mock';
+import { importWorkletProcessor } from '../../../../testing/importWorkletProcessor';
 import { applyBitcrusherParams } from '../applyBitcrusherParams';
 import { createBitcrusher } from '../createBitcrusher';
 
@@ -81,7 +82,7 @@ function applyShaperCurve(curve: Float32Array, input: Float32Array): Float32Arra
 }
 
 async function loadProcessor(): Promise<new () => ProcessorLike> {
-    await import('../../../../services/bitcrusherRateProcessor');
+    await importWorkletProcessor('bitcrusher-rate-processor');
     const Ctor = registry.get('bitcrusher-rate-processor');
     if (!Ctor) {
         throw new Error('bitcrusher-rate-processor was not registered');

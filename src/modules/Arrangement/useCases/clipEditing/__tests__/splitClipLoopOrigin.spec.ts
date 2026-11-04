@@ -4,6 +4,8 @@ import { type Clip, defaultTrackState, trackStore } from '#/modules/Arrangement/
 import { splitClip } from '#/modules/Arrangement/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { projectClipMidiEvents } from '#/modules/MIDI/useCases';
+import { readSecondsAtBeat, readTempoAtBeat, tempoMapStore } from '#/modules/Transport/stores';
+import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 
 import { createTrack } from '../../../models/Track';
@@ -137,6 +139,71 @@ describe('splitClip loop anchoring', () => {
 
     afterEach(() => {
         resetMidiStore();
+        tempoMapStore.set({ changes: [] });
+    });
+
+    it('consumes the internal tempo map at the bounded source rate when splitting audio', () => {
+        tempoMapStore.set({
+            changes: [
+                { id: 'base', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        seedTrack([
+            loopedAudioClip({
+                startBeat: 2,
+                endBeat: 10,
+                loopEnabled: false,
+                audioOffsetSeconds: 0.75,
+                stretchMode: 'timestretch',
+                stretchRatio: 1.5,
+            }),
+        ]);
+
+        const rightId = splitClip('c-audio', 6);
+
+        expect(rightId).not.toBeNull();
+        // 2..4 takes one second and 4..6 takes two: source advances 3 × 1.5.
+        expect(readClip(rightId!).audioOffsetSeconds).toBe(5.25);
+        expect(readClip('c-audio').audioOffsetSeconds).toBe(0.75);
+    });
+
+    it('keeps the captured loop source boundary and timeline reset when splitting stretched audio', () => {
+        tempoMapStore.set({
+            changes: [
+                { id: 'base', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        });
+        seedTrack([
+            loopedAudioClip({
+                startBeat: 2,
+                endBeat: 10,
+                loopOriginBeat: 2,
+                audioOffsetSeconds: 0.75,
+                audioLoopStartSeconds: 0.75,
+                stretchMode: 'timestretch',
+                stretchRatio: 1.5,
+            }),
+        ]);
+
+        const rightId = splitClip('c-audio', 5);
+
+        expect(rightId).not.toBeNull();
+        const right = readClip(rightId!);
+        const segments = projectAudioLoopPassSegments({
+            clip: right,
+            loopLengthBeats: 4,
+            iterationStartBeat: 5,
+            iterationEndBeat: 9,
+            stretchRatio: 1.5,
+            tempoAtClipStart: readTempoAtBeat({ beat: 5 }),
+            secondsAtBeat: (beat) => readSecondsAtBeat({ beat }),
+        });
+        expect(segments).toEqual([
+            { startOffsetBeats: 0, endOffsetBeats: 1, sourceStartSeconds: 3.75 },
+            { startOffsetBeats: 1, endOffsetBeats: 4, sourceStartSeconds: 0.75 },
+        ]);
     });
 
     it('restamps the MIDI fragment anchor at its own start so the fragment keeps sounding', () => {
@@ -244,15 +311,7 @@ describe('splitClip loop anchoring', () => {
         expect(regionOf(right)).toEqual(regionOf(source));
     });
 
-    it('shifts the carried anchor by the stretch difference so a stretched split keeps the source read', () => {
-        // The offset advances by the media delta — `timelineSplitDelta *
-        // stretch` (pinned in splitClip.spec) — while an unshifted anchor's
-        // advance would grow by the timeline delta alone, displacing the
-        // recovered region by `splitDelta * (stretch - 1)` source beats and
-        // putting the fragment on the wrong material at the cut. The anchor
-        // absorbs the difference: shifted by `timelineSplitDelta -
-        // contentSplitDelta`, its advance grows by the same media delta the
-        // offset advanced by, and the recovered geometry stays the source's.
+    it('captures the original physical source anchors when splitting stretched legacy audio', () => {
         seedTrack([
             loopedAudioClip({
                 startBeat: 1,
@@ -266,29 +325,30 @@ describe('splitClip loop anchoring', () => {
         const rightId = splitClip('c-audio', 5);
         expect(rightId).not.toBeNull();
 
-        // Measured figures: timeline delta 4, media delta 8 — offset
-        // 1 + 8 = 9, anchor 0 + (4 - 8) = -4.
         const right = readClip(rightId!);
         expect(right.startBeat).toBe(5);
         expect(right.audioOffsetBeats).toBe(9);
-        expect(right.loopOriginBeat).toBe(-4);
-
-        const source = readClip('c-audio');
-        // The advance is deliberately different — it grows by the media delta
-        // alongside the offset — so the recovered geometry, not the advance,
-        // is the invariant: region and entry phase must equal the source's.
-        const geometryOf = (clip: Clip): { region: number; entry: number } => {
-            const advance = resolveClipLoopOriginAdvance({
-                startBeat: clip.startBeat,
-                loopOriginBeat: clip.loopOriginBeat,
-                loopEnabled: clip.loopEnabled ?? false,
-            });
-            return {
-                region: (clip.audioOffsetBeats ?? 0) - advance,
-                entry: ((advance % clip.loopLength!) + clip.loopLength!) % clip.loopLength!,
-            };
-        };
-        expect(geometryOf(right)).toEqual(geometryOf(source));
+        expect(right).toMatchObject({
+            loopOriginBeat: 0,
+            audioOffsetSeconds: 0.5,
+            audioLoopStartSeconds: 0,
+            audioLoopPassEntrySeconds: 0.5,
+            audioLoopPassOriginBeat: 1,
+        });
+        expect(
+            projectAudioLoopPassSegments({
+                clip: right,
+                loopLengthBeats: 4,
+                iterationStartBeat: 5,
+                iterationEndBeat: 9,
+                stretchRatio: 2,
+                tempoAtClipStart: 120,
+                secondsAtBeat: (beat) => beat / 2,
+            })
+        ).toEqual([
+            { startOffsetBeats: 0, endOffsetBeats: 3, sourceStartSeconds: 0.5 },
+            { startOffsetBeats: 3, endOffsetBeats: 4, sourceStartSeconds: 0 },
+        ]);
     });
 
     it('leaves the loopOriginBeat key absent when the source was never anchored', () => {

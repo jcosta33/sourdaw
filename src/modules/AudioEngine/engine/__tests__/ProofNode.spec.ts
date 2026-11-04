@@ -38,7 +38,7 @@ vi.mock('../telemetryAllocator', async (importOriginal) => ({
     telemetryAllocator: { allocateSlot: mocks.allocateSlot, releaseSlot: mocks.releaseSlot },
 }));
 
-vi.mock('../../services/proofProcessor.ts?worker&url', () => ({ default: 'proof-processor-url' }));
+vi.mock('../../worklets/proofProcessor.ts?worker&url', () => ({ default: 'proof-processor-url' }));
 
 type FakePort = {
     postMessage: ReturnType<typeof vi.fn>;

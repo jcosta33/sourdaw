@@ -30,7 +30,7 @@ vi.mock('../telemetryAllocator', async () => {
     return { ...actual, telemetryAllocator: { allocateSlot: vi.fn(() => null), releaseSlot: vi.fn() } };
 });
 
-vi.mock('../../services/glutenProcessor.ts?worker&url', () => ({ default: 'gluten-processor-url' }));
+vi.mock('../../worklets/glutenProcessor.ts?worker&url', () => ({ default: 'gluten-processor-url' }));
 
 describe('isGlutenDevice', () => {
     it('should return true only for the gluten device type string', () => {

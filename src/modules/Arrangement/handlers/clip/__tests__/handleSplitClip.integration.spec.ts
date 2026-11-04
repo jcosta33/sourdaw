@@ -1,12 +1,28 @@
+import {
+    change,
+    clone,
+    getChangesMetaSince,
+    getHeads,
+    getObjectId,
+    hasHeads,
+    load,
+    merge,
+    save,
+    toJS,
+    view,
+} from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
 import {
     configureAutomergeStoragePort,
+    AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY,
+    runOutsideAutomergeStoragePublisherScope,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { projectOfflineAudioClipPlaybacks, resolveTrackClipsWithComping } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -17,13 +33,19 @@ import {
     undo,
 } from '#/modules/Command/useCases';
 import {
+    captureProjectRootIdentity,
     createCrdtDoc,
+    getCrdtDoc,
+    mutateCrdtDoc,
+    setupProjectionBridge,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
+    replaceCrdtDoc,
+    replaceCrdtDocInLineage,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import {
     type ConfirmPayload,
@@ -35,11 +57,16 @@ import {
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { gainSeamPointId } from '../../../models/GainSeamPointId';
+import { createTake, createTakeLane } from '../../../models/TakeLane';
+import { type Track } from '../../../models/Track';
 import { readClipSatelliteEntry, serializeClipSatelliteEntries } from '../../../stores/clipSatelliteState';
 import { removeEnvelope, setAllEnvelopes, setEnvelope } from '../../../stores/gainEnvelopeStore';
+import { takeLaneStore, type TakeLaneStoreState } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { setWarpState, warpStates } from '../../../stores/warpStates';
+import * as splitClipUseCase from '../../../useCases/clipEditing/splitClip';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
+import { handleSplitClip } from '../handleSplitClip';
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -71,6 +98,92 @@ function makeAudioBuffer(channelData: Float32Array, sampleRate: number): AudioBu
         copyFromChannel: () => undefined,
         copyToChannel: () => undefined,
     } as unknown as AudioBuffer;
+}
+
+type SplitWitnessRoot = {
+    tracks: { tracks: Track[] };
+    takeLanes: TakeLaneStoreState;
+    transport: { tempo: number };
+};
+
+type SplitCommitBoundary = 'beforeCommit' | 'prospective';
+
+async function splitAtCommitBoundary(boundary: SplitCommitBoundary, intervene: () => void, ignoreBeforeChange = false) {
+    let guardReason: string | null | undefined;
+    let rawOwnerReason: string | null | undefined;
+    let checkRawOwners: (() => string | null) | undefined;
+    if (boundary === 'prospective') {
+        configureAutomergeStoragePort({
+            getDoc: getCrdtDoc,
+            getDocHeads: (id) => {
+                const document = getCrdtDoc(id);
+                return document && getHeads(document);
+            },
+            getSemanticMessage: () => undefined,
+            hasDoc: (id) => getCrdtDoc(id) !== undefined,
+            mutateDoc: ({ docId, changedKeys, changeFn, message, snapshotTransaction, beforeChange }) => {
+                if (docId === 'root') {
+                    intervene();
+                    if (!checkRawOwners) {
+                        throw new Error('Expected the retained source guard before publication');
+                    }
+                    rawOwnerReason = checkRawOwners();
+                }
+                mutateCrdtDoc({
+                    id: docId,
+                    changeFn,
+                    message,
+                    snapshotTransaction,
+                    localSlots: changedKeys,
+                    beforeChange: ignoreBeforeChange ? undefined : beforeChange,
+                });
+            },
+        });
+    }
+    const execute = handleSplitClip.execute;
+    const spy = vi.spyOn(handleSplitClip, 'execute').mockImplementation(async (action, context) => {
+        const result = await execute(action, context);
+        if (!result || typeof result !== 'object' || !('commitValidation' in result) || !result.commitValidation) {
+            throw new Error('Expected the real forward split source guard');
+        }
+        const validation = result.commitValidation;
+        checkRawOwners = validation.beforeCommit;
+        return {
+            ...result,
+            commitValidation: {
+                ...validation,
+                beforeCommit: () => {
+                    if (boundary === 'beforeCommit') {
+                        intervene();
+                    }
+                    guardReason = validation.beforeCommit();
+                    if (boundary === 'beforeCommit') {
+                        rawOwnerReason = guardReason;
+                    }
+                    return guardReason;
+                },
+                validateDocument: (document) => {
+                    guardReason = validation.validateDocument(document);
+                    return guardReason;
+                },
+            },
+        };
+    });
+    try {
+        const result = await executeAppActionBatch(
+            [
+                {
+                    type: 'splitClip',
+                    payload: { clipId: 'clip-1', beat: 4, resolvedBeat: 4, rightClipId: 'guarded-right' },
+                },
+            ],
+            { source: 'manual', requireCompensation: true }
+        );
+        return { result, guardReason, rawOwnerReason };
+    } finally {
+        spy.mockRestore();
+        registerCrdtStorageRuntime();
+    }
 }
 
 describe('handleSplitClip atomic integration', () => {
@@ -117,6 +230,8 @@ describe('handleSplitClip atomic integration', () => {
             pitchBendByClipId: {},
         });
         transportStore.set({ ...defaultTransportState, tempo: 120 });
+        tempoMapStore.set({ changes: [] });
+        takeLaneStore.set({ lanes: [] });
         warpStates.clear();
         setAllEnvelopes({});
         flushAutomergeStorageWrites();
@@ -130,10 +245,12 @@ describe('handleSplitClip atomic integration', () => {
         Container.clear();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        takeLaneStore.set({ lanes: [] });
         warpStates.clear();
         setAllEnvelopes({});
         vi.restoreAllMocks();
         transportStore.set({ ...defaultTransportState });
+        tempoMapStore.set({ changes: [] });
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
@@ -282,6 +399,855 @@ describe('handleSplitClip atomic integration', () => {
         }
     );
 
+    it('accepts a raw signed-zero take through its canonical projected split prefix', async () => {
+        const clip = ClipDummy.create({
+            id: 'clip-1',
+            trackId: 'track-1',
+            type: 'audio',
+            startBeat: 0,
+            endBeat: 8,
+            audioBufferId: 'signed-zero-buffer',
+        });
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'track-1', kind: 'audio', clips: [clip] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        const take = { ...createTake(clip.id, 'Signed zero pass', 0, 8, -0), id: 'signed-zero-take' };
+        const lane = {
+            ...createTakeLane('track-1'),
+            id: 'signed-zero-lane',
+            takes: [take],
+            activeCompRegions: [{ startBeat: 0, endBeat: 8, takeId: take.id }],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+        flushAutomergeStorageWrites();
+        // Ordinary store writes use JSON-safe values. Seed a raw Automerge value
+        // directly, then use the normal hydration boundary.
+        mutateCrdtDoc<{ takeLanes: TakeLaneStoreState }>({
+            id: 'root',
+            changeFn: (doc) => {
+                doc.takeLanes = { lanes: [lane] };
+            },
+        });
+        takeLaneStore.hydrate();
+        const raw = getCrdtDoc<{ takeLanes: TakeLaneStoreState }>('root');
+        expect(Object.is(raw?.takeLanes.lanes[0]?.takes[0]?.sourceOffsetBeats, -0)).toBe(true);
+        expect(Object.is(takeLaneStore.value?.lanes[0]?.takes[0]?.sourceOffsetBeats, 0)).toBe(true);
+        const sampleRate = 48000;
+        const scale = 2 ** 20;
+        const pcm = Float32Array.from({ length: 4 * sampleRate }, (_, frame) => frame / scale);
+        vi.spyOn(audioBufferCache, 'get').mockReturnValue(makeAudioBuffer(pcm, sampleRate));
+        const sourceFrameAtCut = (clips: Track['clips']): number => {
+            const programme = resolveTrackClipsWithComping('track-1', clips);
+            const selected = programme.find((part) => part.startBeat <= 4 && part.endBeat > 4);
+            if (!selected) {
+                throw new Error('Expected source at the cut');
+            }
+            const [playback] = projectOfflineAudioClipPlaybacks({
+                clip: selected,
+                bufferDurationSeconds: pcm.length / sampleRate,
+                regionStartBeat: 4,
+                regionStartSec: 2,
+                durationSeconds: 2,
+                compensationDelay: 0,
+                projectBeatToSeconds: (beat) => beat / 2,
+                resolveTempoAtBeat: () => 120,
+            });
+            if (!playback) {
+                throw new Error('Expected the physical source read');
+            }
+            expect(playback.bufferOffsetSec).toBe(2);
+            const frame = Math.round(playback.bufferOffsetSec * sampleRate);
+            expect(frame).toBe(96000);
+            expect(pcm[frame]).toBe(96000 / scale);
+            return frame;
+        };
+        const originalFrame = sourceFrameAtCut([clip]);
+        const result = await executeAppActionBatch(
+            [
+                {
+                    type: 'splitClip',
+                    payload: { clipId: clip.id, beat: 4, resolvedBeat: 4, rightClipId: 'signed-zero-right' },
+                },
+            ],
+            { source: 'manual', requireCompensation: true }
+        );
+        expect(result.status).toBe('committed');
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(getCrdtDoc('root')?.[AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY]).toBeDefined();
+        expect(sourceFrameAtCut(trackStore.value!.tracks[0]!.clips)).toBe(originalFrame);
+        expect(takeLaneStore.value?.lanes[0]?.takes.map((item) => item.clipId)).toEqual([clip.id, 'signed-zero-right']);
+        expect(takeLaneStore.value?.lanes[0]?.takes.every((item) => item.sourceOffsetBeats === 0)).toBe(true);
+    });
+
+    it('refuses an admitted source projection that differs from the authoritative raw prefix', async () => {
+        const clip = ClipDummy.create({ id: 'clip-1', trackId: 'track-1', startBeat: 0, endBeat: 8 });
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'track-1', kind: 'audio', clips: [clip] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        flushAutomergeStorageWrites();
+        // Deliberately leave the projected store stale. A promotion from that
+        // beat-only view must not overwrite the independently retained source.
+        mutateCrdtDoc<{ tracks: { tracks: Track[] } }>({
+            id: 'root',
+            changeFn: (document) => {
+                document.tracks.tracks[0]!.clips[0]!.audioOffsetSeconds = 1;
+            },
+        });
+        const before = structuredClone(getCrdtDoc('root'));
+        expect(trackStore.value?.tracks[0]?.clips[0]?.audioOffsetSeconds).toBeUndefined();
+        const result = await executeAppActionBatch(
+            [
+                {
+                    type: 'splitClip',
+                    payload: {
+                        clipId: clip.id,
+                        beat: 4,
+                        resolvedBeat: 4,
+                        rightClipId: 'stale-source-right',
+                    },
+                },
+            ],
+            { source: 'manual', requireCompensation: true }
+        );
+        expect(result.status).not.toBe('committed');
+        expect(getCrdtDoc('root')).toEqual(before);
+        expect(getCrdtDoc('root')?.[AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY]).toBeUndefined();
+        expect(undoStore.value?.past).toHaveLength(0);
+    });
+
+    it('does not publish a source member when a forward split reports success without its domain effect', async () => {
+        const clip = ClipDummy.create({ id: 'clip-1', trackId: 'track-1', startBeat: 0, endBeat: 8 });
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'track-1', kind: 'audio', clips: [clip] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        flushAutomergeStorageWrites();
+        const before = structuredClone(getCrdtDoc('root'));
+        const split = vi.spyOn(splitClipUseCase, 'splitClip').mockReturnValue('missing-right');
+        const result = await executeAppActionBatch(
+            [
+                {
+                    type: 'splitClip',
+                    payload: {
+                        clipId: clip.id,
+                        beat: 4,
+                        resolvedBeat: 4,
+                        rightClipId: 'missing-right',
+                    },
+                },
+            ],
+            { source: 'manual', requireCompensation: true }
+        );
+        expect(split).toHaveBeenCalledOnce();
+        expect(result.status).not.toBe('committed');
+        expect(getCrdtDoc('root')).toEqual(before);
+        expect(getCrdtDoc('root')?.[AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY]).toBeUndefined();
+        expect(undoStore.value?.past).toHaveLength(0);
+    });
+
+    it.each(['beforeCommit', 'prospective'] as const)(
+        'does not certify a source or clock intervention at %s',
+        async (boundary) => {
+            const clip = ClipDummy.create({ id: 'clip-1', trackId: 'track-1', startBeat: 0, endBeat: 8 });
+            trackStore.set({
+                tracks: [TrackDummy.create({ id: 'track-1', kind: 'audio', clips: [clip] })],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
+            flushAutomergeStorageWrites();
+            const stop = setupProjectionBridge();
+            let peer: unknown;
+            let intervened = false;
+            const intervene = () => {
+                if (intervened) {
+                    return;
+                }
+                intervened = true;
+                runOutsideAutomergeStoragePublisherScope(() =>
+                    mutateCrdtDoc<{
+                        tracks: { tracks: Track[] };
+                        transport: { tempo: number };
+                    }>({
+                        id: 'root',
+                        changeFn: (document) => {
+                            document.tracks.tracks[0]!.clips[0]!.audioBufferId = 'peer-source';
+                            document.transport.tempo = 90;
+                        },
+                    })
+                );
+                peer = structuredClone(getCrdtDoc('root'));
+            };
+            if (boundary === 'prospective') {
+                configureAutomergeStoragePort({
+                    getDoc: getCrdtDoc,
+                    getDocHeads: (id) => {
+                        const document = getCrdtDoc(id);
+                        return document && getHeads(document);
+                    },
+                    getSemanticMessage: () => undefined,
+                    hasDoc: (id) => getCrdtDoc(id) !== undefined,
+                    mutateDoc: ({ docId, changedKeys, changeFn, message, snapshotTransaction, beforeChange }) => {
+                        if (docId === 'root') {
+                            intervene();
+                        }
+                        mutateCrdtDoc({
+                            id: docId,
+                            changeFn,
+                            message,
+                            snapshotTransaction,
+                            localSlots: changedKeys,
+                            beforeChange,
+                        });
+                    },
+                });
+            }
+            const execute = handleSplitClip.execute;
+            const spy = vi.spyOn(handleSplitClip, 'execute').mockImplementation(async (action, context) => {
+                const result = await execute(action, context);
+                if (
+                    !result ||
+                    typeof result !== 'object' ||
+                    !('commitValidation' in result) ||
+                    !result.commitValidation
+                ) {
+                    throw new Error('Expected actual forward source guard');
+                }
+                const validation = result.commitValidation;
+                return {
+                    ...result,
+                    commitValidation: {
+                        ...validation,
+                        beforeCommit: () => {
+                            if (boundary === 'beforeCommit') {
+                                intervene();
+                            }
+                            return validation.beforeCommit();
+                        },
+                        validateDocument: validation.validateDocument,
+                    },
+                };
+            });
+            try {
+                const result = await executeAppActionBatch(
+                    [
+                        {
+                            type: 'splitClip',
+                            payload: {
+                                clipId: clip.id,
+                                beat: 4,
+                                resolvedBeat: 4,
+                                rightClipId: 'guarded-right',
+                            },
+                        },
+                    ],
+                    { source: 'manual', requireCompensation: true }
+                );
+                expect(intervened).toBe(true);
+                expect(result.status).not.toBe('committed');
+                expect(getCrdtDoc('root')).toEqual(peer);
+                expect(getCrdtDoc('root')?.[AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY]).toBeUndefined();
+                expect(trackStore.value?.tracks[0]?.clips).toHaveLength(1);
+                expect(undoStore.value?.past).toHaveLength(0);
+            } finally {
+                spy.mockRestore();
+                registerCrdtStorageRuntime();
+                stop();
+            }
+        }
+    );
+
+    it.each(
+        [
+            'color',
+            'track-name',
+            'canonical',
+            'clip-incarnation',
+            'lane-incarnation',
+            'take-incarnation',
+            'region-incarnation',
+            'gap-incarnation',
+            'root-incarnation',
+            'source-ABA',
+            'clock-ABA',
+            'duplicate-clip',
+            'reserved-alternative',
+            'foreign-take-owner',
+            'source-lock',
+            'track-kind',
+            'active-alternative',
+        ].flatMap((peer) => (['beforeCommit', 'prospective'] as const).map((boundary) => ({ peer, boundary })))
+    )('authenticates scoped $peer at the real $boundary boundary', async ({ peer, boundary }) => {
+        const clip = ClipDummy.create({
+            id: 'clip-1',
+            trackId: 'track-1',
+            startBeat: 0,
+            endBeat: 8,
+            audioOffsetBeats: 0,
+            audioOffsetSeconds: 0,
+            audioUnwrappedOffsetSeconds: 0,
+        });
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'track-1', kind: 'audio', clips: [clip] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        const audioSource = {
+            startBeat: 0,
+            audioOffsetSeconds: 0,
+            audioLoopStartSeconds: 0,
+            audioLoopPassEntrySeconds: 0,
+            audioLoopPassOriginBeat: 0,
+            loopOriginBeat: 0,
+            loopLength: 8,
+        };
+        const take = { ...createTake(clip.id, 'Captured take', 0, 8, 0), id: 'captured-take', sourceOffsetSeconds: 0 };
+        takeLaneStore.set({
+            lanes: [
+                {
+                    ...createTakeLane('track-1'),
+                    id: 'captured-lane',
+                    takes: [take],
+                    activeCompRegions: [{ startBeat: 1, endBeat: 7, takeId: take.id, audioSource }],
+                    baseGapAudioSources: [
+                        { clipId: clip.id, startBeat: 0, endBeat: 1, audioSource },
+                        { clipId: clip.id, startBeat: 7, endBeat: 8, audioSource },
+                    ],
+                },
+            ],
+        });
+        flushAutomergeStorageWrites();
+        const before = getCrdtDoc<SplitWitnessRoot>('root');
+        if (!before) {
+            throw new Error('Expected actual raw source owners');
+        }
+        const original = toJS(before);
+        const originalLane = original.takeLanes.lanes[0]!;
+        const originalGap = originalLane.baseGapAudioSources?.[0];
+        if (!originalGap) {
+            throw new Error('Expected an actual raw base-gap owner');
+        }
+        const rootIdentity = captureProjectRootIdentity();
+        const rawOwner = (document: SplitWitnessRoot) => {
+            const lane = document.takeLanes.lanes[0]!;
+            switch (peer) {
+                case 'clip-incarnation':
+                    return document.tracks.tracks[0]!.clips[0];
+                case 'lane-incarnation':
+                    return lane;
+                case 'take-incarnation':
+                    return lane.takes[0];
+                case 'region-incarnation':
+                    return lane.activeCompRegions[0];
+                case 'gap-incarnation':
+                    return lane.baseGapAudioSources?.[0];
+                default:
+                    return undefined;
+            }
+        };
+        const originalOwner = rawOwner(before);
+        const originalObjectId = originalOwner && getObjectId(originalOwner);
+        const peerClip = ClipDummy.create({
+            id: 'peer',
+            trackId: 'track-1',
+            startBeat: 12,
+            endBeat: 16,
+            audioOffsetSeconds: 0,
+            audioUnwrappedOffsetSeconds: 0,
+        });
+        const stop = setupProjectionBridge();
+        let intervened = false;
+        let peerDocument: unknown;
+        const intervene = () => {
+            if (intervened) {
+                return;
+            }
+            intervened = true;
+            runOutsideAutomergeStoragePublisherScope(() => {
+                if (peer === 'root-incarnation') {
+                    const temporary = change(clone(before), (document) => {
+                        document.tracks.tracks[0]!.name = 'Temporary installed project';
+                    });
+                    replaceCrdtDoc({ id: 'root', doc: temporary });
+                    replaceCrdtDoc({ id: 'root', doc: load<SplitWitnessRoot>(save(before)) });
+                } else {
+                    mutateCrdtDoc<SplitWitnessRoot>({
+                        id: 'root',
+                        changeFn: (document) => {
+                            const track = document.tracks.tracks[0]!;
+                            const lane = document.takeLanes.lanes[0]!;
+                            switch (peer) {
+                                case 'color':
+                                    track.clips[0]!.color = 'peer-blue';
+                                    break;
+                                case 'track-name':
+                                    track.name = 'Peer name';
+                                    break;
+                                case 'canonical':
+                                    track.clips.push(peerClip);
+                                    break;
+                                case 'clip-incarnation':
+                                    track.clips[0] = structuredClone(original.tracks.tracks[0]!.clips[0]!);
+                                    break;
+                                case 'lane-incarnation':
+                                    document.takeLanes.lanes[0] = structuredClone(originalLane);
+                                    break;
+                                case 'take-incarnation':
+                                    lane.takes[0] = structuredClone(originalLane.takes[0]!);
+                                    break;
+                                case 'region-incarnation':
+                                    lane.activeCompRegions[0] = structuredClone(originalLane.activeCompRegions[0]!);
+                                    break;
+                                case 'gap-incarnation':
+                                    lane.baseGapAudioSources![0] = structuredClone(originalGap);
+                                    break;
+                                case 'source-ABA':
+                                    track.clips[0]!.audioBufferId = 'intervening-source';
+                                    break;
+                                case 'clock-ABA':
+                                    document.transport.tempo = 90;
+                                    break;
+                                case 'duplicate-clip':
+                                    track.clips.push(structuredClone(original.tracks.tracks[0]!.clips[0]!));
+                                    break;
+                                case 'reserved-alternative':
+                                    track.alternatives[0]!.clips.push({ ...peerClip, id: 'guarded-right' });
+                                    break;
+                                case 'foreign-take-owner':
+                                    document.takeLanes.lanes.push({
+                                        ...createTakeLane('track-1'),
+                                        id: 'peer-lane',
+                                        takes: [structuredClone(originalLane.takes[0]!)],
+                                    });
+                                    break;
+                                case 'source-lock':
+                                    track.clips[0]!.locked = true;
+                                    break;
+                                case 'track-kind':
+                                    track.kind = 'folder';
+                                    break;
+                                case 'active-alternative':
+                                    track.activeAlternativeId = 'peer-alternative';
+                                    break;
+                            }
+                        },
+                    });
+                    if (peer === 'source-ABA' || peer === 'clock-ABA') {
+                        mutateCrdtDoc<SplitWitnessRoot>({
+                            id: 'root',
+                            changeFn: (document) => {
+                                if (peer === 'source-ABA') {
+                                    document.tracks.tracks[0]!.clips[0]!.audioBufferId =
+                                        original.tracks.tracks[0]!.clips[0]!.audioBufferId;
+                                } else {
+                                    document.transport.tempo = original.transport.tempo;
+                                }
+                            },
+                        });
+                    }
+                }
+            });
+            const current = getCrdtDoc<SplitWitnessRoot>('root');
+            if (!current) {
+                throw new Error('Expected the retained peer project');
+            }
+            peerDocument = toJS(current);
+            if (originalObjectId) {
+                const currentOwner = rawOwner(current);
+                expect(currentOwner).toBeDefined();
+                expect(getObjectId(currentOwner!)).not.toBe(originalObjectId);
+                expect(peerDocument).toEqual(original);
+            }
+            if (peer === 'source-ABA' || peer === 'clock-ABA' || peer === 'root-incarnation') {
+                expect(peerDocument).toEqual(original);
+            }
+            if (peer === 'root-incarnation') {
+                expect(captureProjectRootIdentity()).not.toBe(rootIdentity);
+            }
+        };
+        try {
+            const { result, guardReason, rawOwnerReason } = await splitAtCommitBoundary(boundary, intervene);
+            expect(intervened).toBe(true);
+            const positive = peer === 'color' || peer === 'track-name' || peer === 'canonical';
+            if (positive && boundary === 'beforeCommit') {
+                // #5521: a full bridge hydrate before write preparation keeps
+                // the peer's nested tracks value. The raw source guard admits
+                // this peer, while the missing split effect must refuse safely.
+                expect(rawOwnerReason).toBeNull();
+                expect(guardReason).toBe('Split source effect did not reach committed owners');
+                expect(result.status).toBe('conflicted');
+                const raw = getCrdtDoc<SplitWitnessRoot>('root');
+                if (!raw) {
+                    throw new Error('Expected retained peer truth');
+                }
+                expect(toJS(raw)).toEqual(peerDocument);
+                expect(raw.tracks).toEqual(toJS(raw).tracks);
+                expect(trackStore.value?.tracks).toEqual(raw.tracks.tracks);
+                expect(raw.tracks.tracks[0]?.clips.some((row) => row.id === 'guarded-right')).toBe(false);
+                expect(getCrdtDoc('root')?.[AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY]).toBeUndefined();
+                expect(undoStore.value?.past).toHaveLength(0);
+            } else if (positive) {
+                expect(rawOwnerReason).toBeNull();
+                expect(guardReason).toBeNull();
+                expect(result.status).toBe('committed');
+                const raw = getCrdtDoc<SplitWitnessRoot>('root');
+                const track = raw?.tracks.tracks[0];
+                expect(raw && toJS(raw).tracks).toEqual(raw?.tracks);
+                expect(track?.clips.find((row) => row.id === 'clip-1')).toMatchObject({
+                    endBeat: 4,
+                    audioOffsetSeconds: 0,
+                });
+                expect(track?.clips.find((row) => row.id === 'guarded-right')).toMatchObject({
+                    startBeat: 4,
+                    endBeat: 8,
+                    audioOffsetSeconds: 2,
+                });
+                if (peer === 'color') {
+                    expect(track?.clips.find((row) => row.id === 'clip-1')?.color).toBe('peer-blue');
+                } else if (peer === 'track-name') {
+                    expect(track?.name).toBe('Peer name');
+                } else {
+                    expect(track?.clips.find((row) => row.id === 'peer')).toEqual(peerClip);
+                }
+                expect(getCrdtDoc('root')?.[AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY]).toBeDefined();
+                expect(undoStore.value?.past).toHaveLength(1);
+                expect(trackStore.value?.tracks).toEqual(raw?.tracks.tracks);
+            } else {
+                expect(rawOwnerReason).toBe('Split source owners or clock changed before commit');
+                expect(result.status).not.toBe('committed');
+                expect(toJS(getCrdtDoc('root')!)).toEqual(peerDocument);
+                expect(getCrdtDoc('root')?.[AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY]).toBeUndefined();
+                expect(undoStore.value?.past).toHaveLength(0);
+            }
+        } finally {
+            stop();
+        }
+    });
+
+    it.each([
+        ['none', 'affected'],
+        ['captured', 'affected'],
+        ['empty', 'affected-existing'],
+        ['none', 'other'],
+        ['captured', 'other'],
+    ] as const)(
+        'authenticates late %s lane ownership on %s track before prospective source publication',
+        async (initial, target) => {
+            const clip = ClipDummy.create({
+                id: 'clip-1',
+                trackId: 'track-1',
+                startBeat: 0,
+                endBeat: 8,
+                audioOffsetSeconds: 0,
+                audioUnwrappedOffsetSeconds: 0,
+            });
+            const other = ClipDummy.create({
+                id: 'other-clip',
+                trackId: 'track-2',
+                startBeat: 12,
+                endBeat: 20,
+                audioOffsetSeconds: 0,
+                audioUnwrappedOffsetSeconds: 0,
+            });
+            trackStore.set({
+                tracks: [
+                    TrackDummy.create({ id: 'track-1', kind: 'audio', clips: [clip] }),
+                    TrackDummy.create({ id: 'track-2', kind: 'audio', clips: [other] }),
+                ],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
+            const initialLane = {
+                ...createTakeLane('track-1'),
+                id: 'initial-lane',
+                takes:
+                    initial === 'captured'
+                        ? [{ ...createTake(clip.id, 'Initial take', 0, 8, 0), id: 'initial-take' }]
+                        : [],
+            };
+            takeLaneStore.set({ lanes: initial === 'none' ? [] : [initialLane] });
+            flushAutomergeStorageWrites();
+            const affected = target !== 'other';
+            const take = {
+                ...createTake(affected ? clip.id : other.id, 'Late take', affected ? 0 : 12, affected ? 8 : 20, 0),
+                id: 'fresh-peer-take',
+            };
+            const lane = { ...createTakeLane(affected ? 'track-1' : 'track-2'), id: 'fresh-peer-lane', takes: [take] };
+            const stop = setupProjectionBridge();
+            let peer: unknown;
+            let intervened = false;
+            const intervene = () => {
+                if (intervened) {
+                    return;
+                }
+                intervened = true;
+                runOutsideAutomergeStoragePublisherScope(() =>
+                    mutateCrdtDoc<SplitWitnessRoot>({
+                        id: 'root',
+                        changeFn: (document) => {
+                            if (target === 'affected-existing') {
+                                document.takeLanes.lanes[0]!.takes.push(take);
+                            } else {
+                                document.takeLanes.lanes.push(lane);
+                            }
+                        },
+                    })
+                );
+                const raw = getCrdtDoc('root');
+                if (!raw) {
+                    throw new Error('Expected actual late peer');
+                }
+                peer = toJS(raw);
+            };
+            try {
+                const { result, rawOwnerReason } = await splitAtCommitBoundary('prospective', intervene);
+                expect(intervened).toBe(true);
+                const raw = getCrdtDoc<SplitWitnessRoot>('root');
+                if (!raw) {
+                    throw new Error('Expected retained root');
+                }
+                if (affected) {
+                    expect(result.status).not.toBe('committed');
+                    expect(rawOwnerReason).toBe('Split source owners or clock changed before commit');
+                    expect(toJS(raw)).toEqual(peer);
+                    expect(raw.tracks).toEqual(toJS(raw).tracks);
+                    expect(undoStore.value?.past).toHaveLength(0);
+                    expect(getCrdtDoc('root')?.[AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY]).toBeUndefined();
+                } else {
+                    expect(result.status).toBe('committed');
+                    expect(rawOwnerReason).toBeNull();
+                    expect(raw.tracks.tracks[0]?.clips).toMatchObject([
+                        { id: clip.id, endBeat: 4 },
+                        { id: 'guarded-right', startBeat: 4 },
+                    ]);
+                    expect(raw.takeLanes.lanes.find((row) => row.id === lane.id)).toEqual(lane);
+                    expect(trackStore.value?.tracks).toEqual(raw.tracks.tracks);
+                    expect(undoStore.value?.past).toHaveLength(1);
+                }
+            } finally {
+                stop();
+            }
+        }
+    );
+
+    it('refuses a stale early source certificate when a late-peer port omits the opt-in pre-change hook', async () => {
+        const clip = ClipDummy.create({
+            id: 'clip-1',
+            trackId: 'track-1',
+            startBeat: 0,
+            endBeat: 8,
+            audioOffsetSeconds: 0,
+            audioUnwrappedOffsetSeconds: 0,
+        });
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'track-1', kind: 'audio', clips: [clip] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        flushAutomergeStorageWrites();
+        let peer: unknown;
+        let intervened = false;
+        const intervene = () => {
+            if (intervened) {
+                return;
+            }
+            intervened = true;
+            runOutsideAutomergeStoragePublisherScope(() => {
+                mutateCrdtDoc<SplitWitnessRoot>({
+                    id: 'root',
+                    changeFn: (document) => {
+                        document.tracks.tracks[0]!.clips[0]!.audioBufferId = 'intervening-source';
+                    },
+                });
+                mutateCrdtDoc<SplitWitnessRoot>({
+                    id: 'root',
+                    changeFn: (document) => {
+                        document.tracks.tracks[0]!.clips[0]!.audioBufferId = clip.audioBufferId;
+                    },
+                });
+            });
+            const document = getCrdtDoc('root');
+            if (!document) {
+                throw new Error('Expected actual peer root');
+            }
+            peer = toJS(document);
+        };
+        const { result, rawOwnerReason } = await splitAtCommitBoundary('prospective', intervene, true);
+        expect(intervened).toBe(true);
+        expect(rawOwnerReason).toBe('Split source owners or clock changed before commit');
+        expect(result.status).not.toBe('committed');
+        const document = getCrdtDoc('root');
+        if (!document) {
+            throw new Error('Expected retained peer root');
+        }
+        expect(toJS(document)).toEqual(peer);
+        expect(document.tracks).toEqual(toJS(document).tracks);
+        expect(document[AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY]).toBeUndefined();
+        expect(undoStore.value?.past).toHaveLength(0);
+    });
+
+    it('checks an unreachable backend future on a historical view, then publishes a writable same-frontier split', async () => {
+        const clip = ClipDummy.create({
+            id: 'clip-1',
+            trackId: 'track-1',
+            startBeat: 0,
+            endBeat: 8,
+            audioOffsetSeconds: 0,
+            audioUnwrappedOffsetSeconds: 0,
+        });
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'track-1', kind: 'audio', clips: [clip] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        flushAutomergeStorageWrites();
+        const stop = setupProjectionBridge();
+        let checkRawOwners: (() => string | null) | undefined;
+        let futureObserved = false;
+        let intervened = false;
+        const execute = handleSplitClip.execute;
+        const spy = vi.spyOn(handleSplitClip, 'execute').mockImplementation(async (action, context) => {
+            const result = await execute(action, context);
+            if (!result || typeof result !== 'object' || !('commitValidation' in result) || !result.commitValidation) {
+                throw new Error('Expected the actual forward source guard');
+            }
+            checkRawOwners = result.commitValidation.beforeCommit;
+            return result;
+        });
+        configureAutomergeStoragePort({
+            getDoc: getCrdtDoc,
+            getDocHeads: (id) => {
+                const document = getCrdtDoc(id);
+                return document && getHeads(document);
+            },
+            getSemanticMessage: () => undefined,
+            hasDoc: (id) => getCrdtDoc(id) !== undefined,
+            mutateDoc: ({ docId, changedKeys, changeFn, message, snapshotTransaction, beforeChange }) => {
+                if (docId === 'root' && !intervened) {
+                    intervened = true;
+                    const current = getCrdtDoc<SplitWitnessRoot>('root');
+                    if (!current || !checkRawOwners) {
+                        throw new Error('Expected actual source frontier and guard');
+                    }
+                    const basisHeads = getHeads(current);
+                    const identity = captureProjectRootIdentity();
+                    const future = change(clone(current), (document) => {
+                        document.tracks.tracks[0]!.clips[0]!.audioBufferId = 'unpublished-future';
+                    });
+                    const sibling = change(clone(current), (document) => {
+                        document.tracks.tracks[0]!.name = 'Peer sibling';
+                    });
+                    const joined = merge(clone(future), sibling);
+                    const peer = view(joined, getHeads(sibling));
+                    expect(hasHeads(peer, getHeads(future))).toBe(true);
+                    expect(
+                        getChangesMetaSince(peer, basisHeads).some((row) => getHeads(future).includes(row.hash))
+                    ).toBe(true);
+                    runOutsideAutomergeStoragePublisherScope(() => replaceCrdtDocInLineage({ id: 'root', doc: peer }));
+                    expect(captureProjectRootIdentity()).toBe(identity);
+                    // This retained beforeCommit guard checks the historical view.
+                    // It proves traversal scope, not an actual pre-change hook on
+                    // that read-only backend. Publication below uses a replica.
+                    expect(checkRawOwners()).toBeNull();
+                    futureObserved = true;
+                    // The candidate opens only after this read-only frontier
+                    // has been retained in a writable replica. Preparation is
+                    // already frozen, isolating causal scope from #5521 rebase.
+                    runOutsideAutomergeStoragePublisherScope(() =>
+                        replaceCrdtDocInLineage({ id: 'root', doc: clone(peer) })
+                    );
+                }
+                mutateCrdtDoc({
+                    id: docId,
+                    changeFn,
+                    message,
+                    snapshotTransaction,
+                    localSlots: changedKeys,
+                    beforeChange,
+                });
+            },
+        });
+        try {
+            const result = await executeAppActionBatch(
+                [
+                    {
+                        type: 'splitClip',
+                        payload: { clipId: clip.id, beat: 4, resolvedBeat: 4, rightClipId: 'future-right' },
+                    },
+                ],
+                { source: 'manual', requireCompensation: true }
+            );
+            expect(futureObserved).toBe(true);
+            expect(result.status).toBe('committed');
+            const raw = getCrdtDoc<SplitWitnessRoot>('root');
+            expect(raw?.tracks.tracks[0]?.name).toBe('Peer sibling');
+            expect(raw?.tracks.tracks[0]?.clips).toMatchObject([
+                { id: 'clip-1', endBeat: 4, audioBufferId: clip.audioBufferId, audioOffsetSeconds: 0 },
+                { id: 'future-right', startBeat: 4, audioBufferId: clip.audioBufferId, audioOffsetSeconds: 2 },
+            ]);
+            expect(raw && toJS(raw).tracks).toEqual(raw?.tracks);
+            expect(trackStore.value?.tracks).toEqual(raw?.tracks.tracks);
+            expect(undoStore.value?.past).toHaveLength(1);
+        } finally {
+            spy.mockRestore();
+            registerCrdtStorageRuntime();
+            stop();
+        }
+    });
+
+    it('retains selected source frame 108002 through the real rate2 split, undo and redo', async () => {
+        const clip = ClipDummy.create({
+            id: 'clip-1',
+            trackId: 'track-1',
+            startBeat: 0,
+            endBeat: 4,
+            audioBufferId: 'audio-buffer-1',
+            audioOffsetSeconds: 0.25,
+            audioOffsetBeats: 0.5,
+            stretchMode: 'repitch',
+            stretchRatio: 2,
+        });
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'track-1', kind: 'audio', clips: [clip] })],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+        tempoMapStore.set({
+            changes: [
+                { id: 'tempo-0', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'tempo-1', beat: 1, tempo: 240, curve: 'instant' },
+                { id: 'tempo-2', beat: 2, tempo: 120, curve: 'instant' },
+            ],
+        });
+        const channelData = new Float32Array(192000).fill(-1);
+        channelData.fill(1, 108003);
+        vi.spyOn(audioBufferCache, 'get').mockReturnValue(makeAudioBuffer(channelData, 48000));
+        flushAutomergeStorageWrites();
+        const before = structuredClone(trackStore.value!.tracks[0]!.clips);
+
+        const result = await executeAppActionBatch([{ type: 'splitClip', payload: { clipId: 'clip-1', beat: 2.5 } }], {
+            source: 'prompt',
+            requireCompensation: true,
+        });
+
+        expect(result).toMatchObject({ status: 'committed' });
+        const after = structuredClone(trackStore.value!.tracks[0]!.clips);
+        const right = after.find((candidate) => candidate.id !== 'clip-1');
+        expect(right?.startBeat).toBeCloseTo(2.5 + 2 / 48000, 12);
+        expect(right?.audioOffsetSeconds).toBe(108002 / 48000);
+        expect(Math.floor(right!.audioOffsetSeconds! * 48000)).toBe(108002);
+
+        await undo();
+        expect(trackStore.value!.tracks[0]!.clips).toEqual(before);
+        await redo();
+        expect(trackStore.value!.tracks[0]!.clips).toEqual(after);
+        expect(Math.floor(trackStore.value!.tracks[0]!.clips[1]!.audioOffsetSeconds! * 48000)).toBe(108002);
+    });
+
     describe('an audio split', () => {
         beforeEach(() => {
             const clip = ClipDummy.create({
@@ -298,6 +1264,7 @@ describe('handleSplitClip atomic integration', () => {
             const channelData = new Float32Array(700).fill(1);
             channelData.fill(-1, 251);
             vi.spyOn(audioBufferCache, 'get').mockReturnValue(makeAudioBuffer(channelData, 100));
+            flushAutomergeStorageWrites();
         });
 
         // Red when an audio split accepts note ids it will never create: a committed split would then

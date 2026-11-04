@@ -88,6 +88,7 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
 
 type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
 type AddDeviceAction = Extract<AppAction, { type: 'addDevice' }>;
@@ -244,7 +245,7 @@ function configureLateSettlementConfirmation(input: {
     resourceLease?: NonNullable<Parameters<typeof proposePendingActionConfirmation>[0]['resourceLease']>;
     budgets?: Parameters<typeof agentRunLifecycle.create>[0]['budgets'];
 }): ReturnType<typeof compileVersionedCommandBatchEnvelope> {
-    configureAiWorkflowCommandPreflightFixture('project-1');
+    configureAiWorkflowCommandPreflightFixture();
     configureCommandBatchIdempotency({ canExecute: () => true });
     const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
     registerHandlerMap({
@@ -273,11 +274,12 @@ function configureLateSettlementConfirmation(input: {
     const commandBatch = compileVersionedCommandBatchEnvelope({
         runId: input.runId,
         batchId: input.batchId,
-        projectId: 'project-1',
+        projectId: captureProjectIdentity(),
         baseRevision: projectRevision,
         intent: 'set tempo to 132',
         commands: [serializeVersionedCommandEnvelope(envelope)],
     });
+    const metricGoalState = configuredLiteralMetricState(commandBatch);
     agentRunLifecycle.create({
         runId: input.runId,
         request: 'set tempo to 132',
@@ -295,7 +297,8 @@ function configureLateSettlementConfirmation(input: {
         actions: [action],
         actionLabels: ['Set tempo to 132 BPM'],
         commandBatch,
-        agentApproval: compileAgentRiskApproval({ commandBatch }),
+        agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
+        metricGoalState,
         executionMode: 'atomic',
         groupId: input.batchId,
         groupLabel: 'Set tempo batch',
@@ -680,6 +683,7 @@ describe('confirmPendingChatActions transaction admission', () => {
             intent: 'set tempo to 128',
             commands: [serializeVersionedCommandEnvelope(envelope)],
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         const proposal = {
             id: 'confirmation-1',
             prompt: 'set tempo to 128',
@@ -687,7 +691,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             actions: [action],
             actionLabels: ['Set tempo'],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            metricGoalState,
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
             executionMode: 'atomic' as const,
             projectRevision,
         };
@@ -1156,6 +1161,7 @@ describe('confirmPendingChatActions transaction admission', () => {
             intent: 'set tempo to 128',
             commands: [serializeVersionedCommandEnvelope(envelope)],
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         const proposal = {
             id: 'confirmation-admission-reapply-1',
             prompt: 'set tempo to 128',
@@ -1163,7 +1169,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             actions: [action],
             actionLabels: ['Set tempo'],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            metricGoalState,
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
             executionMode: 'atomic' as const,
             projectRevision,
         };
@@ -1208,7 +1215,7 @@ describe('confirmPendingChatActions transaction admission', () => {
     });
 
     it('keeps the winning same-turn confirmation authoritative when the losing receipt lookup rejects later', async () => {
-        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureAiWorkflowCommandPreflightFixture();
         configureCommandBatchIdempotency({ canExecute: () => true });
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
         const execute = vi.fn<ActionHandler<SetTempoAction>['execute']>((action) => {
@@ -1240,11 +1247,12 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId: 'run-double-confirm',
             batchId: 'group-double-confirm',
-            projectId: 'project-1',
+            projectId: captureProjectIdentity(),
             baseRevision: projectRevision,
             intent: 'set tempo to 132',
             commands: [serializeVersionedCommandEnvelope(command)],
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         agentRunLifecycle.create({
             runId: 'run-double-confirm',
             request: 'set tempo to 132',
@@ -1262,7 +1270,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             actions: [action],
             actionLabels: ['Set tempo to 132 BPM'],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            metricGoalState,
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
             executionMode: 'atomic',
             groupId: 'group-double-confirm',
             groupLabel: 'Set tempo',
@@ -1314,7 +1323,7 @@ describe('confirmPendingChatActions transaction admission', () => {
     });
 
     it('keeps an unreadable proposed receipt pending without executing its command batch', async () => {
-        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureAiWorkflowCommandPreflightFixture();
         configureCommandBatchIdempotency({ canExecute: () => true });
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
         const execute = vi.fn<ActionHandler<SetTempoAction>['execute']>((action) => {
@@ -1346,11 +1355,12 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId: 'run-unreadable-receipt',
             batchId: 'group-unreadable-receipt',
-            projectId: 'project-1',
+            projectId: captureProjectIdentity(),
             baseRevision: projectRevision,
             intent: 'set tempo to 132',
             commands: [serializeVersionedCommandEnvelope(command)],
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         const chat = chatStore.value;
         if (!chat) {
             throw new Error('Expected the confirmation chat fixture');
@@ -1369,7 +1379,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             actions: [action],
             actionLabels: ['Set tempo to 132 BPM'],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            metricGoalState,
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
             executionMode: 'atomic',
             groupId: 'group-unreadable-receipt',
             groupLabel: 'Set tempo',
@@ -1476,7 +1487,7 @@ describe('confirmPendingChatActions transaction admission', () => {
     });
 
     it('executes the approved outer command batch instead of the legacy envelope array', async () => {
-        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureAiWorkflowCommandPreflightFixture();
         configureCommandBatchIdempotency({ canExecute: () => true });
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
         let observedSignal: AbortSignal | undefined;
@@ -1510,11 +1521,12 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId: 'confirmation-batch',
             batchId: 'group-batch',
-            projectId: 'project-1',
+            projectId: captureProjectIdentity(),
             baseRevision: projectRevision,
             intent: 'set tempo to 132',
             commands: [serializeVersionedCommandEnvelope(envelope)],
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         agentRunLifecycle.create({
             runId: 'confirmation-batch',
             request: 'set tempo to 132',
@@ -1541,7 +1553,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             actionLabels: ['Set tempo to 132 BPM'],
             commandEnvelopes: ['invalid legacy envelope must not execute'],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
+            metricGoalState,
             executionMode: 'atomic',
             groupId: 'group-batch',
             groupLabel: 'Set tempo batch',
@@ -1781,7 +1794,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         const runId = 'confirmation-non-render-finalization-unavailable';
         const confirmationId = 'confirmation-non-render-finalization-unavailable';
         const batchId = 'group-non-render-finalization-unavailable';
-        configureAiWorkflowCommandPreflightFixture('project-runtime-finalization');
+        configureAiWorkflowCommandPreflightFixture();
         configureCommandBatchIdempotency({ canExecute: () => true });
         createCrdtDoc('root');
         clearHandlerRegistry();
@@ -1812,11 +1825,12 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId,
             batchId,
-            projectId: 'project-runtime-finalization',
+            projectId: captureProjectIdentity(),
             baseRevision: projectRevision,
             intent: 'Insert the compressor after EQ on Bass.',
             commands: [serializeVersionedCommandEnvelope(envelope)],
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         agentRunLifecycle.create({
             runId,
             request: 'Insert the compressor.',
@@ -1833,7 +1847,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             actions: [action],
             actionLabels: ['Insert compressor after EQ on Bass'],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            metricGoalState,
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
             executionMode: 'atomic',
             groupId: batchId,
             groupLabel: 'Insert compressor',
@@ -1947,7 +1962,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         const runId = 'confirmation-real-stale-pending-effects';
         const confirmationId = 'confirmation-real-stale-pending-effects';
         const batchId = 'group-real-stale-pending-effects';
-        configureAiWorkflowCommandPreflightFixture('project-real-stale-pending-effects');
+        configureAiWorkflowCommandPreflightFixture();
         configureCommandBatchIdempotency({ canExecute: () => true });
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
         let injectedForeignMutation = false;
@@ -1996,11 +2011,12 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId,
             batchId,
-            projectId: 'project-real-stale-pending-effects',
+            projectId: captureProjectIdentity(),
             baseRevision: projectRevision,
             intent: 'set tempo to 132',
             commands: [serializeVersionedCommandEnvelope(envelope)],
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         agentRunLifecycle.create({
             runId,
             request: 'set tempo to 132',
@@ -2019,7 +2035,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             actions: [action],
             actionLabels: ['Set tempo to 132 BPM'],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            metricGoalState,
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
             executionMode: 'atomic',
             groupId: batchId,
             groupLabel: 'Set tempo batch',
@@ -2090,7 +2107,7 @@ describe('confirmPendingChatActions transaction admission', () => {
     });
 
     it('retains a verified receipt without reopening a cancelled run after stale lease settlement', async () => {
-        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureAiWorkflowCommandPreflightFixture();
         configureCommandBatchIdempotency({ canExecute: () => true });
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
         registerHandlerMap({
@@ -2119,11 +2136,12 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId: 'confirmation-stale-settlement',
             batchId: 'group-stale-settlement',
-            projectId: 'project-1',
+            projectId: captureProjectIdentity(),
             baseRevision: projectRevision,
             intent: 'set tempo to 132',
             commands: [serializeVersionedCommandEnvelope(envelope)],
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         agentRunLifecycle.create({
             runId: 'confirmation-stale-settlement',
             request: 'set tempo to 132',
@@ -2143,7 +2161,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             actions: [action],
             actionLabels: ['Set tempo to 132 BPM'],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            metricGoalState,
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
             executionMode: 'atomic',
             groupId: 'group-stale-settlement',
             groupLabel: 'Set tempo batch',
@@ -2372,7 +2391,10 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = configureLateSettlementConfirmation({ runId, confirmationId, batchId });
         const commandUseCases = await import('#/modules/Command/useCases');
         const crdtUseCases = await import('#/modules/CrdtDocument/useCases');
-        const approval = compileAgentRiskApproval({ commandBatch });
+        const approval = getPendingActionConfirmation(confirmationId)?.approvalSnapshot.agentApproval;
+        if (!approval) {
+            throw new TypeError('Expected the original admitted literal confirmation approval.');
+        }
         const approvalBinding = issueAgentCommandApprovalBinding({ approval, commandBatch });
         await expect(
             commandUseCases.executeVersionedCommandBatchEnvelope({
@@ -2756,7 +2778,7 @@ describe('confirmPendingChatActions transaction admission', () => {
     });
 
     it('keeps a batch execution failure authoritative when error-path lease settlement throws', async () => {
-        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureAiWorkflowCommandPreflightFixture();
         configureCommandBatchIdempotency({ canExecute: () => true });
         registerHandlerMap({
             setTempo: {
@@ -2777,11 +2799,12 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId: 'confirmation-error-path',
             batchId: 'group-error-path',
-            projectId: 'project-1',
+            projectId: captureProjectIdentity(),
             baseRevision: projectRevision,
             intent: 'set tempo to 132',
             commands: [serializeVersionedCommandEnvelope(envelope)],
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         agentRunLifecycle.create({
             runId: 'confirmation-error-path',
             request: 'set tempo to 132',
@@ -2798,7 +2821,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             actions: [action],
             actionLabels: ['Set tempo to 132 BPM'],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            metricGoalState,
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
             executionMode: 'atomic',
             groupId: 'group-error-path',
             groupLabel: 'Set tempo batch',
@@ -2853,7 +2877,7 @@ describe('confirmPendingChatActions transaction admission', () => {
     });
 
     it('releases commit-protected resources when the storage transaction proves noncommit', async () => {
-        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureAiWorkflowCommandPreflightFixture();
         configureCommandBatchIdempotency({ canExecute: () => true });
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
         registerHandlerMap({
@@ -2882,11 +2906,12 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId: 'confirmation-storage-failure',
             batchId: 'group-storage-failure',
-            projectId: 'project-1',
+            projectId: captureProjectIdentity(),
             baseRevision: projectRevision,
             intent: 'set tempo to 132',
             commands: [serializeVersionedCommandEnvelope(command)],
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         const prepareForCommit = vi.fn().mockResolvedValue(undefined);
         const protect = vi.fn();
         const commit = vi.fn().mockResolvedValue(undefined);
@@ -2901,7 +2926,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             actions: [action],
             actionLabels: ['Set tempo to 132 BPM'],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            metricGoalState,
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
             executionMode: 'atomic',
             groupId: 'group-storage-failure',
             groupLabel: 'Set tempo batch',
@@ -2939,14 +2965,14 @@ describe('confirmPendingChatActions transaction admission', () => {
         { outcome: 'verified-after-abort', createsTargets: true },
         { outcome: 'ambiguous', createsTargets: false },
     ] as const)('settles confirmed stem resources for $outcome command truth', async ({ outcome, createsTargets }) => {
-        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureAiWorkflowCommandPreflightFixture();
         let targetsCreated = false;
         commandBatchPreflightPort.setProvider(({ targetIds }) => ({
             audioGraphValid: true,
             availableAssetHashes: [],
             availableAudioBufferIds: ['buffer-confirmed-1'],
             lockedRanges: [],
-            projectId: 'project-1',
+            projectId: captureProjectIdentity(),
             projectInvariantsValid: true,
             targetFingerprints: targetsCreated
                 ? Object.fromEntries(targetIds.map((targetId) => [targetId, targetId]))
@@ -3009,11 +3035,12 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId: 'run-confirmed-stems',
             batchId: 'group-confirmed-stems',
-            projectId: 'project-1',
+            projectId: captureProjectIdentity(),
             baseRevision: projectRevision,
             intent: 'Import confirmed stems',
             commands: [serializeVersionedCommandEnvelope(command)],
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         agentRunLifecycle.create({
             runId: 'run-confirmed-stems',
             request: 'Import confirmed stems',
@@ -3031,7 +3058,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             actions: [stemAction],
             actionLabels: ['Import confirmed stems'],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            metricGoalState,
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
             executionMode: 'atomic',
             groupId: 'group-confirmed-stems',
             groupLabel: 'Import confirmed stems',
@@ -3150,7 +3178,7 @@ describe('confirmPendingChatActions transaction admission', () => {
     });
 
     it('uses the approved batch identity through failed recovery when confirmation group ID differs', async () => {
-        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureAiWorkflowCommandPreflightFixture();
         configureCommandBatchIdempotency({ canExecute: () => true });
         const executeBatch = vi.spyOn(commandUseCases, 'executeVersionedCommandBatchEnvelope');
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
@@ -3196,11 +3224,12 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId: 'confirmation-recovery-batch',
             batchId: 'group-recovery-batch',
-            projectId: 'project-1',
+            projectId: captureProjectIdentity(),
             baseRevision: projectRevision,
             intent: 'set tempo to 132',
             commands: [serializeVersionedCommandEnvelope(envelope)],
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         const proposal = {
             runId: 'confirmation-recovery-batch',
             prompt: 'set tempo to 132',
@@ -3208,7 +3237,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             actions: [action],
             actionLabels: ['Set tempo to 132 BPM'],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            metricGoalState,
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
             executionMode: 'atomic' as const,
             groupId: 'untrusted-confirmation-group',
             groupLabel: 'Set tempo batch',
@@ -3346,7 +3376,7 @@ describe('confirmPendingChatActions transaction admission', () => {
     });
 
     it('preserves a failed verified receipt on retry instead of reporting the batch already applied', async () => {
-        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureAiWorkflowCommandPreflightFixture();
         configureCommandBatchIdempotency({ canExecute: () => true });
         const execute = vi.fn(() => {
             throw new Error('Tempo engine unavailable');
@@ -3377,18 +3407,20 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId: 'confirmation-failed-batch',
             batchId: 'group-failed-batch',
-            projectId: 'project-1',
+            projectId: captureProjectIdentity(),
             baseRevision: projectRevision,
             intent: 'set tempo to 132',
             commands: [serializeVersionedCommandEnvelope(envelope)],
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         const proposal = {
             prompt: 'set tempo to 132',
             assistantMessageId: 'assistant-1',
             actions: [action],
             actionLabels: ['Set tempo to 132 BPM'],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            metricGoalState,
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
             executionMode: 'atomic' as const,
             groupId: 'group-failed-batch',
             groupLabel: 'Set tempo batch',
@@ -3415,7 +3447,7 @@ describe('confirmPendingChatActions transaction admission', () => {
     });
 
     it('classifies approval-time divergence and issues a fresh revision-bound approval before execution', async () => {
-        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureAiWorkflowCommandPreflightFixture();
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
         const execute = vi.fn<ActionHandler<SetTempoAction>['execute']>((action) => {
             ownedStorage.set({ bpm: action.payload.bpm });
@@ -3466,11 +3498,12 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId: 'confirmation-reapproval',
             batchId: 'group-reapproval',
-            projectId: 'project-1',
+            projectId: captureProjectIdentity(),
             baseRevision: projectRevision,
             intent: 'set tempo to 132',
             commands: [serializeVersionedCommandEnvelope(envelope)],
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         proposePendingActionConfirmation({
             id: 'confirmation-reapproval',
             prompt: 'set tempo to 132',
@@ -3479,7 +3512,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             actionLabels: ['Set tempo from 120 BPM to 132 BPM'],
             commandEnvelopes: [serializeVersionedCommandEnvelope(envelope)],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            metricGoalState,
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
             executionMode: 'atomic',
             groupId: 'group-reapproval',
             groupLabel: 'Set tempo batch',
@@ -3560,7 +3594,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         const repairRuntimeFromCurrentProject = vi.fn();
         commandRuntimeRepairPort.setProvider(repairRuntimeFromCurrentProject);
         resetAiWorkflowCommandPreflightFixture();
-        configureAiWorkflowCommandPreflightFixture('project-runtime-effect');
+        configureAiWorkflowCommandPreflightFixture();
         configureCommandBatchIdempotency({ canExecute: () => true });
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
@@ -3597,11 +3631,12 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId: 'run-runtime-effect',
             batchId: 'group-runtime-effect',
-            projectId: 'project-runtime-effect',
+            projectId: captureProjectIdentity(),
             baseRevision: projectRevision,
             intent: 'Insert the compressor after EQ on Bass.',
             commands: [serializeVersionedCommandEnvelope(envelope)],
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         agentRunLifecycle.create({
             runId: 'run-runtime-effect',
             request: 'Insert the compressor after EQ on Bass.',
@@ -3618,7 +3653,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             actions: [action],
             actionLabels: ['Insert compressor after EQ on Bass'],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            metricGoalState,
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
             executionMode: 'atomic',
             groupId: 'group-runtime-effect',
             groupLabel: 'Insert compressor',
@@ -3780,7 +3816,7 @@ describe('confirmPendingChatActions transaction admission', () => {
     });
 
     it('keeps a confirmed batch authorized when its owned storage commit moves the project revision', async () => {
-        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureAiWorkflowCommandPreflightFixture();
         configureCommandBatchIdempotency({ canExecute: () => true });
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
         const execute = vi.fn<ActionHandler<SetTempoAction>['execute']>((action) => {
@@ -3818,11 +3854,12 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId: 'confirmation-self-revision',
             batchId: 'group-self-revision',
-            projectId: 'project-1',
+            projectId: captureProjectIdentity(),
             baseRevision: projectRevision,
             intent: 'set tempo to 128 then 132',
             commands,
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         proposePendingActionConfirmation({
             id: 'confirmation-self-revision',
             prompt: 'set tempo to 128 then 132',
@@ -3830,7 +3867,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             actions: [firstAction, secondAction],
             actionLabels: ['Set tempo to 128 BPM', 'Set tempo to 132 BPM'],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            metricGoalState,
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
             executionMode: 'atomic',
             groupId: 'group-self-revision',
             groupLabel: 'Set tempo twice',
@@ -3849,7 +3887,7 @@ describe('confirmPendingChatActions transaction admission', () => {
     });
 
     it('invalidates and halts a confirmed batch when another owner flushes its unscoped pending write mid-action', async () => {
-        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureAiWorkflowCommandPreflightFixture();
         configureCommandBatchIdempotency({ canExecute: () => true });
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
         const bufferedStorage = createAutomergeStorage<{ touched: number }>('owned', 'buffered');
@@ -3918,11 +3956,12 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId: 'confirmation-foreign-flush',
             batchId: 'group-foreign-flush',
-            projectId: 'project-1',
+            projectId: captureProjectIdentity(),
             baseRevision: projectRevision,
             intent: 'set tempo to 128 then 132',
             commands,
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         proposePendingActionConfirmation({
             id: 'confirmation-foreign-flush',
             prompt: 'set tempo to 128 then 132',
@@ -3930,7 +3969,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             actions: [firstAction, secondAction],
             actionLabels: ['Set tempo to 128 BPM', 'Set tempo to 132 BPM'],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            metricGoalState,
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
             executionMode: 'atomic',
             groupId: 'group-foreign-flush',
             groupLabel: 'Set tempo twice',
@@ -3964,7 +4004,7 @@ describe('confirmPendingChatActions transaction admission', () => {
     });
 
     it('keeps callback evidence bound to the checkpoint before a later foreign app action', async () => {
-        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureAiWorkflowCommandPreflightFixture();
         configureCommandBatchIdempotency({ canExecute: () => true });
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
         registerHandlerMap({
@@ -4047,7 +4087,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId: 'confirmation-render-rebind',
             batchId: 'group-render-rebind',
-            projectId: 'project-1',
+            projectId: captureProjectIdentity(),
             baseRevision: projectRevision,
             intent: 'set tempo to 132 and render sections',
             commands: [
@@ -4055,6 +4095,7 @@ describe('confirmPendingChatActions transaction admission', () => {
                 serializeCommand(renderAction, 'Render Verse and Chorus for comparison.'),
             ],
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         agentRunLifecycle.create({
             runId: 'confirmation-render-rebind',
             request: 'set tempo to 132 and render sections',
@@ -4071,7 +4112,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             actions: [tempoAction, renderAction],
             actionLabels: ['Set tempo to 132 BPM', 'Render Verse and Chorus'],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            metricGoalState,
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
             executionMode: 'atomic',
             groupId: 'group-render-rebind',
             groupLabel: 'Tempo and renders',
@@ -4131,7 +4173,7 @@ describe('confirmPendingChatActions transaction admission', () => {
     });
 
     it('settles a committed render as manual recovery when artifact rebinding fails', async () => {
-        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureAiWorkflowCommandPreflightFixture();
         configureCommandBatchIdempotency({ canExecute: () => true });
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
         registerHandlerMap({
@@ -4183,7 +4225,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId: 'confirmation-rebind-failure',
             batchId: 'group-rebind-failure',
-            projectId: 'project-1',
+            projectId: captureProjectIdentity(),
             baseRevision: projectRevision,
             intent: 'set tempo and render section',
             commands: [
@@ -4191,6 +4233,7 @@ describe('confirmPendingChatActions transaction admission', () => {
                 serializeVersionedCommandEnvelope(renderEnvelope),
             ],
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         agentRunLifecycle.create({
             runId: 'confirmation-rebind-failure',
             request: 'set tempo and render section',
@@ -4207,7 +4250,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             actions: [tempoAction, renderAction],
             actionLabels: ['Set tempo to 132 BPM', 'Render section'],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            metricGoalState,
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
             executionMode: 'atomic',
             groupId: 'group-rebind-failure',
             groupLabel: 'Tempo and render section',
@@ -4276,7 +4320,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         const runId = 'confirmation-mixed-render-manual-repair';
         const confirmationId = 'confirmation-mixed-render-manual-repair';
         const batchId = 'group-mixed-render-manual-repair';
-        configureAiWorkflowCommandPreflightFixture('project-mixed-render-manual-repair');
+        configureAiWorkflowCommandPreflightFixture();
         configureCommandBatchIdempotency({ canExecute: () => true });
         registerHandlerMap(getArrangementHandlers());
         registerHandlerMap(getAudioRenderingHandlers());
@@ -4338,7 +4382,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId,
             batchId,
-            projectId: 'project-mixed-render-manual-repair',
+            projectId: captureProjectIdentity(),
             baseRevision: projectRevision,
             intent: 'insert compressor and render section',
             commands: [
@@ -4347,6 +4391,7 @@ describe('confirmPendingChatActions transaction admission', () => {
                 serializeVersionedCommandEnvelope(secondRenderEnvelope),
             ],
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         agentRunLifecycle.create({
             runId,
             request: 'Insert the compressor and render the section.',
@@ -4363,7 +4408,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             actions: [addDeviceAction, renderAction, secondRenderAction],
             actionLabels: ['Insert compressor after EQ on Bass', 'Render section', 'Render chorus'],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            metricGoalState,
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
             executionMode: 'atomic',
             groupId: batchId,
             groupLabel: 'Insert compressor and render',
@@ -4514,7 +4560,7 @@ describe('confirmPendingChatActions transaction admission', () => {
     });
 
     it('requires manual recovery when an ownerless mutation lands during a two-job render', async () => {
-        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureAiWorkflowCommandPreflightFixture();
         configureCommandBatchIdempotency({ canExecute: () => true });
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
         registerHandlerMap({
@@ -4585,7 +4631,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId: 'confirmation-ownerless-render',
             batchId: 'group-ownerless-render',
-            projectId: 'project-1',
+            projectId: captureProjectIdentity(),
             baseRevision: projectRevision,
             intent: 'set tempo and render two sections',
             commands: [
@@ -4593,6 +4639,7 @@ describe('confirmPendingChatActions transaction admission', () => {
                 serializeCommand(renderAction, 'Render Ownerless Verse and Ownerless Chorus.'),
             ],
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         agentRunLifecycle.create({
             runId: 'confirmation-ownerless-render',
             request: 'set tempo and render two sections',
@@ -4612,7 +4659,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             actions: [tempoAction, renderAction],
             actionLabels: ['Set tempo to 132 BPM', 'Render Ownerless Verse and Ownerless Chorus'],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            metricGoalState,
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
             executionMode: 'atomic',
             groupId: 'group-ownerless-render',
             groupLabel: 'Tempo and ownerless renders',
@@ -4658,7 +4706,7 @@ describe('confirmPendingChatActions transaction admission', () => {
     it.each([false, true])(
         'retains a warned render artifact without replaying project commands (manual persistence fails: %s)',
         async (manualPersistenceFails) => {
-            configureAiWorkflowCommandPreflightFixture('project-1');
+            configureAiWorkflowCommandPreflightFixture();
             configureCommandBatchIdempotency({ canExecute: () => true });
             const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
             const executeTempo = vi.fn((action: SetTempoAction) => {
@@ -4719,7 +4767,7 @@ describe('confirmPendingChatActions transaction admission', () => {
             const commandBatch = compileVersionedCommandBatchEnvelope({
                 runId: 'confirmation-warned-render',
                 batchId: 'group-warned-render',
-                projectId: 'project-1',
+                projectId: captureProjectIdentity(),
                 baseRevision: projectRevision,
                 intent: 'set tempo and render a comparison',
                 commands: [
@@ -4727,6 +4775,7 @@ describe('confirmPendingChatActions transaction admission', () => {
                     serializeCommand(renderAction, 'Render the warned verse for comparison.'),
                 ],
             });
+            const metricGoalState = configuredLiteralMetricState(commandBatch);
             agentRunLifecycle.create({
                 runId: 'confirmation-warned-render',
                 request: 'set tempo and render a comparison',
@@ -4748,7 +4797,8 @@ describe('confirmPendingChatActions transaction admission', () => {
                 actions: [tempoAction, renderAction],
                 actionLabels: ['Set tempo to 132 BPM', 'Render Warned Verse'],
                 commandBatch,
-                agentApproval: compileAgentRiskApproval({ commandBatch }),
+                metricGoalState,
+                agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
                 executionMode: 'atomic',
                 groupId: 'group-warned-render',
                 groupLabel: 'Tempo and warned render',
@@ -4888,7 +4938,7 @@ describe('confirmPendingChatActions transaction admission', () => {
     );
 
     it('keeps an incomplete retention-capacity render in manual recovery without arming replay', async () => {
-        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureAiWorkflowCommandPreflightFixture();
         configureCommandBatchIdempotency({ canExecute: () => true });
         runtimeMocks.renderOffline.mockReset();
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
@@ -4937,7 +4987,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId: 'confirmation-capacity-render',
             batchId: 'group-capacity-render',
-            projectId: 'project-1',
+            projectId: captureProjectIdentity(),
             baseRevision: projectRevision,
             intent: 'set tempo and render too many sections',
             commands: [
@@ -4945,6 +4995,7 @@ describe('confirmPendingChatActions transaction admission', () => {
                 serializeCommand(renderAction, 'Render every requested section.'),
             ],
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         agentRunLifecycle.create({
             runId: 'confirmation-capacity-render',
             request: 'set tempo and render too many sections',
@@ -4961,7 +5012,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             actions: [tempoAction, renderAction],
             actionLabels: ['Set tempo to 132 BPM', 'Render sections'],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            metricGoalState,
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
             executionMode: 'atomic',
             groupId: 'group-capacity-render',
             groupLabel: 'Tempo and capacity render',
@@ -5000,7 +5052,7 @@ describe('confirmPendingChatActions transaction admission', () => {
     });
 
     it('charges every failed render start and blocks a retained retry from exceeding its budget', async () => {
-        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureAiWorkflowCommandPreflightFixture();
         configureCommandBatchIdempotency({ canExecute: () => true });
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
         const executeTempo = vi.fn((action: SetTempoAction) => ownedStorage.set({ bpm: action.payload.bpm }));
@@ -5050,7 +5102,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId: 'confirmation-failed-renders',
             batchId: 'group-failed-renders',
-            projectId: 'project-1',
+            projectId: captureProjectIdentity(),
             baseRevision: projectRevision,
             intent: 'set tempo and render two sections',
             commands: [
@@ -5058,6 +5110,7 @@ describe('confirmPendingChatActions transaction admission', () => {
                 serializeCommand(renderAction, 'Render Verse and Chorus.'),
             ],
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         agentRunLifecycle.create({
             runId: 'confirmation-failed-renders',
             request: 'set tempo and render two sections',
@@ -5075,7 +5128,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             actions: [tempoAction, renderAction],
             actionLabels: ['Set tempo to 132 BPM', 'Render Verse and Chorus'],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            metricGoalState,
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
             executionMode: 'atomic',
             groupId: 'group-failed-renders',
             groupLabel: 'Tempo and failed renders',
@@ -5104,7 +5158,7 @@ describe('confirmPendingChatActions transaction admission', () => {
     });
 
     it('invalidates a confirmed batch when another app action commits while its first handler is paused', async () => {
-        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureAiWorkflowCommandPreflightFixture();
         configureCommandBatchIdempotency({ canExecute: () => true });
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
         let releaseFirstAction!: () => void;
@@ -5164,11 +5218,12 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId: 'confirmation-foreign-action',
             batchId: 'group-foreign-action',
-            projectId: 'project-1',
+            projectId: captureProjectIdentity(),
             baseRevision: projectRevision,
             intent: 'set tempo to 128 then 132',
             commands,
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         proposePendingActionConfirmation({
             id: 'confirmation-foreign-action',
             prompt: 'set tempo to 128 then 132',
@@ -5176,7 +5231,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             actions: [firstAction, secondAction],
             actionLabels: ['Set tempo to 128 BPM', 'Set tempo to 132 BPM'],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            metricGoalState,
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
             executionMode: 'atomic',
             groupId: 'group-foreign-action',
             groupLabel: 'Set tempo twice',
@@ -5205,7 +5261,7 @@ describe('confirmPendingChatActions transaction admission', () => {
         // epoch moves under the batch. Attribution replaces the carve-out —
         // the inserts happen inside the action's write scope, so they are the
         // batch's own effect whatever the action type is.
-        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureAiWorkflowCommandPreflightFixture();
         configureCommandBatchIdempotency({ canExecute: () => true });
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
         const execute = vi.fn<ActionHandler<SetTempoAction>['execute']>((action) => {
@@ -5242,11 +5298,12 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId: 'confirmation-doc-creating',
             batchId: 'group-doc-creating',
-            projectId: 'project-1',
+            projectId: captureProjectIdentity(),
             baseRevision: projectRevision,
             intent: 'set tempo to 128',
             commands: [serializeVersionedCommandEnvelope(envelope)],
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         proposePendingActionConfirmation({
             id: 'confirmation-doc-creating',
             prompt: 'set tempo to 128',
@@ -5254,7 +5311,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             actions: [action],
             actionLabels: ['Set tempo to 128 BPM'],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            metricGoalState,
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
             executionMode: 'atomic',
             groupId: 'group-doc-creating',
             groupLabel: 'Set tempo',
@@ -5277,7 +5335,7 @@ describe('confirmPendingChatActions transaction admission', () => {
     // the plan there would cost the user their work for an edit that cannot conflict with it, so the
     // route revalidates and rebinds the same commands and asks for approval against the new revision.
     it('requires reapproval when an outside writer changed the project before confirmation', async () => {
-        configureAiWorkflowCommandPreflightFixture('project-1');
+        configureAiWorkflowCommandPreflightFixture();
         configureCommandBatchIdempotency({ canExecute: () => true });
         const ownedStorage = createAutomergeStorage<{ bpm: number }>('owned', 'transport');
         const execute = vi.fn<ActionHandler<SetTempoAction>['execute']>((action) => {
@@ -5309,11 +5367,12 @@ describe('confirmPendingChatActions transaction admission', () => {
         const commandBatch = compileVersionedCommandBatchEnvelope({
             runId: 'confirmation-outside-writer',
             batchId: 'group-outside-writer',
-            projectId: 'project-1',
+            projectId: captureProjectIdentity(),
             baseRevision: projectRevision,
             intent: 'set tempo to 128',
             commands: [serializeVersionedCommandEnvelope(envelope)],
         });
+        const metricGoalState = configuredLiteralMetricState(commandBatch);
         proposePendingActionConfirmation({
             id: 'confirmation-outside-writer',
             prompt: 'set tempo to 128',
@@ -5321,7 +5380,8 @@ describe('confirmPendingChatActions transaction admission', () => {
             actions: [action],
             actionLabels: ['Set tempo to 128 BPM'],
             commandBatch,
-            agentApproval: compileAgentRiskApproval({ commandBatch }),
+            metricGoalState,
+            agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
             executionMode: 'atomic',
             groupId: 'group-outside-writer',
             groupLabel: 'Set tempo',

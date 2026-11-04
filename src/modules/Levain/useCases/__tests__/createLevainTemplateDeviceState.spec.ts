@@ -11,9 +11,13 @@ describe('createLevainTemplateDeviceState', () => {
 
             expect(structuredClone(state)).toEqual({
                 version: 1,
-                data: { instrumentId, currentArticulation: 'sustain' },
+                data: { instrumentId, currentArticulation: 'sustain', disclosureTier: 'basic' },
             });
-            expect(fromLevainDeviceState(state)).toEqual({ instrumentId, currentArticulation: 'sustain' });
+            expect(fromLevainDeviceState(state)).toEqual({
+                instrumentId,
+                currentArticulation: 'sustain',
+                disclosureTier: 'basic',
+            });
         }
     );
 });

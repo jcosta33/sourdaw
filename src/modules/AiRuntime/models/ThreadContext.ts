@@ -9,12 +9,13 @@ export const THREAD_CONTEXT_MAX_TURNS = 16;
  * The UTF-8 bytes the serialized `thread_context` section may take, per message profile. Each is
  * part of its message's budget, never an addition to it. The hosted message carries its receipt and
  * capability evidence at 8,192 characters each, and the thread sits beside them at twice that. The
- * local share is what the default local model's window has left when a five-track project's
- * receipt turn at the evidence ceiling has taken its prompt and the reply reserve: the local budget
- * never charges a text more than a token a byte, so a section at this cap still fits however
- * identifier-dense it is.
+ * local share is what the default local model's window has left, less a few hundred tokens of
+ * headroom for project context that grows with the catalogue, when a five-track project with a VCA
+ * group and a metronome level has taken its receipt turn at the evidence ceiling and the reply
+ * reserve: the local budget never charges a text more than a token a byte, so a section at this cap
+ * still fits however identifier-dense it is.
  */
-export const THREAD_CONTEXT_MAX_BYTES = { hosted: 16_384, local: 6_144 } as const;
+export const THREAD_CONTEXT_MAX_BYTES = { hosted: 16_384, local: 5_632 } as const;
 
 /**
  * One command of a proposal or commit, as the thread states it: its name, the label the approval

@@ -4,10 +4,7 @@ Mastering limiter, saturator, and multiband dynamic peak controller (brickwall l
 
 ## Public Contract Surface
 
-- **Stores** (`stores/index.ts`): `crustStore`, `defaultCrustState`, `updateCrustMeters`, `resetCrustMeters`.
-- **Views** (`presentations/views/index.ts`): `CrustPanel`.
-- **Use Cases** (`useCases/`): Internal parameter bridge (`loadCrustPatchWithAudio`, `setCrustParamWithAudio`, `createFlushHandlers`), presets (`crustPresets`), and metering controls (`resetCrustPanelMeters`, `resetCrustTruePeakIndicator`, `setCrustPanelUiLevel`).
-- **Events**: No public events.
+Public surface: `stores/index.ts`, `presentations/views/index.ts`. The parameter bridge, presets and metering controls under `useCases/` are internal.
 
 ## Key Subsystems
 
@@ -25,6 +22,6 @@ Mastering limiter, saturator, and multiband dynamic peak controller (brickwall l
 
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
-- `pnpm test:run <changed-spec>`
-- `pnpm cargo:test --package daw-dsp crust`
+- `pnpm guard --profile focused -- pnpm test:run <changed-spec>`
+- `pnpm guard --profile focused -- pnpm cargo:test --package daw-dsp crust`
 - PR CI checks module boundaries; inspect that result after cross-module changes.

@@ -121,7 +121,7 @@ function parseLsofFile(
     if (type === undefined && (fields.length !== 2 || name === undefined || name === '')) {
         return unavailable('invalid-file-fields');
     }
-    if (type === 'REG' || type === 'DIR') {
+    if (type === 'REG' || type === 'DIR' || type === 'LINK') {
         if (name === undefined || !name.startsWith('/')) {
             return unavailable('missing-file-path');
         }
@@ -149,6 +149,7 @@ export function parseLsofCensus(
     const knownTypes = new Set([
         'REG',
         'DIR',
+        'LINK',
         'CHR',
         'BLK',
         'FIFO',

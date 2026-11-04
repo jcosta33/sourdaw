@@ -10,6 +10,7 @@ import { createModelProviderFailureError, isModelProviderFailureError } from '..
 import { isToolPlanningRejectedError } from '../../errors/ToolPlanningRejectedError';
 import { type AgentDataCategory } from '../../models/AgentDataPolicy';
 import { MANDATORY_PLANNING_TOOL_NAMES } from '../../models/AgentToolCatalogNames';
+import { ANSWER_INTERPRETATION_TOOL_NAME } from '../../models/AnswerInterpretation';
 import { CREATIVE_INTERPRETATION_TOOL_NAME } from '../../models/CreativeInterpretation';
 import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
 import { type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
@@ -75,18 +76,17 @@ import { declareHostedTurnDataCategories } from './declareHostedTurnDataCategori
 import { decodeHostedProposalWireCall } from './decodeHostedProposalWireCall';
 import { getHostedProposalWireToolSchema } from './getHostedProposalWireToolSchema';
 
-// What WebLLM advertises on every request: the nine mandatory planning tools, the command-index
-// search, catalog discovery and the creative interpretation tool.
+// The core planning contract and whichever interpretation control this live phase publishes.
 const WEBLLM_APPLICATION_TOOL_NAMES: ReadonlySet<string> = new Set([
     ...MANDATORY_PLANNING_TOOL_NAMES,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     CREATIVE_INTERPRETATION_TOOL_NAME,
+    ANSWER_INTERPRETATION_TOOL_NAME,
 ]);
 
-// The mandatory planning contract (workflow selector, twelve application tools, the 23 workflow
-// action tools: 36) plus one prompt-selected slot; the budget bounds browser prompt size, not a
-// provider limit. Raise it with the mandatory set, never below it plus one free slot.
+// Retain the established ceiling while phases publish fewer mandatory tools. Exactly one optional
+// or discovered tool is selected below; spare ceiling capacity never admits another command.
 export const WEBLLM_TOOL_BUDGET = 37;
 
 /**
@@ -577,7 +577,10 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     const mandatoryTools = [...workflowSelectionTools, ...applicationTools, ...workflowActionTools];
                     providerTools = [
                         ...mandatoryTools,
-                        ...promptActionTools.slice(0, Math.max(0, WEBLLM_TOOL_BUDGET - mandatoryTools.length)),
+                        ...promptActionTools.slice(
+                            0,
+                            Math.min(1, Math.max(0, WEBLLM_TOOL_BUDGET - mandatoryTools.length))
+                        ),
                     ];
                     logger.info(
                         `[AI Engine] (webllm) Using ${String(providerTools.length)}/${String(toolSchemas.length)} tools`

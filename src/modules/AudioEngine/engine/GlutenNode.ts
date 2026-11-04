@@ -16,7 +16,7 @@ import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
 import { createGlutenRuntimeParameterIds } from '../models/GlutenRuntimeControl';
 import { SET_FALLBACK_PARAM_COMMAND, type RuntimeDeviceControlTarget } from '../models/RuntimeDeviceControl';
 import { compileRuntimeDeviceControl } from '../services/compileRuntimeDeviceControl';
-import glutenProcessorUrl from '../services/glutenProcessor.ts?worker&url';
+import glutenProcessorUrl from '../worklets/glutenProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import { telemetryAllocator, createTelemetryReader, GLUTEN_IDX, type TelemetrySlot } from './telemetryAllocator';

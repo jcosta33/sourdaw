@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { decodeAudioFile } from '#/modules/AudioEngine/useCases';
@@ -112,6 +112,50 @@ describe('Sidebar', () => {
     it('should render Instruments tab by default', () => {
         render(<Sidebar />);
         expect(screen.getByTestId('instruments-tab')).toBeInTheDocument();
+    });
+
+    it('should expose the sections as tabs that control a panel labelled by the selected tab', () => {
+        render(<Sidebar />);
+
+        const tablist = screen.getByRole('tablist', { name: 'Browser sections' });
+        expect(
+            within(tablist)
+                .getAllByRole('tab')
+                .map((tab) => tab.textContent)
+        ).toEqual(['Instruments', 'Effects', 'Library', 'Macros', 'Project']);
+        const instruments = screen.getByRole('tab', { name: 'Instruments' });
+        expect(instruments).toHaveAttribute('aria-selected', 'true');
+        expect(instruments).toHaveAttribute('tabindex', '0');
+        expect(screen.getByRole('tab', { name: 'Effects' })).toHaveAttribute('tabindex', '-1');
+
+        const panel = screen.getByRole('tabpanel', { name: 'Instruments' });
+        expect(instruments).toHaveAttribute('aria-controls', panel.id);
+
+        fireEvent.click(screen.getByRole('tab', { name: 'Effects' }));
+        expect(screen.getByRole('tabpanel', { name: 'Effects' })).toBeInTheDocument();
+    });
+
+    it('should move focus between sections with the arrow keys and select on activation only', () => {
+        render(<Sidebar />);
+        screen.getByRole('tab', { name: 'Instruments' }).focus();
+
+        fireEvent.keyDown(screen.getByRole('tab', { name: 'Instruments' }), { key: 'ArrowRight' });
+
+        expect(screen.getByRole('tab', { name: 'Effects' })).toHaveFocus();
+        expect(screen.getByRole('tab', { name: 'Instruments' })).toHaveAttribute('aria-selected', 'true');
+        expect(screen.queryByTestId('effects-tab')).not.toBeInTheDocument();
+    });
+
+    it('should expose the Library sub-sections as their own named tablist', () => {
+        render(<Sidebar />);
+        fireEvent.click(screen.getByRole('tab', { name: 'Library' }));
+
+        const subTabs = within(screen.getByRole('tablist', { name: 'Library sections' })).getAllByRole('tab');
+        expect(subTabs.map((tab) => tab.textContent)).toEqual(['Folders', 'Imported', 'Find']);
+        expect(screen.getByRole('tab', { name: 'Folders' })).toHaveAttribute('aria-selected', 'true');
+
+        fireEvent.click(screen.getByRole('tab', { name: 'Imported' }));
+        expect(screen.getByRole('tab', { name: 'Imported' })).toHaveAttribute('aria-selected', 'true');
     });
 
     it('should drop malformed stored favorite entries before tab props receive favorites', () => {

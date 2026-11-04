@@ -26,7 +26,7 @@
  * ## Why this lives in `models/` and not next to `FermenterNode`
  *
  * Two layers need this table and they may not import each other: `engine/`
- * builds the `paramAutomation` message, and `services/fermenterProcessor.ts`
+ * builds the `paramAutomation` message, and `worklets/fermenterProcessor.ts`
  * — AudioWorklet code, which `services-must-stay-pure` forbids from importing
  * `engine/` — must reject any ordinal Rust would silently ignore. When the
  * worklet restated that bound as its own literal `15`, adding `oscWaveform` at

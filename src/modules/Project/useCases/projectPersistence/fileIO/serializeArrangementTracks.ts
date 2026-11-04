@@ -1,5 +1,7 @@
 import { type Clip, type Track } from '#/modules/Arrangement/stores';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
+import { captureAudioSourceState, hasValidAudioSourceState } from '#/utils/audioSourceTime';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
 import { type ProjectClip, type ProjectTrack, type ProjectTrackAlternative } from '../../../models/ProjectData';
 
@@ -37,6 +39,21 @@ type NotesByClipId = MidiStoreState['notesByClipId'];
  */
 function serializeClip(clip: Clip, notesByClipId?: NotesByClipId): ProjectClip {
     const notes = notesByClipId?.[clip.id];
+    if (clip.type === 'audio' && !hasValidAudioSourceState(clip)) {
+        throw new Error('Cannot serialize invalid audio source provenance');
+    }
+    let canonicalSource: ReturnType<typeof captureAudioSourceState> = null;
+    if (clip.type === 'audio' && clip.audioOffsetSeconds !== undefined) {
+        canonicalSource = captureAudioSourceState(
+            clip,
+            projectClipLoopExpansion({
+                clipDurationBeats: clip.endBeat - clip.startBeat,
+                configuredLoopLengthBeats: clip.loopLength,
+                loopEnabled: clip.loopEnabled ?? false,
+            }).loopLengthBeats,
+            0
+        );
+    }
     return {
         id: clip.id,
         trackId: clip.trackId,
@@ -52,6 +69,7 @@ function serializeClip(clip: Clip, notesByClipId?: NotesByClipId): ProjectClip {
         muted: clip.muted,
         bufferId: clip.audioBufferId,
         sampleStartBeat: clip.audioOffsetBeats,
+        ...canonicalSource,
         fileId: clip.fileId,
         assetHash: clip.assetHash,
         midiOffsetBeats: clip.midiOffsetBeats,

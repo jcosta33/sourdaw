@@ -11,7 +11,7 @@
  * ## Why this lives in `models/` and not next to `ToasterNode`
  *
  * Two layers need the table and they may not import each other: `engine/` builds
- * the `paramAutomation` message, and `services/toasterProcessor.ts` — AudioWorklet
+ * the `paramAutomation` message, and `worklets/toasterProcessor.ts` — AudioWorklet
  * code, which `services-must-stay-pure` forbids from importing `engine/` — must
  * reject any ordinal Rust would ignore. `models/` is the one layer both may read,
  * so the worklet's guard can be *derived* from this table rather than restate its

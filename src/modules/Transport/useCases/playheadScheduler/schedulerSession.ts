@@ -1,3 +1,5 @@
+import type { TempoChange } from '../../stores/tempoMapStore';
+
 /**
  * A buffer source the scheduler tracks, with the handle its fade rides and —
  * for sources scheduled on the compensated clock (#4784) — the compensation it
@@ -90,6 +92,8 @@ export const schedulerSession = {
     pendingFences: [] as Array<{ source: SourceWithFade; stopAt: number }>,
     punchRecordingActive: false,
     onStopRequested: null as (() => void) | null,
+    /** Observe a terminal audio pass on the audible carrier before capture readers detach. */
+    observeNativeRecordingClock: null as (() => boolean) | null,
     // Re-entrancy guard. `tick` is async and awaits the Yeast Worker round-trip
     // (scheduleMidiNotes); if that awaited work outruns the fixed worker interval
     // (`scheduleGrainMs`, default 10ms), the next worker message would start a
@@ -109,7 +113,7 @@ export const schedulerSession = {
     // Last-seen tempo-map identity and loop-region signature. A mid-playback edit
     // to either changes the beat→time alignment of already-scheduled clips, but
     // the dedup Set would keep them suppressed; we detect the change and invalidate.
-    lastTempoMapChanges: null as unknown[] | null,
+    lastTempoMapChanges: null as TempoChange[] | null,
     lastLoopSignature: '',
     // The loop seam the scheduler has scheduled but the playhead has not
     // reached yet (#4656): the audio instant both passes pivot on, plus where
@@ -120,6 +124,9 @@ export const schedulerSession = {
     // startPlayheadScheduler).
     pendingSeam: null as {
         seamAudioTime: number;
+        destinationBeat: number;
+        /** Song time from the map that emitted this seam, retained until it sounds. */
+        destinationSongSeconds?: number;
         anchorAudioTime: number;
         anchorPosition: number;
     } | null,
@@ -130,4 +137,13 @@ export const schedulerSession = {
     // onto it (applyAutomation). Cleared by a tempo-map or loop-region edit
     // (whose teardown cuts the tail) and by every new scheduler session.
     lastLoopSeamAudioTime: null as number | null,
+    // Initial emissions still preparing, across every scheduler session. A
+    // refused punch-in start retires its provisional clip with a store write,
+    // and that write breaks the programme witness of whichever emission is
+    // preparing, not only its own session's: a Play pressed after a Pause can
+    // be preparing while the paused session's start is refused (#5998).
+    pendingInitialEmissions: new Set<symbol>(),
+    // Retirements held until no initial emission is preparing. Each decides
+    // whether it still owns its capture when it runs, not when it was queued.
+    deferredStartRetirements: [] as Array<() => void>,
 };

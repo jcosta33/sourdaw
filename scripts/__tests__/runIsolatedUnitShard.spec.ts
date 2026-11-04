@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { accessSync, constants, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -52,6 +52,30 @@ const status = [
     'NoNewPrivs:\t1',
     '',
 ].join('\n');
+
+function isExecutableFile(path: string): boolean {
+    try {
+        accessSync(path, constants.X_OK);
+        return statSync(path).isFile();
+    } catch {
+        return false;
+    }
+}
+
+// pnpm sets npm_execpath to an absolute path when run directly, but to the bare
+// name `pnpm` when another pnpm started it (`pnpm guard -- pnpm test:run`).
+function resolveInvokingPnpm(execpath: string): string {
+    if (execpath.includes('/') || execpath.includes('\\')) {
+        return realpathSync(execpath);
+    }
+    for (const entry of (process.env.PATH ?? '').split(delimiter)) {
+        const candidate = join(entry, execpath);
+        if (entry !== '' && isExecutableFile(candidate)) {
+            return realpathSync(candidate);
+        }
+    }
+    throw new Error(`the invoking pnpm executable '${execpath}' is not on PATH`);
+}
 
 function setupPorts() {
     const run = vi.fn<UnitIsolationPorts['run']>((file, args) => {
@@ -544,7 +568,7 @@ describe('required unit account isolation', () => {
             store: join(fixture, 'store'),
             temp: join(fixture, 'tmp'),
             node: process.execPath,
-            pnpm: realpathSync(invokingPnpm),
+            pnpm: resolveInvokingPnpm(invokingPnpm),
         };
         const { ports, run } = runtimePorts();
         ports.env = {
@@ -712,6 +736,34 @@ describe('checkout directory ownership', () => {
             [2, 20000, 20000],
         ]);
         expect(close.mock.calls).toEqual([[2], [1]]);
+    });
+
+    it('owns a child directory whose name merely begins with two dots', () => {
+        const { ports, own, close, open } = directoryPorts();
+        ports.children = (fd) => (fd === 1 ? [{ name: '..cache', directory: true, symlink: false }] : []);
+        ports.physicalPath = (fd) => (fd === 1 ? root : `${root}/..cache`);
+        open.mockImplementation((path) => {
+            if (path === root) {
+                return 1;
+            }
+            if (path === '/proc/self/fd/1/..cache') {
+                return 2;
+            }
+            throw new Error('unexpected file or symlink traversal');
+        });
+        ownCheckoutDirectories({ ...context, workspace: root }, ports);
+        expect(own.mock.calls).toEqual([
+            [1, 20000, 20000],
+            [2, 20000, 20000],
+        ]);
+        expect(close.mock.calls).toEqual([[2], [1]]);
+    });
+
+    it.each(['/', '/checkout-sibling', '/outside'])('does not own a child whose physical path is %s', (physical) => {
+        const { ports, own } = directoryPorts();
+        ports.physicalPath = (fd) => (fd === 1 ? root : physical);
+        expect(() => ownCheckoutDirectories({ ...context, workspace: root }, ports)).toThrow('boundary');
+        expect(own.mock.calls).toEqual([[1, 20000, 20000]]);
     });
 
     it.each(['outside', 'device', 'file', 'unlinked', 'deadline'])(

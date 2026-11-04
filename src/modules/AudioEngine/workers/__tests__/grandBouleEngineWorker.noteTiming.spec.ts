@@ -7,7 +7,7 @@ import {
     GRAND_BOULE_SYNC_INT_COUNT,
     GRAND_BOULE_SYNC_SEQUENCE_IDX,
 } from '../../models/GrandBouleRingProtocol';
-import { installWorkletGlobals, makeChannels } from '../../services/__tests__/wasmViewGrowthHarness';
+import { installWorkletGlobals, makeChannels } from '../../testing/wasmViewGrowthHarness';
 
 /**
  * Where a Grand Boule note actually lands, measured against the engine's own

@@ -5,6 +5,7 @@ import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { type ConfirmPayload } from '#/utils/Notification/notificationEventBus';
 
 import { ConfirmDialog } from '../ConfirmDialog';
+import { DIALOG_SERVICE_LAYER } from '../dialogServiceLayer';
 import { onConfirmation } from '../onConfirmation';
 
 const confirmHandlerRef: {
@@ -132,6 +133,56 @@ describe('ConfirmDialog', () => {
         fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
         expect(secondResolve).toHaveBeenCalledWith(false);
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    // A transient save failure opens Don't Save while the user is typing: a
+    // stray Space or Enter must never pick the destructive answer.
+    it('gives a danger confirmation Cancel as its initial focus and Enter on its content cancels', async () => {
+        const fire = await renderAndGetHandler();
+        const resolve = vi.fn();
+        act(() => {
+            fire(
+                makePayload({
+                    variant: 'danger',
+                    title: 'Leave "Song" without saving?',
+                    confirmLabel: "Don't Save",
+                    cancelLabel: 'Cancel',
+                    resolve,
+                })
+            );
+        });
+
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus());
+        expect(screen.getByRole('button', { name: "Don't Save" })).not.toHaveFocus();
+
+        fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Enter' });
+
+        expect(resolve).toHaveBeenCalledExactlyOnceWith(false);
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    it('gives a default confirmation Cancel as its initial focus too', async () => {
+        const fire = await renderAndGetHandler();
+        act(() => {
+            fire(makePayload({}));
+        });
+
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus());
+    });
+
+    // The launch screen and loading overlay sit at z-[9999] and the load-failure
+    // overlay at z-[10000]; a question asked beneath them can never be answered.
+    it('renders its content and scrim on the dialog-service layer above full-screen overlays', async () => {
+        const fire = await renderAndGetHandler();
+        act(() => {
+            fire(makePayload({ message: 'Layered' }));
+        });
+
+        expect(screen.getByRole('dialog').className).toContain(DIALOG_SERVICE_LAYER);
+        expect(screen.getByRole('dialog').className).not.toContain('z-50');
+        const scrim = document.querySelector('[data-slot="dialog-overlay"]');
+        expect(scrim?.className).toContain(DIALOG_SERVICE_LAYER);
+        expect(scrim?.className).not.toContain('z-50');
     });
 
     it('ignores keys other than Enter and Escape', async () => {

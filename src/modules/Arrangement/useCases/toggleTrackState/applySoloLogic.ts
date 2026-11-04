@@ -1,7 +1,7 @@
 import { setTrackGain, setTrackMute, setTrackSoloGate } from '#/modules/AudioEngine/useCases';
-import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { applySoloLogic as calculateSoloLogic } from '../../services/applySoloLogic';
+import { soloModeStore } from '../../stores/soloModeStore';
 import { shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
 import { getTrackStoreState } from '../getTrackStoreState';
 
@@ -37,7 +37,7 @@ export function applySoloLogic({
     );
     const result = calculateSoloLogic({
         tracks: state.tracks,
-        soloMode: workspaceStore.value?.soloMode ?? 'sip',
+        soloMode: soloModeStore.value?.soloMode ?? 'sip',
         savedGains,
         liveStripTrackIds,
     });

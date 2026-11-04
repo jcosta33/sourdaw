@@ -18,8 +18,7 @@ const { builderMocks, transportMocks } = vi.hoisted(() => {
             setMasterChain: vi.fn(),
         },
         transportMocks: {
-            replaceTempoMap: vi.fn(),
-            replaceTimeSignatureMap: vi.fn(),
+            restoreTimelineMapSnapshot: vi.fn(),
         },
     };
 });
@@ -30,8 +29,7 @@ vi.mock('#/modules/Transport/stores', () => {
 
 vi.mock('#/modules/Transport/useCases', () => ({
     preferencesSeededTransportState: vi.fn(),
-    replaceTempoMap: transportMocks.replaceTempoMap,
-    replaceTimeSignatureMap: transportMocks.replaceTimeSignatureMap,
+    restoreTimelineMapSnapshot: transportMocks.restoreTimelineMapSnapshot,
 }));
 
 vi.mock('../../templateHelpers/addDeviceChain', () => ({ addDeviceChain: builderMocks.addDeviceChain }));
@@ -56,24 +54,22 @@ describe('createCinematicTemplate', () => {
         vi.clearAllMocks();
     });
 
-    it('replaces each Transport map once through the bulk boundaries', async () => {
+    it('restores both target maps once without a musical edit command', async () => {
         await createCinematicTemplate();
-
-        expect(transportMocks.replaceTimeSignatureMap).toHaveBeenCalledExactlyOnceWith({
-            changes: [
-                { beat: 0, numerator: 4, denominator: 4 },
-                { beat: 48, numerator: 6, denominator: 8 },
-                { beat: 72, numerator: 4, denominator: 4 },
-            ],
+        expect(transportMocks.restoreTimelineMapSnapshot).toHaveBeenCalledExactlyOnceWith({
+            timeSignatureMap: {
+                changes: [
+                    { id: expect.any(String), beat: 0, numerator: 4, denominator: 4 },
+                    { id: expect.any(String), beat: 48, numerator: 6, denominator: 8 },
+                    { id: expect.any(String), beat: 72, numerator: 4, denominator: 4 },
+                ],
+            },
+            tempoMap: {
+                changes: [
+                    { id: expect.any(String), beat: 0, tempo: 90, curve: 'instant' },
+                    { id: expect.any(String), beat: 88, tempo: 72, curve: 'linear' },
+                ],
+            },
         });
-        expect(transportMocks.replaceTempoMap).toHaveBeenCalledExactlyOnceWith({
-            changes: [
-                { beat: 0, tempo: 90, curve: 'instant' },
-                { beat: 88, tempo: 72, curve: 'linear' },
-            ],
-        });
-        const timeSignatureCallOrder = transportMocks.replaceTimeSignatureMap.mock.invocationCallOrder[0]!;
-        const tempoCallOrder = transportMocks.replaceTempoMap.mock.invocationCallOrder[0]!;
-        expect(timeSignatureCallOrder).toBeLessThan(tempoCallOrder);
     });
 });

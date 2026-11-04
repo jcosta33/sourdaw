@@ -109,6 +109,22 @@ describe('executableAppActionRegistry', () => {
         expect(descriptor?.parameters.properties).not.toHaveProperty('replacement');
     });
 
+    it('keeps comp removal hidden and reserves interval and source values for its owner', () => {
+        const descriptor = executableAppActionDescriptorByType.get('removeCompRegion');
+        expect(descriptor).toMatchObject({
+            actionType: 'removeCompRegion',
+            discoverability: 'hidden',
+            intentPhrases: [],
+            materializedArgumentsValidation: 'owner-required',
+            risk: 'bounded-reversible',
+            parameters: {
+                required: ['trackId', 'startBeat'],
+                properties: { trackId: { type: 'string' }, startBeat: { type: 'number', minimum: 0 } },
+            },
+        });
+        expect(Object.keys(descriptor!.parameters.properties).sort()).toEqual(['startBeat', 'trackId']);
+    });
+
     it('keeps comp interval serialization hidden and reserves its guard witness for the owner', () => {
         const descriptor = executableAppActionDescriptorByType.get('setCompRegion');
 

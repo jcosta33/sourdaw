@@ -274,6 +274,112 @@ describe('authentic pre-capture trim history replay (#5696)', () => {
         expect(notifyUser).not.toHaveBeenCalled();
     });
 
+    it('keeps the historic audio representation through repeated Undo and Redo', async () => {
+        await loadFixture('audio');
+        const capturedClip = structuredClone(readClip());
+        expect(Object.hasOwn(capturedClip, 'audioOffsetSeconds')).toBe(false);
+        for (let cycle = 0; cycle < 2; cycle += 1) {
+            await expect(undo()).resolves.toEqual({ headConsumed: true });
+            await redo();
+            await settleMirror();
+            expect(readClip()).toEqual(capturedClip);
+        }
+    });
+
+    it('preserves the genuine historic audio tuple through the grouped Redo dispatcher', async () => {
+        await loadFixture('audio');
+        const capturedClip = structuredClone(readClip());
+        await expect(undo()).resolves.toEqual({ headConsumed: true });
+        const history = undoStore.value;
+        if (!history) {
+            throw new Error('Expected the genuine pending Redo entry');
+        }
+        // Exercise the exposed grouped dispatcher with the genuine action;
+        // this does not claim the historic singleton producer persisted groups.
+        undoStore.set({ ...history, future: history.future.map((entry) => ({ ...entry, groupId: 'redo-unit' })) });
+        await redo();
+        await settleMirror();
+        expect(readClip()).toEqual(capturedClip);
+        expect(undoStore.value?.future).toHaveLength(0);
+    });
+
+    it('does not grant historic dispatch to a fresh clone of the pending forward action', async () => {
+        await loadFixture('audio');
+        await expect(undo()).resolves.toEqual({ headConsumed: true });
+        const entry = undoStore.value?.future[0];
+        if (entry?.kind !== 'action') {
+            throw new Error('Expected the genuine pending Redo entry');
+        }
+        await executeAppAction(structuredClone(entry.action), { skipUndo: true });
+        await settleMirror();
+        expect(readClip().audioOffsetSeconds).toBe(1);
+        expect(readClip().audioUnwrappedOffsetSeconds).toBe(1);
+        expect(readClip().loopLength).toBe(8);
+    });
+
+    it('refuses historic audio Redo after the current owner gains canonical source authority', async () => {
+        await loadFixture('audio');
+        await expect(undo()).resolves.toEqual({ headConsumed: true });
+        mutateCrdtDoc<{ tracks: TrackStoreState }>({
+            id: 'root',
+            changeFn: (doc) => {
+                const clip = doc.tracks.tracks[0]!.clips[0]!;
+                clip.audioOffsetSeconds = 2;
+                clip.audioUnwrappedOffsetSeconds = 2;
+            },
+        });
+        projectCrdtToStores({ resetProjections: true });
+        await settleMirror();
+        const before = snapshot();
+        await redo();
+        await settleMirror();
+        expect(snapshot()).toEqual(before);
+    });
+
+    it('refuses a pending historic dispatch retired during the real snapshot wait', async () => {
+        await loadFixture('audio');
+        await expect(undo()).resolves.toEqual({ headConsumed: true });
+        const entry = undoStore.value?.future[0];
+        if (entry?.kind !== 'action') {
+            throw new Error('Expected the genuine pending Redo entry');
+        }
+        const entered = Promise.withResolvers<void>();
+        const held = Promise.withResolvers<void>();
+        const waiting = Promise.withResolvers<void>();
+        const waitForSnapshot = automergeStorage.waitForAutomergeSnapshotTransaction;
+        const waitSpy = vi
+            .spyOn(automergeStorage, 'waitForAutomergeSnapshotTransaction')
+            .mockImplementation((transaction) => {
+                waiting.resolve();
+                return waitForSnapshot(transaction);
+            });
+        const snapshotTransaction = transactSnapshot(async () => {
+            entered.resolve();
+            await held.promise;
+        });
+        await entered.promise;
+        try {
+            const pending = executeAppAction(entry.action, { skipUndo: true });
+            const refused = expect(pending).rejects.toBeInstanceOf(AppActionConflictError);
+            await waiting.promise;
+            const history = undoStore.value;
+            if (!history) {
+                throw new Error('Expected pending history during dispatch');
+            }
+            undoStore.set({ ...history, future: [] });
+            await settleMirror();
+            const retired = snapshot();
+            held.resolve();
+            await snapshotTransaction;
+            await refused;
+            await settleMirror();
+            expect(snapshot()).toEqual(retired);
+        } finally {
+            held.resolve();
+            waitSpy.mockRestore();
+        }
+    });
+
     it('conservatively refuses a saved loop-disabled MIDI inverse without its captured offset', async () => {
         await loadFixture('loop-off');
         expect(readClip()).toMatchObject({ startBeat: 2, loopEnabled: false });

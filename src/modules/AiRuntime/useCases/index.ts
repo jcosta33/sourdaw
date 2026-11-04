@@ -102,3 +102,6 @@ export { applyAgentAuditionCandidate } from './agentCatalogAudition/applyAgentAu
 export { resolveAgentPreviewDomains } from './agentDomainPreview/resolveAgentPreviewDomains';
 export { resolveAgentDomainPreviewSupport } from './agentDomainPreview/resolveAgentDomainPreviewSupport';
 export { buildAgentDomainPreviews } from './agentDomainPreview/buildAgentDomainPreviews';
+export { startMeasuredPreviewAudition } from './startMeasuredPreviewAudition';
+export { stopMeasuredPreviewAudition } from './stopMeasuredPreviewAudition';
+export { getMeasuredPreviewAuditionView } from './getMeasuredPreviewAuditionView';

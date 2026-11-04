@@ -2,7 +2,12 @@ import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
-import { createMockAudioContext, type MockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
+import {
+    asAudioNode,
+    createMockAudioContext,
+    createMockAudioNode,
+    type MockAudioContext,
+} from '../../../../helpers/__tests__/audioContext.mock';
 import { notifyUser } from '../../../../utils/Notification/notifyUser';
 import { AdjustmentBusNode } from '../../engine/AdjustmentBusNode';
 import { RuntimeGraphMutationFailure, RuntimeGraphMutationRejected } from '../../engine/TrackNode';
@@ -13,7 +18,7 @@ import {
     type AudioEngineTopologyTestHarness,
 } from './createAudioEngineTopologyTestHarness';
 
-import type { AudioEngine } from '../../models/AudioEngineState';
+import type { AudioEngine, BuiltinDeviceNode } from '../../models/AudioEngineState';
 import type {
     RuntimeGraphDelta,
     RuntimeGraphDeviceChainDelta,
@@ -441,6 +446,18 @@ function createMasterRuntimeOutputDelta(appRevision: number): RuntimeGraphOutput
         nodes: [{ id: 'source', kind: 'audio', devices: [] }],
         edges: [{ kind: 'output', sourceId: 'source', targetId: 'master' }],
         parameters: [] as const,
+    };
+}
+
+function createRuntimeCompressorFixture(): BuiltinDeviceNode {
+    const node = asAudioNode(createMockAudioNode('compressor'));
+    return {
+        deviceId: 'compressor',
+        type: 'builtin-compressor',
+        parameterIds: ['attack', 'ratio'],
+        nodes: [node],
+        inputNode: node,
+        outputNode: node,
     };
 }
 
@@ -1122,7 +1139,7 @@ describe('AudioEngine', () => {
     it('rejects a same-id device with a different supported factory type before the live output mutation', () => {
         const source = engine.ensureTrackStrip('source');
         engine.ensureTrackStrip('target');
-        source.deviceNodes.push({ deviceId: 'compressor', type: 'builtin-compressor' } as never);
+        source.deviceNodes.push(createRuntimeCompressorFixture());
         const delta = createDeviceRuntimeOutputDelta(engine.getRuntimeGraphRevision());
         const wrongType: RuntimeGraphOutputDelta = {
             ...delta,
@@ -1173,7 +1190,7 @@ describe('AudioEngine', () => {
     ])('rejects %s before the live output mutation', (_label, mutateSource) => {
         const source = engine.ensureTrackStrip('source');
         engine.ensureTrackStrip('target');
-        source.deviceNodes.push({ deviceId: 'compressor', type: 'builtin-compressor' } as never);
+        source.deviceNodes.push(createRuntimeCompressorFixture());
         const delta = createDeviceRuntimeOutputDelta(engine.getRuntimeGraphRevision());
         engine.setRuntimeGraphTopologyValidator((nodes) => JSON.stringify(nodes) === JSON.stringify(delta.nodes));
         const mismatch: RuntimeGraphOutputDelta = {
@@ -1213,7 +1230,7 @@ describe('AudioEngine', () => {
 
     it('applies unchanged exact topology to a terminal output', () => {
         const source = engine.ensureTrackStrip('source');
-        source.deviceNodes.push({ deviceId: 'compressor', type: 'builtin-compressor' } as never);
+        source.deviceNodes.push(createRuntimeCompressorFixture());
         const delta: RuntimeGraphDelta = {
             schemaVersion: 1,
             command: 'set-track-output',
@@ -2479,7 +2496,7 @@ describe('AudioEngine', () => {
     // so a reader retrying on odd/changed counters never consumes a torn snapshot.
     describe('setTransportInfo seqlock (torn-read guard)', () => {
         // Int32 index of the seqlock counter; mirrors TRANSPORT_SEQ_I32 in the impl
-        // and TRANSPORT_SEQ_I32 in services/kneadProcessor.ts.
+        // and TRANSPORT_SEQ_I32 in worklets/kneadProcessor.ts.
         const SEQ_I32 = 14;
         const F64 = {
             beat: 0,
@@ -2566,7 +2583,7 @@ describe('AudioEngine', () => {
 
         it('the engine writer produces snapshots a seqlock reader accepts as clean', () => {
             // Faithful re-implementation of the reader loop in
-            // services/kneadProcessor.ts (TRANSPORT_SEQ_MAX_RETRIES path): sample
+            // worklets/kneadProcessor.ts (TRANSPORT_SEQ_MAX_RETRIES path): sample
             // the fields between two Atomics.load of the counter; accept only when
             // the counter is unchanged and even. After a completed engine write the
             // reader must get the exact values on its first attempt — proving the

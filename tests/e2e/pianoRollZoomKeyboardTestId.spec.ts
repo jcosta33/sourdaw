@@ -1,5 +1,4 @@
-import { expect, test } from '@playwright/test';
-
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -19,7 +18,9 @@ async function open_midi_editor(page: import('@playwright/test').Page): Promise<
     for (let attempt = 0; attempt < 5; attempt++) {
         await timeline.click({ position: { x: 300, y: 30 } });
         const zoom = page.getByTestId('toolbar-zoom');
-        if (await zoom.isVisible().catch(() => false)) { return; }
+        if (await zoom.isVisible().catch(() => false)) {
+            return;
+        }
         await page.waitForTimeout(300);
     }
     await expect(page.getByTestId('toolbar-zoom')).toBeVisible({ timeout: 5000 });

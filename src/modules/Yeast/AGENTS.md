@@ -4,10 +4,7 @@ Generative MIDI processor rack and real-time transformation pipeline (arpeggiato
 
 ## Public Contract Surface
 
-- **Use Cases** (`useCases/index.ts`): `processRealtimeMidiInput`, `processYeastMidi`, `readYeastPreviewSnapshot`, `setYeastPreviewCaptureEnabled`, `yeastPanic`, `configureYeastRuntime`, `setYeastGrooveTemplate`, `hydrateYeastState`, `hydrateYeastCrdtProjection`, `sendYeastProcessorCommand`, `teardownYeastRuntime`, `getYeastSchedulingLookahead`, `createOfflineYeastMidiProcessor`, `subscribeYeastPreview`, `reorderYeastProcessor`, `addYeastProcessor`, `setYeastProcessorParam`.
-- **Stores** (`stores/index.ts`): `getPinnedYeastDevice`, `readAllYeastRacks`, `readYeastRack`, `readYeastRackForTrack`, `setActiveYeastDevice`, `yeastDeviceIdsInProjectOrder`, `yeastStore`, `LEGACY_SHARED_RACK_DEVICE_ID`, `setYeastEventBus`, `YeastState`, `YeastProcessorInfo`, `YeastProcessorType`.
-- **Events** (`events/index.ts`): `YeastNoteOffIdentity`, `YeastNotesOffPayload`.
-- **Views** (`presentations/views/index.ts`): `YeastPanel`.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `events/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 
@@ -27,5 +24,5 @@ Generative MIDI processor rack and real-time transformation pipeline (arpeggiato
 
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
-- `pnpm test:run <changed-spec>`
+- `pnpm guard --profile focused -- pnpm test:run <changed-spec>`
 - PR CI checks module boundaries; inspect that result after cross-module changes.

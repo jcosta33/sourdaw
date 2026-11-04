@@ -472,7 +472,12 @@ describe('scheduler terminal through the real snapshot queue', () => {
         await settle();
         if (replace) {
             expectSuccessorUnchanged(before);
-            expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('not kept'), 'warning');
+            // A real commit error stays an error after ownership moves; only
+            // RecordingRootMovedRefusal is the expected warning path.
+            expect(mocks.notifyUser).toHaveBeenCalledWith(
+                'Punch-in recording failed — the take was not kept on this branch.',
+                'error'
+            );
             expect(mocks.notifyUser.mock.calls.every(([message]) => !message.includes('discarded'))).toBe(true);
         } else {
             expect(trackStore.value?.tracks[0]?.clips).toEqual([]);

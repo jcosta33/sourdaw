@@ -255,6 +255,78 @@ describe('handleRestoreCrossfadeClips — isNoop', () => {
     });
 });
 
+describe('handleRestoreCrossfadeClips — canonical clip B clock guard', () => {
+    const clock = { audioOffsetSeconds: 1.625, audioUnwrappedOffsetSeconds: 2.125 };
+
+    it('returns conflict when clip B source clock moved since the capture', () => {
+        setClips([makeClip('a'), makeClip('b', { audioOffsetSeconds: 1.5, audioUnwrappedOffsetSeconds: 2.125 })]);
+        const result = handleRestoreCrossfadeClips.execute({
+            type: 'restoreCrossfadeClips',
+            payload: {
+                clipAId: 'a',
+                clipBId: 'b',
+                expected: { ...matchingExpected, clipBAudioSource: clock },
+                replacement: matchingExpected,
+            },
+        });
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mockedRestore).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        'audioOffsetSeconds',
+        'audioUnwrappedOffsetSeconds',
+        'audioLoopStartSeconds',
+        'audioLoopPassEntrySeconds',
+        'audioLoopPassOriginBeat',
+    ] as const)('returns conflict when live clip B differs from the capture only in %s', (field) => {
+        const captured = {
+            audioOffsetSeconds: 2,
+            audioUnwrappedOffsetSeconds: 1.5,
+            audioLoopStartSeconds: 0.5,
+            audioLoopPassEntrySeconds: 1,
+            audioLoopPassOriginBeat: 3,
+        };
+        setClips([makeClip('a'), makeClip('b', { ...captured, [field]: captured[field] + 0.25 })]);
+        const result = handleRestoreCrossfadeClips.execute({
+            type: 'restoreCrossfadeClips',
+            payload: {
+                clipAId: 'a',
+                clipBId: 'b',
+                expected: { ...matchingExpected, clipBAudioSource: captured },
+                replacement: matchingExpected,
+            },
+        });
+        expect(result).toEqual({ status: 'conflict' });
+        expect(mockedRestore).not.toHaveBeenCalled();
+    });
+
+    it('writes when clip B source clock still matches the capture', () => {
+        setClips([makeClip('a'), makeClip('b', clock)]);
+        mockedRestore.mockReturnValue(true);
+        const result = handleRestoreCrossfadeClips.execute({
+            type: 'restoreCrossfadeClips',
+            payload: {
+                clipAId: 'a',
+                clipBId: 'b',
+                expected: { ...matchingExpected, clipBAudioSource: clock },
+                replacement: { ...matchingExpected, clipBAudioSource: { audioOffsetSeconds: 2 } },
+            },
+        });
+        expect(result).toEqual({ status: 'written' });
+    });
+
+    it('accepts a legacy capture without a clock whatever clip B carries', () => {
+        setClips([makeClip('a'), makeClip('b', clock)]);
+        mockedRestore.mockReturnValue(true);
+        const result = handleRestoreCrossfadeClips.execute({
+            type: 'restoreCrossfadeClips',
+            payload: { clipAId: 'a', clipBId: 'b', expected: matchingExpected, replacement: matchingExpected },
+        });
+        expect(result).toEqual({ status: 'written' });
+    });
+});
+
 describe('handleRestoreCrossfadeClips — describe', () => {
     it('returns label with null inverse', () => {
         const result = handleRestoreCrossfadeClips.describe({

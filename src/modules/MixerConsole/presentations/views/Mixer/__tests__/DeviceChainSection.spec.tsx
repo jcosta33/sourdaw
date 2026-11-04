@@ -11,6 +11,7 @@ type PluginStub = { id: string; name: string };
 
 const mocks = vi.hoisted(() => ({
     selectTrack: vi.fn(),
+    selectDevice: vi.fn(),
     executeUserAppAction: vi.fn(),
     executeAddDeviceAction: vi.fn(() => Promise.resolve({ status: 'applied', deviceId: 'device-added' })),
     executeRemoveDeviceAction: vi.fn(() => Promise.resolve({ status: 'applied' })),
@@ -21,6 +22,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
     selectTrack: mocks.selectTrack,
+    selectDevice: mocks.selectDevice,
     compileReorderDevicesAction: mocks.compileReorderDevicesAction,
     executeAddDeviceAction: mocks.executeAddDeviceAction,
     executeRemoveDeviceAction: mocks.executeRemoveDeviceAction,
@@ -96,6 +98,18 @@ describe('DeviceChainSection', () => {
 
         expect(mocks.selectTrack).toHaveBeenCalledWith('track-5');
         expect(mocks.openInspector).toHaveBeenCalledTimes(1);
+    });
+
+    it('selects the clicked device so the inspector shows it, not just the track', () => {
+        const track: Track = {
+            ...baseTrack,
+            devices: [makeDevice({ id: 'dev-1', name: 'Delay' }), makeDevice({ id: 'dev-2', name: 'Chorus' })],
+        };
+        render(<DeviceChainSection track={track} />);
+
+        fireEvent.click(screen.getByText('Chorus').closest('button')!);
+
+        expect(mocks.selectDevice).toHaveBeenCalledExactlyOnceWith('dev-2');
     });
 
     it('toggles bypass on double-click through the action boundary', () => {

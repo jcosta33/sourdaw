@@ -34,6 +34,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { type ToolSchema } from '../../models/ToolDefinitions';
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
@@ -41,7 +42,9 @@ import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
+import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { getProjectContext } from '../getProjectContext';
 import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
 
 import {
@@ -51,6 +54,7 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 
 const PROMPT = 'Insert a compressor after EQ on every bass track, excluding frozen tracks.';
 const BASS_DI_DEVICE_IDS = ['device-bass-di-eq', 'device-bass-di-saturator'];
@@ -329,7 +333,7 @@ function assertDiscoveredCommandSchemas(receipts: readonly unknown[], finalCalls
     if (
         !isRecord(discoveryReceipt) ||
         discoveryReceipt.status !== 'success' ||
-        discoveryReceipt.turn !== 1 ||
+        discoveryReceipt.turn !== 2 ||
         !isRecord(discoveryReceipt.data) ||
         discoveryReceipt.data.schema !== 'sourdaw.agent-tool-catalog' ||
         discoveryReceipt.data.schemaVersion !== 1 ||
@@ -418,12 +422,15 @@ function createFinalProviderCalls(userMessage: string): ProviderPlanCall[] {
 
 function createTurnTrackedWebLlmResponder(): (systemPrompt: string, userMessage: string) => Promise<string> {
     let turn = 0;
-    return (_systemPrompt, userMessage) => {
+    return (systemPrompt, userMessage) => {
         turn += 1;
-        if (turn > 2) {
-            throw new Error('Expected exactly two WebLLM provider turns');
+        if (turn > 6) {
+            throw new Error('Expected at most six WebLLM provider turns');
         }
-        if (turn === 1) {
+        if (turn % 3 === 1) {
+            return Promise.resolve(JSON.stringify(literalMetricIntakeTurn(userMessage, systemPrompt)));
+        }
+        if (turn % 3 === 2) {
             return Promise.resolve(JSON.stringify(catalogDiscoveryPlan(asCommandBatchProposal(providerPlan))));
         }
         const finalCalls = createFinalProviderCalls(userMessage);
@@ -471,11 +478,15 @@ function createTurnTrackedHostedResponder(): (...args: Parameters<typeof fetch>)
             throw new TypeError('Expected hosted provider request body');
         }
         turn += 1;
-        if (turn > 2) {
-            throw new Error('Expected exactly two hosted provider turns');
+        if (turn > 6) {
+            throw new Error('Expected at most six hosted provider turns');
         }
         const userMessage = getHostedUserMessage(init.body);
-        if (turn === 1) {
+        if (turn % 3 === 1) {
+            const request = JSON.parse(init.body) as { tools: ToolSchema[] };
+            return Promise.resolve(toolCallsResponse(literalMetricIntakeTurn(userMessage, request.tools)));
+        }
+        if (turn % 3 === 2) {
             return Promise.resolve(toolCallsResponse(catalogDiscoveryPlan(asCommandBatchProposal(providerPlan))));
         }
         const finalCalls = createFinalProviderCalls(userMessage);
@@ -726,7 +737,7 @@ describe('bass compressor prompt workflow', () => {
         const bassAmpDevicesBefore = structuredClone(getTrack('track-bass-amp').devices);
         await sendChatMessage(PROMPT);
 
-        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(2);
+        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(3);
         const providerRequest = getWebLlmUserMessage();
         expect(providerRequest).toContain(PROMPT);
         expect(getProviderProjectTargets(providerRequest)).toEqual(
@@ -869,7 +880,7 @@ describe('bass compressor prompt workflow', () => {
         runtimeMocks.backend.value = 'cloud';
         await sendChatMessage(PROMPT);
 
-        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(2);
+        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(3);
         expect(getProviderProjectTargets(getHostedUserMessage(getHostedRequestBody()))).toEqual(
             expect.arrayContaining([expect.objectContaining({ id: 'track-bass-frozen', frozen: true })])
         );
@@ -908,14 +919,66 @@ describe('bass compressor prompt workflow', () => {
 
     it('rejects an unanchored insertion before confirmation or write', async () => {
         const before = structuredClone(trackStore.value?.tracks);
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
-            JSON.stringify([{ name: 'addDevice', arguments: { trackId: 'track-bass-di', deviceType: 'Compressor' } }])
-        );
+        runtimeMocks.transformPlan.value = () => [
+            { name: 'addDevice', arguments: { trackId: 'track-bass-di', deviceType: 'Compressor' } },
+            providerPlan[1],
+        ];
 
         await sendChatMessage(PROMPT);
 
         expect(getConfirmation()).toBeNull();
+        expect(chatStore.value?.messages.at(-1)?.error).toMatch(/anchor|afterDeviceId/iu);
         expect(trackStore.value?.tracks).toEqual(before);
+        expect(runtimeGraphDeltaSpy).not.toHaveBeenCalled();
+        expect(undoStore.value?.past).toEqual([]);
+    });
+
+    it.each([
+        { backend: 'webllm', trackIndex: 1, anchor: undefined },
+        { backend: 'cloud', trackIndex: 0, anchor: undefined },
+        { backend: 'cloud', trackIndex: 1, anchor: 'device-bass-amp-chorus' },
+    ] as const)(
+        'refuses a missing or wrong required anchor on either target through $backend: $trackIndex/$anchor',
+        async ({ backend, trackIndex, anchor }) => {
+            runtimeMocks.backend.value = backend;
+            const before = structuredClone(trackStore.value?.tracks);
+            const revision = captureProjectRevision();
+            runtimeMocks.transformPlan.value = (plan) =>
+                plan.map((call, index) =>
+                    index === trackIndex ? { ...call, arguments: { ...call.arguments, afterDeviceId: anchor } } : call
+                );
+            await sendChatMessage(PROMPT);
+            expect(getConfirmation()).toBeNull();
+            expect(chatStore.value?.messages.at(-1)?.error).toMatch(/anchor|afterDeviceId/iu);
+            expect(trackStore.value?.tracks).toEqual(before);
+            expect(captureProjectRevision()).toBe(revision);
+            expect(runtimeGraphDeltaSpy).not.toHaveBeenCalled();
+            expect(undoStore.value?.past).toEqual([]);
+        }
+    );
+
+    it('allows an anchorless append request and preserves refusal of an unsolicited anchor', async () => {
+        const prompt = 'Insert a compressor on every bass track, excluding frozen tracks.';
+        runtimeMocks.transformPlan.value = (plan) =>
+            plan.map((call) => ({
+                ...call,
+                arguments: { trackId: call.arguments.trackId, deviceType: call.arguments.deviceType },
+            }));
+        await sendChatMessage(prompt);
+        const confirmation = getConfirmation();
+        expect(confirmation?.actions).toHaveLength(2);
+        expect(
+            confirmation?.actions.every(
+                (action) => action.type === 'addDevice' && action.payload.afterDeviceId === undefined
+            )
+        ).toBe(true);
+        const context = getProjectContext();
+        const unsolicited = bridgeGroundedLlmToolCalls({ calls: providerPlan, context, prompt });
+        expect(unsolicited.rejections).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ reason: expect.stringMatching(/anchor|afterDeviceId/iu) }),
+            ])
+        );
         expect(runtimeGraphDeltaSpy).not.toHaveBeenCalled();
         expect(undoStore.value?.past).toEqual([]);
     });

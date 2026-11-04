@@ -1,5 +1,5 @@
 /**
- * The four outcome classes AC-054 scores the agent acceptance corpora against, and the frozen
+ * The four legacy outcome classes AC-054 scores, plus exact answers, and the frozen
  * release thresholds from `docs/architecture/agent-release-gates.md`. Every scored case resolves to
  * exactly one class; the thresholds here are transcribed once from that document's table and change
  * only when the document itself is superseded to a later schema version.
@@ -11,10 +11,11 @@ export const AGENT_ACCEPTANCE_OUTCOME_CLASSES = [
     'deny-policy',
 ] as const;
 
-export type AgentAcceptanceOutcomeClass = (typeof AGENT_ACCEPTANCE_OUTCOME_CLASSES)[number];
+export type AgentLegacyOutcomeClass = (typeof AGENT_ACCEPTANCE_OUTCOME_CLASSES)[number];
+export type AgentAcceptanceOutcomeClass = AgentLegacyOutcomeClass | 'answer-exact';
 
 /**
- * The twelve request shapes a musician actually types, each answered by its own command contract.
+ * The twelve request shapes a musician actually types, each answered by its own command or answer contract.
  * A class is scored on its own floors, so a corpus cannot hide a shape the agent never learned by
  * averaging it into a corpus-wide rate.
  */
@@ -52,6 +53,7 @@ export type AgentPromptClass = (typeof AGENT_PROMPT_CLASSES)[number];
  */
 export const AGENT_ACCEPTANCE_ORACLE_KINDS = [
     'proposal',
+    'answer',
     'revert',
     'clarify',
     'unsupported',
@@ -85,6 +87,9 @@ export type AgentAcceptanceClassMetrics = {
     support: number;
 };
 
+export type AgentConfusionCounts = { truePositives: number; falsePositives: number; falseNegatives: number };
+export type AgentAnswerMetrics = AgentAcceptanceClassMetrics & AgentConfusionCounts;
+
 /** One prompt class's execute figures. `support` catches a sealed class the corpus stopped covering. */
 export type AgentPromptClassMetrics = {
     recall: number;
@@ -100,7 +105,9 @@ export type AgentPromptClassMetrics = {
  * `notMeasured` instead of carrying a fabricated value.
  */
 export type AgentAcceptanceMetrics = {
-    perClass: Record<AgentAcceptanceOutcomeClass, AgentAcceptanceClassMetrics>;
+    perClass: Record<AgentLegacyOutcomeClass, AgentAcceptanceClassMetrics>;
+    answer: AgentAnswerMetrics;
+    confusion: Record<AgentLegacyOutcomeClass, AgentConfusionCounts>;
     perPromptClass: Record<AgentScoredPromptClass, AgentPromptClassMetrics>;
     exactMatchRate: number;
     clarificationOnNonClarifyOracle: number;
@@ -119,6 +126,8 @@ export type AgentAcceptanceThresholds = {
     perClassF1Min: number;
     promptClassExecuteRecallMin: number;
     promptClassExecutePrecisionMin: number;
+    answerPrecisionMin: number;
+    answerRecallMin: number;
     clarifyRequiredPrecision: number;
     clarificationOnNonClarifyOracleMax: number;
     falseAbstentionOnExecuteExactMax: number;
@@ -139,6 +148,8 @@ export const AGENT_ACCEPTANCE_THRESHOLDS: Readonly<Record<AgentAcceptanceCorpusN
         perClassF1Min: 0.9,
         promptClassExecuteRecallMin: 1.0,
         promptClassExecutePrecisionMin: 1.0,
+        answerPrecisionMin: 1.0,
+        answerRecallMin: 1.0,
         clarifyRequiredPrecision: 0.85,
         clarificationOnNonClarifyOracleMax: 0,
         falseAbstentionOnExecuteExactMax: 0.05,
@@ -151,6 +162,8 @@ export const AGENT_ACCEPTANCE_THRESHOLDS: Readonly<Record<AgentAcceptanceCorpusN
         perClassF1Min: 0.9,
         promptClassExecuteRecallMin: 1.0,
         promptClassExecutePrecisionMin: 1.0,
+        answerPrecisionMin: 1.0,
+        answerRecallMin: 1.0,
         clarifyRequiredPrecision: 0.85,
         clarificationOnNonClarifyOracleMax: 0,
         falseAbstentionOnExecuteExactMax: 0.05,

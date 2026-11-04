@@ -59,6 +59,8 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { advertisedAnswerSchema } from './answerWireFixture';
+import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 
 const PROMPT =
     'Set the Bass DI compressor threshold to -18 dB and ratio to 4:1, leaving attack, release, and makeup gain unchanged.';
@@ -139,6 +141,22 @@ const noActionHistoryMetadataPort = {
 async function sendChatMessage(prompt: string): Promise<void> {
     flushAutomergeStorageWrites();
     await sendChatMessageWithoutDocumentFlush(prompt);
+}
+
+function assertAdvertisedToolSchema(
+    schema: ReturnType<typeof advertisedAnswerSchema>
+): asserts schema is ReturnType<typeof advertisedAnswerSchema> &
+    import('../../models/ToolDefinitions').ToolSchema['function'] {
+    const parameters = schema.parameters;
+    if (
+        parameters.type !== 'object' ||
+        !isRecord(parameters.properties) ||
+        !Array.isArray(parameters.required) ||
+        !parameters.required.every((entry: unknown) => typeof entry === 'string') ||
+        (parameters.additionalProperties !== undefined && typeof parameters.additionalProperties !== 'boolean')
+    ) {
+        throw new TypeError('Expected the actual advertised object tool schema.');
+    }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -275,7 +293,7 @@ function assertDiscoveredCommandSchema(receipts: readonly unknown[]): void {
     if (
         !isRecord(discoveryReceipt) ||
         discoveryReceipt.status !== 'success' ||
-        discoveryReceipt.turn !== 1 ||
+        discoveryReceipt.turn !== 2 ||
         !isRecord(discoveryReceipt.data) ||
         discoveryReceipt.data.schema !== 'sourdaw.agent-tool-catalog' ||
         discoveryReceipt.data.schemaVersion !== 1 ||
@@ -301,12 +319,13 @@ function createTurnTrackedWebLlmResponder(
     buildPlan: (userMessage: string) => ProviderCall[] = () => providerPlan
 ): (systemPrompt: string, userMessage: string) => Promise<string> {
     let turn = 0;
-    return (_systemPrompt, userMessage) => {
+    return (systemPrompt, userMessage) => {
+        const phase = turn % 3;
         turn += 1;
-        if (turn > 2) {
-            throw new Error('Expected exactly two WebLLM provider turns');
+        if (phase === 0) {
+            return Promise.resolve(JSON.stringify(literalMetricIntakeTurn(userMessage, systemPrompt)));
         }
-        if (turn === 1) {
+        if (phase === 1) {
             return Promise.resolve(JSON.stringify(catalogDiscoveryPlan()));
         }
         assertDiscoveredCommandSchema(getApplicationToolReceipts(userMessage));
@@ -338,11 +357,18 @@ function createTurnTrackedHostedResponder(): (...args: Parameters<typeof fetch>)
         if (typeof init?.body !== 'string') {
             throw new TypeError('Expected hosted provider request body');
         }
+        const phase = turn % 3;
         turn += 1;
-        if (turn > 2) {
-            throw new Error('Expected exactly two hosted provider turns');
+        if (phase === 0) {
+            const request: unknown = JSON.parse(init.body);
+            const schema = advertisedAnswerSchema(request);
+            assertAdvertisedToolSchema(schema);
+            const userMessage = getHostedUserMessage(init.body);
+            return Promise.resolve(
+                toolCallsResponse(literalMetricIntakeTurn(userMessage, [{ type: 'function', function: schema }]))
+            );
         }
-        if (turn === 1) {
+        if (phase === 1) {
             return Promise.resolve(toolCallsResponse(catalogDiscoveryPlan()));
         }
         assertDiscoveredCommandSchema(getReplayedToolReceipts(init.body));
@@ -559,11 +585,11 @@ describe('Bass DI compressor parameter prompt workflow', () => {
         await sendChatMessage(PROMPT);
 
         const providerRequests = vi.mocked(generateWebLlmCompletion).mock.calls.map(([, userMessage]) => userMessage);
-        expect(providerRequests).toHaveLength(2);
+        expect(providerRequests).toHaveLength(3);
         expect(providerRequests[0]).toContain(PROMPT);
         expect(providerRequests[0]).toContain('user_request:');
-        expect(providerRequests[1]).toContain('relevant_evidence:');
-        assertDiscoveredCommandSchema(getApplicationToolReceipts(providerRequests[1] ?? ''));
+        expect(providerRequests[2]).toContain('relevant_evidence:');
+        assertDiscoveredCommandSchema(getApplicationToolReceipts(providerRequests[2] ?? ''));
 
         const confirmation = getConfirmation();
         expect(confirmation?.actions).toEqual([
@@ -722,13 +748,13 @@ describe('Bass DI compressor parameter prompt workflow', () => {
             return init.body;
         });
         const providerRequests = requestBodies.map(getHostedUserMessage);
-        expect(providerRequests).toHaveLength(2);
+        expect(providerRequests).toHaveLength(3);
         expect(providerRequests[0]).toContain(PROMPT);
         expect(providerRequests[0]).toContain('user_request:');
-        expect(providerRequests[1]).toContain('relevant_evidence:');
-        // The second turn answers the first natively: its receipts ride as tool messages, not
+        expect(providerRequests[2]).toContain('relevant_evidence:');
+        // The proposal replays intake and discovery natively: receipts ride as tool messages, not
         // as text folded into the user message.
-        assertDiscoveredCommandSchema(getReplayedToolReceipts(requestBodies[1] ?? ''));
+        assertDiscoveredCommandSchema(getReplayedToolReceipts(requestBodies[2] ?? ''));
         expect(getConfirmation()?.actions).toEqual(createGuardedActions());
 
         const confirmation = getConfirmation();

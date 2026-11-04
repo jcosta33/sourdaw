@@ -112,15 +112,20 @@ describe('createNebulaDriftDemo', () => {
         expect(Number(firstPoint![1])).toBeGreaterThan(0);
     });
 
-    it('commits project truth before yielding for device readiness', () => {
+    it('commits project truth before starting the detached device-readiness report', () => {
         const metadataCreationOffset = demoSource.lastIndexOf('createFreshProjectMetadata({');
         const projectWriteOffset = demoSource.lastIndexOf('projectStore.set(projectMetadata);');
-        const readinessOffset = demoSource.indexOf('reportDeviceReadiness(await waitForDevices(), originatingEpoch);');
+        const readinessOffset = demoSource.indexOf(
+            'reportDeviceReadinessWhenSettled(waitForDevices(), committedGeneration);'
+        );
 
         expect(metadataCreationOffset).toBeGreaterThan(0);
         expect(projectWriteOffset).toBeGreaterThan(0);
         expect(readinessOffset).toBeGreaterThan(0);
         expect(metadataCreationOffset).toBeLessThan(projectWriteOffset);
         expect(projectWriteOffset).toBeLessThan(readinessOffset);
+        // The demo's app action must settle before bank admission does, or the
+        // launch overlay waits for the Levain bank to finish staging.
+        expect(demoSource).not.toContain('await waitForDevices()');
     });
 });

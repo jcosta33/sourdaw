@@ -9,7 +9,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { writeNamedProjectJsonByKey } from '../../../repositories/project/writeNamedProjectJsonByKey';
 import { projectLoadFailureStore } from '../../../stores/projectLoadFailureStore';
-import { projectStore } from '../../../stores/projectStore';
+import { projectStore, type ProjectStoreState } from '../../../stores/projectStore';
 import { addToRecentProjects } from '../../recentProjects/addToRecentProjects';
 import { buildProjectData } from '../fileIO/buildProjectData';
 import { getProjectSnapshotKey } from '../getProjectSnapshotKey';
@@ -23,13 +23,72 @@ type AudioDurabilityReceipt = {
     release: () => void;
 };
 
+let latestSave: Promise<boolean> | undefined;
+
 function assertProjectSnapshotAuthority(): void {
     if (agentProjectRepairStateStore.value !== null) {
         throw new Error('[saveProject] Project repair became required before snapshot persistence');
     }
 }
 
-export async function saveProject(): Promise<boolean> {
+/** Names the one authority that moved since the snapshot, so a refusal seen only in a remote log says which. */
+function describeSnapshotChange(
+    persistedProject: ProjectStoreState,
+    snapshotRevision: string,
+    audioDurabilityReceipt: AudioDurabilityReceipt | undefined
+): string | null {
+    const activeProject = projectStore.value;
+    if (!activeProject) {
+        return 'the project closed';
+    }
+    if (activeProject.createdAt !== persistedProject.createdAt) {
+        return 'the project creation identity changed';
+    }
+    if (activeProject.projectId !== persistedProject.projectId) {
+        return 'the project id changed';
+    }
+    if (captureProjectRevision() !== snapshotRevision) {
+        return 'the project revision moved';
+    }
+    if (audioDurabilityReceipt !== undefined && !audioDurabilityReceipt.isCurrent()) {
+        return 'the required audio durability receipt is no longer current';
+    }
+    return null;
+}
+
+/**
+ * Saves run one at a time, and each persists its own snapshot. Every save
+ * publishes a fresh `updatedAt` into the project before it builds its
+ * snapshot, so a second save overlapping the first (the 30 s autosave firing
+ * during a Save the user asked for) moved the first one's revision and the
+ * first save refused itself (#5984).
+ */
+export function saveProject(): Promise<boolean> {
+    const save = runSaveAfter(latestSave);
+    latestSave = save;
+    // Only a save still in flight is waited on: once it settles, fulfilled or
+    // rejected, the next save starts at once.
+    const releaseQueueSlot = (): void => {
+        if (latestSave === save) {
+            latestSave = undefined;
+        }
+    };
+    void save.then(releaseQueueSlot, releaseQueueSlot);
+    // The caller gets its own promise, which nothing here handles, so a
+    // rejection it ignores still reports as unhandled, as it did before the queue.
+    return save.then((saved) => saved);
+}
+
+async function runSaveAfter(predecessor: Promise<boolean> | undefined): Promise<boolean> {
+    if (predecessor) {
+        // Only the order matters here; the predecessor's own caller receives
+        // its result, rejection included, through the promise it was handed.
+        await predecessor.catch(() => undefined);
+    }
+    return persistProjectSnapshot();
+}
+
+async function persistProjectSnapshot(): Promise<boolean> {
     // Everything below assumes `projectStore` identifies the project the other
     // stores hold. That pairing only survives while a project is open. After a
     // load replaced the CRDT authority and then failed, `projectStore` still
@@ -131,15 +190,9 @@ export async function saveProject(): Promise<boolean> {
             // original serialized revision cannot certify a newer visible state.
             flushAutomergeStorageWrites();
             assertProjectSnapshotAuthority();
-            const activeProject = projectStore.value;
-            if (
-                !activeProject ||
-                activeProject.createdAt !== persistedProject.createdAt ||
-                activeProject.projectId !== persistedProject.projectId ||
-                captureProjectRevision() !== built.snapshotRevision ||
-                (audioDurabilityReceipt !== undefined && !audioDurabilityReceipt.isCurrent())
-            ) {
-                throw new Error('[saveProject] Project or audio changed during snapshot persistence');
+            const change = describeSnapshotChange(persistedProject, built.snapshotRevision, audioDurabilityReceipt);
+            if (change !== null) {
+                throw new Error(`[saveProject] Project or audio changed during snapshot persistence: ${change}`);
             }
         };
 

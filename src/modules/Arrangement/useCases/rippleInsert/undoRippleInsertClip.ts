@@ -1,5 +1,6 @@
 import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 
+import { relocateAudioSourceTimeFields } from '../clip/relocateAudioSourceTimeFields';
 import { getTrackStoreState } from '../getTrackStoreState';
 import { setTrackState } from '../setTrackState';
 
@@ -42,6 +43,7 @@ export function undoRippleInsertClip({ trackId, plan }: UndoRippleInsertClipInpu
                         // the anchor rides the same delta back or the restored
                         // placement would read a spurious advance (#4988).
                         ...shiftLoopOriginEntry(clip, orig.origStartBeat - clip.startBeat),
+                        ...relocateAudioSourceTimeFields(clip, orig.origStartBeat - clip.startBeat),
                     };
                 }),
             };

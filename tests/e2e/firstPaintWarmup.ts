@@ -5,6 +5,7 @@ import { chromium, type FullConfig } from '@playwright/test';
 import { assertServingCheckoutIdentity } from '../../scripts/e2eServerIdentity';
 import { DIRECT_E2E_VIEWPORT_NAME } from '../../src/app/resolveAppComposition';
 
+import { COLD_FIRST_PAINT_TIMEOUT_MS } from './coldFirstPaintBudget';
 import { LAUNCH_SCREEN_NAME } from './e2eUtils';
 import {
     attach_first_paint_console,
@@ -12,17 +13,6 @@ import {
     format_first_paint_failure_diagnosis,
     wait_for_console_marker,
 } from './firstPaintDiagnostics';
-
-/**
- * One-time bound for the dev server's cold module transform. Playwright's
- * `webServer.url` answers as soon as Vite serves the HTML shell, long before
- * the SPA and WASM module graph has compiled, so whichever test navigated
- * first used to absorb that compile inside its own first-paint allowance and
- * time out on cold CI hardware. This bound is paid once per run, outside every
- * test's observation window; the per-test first-paint bounds stay as they are
- * and keep measuring a warm module graph.
- */
-const COLD_FIRST_PAINT_TIMEOUT_MS = 180_000;
 
 function remainingWarmupTime(deadline: number): number {
     const remaining = Math.floor(deadline - performance.now());

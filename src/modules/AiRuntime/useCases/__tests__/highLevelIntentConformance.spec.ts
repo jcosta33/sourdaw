@@ -57,7 +57,6 @@ import {
     BLUES_CLIP_START_BEAT,
     BLUES_PROMPT,
     bluesProposalItems,
-    cycleProviderAttempt,
     declineCall,
     deriveBluesNotes,
     discoverSearchedCalls,
@@ -67,14 +66,43 @@ import {
     GENERATED_CLIP_ID,
     GENERATED_TRACK_ID,
     isRecord,
+    proposeCall,
     proposeDiscoveredCalls,
     PROPOSED_COMMAND_NAMES,
-    scriptHighLevelIntentProvider,
     scriptProviderTurns,
     SEARCH_INTENTS,
     searchCalls,
     TEMPO_SEARCH_INTENT,
+    type ScriptedTurn,
 } from './highLevelIntentWorkflowFixture';
+import { nonAcousticMetricIntakeTurn } from './metricGoalWorkflowFixture';
+
+const bluesIntake = nonAcousticMetricIntakeTurn({
+    modeId: 'create',
+    dimensions: ['arrangement', 'midi-content'],
+    creationSlotObjectTypes: ['track'],
+    nestedCreationSlotObjectTypes: ['clip'],
+});
+
+function cycleProviderAttemptAfterIntake(
+    completion: typeof runtimeMocks.generateWebLlmCompletion,
+    turns: readonly ScriptedTurn[]
+): void {
+    let turnIndex = 0;
+    completion.mockImplementation((systemPrompt: string, userMessage: string) => {
+        const position = turnIndex % (turns.length + 1);
+        if (position === 0) {
+            turnIndex++;
+            return Promise.resolve(JSON.stringify(bluesIntake(userMessage, systemPrompt)));
+        }
+        const turn = turns[position - 1];
+        turnIndex++;
+        if (turn === undefined) {
+            throw new Error('Expected at least one scripted provider turn');
+        }
+        return Promise.resolve(JSON.stringify(turn(userMessage, systemPrompt)));
+    });
+}
 
 const CLARIFY_PROMPT = 'make it sound better';
 const UNSUPPORTED_PROMPT = 'master this for vinyl';
@@ -237,7 +265,12 @@ describe('high-level intent conformance', () => {
         configureAiWorkflowCommandPreflightFixture();
         vi.clearAllMocks();
         runtimeMocks.backend.value = 'webllm';
-        scriptHighLevelIntentProvider(runtimeMocks.generateWebLlmCompletion);
+        scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+            bluesIntake,
+            () => searchCalls(),
+            discoverSearchedCalls(),
+            proposeDiscoveredCalls(bluesProposalItems()),
+        ]);
         await cloudSession.clear();
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('high-level intent conformance test');
@@ -377,13 +410,12 @@ describe('high-level intent conformance', () => {
         // proposing the same batch — the grounding refusal is app-owned and
         // cannot be repaired away — and the repeated batch is refused again,
         // terminally.
-        cycleProviderAttempt(runtimeMocks.generateWebLlmCompletion, [
+        cycleProviderAttemptAfterIntake(runtimeMocks.generateWebLlmCompletion, [
             () => searchCalls([...SEARCH_INTENTS, TEMPO_SEARCH_INTENT]),
             discoverSearchedCalls(searchedNames),
-            proposeDiscoveredCalls(
-                [...bluesProposalItems(), { id: 'set-tempo', name: 'setTempo', arguments: { bpm: 96 } }],
-                searchedNames
-            ),
+            () => [
+                proposeCall([...bluesProposalItems(), { id: 'set-tempo', name: 'setTempo', arguments: { bpm: 96 } }]),
+            ],
         ]);
 
         await sendChatMessage(BLUES_PROMPT);
@@ -409,10 +441,10 @@ describe('high-level intent conformance', () => {
             { ...makeClip, arguments: { ...(makeClip?.arguments ?? {}), trackId } },
             writeChords ?? {},
         ];
-        cycleProviderAttempt(runtimeMocks.generateWebLlmCompletion, [
+        cycleProviderAttemptAfterIntake(runtimeMocks.generateWebLlmCompletion, [
             () => searchCalls(),
             discoverSearchedCalls(),
-            proposeDiscoveredCalls(ungroundedItems),
+            () => [proposeCall(ungroundedItems)],
         ]);
 
         await sendChatMessage(BLUES_PROMPT);
@@ -433,7 +465,12 @@ describe('high-level intent conformance', () => {
     });
 
     it('proposes from what the command index returned rather than collapsing to no-match', async () => {
-        const messages = scriptHighLevelIntentProvider(runtimeMocks.generateWebLlmCompletion);
+        const messages = scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+            bluesIntake,
+            () => searchCalls(),
+            discoverSearchedCalls(),
+            proposeDiscoveredCalls(bluesProposalItems()),
+        ]);
 
         const result = await parsePromptToActions({
             prompt: BLUES_PROMPT,
@@ -441,8 +478,8 @@ describe('high-level intent conformance', () => {
             projectRevision: captureProjectRevision(),
         });
 
-        const discoverTurnMessage = messages[1] ?? '';
-        const proposeTurnMessage = messages[2] ?? '';
+        const discoverTurnMessage = messages[2] ?? '';
+        const proposeTurnMessage = messages[3] ?? '';
         const searched = getSearchedCommandNames(discoverTurnMessage);
         expect([...PROPOSED_COMMAND_NAMES].every((name) => searched.has(name))).toBe(true);
         const discovery = getDiscoveryReceipt(proposeTurnMessage);
@@ -471,7 +508,7 @@ describe('high-level intent conformance', () => {
     it('says a decided no-match in its own words rather than the text a missing outcome produces', async () => {
         // The run searched and then returned no call at all: that is a decided outcome, and it is the
         // one the orchestrator's generic fallback would otherwise swallow.
-        scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [() => searchCalls(), () => []]);
+        scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [bluesIntake, () => searchCalls(), () => []]);
 
         await sendChatMessage(BLUES_PROMPT);
 

@@ -180,7 +180,7 @@ function buildToolChoiceExtension(
     if (directive.mode === 'required') {
         // `allowed_tools` restricts the choice set without capping the call count: the
         // workflow terminal shape is two calls in one turn (`selectWorkflowCapability`
-        // beside `command.batch.propose`), so `parallel_tool_calls` stays true here too.
+        // beside `command.batch.propose`), unless this turn explicitly requires one call.
         // The allowed set is read from the narrowed schema list, not the raw directive
         // names, so a terminal name with no matching advertised schema cannot reach the wire.
         return {
@@ -192,10 +192,10 @@ function buildToolChoiceExtension(
                     name: codec.encode(schema.function.name),
                 })),
             },
-            parallel_tool_calls: true,
+            parallel_tool_calls: directive.parallelToolCalls ?? true,
         };
     }
-    return { tool_choice: 'auto', parallel_tool_calls: true };
+    return { tool_choice: 'auto', parallel_tool_calls: directive.parallelToolCalls ?? true };
 }
 
 function readUsage(payload: Record<string, unknown>): HostedToolPlanUsage | null {

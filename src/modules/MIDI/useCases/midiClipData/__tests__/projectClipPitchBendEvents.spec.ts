@@ -80,9 +80,10 @@ describe('projectClipPitchBendEvents', () => {
             toBeat: 8,
         });
 
+        // The carried rows keep the order they were recorded in, so the latest of them stays the last.
         expect(events.map((event) => [event.channel, event.beat, event.value])).toEqual([
-            [0, 0, 300],
             [1, 0, 200],
+            [0, 0, 300],
         ]);
     });
 

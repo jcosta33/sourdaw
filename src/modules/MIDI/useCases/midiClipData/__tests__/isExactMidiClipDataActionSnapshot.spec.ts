@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isExactMidiClipDataActionSnapshot } from '../isExactMidiClipDataActionSnapshot';
+import { isExactMidiClipDataActionSnapshot } from '../../../services/isExactMidiClipDataActionSnapshot';
 
 const note = {
     id: 'note',

@@ -34,6 +34,76 @@ function testClip(overrides: Partial<Clip> & Pick<Clip, 'id'>): Clip {
 }
 
 describe('resolveTrackClipsWithComping', () => {
+    it('carries the selected original MIDI source through the offline comp resolver', () => {
+        const midiSource = {
+            sourceClipId: 'original',
+            rows: {
+                notes: {
+                    present: true,
+                    value: [{ id: 'original-row', pitch: 60, startBeat: 5.5, duration: 1, velocity: 100 }],
+                },
+                controlChanges: { present: false, value: [] },
+                pitchBends: { present: false, value: [] },
+            },
+            sourceEntryBeat: 5,
+            sourceEndBeat: 9,
+            phaseHeadBeat: 0,
+            passLengthBeats: 4,
+        };
+        const lane = {
+            id: 'lane-midi',
+            trackId: 't1',
+            takes: [
+                {
+                    id: 'selected',
+                    clipId: 'original',
+                    name: 'Selected',
+                    startBeat: 0,
+                    endBeat: 4,
+                    selected: true,
+                    sourceOffsetBeats: 5,
+                    midiSource,
+                },
+            ],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'selected' }],
+        };
+        const clip = testClip({ id: 'original', type: 'midi', startBeat: 0, endBeat: 8 });
+
+        const resolved = resolveTrackClipsWithComping('t1', [clip], { lanes: [lane] });
+
+        expect(resolved[0]).toMatchObject({ midiTakeId: 'selected', midiTakeSource: midiSource });
+        expect(resolved[1]).not.toHaveProperty('midiTakeSource');
+    });
+    it('carries an unfrozen recorded pass to native and offline MIDI consumers', () => {
+        const take = {
+            id: 'recorded-pass-2',
+            clipId: 'recording',
+            name: 'Pass 2',
+            startBeat: 8,
+            endBeat: 12,
+            selected: true,
+            sourceOffsetBeats: 4,
+            recordingPassIndex: 1,
+        };
+        const lane = {
+            id: 'lane-midi',
+            trackId: 't1',
+            takes: [take],
+            activeCompRegions: [{ startBeat: 8, endBeat: 12, takeId: take.id }],
+        };
+        const clip = testClip({ id: 'recording', type: 'midi', startBeat: 8, endBeat: 16 });
+
+        const resolved = resolveTrackClipsWithComping('t1', [clip], { lanes: [lane] });
+
+        expect(resolved[0]).toMatchObject({ regionStartBeat: 8, midiTakeRecordingPassIndex: 1 });
+        expect(resolved[0]).not.toHaveProperty('midiTakeSource');
+        expect(resolved[1]).not.toHaveProperty('midiTakeRecordingPassIndex');
+        expect(() =>
+            resolveTrackClipsWithComping('t1', [clip], {
+                lanes: [{ ...lane, takes: [{ ...take, recordingPassIndex: undefined }] }],
+            })
+        ).toThrow('Invalid MIDI take recording pass index');
+    });
     it('returns clip bounds as region and source bounds when the lane store is empty', () => {
         mocks.takeLaneStoreValue.value = null;
 

@@ -6,7 +6,7 @@
  *
  * The field names are the worklet's own upload protocol:
  * `loadInstrumentFromManifest.ts` posts them at a `MessagePort` and
- * `services/levainProcessor.ts` translates them into `LevainInstance` calls.
+ * `worklets/levainProcessor.ts` translates them into `LevainInstance` calls.
  * `LevainZone` / `LevainLegatoTransition` / `LevainBankLayout`
  * (`crates/sourdaw-native/src/commands/levain.rs`) accept the same vocabulary
  * with `deny_unknown_fields` and translate it identically, so a strip that
@@ -125,4 +125,6 @@ export type NativeSampleBank = NativeLevainBankLayout &
 export type NativeSampleBankLease = Readonly<{
     bank: NativeSampleBank;
     release: () => void;
+    /** A successful transport acknowledgement while the decoded lease remains held. */
+    reportActivity?: () => void;
 }>;

@@ -25,16 +25,12 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
     const isStillChosen = pendingProjectReplacements.capture();
 
     // Pre-save the open project before the import replaces it — otherwise
-    // unsaved edits since the last save are silently lost (audit #568 F3). The
-    // guard refuses a failed save and a save that resolved with the project
-    // still dirty (a plugin capture rejected before commit; both surfaces
-    // already notified), so the current project stays open.
-    if (projectStore.value?.dirty) {
-        if (!(await saveProjectBeforeReplacement())) {
-            return false;
-        }
-    }
-    if (!isStillChosen()) {
+    // unsaved edits since the last save are silently lost (audit #568 F3). A
+    // failed save, or one that resolved with the project still dirty (a plugin
+    // capture rejected before commit), asks whether to leave without saving;
+    // Cancel keeps the current project open.
+    const outgoingProject = projectStore.value?.dirty ? await saveProjectBeforeReplacement() : 'save-closed-takes';
+    if (outgoingProject === 'stay' || !isStillChosen()) {
         return false;
     }
 
@@ -51,7 +47,12 @@ export async function pickAndImportProjectFile(): Promise<boolean> {
         }
         const data: unknown = JSON.parse(content);
 
-        const imported = await applyImportedProjectData({ data, shouldProceed: isStillChosen, transaction });
+        const imported = await applyImportedProjectData({
+            data,
+            outgoingProject,
+            shouldProceed: isStillChosen,
+            transaction,
+        });
         if (!imported) {
             // A withdrawn import kept the open project, which is what the user chose.
             if (!isStillChosen()) {

@@ -7,6 +7,7 @@ import { forgetHeldNoteExpression } from '../scheduling/forgetHeldNoteExpression
 import { resetMetronomeBeat } from '../scheduling/resetMetronomeBeat';
 
 import { advanceSchedulerDiscontinuityEpoch } from './advanceSchedulerDiscontinuityEpoch';
+import { initialEmissionRetirements } from './initialEmissionRetirements';
 import { schedulerSession, stopActiveSources } from './schedulerSession';
 
 /**
@@ -43,6 +44,7 @@ export function disposePlayheadScheduler(): void {
     schedulerSession.accumulatedPosition = 0;
     playheadClockRef.beat = 0;
     playheadClockRef.audioTimeSeconds = 0;
+    playheadClockRef.pendingLoopSeam = null;
     schedulerSession.lastScheduledBeat = -1;
     schedulerSession.punchRecordingActive = false;
     schedulerSession.tickInFlight = false;
@@ -52,6 +54,8 @@ export function disposePlayheadScheduler(): void {
     schedulerSession.lastTempoMapChanges = null;
     schedulerSession.lastLoopSignature = '';
     schedulerSession.pendingSeam = null;
+    schedulerSession.observeNativeRecordingClock = null;
+    initialEmissionRetirements.forget();
     resetMetronomeBeat(0);
     // The graph the engagements were pressed on is being discarded with the
     // session, so there is nothing left to release them on.

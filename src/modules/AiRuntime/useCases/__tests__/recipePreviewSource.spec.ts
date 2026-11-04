@@ -46,7 +46,11 @@ const measure: ToolCallResult = {
     name: 'analysis.measure',
     arguments: { scope, range, subject: 'preview', recipeCallId: 'expand-1' },
 };
-const end: ToolCallResult = { id: 'end-1', name: 'answer.respond', arguments: { answer: 'Done', evidenceCallIds: [] } };
+const end: ToolCallResult = {
+    id: 'end-1',
+    name: 'command.batch.decline',
+    arguments: { kind: 'clarify', reason: 'Which target?', questions: ['Which target?'] },
+};
 
 beforeEach(() => {
     trackStore.set({
@@ -66,7 +70,7 @@ function runTurns(turns: ToolCallResult[][], maxReceiptBytesPerCall?: number) {
     }
     const loopInput: Parameters<typeof runApplicationOwnedToolLoop>[0] = {
         loopId: 'recipe-source-run',
-        terminalToolNames: new Set(['answer.respond']),
+        terminalToolNames: new Set(['command.batch.decline']),
         requestTurn,
         recipe: {
             toolName: 'recipe.expand',

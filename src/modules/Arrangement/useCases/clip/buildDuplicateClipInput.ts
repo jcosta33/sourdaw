@@ -2,6 +2,8 @@ import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 
 import { type Clip } from '../../models/Track';
 
+import { relocateAudioSourceTimeFields } from './relocateAudioSourceTimeFields';
+
 /** The producer's copy shape, shared with admission of a later replay member. */
 export function buildDuplicateClipInput(
     clip: Clip,
@@ -30,6 +32,7 @@ export function buildDuplicateClipInput(
         loopLength: clip.loopLength,
         // An unanchored source stays unanchored; an anchored loop moves with its copy.
         ...shiftLoopOriginEntry(clip, input.startBeat - clip.startBeat),
+        ...relocateAudioSourceTimeFields(clip, input.startBeat - clip.startBeat),
         followAction: clip.followAction,
     };
 }

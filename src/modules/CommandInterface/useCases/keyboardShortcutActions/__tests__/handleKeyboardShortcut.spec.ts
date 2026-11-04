@@ -40,6 +40,7 @@ vi.mock('#/modules/WorkspaceShell/stores', async (importOriginal) => {
 });
 
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({
+    closeCollaborationPanel: vi.fn(),
     cycleAutomationVisibility: vi.fn(),
     toggleCommandPalette: vi.fn(),
     toggleWorkspaceMode: vi.fn(),
@@ -52,7 +53,7 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     toggleVirtualKeyboard: vi.fn(),
     openExportDialog: vi.fn(),
     openPreferencesDialog: vi.fn(),
-    TOOL_SHORTCUTS: {},
+    getToolForKeyPress: vi.fn(() => null),
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({

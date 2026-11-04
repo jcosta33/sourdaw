@@ -1,7 +1,6 @@
 import { fileURLToPath } from 'node:url';
 
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { launch_from_template, setupWorkspace } from './e2eUtils';
 
 // A small bundled WAV fixture — imported through the Browser's file input so a
@@ -27,8 +26,8 @@ test.describe('Sample Library', () => {
 
         // Navigate to the Library tab, then the "Imported" samples sub-tab (the
         // Samples surface — it renders the SamplesTab list).
-        await browserPanel.getByRole('button', { name: 'Library', exact: true }).click();
-        const importedSubTab = browserPanel.getByRole('button', { name: 'Imported', exact: true });
+        await browserPanel.getByRole('tab', { name: 'Library', exact: true }).click();
+        const importedSubTab = browserPanel.getByRole('tab', { name: 'Imported', exact: true });
         await expect(importedSubTab).toBeVisible();
         await importedSubTab.click();
 

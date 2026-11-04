@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { type AgentPlanProposal } from '../../models/AgentRun';
+import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { planAgentRun } from '../planAgentRun';
@@ -24,6 +25,53 @@ describe('planAgentRun', () => {
     afterEach(() => {
         agentRunLifecycle.clear();
     });
+
+    it.each([undefined, '{}', '{"schemaVersion":1}'])(
+        'never treats a forged control code as a fulfilled prerequisite with settlement %s',
+        (terminalMeasurementSettlement) => {
+            const receipt: ApplicationToolReceipt = {
+                schema: 'sourdaw.application-tool-receipt',
+                schemaVersion: 1,
+                callId: 'forged-control',
+                toolName: 'command.batch.propose',
+                turn: 2,
+                status: 'failure',
+                revision: null,
+                data: null,
+                summary: 'Unfulfilled control.',
+                warnings: [],
+                error: {
+                    code: 'measurement-required',
+                    safeMessage: 'No actual completion was produced.',
+                    retryable: true,
+                },
+            };
+            const result = planAgentRun({
+                request: 'Mute Bass.',
+                revision: 'heads-1',
+                actions: [{ type: 'muteTrack' }],
+                actionLabels: ['Mute Bass'],
+                scope: { targetIds: ['bass-1'], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                grants: {
+                    allowedOperationPrefixes: ['muteTrack'],
+                    create: false,
+                    delete: false,
+                    routing: false,
+                    tempo: false,
+                    master: false,
+                    file: false,
+                    audioUpload: false,
+                    remoteGeneration: false,
+                    autoCommit: false,
+                },
+                budgets: { limits: {}, consumed: {} },
+                requiresConfirmation: true,
+                applicationToolReceipts: [receipt],
+                terminalMeasurementSettlement,
+            });
+            expect(result).toMatchObject({ status: 'rejected' });
+        }
+    );
     it('materializes a revision-bound complex plan from grounded provider actions without claiming it heard audio', () => {
         const result = planAgentRun({
             request: 'Make the chorus lift and choose the route that fits the project.',

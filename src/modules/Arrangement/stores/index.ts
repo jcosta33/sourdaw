@@ -3,6 +3,8 @@
 
 export { clipSelectionStore, defaultClipSelectionState } from './clipSelectionStore';
 export type { ClipSelectionState, MarqueeSelection } from './clipSelectionStore';
+export { deviceSelectionStore, defaultDeviceSelectionState } from './deviceSelectionStore';
+export type { DeviceSelectionState } from './deviceSelectionStore';
 export { markerStore } from './markerStore';
 export type { MarkerStoreState } from './markerStore';
 export { readMusicalRange } from './readMusicalRange';
@@ -28,6 +30,7 @@ export {
 export type { TimelineViewState } from './timelineViewStore';
 
 export { activeRecordingRef } from './activeRecordingRef';
+export type { RecordingMidiAdmission } from './activeRecordingRef';
 
 export { trackStore, defaultTrackState, sanitizeTrackSnapshot } from './trackStore';
 export type {
@@ -56,6 +59,9 @@ export { getTrackEligibility, shouldCreateLiveTrackStrip } from './trackEligibil
 // closing the store-vs-engine solo split without duplicating the math (OE-4).
 export { deriveEffectiveAudibility, hasActiveSolo } from './effectiveAudibility';
 export type { EffectiveAudibility, EffectiveAudibilityInput } from './effectiveAudibility';
+export { soloModeStore, defaultSoloModeState } from './soloModeStore';
+export type { SoloModeState } from './soloModeStore';
+export type { SoloMode } from './effectiveAudibility';
 
 export { adjustmentLayerStore, EFFECT_PRESETS, LAYER_COLORS } from './adjustmentLayer';
 export type {

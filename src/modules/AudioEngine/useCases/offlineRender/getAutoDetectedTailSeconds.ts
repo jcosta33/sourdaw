@@ -1,5 +1,4 @@
-import { deriveEffectiveAudibility, trackStore, type Track } from '#/modules/Arrangement/stores';
-import { workspaceStore } from '#/modules/WorkspaceShell/stores';
+import { deriveEffectiveAudibility, soloModeStore, trackStore, type Track } from '#/modules/Arrangement/stores';
 import { resolveFrozenBufferTail } from '#/utils/frozenBufferTail';
 
 import { estimateRenderTailSeconds, type TailDeclarationLike } from '../../services/estimateRenderTailSeconds';
@@ -144,7 +143,7 @@ export function getAutoDetectedTailSeconds({
     );
     const { audibleByTrackId, soloGatedByTrackId } = deriveEffectiveAudibility({
         tracks,
-        soloMode: explicitSoloMode ?? workspaceStore.value?.soloMode ?? 'sip',
+        soloMode: explicitSoloMode ?? soloModeStore.value?.soloMode ?? 'sip',
         stripTrackIds,
     });
 

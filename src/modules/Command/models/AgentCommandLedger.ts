@@ -136,6 +136,7 @@ const AGENT_COMMAND_LEDGER_TUPLES: readonly SupportedEntryTuple[] = [
     ['clearSolos', 'track', 'Arrangement'],
     ['selectTake', 'track', 'Arrangement'],
     ['setCompRegion', 'track', 'Arrangement'],
+    ['removeCompRegion', 'track', 'Arrangement'],
     ['createVcaGroup', 'track', 'Arrangement'],
     ['assignToVca', 'track', 'Arrangement'],
     ['removeFromVca', 'track', 'Arrangement'],

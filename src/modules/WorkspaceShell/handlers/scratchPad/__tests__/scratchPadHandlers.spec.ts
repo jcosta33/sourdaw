@@ -39,6 +39,15 @@ describe('Workspace Scratch Pad Handlers', () => {
             expect(workspaceStore.set).toHaveBeenCalledWith(expect.objectContaining({ scratchPadOpen: true }));
         });
 
+        it('opens the pad expanded even if it was last closed while collapsed', () => {
+            workspaceStore.set({ scratchPadOpen: false, scratchPadCollapsed: true } as any);
+            void handleCaptureScratchPad.execute({ type: 'captureScratchPad', payload: undefined });
+
+            expect(workspaceStore.set).toHaveBeenCalledWith(
+                expect.objectContaining({ scratchPadOpen: true, scratchPadCollapsed: false })
+            );
+        });
+
         it('should capture arrangement and not toggle if already open', () => {
             workspaceStore.set({ scratchPadOpen: true } as any);
             vi.mocked(workspaceStore.set).mockClear();
@@ -61,6 +70,14 @@ describe('Workspace Scratch Pad Handlers', () => {
             workspaceStore.set({ scratchPadOpen: true } as any);
             void handleToggleScratchPad.execute({ type: 'toggleScratchPad', payload: undefined });
             expect(workspaceStore.set).toHaveBeenCalledWith(expect.objectContaining({ scratchPadOpen: false }));
+        });
+
+        it('forgets the collapsed state when it closes the pad', () => {
+            workspaceStore.set({ scratchPadOpen: true, scratchPadCollapsed: true } as any);
+            void handleToggleScratchPad.execute({ type: 'toggleScratchPad', payload: undefined });
+            expect(workspaceStore.set).toHaveBeenCalledWith(
+                expect.objectContaining({ scratchPadOpen: false, scratchPadCollapsed: false })
+            );
         });
 
         it('is a no-op when the workspace store value is null (guard branch)', () => {

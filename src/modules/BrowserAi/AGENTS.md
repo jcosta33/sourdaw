@@ -4,11 +4,7 @@ Client-side neural audio inference (DDSP instrument synthesis, Kokoro TTS, DiffS
 
 ## Public Contract Surface
 
-- `useCases`: `initBrowserAi`, `downloadModel`, `removeModel`, `downloadDdspInstrument`, `removeDdspInstrument`, `isDdspInstrumentId`, `getDdspPhraseId`, `markDdspPhraseStale`, `invalidateDdspPhraseIfSourceChanged`, `recordDdspPhraseSource`, `renderDdspInstrument`, `renderKokoroTts`, `renderDiffSingerPhrase`, `cancelRender`, `detectCapabilities`, `initRaveModels`, `isRaveModelPresent`, `KOKORO_MODEL_ENTRY`, `getRaveHandlers`.
-- `stores`: `capabilityStore`, `modelRegistryStore`, `renderQueueStore`.
-- `presentations/views`: `ModelManagerPanel`, `CapabilityReportPanel`, `KokoroVoiceSelector`, `AiRenderClipPreview`.
-- `events`: None.
-- Handlers: `getRaveHandlers`.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 
@@ -28,5 +24,5 @@ Client-side neural audio inference (DDSP instrument synthesis, Kokoro TTS, DiffS
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
 ```bash
-pnpm test:run <changed-spec>
+pnpm guard --profile focused -- pnpm test:run <changed-spec>
 ```

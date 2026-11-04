@@ -291,6 +291,50 @@ describe('trimClipStart loop anchoring', () => {
         expect(minted.loopOriginBeat).toBe(0);
         expect(Number.isFinite(readClip('c-mint').loopOriginBeat)).toBe(true);
     });
+
+    it('keeps canonical source authority when a trim carries a legacy anchor argument', () => {
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: [
+                {
+                    ...midiTrack([
+                        loopedClip({
+                            id: 'canonical-audio',
+                            type: 'audio',
+                            loopEnabled: false,
+                            audioOffsetBeats: 0.5,
+                            audioOffsetSeconds: 0.25,
+                            audioUnwrappedOffsetSeconds: 0.25,
+                        }),
+                    ]),
+                    kind: 'audio',
+                },
+            ],
+        });
+
+        expect(trimClipStart('canonical-audio', 2, null)).toBe(true);
+        expect(readClip('canonical-audio')).toMatchObject({
+            startBeat: 2,
+            audioOffsetSeconds: 1.25,
+            audioUnwrappedOffsetSeconds: 1.25,
+        });
+    });
+
+    it.each([
+        'audioOffsetSeconds',
+        'audioUnwrappedOffsetSeconds',
+        'audioLoopStartSeconds',
+        'audioLoopPassEntrySeconds',
+        'audioLoopPassOriginBeat',
+    ] as const)('refuses a present undefined %s rather than treating a legacy restore as source-free', (field) => {
+        const clip = { ...loopedClip({ id: 'malformed-audio', type: 'audio' }), [field]: undefined };
+        trackStore.set({ ...defaultTrackState, tracks: [{ ...midiTrack([clip]), kind: 'audio' }] });
+        const before = structuredClone(trackStore.value);
+
+        expect(trimClipStart(clip.id, 2, null)).toBe(false);
+        expect(trackStore.value).toEqual(before);
+        expect(Object.hasOwn(readClip(clip.id), field)).toBe(true);
+    });
 });
 
 describe('setClipLoop loop anchoring', () => {

@@ -15,6 +15,7 @@ import {
     type PostTargetScopeAdmissionStrategyDefinition,
 } from './createPostTargetScopeAdmissionStrategyRegistry';
 import { escapeRegExp } from './escapeRegExp';
+import { PROMPT_CLAUSE_SEPARATOR } from './getPromptClauses';
 import { hasReferenceOutsideMatchedIntent } from './hasReferenceOutsideMatchedIntent';
 import { hasTrackControlRestriction } from './hasTrackControlRestriction';
 import { normalizePromptText } from './normalizePromptText';
@@ -149,7 +150,7 @@ function isUnrelatedMuteContinuation(text: string): boolean {
 
 function getPromptSegments(prompt: string): string[] {
     return prompt
-        .split(/\s+(?:and then|then|and|but)\s+|[;,\n]+|\.(?!\d)/giu)
+        .split(PROMPT_CLAUSE_SEPARATOR)
         .map((segment) => segment.trim())
         .filter((segment) => segment.length > 0);
 }

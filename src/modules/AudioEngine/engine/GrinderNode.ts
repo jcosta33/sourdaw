@@ -11,7 +11,7 @@ import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
 import { SET_FALLBACK_PARAM_COMMAND, type RuntimeDeviceControlTarget } from '../models/RuntimeDeviceControl';
 import { compileRuntimeDeviceControl } from '../services/compileRuntimeDeviceControl';
 import { compileRuntimeGrinderNeuralPatch } from '../services/compileRuntimeGrinderNeuralPatch';
-import grinderProcessorUrl from '../services/grinderProcessor.ts?worker&url';
+import grinderProcessorUrl from '../worklets/grinderProcessor.ts?worker&url';
 
 import { requireSharedArrayBuffer } from './pluginHostingErrors';
 import { telemetryAllocator, createTelemetryReader, GRINDER_IDX, type TelemetrySlot } from './telemetryAllocator';

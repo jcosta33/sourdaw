@@ -1,5 +1,6 @@
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -14,7 +15,10 @@ async function createBus(page: Page): Promise<void> {
     const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
     await inspector.getByRole('button', { name: 'Create Bus' }).click();
     await expect(
-        page.getByRole('grid', { name: /Track list/i }).getByText('Bus 1', { exact: true }).first(),
+        page
+            .getByRole('grid', { name: /Track list/i })
+            .getByText('Bus 1', { exact: true })
+            .first()
     ).toBeVisible({ timeout: 5000 });
 }
 

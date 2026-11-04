@@ -178,6 +178,10 @@ describe('destroyWebMidi', () => {
         expect(midiLearn.active).toBe(false);
         expect(midiLearn.callback).toBeNull();
         expect(setTargetTrackIdMock).toHaveBeenCalledWith(null);
-        expect(setStateMock).toHaveBeenCalledWith({ inputs: [], selectedInputId: null });
+        expect(setStateMock).toHaveBeenCalledWith({
+            inputs: [],
+            selectedInputId: null,
+            enumerationCompleted: false,
+        });
     });
 });

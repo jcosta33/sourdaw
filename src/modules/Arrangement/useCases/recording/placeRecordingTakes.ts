@@ -1,6 +1,8 @@
-import { placeTakeOnClipMedia } from '../../models/TakeLane';
+import { placeTakeOnClipMedia, startFirstPassAtRecordPoint } from '../../models/TakeLane';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { liveTempoTimeline } from '../liveTempoTimeline';
+
+import { recordingPassTiming } from './recordingPassTiming';
 
 type PlaceRecordingTakesInput = {
     clipId: string;
@@ -10,6 +12,9 @@ type PlaceRecordingTakesInput = {
     mediaOriginSeconds: number;
     /** The song time the committed clip's media begins on, as the readers read the clip. */
     clipMediaOriginSeconds: number;
+    /** Producer sample-zero clock, corrected by the latency captured at admission. */
+    sourceContextOriginSeconds?: number;
+    sourceDurationSeconds?: number;
 };
 
 /**
@@ -23,15 +28,73 @@ export function placeRecordingTakes(input: PlaceRecordingTakesInput): void {
     if (!state) {
         return;
     }
+    let captureEnd: ReturnType<typeof recordingPassTiming.captureEnd>;
+    if (input.sourceContextOriginSeconds !== undefined && input.sourceDurationSeconds !== undefined) {
+        captureEnd = recordingPassTiming.captureEnd(
+            input.clipId,
+            input.sourceContextOriginSeconds + input.sourceDurationSeconds
+        );
+    }
     const placement = { ...input, timeline: liveTempoTimeline };
     takeLaneStore.set({
         lanes: state.lanes.map((lane) => ({
             ...lane,
-            takes: lane.takes.map((take) => {
+            takes: lane.takes.flatMap((take) => {
                 if (take.clipId !== input.clipId) {
                     return take;
                 }
-                return placeTakeOnClipMedia(take, placement);
+                if (take.sourceOffsetBeats === undefined) {
+                    return take;
+                }
+                if (input.sourceContextOriginSeconds === undefined) {
+                    return placeTakeOnClipMedia(take, placement);
+                }
+                const placed = startFirstPassAtRecordPoint(take, input.recordPointBeat);
+                let startBeat = placed.startBeat;
+                let passDepthSeconds = recordingPassTiming.depthSeconds(
+                    take,
+                    input.sourceContextOriginSeconds,
+                    input.mediaOriginSeconds
+                );
+                // An input grant can arrive after this pass opened. Keep only
+                // its captured tail; a negative depth would invent earlier PCM.
+                if (passDepthSeconds < 0) {
+                    startBeat = liveTempoTimeline.beatAtSeconds(
+                        liveTempoTimeline.secondsAtBeat(startBeat) - passDepthSeconds
+                    );
+                    passDepthSeconds = 0;
+                }
+                let endBeat = placed.endBeat;
+                const passSourceEndSeconds = Math.min(
+                    recordingPassTiming.sourceEndSeconds(
+                        take,
+                        input.sourceContextOriginSeconds,
+                        input.mediaOriginSeconds
+                    ),
+                    input.sourceDurationSeconds ?? Infinity
+                );
+                // Invert the exact source interval the comp readers seek.
+                endBeat = Math.min(
+                    endBeat,
+                    liveTempoTimeline.beatAtSeconds(
+                        liveTempoTimeline.secondsAtBeat(startBeat) +
+                            Math.max(0, passSourceEndSeconds - passDepthSeconds)
+                    )
+                );
+                if (captureEnd && captureEnd.takeId === take.id) {
+                    endBeat = Math.min(endBeat, captureEnd.endBeat);
+                }
+                if (endBeat <= startBeat) {
+                    return [];
+                }
+                return {
+                    ...placed,
+                    startBeat,
+                    endBeat,
+                    passAnchorSeconds: liveTempoTimeline.secondsAtBeat(startBeat) - input.clipMediaOriginSeconds,
+                    passDepthSeconds,
+                    passSourceEndSeconds,
+                };
             }),
         })),
     });

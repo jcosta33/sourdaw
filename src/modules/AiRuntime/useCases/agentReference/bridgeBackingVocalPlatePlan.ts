@@ -1,5 +1,6 @@
 import { getPluginById } from '#/modules/Arrangement/useCases';
 
+import { type WorkflowNativeLiteralUse } from '../../models/MetricGoalAdmission';
 import { type RuntimeAction } from '../../models/RuntimeAction';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 
@@ -21,6 +22,7 @@ type BridgeBackingVocalPlatePlanResult =
           identities: BatchLocalActionIdentity[];
           renderTailSeconds: number;
           providerKnownTargetIds: string[];
+          nativeLiteralUses: WorkflowNativeLiteralUse[];
       };
 
 const EX_01_ONLY_TOOL_NAMES = new Set(['automateSendRanges', 'renderProjectSections']);
@@ -156,12 +158,41 @@ export function bridgeBackingVocalPlatePlan({
     return {
         status: 'accepted',
         actions,
+        ...createdPlateProvenance(actions, busId, filterDeviceId, plateDeviceId, values.highPassHz),
+        renderTailSeconds: values.renderTailSeconds,
+        providerKnownTargetIds: [...removableReverbIds, ...trackIds],
+    };
+}
+
+function createdPlateProvenance(
+    actions: readonly RuntimeAction[],
+    busId: string,
+    filterDeviceId: string,
+    plateDeviceId: string,
+    highPassHz: number
+): Pick<Extract<BridgeBackingVocalPlatePlanResult, { status: 'accepted' }>, 'identities' | 'nativeLiteralUses'> {
+    return {
         identities: [
             { actionType: 'createBus', actionOrdinal: 0, busId },
             { actionType: 'addDevice', actionOrdinal: 0, deviceId: filterDeviceId },
             { actionType: 'addDevice', actionOrdinal: 1, deviceId: plateDeviceId },
         ],
-        renderTailSeconds: values.renderTailSeconds,
-        providerKnownTargetIds: [...removableReverbIds, ...trackIds],
+        nativeLiteralUses: [
+            {
+                workflow: 'backing-vocal-plate',
+                field: 'highPassHz',
+                actionIndex: actions.findIndex(
+                    (action) => action.type === 'setDeviceParameter' && action.payload.paramId === 'filter-cutoff'
+                ),
+                ownerActionIndex: actions.findIndex((action) => action.type === 'createBus'),
+                deviceActionIndex: actions.findIndex((action) => action.type === 'addDevice'),
+                ownerId: busId,
+                deviceId: filterDeviceId,
+                deviceType: 'builtin-filter',
+                paramId: 'filter-cutoff',
+                unit: 'Hz',
+                value: highPassHz,
+            },
+        ],
     };
 }

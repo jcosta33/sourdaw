@@ -38,7 +38,7 @@ vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
-    trackStore: { value: { tracks: [] } },
+    trackStore: { value: { tracks: [] }, subscribe: vi.fn(() => () => {}) },
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({

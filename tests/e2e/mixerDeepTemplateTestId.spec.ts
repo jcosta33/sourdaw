@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { launch_from_template, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 async function openMixer(page: import('@playwright/test').Page): Promise<void> {

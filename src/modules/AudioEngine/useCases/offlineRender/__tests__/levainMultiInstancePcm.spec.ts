@@ -8,7 +8,8 @@ import { captureOfflineLevain, configureLevainZoneTableBuilder, prepareOfflineLe
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 
 import { type LevainZoneTableRequest } from '../../../models/LevainZoneTables';
-import { installWorkletGlobals, makeChannels } from '../../../services/__tests__/wasmViewGrowthHarness';
+import { importWorkletProcessor } from '../../../testing/importWorkletProcessor';
+import { installWorkletGlobals, makeChannels } from '../../../testing/wasmViewGrowthHarness';
 import { computeLevainZoneTables } from '../../../transformers/computeLevainZoneTables';
 import { buildDeviceChain, type DeviceNodeEntry } from '../../buildDeviceChain';
 import { schedulePendingSuspends } from '../schedulePendingSuspends';
@@ -257,7 +258,7 @@ describe('two shipped Levain processors through the offline MIDI route', () => {
             return zoneTables;
         });
         const { registry } = installWorkletGlobals<Processor>();
-        await import('../../../services/levainProcessor');
+        await importWorkletProcessor('levain-processor');
         const registeredProcessor = registry.get('levain-processor');
         if (!registeredProcessor) {
             throw new Error('Levain processor was not registered');

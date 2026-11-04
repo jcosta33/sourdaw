@@ -2546,6 +2546,43 @@ mod tests {
     }
 
     #[test]
+    fn export_transactions_commit_report_before_audio_on_manifest_failure() {
+        let dir = TempExportDir::create("report-before-audio");
+        let audio = dir.path("stem.wav");
+        let report = dir.path("stem.wav.loudness.json");
+        std::fs::write(&audio, b"old audio").unwrap();
+        let mut registry = ExportFileRegistry::open(&dir.path("private")).unwrap();
+        let audio_token = registry
+            .begin(audio.to_string_lossy().into_owned(), 7)
+            .unwrap();
+        registry.append(&audio_token, b"new audio", 7).unwrap();
+        registry.seal(&audio_token, 7).unwrap();
+        let report_token = registry
+            .begin(report.to_string_lossy().into_owned(), 7)
+            .unwrap();
+        registry.append(&report_token, b"new report", 7).unwrap();
+        registry.seal(&report_token, 7).unwrap();
+
+        // The report's rename succeeds, then persisting the manifest after it fails.
+        std::fs::remove_file(&registry.manifest_path).unwrap();
+        std::fs::create_dir(&registry.manifest_path).unwrap();
+        assert!(registry
+            .commit(&[report_token, audio_token.clone()], 7)
+            .is_err());
+
+        // Renames are not one transaction: the report is already published, and the audio
+        // it describes never replaced the old file, which keeps its old bytes.
+        assert_eq!(std::fs::read(&report).unwrap(), b"new report");
+        assert_eq!(std::fs::read(&audio).unwrap(), b"old audio");
+
+        // The unpublished audio stays staged and aborts without touching the old file.
+        std::fs::remove_dir(&registry.manifest_path).unwrap();
+        registry.abort(&[audio_token]).unwrap();
+        assert_eq!(std::fs::read(&audio).unwrap(), b"old audio");
+        assert!(temp_file_residue(&dir.root).is_empty());
+    }
+
+    #[test]
     fn export_transactions_abort_and_drop_preserve_existing_files() {
         let dir = TempExportDir::create("abort");
         let target = dir.path("stem.flac");
@@ -2626,7 +2663,9 @@ mod tests {
     fn export_transactions_forged_manifest_is_refused_without_deleting_or_overwriting_it() {
         let dir = TempExportDir::create("forged");
         let private = dir.path("private");
-        drop(ExportFileRegistry::open(&private).unwrap());
+        create_private_state_directory(&private).unwrap();
+        let key: Vec<u8> = (0..32).collect();
+        std::fs::write(private.join("export-files.key"), key).unwrap();
         let victim = dir.path("user.wav");
         std::fs::write(&victim, b"user file").unwrap();
         let record = ExportTempRecord {
@@ -2643,10 +2682,8 @@ mod tests {
         .unwrap();
         let manifest = private.join("export-files.json");
         std::fs::write(&manifest, &forged).unwrap();
-        assert!(ExportFileRegistry::open(&private)
-            .err()
-            .unwrap()
-            .contains("Unauthenticated"));
+        let error = ExportFileRegistry::open(&private).err().unwrap();
+        assert!(error.contains("Unauthenticated"), "{error}");
         assert_eq!(std::fs::read(&victim).unwrap(), b"user file");
         assert_eq!(std::fs::read(&manifest).unwrap(), forged);
     }

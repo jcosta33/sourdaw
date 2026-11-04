@@ -66,6 +66,7 @@ import {
     configureAiWorkflowCommandCheckpointRuntime,
     resetAiWorkflowCommandCheckpointRuntime,
 } from './aiWorkflowCommandCheckpointRuntime';
+import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
 
 const fixtureStorageOwners = vi.hoisted(() => new Map<string, { flushPendingUnscopedWrite(): void }>());
 
@@ -464,6 +465,7 @@ function propose(actions: ExecutableRuntimeAction[], id: string): void {
             )
         ),
     });
+    const metricGoalState = configuredLiteralMetricState(commandBatch);
     proposePendingActionConfirmation({
         id,
         prompt: 'create a Vocal Plate bus, add Reverb, and route Vocals to it',
@@ -471,7 +473,8 @@ function propose(actions: ExecutableRuntimeAction[], id: string): void {
         actions,
         actionLabels: actions.map((action) => action.type),
         commandBatch,
-        agentApproval: compileAgentRiskApproval({ commandBatch }),
+        metricGoalState,
+        agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
         executionMode: 'atomic',
         projectRevision,
     });

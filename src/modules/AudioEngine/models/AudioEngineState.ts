@@ -1,5 +1,6 @@
 import type { AudioPreviewIntent } from './AudioPreviewIntent';
 import type { BuiltinLufsMeterReader, BuiltinLufsMeterReading } from './BuiltinLufsMeterReader';
+import type { EngineUseCaseCollaborators } from './EngineDeviceCollaborators';
 import type {
     RuntimeGraphDeltaResult,
     RuntimeGraphProjectRevisionValidator,
@@ -523,12 +524,23 @@ export type AudioEngine = {
     /** Main-thread cancellation ownership; currentness alone does not certify listening isolation. */
     beginAudioPreviewIntent(): AudioPreviewIntent;
     beginExclusiveAudioPreviewIntent(): AudioPreviewIntent;
+    /** Retained audition enters the same mono/dim listening insert as programme. */
+    readonly audioPreviewOutput: AudioNode;
+    setAudioPreviewProgrammeSuppressed(suppressed: boolean): void;
+    holdAudioPreviewRestoration(restoration: Promise<void>): void;
+    playAudioPreviewTone(
+        frequency: number,
+        durationSeconds: number,
+        intent: AudioPreviewIntent
+    ): { stop: () => void; ready: Promise<void> } | null;
     /** Monotonic live-graph revision used to reject stale compiled deltas. */
     getRuntimeGraphRevision(): number;
     /** Composition-owned freshness authority; AudioEngine never reads project state directly. */
     setRuntimeGraphProjectRevisionValidator(validator: RuntimeGraphProjectRevisionValidator | null): void;
     /** Composition-owned exact topology authority; AudioEngine never reads project state directly. */
     setRuntimeGraphTopologyValidator(validator: RuntimeGraphTopologyValidator | null): void;
+    /** Composition-owned use-case collaborators the live graph writes through; null unwires them. */
+    setUseCaseDeviceCollaborators(collaborators: EngineUseCaseCollaborators | null): void;
     /** Validated, immutable graph command applied only at the main-thread graph boundary. */
     applyRuntimeGraphDelta(delta: unknown): RuntimeGraphDeltaResult;
     /** Rehydration-only baseline; validates one complete strip before publishing it. */

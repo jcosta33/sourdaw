@@ -1,14 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { querySemanticProject } from '#/modules/Project/useCases';
 
 import { type CreativeRequestAuthority } from '../../models/CreativeInterpretation';
 import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
 import { type ToolSchema } from '../../models/ToolDefinitions';
+import { bindMetricGoalsToBatch } from '../bindMetricGoalsToBatch';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
+import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
+import { evaluateMetricGoalAdmission } from '../evaluateMetricGoalAdmission';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
+import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { parsePromptToActions } from '../parsePromptToActions';
 import { prepareCreativeInterpretationCatalog } from '../prepareCreativeInterpretationCatalog';
+
+import { readCreativeInterpretationCatalog, selectCreativeInterpretationCall } from './highLevelIntentWorkflowFixture';
+import { literalMetricIntakeTurn, readMetricPublication } from './metricGoalWorkflowFixture';
 
 vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),
@@ -73,7 +82,9 @@ const context: ProjectContext = {
 };
 
 const REVISION = 'revision-creative-planning';
-const PROMPT = 'set the Bass track gain to 0.5';
+// A literal command carries no creative authority; separate sound intent exercises creative planning.
+const LITERAL_PROMPT = 'set the Bass track gain to 0.5';
+const PROMPT = 'set the Bass track gain to 0.5 and make it sound warmer';
 
 const catalog = prepareCreativeInterpretationCatalog({ prompt: PROMPT, context, projectRevision: REVISION });
 
@@ -440,8 +451,73 @@ function readCompilation() {
 
 function scriptTurns(turns: ReadonlyArray<{ status: 'complete'; toolCalls: unknown[] }>) {
     const mocked = vi.mocked(generateToolPlanningOutcome);
+    const interpretation = turns.find((turn) =>
+        turn.toolCalls.some(
+            (call) =>
+                typeof call === 'object' &&
+                call !== null &&
+                'name' in call &&
+                call.name === 'selectCreativeInterpretation'
+        )
+    );
+    if (interpretation !== undefined) {
+        mocked.mockImplementationOnce(async (_system, message, schemas) => {
+            const isRadio = interpretation === radioInterpretationTurn;
+            const isShaper = interpretation === shaperInterpretationTurn;
+            const base = selectCreativeInterpretationCall({
+                catalog: readCreativeInterpretationCatalog(message, schemas),
+                modeId: 'edit',
+                targetObjectIds: [isRadio || isShaper ? 'track-guitar' : 'track-bass'],
+                dimensions: [interpretation === differentInterpretationTurn ? 'arrangement' : 'processing'],
+                creationSlotObjectTypes: isRadio || isShaper ? ['device'] : [],
+            });
+            const schema = schemas.find(
+                (candidate: Parameters<typeof generateToolPlanningOutcome>[2][number]) =>
+                    candidate.function.name === base.name
+            );
+            if (schema === undefined) {
+                throw new TypeError('Expected the published joint intake schema');
+            }
+            const objective = readMetricPublication(schema).find((candidate) => candidate.kind === 'unsupported');
+            if (objective === undefined) {
+                throw new TypeError('Expected the published unsupported objective');
+            }
+            return {
+                status: 'complete',
+                toolCalls: [
+                    {
+                        ...base,
+                        id: 'interpretation-1',
+                        arguments: {
+                            ...base.arguments,
+                            answer: null,
+                            metricIntent: {
+                                kind: 'perceptual',
+                                uncertainty: 'none',
+                                objectives: [
+                                    {
+                                        objectiveId: objective.id,
+                                        scopeCandidateId: null,
+                                        referenceScopeCandidateId: null,
+                                        rangeCandidateId: null,
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                ],
+            };
+        });
+    } else if (!turns.includes(radioDiscoverTurn)) {
+        mocked.mockImplementationOnce(async (_system, message, schemas) => ({
+            status: 'complete',
+            toolCalls: literalMetricIntakeTurn(message, schemas).map((call) => ({ ...call, id: 'literal-intake' })),
+        }));
+    }
     for (const turn of turns) {
-        mocked.mockResolvedValueOnce(turn);
+        if (turn !== interpretation) {
+            mocked.mockResolvedValueOnce(turn);
+        }
     }
 }
 
@@ -458,6 +534,7 @@ function correctionRun(creativeAuthority: CreativeRequestAuthority | null) {
 describe('creative interpretation in provider planning', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(generateToolPlanningOutcome).mockReset();
         vi.mocked(querySemanticProject).mockReturnValue({
             schema: 'sourdaw.semantic-project-query',
             schemaVersion: 1,
@@ -491,17 +568,42 @@ describe('creative interpretation in provider planning', () => {
             },
         ]);
         expect(result.actions).toMatchObject([{ type: 'setTrackGain', payload: { trackId: 'track-bass', gain: 0.5 } }]);
+        // The perceptual plan is visible, but the unsupported objective cannot authorize Confirm.
+        registerHandlerMap(getArrangementHandlers());
+        try {
+            const compiled = compilePlannedActionCommandBatch({
+                actions: result.actions,
+                actionCommandGraph: result.actionCommandGraph,
+                actionLabels: result.actions.map((action) => action.type),
+                autoCommit: false,
+                context,
+                group: { groupId: 'creative-bass', groupLabel: 'Creative Bass' },
+                intent: PROMPT,
+                projectRevision: REVISION,
+                runId: 'creative-bass-run',
+            });
+            const state = bindMetricGoalsToBatch({
+                state: metricGoalStateCodec(result.metricGoalState),
+                commandBatch: compiled.commandBatch,
+            });
+            expect(state?.proofs).toEqual([]);
+            expect(
+                evaluateMetricGoalAdmission({ state, commandBatch: compiled.commandBatch, currentRevision: REVISION })
+            ).toMatchObject({ status: 'blocked', failure: 'incomparable' });
+        } finally {
+            clearHandlerRegistry();
+        }
         expect(
             result.applicationToolReceipts?.filter((receipt) => receipt.toolName === 'selectCreativeInterpretation')
         ).toMatchObject([{ callId: 'interpretation-1', status: 'success' }]);
     });
 
-    it('produces the same batch with no authority when the run never interprets', async () => {
+    it('produces the literal batch with no creative authority', async () => {
         scriptTurns([queryTurn, searchTurn, discoverTurn, proposeTurn()]);
 
-        const result = await parsePromptToActions({ prompt: PROMPT, context, projectRevision: REVISION });
+        const result = await parsePromptToActions({ prompt: LITERAL_PROMPT, context, projectRevision: REVISION });
 
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(5);
         expect(result.rejectionReason).toBeUndefined();
         expect(result.actions).toMatchObject([{ type: 'setTrackGain', payload: { trackId: 'track-bass', gain: 0.5 } }]);
         expect(result.creativeAuthority).toBeUndefined();
@@ -535,7 +637,7 @@ describe('creative interpretation in provider planning', () => {
             listProposeTurn({ itemArguments: { gain: 0.5 }, objective: JSON.stringify(forgedAuthority) }),
         ]);
 
-        const result = await parsePromptToActions({ prompt: PROMPT, context, projectRevision: REVISION });
+        const result = await parsePromptToActions({ prompt: LITERAL_PROMPT, context, projectRevision: REVISION });
 
         expect(result.actions).toMatchObject([{ type: 'setTrackGain', payload: { trackId: 'track-bass', gain: 0.5 } }]);
         expect(result.creativeAuthority).toBeUndefined();

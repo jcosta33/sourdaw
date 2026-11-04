@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
+import { type RefObject, useState, useRef, useEffect } from 'react';
 
-import { getAudioContext } from '#/modules/AudioEngine/useCases';
+import { logger } from '#/infra/logger/appLogger';
+import { audioEngine, getAudioContext, playAudioBufferPreview } from '#/modules/AudioEngine/useCases';
 
 export type PreviewHandle = {
     playingId: string | null;
@@ -10,155 +11,155 @@ export type PreviewHandle = {
     stop: () => void;
 };
 
-function teardownSource(source: AudioScheduledSourceNode | null): void {
-    if (source) {
-        try {
-            source.stop();
-        } catch {
-            /* already stopped */
-        }
-        source.disconnect();
+type Owner = {
+    intent: ReturnType<typeof audioEngine.beginAudioPreviewIntent>;
+    stop: () => void;
+};
+
+function releaseOwner(ownerRef: RefObject<Owner | null>): void {
+    const owner = ownerRef.current;
+    ownerRef.current = null;
+    try {
+        owner?.stop();
+    } finally {
+        owner?.intent.release();
     }
 }
 
-function createBufferSourceNode(
-    ctx: AudioContext,
+type BufferPreviewState = {
+    ownerRef: RefObject<Owner | null>;
+    isCurrent: (owner: Owner) => boolean;
+    report: (owner: Owner, error: unknown) => void;
+    setPlayingId: (id: string | null) => void;
+};
+
+function startPreviewBuffer(
+    { ownerRef, isCurrent, report, setPlayingId }: BufferPreviewState,
+    owner: Owner,
+    id: string,
     buffer: AudioBuffer
-): { source: AudioBufferSourceNode; gain: GainNode } {
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-
-    const gain = ctx.createGain();
-    gain.gain.value = 0.7;
-    source.connect(gain);
-    gain.connect(ctx.destination);
-    return { source, gain };
-}
-
-function createToneOscillator(
-    ctx: AudioContext,
-    frequency: number,
-    durationSec: number
-): { osc: OscillatorNode; gain: GainNode } {
-    const osc = ctx.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.value = frequency;
-
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.4, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + durationSec);
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    return { osc, gain };
+): void {
+    if (!isCurrent(owner)) {
+        return;
+    }
+    const playback = playAudioBufferPreview({
+        buffer,
+        gain: 0.7,
+        intent: owner.intent,
+        onEnded: () => {
+            if (ownerRef.current === owner) {
+                ownerRef.current = null;
+                setPlayingId(null);
+            }
+        },
+    });
+    if (playback === null) {
+        return;
+    }
+    owner.stop = playback.stop;
+    if (isCurrent(owner)) {
+        setPlayingId(id);
+    }
+    void playback.ready.catch((error: unknown) => report(owner, error));
 }
 
 export const usePreviewAudio = (): PreviewHandle => {
-    // §186.1 — broaden the ref type so it can hold either an audio
-    // buffer source or an oscillator. Previously the oscillator path
-    // stashed a dummy BufferSource here, so calling stop() silently
-    // did nothing and the tone played to completion.
-    const sourceRef = useRef<AudioScheduledSourceNode | null>(null);
-    const activeRequestIdRef = useRef<number>(0);
+    const ownerRef = useRef<Owner | null>(null);
     const [playingId, setPlayingId] = useState<string | null>(null);
 
+    const release = () => releaseOwner(ownerRef);
     const stop = () => {
-        activeRequestIdRef.current++;
-        teardownSource(sourceRef.current);
-        sourceRef.current = null;
+        release();
         setPlayingId(null);
     };
-
-    const startBufferPlayback = (id: string, buffer: AudioBuffer) => {
-        const ctx = getAudioContext();
-        if (ctx.state === 'suspended') {
-            void ctx.resume();
+    const begin = (): Owner | null => {
+        stop();
+        const intent = audioEngine.beginAudioPreviewIntent();
+        if (!intent.isCurrent()) {
+            return null;
         }
-
-        const { source, gain } = createBufferSourceNode(ctx, buffer);
-
-        source.onended = () => {
-            source.disconnect();
-            gain.disconnect();
-            if (sourceRef.current === source) {
-                sourceRef.current = null;
-                setPlayingId(null);
-            }
-        };
-
-        sourceRef.current = source;
-        setPlayingId(id);
-        source.start();
+        const owner: Owner = { intent, stop: () => undefined };
+        ownerRef.current = owner;
+        intent.signal.addEventListener(
+            'abort',
+            () => {
+                owner.stop();
+                if (ownerRef.current === owner) {
+                    ownerRef.current = null;
+                    setPlayingId(null);
+                }
+            },
+            { once: true }
+        );
+        return owner;
     };
-
+    const isCurrent = (owner: Owner) => ownerRef.current === owner && owner.intent.isCurrent();
+    const report = (owner: Owner, error: unknown) => {
+        if (isCurrent(owner)) {
+            stop();
+            logger.warn(new Error('Browser audio preview failed', { cause: error }));
+        }
+    };
+    const resume = (owner: Owner): Promise<void> => {
+        const context = getAudioContext();
+        const resuming = context.state === 'suspended' ? context.resume() : Promise.resolve();
+        void resuming.catch((error: unknown) => report(owner, error));
+        return resuming;
+    };
+    const startBuffer = (owner: Owner, id: string, buffer: AudioBuffer) => {
+        startPreviewBuffer({ ownerRef, isCurrent, report, setPlayingId }, owner, id, buffer);
+    };
     const play = (id: string, buffer: AudioBuffer) => {
-        stop();
-        startBufferPlayback(id, buffer);
+        const owner = begin();
+        if (owner === null) {
+            return;
+        }
+        void resume(owner);
+        startBuffer(owner, id, buffer);
     };
-
     const playTone = (id: string, frequency: number, durationSec: number) => {
-        stop();
-
-        const ctx = getAudioContext();
-        if (ctx.state === 'suspended') {
-            void ctx.resume();
+        const owner = begin();
+        if (owner === null) {
+            return;
         }
-
-        const { osc, gain } = createToneOscillator(ctx, frequency, durationSec);
-
-        sourceRef.current = osc;
-        setPlayingId(id);
-
-        osc.start();
-        osc.stop(ctx.currentTime + durationSec);
-
-        osc.onended = () => {
-            osc.disconnect();
-            gain.disconnect();
-            if (sourceRef.current === osc) {
-                sourceRef.current = null;
-                setPlayingId(null);
-            }
-        };
+        void resume(owner);
+        const playback = audioEngine.playAudioPreviewTone(frequency, durationSec, owner.intent);
+        if (playback === null) {
+            return;
+        }
+        owner.stop = playback.stop;
+        if (isCurrent(owner)) {
+            setPlayingId(id);
+        }
+        void playback.ready.catch((error: unknown) => report(owner, error));
     };
-
     const playFile = async (id: string, file: File): Promise<void> => {
-        stop();
-        const requestId = ++activeRequestIdRef.current;
+        // The gesture owns cancellation before resume, file reads or decoding;
+        // decoded completion never acquires a new intent over a newer A/B.
+        const owner = begin();
+        if (owner === null) {
+            return;
+        }
         try {
-            const ctx = getAudioContext();
-            if (ctx.state === 'suspended') {
-                await ctx.resume();
-            }
-            if (activeRequestIdRef.current !== requestId) {
+            await resume(owner);
+            if (!isCurrent(owner)) {
                 return;
             }
-            const arrayBuffer = await file.arrayBuffer();
-            if (activeRequestIdRef.current !== requestId) {
+            const bytes = await file.arrayBuffer();
+            if (!isCurrent(owner)) {
                 return;
             }
-            const buffer = await ctx.decodeAudioData(arrayBuffer);
-            if (activeRequestIdRef.current !== requestId) {
-                return;
+            const buffer = await getAudioContext().decodeAudioData(bytes);
+            if (isCurrent(owner)) {
+                startBuffer(owner, id, buffer);
             }
-            startBufferPlayback(id, buffer);
         } catch {
-            // Format not supported or decode failed — preview is best-effort
+            // Unsupported files remain a best-effort browser preview.
+            if (isCurrent(owner)) {
+                stop();
+            }
         }
     };
-
-    // Release any sounding preview node when the consuming component unmounts.
-    // Without this, unmounting mid-playback leaves the source running and its
-    // gain node connected to ctx.destination (audio keeps sounding, graph
-    // leaks). We tear down from the ref directly so the effect can keep an
-    // empty dependency array and not capture a stale `stop` closure.
-    useEffect(() => {
-        return () => {
-            activeRequestIdRef.current++;
-            teardownSource(sourceRef.current);
-            sourceRef.current = null;
-        };
-    }, []);
-
+    useEffect(() => () => releaseOwner(ownerRef), []);
     return { playingId, play, playTone, playFile, stop };
 };

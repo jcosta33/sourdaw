@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
-import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
+import { getArrangementHandlers, getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { getCanonicalTrackRoleOptions, querySemanticProject } from '#/modules/Project/useCases';
 
@@ -13,10 +14,13 @@ import { executeRecipeExpansion } from '../executeRecipeExpansion';
 import { executeTransformCompile } from '../executeTransformCompile';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
+import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { parsePromptToActions } from '../parsePromptToActions';
-import { prepareCreativeInterpretationCatalog } from '../prepareCreativeInterpretationCatalog';
 import { projectDeclarativeTransformSnapshot } from '../projectDeclarativeTransformSnapshot';
 
+import { advertisedAnswerCandidateId } from './answerWireFixture';
+import { readCreativeInterpretationCatalog, selectCreativeInterpretationCall } from './highLevelIntentWorkflowFixture';
+import { readMetricPublication } from './metricGoalWorkflowFixture';
 import { createTrack } from './trackFixture';
 
 vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
@@ -207,6 +211,26 @@ describe('recipe.discover', () => {
         for (const candidate of data.candidates) {
             expect(candidate.effect).toBe('produces');
         }
+    });
+
+    it.each([
+        ['vocal', 'vocal-controlled'],
+        ['drums', 'drums-controlled-gate'],
+        ['bass', 'bass-controlled'],
+        ['guitar', 'guitar-controlled'],
+        ['keys', 'keys-controlled'],
+        ['bus', 'bus-controlled'],
+        ['master', 'master-controlled'],
+    ])('discovers the source-backed controlled recipe for %s', async (role, id) => {
+        const receipt = await runRecipeDiscovery(`loop-controlled-${role}`, { descriptors: ['controlled'], role });
+
+        expect(receipt.status).toBe('success');
+        expect(receipt.data).toMatchObject({
+            terms: [{ term: 'controlled', descriptor: 'controlled', effect: 'produces' }],
+            role: { recipeRole: role, source: 'argument' },
+            candidates: [expect.objectContaining({ id, descriptor: 'controlled', roles: [role] })],
+        });
+        expect(receipt.warnings).toEqual([]);
     });
 
     it('resolves an untagged "Kick" track to the drums recipe role and returns only punchy/drums candidates', async () => {
@@ -668,6 +692,67 @@ describe('recipe.expand', () => {
         setTracks([]);
         projectStore.set(structuredClone(defaultProjectStoreState));
     });
+
+    it.each([
+        ['vocal', 'vocal-controlled', 'builtin-compressor', [-20, 4, 8.5, 90]],
+        ['drums', 'drums-controlled-gate', 'faust-noise-gate', [-42.5, 0.0051, 0.06, 0.15]],
+        ['bass', 'bass-controlled', 'builtin-compressor', [-20, 5, 14, 120]],
+        ['guitar', 'guitar-controlled', 'builtin-compressor', [-18, 4, 10, 90]],
+        ['keys', 'keys-controlled', 'builtin-compressor', [-18, 4, 10, 90]],
+        ['bus', 'bus-controlled', 'builtin-compressor', [-14, 2.5, 25, 200, 8]],
+        ['master', 'master-controlled', 'builtin-compressor', [-10, 2.5, 27.5, 200, 8]],
+    ] as const)(
+        'expands %s controlled into ordinary commands with exact midpoints and revision provenance',
+        async (role, recipeId, deviceType, midpoints) => {
+            setTracks([
+                createTrack({ id: 'controlled-target', name: 'Controlled Target' }),
+                createTrack({ id: 'unrelated-target', name: 'Unrelated Target' }),
+            ]);
+            const tracksBefore = structuredClone(trackStore.value?.tracks);
+            const receipt = await runRecipeExpansion(`loop-controlled-expand-${role}`, {
+                recipeId,
+                targetId: 'controlled-target',
+                role,
+            });
+            const data = readExpansion(receipt);
+
+            expect(receipt.revision).toBe(EXPANSION_REVISION);
+            expect(data).toMatchObject({ recipeId, targetId: 'controlled-target' });
+            expect(data.commands[0]).toEqual({
+                name: 'addDevice',
+                arguments: { trackId: 'controlled-target', deviceType, binding: 'recipe-1-0' },
+            });
+            expect(data.commands.slice(1).map((command) => command.name)).toEqual(
+                midpoints.map(() => 'setDeviceParameter')
+            );
+            expect(data.commands.slice(1).map((command) => command.arguments.value)).toEqual(midpoints);
+            expect(data.values.map((entry) => entry.value)).toEqual(midpoints);
+            expect(data.values.every((entry) => entry.source === 'midpoint')).toBe(true);
+            expect(data.values.every((entry) => entry.value >= entry.minimum && entry.value <= entry.maximum)).toBe(
+                true
+            );
+
+            const supplied = await runRecipeExpansion(`loop-controlled-supplied-${role}`, {
+                recipeId,
+                targetId: 'controlled-target',
+                role,
+                values: [{ step: 0, paramId: data.values[0]!.paramId, value: data.values[0]!.minimum }],
+            });
+            const suppliedData = readExpansion(supplied);
+            expect(suppliedData.values[0]).toMatchObject({ value: data.values[0]!.minimum, source: 'supplied' });
+            expect(suppliedData.commands[1]?.arguments.value).toBe(data.values[0]!.minimum);
+
+            const refused = await runRecipeExpansion(`loop-controlled-refusal-${role}`, {
+                recipeId,
+                targetId: 'controlled-target',
+                role,
+                values: [{ step: 0, paramId: data.values[0]!.paramId, value: data.values[0]!.minimum - 1 }],
+            });
+            expect(refused.status).toBe('failure');
+            expect(refused.error?.safeMessage).toContain('outside its window');
+            expect(trackStore.value?.tracks).toEqual(tracksBefore);
+        }
+    );
 
     // Red when the second insert stops chaining after the first binding, the first insert stops following
     // the chain's last device, or an omitted value stops taking the middle of its window.
@@ -1328,6 +1413,8 @@ describe('recipe.expand through provider planning', () => {
     const PROMPT = 'make the lead vocal warmer';
 
     beforeEach(() => {
+        clearHandlerRegistry();
+        registerHandlerMap(getArrangementHandlers());
         vi.clearAllMocks();
         vi.mocked(tryPresetMatch).mockReturnValue([]);
         vi.mocked(tryParameterizedPath).mockReturnValue([]);
@@ -1336,6 +1423,7 @@ describe('recipe.expand through provider planning', () => {
     });
 
     afterEach(() => {
+        clearHandlerRegistry();
         setTracks([]);
         projectStore.set(structuredClone(defaultProjectStoreState));
     });
@@ -1343,28 +1431,56 @@ describe('recipe.expand through provider planning', () => {
     // Red when an adopted expansion stops carrying its commands into the batch or its recipe onto the result.
     it('adopts an expansion by call id into the batch and records the recipe on the planned result', async () => {
         const context = getProjectContext();
-        const catalog = prepareCreativeInterpretationCatalog({ prompt: PROMPT, context, projectRevision: REVISION });
         const recipe = getMixRecipeCatalog().recipes.find((candidate) => candidate.id === 'vocal-warm');
         vi.mocked(generateToolPlanningOutcome)
-            .mockResolvedValueOnce({
-                status: 'complete',
-                toolCalls: [
-                    {
-                        id: 'interpretation-1',
-                        name: 'selectCreativeInterpretation',
-                        arguments: {
-                            catalogId: catalog.catalogId,
-                            modeId: 'edit',
-                            targetCandidateIds: ['target-1'],
-                            editDimensionCandidateIds: ['dimension-processing'],
-                            constraintCandidateIds: [],
-                            creationSlotIds: [
-                                catalog.creationSlots.find((slot) => slot.objectType === 'device')?.candidateId ?? '',
-                            ],
-                            uncertainty: 'none',
+            .mockImplementationOnce(async (_system, userMessage, schemas) => {
+                const catalog = readCreativeInterpretationCatalog(userMessage, schemas);
+                const base = selectCreativeInterpretationCall({
+                    catalog,
+                    modeId: 'edit',
+                    targetObjectIds: ['lead-vocal-1'],
+                    dimensions: ['processing'],
+                    creationSlotObjectTypes: ['device'],
+                });
+                const schema = schemas.find(
+                    (entry: Parameters<typeof generateToolPlanningOutcome>[2][number]) =>
+                        entry.function.name === base.name
+                );
+                if (schema === undefined) {
+                    throw new Error('Missing actual published selector.');
+                }
+                const objective = readMetricPublication(schema).find((entry) => entry.recipeId === 'vocal-warm');
+                if (objective === undefined) {
+                    throw new Error('Missing actual published authored recipe objective.');
+                }
+                return {
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            ...base,
+                            id: 'interpretation-1',
+                            arguments: {
+                                ...base.arguments,
+                                answer: null,
+                                metricIntent: {
+                                    kind: 'perceptual',
+                                    uncertainty: 'none',
+                                    objectives: [
+                                        {
+                                            objectiveId: objective.id,
+                                            scopeCandidateId: advertisedAnswerCandidateId(
+                                                [schemas, userMessage],
+                                                'lead-vocal-1'
+                                            ),
+                                            referenceScopeCandidateId: null,
+                                            rangeCandidateId: null,
+                                        },
+                                    ],
+                                },
+                            },
                         },
-                    },
-                ],
+                    ],
+                };
             })
             .mockResolvedValueOnce({
                 status: 'complete',
@@ -1395,6 +1511,14 @@ describe('recipe.expand through provider planning', () => {
         const planned = await parsePromptToActions({ prompt: PROMPT, context, projectRevision: REVISION });
 
         expect(planned.rejectionReason).toBeUndefined();
+        expect(metricGoalStateCodec(planned.metricGoalState)?.authorities[0]).toMatchObject({
+            kind: 'perceptual',
+            goals: expect.arrayContaining([
+                expect.objectContaining({
+                    source: expect.objectContaining({ kind: 'recipe', recipeId: 'vocal-warm' }),
+                }),
+            ]),
+        });
         expect(planned.actions).toMatchObject([
             { type: 'addDevice', payload: { trackId: 'lead-vocal-1', deviceType: 'builtin-eq' } },
             { type: 'setDeviceParameter', payload: { paramId: 'eq-low-freq', value: 160 } },
@@ -1410,6 +1534,29 @@ describe('recipe.expand through provider planning', () => {
     it('records no recipe on a batch that adopted none', async () => {
         const context = getProjectContext();
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(async (_system, userMessage, schemas) => {
+                const catalog = readCreativeInterpretationCatalog(userMessage, schemas);
+                return {
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'literal-intake',
+                            name: 'selectCreativeInterpretation',
+                            arguments: {
+                                catalogId: catalog.catalogId,
+                                modeId: 'literal',
+                                uncertainty: 'none',
+                                targetCandidateIds: [],
+                                editDimensionCandidateIds: [],
+                                constraintCandidateIds: [],
+                                creationSlotIds: [],
+                                answer: null,
+                                metricIntent: { kind: 'literal', uncertainty: 'none', objectives: [] },
+                            },
+                        },
+                    ],
+                };
+            })
             .mockResolvedValueOnce({
                 status: 'complete',
                 toolCalls: [
@@ -1440,5 +1587,9 @@ describe('recipe.expand through provider planning', () => {
         expect(planned.rejectionReason).toBeUndefined();
         expect(planned.actions).toMatchObject([{ type: 'setTempo', payload: { bpm: 100 } }]);
         expect(planned.adoptedRecipes).toBeUndefined();
+        expect(metricGoalStateCodec(planned.metricGoalState)?.authorities[0]).toMatchObject({
+            kind: 'literal',
+            goals: [],
+        });
     });
 });

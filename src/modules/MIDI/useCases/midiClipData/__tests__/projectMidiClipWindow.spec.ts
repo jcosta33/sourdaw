@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type MidiCC, type MidiPitchBend } from '../../../models/MidiNote';
-import { projectMidiClipWindow } from '../projectMidiClipWindow';
+import { projectMidiClipWindow } from '../../../services/projectMidiClipWindow';
 
 function controller(id: string, beat: number, value: number): MidiCC {
     return { id, controller: 64, value, beat, channel: 0 };

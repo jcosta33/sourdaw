@@ -10,9 +10,14 @@
  * The projector is pure, so nothing is mocked.
  */
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type Device, type DeviceStateChunk } from '#/modules/Arrangement/stores';
+import {
+    grinderNeuralLibraryStore,
+    DEFAULT_GRINDER_NEURAL_LIBRARY_STATE,
+    readGrinderNeuralModelContent,
+} from '#/modules/Grinder/stores';
 
 import { setAudioDeviceRuntimeSink } from '../../../engine/audioDeviceRuntimeSink';
 import { projectDeviceForNativeBody } from '../projectDeviceForNativeBody';
@@ -304,5 +309,191 @@ describe('projectDeviceForNativeBody', () => {
         );
 
         expect(Object.hasOwn(projected, 'modAssignments')).toBe(false);
+    });
+});
+
+describe('native Grinder saved-project full network projection', () => {
+    function importedEntry(): NonNullable<typeof grinderNeuralLibraryStore.value>['entries'][number] {
+        return {
+            id: 'imported',
+            source: 'imported',
+            name: 'Linear reference',
+            family: 'Reference',
+            placement: 'amp-capture',
+            description: 'test',
+            importedAt: 1,
+            sourceFileName: 'linear.nam',
+            sourceFileText: null,
+            profile: {
+                derivedFrom: 'nam',
+                sourceArchitecture: 'Linear',
+                sourceSampleRate: 48000,
+                sourceWeightCount: 2,
+                preferredTier: 'standard',
+                inputDrive: 1,
+                asymmetry: 0,
+                outputTrim: 1,
+                contourMix: 0,
+                recurrentBias: 0,
+                convWeights: [[0, 1, 0]],
+                modelDigest: '0001-0002-0003-0004',
+                model: {
+                    architecture: 'Linear',
+                    version: null,
+                    sampleRate: 48000,
+                    config: { receptive_field: 2, bias: false },
+                    weights: [0.25, -0.5],
+                },
+            },
+        };
+    }
+
+    function savedDevice(): Device {
+        return createDevice({
+            id: 'd-nam',
+            type: 'grinder',
+            parameterValues: {
+                engineMode: 1,
+                neuralModelMode: 1,
+                neuralModelSlot: 2,
+                neuralCustomTier: 0,
+                neuralCustomInputDrive: 1,
+                neuralCustomAsymmetry: 0,
+                neuralCustomOutputTrim: 1,
+                neuralCustomContourMix: 0,
+                neuralCustomLstmBias: 0,
+                neuralCustomConvWeight0_0: 0,
+                neuralCustomConvWeight0_1: 1,
+                neuralCustomConvWeight0_2: 0,
+                neuralCustomModelDigest0: 1,
+                neuralCustomModelDigest1: 2,
+                neuralCustomModelDigest2: 3,
+                neuralCustomModelDigest3: 4,
+            },
+        });
+    }
+
+    function entryWithModelBytes(byteLength: number) {
+        const entry = importedEntry();
+        const model = entry.profile.model;
+        if (!model) {
+            throw new Error('Full model fixture is required');
+        }
+        const config = { ...model.config, description: '' };
+        const emptyContent = JSON.stringify({
+            architecture: model.architecture,
+            config,
+            weights: model.weights,
+            sample_rate: model.sampleRate,
+        });
+        const contentOverhead = new TextEncoder().encode(emptyContent).byteLength;
+        entry.profile.model = {
+            ...model,
+            config: { ...config, description: `é${'x'.repeat(byteLength - contentOverhead - 2)}` },
+        };
+        return entry;
+    }
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        grinderNeuralLibraryStore.set(DEFAULT_GRINDER_NEURAL_LIBRARY_STATE);
+    });
+
+    it('resolves an unopened persisted model identity and refuses its missing library content', () => {
+        const entry = importedEntry();
+        grinderNeuralLibraryStore.set({ ...DEFAULT_GRINDER_NEURAL_LIBRARY_STATE, hydrated: true, entries: [entry] });
+        const device = savedDevice();
+        const projected = projectDeviceForNativeBody(device);
+        expect(JSON.parse(projected.grinderModel?.modelJson ?? 'null')).toEqual({
+            architecture: 'Linear',
+            sample_rate: 48000,
+            config: { receptive_field: 2, bias: false },
+            weights: [0.25, -0.5],
+        });
+        expect(projected.parameterValues.neuralModelSlot).toBeUndefined();
+        expect(device).not.toHaveProperty('grinderModel');
+        grinderNeuralLibraryStore.set(DEFAULT_GRINDER_NEURAL_LIBRARY_STATE);
+        expect(() => projectDeviceForNativeBody(device)).toThrow(/unavailable/);
+    });
+
+    it('assigns fresh native request identity without changing the owned content or saved device', () => {
+        const entry = importedEntry();
+        grinderNeuralLibraryStore.set({ ...DEFAULT_GRINDER_NEURAL_LIBRARY_STATE, entries: [entry] });
+        const device = savedDevice();
+        const original = structuredClone(device);
+        const uuid = vi
+            .spyOn(crypto, 'randomUUID')
+            .mockReturnValueOnce('11111111-1111-4111-8111-111111111111')
+            .mockReturnValueOnce('22222222-2222-4222-8222-222222222222');
+        const modelJson = readGrinderNeuralModelContent(device.parameterValues);
+        expect(uuid).not.toHaveBeenCalled();
+        const first = projectDeviceForNativeBody(device);
+        const second = projectDeviceForNativeBody(device);
+        expect(first.grinderModel).toEqual({ requestId: '11111111-1111-4111-8111-111111111111', modelJson });
+        expect(second.grinderModel).toEqual({ requestId: '22222222-2222-4222-8222-222222222222', modelJson });
+        expect(uuid).toHaveBeenCalledTimes(2);
+        expect(device).toEqual(original);
+        expect(device).not.toHaveProperty('grinderModel');
+        grinderNeuralLibraryStore.set(DEFAULT_GRINDER_NEURAL_LIBRARY_STATE);
+        expect(first.grinderModel?.modelJson).toBe(modelJson);
+    });
+
+    it('refuses unavailable or ambiguous content before allocating native request identity', () => {
+        const device = savedDevice();
+        const uuid = vi.spyOn(crypto, 'randomUUID');
+        expect(() => projectDeviceForNativeBody(device)).toThrow(
+            'Imported Grinder NAM content is unavailable in the neural library'
+        );
+        const entry = importedEntry();
+        const missing = { ...entry, profile: { ...entry.profile, model: null } };
+        grinderNeuralLibraryStore.set({ ...DEFAULT_GRINDER_NEURAL_LIBRARY_STATE, entries: [entry, missing] });
+        expect(() => projectDeviceForNativeBody(device)).toThrow(
+            'Imported Grinder NAM identity is ambiguous in the neural library'
+        );
+        expect(
+            projectDeviceForNativeBody(
+                createDevice({
+                    id: 'factory',
+                    type: 'grinder',
+                    parameterValues: {
+                        neuralModelMode: 0,
+                        neuralModelSlot: 1,
+                    },
+                })
+            )
+        ).not.toHaveProperty('grinderModel');
+        expect(
+            projectDeviceForNativeBody(
+                createDevice({
+                    id: 'legacy',
+                    type: 'grinder',
+                    parameterValues: {
+                        neuralModelMode: 1,
+                        neuralCustomInputDrive: 1,
+                    },
+                })
+            )
+        ).not.toHaveProperty('grinderModel');
+        expect(uuid).not.toHaveBeenCalled();
+    });
+
+    it('admits exactly 1 MiB of UTF-8 model content and refuses one byte more before request allocation', () => {
+        const device = savedDevice();
+        const uuid = vi.spyOn(crypto, 'randomUUID');
+        const oversized = entryWithModelBytes(1_048_577);
+        grinderNeuralLibraryStore.set({ ...DEFAULT_GRINDER_NEURAL_LIBRARY_STATE, entries: [oversized] });
+        const oversizedContent = readGrinderNeuralModelContent(device.parameterValues);
+        expect(new TextEncoder().encode(oversizedContent).byteLength).toBe(1_048_577);
+        expect(oversizedContent?.length).toBe(1_048_576);
+        expect(() => projectDeviceForNativeBody(device)).toThrow(
+            'Imported Grinder NAM exceeds the native model byte limit'
+        );
+        expect(uuid).not.toHaveBeenCalled();
+        const boundary = entryWithModelBytes(1_048_576);
+        grinderNeuralLibraryStore.set({ ...DEFAULT_GRINDER_NEURAL_LIBRARY_STATE, entries: [boundary] });
+        const content = readGrinderNeuralModelContent(device.parameterValues);
+        expect(new TextEncoder().encode(content).byteLength).toBe(1_048_576);
+        expect(projectDeviceForNativeBody(device).grinderModel?.modelJson).toBe(content);
+        expect(uuid).toHaveBeenCalledTimes(1);
     });
 });

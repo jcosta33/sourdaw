@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -90,7 +90,12 @@ test.describe('Command palette deep interactions', () => {
         await input.fill('Add Audio Track');
         await page.getByRole('option', { name: 'Add Audio Track' }).click();
 
-        await expect(page.getByRole('grid', { name: /Track list/i }).getByRole('row', { name: /Audio/i }).first()).toBeVisible({ timeout: 5000 });
+        await expect(
+            page
+                .getByRole('grid', { name: /Track list/i })
+                .getByRole('row', { name: /Audio/i })
+                .first()
+        ).toBeVisible({ timeout: 5000 });
     });
 });
 
@@ -172,7 +177,10 @@ test.describe('Preferences deep interactions', () => {
         await setupWorkspace(page);
         await launch_new_project(page);
         await page.getByRole('button', { name: 'Open Preferences' }).click();
-        await page.getByRole('dialog').filter({ hasText: /Preferences/i }).waitFor({ state: 'visible', timeout: 5000 });
+        await page
+            .getByRole('dialog')
+            .filter({ hasText: /Preferences/i })
+            .waitFor({ state: 'visible', timeout: 5000 });
     });
 
     test.afterEach(async ({ page }) => {

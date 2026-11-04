@@ -188,6 +188,21 @@ describe('MixerLevelReadout', () => {
         expect(readout).toHaveClass('text-muted-foreground/80');
     });
 
+    it('reads an infinite peak as "+∞", flags it as an over, and clicking resets it', () => {
+        mocks.getTrackPeakLevel.mockReturnValue(Number.POSITIVE_INFINITY);
+        render(<MixerLevelReadout trackId="track-1" control={null} value={null} />);
+
+        mocks.scheduledTick?.(0, 16);
+        const readout = getPeakReadout();
+        expect(readout).toHaveTextContent('+∞');
+        expect(readout).toHaveClass('text-state-error');
+
+        mocks.getTrackPeakLevel.mockReturnValue(0.5);
+        fireEvent.click(readout);
+        mocks.scheduledTick?.(16, 16);
+        expect(readout).toHaveTextContent('-6.0');
+    });
+
     it('applies clusterClassName to the cluster and valueSize to the value text', () => {
         render(
             <MixerLevelReadout
