@@ -32,7 +32,7 @@ const { closeUndoHistory } = await import('#/modules/WorkspaceShell/useCases');
 const { undoToIndex } = await import('#/modules/Command/useCases/undoToIndex');
 
 function entry(id: string, groupId?: string): UndoEntry {
-    return {
+    const row: UndoEntry = {
         kind: 'callback',
         id,
         label: id,
@@ -40,8 +40,11 @@ function entry(id: string, groupId?: string): UndoEntry {
         source: 'manual',
         undo: () => undefined,
         redo: () => undefined,
-        ...(groupId ? { groupId } : {}),
     };
+    if (groupId) {
+        row.groupId = groupId;
+    }
+    return row;
 }
 
 /** Opens the panel over the real undo history. */

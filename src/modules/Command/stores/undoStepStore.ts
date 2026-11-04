@@ -48,12 +48,15 @@ function to_step_snapshot(mutable_snapshot: MutableUndoStoreState | null): UndoS
     }
 
     cached_mutable_snapshot = mutable_snapshot;
-    cached_step_snapshot = mutable_snapshot
-        ? Object.freeze({
-              pastSteps: to_past_steps(mutable_snapshot.past),
-              futureSteps: to_future_steps(mutable_snapshot.future, mutable_snapshot.past.length),
-          })
-        : null;
+    if (!mutable_snapshot) {
+        cached_step_snapshot = null;
+        return cached_step_snapshot;
+    }
+
+    cached_step_snapshot = Object.freeze({
+        pastSteps: to_past_steps(mutable_snapshot.past),
+        futureSteps: to_future_steps(mutable_snapshot.future, mutable_snapshot.past.length),
+    });
     return cached_step_snapshot;
 }
 
