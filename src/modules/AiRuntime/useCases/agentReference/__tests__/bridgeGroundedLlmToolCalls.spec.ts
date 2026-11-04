@@ -9078,6 +9078,74 @@ describe('explicit clip exclusions on the ordinary direct route', () => {
         });
     });
 
+    describe('a clip protected with a prohibition or with leave-alone', () => {
+        const alphaCall = { name: 'setAllVelocities', arguments: { clipId: 'clip-guitar-0', velocity: 96 } };
+        const alphaAction = { type: 'setAllVelocities', payload: { clipId: 'clip-guitar-0', velocity: 96 } };
+        const betaCall = { name: 'setAllVelocities', arguments: { clipId: 'clip-guitar-1', velocity: 96 } };
+        const betaAction = { type: 'setAllVelocities', payload: { clipId: 'clip-guitar-1', velocity: 96 } };
+        const alphaRefusal = {
+            actions: [],
+            rejections: [
+                { index: 0, name: '<batch>', reason: 'Request changes "Alpha", which a protection in it leaves alone' },
+            ],
+        };
+
+        it.each([
+            'leave Alpha alone',
+            'without touching Alpha',
+            "don't touch Alpha",
+            'do not change Alpha',
+            'without changing Alpha',
+        ])('refuses an edit to Alpha when the request says: %s', (protection) => {
+            expect(
+                bridge([alphaCall], `set note velocities in Alpha to 96, ${protection}`, withGuitarObjects(['Alpha']))
+            ).toEqual(alphaRefusal);
+        });
+
+        it.each(['leave Alpha alone', 'without touching Alpha', "don't touch Alpha", 'do not change Alpha'])(
+            'edits Beta and not Alpha when the request says: %s',
+            (protection) => {
+                expect(
+                    bridge(
+                        [betaCall],
+                        `set note velocities in Beta to 96, ${protection}`,
+                        withGuitarObjects(['Alpha', 'Beta'])
+                    )
+                ).toEqual({ actions: [betaAction], rejections: [] });
+            }
+        );
+
+        it('does not protect a clip through a prohibition that names its track', () => {
+            expect(
+                bridge(
+                    [alphaCall],
+                    'set note velocities in Alpha to 96, without touching Vocals',
+                    withGuitarObjects(['Alpha'])
+                )
+            ).toEqual({ actions: [alphaAction], rejections: [] });
+        });
+
+        it.each(['leave Alpha alone', 'without touching Alpha'])(
+            'ends the protection at a sentence boundary: %s',
+            (protection) => {
+                expect(
+                    bridge(
+                        [betaCall],
+                        `${protection}. Then set note velocities in Beta to 96`,
+                        withGuitarObjects(['Alpha', 'Beta'])
+                    )
+                ).toEqual({ actions: [betaAction], rejections: [] });
+                expect(
+                    bridge(
+                        [alphaCall],
+                        `${protection}. Then set note velocities in Alpha to 96`,
+                        withGuitarObjects(['Alpha', 'Beta'])
+                    )
+                ).toEqual(alphaRefusal);
+            }
+        );
+    });
+
     it.each(['excluding Piano MIDI', 'excluding "Piano MIDI"'])(
         'refuses an edit to the clip the request protects with %s',
         (exclusion) => {

@@ -4,7 +4,7 @@ import { getSelectedClipReferenceIds } from '../../transformers/promptParser/sel
 
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { CONNECTIVE_WORDS, CONVENTIONAL_WORDS, protectionObjectForms } from './protectionObjectForms';
-import { protectionSlots, type Range } from './readProtectionSlots';
+import { protectionSlots, type Range, type Slot } from './readProtectionSlots';
 import { resolveAgentReference } from './resolveAgentReference';
 
 export type ExplicitlyProtectedClip = { id: string; name: string };
@@ -95,6 +95,11 @@ function splitProtectedReferenceList(reference: string, offset: number): Referen
     return { complete: true, references };
 }
 
+/** A clause protects when a protection verb or a prohibition opens it, never a bare closer or a carve-out. */
+function opensProtectionClause(slot: Slot, maskedPrompt: string, range: Range): boolean {
+    return slot.lead === 'prohibition' || protectionClauseStartPattern.test(maskedPrompt.slice(range.start));
+}
+
 function getProtectedReferenceTexts(prompt: string, context: ProjectContext): ProtectedReferenceParse {
     const quoteScan = scanPromptQuotedText(prompt);
     const clips = context.tracks.flatMap((track) => track.clips);
@@ -134,7 +139,7 @@ function getProtectedReferenceTexts(prompt: string, context: ProjectContext): Pr
             range === null ||
             !slot.strict ||
             completeVerbStarts.has(range.start) ||
-            !protectionClauseStartPattern.test(quoteScan.maskedText.slice(range.start))
+            !opensProtectionClause(slot, quoteScan.maskedText, range)
         ) {
             continue;
         }
