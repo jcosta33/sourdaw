@@ -3,7 +3,7 @@ import { addSidechainRoute } from '#/modules/Routing/useCases';
 import { ensureTrackStrips } from '#/modules/Transport/useCases';
 
 import { syncArrangement } from '../../demoProjects/demoUtils/syncArrangement';
-import { projectLoadEpoch } from '../../projectPersistence/helpers/runProjectLoadTransaction';
+import { committedProject } from '../../projectPersistence/helpers/committedProjectAuthority';
 
 import { commitVcaGroups } from './commitVcaGroups';
 import { reportDeviceReadinessWhenSettled } from './reportDeviceReadinessWhenSettled';
@@ -41,12 +41,13 @@ export async function finalizeTemplate(input: FinalizeTemplateInput): Promise<vo
 
     ensureTrackStrips();
 
-    const originatingEpoch = projectLoadEpoch.current;
+    // Capture the project the template's authority switch committed. Content
+    // readiness continues behind the workspace: a progressing Levain admission
+    // refreshes the wait's own inactivity deadline for as long as it uploads, so
+    // holding this action for it would keep the launch overlay up with it.
+    // Report the cohort's failures when it settles instead, and only while the
+    // user is still in the project this cohort belongs to.
+    const committedGeneration = committedProject.generation;
     const { waitForDevices } = await import('#/modules/AudioEngine/useCases');
-    // Content readiness continues behind the workspace: the project and its
-    // graph are committed above, and a progressing Levain admission refreshes
-    // the wait's own inactivity deadline for as long as it uploads. Holding this
-    // action for that would keep the launch overlay up with it, so report the
-    // cohort's failures when it settles instead.
-    reportDeviceReadinessWhenSettled(waitForDevices(), originatingEpoch);
+    reportDeviceReadinessWhenSettled(waitForDevices(), committedGeneration);
 }

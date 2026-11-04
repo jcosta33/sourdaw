@@ -6,6 +6,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { saveProject } from '../saveProject/saveProject';
 
+import { commitProjectAuthority } from './committedProjectAuthority';
 import { unsavedClosedTakes } from './unsavedClosedTakes';
 
 type SettledProjectReset =
@@ -95,6 +96,7 @@ export async function resetCrdtProjectWithTransportStopped(
     const isQuietAtSwitch = (): boolean => shouldContinue() && isTransportIdle() && !owesClosedTake();
     const replaceAuthority = (): void => {
         unsavedClosedTakes.acknowledgeAll();
+        commitProjectAuthority();
         onAuthorityReplaced();
     };
     async function settleClosedTakes(): Promise<void> {

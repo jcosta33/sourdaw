@@ -116,7 +116,7 @@ describe('createNebulaDriftDemo', () => {
         const metadataCreationOffset = demoSource.lastIndexOf('createFreshProjectMetadata({');
         const projectWriteOffset = demoSource.lastIndexOf('projectStore.set(projectMetadata);');
         const readinessOffset = demoSource.indexOf(
-            'reportDeviceReadinessWhenSettled(waitForDevices(), originatingEpoch);'
+            'reportDeviceReadinessWhenSettled(waitForDevices(), committedGeneration);'
         );
 
         expect(metadataCreationOffset).toBeGreaterThan(0);

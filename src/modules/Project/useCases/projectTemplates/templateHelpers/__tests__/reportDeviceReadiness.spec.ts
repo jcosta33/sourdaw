@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-    projectLoadEpoch,
-    runProjectLoadTransaction,
-} from '../../../projectPersistence/helpers/runProjectLoadTransaction';
+    commitProjectAuthority,
+    committedProject,
+} from '../../../projectPersistence/helpers/committedProjectAuthority';
+import { runProjectLoadTransaction } from '../../../projectPersistence/helpers/runProjectLoadTransaction';
 import { reportDeviceReadiness } from '../reportDeviceReadiness';
 
 const mocks = vi.hoisted(() => ({
@@ -26,11 +27,20 @@ const failedCohort = {
     devices: [{ deviceId: 'levain-1', status: 'failed' as const, stage: 'content' as const }],
 };
 
-async function activateTransition(): Promise<number> {
-    const transition = runProjectLoadTransaction();
-    await expect(transition.prepare()).resolves.toBe(true);
-    expect(transition.activate()).toBe(true);
-    return projectLoadEpoch.current;
+/** Open a template project: activate its transition and replace the document's authority. */
+async function commitTemplateProject(): Promise<number> {
+    const template = runProjectLoadTransaction();
+    await expect(template.prepare()).resolves.toBe(true);
+    expect(template.activate()).toBe(true);
+    commitProjectAuthority();
+    return committedProject.generation;
+}
+
+/** A replacement that has activated but has not reached its authority switch yet. */
+async function activateReplacement(): Promise<void> {
+    const replacement = runProjectLoadTransaction();
+    await expect(replacement.prepare()).resolves.toBe(true);
+    expect(replacement.activate()).toBe(true);
 }
 
 describe('reportDeviceReadiness', () => {
@@ -38,29 +48,42 @@ describe('reportDeviceReadiness', () => {
         vi.clearAllMocks();
     });
 
-    it('warns for a failed cohort whose project stays active after a replacement aborts', async () => {
-        const templateEpoch = await activateTransition();
+    it('warns for a failed cohort after a replacement prepared and aborted', async () => {
+        const committedGeneration = await commitTemplateProject();
 
         const replacement = runProjectLoadTransaction();
         await expect(replacement.prepare()).resolves.toBe(true);
+        // The replacement never activates: the template stays the open project.
         expect(replacement.canActivate()).toBe(true);
-        // The replacement withdraws without activating: the template stays open,
-        // while the latest prepared transition has moved past the template.
-        expect(projectLoadEpoch.current).toBe(templateEpoch);
-        expect(projectLoadEpoch.isCurrent(templateEpoch)).toBe(false);
+        expect(committedProject.generation).toBe(committedGeneration);
 
-        reportDeviceReadiness(failedCohort, templateEpoch);
+        reportDeviceReadiness(failedCohort, committedGeneration);
 
         expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('levain-1'), 'warning');
     });
 
-    it('suppresses a failed cohort that an activated replacement superseded', async () => {
-        const templateEpoch = await activateTransition();
-        const replacementEpoch = await activateTransition();
+    it('warns for a failed cohort after an activated replacement aborted before its switch', async () => {
+        const committedGeneration = await commitTemplateProject();
 
-        expect(replacementEpoch).not.toBe(templateEpoch);
+        await activateReplacement();
+        // Activation alone does not replace the document: this replacement
+        // aborts before its authority switch, so the template is still open.
+        expect(committedProject.generation).toBe(committedGeneration);
 
-        reportDeviceReadiness(failedCohort, templateEpoch);
+        reportDeviceReadiness(failedCohort, committedGeneration);
+
+        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('levain-1'), 'warning');
+    });
+
+    it('suppresses a failed cohort once a replacement replaced the document', async () => {
+        const committedGeneration = await commitTemplateProject();
+
+        await activateReplacement();
+        commitProjectAuthority();
+
+        expect(committedProject.generation).not.toBe(committedGeneration);
+
+        reportDeviceReadiness(failedCohort, committedGeneration);
 
         expect(mocks.notifyUser).not.toHaveBeenCalled();
     });

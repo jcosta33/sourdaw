@@ -3,6 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTrack } from '#/modules/Arrangement/useCases';
 
 import {
+    commitProjectAuthority,
+    committedProject,
+} from '../../../projectPersistence/helpers/committedProjectAuthority';
+import {
     projectLoadEpoch,
     runProjectLoadTransaction,
 } from '../../../projectPersistence/helpers/runProjectLoadTransaction';
@@ -240,19 +244,23 @@ describe('finalizeTemplate', () => {
 
             expect(templateA.isCurrent()).toBe(false);
             expect(projectB.isCurrent()).toBe(true);
+            // Project B reaches the authority switch, so the template's cohort
+            // now belongs to a project the user has left.
+            commitProjectAuthority();
 
             // The readiness report is detached from template finalization, so
-            // observe the callback reading the active project before asserting
-            // it stayed silent; `await completionA` no longer waits for it.
-            const active = vi.spyOn(projectLoadEpoch, 'active', 'get');
+            // observe the callback reading the committed generation before
+            // asserting it stayed silent; `await completionA` no longer waits
+            // for it.
+            const committed = vi.spyOn(committedProject, 'generation', 'get');
             try {
                 readiness.resolve(failedReadiness);
-                await vi.waitFor(() => expect(active).toHaveBeenCalled());
+                await vi.waitFor(() => expect(committed).toHaveBeenCalled());
 
                 expect(projectBEnteredRuntimeTransition).toBe(false);
                 expect(mocks.notifyUser).not.toHaveBeenCalled();
             } finally {
-                active.mockRestore();
+                committed.mockRestore();
             }
         } finally {
             readiness.resolve(failedReadiness);
