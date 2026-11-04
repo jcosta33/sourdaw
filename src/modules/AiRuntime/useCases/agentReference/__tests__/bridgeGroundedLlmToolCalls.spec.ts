@@ -9115,6 +9115,54 @@ describe('explicit clip exclusions on the ordinary direct route', () => {
             }
         );
 
+        it.each([
+            ["Don't touch Alpha, but rename Beta to Gamma"],
+            ['without touching Alpha, but rename Beta to Gamma'],
+            ['do not change Alpha, and rename Beta to Gamma'],
+            ['without touching Alpha; rename Beta to Gamma'],
+        ])('renames Beta beside a prohibition that ends at a separator: %s', (prompt) => {
+            expect(
+                bridge(
+                    [{ name: 'renameClip', arguments: { clipId: 'clip-guitar-1', name: 'Gamma' } }],
+                    prompt,
+                    withGuitarObjects(['Alpha', 'Beta'])
+                )
+            ).toEqual({
+                actions: [{ type: 'renameClip', payload: { clipId: 'clip-guitar-1', name: 'Gamma' } }],
+                rejections: [],
+            });
+        });
+
+        it('edits Beta when a prohibition of Alpha is followed by a velocity clause', () => {
+            expect(
+                bridge(
+                    [betaCall],
+                    'without touching Alpha, but set note velocities in Beta to 96',
+                    withGuitarObjects(['Alpha', 'Beta'])
+                )
+            ).toEqual({ actions: [betaAction], rejections: [] });
+        });
+
+        it('refuses renaming Alpha beside a prohibition of Alpha that ends at a separator', () => {
+            const result = bridge(
+                [{ name: 'renameClip', arguments: { clipId: 'clip-guitar-0', name: 'Gamma' } }],
+                'without touching Alpha, but rename Alpha to Gamma',
+                withGuitarObjects(['Alpha', 'Beta'])
+            );
+            expect(result.actions).toEqual([]);
+            expect(result.rejections[0]?.reason).toBe('Provider clip rename target is explicitly protected');
+        });
+
+        it.each([
+            ['without touching Alpha and', withGuitarObjects(['Alpha'])],
+            [
+                'without touching Alpha and Omega, but set note velocities in Beta to 96',
+                withGuitarObjects(['Alpha', 'Beta']),
+            ],
+        ])('keeps refusing a prohibition list that is dangling or names nothing: %s', (prompt, project) => {
+            expect(bridge([betaCall], `set note velocities in Beta to 96, ${prompt}`, project).actions).toEqual([]);
+        });
+
         it('does not protect a clip through a prohibition that names its track', () => {
             expect(
                 bridge(

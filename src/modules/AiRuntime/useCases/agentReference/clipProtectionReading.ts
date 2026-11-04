@@ -100,6 +100,14 @@ function opensProtectionClause(slot: Slot, maskedPrompt: string, range: Range): 
     return slot.lead === 'prohibition' || protectionClauseStartPattern.test(maskedPrompt.slice(range.start));
 }
 
+const trailingClauseSeparatorPattern = /\s*[,;]\s*(?:(?:and|but|then)\s*)?$/iu;
+
+/** A prohibition has no closing word, so its slot runs to the next clause: drop the separator that joins them. */
+function readSlotReference(prompt: string, slot: Slot): string {
+    const reference = prompt.slice(slot.start, slot.end);
+    return slot.lead === 'prohibition' ? reference.replace(trailingClauseSeparatorPattern, '') : reference;
+}
+
 function getProtectedReferenceTexts(prompt: string, context: ProjectContext): ProtectedReferenceParse {
     const quoteScan = scanPromptQuotedText(prompt);
     const clips = context.tracks.flatMap((track) => track.clips);
@@ -143,7 +151,7 @@ function getProtectedReferenceTexts(prompt: string, context: ProjectContext): Pr
         ) {
             continue;
         }
-        const reference = prompt.slice(slot.start, slot.end);
+        const reference = readSlotReference(prompt, slot);
         if (
             !isAggregateControlReference(reference) &&
             resolveProtectedClipIds(reference, clips, context).length === 0
