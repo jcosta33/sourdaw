@@ -1,0 +1,64 @@
+src/modules/AiRuntime/useCases/approvedProjectRevision.ts
+  s_55244eb93b97d1::t_b57d596e9d0c78 1-26
+src/modules/AiRuntime/useCases/__tests__/confirmAfterSave.spec.ts
+  s_55244eb93b97d1::t_a2453f4d0040b7 1-363
+  s_3bb122e91d89a5::t_1fdda0f1c26108 364-389
+src/modules/AiRuntime/useCases/__tests__/pendingChatActions.spec.ts
+  s_91f8b522168bd8::t_c6f9ab09444fc3 101
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/beginConfirmedCommandExecution.spec.ts
+  s_91f8b522168bd8::t_ec75965a7e7fe3 53,392
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/resolveConfirmationAdmission.spec.ts
+  s_91f8b522168bd8::t_e1f03a527054dc 56,232
+src/modules/AiRuntime/useCases/getAgentApprovalView.ts
+  s_ba80576e6f5cb5::t_45999bd7e32641 14,97-101,204-211,215,221,223-227
+src/modules/AiRuntime/AGENTS.md
+  s_55244eb93b97d1::t_12220422b606f8 23
+src/modules/AiRuntime/useCases/agentRequestOrchestration/beginConfirmedCommandExecution.ts
+  s_55244eb93b97d1::t_11fbbeca7e9a35 13,75
+src/modules/AiRuntime/useCases/agentRequestOrchestration/resolveConfirmationAdmission.ts
+  s_55244eb93b97d1::t_8b803e85e0c4a2 5,16,265
+src/modules/AiRuntime/useCases/issueAgentCommandApprovalBinding.ts
+  s_55244eb93b97d1::t_c16c0633619861 3,24-27
+src/modules/CrdtDocument/useCases/projectRevisionMatchesLiveIgnoringSaveWrites.ts
+  s_55244eb93b97d1::t_7e2fce998d5de3 55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c060a81ffde197c23eb13270a0bb1a454c756f79",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_91f8b522168bd8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea993bb3-f8f9-4703-aa93-ef8a806d9107",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
