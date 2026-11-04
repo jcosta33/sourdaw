@@ -39,7 +39,7 @@ export const projectCommands: CallableCommandEntry[] = [
         category: 'Project',
         shortcut: '⌘S',
         action: () => {
-            void saveProject();
+            void saveProject({ requestFolderSelection: true });
         },
     },
     {

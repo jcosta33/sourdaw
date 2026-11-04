@@ -4,7 +4,7 @@ import { createHandler } from '#/utils/createHandler';
 export const handleSaveProject = createHandler<'saveProject'>({
     execute: () => {
         // Fire-and-forget: saveProject notifies the user itself on failure.
-        void saveProject();
+        void saveProject({ requestFolderSelection: true });
     },
     describe: () => ({ label: 'Save project' }),
     undoable: false,

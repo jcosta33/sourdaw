@@ -58,7 +58,7 @@ export const ProjectName = ({ name, dirty }: ProjectNameProps): ReactElement => 
                         setEditing(true);
                         setValue(name);
                     }}
-                    onDoubleClick={() => saveProject()}
+                    onDoubleClick={() => saveProject({ requestFolderSelection: true })}
                 >
                     <span className="max-w-32 truncate">{name}</span>
                     {dirty ? (

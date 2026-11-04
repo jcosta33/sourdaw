@@ -45,3 +45,10 @@ wall-clock) prove ordering, ownership and cleanup; they never establish physical
    owner and persistence work, with scheduling and queued execution both fenced against stop or source disconnect.
    A stopped or disconnected runtime never revives a queue, while a live host still relays accepted content to its
    other connected peers.
+6. **A cold media request reopens the project owner before any transfer (#5778).** A cold session could ask a peer for
+   an asset the project already owned once its mapped-library grant and the session that authorized it were gone.
+   Copy an original into project ownership, revoke the mapped grant, end the transfer session and reopen the project
+   cold: request the hash through the real caller and require the exact verified bytes with zero `asset.request`. A
+   resident Blob or a still-authorized library file cannot satisfy it. Removing the durable-owner lookup must fail
+   the unchanged cold case; preserve lease and journal cleanup, alias and PCM guards, and terminal retry fences
+   across recovery and teardown.
