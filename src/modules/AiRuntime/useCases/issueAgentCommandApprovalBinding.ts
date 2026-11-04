@@ -1,9 +1,6 @@
 import { issueCommandApprovalBinding } from '#/modules/Command/useCases';
-import {
-    captureProjectRevision,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
-} from '#/modules/CrdtDocument/useCases';
 
+import { approvedProjectRevision } from './approvedProjectRevision';
 import { type compileAgentRiskApproval } from './compileAgentRiskApproval';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
 
@@ -24,13 +21,10 @@ export function issueAgentCommandApprovalBinding(input: {
         authority: input.commandBatch.authority,
         serialized: input.commandBatch.serialized,
         validate: () => {
-            // Confirmation preflight already accepts an unchanged project when a
-            // no-op store flush moved only the mutation epoch. Use the same proof
-            // at the final binding; the batch's own source revision stays exact.
-            let currentRevision = input.approval.sourceRevision;
-            if (!projectRevisionMatchesLiveIgnoringCommandCheckpoint(input.approval.sourceRevision)) {
-                currentRevision = captureProjectRevision();
-            }
+            // The same proof confirmation admission and preflight use, so a
+            // save or a checkpoint write between them and this binding is no
+            // change; the batch's own source revision stays exact.
+            const currentRevision = approvedProjectRevision.readValidationRevision(input.approval.sourceRevision);
             const validation = validateAgentRiskApproval({
                 approval: input.approval,
                 commandBatch: input.commandBatch,

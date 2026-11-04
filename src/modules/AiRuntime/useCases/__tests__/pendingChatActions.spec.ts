@@ -98,7 +98,7 @@ vi.mock('#/modules/CrdtDocument/useCases', async (import_original) => ({
     captureProjectMutationAuthorization: projectMutationAuthorization.capture,
     captureProjectRevision: () => mocks.projectRevision.value,
     captureUnownedProjectMutations: () => mocks.unownedMutationEpoch.value,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint: mocks.projectRevisionMatchesLive,
+    projectRevisionMatchesLiveIgnoringSaveWrites: mocks.projectRevisionMatchesLive,
     DOC_BRANCHES: '__branches__',
     DOC_PREFIX_ROOT: 'root',
     compactProject: vi.fn(),
