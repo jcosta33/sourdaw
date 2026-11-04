@@ -21,11 +21,12 @@ const SYNTH_FAMILY_GUIDANCE_VERSION_BUMPS: Readonly<Record<string, string>> = {
     'builtin-synth-brass': 'descriptor-v1:e0b5d9cb',
 };
 
-// PR #5863 updates Bacteria Spring guidance, which is part of its command
+// PR #5863 updates Bacteria Spring guidance, and the inert breakdown-depth
+// retirement removes a parameter and its guidance. Both are part of its command
 // contract fingerprint just like the synth-family guidance above.
 const INTENTIONAL_DESCRIPTOR_VERSION_BUMPS: Readonly<Record<string, string>> = {
     ...SYNTH_FAMILY_GUIDANCE_VERSION_BUMPS,
-    bacteria: 'descriptor-v1:3821f89e',
+    bacteria: 'descriptor-v1:37015492',
 };
 
 const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {
