@@ -20,7 +20,6 @@ import { narrowToolSchemasForDirective } from './narrowToolSchemasForDirective';
 import { parseToolCallArguments } from './parseToolCallArguments';
 import { projectOpenAiStrictToolSchema } from './projectOpenAiStrictToolSchema';
 import { readProviderRequestId } from './readProviderRequestId';
-import { readStrictCallsAsSourceArguments } from './readStrictCallsAsSourceArguments';
 import { rejectedBatchMessage } from './rejectedBatchMessage';
 import { requestHostedOpenAiProvider } from './requestOpenAiProvider';
 
@@ -269,7 +268,7 @@ export async function generateOpenAiCompatibleToolCalls({
     }
     return {
         providerRequestId: isRecord(payload) ? readProviderRequestId(payload.id) : null,
-        calls: runtime.strict_tool_schemas === true ? readStrictCallsAsSourceArguments(calls, toolSchemas) : calls,
+        calls,
         assistantItems: readAssistantMessage(payload),
         strictToolSchemas: runtime.strict_tool_schemas === true,
         usage,

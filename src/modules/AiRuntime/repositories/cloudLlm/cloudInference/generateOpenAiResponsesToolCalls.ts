@@ -17,7 +17,6 @@ import { narrowToolSchemasForDirective } from './narrowToolSchemasForDirective';
 import { parseToolCallArguments } from './parseToolCallArguments';
 import { projectOpenAiStrictToolSchema } from './projectOpenAiStrictToolSchema';
 import { readProviderRequestId } from './readProviderRequestId';
-import { readStrictCallsAsSourceArguments } from './readStrictCallsAsSourceArguments';
 import { rejectedBatchMessage } from './rejectedBatchMessage';
 import { requestHostedOpenAiProvider } from './requestOpenAiProvider';
 
@@ -298,7 +297,7 @@ export async function generateOpenAiResponsesToolCalls({
     }
     return {
         providerRequestId: isRecord(payload) ? readProviderRequestId(payload.id) : null,
-        calls: readStrictCallsAsSourceArguments(calls, toolSchemas),
+        calls,
         // Every output item, so a later turn hands this turn's reasoning items back unchanged;
         // only `function_call` and `message` items decided the plan above.
         assistantItems: isRecord(payload) && Array.isArray(payload.output) ? payload.output : [],
