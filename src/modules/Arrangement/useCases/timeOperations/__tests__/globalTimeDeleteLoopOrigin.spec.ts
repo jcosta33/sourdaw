@@ -4,41 +4,33 @@ import { type Clip, type Track, defaultTrackState, trackStore } from '#/modules/
 import { setClipLoop } from '#/modules/Arrangement/useCases/clipLoop/setClipLoop';
 import { prepareAutomationTimeOperation, prepareAutomationTimeStateRestore } from '#/modules/Automation/useCases';
 import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
-import {
-    getNotesForClip,
-    prepareMidiGlobalTimeTransaction,
-    projectMidiClipPlayback,
-    setNotesForClip,
-} from '#/modules/MIDI/useCases';
+import { prepareMidiGlobalTimeTransaction } from '#/modules/MIDI/useCases';
 import { prepareTimelineMapTimeOperation, prepareTimelineMapStateRestore } from '#/modules/Transport/useCases';
-import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
+import { resolveClipLoopOriginAdvance, resolveLoopAnchoredStartBeat } from '#/utils/clipLoopOrigin';
 
+import { loopPhaseControllers, loopPhaseNotes, scoreMidiClips, shiftScore } from '../../../__tests__/midiClipScore';
 import { executeGlobalTimeOperation } from '../executeGlobalTimeOperation';
 import { setTimeOperationDependencies } from '../timeOperationDependencies';
 
 /**
  * #5198, the fragment half of the anchor's write law in the global time
- * delete. A delete's surviving right fragment re-bases its notes by −splitBeat
- * under `midiOffsetBeats` 0 and moves its head — a fresh coordinate basis the
- * source anchor has no meaning in, so the writer re-stamps the anchor to the
- * fragment's own start (advance zero, the window opening at the head, the
- * pre-anchor admission) and an unanchored source keeps the key absent. Carried
- * through, the stale anchor derived a spurious advance whose window silenced
- * the fragment's surviving material — the #5198 review draw: Delete Time
- * [4,8) over a looped clip [0,16) left the fragment projecting 0 notes where
- * the anchor-free state projects 4.
+ * delete. A looping MIDI survivor keeps the source's basis: it holds every row
+ * of the source's loop, its content offset advances by what the delete
+ * consumed, and its anchor rides the compressing relocation, so every beat it
+ * plays is a beat the source played, moved left by the deleted span. A MIDI
+ * clip that does not loop still re-bases its survivor's notes under
+ * `midiOffsetBeats` 0 and leaves the anchor key absent.
  *
- * The audio twin follows the same per-basis law on the other side: its
- * `audioOffsetBeats` stays in source coordinates, advanced by the consumed
- * span, while its head rides the compressing relocation by −duration — so it
- * carries the source anchor through the cut and rides that relocation, and the
- * region the audio readers recover,
- * `audioOffsetBeats - (startBeat - loopOriginBeat)`, stays the source's own
- * with the entry landing at the cut phase.
+ * The audio twin follows the same law: its `audioOffsetBeats` stays in source
+ * coordinates, advanced by the consumed span, while its head rides the
+ * compressing relocation by −duration — so it carries the source anchor
+ * through the cut and rides that relocation, and the region the audio readers
+ * recover, `audioOffsetBeats - (startBeat - loopOriginBeat)`, stays the
+ * source's own with the entry landing at the cut phase.
  *
  * Each case drives the real transaction (real MIDI split, real arrangement
- * write) and reads the fragment back through `projectMidiClipPlayback`, the
- * projection the note scheduler draws from.
+ * write) and reads what the clips play through `projectMidiClipPlayback`, the
+ * projection the note and controller schedulers draw from.
  */
 
 // The MIDI restore dependency has no real export outside its own module; the
@@ -150,16 +142,33 @@ function audioTrack(clips: Clip[]): Track {
     };
 }
 
-function seedLoopedClip(notes: Array<{ id: string; startBeat: number }>, clipOverrides: Partial<Clip> = {}): void {
-    midiStore.set({ ...defaultMidiStoreState, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
-    trackStore.set({ ...defaultTrackState, tracks: [midiTrack([loopedClip(clipOverrides)])] });
-    // Loop established at the clip's placement: the anchor a real user gesture
-    // (setClipLoop) stamps.
-    expect(setClipLoop('c-loop', true)).toBe(true);
-    setNotesForClip(
-        'c-loop',
-        notes.map((note) => ({ id: note.id, pitch: 60, startBeat: note.startBeat, duration: 0.5, velocity: 100 }))
-    );
+/**
+ * The loop phrase on one looping MIDI clip, anchored at beat 0 unless the
+ * overrides say otherwise. An override of `undefined` drops the key, the way
+ * the CRDT normalizer stores an absent optional field.
+ */
+function seedLoopPhrase(clipOverrides: Partial<Clip>): void {
+    const clip: Clip = loopedClip({ loopOriginBeat: 0, ...clipOverrides });
+    for (const key of ['loopLength', 'loopOriginBeat'] as const) {
+        if (clip[key] === undefined) {
+            delete clip[key];
+        }
+    }
+    midiStore.set({
+        ...defaultMidiStoreState,
+        notesByClipId: { 'c-loop': loopPhaseNotes() },
+        ccByClipId: { 'c-loop': loopPhaseControllers() },
+        pitchBendByClipId: {},
+    });
+    trackStore.set({ ...defaultTrackState, tracks: [midiTrack([clip])] });
+}
+
+function requireClip(clipId: string): Clip {
+    const clip = allClips().find((candidate) => candidate.id === clipId);
+    if (!clip) {
+        throw new Error(`Expected clip ${clipId} in the track store`);
+    }
+    return structuredClone(clip);
 }
 
 function allClips(): Clip[] {
@@ -179,16 +188,6 @@ function requireRightFragment(): Clip {
         throw new Error('Expected the delete-right fragment in the track store');
     }
     return fragment;
-}
-
-function projectSoundingStartBeats(clip: Clip): number[] {
-    return projectMidiClipPlayback({
-        notes: getNotesForClip(clip.id),
-        controlChanges: [],
-        clip,
-    })
-        .notes.map((note) => note.startBeat)
-        .toSorted((left, right) => left - right);
 }
 
 /**
@@ -215,72 +214,90 @@ describe('global time delete keeps a looped fragment sounding (#5198)', () => {
         midiStore.set({ ...defaultMidiStoreState, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
     });
 
-    it('a spanning fragment re-stamps the anchor to its head and keeps sounding its surviving notes', () => {
-        // Anchored window [0,4): n-left sounds and stays in the left half;
-        // n-a/n-b/n-c sit past the deleted [4,8) and move to the fragment
-        // re-based by −8, landing at 0.5, 2 and 4.5.
-        seedLoopedClip([
-            { id: 'n-left', startBeat: 1 },
-            { id: 'n-a', startBeat: 8.5 },
-            { id: 'n-b', startBeat: 10 },
-            { id: 'n-c', startBeat: 12.5 },
-        ]);
+    it.each([
+        {
+            name: 'a spanning delete with an off-grid start',
+            clip: {},
+            range: { startBeat: 2, endBeat: 7 },
+        },
+        {
+            name: 'a spanning delete through a start-trimmed clip anchored before its start',
+            clip: { startBeat: 3, endBeat: 19, midiOffsetBeats: 2, loopOriginBeat: 1 },
+            range: { startBeat: 5.5, endBeat: 9 },
+        },
+        {
+            name: 'a spanning delete through a whole-length loop',
+            clip: { endBeat: 12, loopLength: undefined },
+            range: { startBeat: 2.5, endBeat: 5 },
+        },
+        {
+            name: 'a delete that consumes the head of a clip anchored at its start',
+            clip: { startBeat: 3, endBeat: 19, loopOriginBeat: 3 },
+            range: { startBeat: 1, endBeat: 6 },
+        },
+        {
+            name: 'a spanning delete through a clip the loop gesture never anchored',
+            clip: { loopOriginBeat: undefined },
+            range: { startBeat: 4, endBeat: 8 },
+        },
+        {
+            name: 'a delete that consumes the tail',
+            clip: { endBeat: 10 },
+            range: { startBeat: 6.5, endBeat: 12 },
+        },
+    ])('$name keeps every beat the looping MIDI clip plays', ({ clip, range }) => {
+        // The survivor used to re-base its notes to 0 and restamp the anchor
+        // at its own head (#5495), so it restarted the loop at the cut: a
+        // delete ending at 7 on a loop-4 clip struck n-a where the source
+        // struck n-c.
+        seedLoopPhrase(clip);
+        const source = requireClip('c-loop');
+        const span = range.endBeat - range.startBeat;
+        const headEnd = Math.max(source.startBeat, Math.min(range.startBeat, source.endBeat));
+        const tailStart = Math.min(source.endBeat, Math.max(range.endBeat, source.startBeat));
+        const expected = [
+            ...scoreMidiClips([source], source.startBeat, headEnd),
+            ...shiftScore(scoreMidiClips([source], tailStart, source.endBeat), -span),
+        ];
 
-        const result = executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 4, endBeat: 8 } });
+        const result = executeGlobalTimeOperation({
+            operation: { type: 'delete', startBeat: range.startBeat, endBeat: range.endBeat },
+        });
         expect(result.status).toBe('applied');
 
-        const fragment = requireRightFragment();
-        expect(fragment.startBeat).toBe(4);
-        expect(fragment.midiOffsetBeats).toBe(0);
-        // Re-stamped to the fragment's own head: advance zero, the window
-        // opening where the surviving material starts.
-        expect(fragment.loopOriginBeat).toBe(4);
-
-        // The surviving head material sounds across both passes — the
-        // anchor-free projection of this exact state — and the note past the
-        // re-stamped window stays silent.
-        const sounded = projectSoundingStartBeats(fragment);
-        expect(sounded).toEqual([4.5, 6, 8.5, 10]);
-        expect(sounded).toEqual(projectSoundingStartBeats({ ...fragment, loopOriginBeat: undefined }));
-
-        // The left half keeps its id and anchor; its in-window note still
-        // sounds exactly as before the edit.
-        const left = allClips().find((clip) => clip.id === 'c-loop');
-        if (!left) {
-            throw new Error('Expected the left fragment to keep the source id');
+        const survivors = allClips();
+        expect(expected.length).toBeGreaterThan(0);
+        expect([
+            ...scoreMidiClips(survivors, source.startBeat, headEnd),
+            ...scoreMidiClips(survivors, tailStart - span, source.endBeat - span),
+        ]).toEqual(expected);
+        // The survivor's loop grid stays the source's: the anchored pass start
+        // moves with the material it heads.
+        const tail = survivors.find((clip) => clip.id !== 'c-loop');
+        if (tail) {
+            expect(resolveLoopAnchoredStartBeat(tail)).toBe(resolveLoopAnchoredStartBeat(source) - span);
         }
-        expect(left.loopOriginBeat).toBe(0);
-        expect(projectSoundingStartBeats(left)).toEqual([1]);
     });
 
-    it('a right-edge fragment re-stamps the anchor and keeps sounding its surviving notes', () => {
-        // Clip [6,20) anchored at 6, window [0,4) covering timeline [6,10).
-        // Delete [4,8) excises the head m∈[0,2): n-a/n-b (m 2.5, 3.5) sound
-        // before and survive onto the fragment at 0.5/1.5; n-c (m 6.5) lands
-        // past the re-stamped window. Note starts are clip-relative, hence the
-        // timeline positions minus the 6-beat head.
-        seedLoopedClip(
-            [
-                { id: 'n-a', startBeat: 2.5 },
-                { id: 'n-b', startBeat: 3.5 },
-                { id: 'n-c', startBeat: 6.5 },
-            ],
-            { startBeat: 6, endBeat: 20 }
-        );
+    it('keeps re-basing the survivor of a MIDI clip that does not loop, without an anchor key', () => {
+        midiStore.set({
+            ...defaultMidiStoreState,
+            notesByClipId: { 'c-loop': [{ id: 'n-a', pitch: 60, startBeat: 8.5, duration: 0.5, velocity: 100 }] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: [midiTrack([loopedClip({ loopEnabled: false, loopLength: undefined })])],
+        });
 
         const result = executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 4, endBeat: 8 } });
         expect(result.status).toBe('applied');
 
         const fragment = requireRightFragment();
-        expect(fragment.startBeat).toBe(4);
         expect(fragment.midiOffsetBeats).toBe(0);
-        expect(fragment.loopOriginBeat).toBe(4);
-
-        // The stale carry would derive a negative advance (4 − 6) whose window
-        // [2,6) drops the surviving head material and admits n-c instead.
-        const sounded = projectSoundingStartBeats(fragment);
-        expect(sounded).toEqual([4.5, 5.5, 8.5, 9.5, 12.5, 13.5]);
-        expect(sounded).toEqual(projectSoundingStartBeats({ ...fragment, loopOriginBeat: undefined }));
+        expect(Object.hasOwn(fragment, 'loopOriginBeat')).toBe(false);
+        expect(midiStore.value?.notesByClipId[fragment.id]?.map((note) => note.startBeat)).toEqual([0.5]);
     });
 
     it('the audio survivor carries its anchor through the cut, rides the relocation, and keeps the source region', () => {
@@ -312,27 +329,5 @@ describe('global time delete keeps a looped fragment sounding (#5198)', () => {
             throw new Error('Expected the left fragment to keep the source id');
         }
         expect(regionOf(fragment)).toEqual(regionOf(kept));
-    });
-
-    it('an unanchored clip writes no anchor key on its fragment', () => {
-        // The entry-helper law: the key is written only when an anchor exists,
-        // so a legacy clip the loop field never stamped stays key-absent — the
-        // inverse plan compares clip snapshots structurally. The fixture below
-        // is loop-enabled but carries no loopOriginBeat and setClipLoop never
-        // stamps one.
-        midiStore.set({ ...defaultMidiStoreState, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
-        trackStore.set({ ...defaultTrackState, tracks: [midiTrack([loopedClip()])] });
-        setNotesForClip('c-loop', [{ id: 'n-a', pitch: 60, startBeat: 8.5, duration: 0.5, velocity: 100 }]);
-        const seeded = trackStore.value?.tracks.flatMap((track) => track.clips)[0];
-        if (!seeded) {
-            throw new Error('Expected the seeded clip');
-        }
-        expect(Object.hasOwn(seeded, 'loopOriginBeat')).toBe(false);
-
-        const result = executeGlobalTimeOperation({ operation: { type: 'delete', startBeat: 4, endBeat: 8 } });
-        expect(result.status).toBe('applied');
-
-        const fragment = requireRightFragment();
-        expect(Object.hasOwn(fragment, 'loopOriginBeat')).toBe(false);
     });
 });

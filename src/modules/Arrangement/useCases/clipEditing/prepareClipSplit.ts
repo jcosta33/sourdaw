@@ -1,5 +1,6 @@
 import { prepareMidiClipSplit } from '#/modules/MIDI/useCases';
 import { getAudioSourcePositionSeconds, resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
+import { continuesLoopingMidiPhase, loopingMidiLengthEntry } from '#/utils/clipLoopOrigin';
 import {
     type ClipAutomationLaneSnapshot,
     type ClipSplitActionSnapshot,
@@ -152,6 +153,7 @@ export function prepareClipSplit({
         rightClipId: effectiveRightClipId,
         splitBeat: adjustedMediaSplit,
         splitNotes: clip.type === 'midi',
+        copiesLoopMaterial: continuesLoopingMidiPhase(clip),
         targetNoteIds,
     });
     if (!midiPlan) {
@@ -208,15 +210,20 @@ export function prepareClipSplit({
         endBeat: adjustedSplitBeat,
         name: `${clip.name} (L)`,
         fadeOutBeats: 0,
+        ...loopingMidiLengthEntry(clip),
     };
-    // The right fragment's loop anchor follows its basis (#4988). The MIDI
-    // fragment re-bases its notes (offset 0, notes shifted down by the split)
-    // into a fresh media basis the source's timeline anchor has no meaning
-    // in: carried through, the old anchor's advance opens the loop window
-    // behind the fragment's head and silences surviving material, so it
-    // restamps at the fragment's own start — key absent for an unanchored
-    // source, the same law the delete/bounce fragment writers follow. The
-    // audio fragment's media basis is preserved, and its offset advances by
+    // The right fragment's loop anchor follows its basis (#4988). A MIDI
+    // fragment of a clip that does not loop re-bases its notes (offset 0,
+    // notes shifted down by the split) into a fresh media basis the source's
+    // timeline anchor has no meaning in: carried through, the old anchor's
+    // advance opens the loop window behind the fragment's head and silences
+    // surviving material, so it restamps at the fragment's own start — key
+    // absent for an unanchored source, the same law the delete/bounce
+    // fragment writers follow. A looping MIDI fragment copies the source's
+    // whole loop in the source's basis instead, and carries the advanced
+    // offset and the anchor, so every pass after the split plays the beat
+    // the source played there (`midiFragmentWindowEntry`). The audio
+    // fragment's media basis is preserved, and its offset advances by
     // the media delta `contentSplitDelta` — the stretched span the runtimes
     // actually played over the cut, not `timelineSplitDelta`. For the region
     // the audio readers recover —

@@ -348,7 +348,7 @@ function splitRightSourceMatches(
         return false;
     }
     const projected = projectClipSplitSourceWindow(whole.leftClip, split.leftClip.endBeat);
-    const fields = ['audioOffsetBeats', 'midiOffsetBeats', 'loopOriginBeat'];
+    const fields = ['audioOffsetBeats', 'midiOffsetBeats', 'loopOriginBeat', 'loopLength'];
     const pick = (clip: Record<string, unknown>, keys: readonly string[]) =>
         Object.fromEntries(keys.filter((key) => clip[key] !== undefined).map((key) => [key, clip[key]]));
     const inherited = [
@@ -359,7 +359,6 @@ function splitRightSourceMatches(
         'stretchMode',
         'stretchRatio',
         'loopEnabled',
-        'loopLength',
         'parentClipId',
         'isLinkedInstance',
     ];

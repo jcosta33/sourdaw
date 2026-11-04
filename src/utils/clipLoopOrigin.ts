@@ -165,13 +165,97 @@ export function shiftLoopOriginEntry(
  * fresh basis correctly is the fragment's own start — advance zero, the loop
  * window opening at the head, exactly what the pre-anchor reading admits — so
  * an anchored source re-stamps there, and a source with no anchor keeps the
- * key absent (the entry law above).
+ * key absent (the entry law above). Only a fragment that re-bases its notes
+ * takes this entry: a looping MIDI source's fragment keeps the source's basis
+ * instead (`midiFragmentWindowEntry`).
  */
 export function restampLoopOriginEntry(
     clip: ClipLoopOriginShiftInput,
     anchoredStartBeat: number
 ): { loopOriginBeat: number } | Record<string, never> {
     return loopOriginEntry(clip.loopOriginBeat === undefined ? undefined : anchoredStartBeat);
+}
+
+type MidiFragmentSource = Readonly<{
+    type: string;
+    startBeat: number;
+    endBeat: number;
+    midiOffsetBeats?: number;
+    loopEnabled?: boolean;
+    loopLength?: number;
+    loopOriginBeat?: number;
+}>;
+
+/**
+ * Whether a cut through this clip must keep the loop phase: a looping MIDI
+ * clip plays the same loop region on every pass, so any fragment cut from it
+ * carries the whole region rather than only the rows after the cut.
+ */
+export function continuesLoopingMidiPhase(clip: Pick<MidiFragmentSource, 'type' | 'loopEnabled'>): boolean {
+    return clip.type === 'midi' && clip.loopEnabled === true;
+}
+
+/**
+ * The loop length both fragments of a looping MIDI cut store: the length the
+ * source played, written out, because a clip with no `loopLength` loops its
+ * own duration and a fragment is shorter than its source.
+ */
+export function loopingMidiLengthEntry(
+    clip: Pick<MidiFragmentSource, 'type' | 'startBeat' | 'endBeat' | 'loopEnabled' | 'loopLength'>
+): { loopLength: number } | Record<string, never> {
+    if (!continuesLoopingMidiPhase(clip)) {
+        return {};
+    }
+    const { loopLengthBeats } = projectClipLoopExpansion({
+        clipDurationBeats: clip.endBeat - clip.startBeat,
+        configuredLoopLengthBeats: clip.loopLength,
+        loopEnabled: true,
+    });
+    return { loopLength: loopLengthBeats };
+}
+
+/**
+ * The content fields of a MIDI fragment cut from `clip`: the fragment plays
+ * the source's material from the source timeline beat `cutBeat` on, with its
+ * head at `fragmentStartBeat` (the cut itself for a split, the start of the
+ * deleted span after a Delete Time).
+ *
+ * A fragment of a clip that does not loop re-bases its notes onto offset 0
+ * and re-stamps its anchor (`restampLoopOriginEntry`).
+ *
+ * A looping clip's fragment cannot re-base: the rows after the cut are not
+ * the loop, and looping them from the head restarts the loop at the cut, so
+ * every pass after a cut that falls off the loop grid plays the wrong beat.
+ * It keeps every row in the source's basis (`copiesLoopMaterial`) and becomes
+ * the source trimmed to `cutBeat` and moved to `fragmentStartBeat`: the
+ * content offset advances by the cut's timeline delta, the anchor rides the
+ * move (an unanchored source anchors at its own start, the advance-zero
+ * reading it played with, as a first trim does), and the loop length is the
+ * source's (`loopingMidiLengthEntry`). The offset is not wrapped into the
+ * loop, so the rows stay exactly the source's: every reader reads
+ * `note.startBeat - midiOffsetBeats`, which a wrap and its row shift would
+ * leave unchanged.
+ */
+export function midiFragmentWindowEntry(
+    clip: MidiFragmentSource,
+    cutBeat: number,
+    fragmentStartBeat: number
+):
+    | ({ midiOffsetBeats: number; loopOriginBeat: number } & ReturnType<typeof loopingMidiLengthEntry>)
+    | ({ midiOffsetBeats: number } & ReturnType<typeof restampLoopOriginEntry>) {
+    if (!continuesLoopingMidiPhase(clip)) {
+        return { midiOffsetBeats: 0, ...restampLoopOriginEntry(clip, fragmentStartBeat) };
+    }
+    const sourceAnchorBeat = resolveLoopAnchoredStartBeat({
+        startBeat: clip.startBeat,
+        loopOriginBeat: clip.loopOriginBeat,
+        loopEnabled: true,
+    });
+    return {
+        midiOffsetBeats: (clip.midiOffsetBeats ?? 0) + (cutBeat - clip.startBeat),
+        ...loopingMidiLengthEntry(clip),
+        loopOriginBeat: sourceAnchorBeat + (fragmentStartBeat - cutBeat),
+    };
 }
 
 /**
