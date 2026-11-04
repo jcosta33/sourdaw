@@ -1,4 +1,4 @@
-import { type SourceWithFade } from './schedulerSession';
+import { type SourceWithFade } from '../../models/SourceWithFade';
 
 /**
  * Cut one source through its optional fade, the ramp ending at `stopAt`. The

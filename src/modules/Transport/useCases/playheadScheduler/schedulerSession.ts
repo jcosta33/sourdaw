@@ -1,13 +1,7 @@
+import { type SourceWithFade } from '../../models/SourceWithFade';
 import { type TempoChange } from '../../stores/tempoMapStore';
 
 import { cutSource } from './cutSource';
-
-/**
- * A buffer source the scheduler tracks, with the handle its fade rides and —
- * for sources scheduled on the compensated clock (#4784) — the compensation it
- * was scheduled with, so a loop-seam fence can spare the tail it is still due.
- */
-export type SourceWithFade = AudioBufferSourceNode & { fadeGainNode?: GainNode; compensationSeconds?: number };
 
 /**
  * Stop every source in the pool through its optional fade, and drop the

@@ -25,11 +25,12 @@ import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
+import { type SourceWithFade } from '../../models/SourceWithFade';
 import { getTempoAtBeat, secondsBetweenBeats } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
 import { type TempoChange, tempoMapStore } from '../../stores/tempoMapStore';
 import { cutSource } from '../playheadScheduler/cutSource';
-import { type SourceWithFade, schedulerSession } from '../playheadScheduler/schedulerSession';
+import { schedulerSession } from '../playheadScheduler/schedulerSession';
 
 import { gainNodePool } from './audioClipSchedulingState';
 import { disposeAudioClipScheduling } from './disposeAudioClipScheduling';
