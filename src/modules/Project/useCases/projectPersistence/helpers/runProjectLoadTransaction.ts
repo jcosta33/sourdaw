@@ -40,6 +40,10 @@ export const projectLoadEpoch = {
     get current(): number {
         return activeProjectTransitionId;
     },
+    /** The transition whose project the user is in; unchanged by a prepare that never activates. */
+    get active(): number {
+        return activeProjectTransitionId;
+    },
     isCurrent(epoch: number): boolean {
         return epoch > 0 && epoch === activeProjectTransitionId && epoch === latestPreparedProjectTransitionId;
     },

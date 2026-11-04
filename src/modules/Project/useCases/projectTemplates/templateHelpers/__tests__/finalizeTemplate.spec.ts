@@ -242,17 +242,17 @@ describe('finalizeTemplate', () => {
             expect(projectB.isCurrent()).toBe(true);
 
             // The readiness report is detached from template finalization, so
-            // observe the callback reaching the epoch guard before asserting it
-            // stayed silent; `await completionA` no longer waits for it.
-            const isCurrent = vi.spyOn(projectLoadEpoch, 'isCurrent');
+            // observe the callback reading the active project before asserting
+            // it stayed silent; `await completionA` no longer waits for it.
+            const active = vi.spyOn(projectLoadEpoch, 'active', 'get');
             try {
                 readiness.resolve(failedReadiness);
-                await vi.waitFor(() => expect(isCurrent).toHaveBeenCalled());
+                await vi.waitFor(() => expect(active).toHaveBeenCalled());
 
                 expect(projectBEnteredRuntimeTransition).toBe(false);
                 expect(mocks.notifyUser).not.toHaveBeenCalled();
             } finally {
-                isCurrent.mockRestore();
+                active.mockRestore();
             }
         } finally {
             readiness.resolve(failedReadiness);
