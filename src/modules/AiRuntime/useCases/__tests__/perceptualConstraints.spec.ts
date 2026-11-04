@@ -13,6 +13,7 @@ import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { compilePreviewMeasurementProposal } from '../compilePreviewMeasurementProposal';
 import { evaluateMetricGoalAdmission } from '../evaluateMetricGoalAdmission';
 import { getProjectContext } from '../getProjectContext';
+import { groundCompiledCommandBatch } from '../groundCompiledCommandBatch';
 import { type MetricGoalState } from '../metricGoalContractTypes';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { compilePerceptualConstraints } from '../perceptualConstraints/compilePerceptualConstraints';
@@ -352,6 +353,31 @@ describe('excluded dimensions', () => {
             reason: "The request says “don't touch the low end”, but command 1 (setDeviceParameter filter-cutoff) edits the low end of “Bass”.",
         });
         expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+    });
+
+    it('returns a provider proposal with the excluded edit to the planner as a correctable rejection', () => {
+        const groundProposal = (prompt: string) =>
+            groundCompiledCommandBatch({
+                toolCalls: [{ name: 'addDevice', arguments: { trackId: 'vocal', deviceType: 'builtin-reverb' } }],
+                context: getProjectContext(),
+                prompt,
+                projectRevision: captureProjectRevision(),
+                workflowCapabilityId: undefined,
+                compilerEvidence: undefined,
+                selectedCompilations: [],
+                transformCommands: [],
+                transformTargetIds: [],
+                creativeAuthority: undefined,
+                providerProposal: null,
+            });
+        // The same proposal grounds without the constraint, so the rejection is the constraint's.
+        expect(groundProposal('Add a reverb to the Vocal')).toMatchObject({ status: 'grounded' });
+        // `Provider action rejected:` is the prefix the planner's bounded correction admits.
+        expect(groundProposal('Add a reverb to the Vocal but keep the vocal intimate')).toEqual({
+            status: 'rejected',
+            rejectionReason:
+                'Provider action rejected: The request says “keep the vocal intimate”, but command 1 (addDevice builtin-reverb) edits the ambience of “Vocal”.',
+        });
     });
 
     it('admits an edit outside the excluded dimension', () => {

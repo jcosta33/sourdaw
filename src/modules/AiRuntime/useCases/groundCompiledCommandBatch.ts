@@ -29,6 +29,8 @@ import { type ArbitraryCommandListEvidence } from './compileArbitraryCommandList
 import { deriveMatchSelectorPredicates } from './deriveMatchSelectorPredicates';
 import { type ProjectContext } from './getProjectContext';
 import { materializeActionStateGuards } from './materializeActionStateGuards';
+import { compilePerceptualConstraints } from './perceptualConstraints/compilePerceptualConstraints';
+import { findExcludedDimensionEdit } from './perceptualConstraints/findExcludedDimensionEdit';
 import { readPlanningMarkerSignatures } from './readPlanningMarkerSignatures';
 import { validateActions } from './validateActions';
 
@@ -447,6 +449,17 @@ export function groundCompiledCommandBatch(input: GroundCompiledCommandBatchInpu
     const guarded = bindBridgedActions(bridged, input.context);
     if (guarded.status !== 'accepted') {
         return guarded;
+    }
+    // Refused here, inside planning, so the provider can answer with a batch that leaves the
+    // excluded dimension alone; compilation refuses it again for every route that skips the loop.
+    const excludedEdit = findExcludedDimensionEdit({
+        constraints: compilePerceptualConstraints(input.prompt, input.context).constraints,
+        actions: guarded.actions,
+        context: input.context,
+    });
+    if (excludedEdit !== null) {
+        logger.warn('[AI] Rejected LLM action batch because it edits a dimension the request excludes');
+        return { status: 'rejected', rejectionReason: `Provider action rejected: ${excludedEdit.reason}` };
     }
     return { status: 'grounded', ...composeGroundedFields(input, bridged, guarded) };
 }
