@@ -1,0 +1,29 @@
+src/modules/Transport/useCases/scheduling/scheduleFrozenTrack.ts
+  s_ba80576e6f5cb5::t_a31ee210b18e92 10
+src/modules/Transport/models/SourceWithFade.ts
+  s_ba80576e6f5cb5::t_a206574f525ad0 1-6
+src/modules/Transport/useCases/playheadScheduler/__tests__/schedulerSession.spec.ts
+  s_ba80576e6f5cb5::t_6a0dc0031a7576 3-4
+src/modules/Transport/useCases/playheadScheduler/cutSource.ts
+  s_ba80576e6f5cb5::t_c9be9ff3425ae3 1
+src/modules/Transport/useCases/playheadScheduler/schedulerSession.ts
+  s_ba80576e6f5cb5::t_d26d4ca79f3f89 1
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_ba80576e6f5cb5::t_936eac6a33c2af 28,33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1dc92edc3319aa32b05fcc42ab36f69beeae1ce9",
+  "prompts": {},
+  "sessions": {
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
