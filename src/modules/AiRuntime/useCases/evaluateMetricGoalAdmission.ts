@@ -1,3 +1,4 @@
+import { trackStore } from '#/modules/Arrangement/stores';
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { getExecutableAppActionEffect, parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { digest } from '#/utils/canonicalDigest';
@@ -10,6 +11,10 @@ import { digestCommandBatchContent } from './digestCommandBatchContent';
 import { unaccountedNumericRefusal } from './evaluateRequestNumericLiterals';
 import { type MetricGoal, type MetricGoalState } from './metricGoalContractTypes';
 import { objectiveMetricProjection } from './objectiveMetricProjection';
+import {
+    describePerceptualConstraintFailure,
+    perceptualConstraintCriterionMatches,
+} from './perceptualConstraints/perceptualConstraintInvariants';
 
 type AdmissionInput = {
     state: MetricGoalState | null | undefined;
@@ -162,6 +167,12 @@ function criterionSourceRefusal(goals: MetricGoal[]): Refusal | null {
                 reason: 'The comparison does not use its versioned application objective policy.',
             };
         }
+        if (!perceptualConstraintCriterionMatches(goal)) {
+            return {
+                failure: 'incomparable',
+                reason: 'The constraint criterion does not use its versioned perceptual invariant.',
+            };
+        }
     }
     return null;
 }
@@ -303,7 +314,7 @@ function satisfies(goal: MetricGoal, before: number, after: number, reference: n
         return after < before;
     }
     if (goal.relation === 'hold') {
-        return after === before;
+        return Math.abs(after - before) <= goal.tolerance;
     }
     if (goal.relation === 'target') {
         return goal.targetValue !== null && Math.abs(after - goal.targetValue) <= goal.tolerance;
@@ -439,6 +450,23 @@ function evaluateCriterion(
     return { criterion: { ...goal, ...figures, status: failure === null ? 'verified' : 'blocked' }, failure };
 }
 
+function nameTarget(targetId: string): string {
+    if (targetId === 'master') {
+        return 'the master output';
+    }
+    return `“${trackStore.value?.tracks.find((track) => track.id === targetId)?.name ?? targetId}”`;
+}
+
+/** A constraint failure names its clause and violating metric, because that refusal is what the user sees. */
+function criterionFailureReason(result: { criterion: Criterion; failure: Failure }): string {
+    if (result.criterion.source.kind === 'constraint') {
+        return describePerceptualConstraintFailure(result.criterion, result.failure, nameTarget);
+    }
+    return result.failure === 'out-of-tolerance'
+        ? 'Actual preview measurements do not satisfy the frozen objective criterion.'
+        : 'Compatible actual baseline and preview measurements are missing for the frozen subjects, range or logical step.';
+}
+
 /** Objective success is permission for one bound plan, never evidence of perceived sound quality. */
 export function evaluateMetricGoalAdmission(input: AdmissionInput): MetricGoalEvaluation {
     const criteria: Criterion[] = (input.state?.authorities ?? []).flatMap((authority) =>
@@ -502,13 +530,7 @@ export function evaluateMetricGoalAdmission(input: AdmissionInput): MetricGoalEv
         const result = evaluateCriterion(goal, { state, binding });
         criteria[goalIndex] = result.criterion;
         if (result.failure !== null) {
-            return blocked(criteria, {
-                failure: result.failure,
-                reason:
-                    result.failure === 'out-of-tolerance'
-                        ? 'Actual preview measurements do not satisfy the frozen objective criterion.'
-                        : 'Compatible actual baseline and preview measurements are missing for the frozen subjects, range or logical step.',
-            });
+            return blocked(criteria, { failure: result.failure, reason: criterionFailureReason(result) });
         }
     }
     return {

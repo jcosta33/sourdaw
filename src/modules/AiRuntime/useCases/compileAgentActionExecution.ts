@@ -8,6 +8,9 @@ import { compileAgentRiskApproval } from './compileAgentRiskApproval';
 import { compilePlannedActionCommandBatch } from './compilePlannedActionCommandBatch';
 import { getAgentExecutionModeFailure } from './getAgentExecutionModeFailure';
 import { metricGoalStateCodec } from './metricGoalStateCodec';
+import { compilePerceptualConstraints } from './perceptualConstraints/compilePerceptualConstraints';
+import { findExcludedDimensionEdit } from './perceptualConstraints/findExcludedDimensionEdit';
+import { withPerceptualConstraintAuthority } from './perceptualConstraints/withPerceptualConstraintAuthority';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
 
 type CompileAgentActionExecutionInput = Omit<
@@ -83,6 +86,17 @@ export function compileAgentActionExecution(input: CompileAgentActionExecutionIn
     if (mode === 'explain' || mode === 'plan') {
         throw new Error(`Agent execution mode ${mode} does not produce an executable command batch`);
     }
+    // Every proposal route compiles here, so a batch editing a dimension the request excludes is
+    // refused before it is previewed, persisted or shown for approval.
+    const constraints = compilePerceptualConstraints(commandInput.intent, commandInput.context);
+    const excludedEdit = findExcludedDimensionEdit({
+        constraints: constraints.constraints,
+        actions: commandInput.actions,
+        context: commandInput.context,
+    });
+    if (excludedEdit !== null) {
+        throw new Error(excludedEdit.reason);
+    }
     const proposed = compilePlannedActionCommandBatch({
         ...commandInput,
         autoCommit: false,
@@ -93,7 +107,13 @@ export function compileAgentActionExecution(input: CompileAgentActionExecutionIn
         requireExplicitApproval: requiresConfirmation,
         metricGoalState: JSON.stringify(
             bindMetricGoalsToBatch({
-                state: metricGoalStateCodec(metricGoalState),
+                state: withPerceptualConstraintAuthority({
+                    state: metricGoalStateCodec(metricGoalState),
+                    reading: constraints,
+                    prompt: commandInput.intent,
+                    context: commandInput.context,
+                    commandBatch: proposed.commandBatch,
+                }),
                 commandBatch: proposed.commandBatch,
                 schedulePosition,
             })

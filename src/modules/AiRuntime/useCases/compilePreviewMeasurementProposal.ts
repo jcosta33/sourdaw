@@ -18,6 +18,8 @@ import { compileArbitraryCommandList } from './compileArbitraryCommandList';
 import { compilePlannedActionCommandBatch } from './compilePlannedActionCommandBatch';
 import { materializeActionStateGuards } from './materializeActionStateGuards';
 import { materializeTransformToolCalls } from './materializeTransformToolCalls';
+import { compilePerceptualConstraints } from './perceptualConstraints/compilePerceptualConstraints';
+import { findExcludedDimensionEdit } from './perceptualConstraints/findExcludedDimensionEdit';
 import { readPlanningMarkerSignatures } from './readPlanningMarkerSignatures';
 import { validateActions } from './validateActions';
 
@@ -147,6 +149,14 @@ function admitRetainedCommands(input: CompilePreviewMeasurementProposalInput, re
     }
     if (!doesProductionBriefAllowActionBatch(guarded.actions)) {
         return { status: 'rejected' as const, reason: 'The proposal list conflicts with locked production intent.' };
+    }
+    const excludedEdit = findExcludedDimensionEdit({
+        constraints: compilePerceptualConstraints(input.prompt, input.context).constraints,
+        actions: guarded.actions,
+        context: input.context,
+    });
+    if (excludedEdit !== null) {
+        return { status: 'rejected' as const, reason: excludedEdit.reason };
     }
     return { status: 'admitted' as const, actions: guarded.actions, actionCommandGraph: bridged.actionCommandGraph };
 }
