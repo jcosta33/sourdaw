@@ -4,6 +4,8 @@ import { expect, test } from './e2eTest';
 
 import type { ConfirmPayload, NotifyPayload, PromptPayload } from '../../src/utils/Notification/notificationEventBus';
 
+import { chooseProjectDirectory } from './chosenProjectDirectory';
+
 const MODULE_DOCUMENT = '/src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts';
 const PROJECT_AUDIO_STORAGE_LOCK_NAME = 'sourdaw:project-audio-storage';
 const PROJECT_DATABASE_NAME = 'sourdaw-projects';
@@ -461,6 +463,7 @@ test.describe('project audio ownership with native IndexedDB and Web Locks', () 
         await clearStorage(saver);
         const { bufferId, decodedPcm } = await initializeProjectWithAudio(saver);
         await initializeEmptyCollector(collector);
+        await chooseProjectDirectory(saver);
 
         await expect(saveProject(saver)).resolves.toBe(true);
         await expect(collectWithRealProvider(collector)).resolves.toBe(0);

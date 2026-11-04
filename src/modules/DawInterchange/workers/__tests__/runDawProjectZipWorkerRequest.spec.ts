@@ -1,12 +1,12 @@
 import { zipSync } from 'fflate';
 import { describe, it, expect } from 'vitest';
 
-import { DAW_PROJECT_ZIP_LIMITS } from '../dawProjectZipLimits';
+import { DAW_PROJECT_ZIP_LIMITS } from '../../useCases/dawProjectZipLimits';
 import { runDawProjectZipWorkerRequest } from '../runDawProjectZipWorkerRequest';
 
 /**
  * Specs for the pure DAWproject ZIP worker-request core. This is the logic
- * that actually runs inside `dawProjectZip.worker.ts` off the main thread;
+ * that actually runs inside `dawProjectZipWorker.ts` off the main thread;
  * it is tested directly here (no real Worker needed) the same way
  * `runGuardedZipWorkerRequest.spec.ts` tests its shared-infra counterpart.
  */

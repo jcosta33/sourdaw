@@ -4,7 +4,7 @@ import {
     OGG_CODEC_MAX_BYTES,
     type OggCodecWorkerRequest,
     type OggCodecWorkerResponse,
-} from '../../models/OggCodecWorkerProtocol';
+} from '../models/OggCodecWorkerProtocol';
 
 import opus from './vendor/opus/opus-encode.js';
 import ogg from './vendor/vorbis/ogg-encode.js';

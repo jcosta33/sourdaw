@@ -1,10 +1,17 @@
 import { logger } from '#/infra/logger/appLogger';
 import { batchStoreUpdates } from '#/infra/store/createStore';
 import { migrateTrimmedClipPassTakes } from '#/modules/Arrangement/useCases';
-import { getAudioContext, prepareCachedAudioBuffersFromIdb } from '#/modules/AudioEngine/useCases';
-import { executeAppAction, reconcileSessionUndoForProject } from '#/modules/Command/useCases';
+import {
+    clearRuntimeCachedAudioBuffers,
+    getAudioContext,
+    importCachedAudioBuffers,
+    prepareCachedAudioBuffersFromIdb,
+    resetAudioGraph,
+} from '#/modules/AudioEngine/useCases';
+import { clearUndoHistory, executeAppAction, reconcileSessionUndoForProject } from '#/modules/Command/useCases';
 import {
     captureDurableDocumentWitness,
+    compactProject,
     DOC_PREFIX_ROOT,
     getCrdtDoc,
     loadCrdtProject,
@@ -13,36 +20,89 @@ import {
     startCrdtAutoSave,
 } from '#/modules/CrdtDocument/useCases';
 import { migrateAbsoluteMidiNotes, readLegacyChordTrackMigration } from '#/modules/MIDI/useCases';
+import { unloadPlugin as unloadLoadedExternalPlugins } from '#/modules/PluginHost/useCases';
+import { stopPlayback } from '#/modules/Transport/useCases';
 
+import {
+    projectDirectoryBinding,
+    type ProjectDirectoryBinding,
+} from '../../repositories/project/projectDirectoryBinding';
 import { projectStore } from '../../stores/projectStore';
 import { finishProjectLoading } from '../finishProjectLoading';
 import { getDurableProjectOwnerId } from '../getDurableProjectOwnerId';
 
 import { setAutoSaveHandle } from './helpers/autoSaveHandle';
 import { collectTrackStateAudioBufferIds } from './helpers/collectTrackStateAudioBufferIds';
+import { type OutgoingProjectDisposition } from './helpers/resetCrdtProjectWithTransportStopped';
 import { resetModuleStoresToDefault } from './helpers/resetModuleStoresToDefault';
-import { runProjectLoadTransaction } from './helpers/runProjectLoadTransaction';
+import { runProjectLoadTransaction, type ProjectLoadTransaction } from './helpers/runProjectLoadTransaction';
 import { stopActiveAutoSave } from './helpers/stopActiveAutoSave';
+import { unsavedClosedTakes } from './helpers/unsavedClosedTakes';
 import { verifyAudioBufferReferences } from './helpers/verifyAudioBufferReferences';
 import { migrateActiveProjectIdentity } from './migrateActiveProjectIdentity';
+import { prepareProjectDirectoryRead, type PreparedProjectDirectoryRead } from './projectDirectoryRead';
 import { projectIdentityTransitionDependencies } from './projectIdentityTransitionDependencies';
+import { projectOriginalMediaPort } from './projectOriginalMediaPort';
 import { whenProjectIdentityTransitionDependenciesConfigured } from './whenProjectIdentityTransitionDependenciesConfigured';
 
+const { loadProjectDirectoryBinding, rememberProjectDirectoryRoot } = projectDirectoryBinding;
+
+type LoadProjectInput = {
+    directory?: PreparedProjectDirectoryRead;
+    transaction?: ProjectLoadTransaction;
+    explicit?: boolean;
+    /** `discard` when the user chose to leave the outgoing project without saving. */
+    outgoingProject?: OutgoingProjectDisposition;
+    shouldProceed?: () => boolean;
+    shouldContinue?: () => boolean;
+};
+
 export async function loadProject({
+    directory: providedDirectory,
+    transaction: providedTransaction,
+    explicit = false,
+    outgoingProject,
+    shouldProceed,
     shouldContinue = () => true,
-}: { shouldContinue?: () => boolean } = {}): Promise<boolean> {
+}: LoadProjectInput = {}): Promise<boolean> {
+    const canContinue = () => shouldContinue() && shouldProceed?.() !== false;
     await whenProjectIdentityTransitionDependenciesConfigured();
-    if (!shouldContinue()) {
+    if (!canContinue()) {
         return false;
     }
     // Boot restore is subordinate: if the user picked a project on the
     // LaunchScreen while `initializeAudioEngine()` was resolving, that
     // transition is already preparing and must win. Yield to any mid-flight
     // transition rather than superseding it with the implicit startup restore.
-    const transaction = runProjectLoadTransaction({ yieldToInFlight: true });
-    const isCurrent = () => transaction.isCurrent() && shouldContinue();
+    const transaction = providedTransaction ?? runProjectLoadTransaction({ yieldToInFlight: true });
+    const canActivate = () => transaction.canActivate() && canContinue();
+    const isCurrent = () => transaction.isCurrent() && canContinue();
+    let directory = providedDirectory;
+    let bootBinding: ProjectDirectoryBinding | null = null;
     try {
-        if (!(await transaction.prepare()) || !transaction.activate() || !shouldContinue()) {
+        if (!directory && !explicit && typeof window.showDirectoryPicker === 'function') {
+            const binding: ProjectDirectoryBinding | null = await loadProjectDirectoryBinding('last');
+            if (!canActivate()) {
+                return false;
+            }
+            if (binding) {
+                bootBinding = binding;
+                directory = await prepareProjectDirectoryRead(binding, canActivate);
+            }
+        }
+    } catch (error) {
+        if (!canActivate()) {
+            return false;
+        }
+        throw error;
+    }
+    if (!canActivate()) {
+        return false;
+    }
+    try {
+        // Activation settles the preparation ticket even if the caller withdrew
+        // during prepare. No document has been committed at this boundary.
+        if (!(await transaction.prepare()) || !transaction.activate() || !canContinue()) {
             return false;
         }
     } catch (error) {
@@ -50,8 +110,36 @@ export async function loadProject({
         return false;
     }
 
+    let preparedDirectoryAudio: Awaited<ReturnType<typeof importCachedAudioBuffers>> | null = null;
     try {
-        const loaded = await loadCrdtProject({ shouldCommit: isCurrent });
+        if (directory) {
+            await projectOriginalMediaPort.restore(directory.projectId, directory.media, isCurrent);
+            if (!isCurrent()) {
+                return false;
+            }
+            preparedDirectoryAudio = await importCachedAudioBuffers({
+                audioContext: getAudioContext(),
+                buffers: directory.frozenAudioBuffers,
+                decodedBuffers: directory.decodedAudioBuffers,
+                cacheIds: [...Object.keys(directory.decodedAudioBuffers), ...Object.keys(directory.frozenAudioBuffers)],
+                shouldContinue: isCurrent,
+            });
+            if (!preparedDirectoryAudio || !isCurrent()) {
+                return false;
+            }
+            if (explicit) {
+                await stopPlayback();
+                if (!isCurrent()) {
+                    return false;
+                }
+            }
+        }
+        let loaded: boolean;
+        if (directory) {
+            loaded = await directory.commitDocument(isCurrent);
+        } else {
+            loaded = await loadCrdtProject({ shouldCommit: isCurrent });
+        }
         if (!isCurrent()) {
             return false;
         }
@@ -62,6 +150,11 @@ export async function loadProject({
             // run the unified createCrdtProject path from the launch flow.
             finishProjectLoading();
             return false;
+        }
+        if (outgoingProject === 'discard') {
+            // Don't Save drops the outgoing project's settled takes with it; the
+            // incoming project owes nothing for them.
+            unsavedClosedTakes.acknowledgeAll();
         }
     } catch (error) {
         if (!isCurrent()) {
@@ -77,17 +170,39 @@ export async function loadProject({
 
     const rootDoc = getCrdtDoc<{ chordTrack?: unknown; tracks?: unknown }>(DOC_PREFIX_ROOT);
     const referencedBufferIds = collectTrackStateAudioBufferIds(rootDoc?.tracks);
-    const preparedBuffers = await prepareCachedAudioBuffersFromIdb({
-        audioContext: getAudioContext(),
-        bufferIds: referencedBufferIds,
-        shouldContinue: isCurrent,
-    });
+    const preparedBuffers =
+        preparedDirectoryAudio ??
+        (await prepareCachedAudioBuffersFromIdb({
+            audioContext: getAudioContext(),
+            bufferIds: referencedBufferIds,
+            shouldContinue: isCurrent,
+        }));
     if (!preparedBuffers || !isCurrent()) {
-        preparedBuffers?.cancel();
+        if (preparedBuffers && 'cancel' in preparedBuffers) {
+            preparedBuffers.cancel();
+        }
         return false;
     }
 
     try {
+        if (directory) {
+            await clearRuntimeCachedAudioBuffers({
+                retainedIds: new Set([
+                    ...Object.keys(directory.decodedAudioBuffers),
+                    ...Object.keys(directory.frozenAudioBuffers),
+                ]),
+            });
+            if (!isCurrent()) {
+                return false;
+            }
+            resetAudioGraph();
+            if (explicit) {
+                await unloadLoadedExternalPlugins();
+                if (!isCurrent()) {
+                    return false;
+                }
+            }
+        }
         batchStoreUpdates(() => {
             preparedBuffers.publish();
             // Reset in-memory module/device state, then discard the reset writes at
@@ -117,9 +232,41 @@ export async function loadProject({
                 projectId: projectStore.value?.projectId,
                 captureWitness: captureDurableDocumentWitness,
             });
+            if (directory && explicit) {
+                clearUndoHistory();
+            }
         });
     } finally {
-        preparedBuffers.cancel();
+        if ('cancel' in preparedBuffers) {
+            preparedBuffers.cancel();
+        }
+    }
+
+    if (directory) {
+        if (!isCurrent()) {
+            return false;
+        }
+        if ('persist' in preparedBuffers) {
+            let persisted: boolean;
+            try {
+                persisted = await preparedBuffers.persist();
+            } catch (error) {
+                if (!isCurrent()) {
+                    return false;
+                }
+                throw error;
+            }
+            if (!isCurrent()) {
+                return false;
+            }
+            if (!persisted) {
+                throw new Error('Project directory PCM could not be persisted');
+            }
+        }
+        await compactProject();
+        if (!isCurrent()) {
+            return false;
+        }
     }
 
     try {
@@ -131,7 +278,7 @@ export async function loadProject({
         // not a load failure — `loadProject` rejecting here reaches
         // `useAppInitialization` uncaught and toasts a boot failure over a
         // recent-project load that succeeded. `isCurrent()` is the
-        // signal that another project or initialization attempt owns the projection now, so a
+        // signal that a different project owns the projection now, so a
         // superseded load ends exactly as the guard below would end it, and a
         // genuine failure of this project's own migration still propagates.
         if (isCurrent()) {
@@ -168,6 +315,13 @@ export async function loadProject({
         return false;
     }
 
+    if (directory) {
+        await projectOriginalMediaPort.activate(directory.projectId, [...directory.media.keys()], isCurrent);
+        if (!isCurrent()) {
+            return false;
+        }
+    }
+
     if (rootDoc && !Object.hasOwn(rootDoc, 'chordTrack')) {
         const migration = readLegacyChordTrackMigration();
         if (migration) {
@@ -191,6 +345,11 @@ export async function loadProject({
     // Stop any previous auto-save loop first (e.g. if loadProject is called again).
     stopActiveAutoSave();
     setAutoSaveHandle(startCrdtAutoSave());
+    if (bootBinding) {
+        // The durable bookmark already owns this folder; a later Save uses it
+        // instead of asking for the folder again.
+        rememberProjectDirectoryRoot(bootBinding.projectId, bootBinding.root);
+    }
 
     return true;
 }

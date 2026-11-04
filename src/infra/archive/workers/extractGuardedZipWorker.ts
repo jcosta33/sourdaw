@@ -4,7 +4,7 @@ import {
     type GuardedZipWorkerRequest,
     type GuardedZipWorkerResponse,
     runGuardedZipWorkerRequest,
-} from './runGuardedZipWorkerRequest';
+} from '../runGuardedZipWorkerRequest';
 
 self.onmessage = (event: MessageEvent<GuardedZipWorkerRequest>) => {
     try {

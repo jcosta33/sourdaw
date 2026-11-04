@@ -2,6 +2,23 @@ import { execFileSync } from 'node:child_process';
 
 export type ChangedRecord = { path: string; status: string };
 
+/** Working-tree inputs browser selection reads; any uncommitted change to them disables narrowing. */
+export const SELECTION_INPUTS = [
+    'src',
+    'public',
+    'tests',
+    'scripts/e2eSuiteOwners.json',
+    'scripts/e2eAffectedGraph.ts',
+    'scripts/e2eCoverageSelection.ts',
+    'scripts/e2eFileGraph.ts',
+    'scripts/e2eTestSideGraph.ts',
+    'scripts/e2eTestSideRoute.ts',
+    'tsconfig.json',
+    'playwright.config.ts',
+    'vite.config.ts',
+    'package.json',
+];
+
 /** Every path of a NUL-terminated `--name-status -z` diff with the status of its record. */
 export function parseChangedRecords(diff: string): ChangedRecord[] {
     if (diff === '') {
@@ -65,23 +82,7 @@ export function readCheckoutDiff(
         if (git(root, ['status', '--porcelain', '--untracked-files=no']) !== '') {
             throw new Error('Selection checkout has dirty tracked inputs');
         }
-        if (
-            git(root, [
-                'status',
-                '--porcelain',
-                '--untracked-files=all',
-                '--',
-                'src',
-                'public',
-                'tests/e2e',
-                'scripts/e2eSuiteOwners.json',
-                'scripts/e2eAffectedGraph.ts',
-                'scripts/e2eCoverageSelection.ts',
-                'tsconfig.json',
-                'playwright.config.ts',
-                'package.json',
-            ]) !== ''
-        ) {
+        if (git(root, ['status', '--porcelain', '--untracked-files=all', '--', ...SELECTION_INPUTS]) !== '') {
             throw new Error('Selection checkout has uncommitted inventory or graph inputs');
         }
     }

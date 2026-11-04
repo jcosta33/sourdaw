@@ -1,6 +1,6 @@
 /**
  * Entry names inside a `.dawproject` archive. The writer
- * (`buildDawProjectZip.ts`) and every reader (`runDawProjectZipWorkerRequest.ts`
+ * (`buildDawProjectZip.ts`) and every reader (`workers/runDawProjectZipWorkerRequest.ts`
  * via the zip worker, `readDawProjectZip.ts`) must agree on them
  * byte-for-byte: a renamed entry stops matching the other side's path pattern,
  * and an import of an exported archive silently loses its project or metadata.

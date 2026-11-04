@@ -45,6 +45,7 @@ export { queryAgentDiscovery } from './queryAgentDiscovery';
 export { parseSemanticProjectQueryInput } from './parseSemanticProjectQueryInput';
 export { parseAgentDiscoveryInput } from './parseAgentDiscoveryInput';
 export { agentCapabilityDiscoveryPort } from './agentCapabilityDiscoveryPort';
+export { projectOriginalMediaPort } from './projectPersistence/projectOriginalMediaPort';
 export { getProjectProtocolContracts } from './getProjectProtocolContracts';
 export { getAgentProjectModelContract } from './getAgentProjectModelContract';
 export { getDurableProjectOwnerId } from './getDurableProjectOwnerId';

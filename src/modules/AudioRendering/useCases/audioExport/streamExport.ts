@@ -10,6 +10,8 @@ import { audioBufferToMp3 } from '../audioBufferToMp3';
 import { type resolveDeliveryTargets } from '../resolveDeliveryTargets';
 
 import { prepareDeliveryTarget } from './prepareDeliveryTarget';
+import { validateWavLoudnessReportPlan } from './validateWavLoudnessReportPlan';
+import { writeReportedWav } from './writeReportedWav';
 
 type Target = Omit<ReturnType<typeof resolveDeliveryTargets>[number], 'mp3BitRate' | 'channels'> & {
     mp3BitRate: number;
@@ -27,6 +29,8 @@ type LegacySettings = {
 type StreamExportAudioOptions = {
     source: ExportAudioSource;
     name: string;
+    /** The stem's track id; a reported WAV records it so a renamed file still names its stem. */
+    stemId?: string;
     onProgress: (format: DeliveryFormat, fraction: number, targetId: string) => void;
     onLimited: (target: Target) => void;
 };
@@ -41,6 +45,9 @@ type StreamExportInput = {
         | { kind: 'browser'; suggestedName: string; extension: string; mime: string; archive: boolean };
     checkCancelled: () => void;
     signal?: AbortSignal;
+    /** Stage a paired `.loudness.json` report of the exact emitted bytes beside every WAV stem. */
+    includeWavLoudnessReports?: boolean;
+    exportMode?: 'stems' | 'mixdown';
 } & ({ targets: readonly Target[] } | LegacySettings);
 
 function copyTargets(targets: readonly Target[]): Target[] {
@@ -159,6 +166,69 @@ async function encodeDeliveryFormat(input: {
     }
 }
 
+type ExportDestination =
+    Awaited<ReturnType<typeof streamExportToNative>> | Awaited<ReturnType<typeof streamExportToBrowser>>;
+
+function openExportDestination(input: StreamExportInput, requireReportPairs: boolean): Promise<ExportDestination> {
+    if (input.destination.kind === 'native') {
+        return streamExportToNative({
+            ...input.destination,
+            requireReportPairs,
+            checkCancelled: input.checkCancelled,
+        });
+    }
+    return streamExportToBrowser({
+        ...input.destination,
+        requireReportPairs,
+        checkCancelled: input.checkCancelled,
+        signal: input.signal,
+    });
+}
+
+/** Write one target's pass in one format; returns whether it staged a WAV with its report. */
+async function writeDeliveryPass(input: {
+    format: DeliveryFormat;
+    source: ExportAudioSource;
+    target: Target;
+    name: string;
+    stemId?: string;
+    reported: boolean;
+    destination: ExportDestination;
+    progress: (fraction: number) => void;
+    checkCancelled: () => void;
+    signal?: AbortSignal;
+}): Promise<boolean> {
+    const { format, source, target, name, destination, progress, signal } = input;
+    if (input.reported && format === 'wav') {
+        if (!input.stemId) {
+            throw new Error('A reported WAV stem needs its stem identity.');
+        }
+        await awaitExportOperation(
+            writeReportedWav({
+                source,
+                bitDepth: target.bitDepth,
+                dither: target.dither,
+                stemId: input.stemId,
+                targetId: target.id,
+                audioName: `${name}.wav`,
+                progress,
+                destination,
+                checkCancelled: input.checkCancelled,
+                signal,
+            }),
+            signal
+        );
+        input.checkCancelled();
+        return true;
+    }
+    const entry = await awaitExportOperation(destination.beginFile(`${name}.${format}`), signal);
+    await encodeDeliveryFormat({ format, source, target, writer: entry.writer, onProgress: progress, signal });
+    input.checkCancelled();
+    await awaitExportOperation(entry.finish(), signal);
+    input.checkCancelled();
+    return false;
+}
+
 /** Storage precedes rendering; each borrowed render drains all targets before its owner continues. */
 export async function streamExport(input: StreamExportInput) {
     const targets = 'targets' in input ? copyTargets(input.targets) : undefined;
@@ -171,17 +241,15 @@ export async function streamExport(input: StreamExportInput) {
     ) {
         throw new Error('Unsupported delivery format.');
     }
-    let destination:
-        Awaited<ReturnType<typeof streamExportToNative>> | Awaited<ReturnType<typeof streamExportToBrowser>>;
-    if (input.destination.kind === 'native') {
-        destination = await streamExportToNative({ ...input.destination, checkCancelled: input.checkCancelled });
-    } else {
-        destination = await streamExportToBrowser({
-            ...input.destination,
-            checkCancelled: input.checkCancelled,
-            signal: input.signal,
-        });
-    }
+    validateWavLoudnessReportPlan({
+        includeWavLoudnessReports: input.includeWavLoudnessReports,
+        exportMode: input.exportMode,
+        targets,
+    });
+    const requireReportPairs = input.includeWavLoudnessReports === true;
+    const destination = await openExportDestination(input, requireReportPairs);
+    let stagedReports = 0;
+    let committed = false;
     return {
         async writeAudio(options: StreamExportAudioOptions) {
             input.checkCancelled();
@@ -220,24 +288,30 @@ export async function streamExport(input: StreamExportInput) {
                     if (!prepared) {
                         throw new Error('Export PCM preparation is unavailable.');
                     }
-                    const source = prepared.source;
-                    const entry = await awaitExportOperation(destination.beginFile(`${name}.${format}`), input.signal);
-                    const progress = (fraction: number) => options.onProgress(format, fraction, target.id);
-                    await encodeDeliveryFormat({
+                    const stagedReport = await writeDeliveryPass({
                         format,
-                        source,
+                        source: prepared.source,
                         target,
-                        writer: entry.writer,
-                        onProgress: progress,
+                        name,
+                        stemId: options.stemId,
+                        reported: requireReportPairs,
+                        destination,
+                        progress: (fraction) => options.onProgress(format, fraction, target.id),
+                        checkCancelled: input.checkCancelled,
                         signal: input.signal,
                     });
-                    input.checkCancelled();
-                    await awaitExportOperation(entry.finish(), input.signal);
-                    input.checkCancelled();
+                    if (stagedReport) {
+                        stagedReports++;
+                    }
                 }
             }
         },
-        commit: destination.commit,
+        async commit(onCommitBegin: () => void) {
+            await destination.commit(onCommitBegin);
+            committed = true;
+        },
+        /** Reports delivered by a completed commit; none before it. */
+        reportedFiles: () => (committed ? stagedReports : 0),
         abort: destination.abort,
     };
 }

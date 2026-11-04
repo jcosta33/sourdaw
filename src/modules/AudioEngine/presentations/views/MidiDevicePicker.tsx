@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useEffect } from 'react';
+import { type ReactElement, useEffect, useRef } from 'react';
 
 import { KeyboardMusic, RefreshCw } from 'lucide-react';
 
@@ -18,21 +18,23 @@ const defaultWebMidiState = {
     inputs: [],
     selectedInputId: null,
     enumerationError: null,
+    enumerationCompleted: false,
 };
 
 export const MidiDevicePicker = (): ReactElement => {
     const state = useStore(webMidiStore, defaultWebMidiState);
-    const [initialised, setInitialised] = useState(false);
+    const attemptedInitialisation = useRef(false);
 
     useEffect(() => {
-        if (!state.isSupported) {
+        if (!state.isSupported || attemptedInitialisation.current) {
             return;
         }
-        void initWebMidi().then(() => {
-            setInitialised(true);
-            return null;
-        });
-    }, [state.isSupported]);
+        attemptedInitialisation.current = true;
+        if ((state.enumerationError ?? null) !== null) {
+            return;
+        }
+        void initWebMidi();
+    }, [state.isSupported, state.enumerationError]);
 
     if (!state.isSupported) {
         return (
@@ -55,7 +57,12 @@ export const MidiDevicePicker = (): ReactElement => {
     };
 
     const listingFailed = (state.enumerationError ?? null) !== null;
-    const emptyInputsOptionLabel = initialised || listingFailed ? 'No MIDI devices found' : 'Detecting devices...';
+    let emptyInputsOptionLabel = 'Detecting devices...';
+    if (listingFailed) {
+        emptyInputsOptionLabel = "Couldn't list MIDI devices";
+    } else if (state.enumerationCompleted) {
+        emptyInputsOptionLabel = 'No MIDI devices found';
+    }
 
     return (
         <Stack gap={2}>
@@ -98,7 +105,7 @@ export const MidiDevicePicker = (): ReactElement => {
                     </Button>
                 </Row>
             </Stack>
-            {!initialised && state.inputs.length === 0 && !listingFailed ? (
+            {!state.enumerationCompleted && state.inputs.length === 0 && !listingFailed ? (
                 <DawInlineHint className="justify-start px-0 py-0 text-[10px] text-muted-foreground/70">
                     Detecting MIDI devices...
                 </DawInlineHint>

@@ -13,6 +13,8 @@ import { engineDeviceCollaborators } from '../../useCases/engineDeviceCollaborat
 import { createDeviceReadinessDiagnostics, type DeviceContentLoadOutcome } from '../deviceReadinessDiagnostics';
 import { RuntimeGraphMutationFailure, TrackNode, type TrackNodeDeps } from '../TrackNode';
 
+import type { RuntimeGraphDeltaDevice, RuntimeGraphDeviceChainDelta } from '../../models/RuntimeGraphDelta';
+
 const mocks = vi.hoisted(() => ({
     hasSharedArrayBuffer: vi.fn(() => true),
     findReleasedWasmDescriptor: vi.fn(),
@@ -476,6 +478,84 @@ describe('TrackNode — metering, devices, sends, and teardown', () => {
                 for (const node of device.nodes) {
                     expect(node.disconnect).toHaveBeenCalledTimes(1);
                 }
+            }
+        );
+    });
+
+    describe('applyDeviceChain device-chain projection', () => {
+        function topologyDevice(id: string, type: string): RuntimeGraphDeltaDevice {
+            return { id, type, parameterIds: [] };
+        }
+
+        function chainDelta(
+            operation: 'reorder-device' | 'replace-device-chain',
+            before: readonly RuntimeGraphDeltaDevice[],
+            after: readonly RuntimeGraphDeltaDevice[]
+        ): RuntimeGraphDeviceChainDelta {
+            return {
+                schemaVersion: 1,
+                command: 'replace-track-device-chain',
+                correlation: { appRevision: 0, projectRevision: 'projection-probe' },
+                operation,
+                before: { id: 't1', kind: 'midi', devices: before },
+                after: { id: 't1', kind: 'midi', devices: after },
+                parameters: [],
+            };
+        }
+
+        it('reorders only the live persistent slots of a full chain holding a scheduled Synth', () => {
+            const track = new TrackNode('t1', makeDeps(ctx));
+            track.addDevice('eq', 'builtin-eq');
+            track.addDevice('comp', 'builtin-compressor');
+            const [eqNode, compNode] = track.strip.deviceNodes;
+            if (!eqNode || !compNode) {
+                throw new Error('Expected both persistent effect nodes before reorder');
+            }
+            // The compiler ships complete project chains; the scheduled Synth
+            // has no Web Audio slot, so only the effects own live nodes.
+            const before = [
+                topologyDevice('synth', 'builtin-synth'),
+                topologyDevice('eq', 'builtin-eq'),
+                topologyDevice('comp', 'builtin-compressor'),
+            ];
+            const after = [
+                topologyDevice('synth', 'builtin-synth'),
+                topologyDevice('comp', 'builtin-compressor'),
+                topologyDevice('eq', 'builtin-eq'),
+            ];
+
+            expect(track.applyDeviceChain(chainDelta('reorder-device', before, after))).toBe(true);
+
+            expect(track.strip.deviceNodes).toEqual([compNode, eqNode]);
+            expect(track.strip.deviceNodes.map((device) => device.deviceId)).toEqual(['comp', 'eq']);
+        });
+
+        it.each(['builtin-synth', 'builtin-drum-kit'])(
+            'builds only the persistent slots of a mixed %s replacement chain in the requested order',
+            (instrumentType) => {
+                const track = new TrackNode('t1', makeDeps(ctx));
+                track.addDevice('eq', 'builtin-eq');
+                track.addDevice('comp', 'builtin-compressor');
+                const [oldEq, oldComp] = track.strip.deviceNodes;
+                const before = [
+                    topologyDevice('synth', instrumentType),
+                    topologyDevice('eq', 'builtin-eq'),
+                    topologyDevice('comp', 'builtin-compressor'),
+                ];
+                const after = [
+                    topologyDevice('synth', instrumentType),
+                    topologyDevice('replacement-eq', 'builtin-eq'),
+                    topologyDevice('replacement-comp', 'builtin-compressor'),
+                ];
+
+                expect(track.applyDeviceChain(chainDelta('replace-device-chain', before, after))).toBe(true);
+
+                const live = track.strip.deviceNodes;
+                expect(live.map((device) => device.deviceId)).toEqual(['replacement-eq', 'replacement-comp']);
+                expect(live.map((device) => device.type)).toEqual(['builtin-eq', 'builtin-compressor']);
+                expect(live.some((device) => device.type === instrumentType)).toBe(false);
+                expect(live).not.toContain(oldEq);
+                expect(live).not.toContain(oldComp);
             }
         );
     });
