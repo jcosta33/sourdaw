@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { newestUndoUnit, nextUndoUnit, partitionUndoUnits } from '../UndoUnit';
+import { type UndoEntry } from '../UndoEntry';
+import { isInertUndoUnit, newestUndoUnit, nextUndoUnit, partitionUndoUnits } from '../UndoUnit';
 
 const ungrouped = {};
 const inGroup = (groupId: string) => ({ groupId });
@@ -73,5 +74,30 @@ describe('newestUndoUnit and nextUndoUnit', () => {
     it('stop at an ungrouped neighbour', () => {
         expect(newestUndoUnit([inGroup('a'), ungrouped])).toEqual({ first: 1, last: 1 });
         expect(nextUndoUnit([ungrouped, inGroup('a')])).toEqual({ first: 0, last: 0 });
+    });
+});
+
+describe('isInertUndoUnit', () => {
+    const base = { label: 'x', timestamp: 0, source: 'manual' as const };
+    const inert: UndoEntry = {
+        ...base,
+        id: 'i',
+        kind: 'action',
+        action: { type: 'togglePlayback' },
+        inverseAction: null,
+    };
+    const reversible: UndoEntry = {
+        ...base,
+        id: 'r',
+        kind: 'action',
+        action: { type: 'togglePlayback' },
+        inverseAction: { type: 'togglePlayback' },
+    };
+    const callback: UndoEntry = { ...base, id: 'c', kind: 'callback', undo: () => undefined, redo: () => undefined };
+
+    it('holds only when every member is an action entry without an inverse', () => {
+        expect(isInertUndoUnit([inert, inert])).toBe(true);
+        expect(isInertUndoUnit([inert, reversible])).toBe(false);
+        expect(isInertUndoUnit([inert, callback])).toBe(false);
     });
 });

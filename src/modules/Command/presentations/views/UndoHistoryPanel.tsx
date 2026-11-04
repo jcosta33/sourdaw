@@ -15,7 +15,7 @@ import { closeUndoHistory } from '#/modules/WorkspaceShell/useCases';
 import { cn } from '#/utils/Styles/cn';
 
 import { undoStepStore, type UndoStepStoreState } from '../../stores/undoStepStore';
-import { undoToIndex } from '../../useCases/undoToIndex';
+import { moveHistoryToStep } from '../../useCases/moveHistoryToStep';
 
 const defaultState: UndoStepStoreState = { pastSteps: [], futureSteps: [] };
 
@@ -30,8 +30,8 @@ export const UndoHistoryPanel = (): ReactElement | null => {
 
     const close = closeUndoHistory;
 
-    const handleClick = (historyIndex: number) => {
-        void undoToIndex(historyIndex);
+    const handleClick = (targetEntryId: string) => {
+        void moveHistoryToStep(targetEntryId);
     };
 
     return (
@@ -68,7 +68,7 @@ export const UndoHistoryPanel = (): ReactElement | null => {
                                 key={step.key}
                                 title={step.label}
                                 titleClassName="text-xs text-muted-foreground/50"
-                                onPress={() => handleClick(step.historyIndex)}
+                                onPress={() => handleClick(step.targetEntryId)}
                             />
                         ))}
                     </div>
@@ -103,7 +103,7 @@ export const UndoHistoryPanel = (): ReactElement | null => {
                                         </DawMicroBadge>
                                     ) : null
                                 }
-                                onPress={() => handleClick(step.historyIndex)}
+                                onPress={() => handleClick(step.targetEntryId)}
                             />
                         ))}
                     </div>

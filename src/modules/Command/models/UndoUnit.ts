@@ -56,6 +56,20 @@ export function partitionUndoUnits(entries: readonly Groupable[]): UndoUnitSpan[
     return units;
 }
 
+/** An entry undo can never revert: an action entry without an `inverseAction`. */
+export function isInertUndoEntry(entry: UndoEntry): boolean {
+    return isActionEntry(entry) && entry.inverseAction === null;
+}
+
+/**
+ * Whether undo drops this unit without running anything: every member is
+ * inert. A mixed unit still has a member that writes (or a callback that runs),
+ * so only a fully inert unit is purged, and it never costs the user an undo.
+ */
+export function isInertUndoUnit(entries: readonly UndoEntry[]): boolean {
+    return entries.every(isInertUndoEntry);
+}
+
 /** The name undo and redo give an entry, and through its head entry, its unit. */
 export function undoEntryLabel(entry: UndoEntry): string {
     return entry.groupLabel || entry.label || (isActionEntry(entry) ? entry.action.type : 'action');

@@ -2,7 +2,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { AppActionCommittedError, AppActionConflictError } from '../errors/AppActionExecutionError';
 import { isActionEntry, type UndoEntry } from '../models/UndoEntry';
-import { newestUndoUnit, undoEntryLabel } from '../models/UndoUnit';
+import { isInertUndoUnit, newestUndoUnit, undoEntryLabel } from '../models/UndoUnit';
 import { undoStore } from '../stores/undoStore';
 
 import { executeActionGroupUndo, type UndoOutcome } from './executeActionGroupUndo';
@@ -165,16 +165,6 @@ function canStepOverConflictOnto(candidate: UndoCandidate): boolean {
  */
 function isAtomicActionGroup(entries: readonly UndoEntry[]): boolean {
     return entries.every((entry) => isActionEntry(entry) && entry.inverseAction !== null);
-}
-
-/**
- * Whether the scan would drop this unit without running anything: every member
- * is an action entry without an `inverseAction`. A mixed unit still has a
- * member that writes (or a callback that runs), so only a fully inert unit can
- * be purged ahead of a blocked undo.
- */
-function isInertUnit(candidate: UndoCandidate): boolean {
-    return candidate.entries.every((entry) => isActionEntry(entry) && entry.inverseAction === null);
 }
 
 type CandidateOutcome =
@@ -364,7 +354,7 @@ async function undoImpl(stepOverConflicts: boolean): Promise<UndoResult> {
     // the real head's label from the notification that reports it.
     while (past.length > 0) {
         const inertHead = takeCandidate(past);
-        if (!inertHead || !isInertUnit(inertHead)) {
+        if (!inertHead || !isInertUndoUnit(inertHead.entries)) {
             break;
         }
         past = inertHead.below;

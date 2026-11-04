@@ -1,7 +1,7 @@
 import { type ReadableStore } from '#/infra/store/types';
 
 import { type UndoEntry, type UndoSource } from '../models/UndoEntry';
-import { partitionUndoUnits, undoEntryLabel } from '../models/UndoUnit';
+import { isInertUndoUnit, partitionUndoUnits, undoEntryLabel } from '../models/UndoUnit';
 
 import { undoStore as mutable_undo_store, type UndoStoreState as MutableUndoStoreState } from './undoStore';
 
@@ -11,8 +11,8 @@ type UndoStep = {
     readonly key: string;
     readonly label: string;
     readonly source: UndoSource;
-    /** The `undoToIndex` target that leaves this step as the newest applied one. */
-    readonly historyIndex: number;
+    /** The entry `moveHistoryToStep` must leave as the newest applied one to make this step current. */
+    readonly targetEntryId: string;
 };
 
 export type UndoStepStoreState = {
@@ -25,21 +25,22 @@ export type UndoStepStoreState = {
 let cached_mutable_snapshot: MutableUndoStoreState | null | undefined;
 let cached_step_snapshot: UndoStepStoreState | null = null;
 
-function to_step(head: UndoEntry, historyIndex: number): UndoStep {
-    return Object.freeze({ key: head.id, label: undoEntryLabel(head), source: head.source, historyIndex });
+function to_step(head: UndoEntry, target: UndoEntry): UndoStep {
+    return Object.freeze({ key: head.id, label: undoEntryLabel(head), source: head.source, targetEntryId: target.id });
 }
 
-/** Undo names a past step by its newest entry; reaching it keeps that entry applied. */
+/** Undo names a past step by its newest entry, and reaching it keeps that entry applied.
+ *  Undo drops a fully inert unit without spending a keystroke on it, so it is no step. */
 function to_past_steps(past: readonly UndoEntry[]): readonly UndoStep[] {
-    return Object.freeze(partitionUndoUnits(past).map((unit) => to_step(past[unit.last]!, unit.last)));
+    const steps = partitionUndoUnits(past)
+        .filter((unit) => !isInertUndoUnit(past.slice(unit.first, unit.last + 1)))
+        .map((unit) => to_step(past[unit.last]!, past[unit.last]!));
+    return Object.freeze(steps);
 }
 
-/** Redo names a future step by its first entry; reaching it redoes through its last.
- *  `future[k]` sits at `past.length + k` in the history numbering `undoToIndex` reads. */
-function to_future_steps(future: readonly UndoEntry[], past_count: number): readonly UndoStep[] {
-    return Object.freeze(
-        partitionUndoUnits(future).map((unit) => to_step(future[unit.first]!, past_count + unit.last))
-    );
+/** Redo names a future step by its first entry, and reaching it redoes through its last. */
+function to_future_steps(future: readonly UndoEntry[]): readonly UndoStep[] {
+    return Object.freeze(partitionUndoUnits(future).map((unit) => to_step(future[unit.first]!, future[unit.last]!)));
 }
 
 function to_step_snapshot(mutable_snapshot: MutableUndoStoreState | null): UndoStepStoreState | null {
@@ -55,7 +56,7 @@ function to_step_snapshot(mutable_snapshot: MutableUndoStoreState | null): UndoS
 
     cached_step_snapshot = Object.freeze({
         pastSteps: to_past_steps(mutable_snapshot.past),
-        futureSteps: to_future_steps(mutable_snapshot.future, mutable_snapshot.past.length),
+        futureSteps: to_future_steps(mutable_snapshot.future),
     });
     return cached_step_snapshot;
 }

@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { type ActionUndoEntry, type CallbackUndoEntry } from '../../models/UndoEntry';
 import { clearUndoHistory } from '../../useCases/clearUndoHistory';
+import { moveHistoryToStep } from '../../useCases/moveHistoryToStep';
 import { pushUndoEntry } from '../../useCases/pushUndoEntry';
-import { undoToIndex } from '../../useCases/undoToIndex';
+import { REDO_NOT_APPLIED } from '../../useCases/redoResult';
+import { undo } from '../../useCases/undo';
 import { undoStepStore } from '../undoStepStore';
 import { undoStore } from '../undoStore';
 
@@ -23,12 +26,50 @@ function pushTracked(
     );
 }
 
+/** An entry with no inverse: undo drops it without running anything. */
+function inertEntry(id: string): ActionUndoEntry {
+    return {
+        kind: 'action',
+        id,
+        label: id,
+        timestamp: 0,
+        source: 'manual',
+        action: { type: 'togglePlayback' },
+        inverseAction: null,
+    };
+}
+
+/** A callback entry whose redo toggles `id` back into `applied`. */
+function trackedEntry(applied: Applied, id: string): CallbackUndoEntry {
+    return {
+        kind: 'callback',
+        id,
+        label: id,
+        timestamp: 0,
+        source: 'manual',
+        undo: () => applied.delete(id),
+        redo: () => applied.add(id),
+    };
+}
+
 function pastLabels(): string[] {
     return undoStepStore.value?.pastSteps.map((step) => step.label) ?? [];
 }
 
 function futureLabels(): string[] {
     return undoStepStore.value?.futureSteps.map((step) => step.label) ?? [];
+}
+
+function pastIds(): string[] {
+    return undoStore.value?.past.map((entry) => entry.id) ?? [];
+}
+
+function stepNamed(steps: 'pastSteps' | 'futureSteps', label: string) {
+    const step = undoStepStore.value?.[steps].find((candidate) => candidate.label === label);
+    if (!step) {
+        throw new Error(`expected a ${steps} row named ${label}`);
+    }
+    return step;
 }
 
 describe('undoStepStore', () => {
@@ -45,8 +86,8 @@ describe('undoStepStore', () => {
 
         expect(undoStore.value?.past).toHaveLength(4);
         expect(pastLabels()).toEqual(['drag c', 'rename']);
-        expect(undoStepStore.value?.pastSteps.map((step) => step.historyIndex)).toEqual([2, 3]);
         expect(undoStepStore.value?.pastSteps[0]?.key).toBe(undoStore.value?.past[2]?.id);
+        expect(undoStepStore.value?.pastSteps[0]?.targetEntryId).toBe(undoStore.value?.past[2]?.id);
     });
 
     it('names a grouped step by its group label, as undo and redo do', () => {
@@ -54,12 +95,26 @@ describe('undoStepStore', () => {
         pushTracked(applied, 'move note', { groupId: 'g', groupLabel: 'Quantize', source: 'prompt' });
         pushTracked(applied, 'move note', { groupId: 'g', groupLabel: 'Quantize', source: 'prompt' });
 
+        const newestId = undoStore.value?.past[1]?.id;
         expect(undoStepStore.value?.pastSteps).toEqual([
-            { key: undoStore.value?.past[1]?.id, label: 'Quantize', source: 'prompt', historyIndex: 1 },
+            { key: newestId, label: 'Quantize', source: 'prompt', targetEntryId: newestId },
         ]);
     });
 
-    it('keeps the clicked past step applied when the sweep targets its historyIndex', async () => {
+    it('leaves a fully inert unit out of the past steps, as one undo reverts past it', async () => {
+        const applied: Applied = new Set();
+        undoStore.set({ past: [trackedEntry(applied, 'Move clip'), inertEntry('Cut clip')], future: [] });
+        applied.add('Move clip');
+
+        expect(pastLabels()).toEqual(['Move clip']);
+
+        await undo();
+
+        expect(applied.has('Move clip')).toBe(false);
+        expect(undoStepStore.value?.pastSteps).toEqual([]);
+    });
+
+    it('keeps the clicked past step applied when the move targets it', async () => {
         const applied: Applied = new Set();
         pushTracked(applied, 'first');
         pushTracked(applied, 'group a', { groupId: 'g' });
@@ -67,13 +122,25 @@ describe('undoStepStore', () => {
         pushTracked(applied, 'group c', { groupId: 'g' });
         pushTracked(applied, 'last');
 
-        const target = undoStepStore.value!.pastSteps[1]!;
-        expect(target.label).toBe('group c');
-        await undoToIndex(target.historyIndex);
+        await moveHistoryToStep(stepNamed('pastSteps', 'group c').targetEntryId);
 
         expect(pastLabels()).toEqual(['first', 'group c']);
         expect([...applied]).toEqual(['first', 'group a', 'group b', 'group c']);
         expect(futureLabels()).toEqual(['last']);
+    });
+
+    it('stops at the clicked past step when an inert entry sits directly above it', async () => {
+        const applied = new Set(['first', 'last']);
+        undoStore.set({
+            past: [trackedEntry(applied, 'first'), inertEntry('dead'), trackedEntry(applied, 'last')],
+            future: [],
+        });
+        expect(pastLabels()).toEqual(['first', 'last']);
+
+        await moveHistoryToStep(stepNamed('pastSteps', 'first').targetEntryId);
+
+        expect(pastIds()).toEqual(['first']);
+        expect([...applied]).toEqual(['first']);
     });
 
     it('redoes through the clicked future step and no further', async () => {
@@ -82,17 +149,33 @@ describe('undoStepStore', () => {
         pushTracked(applied, 'group a', { groupId: 'g' });
         pushTracked(applied, 'group b', { groupId: 'g' });
         pushTracked(applied, 'last');
-        await undoToIndex(0);
+        await moveHistoryToStep(stepNamed('pastSteps', 'first').targetEntryId);
         expect(futureLabels()).toEqual(['group a', 'last']);
 
-        const target = undoStepStore.value!.futureSteps[0]!;
-        expect(target.historyIndex).toBe(2);
-        await undoToIndex(target.historyIndex);
+        await moveHistoryToStep(stepNamed('futureSteps', 'group a').targetEntryId);
 
         expect(pastLabels()).toEqual(['first', 'group b']);
         expect(applied.has('group a') && applied.has('group b')).toBe(true);
         expect(applied.has('last')).toBe(false);
         expect(futureLabels()).toEqual(['last']);
+    });
+
+    it('stops at the clicked future step when redo drops a not-applied entry on the way', async () => {
+        const applied = new Set(['base']);
+        const notApplied: CallbackUndoEntry = {
+            ...trackedEntry(applied, 'X'),
+            redo: () => REDO_NOT_APPLIED,
+        };
+        undoStore.set({
+            past: [trackedEntry(applied, 'base')],
+            future: [notApplied, trackedEntry(applied, 'Y'), trackedEntry(applied, 'Z')],
+        });
+
+        await moveHistoryToStep(stepNamed('futureSteps', 'Y').targetEntryId);
+
+        expect(pastIds()).toEqual(['base', 'Y']);
+        expect(applied.has('Z')).toBe(false);
+        expect(futureLabels()).toEqual(['Z']);
     });
 
     it('returns frozen snapshots that stay identical until the history changes', () => {

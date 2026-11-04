@@ -23,13 +23,13 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     closeUndoHistory: vi.fn(),
 }));
 
-vi.mock('#/modules/Command/useCases/undoToIndex', () => ({
-    undoToIndex: vi.fn(),
+vi.mock('#/modules/Command/useCases/moveHistoryToStep', () => ({
+    moveHistoryToStep: vi.fn(),
 }));
 
 const { useStore } = await import('#/infra/store/useStore');
 const { closeUndoHistory } = await import('#/modules/WorkspaceShell/useCases');
-const { undoToIndex } = await import('#/modules/Command/useCases/undoToIndex');
+const { moveHistoryToStep } = await import('#/modules/Command/useCases/moveHistoryToStep');
 
 function entry(id: string, groupId?: string): UndoEntry {
     const row: UndoEntry = {
@@ -145,7 +145,7 @@ describe('UndoHistoryPanel', () => {
         expect(screen.queryByText('drag b')).not.toBeInTheDocument();
 
         fireEvent.click(screen.getByText('drag c'));
-        expect(undoToIndex).toHaveBeenCalledWith(3);
+        expect(moveHistoryToStep).toHaveBeenCalledWith('drag c');
     });
 
     it('redoes through the whole clicked future step', () => {
@@ -161,9 +161,28 @@ describe('UndoHistoryPanel', () => {
         expect(screen.queryByText('drag c')).not.toBeInTheDocument();
 
         fireEvent.click(screen.getByText('drag a'));
-        expect(undoToIndex).toHaveBeenCalledWith(3);
+        expect(moveHistoryToStep).toHaveBeenCalledWith('drag c');
 
         fireEvent.click(screen.getByText('last'));
-        expect(undoToIndex).toHaveBeenLastCalledWith(4);
+        expect(moveHistoryToStep).toHaveBeenLastCalledWith('last');
+    });
+
+    it('leaves a fully inert unit out of the rows', () => {
+        const inert: UndoEntry = {
+            kind: 'action',
+            id: 'cut clip',
+            label: 'cut clip',
+            timestamp: 0,
+            source: 'manual',
+            action: { type: 'togglePlayback' },
+            inverseAction: null,
+        };
+        undoStore.set({ past: [entry('move clip'), inert], future: [] });
+        openPanelOverHistory();
+
+        render(<UndoHistoryPanel />);
+
+        expect(screen.getByText('move clip')).toBeInTheDocument();
+        expect(screen.queryByText('cut clip')).not.toBeInTheDocument();
     });
 });
