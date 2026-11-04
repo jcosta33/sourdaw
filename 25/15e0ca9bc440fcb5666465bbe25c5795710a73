@@ -1,0 +1,66 @@
+src/modules/Command/useCases/moveHistoryToStep.ts
+  s_fec7059b7a251c::t_743fdc563ea389 1-79
+src/modules/Command/stores/__tests__/undoStepStore.spec.ts
+  s_fec7059b7a251c::t_7d85ce905d4de0 3,5,7-8,29-54,63-74,90,98,100,104-117,125,132-145,152,155,163-178
+  s_e55e77499e6fbf::t_274d305587a8fc 179-180
+src/modules/Command/models/UndoUnit.ts
+  s_0314bb17e5dee3::t_6e4a52f1b790d8 59-72
+src/modules/Command/models/__tests__/UndoUnit.spec.ts
+  s_3bb122e91d89a5::t_e793a38195bbcc 3-4,79-103
+src/modules/Command/presentations/views/UndoHistoryPanel.tsx
+  s_ba80576e6f5cb5::t_e1f3e8eafbad43 18,33-34,71,106
+src/modules/Command/presentations/views/__tests__/UndoHistoryPanel.spec.tsx
+  s_0314bb17e5dee3::t_37c808dd4ecafa 26-27,32,148,164,167-186
+src/modules/Command/stores/undoStepStore.ts
+  s_ba80576e6f5cb5::t_05c4822a1acd0c 4,14-15,28-29,32-33,35-38,41-43,59
+src/modules/Command/useCases/undo.ts
+  s_ba80576e6f5cb5::t_a2f4ec730f7ab7 5,357
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2515e0ca9bc440fcb5666465bbe25c5795710a73",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_e55e77499e6fbf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd7dd5e0-857f-4467-a958-f9009df751e8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
