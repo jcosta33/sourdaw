@@ -79,6 +79,10 @@ describe('reportDeviceReadiness', () => {
         const committedGeneration = await commitTemplateProject();
 
         await activateReplacement();
+        // This case models the switch at the report's own boundary. The wire
+        // from the real reset helper to this generation is asserted by
+        // `resetCrdtProjectWithTransportStopped.spec.ts`'s "tells the caller
+        // once the authority is replaced and records the committed project".
         commitProjectAuthority();
 
         expect(committedProject.generation).not.toBe(committedGeneration);
