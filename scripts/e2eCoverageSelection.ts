@@ -347,9 +347,10 @@ function driftSince(path: string, map: CoverageMap, sources: CoverageSources, ba
     if (mapBlob === baseBlob) {
         return { kind: 'none' };
     }
-    return mapBlob === null
-        ? { kind: 'stale', reason: `${path}: absent from the coverage map and changed since its commit` }
-        : { kind: 'drifted', mapBlob };
+    if (mapBlob === null) {
+        return { kind: 'stale', reason: `${path}: absent from the coverage map and changed since its commit` };
+    }
+    return { kind: 'drifted', mapBlob };
 }
 
 function changeVerdict(path: string, sources: CoverageSources): FileVerdict | string {
