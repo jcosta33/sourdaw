@@ -1,0 +1,20 @@
+.agents/skills/review-stances/moving-coordinate-inverses.md
+  s_ba80576e6f5cb5::t_073677f182081f 77-79
+  s_ba80576e6f5cb5::t_31173033bab79f 80-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "71702c54c9620e08dc2b9e4d011dc070277800d3",
+  "prompts": {},
+  "sessions": {
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
