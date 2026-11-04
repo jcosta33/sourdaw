@@ -1,0 +1,14 @@
+tests/e2e/tempoSourceTimeAcceptance.spec.ts
+  h_beb54bf43b47b7 743-754
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "258ebc48abeb155e2a661bee8278f4c535ffe8fe",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
