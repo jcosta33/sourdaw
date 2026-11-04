@@ -3434,6 +3434,84 @@
                     "targetId": "track-keys"
                 }
             }
+        },
+        {
+            "id": "AC005-HO-QUESTION-6",
+            "promptClass": "question",
+            "class": "answer-exact",
+            "questionKind": "measured",
+            "prompt": "how loud does the lead vocal get in the intro?",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "answer-measured",
+                    "target": { "kind": "track", "name": "Lead Vocal" },
+                    "rangeName": "Intro",
+                    "topics": ["level"]
+                },
+                {
+                    "kind": "measure",
+                    "id": "measure",
+                    "target": { "kind": "track", "name": "Lead Vocal" },
+                    "rangeName": "Intro"
+                },
+                {
+                    "kind": "metric-answer",
+                    "id": "answer",
+                    "intakeCallId": "intake",
+                    "measureCallId": "measure",
+                    "target": { "kind": "track", "name": "Lead Vocal" },
+                    "metrics": ["integratedLoudness", "rms"]
+                }
+            ],
+            "oracle": {
+                "kind": "answer",
+                "text": "Over “Intro” (beats 0–16), “Lead Vocal” integrated loudness is -18.41 LUFS (exact).\n\nOver “Intro” (beats 0–16), “Lead Vocal” RMS level is -21.43 dBFS (exact).",
+                "measurement": {
+                    "target": { "kind": "track", "name": "Lead Vocal" },
+                    "rangeName": "Intro",
+                    "metrics": { "integratedLoudness": -18.41, "rms": -21.43 }
+                }
+            }
+        },
+        {
+            "id": "AC005-HO-QUESTION-7",
+            "promptClass": "question",
+            "class": "answer-exact",
+            "questionKind": "measured",
+            "prompt": "What's the crest factor and true peak of the mix through the verse?",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "answer-measured",
+                    "target": { "kind": "master" },
+                    "rangeName": "Verse",
+                    "topics": ["dynamics", "level"]
+                },
+                {
+                    "kind": "measure",
+                    "id": "measure",
+                    "target": { "kind": "master" },
+                    "rangeName": "Verse"
+                },
+                {
+                    "kind": "metric-answer",
+                    "id": "answer",
+                    "intakeCallId": "intake",
+                    "measureCallId": "measure",
+                    "target": { "kind": "master" },
+                    "metrics": ["crestFactor", "truePeak"]
+                }
+            ],
+            "oracle": {
+                "kind": "answer",
+                "text": "Over “Verse” (beats 16–48), Master output crest factor is 3.01 dB (exact).\n\nOver “Verse” (beats 16–48), Master output true peak is -10.45 dBTP (exact).",
+                "measurement": {
+                    "target": { "kind": "master" },
+                    "rangeName": "Verse",
+                    "metrics": { "crestFactor": 3.01, "truePeak": -10.45 }
+                }
+            }
         }
     ]
 }

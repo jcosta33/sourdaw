@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    type DawProjectZipWorkerRequest,
+    type DawProjectZipWorkerResponse,
+} from '../../models/DawProjectZipWorkerProtocol';
 import { extractDawProjectZipEntries } from '../extractDawProjectZipEntries';
 import { readDawProjectZip } from '../readDawProjectZip';
-import { type DawProjectZipWorkerRequest, type DawProjectZipWorkerResponse } from '../runDawProjectZipWorkerRequest';
 
 /**
  * Mirrors `extractSingleGuardedZipEntry.spec.ts` in `#/infra/archive`: proves

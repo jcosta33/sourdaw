@@ -10,10 +10,12 @@ import {
     setArrangementEventBus,
 } from '#/modules/Arrangement/useCases';
 import {
+    audioEngine,
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
     ensureBusStrip,
     getDeviceChainTailSeconds,
+    initEngineDeviceCollaborators,
     removeBusStrip,
     removeTrackStrip,
 } from '#/modules/AudioEngine/useCases';
@@ -1001,6 +1003,7 @@ describe('backing-vocal plate workflow', () => {
             (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
         );
         configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
+        initEngineDeviceCollaborators();
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
 
         const leadVocal = createTrack('track-lead-vocal', 'Lead Vocal');
@@ -1061,6 +1064,7 @@ describe('backing-vocal plate workflow', () => {
         await cloudSession.clear();
         removeCrdtDoc('root');
         localStorage.removeItem('sourdaw:command-batch-idempotency:v1');
+        audioEngine.setUseCaseDeviceCollaborators(null);
         vi.unstubAllGlobals();
     });
 

@@ -881,7 +881,7 @@ These folders hold code that runs outside the plain request/response flow of use
 The code that builds and drives live runtime objects: graph nodes, WASM-backed device hosts, note schedulers, and worker clients. Runtime handles (`AudioNode`, WASM instances, `MessagePort`) belong here and in the repositories that wrap platform APIs; models and stores stay handle-free (§4.1, §4.6).
 
 - Use cases and repositories create and drive engine objects; presentation never imports them (`presentation-no-engine-runtime-imports`).
-- Engine code does not import `repositories/` (`usecases-only-write-boundary-to-repositories`).
+- Engine code does not import `repositories/` (`usecases-only-write-boundary-to-repositories`), nor its own module's `useCases/` or `handlers/` (`engine-no-own-application-layers`). Whoever builds an engine object passes those collaborators in: constructor deps, factory options, or a composition-root port (§4.15).
 - Worklets and workers never import it (`worklets-no-module-runtime-imports`, `workers-no-module-runtime-imports`).
 - `runtime/` is a reserved name that the presentation, worklet, worker, model, event, and layer-purity rules list beside `engine/`. New runtime code goes in `engine/`.
 
@@ -898,7 +898,9 @@ Code that executes on the audio rendering thread inside an `AudioWorkletGlobalSc
 Code that executes in a dedicated `Worker`.
 
 - The same lists apply as for worklets (`workers-no-module-runtime-imports`, `workers-no-app-helper-or-desktop-ipc`): the forbidden layers are identical, and `models/`, `transformers/`, `errors/`, and `wasm/` stay allowed.
-- Use cases, repositories, stores, handlers, and presentation do not `import` worker files (`module-runtime-no-worker-imports`). They start one with `new Worker(new URL('…', import.meta.url))`, which is a URL reference, not an import edge, and talk to it by message.
+- Use cases, repositories, stores, handlers, and presentation do not `import` worker files (`module-runtime-no-worker-imports`), and that includes a Vite `?worker` import. They start one with `new Worker(new URL('…', import.meta.url))`, which is a URL reference, not an import edge, and talk to it by message.
+- Every worker entry lives in `workers/` (or `src/infra/<area>/workers/` for cross-cutting infra). The `worker spawns` gate in `pnpm deps:validate` reads each spawn site, including `?worker` imports, and fails a target outside such a folder or one that is not a string literal ([boundary enforcement limits](./05-boundary-enforcement-limits.md)).
+- What a worker needs to share with the main thread goes in `models/` (protocol types, constants), where both sides may import it. `engine/` may import stateful worker-folder code that must also run synchronously on the main thread, such as an offline render path; that code touches no worker globals, and the worker entry stays the only file that does. Test doubles that run a worker entry in process live in `testing/`, because a spec in `useCases/` or `repositories/` that imports a worker trips `module-runtime-no-worker-imports`.
 
 ### `wasm/`
 
@@ -1077,7 +1079,7 @@ Use when:
 
 - another module needs a synchronous business operation
 - a return value matters
-- the dependency is intentional and acceptable
+- the dependency is intentional and acceptable — the module tier manifest ([§7.5](#75-module-tiers)) decides which, not the caller
 
 ```typescript
 // Import from the module's useCases barrel, not from a useCases/ file directly
@@ -1121,6 +1123,14 @@ Use when:
 // Views re-exported from the module's presentations/views barrel
 import { ArrangementView } from '#/modules/Arrangement/presentations/views';
 ```
+
+## 7.5 Module tiers
+
+`.dependency-cruiser.module-tiers.cjs` is the single source for module placement. It lists the tiers in order, each with the tiers it may depend on, and gives every module under `src/modules/` a tier with a reason. A module's tier follows its role — its subdomain kind ([ADR 0011](../../.agents/decisions/0011-ddd-module-boundary-redraw.md)), its `AGENTS.md`, and the aggregate it owns — never its current imports.
+
+`pnpm deps:validate` enforces it. Every non-presentation cross-module edge must be allowed by the tier rules (same-tier edges always are), and every module-level cycle is reported. Both kinds of violation sit in an exact baseline: a new row fails, and so does a stale one, so the baseline only ratchets down. A module without a tier, or a tier entry without a module, fails outright.
+
+A new cross-tier edge is a change to the manifest, argued in review. Never admit one by rewriting the baseline.
 
 ---
 

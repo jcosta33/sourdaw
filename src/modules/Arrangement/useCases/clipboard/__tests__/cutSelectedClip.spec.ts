@@ -37,10 +37,11 @@ vi.mock('../../../stores/clipSelectionStore', () => ({
     clipSelectionStore: mocks.clipSelectionStore,
 }));
 
-vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
-    isFrozenMidiTakeSource: (await importOriginal<typeof import('#/modules/MIDI/stores')>()).isFrozenMidiTakeSource,
-    midiStore: mocks.midiStore,
-}));
+vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
+    const { frozenMidiTakeOccurrenceOriginBeat, isFrozenMidiTakeSource } =
+        await importOriginal<typeof import('#/modules/MIDI/stores')>();
+    return { frozenMidiTakeOccurrenceOriginBeat, isFrozenMidiTakeSource, midiStore: mocks.midiStore };
+});
 
 vi.mock('#/modules/MIDI/useCases', () => ({
     removeMidiClipData: mocks.removeMidiClipData,

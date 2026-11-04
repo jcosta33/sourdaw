@@ -17,6 +17,7 @@ import { handleLoadPreset, handleRestorePresetDeviceChain } from '../handleLoadP
 const mocks = vi.hoisted(() => ({
     applyDeviceChainRuntimeDelta: vi.fn<typeof applyDeviceChainRuntimeDelta>(),
     captureProjectRevision: vi.fn(() => 'project-1'),
+    deactivateTrackStrip: vi.fn(),
     findPresetById: vi.fn(),
     getTrackStrip: vi.fn<() => unknown>(() => ({})),
     hasLiveProjectHostTrack: vi.fn(() => true),
@@ -29,6 +30,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     createRuntimeGraphTopologyFingerprint: (node: unknown) => JSON.stringify(node),
+    deactivateTrackStrip: mocks.deactivateTrackStrip,
     getRuntimeGraphRevision: vi.fn(() => 4),
     getTrackStrip: mocks.getTrackStrip,
     initializeTrackStripFromSnapshot: mocks.initializeTrackStripFromSnapshot,
@@ -65,6 +67,11 @@ vi.mock('../../../useCases/updateTrack', () => ({
 }));
 
 type LoadPresetAction = Extract<AppAction, { type: 'loadPreset' }>;
+type PresetChainAction = Extract<AppAction, { type: 'loadPreset' | 'restorePresetDeviceChain' }>;
+
+function isPresetChainAction(candidate: AppAction): candidate is PresetChainAction {
+    return candidate.type === 'loadPreset' || candidate.type === 'restorePresetDeviceChain';
+}
 
 /**
  * What the delta reports once its host track left project truth mid-commit.
@@ -133,6 +140,7 @@ describe('handleLoadPreset', () => {
         clearUndoHistory();
         mocks.captureProjectRevision.mockReturnValue('project-1');
         mocks.getTrackStrip.mockReturnValue({});
+        mocks.hasLiveProjectHostTrack.mockReturnValue(true);
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 'track-1', kind: 'midi', frozen: false, devices: [oldDevice] }],
         });
@@ -396,6 +404,158 @@ describe('handleLoadPreset', () => {
         expect(mocks.updateDeviceParam).toHaveBeenCalledWith('toaster-folder', 'toaster-device', 'masterGain', 1.2);
     });
 
+    describe('restoring a Toaster folder to an empty chain', () => {
+        const toasterDevice: DeviceSnapshot = {
+            id: 'toaster-device',
+            name: 'Toaster',
+            type: 'toaster',
+            bypassed: false,
+            parameterValues: { masterGain: 1.2 },
+        };
+        const restore = {
+            type: 'restorePresetDeviceChain' as const,
+            payload: {
+                trackId: 'toaster-folder',
+                expectedBefore: {
+                    id: 'toaster-folder',
+                    kind: 'folder' as const,
+                    devices: [{ id: 'toaster-device', type: 'toaster', parameterIds: ['masterGain'] }],
+                },
+                expectedFrozen: false,
+                replacementDevices: [],
+            },
+        };
+
+        async function commitRestore(committedTracks: unknown[]): Promise<void> {
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 'toaster-folder', kind: 'folder', frozen: false, devices: [toasterDevice] }],
+            });
+            const result = await handleRestorePresetDeviceChain.execute(restore, {
+                actions: [restore],
+                actionIndex: 0,
+            });
+            if (!result || result.status !== 'written' || !result.afterCommit) {
+                throw new Error('The restore did not schedule its post-commit runtime effect');
+            }
+            mocks.getTrackStoreState.mockReturnValue({ tracks: committedTracks });
+            await result.afterCommit();
+        }
+
+        it('tears down the live Toaster strip the folder no longer needs', async () => {
+            await commitRestore([{ id: 'toaster-folder', kind: 'folder', frozen: false, devices: [] }]);
+
+            expect(mocks.deactivateTrackStrip).toHaveBeenCalledExactlyOnceWith('toaster-folder');
+            expect(mocks.applyDeviceChainRuntimeDelta).not.toHaveBeenCalled();
+            expect(mocks.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
+            expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+        });
+
+        it('leaves the strip to the action that removed the folder in the same commit', async () => {
+            mocks.hasLiveProjectHostTrack.mockReturnValue(false);
+
+            await commitRestore([]);
+
+            expect(mocks.deactivateTrackStrip).not.toHaveBeenCalled();
+        });
+
+        it('composes its live strip straight to the chain a later load in the same commit makes live again', async () => {
+            const nextToasterDevice: DeviceSnapshot = {
+                id: 'toaster-device-2',
+                name: 'Toaster',
+                type: 'toaster',
+                bypassed: false,
+                parameterValues: { masterGain: 0.7 },
+            };
+            const load = action({
+                trackId: 'toaster-folder',
+                expectedProjectRevision: undefined,
+                expectedBefore: { id: 'toaster-folder', kind: 'folder', devices: [] },
+                devices: [nextToasterDevice],
+            });
+            const actions = [restore, load];
+            const folder = (devices: DeviceSnapshot[]) => ({
+                tracks: [{ id: 'toaster-folder', kind: 'folder', frozen: false, devices }],
+            });
+            const deviceIds = (track: { devices: readonly { id: string }[] }) =>
+                track.devices.map((device) => device.id).join(',');
+            // Models the engine contract the real delta enforces: `before` must
+            // match the live strip, and a step with a later same-track chain
+            // mutation in its batch composes straight to final project truth.
+            let liveChain = 'toaster-device';
+            mocks.applyDeviceChainRuntimeDelta.mockImplementation(({ before, after, batchContext }) => {
+                const committed = { id: 'toaster-folder', devices: [nextToasterDevice] };
+                const laterChainTrackIds = (batchContext?.actions ?? [])
+                    .slice((batchContext?.actionIndex ?? 0) + 1)
+                    .filter(isPresetChainAction)
+                    .map((later) => later.payload.trackId);
+                const composes = deviceIds(after) !== deviceIds(committed) && laterChainTrackIds.includes(after.id);
+                const target = deviceIds(after) === deviceIds(committed) || composes ? committed : undefined;
+                if (target && deviceIds(target) === liveChain) {
+                    return dischargedPresetDelta;
+                }
+                if (!target || deviceIds(before) !== liveChain) {
+                    return {
+                        acceptance: 'rejected',
+                        application: 'not-applied',
+                        reason: 'Live source strip does not match the compiled device-chain delta',
+                    };
+                }
+                liveChain = deviceIds(target);
+                return {
+                    acceptance: 'accepted',
+                    application: 'applied',
+                    correlation: { appRevision: 4, projectRevision: 'project-2' },
+                    runtimeRevision: 5,
+                };
+            });
+
+            mocks.getTrackStoreState.mockReturnValue(folder([toasterDevice]));
+            const restored = await handleRestorePresetDeviceChain.execute(restore, { actions, actionIndex: 0 });
+            mocks.getTrackStoreState.mockReturnValue(folder([]));
+            const loaded = await handleLoadPreset.execute(load, { actions, actionIndex: 1 });
+            if (
+                restored?.status !== 'written' ||
+                !restored.afterCommit ||
+                loaded?.status !== 'written' ||
+                !loaded.afterCommit
+            ) {
+                throw new Error('The batch did not schedule both post-commit runtime effects');
+            }
+            mocks.getTrackStoreState.mockReturnValue(folder([nextToasterDevice]));
+
+            await expect(Promise.resolve().then(() => restored.afterCommit?.())).resolves.toBeUndefined();
+            await expect(Promise.resolve().then(() => loaded.afterCommit?.())).resolves.toBeUndefined();
+
+            expect(mocks.applyDeviceChainRuntimeDelta.mock.results.map((result) => result.value)).toEqual([
+                expect.objectContaining({ acceptance: 'accepted', application: 'applied' }),
+                dischargedPresetDelta,
+            ]);
+            expect(liveChain).toBe('toaster-device-2');
+            expect(mocks.deactivateTrackStrip).not.toHaveBeenCalled();
+            expect(mocks.updateDeviceParam.mock.calls).toEqual([
+                ['toaster-folder', 'toaster-device-2', 'masterGain', 0.7],
+            ]);
+        });
+
+        it('has nothing to tear down when the folder has no live strip', async () => {
+            mocks.getTrackStrip.mockReturnValue(undefined);
+
+            await commitRestore([{ id: 'toaster-folder', kind: 'folder', frozen: false, devices: [] }]);
+
+            expect(mocks.deactivateTrackStrip).not.toHaveBeenCalled();
+        });
+
+        it('reports a failed strip teardown as needing repair', async () => {
+            mocks.deactivateTrackStrip.mockImplementationOnce(() => {
+                throw new Error('engine closed');
+            });
+
+            await expect(
+                commitRestore([{ id: 'toaster-folder', kind: 'folder', frozen: false, devices: [] }])
+            ).rejects.toThrow(/Runtime strip removal failed for track toaster-folder: Error: engine closed/);
+        });
+    });
+
     it('rejects a stale collaborator revision before the project write or runtime effect', async () => {
         mocks.captureProjectRevision.mockReturnValue('project-2');
 
@@ -453,6 +613,81 @@ describe('handleLoadPreset', () => {
                 replacementDevices: [oldDevice],
             },
         });
+    });
+
+    it('captures the inverse of a load onto a track an earlier addTrack in the same batch creates', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+        const planned = action({
+            trackId: 'preset-track-1',
+            expectedProjectRevision: undefined,
+            expectedBefore: {
+                id: 'preset-track-1',
+                kind: 'midi',
+                devices: [{ id: 'preset-initial-device-1', type: 'builtin-synth', parameterIds: [] }],
+            },
+        });
+        const add = {
+            type: 'addTrack' as const,
+            payload: {
+                id: 'preset-track-1',
+                initialAlternativeId: 'preset-alternative-1',
+                initialDeviceId: 'preset-initial-device-1',
+                name: 'Glass Pad',
+                kind: 'midi' as const,
+            },
+        };
+
+        const description = handleLoadPreset.describe(planned, { actions: [add, planned], actionIndex: 1 });
+
+        expect(description.inverseAction).toMatchObject({
+            type: 'restorePresetDeviceChain',
+            payload: {
+                trackId: 'preset-track-1',
+                expectedBefore: {
+                    id: 'preset-track-1',
+                    devices: [{ id: 'preset-device-1', type: 'builtin-synth', parameterIds: ['cutoff'] }],
+                },
+                replacementDevices: [{ id: 'preset-initial-device-1', type: 'builtin-synth' }],
+            },
+        });
+    });
+
+    it('refuses a preset load with no devices but restores an empty prior chain', async () => {
+        const empty = action({ devices: [] });
+
+        expect(validate(empty)).toBe(false);
+        await expect(Promise.resolve(handleLoadPreset.execute(empty))).resolves.toEqual({ status: 'conflict' });
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'toaster-folder', kind: 'folder', frozen: false, devices: [newDevice] }],
+        });
+        const restore = {
+            type: 'restorePresetDeviceChain' as const,
+            payload: {
+                trackId: 'toaster-folder',
+                expectedBefore: {
+                    id: 'toaster-folder',
+                    kind: 'folder' as const,
+                    devices: [{ id: 'preset-device-1', type: 'builtin-synth', parameterIds: ['cutoff'] }],
+                },
+                expectedFrozen: false,
+                replacementDevices: [],
+            },
+        };
+
+        const writtenChains: DeviceSnapshot[][] = [];
+        mocks.updateTrack.mockImplementation(
+            (_id: string, update: (track: { devices: readonly DeviceSnapshot[] }) => { devices: DeviceSnapshot[] }) => {
+                writtenChains.push(update({ devices: [newDevice] }).devices);
+            }
+        );
+
+        expect(handleRestorePresetDeviceChain.validate?.(restore, { actions: [restore], actionIndex: 0 })).toBe(true);
+        await expect(
+            Promise.resolve(handleRestorePresetDeviceChain.execute(restore, { actions: [restore], actionIndex: 0 }))
+        ).resolves.toMatchObject({ status: 'written' });
+        expect(writtenChains).toEqual([[]]);
     });
 
     const runtimeFailureCases: ReadonlyArray<

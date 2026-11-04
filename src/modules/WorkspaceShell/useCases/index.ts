@@ -15,6 +15,8 @@ export { showDevicePanelForType } from './panels/devicePanels/showDevicePanelFor
 // ── Editing Tool ──────────────────────────────────────────────────────────────
 
 export { finishToolSwap } from './finishToolSwap';
+export { getToolForKeyPress } from './getToolForKeyPress';
+export { getToolShortcutHint } from './getToolShortcutHint';
 export { setEditingTool } from './setEditingTool';
 export { startToolSwap } from './startToolSwap';
 
@@ -25,7 +27,6 @@ export { setWorkspaceMode } from './setWorkspaceMode';
 export { closeCollaborationPanel } from './togglePanel/panelToggles/closeCollaborationPanel';
 export { closeCommandPalette } from './togglePanel/panelToggles/closeCommandPalette';
 export { closeUndoHistory } from './togglePanel/panelToggles/closeUndoHistory';
-export { setSoloMode } from './togglePanel/panelToggles/setSoloMode';
 export { setVirtualKeyboardOctave } from './togglePanel/panelToggles/setVirtualKeyboardOctave';
 export { setVirtualKeyboardVelocity } from './togglePanel/panelToggles/setVirtualKeyboardVelocity';
 export { toggleAutomationPanel } from './togglePanel/panelToggles/toggleAutomationPanel';
@@ -55,7 +56,6 @@ export { onScrollToPlayhead } from './togglePanel/zoomOperations/onScrollToPlayh
 
 export { getWorkspaceHandlers } from './getWorkspaceHandlers';
 
-export { TOOL_SHORTCUTS } from './workspaceQueries/helpers';
 // Public state/preferences TYPES are exported from the `stores/` barrel (next to
 // the stores that hold them), not here — the `useCases/` contract barrel must not
 // re-export types (arch rule `no-usecase-type-exports-on-index`).

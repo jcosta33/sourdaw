@@ -87,7 +87,7 @@ When a multi-action prompt is segmented, retain each action's exclusions, qualif
 
 **Why:** clause boundaries are a parsing convenience, not permission to widen a destructive action or collapse competing targets.
 
-**Enforced by:** review only (probe: `review-stances/correctness.md`).
+**Enforced by:** review only (probe: `review-stances/ai-request-authority.md`).
 
 ### 10. Deterministic execution needs complete admission
 
@@ -95,7 +95,7 @@ Deterministic execution requires a grammar that consumes the whole request and r
 
 **Why:** once a partial proposal reaches validation, approval, and receipts, the omitted intent cannot be reconstructed and an ambiguity can look like a deliberate edit.
 
-**Enforced by:** review only (probe: `review-stances/correctness.md`).
+**Enforced by:** review only (probe: `review-stances/ai-request-authority.md`).
 
 ### 11. Source authority and protections come from the original request text
 
@@ -103,10 +103,10 @@ Masked text supports discovery and segmentation only. Every proposal route deriv
 
 **Why:** a project-name placeholder can resemble executable grammar, and a qualifier split away from an action still limits what the whole request authorizes.
 
-**Enforced by:** review only (probe: `review-stances/correctness.md`).
+**Enforced by:** review only (probe: `review-stances/ai-request-authority.md`).
 
 ## References
 
 - [docs/architecture/03-typescript-module.md](../../../docs/architecture/03-typescript-module.md) — use cases and command surfaces actions must hit.
 - [docs/03-state-management.md](../../../docs/03-state-management.md) — who may write which state.
-- Review probes for dispatcher context, segmentation, admission, and protections: `../review-stances/correctness.md`.
+- Review probes for dispatcher context, segmentation, admission, and protections: `../review-stances/ai-request-authority.md`.

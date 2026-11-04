@@ -5695,21 +5695,20 @@ describe('fresh reviewer dossier publication', () => {
         });
 
         it.each([
-            ['premium summary', { reviewerModel: 'gpt-6.1-sol' }, /review.json reviewerModel.*permitted low-cost/u],
-            [
-                'premium later draw',
-                { draws: [...defaultDraws.slice(0, 2), { ...defaultDraws[2], reviewerModel: 'claude-opus-4.5' }] },
-                /draws\[2\].reviewerModel.*permitted low-cost/u,
-            ],
             [
                 'strongest metadata',
                 { draws: [{ ...defaultDraws[0], tier: 'strongest' }, ...defaultDraws.slice(1)] },
                 /economy or standard/u,
             ],
             [
-                'exhaustion waiver',
-                { reviewerModel: 'gpt-6-astra', modelExhaustion: 'All affordable models were unavailable.' },
-                /permitted low-cost/u,
+                'exhaustion never waives the tier rule',
+                {
+                    reviewerModel: 'gpt-6-astra',
+                    modelExhaustion: 'All affordable models were unavailable.',
+                    body: 'Reviewed on gpt-6-astra after every other model was unavailable.',
+                    draws: [{ ...defaultDraws[0], tier: 'strongest' }, ...defaultDraws.slice(1)],
+                },
+                /economy or standard/u,
             ],
         ])('refuses a fresh %s before dossier, journal or remote writes', (_label, fields, message) => {
             const fixture = dossierFixture({ document: { ...reviewDocument, ...fields } });
@@ -6243,14 +6242,14 @@ describe('fresh reviewer dossier publication', () => {
         }
     });
 
-    it('refuses a premium unpublished historical record before a new publication without rewriting it', () => {
+    it('refuses a strongest-tier unpublished historical record before a new publication without rewriting it', () => {
         const historical = canonicalPersistedDossier();
         const fixture = dossierFixture({ plan: riskPlan(), dossier: historical, draws: null });
         try {
             writeFileSync(join(fixture.bundle, 'dossier.json'), serializeReviewDossier(parseReviewDossier(historical)));
             const before = readFileSync(join(fixture.bundle, 'dossier.json'), 'utf8');
             expect(serializeReviewDossier(parseReviewDossier(JSON.parse(before)))).toBe(before);
-            expect(refusedBeforeSideEffects(fixture)).toMatch(/permitted low-cost review model/u);
+            expect(refusedBeforeSideEffects(fixture)).toMatch(/economy or standard/u);
             expect(readFileSync(join(fixture.bundle, 'dossier.json'), 'utf8')).toBe(before);
         } finally {
             removeTemporaryDirectory(fixture.root);

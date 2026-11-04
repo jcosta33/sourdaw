@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { TOOL_LABELS } from '../../../models/EditingTool';
-import { TOOL_SHORTCUTS } from '../helpers';
+import { TOOL_LABELS, TOOL_SHORTCUTS } from '../../../models/EditingTool';
 
 /** Pulls the advertised letter out of a label such as `Marquee (E)` / `Draw (D/B)`. */
 const advertisedLetters = (label: string): string[] => {

@@ -8,6 +8,7 @@ import {
     audioEngine,
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
+    initEngineDeviceCollaborators,
 } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, executeAppActionBatch, redo, undo } from '#/modules/Command/useCases';
@@ -92,6 +93,7 @@ beforeEach(async () => {
     audioEngine.resetGraph();
     configureRuntimeGraphProjectRevisionValidator((revision) => revision === captureProjectRevision());
     configureRuntimeGraphTopologyValidator(runtimeGraphTopology.matchesCurrentProject);
+    initEngineDeviceCollaborators();
     await audioEngine.initialize();
     expect(trackStore.value?.tracks).toEqual([]);
 });
@@ -101,6 +103,7 @@ afterEach(() => {
     audioEngine.resetGraph();
     configureRuntimeGraphProjectRevisionValidator(null);
     configureRuntimeGraphTopologyValidator(null);
+    audioEngine.setUseCaseDeviceCollaborators(null);
     clearUndoHistory();
     clearHandlerRegistry();
     stopProjection?.();

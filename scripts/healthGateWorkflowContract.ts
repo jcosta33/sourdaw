@@ -56,6 +56,7 @@ export const SHARD_MATRIX_JOBS: ReadonlyArray<readonly [string, string, readonly
     ['validation.yml', 'unit', UNIT_SHARDS],
     ['nightly.yml', 'unit', UNIT_SHARDS],
     ['nightly.yml', 'e2e', E2E_SHARDS],
+    ['nightly.yml', 'e2e-coverage', E2E_SHARDS],
 ];
 
 const NODE_SETUP_ACTIONS = ['Checkout', 'Set up pnpm', 'Set up Node'] as const;
@@ -170,14 +171,14 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
     },
     'health-gates.yml': {
         admission: ['Checkout trusted admission', 'Set up Node', 'Read reviews', 'Decide admission'],
-        scope: [...SETUP_PNPM_NODE, 'Plan affected checks', 'Upload scope manifest'],
+        scope: [...SETUP_PNPM_NODE, 'Fetch coverage map', 'Plan affected checks', 'Upload scope manifest'],
         validation: null,
         affected: null,
         codeql: ['Checkout', 'Initialise CodeQL', 'Analyse'],
         gate: ['Require selected checks to succeed'],
     },
     'pr-checks.yml': {
-        scope: [...SETUP_PNPM_NODE, 'Plan affected checks', 'Upload scope manifest'],
+        scope: [...SETUP_PNPM_NODE, 'Fetch coverage map', 'Plan affected checks', 'Upload scope manifest'],
         validation: null,
     },
     'validation.yml': {
@@ -295,6 +296,18 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Upload the agent workspace proof record',
         ],
         'e2e-report': [...SETUP_PNPM_NODE, 'Download blob reports', 'Merge into one report', 'Upload report'],
+        'e2e-coverage': [
+            ...SETUP_NODE,
+            'Verify preinstalled browser runtime',
+            'Run shard with coverage',
+            'Upload coverage records',
+        ],
+        'e2e-coverage-map': [
+            ...SETUP_PNPM_NODE,
+            'Download coverage records',
+            'Build the coverage map',
+            'Upload the coverage map',
+        ],
         codeql: ['Checkout', 'Initialise CodeQL', 'Analyse'],
         secrets: [
             'Checkout trusted scanner',

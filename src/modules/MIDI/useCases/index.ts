@@ -105,6 +105,7 @@ export { moveMidiCC } from './midiEvent/moveMidiCC';
 export { movePitchBend } from './midiEvent/movePitchBend';
 export { removeMidiCC } from './midiEvent/removeMidiCC';
 export { removePitchBend } from './midiEvent/removePitchBend';
+export { restorePitchBend } from './midiEvent/restorePitchBend';
 export { restoreMidiCCPoints } from './midiEvent/restoreMidiCCPoints';
 export { revisitHandEditedCCReturns } from './midiEvent/revisitHandEditedCCReturns';
 export { getHandEditedReturnFamily } from './midiEvent/getHandEditedReturnFamily';

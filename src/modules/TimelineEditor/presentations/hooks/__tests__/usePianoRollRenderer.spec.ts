@@ -1,6 +1,7 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { getPianoRollRowTop } from '../../helpers/pianoRollConstants';
 import { usePianoRollRenderer } from '../usePianoRollRenderer';
 
 const mocks = vi.hoisted(() => {
@@ -211,6 +212,26 @@ describe('usePianoRollRenderer', () => {
         // The cache window starts half a viewport before the scroll offset
         // (300 - 180), and is blitted at that same origin.
         expect(drawImage).toHaveBeenCalledWith(expect.anything(), -180, 0);
+    });
+
+    // The key rail positions its labels from `getPianoRollRowTop`, so the
+    // canvas must start its note rows at that same y. The first tick builds the
+    // grid cache and then paints the dynamic layer, each shifting its origin
+    // below the ruler once; a missing or wrong shift on either leg moves every
+    // row (grid lines or notes) off the labels. Horizontal-only translates
+    // (the cache's content-x shift) have y = 0 and are not row origins.
+    it('moves both the grid cache and the dynamic layer to the first row top before drawing rows', () => {
+        const translate = vi.spyOn(ctx, 'translate');
+        const deps = buildDeps();
+        renderHook(() => usePianoRollRenderer(deps));
+
+        runTick();
+
+        const rowOriginShifts = translate.mock.calls.filter(([, y]) => y !== 0);
+        expect(rowOriginShifts).toEqual([
+            [0, getPianoRollRowTop(0)],
+            [0, getPianoRollRowTop(0)],
+        ]);
     });
 
     // Every repaint walks the whole note list, including every frame of a

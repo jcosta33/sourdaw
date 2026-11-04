@@ -1,5 +1,5 @@
 import { takeLaneStore, type TakeLaneStoreState, type Track } from '#/modules/Arrangement/stores';
-import { isFrozenMidiTakeSource } from '#/modules/MIDI/stores';
+import { frozenMidiTakeOccurrenceOriginBeat, isFrozenMidiTakeSource } from '#/modules/MIDI/stores';
 import {
     audioSourceSnapshotAtBeat,
     captureAudioSourceSnapshot,
@@ -252,6 +252,22 @@ function selectedAudioSource(
     return null;
 }
 
+/**
+ * The beat a comped take counts its loop occurrences from. Live takes count
+ * from their media origin in the clip they sit on. A frozen take keeps the
+ * origin it was captured with, so a split or Delete Time that re-homes it onto
+ * another clip never restarts the count.
+ */
+function takeOccurrenceOriginBeat(
+    take: TakeLaneStoreState['lanes'][number]['takes'][number],
+    media: TakeMedia
+): number {
+    if (take.midiSource === undefined) {
+        return media.sourceStartBeat;
+    }
+    return frozenMidiTakeOccurrenceOriginBeat(take.midiSource);
+}
+
 function resolveSelectedTakeRegion(
     region: TakeLaneStoreState['lanes'][number]['activeCompRegions'][number],
     lane: TakeLaneStoreState['lanes'][number],
@@ -310,7 +326,7 @@ function resolveSelectedTakeRegion(
         endBeat: overlapEnd,
         regionStartBeat: overlapStart,
         regionEndBeat: overlapEnd,
-        sourceStartBeat: media.sourceStartBeat,
+        sourceStartBeat: takeOccurrenceOriginBeat(take, media),
     };
     if (sourceClip.type === 'midi' && take.recordingPassIndex !== undefined) {
         fragment.midiTakeRecordingPassIndex = take.recordingPassIndex;

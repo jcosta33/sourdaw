@@ -11,6 +11,7 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack, getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import { audioEngine, initEngineDeviceCollaborators } from '#/modules/AudioEngine/useCases';
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import { clearHandlerRegistry, getHandlerMap, registerHandlerMap } from '#/modules/Command/stores';
 import {
@@ -117,6 +118,7 @@ describe('metric goal admission at the final Command boundary', () => {
         clearChatMessages();
         collaborationStore.set({ ...initialCollaboration, localPeerId: 'metric-goal-actor' });
         setArrangementEventBus({ emit: async () => undefined });
+        initEngineDeviceCollaborators();
         flushAutomergeStorageWrites();
         registerHandlerMap({
             ...getArrangementHandlers(),
@@ -151,6 +153,7 @@ describe('metric goal admission at the final Command boundary', () => {
         clearChatMessages();
         commandBatchPreflightPort.setProvider(null);
         collaborationStore.set(structuredClone(initialCollaboration));
+        audioEngine.setUseCaseDeviceCollaborators(null);
     });
 
     it('executes a selected Play preset once through real submission and Command admission', async () => {

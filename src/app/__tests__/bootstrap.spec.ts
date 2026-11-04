@@ -172,6 +172,7 @@ const {
     setRecordingMidiAdmissionPortMock,
     configureRuntimeGraphProjectRevisionValidatorMock,
     configureRuntimeGraphTopologyValidatorMock,
+    initEngineDeviceCollaboratorsMock,
     runtimeGraphTopologyMock,
     setNotificationEventBusMock,
     setProjectIdentityTransitionDependenciesMock,
@@ -320,6 +321,7 @@ const {
         configureRuntimeGraphProjectRevisionValidatorMock:
             vi.fn<(validator: RuntimeGraphProjectRevisionValidator | null) => void>(),
         configureRuntimeGraphTopologyValidatorMock: vi.fn<(validator: RuntimeGraphTopologyValidator | null) => void>(),
+        initEngineDeviceCollaboratorsMock: vi.fn<() => void>(),
         runtimeGraphTopologyMock: {
             matchesCurrentProject: vi.fn<RuntimeGraphTopologyValidator>(),
         },
@@ -448,6 +450,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     compileAudioGraphTopology: noop,
     configureRuntimeGraphProjectRevisionValidator: configureRuntimeGraphProjectRevisionValidatorMock,
     configureRuntimeGraphTopologyValidator: configureRuntimeGraphTopologyValidatorMock,
+    initEngineDeviceCollaborators: initEngineDeviceCollaboratorsMock,
     recordNativeChainReleases: recordNativeChainReleasesMock,
     isTunerTelemetryNativelyOwned: isTunerTelemetryNativelyOwnedMock,
     startMainThreadLongTaskObservation: noop,
@@ -488,13 +491,16 @@ vi.mock('#/modules/BrowserAi/useCases', () => ({
 }));
 
 vi.mock('#/modules/Collaboration/useCases', () => ({
+    activateProjectOriginalMedia: noop,
     canExecuteCommandBatch: canExecuteCommandBatchMock,
     canMutateBranchMetadata: () => true,
     configureCollaborationAssetOwner: configureCollaborationAssetOwnerMock,
+    captureProjectOriginalMedia: noop,
     configureDurableAssetCommitProof: configureDurableAssetCommitProofMock,
     getCollaborationHandlers: sentinelHandlers('Collaboration'),
     getAssetTransfer: getAssetTransferMock,
     leaveSession: noop,
+    restoreProjectOriginalMedia: noop,
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -662,6 +668,7 @@ vi.mock('#/modules/Project/useCases', () => ({
     productionBriefActionBatchAdmission: { capture: () => ({ allowsCurrent: () => true }) },
     getProjectHandlers: sentinelHandlers('Project'),
     initGrooveTemplateDirtyTracking: noop,
+    projectOriginalMediaPort: { configure: noop },
     initPluginStateDirtyTracking: noop,
     initProjectDirtyTracking: noop,
     getDurableProjectOwnerId: getDurableProjectOwnerIdMock,
@@ -1105,6 +1112,7 @@ describe('bootstrap', () => {
         expect(configureRuntimeGraphTopologyValidatorMock).toHaveBeenCalledExactlyOnceWith(
             runtimeGraphTopologyMock.matchesCurrentProject
         );
+        expect(initEngineDeviceCollaboratorsMock).toHaveBeenCalledExactlyOnceWith();
         expect(setNotificationEventBusMock).toHaveBeenCalledExactlyOnceWith(eventBusMock);
     });
 

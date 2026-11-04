@@ -221,6 +221,7 @@ export { compileAudioGraphTopology } from './compileAudioGraphTopology';
 export { compileRuntimeGraphDelta } from './compileRuntimeGraphDelta';
 export { configureRuntimeGraphProjectRevisionValidator } from './configureRuntimeGraphProjectRevisionValidator';
 export { configureRuntimeGraphTopologyValidator } from './configureRuntimeGraphTopologyValidator';
+export { initEngineDeviceCollaborators } from './initEngineDeviceCollaborators';
 export { createRuntimeGraphTopologyFingerprint } from './createRuntimeGraphTopologyFingerprint';
 export { applyRuntimeGraphDelta } from './applyRuntimeGraphDelta';
 export { getRuntimeGraphRevision } from './getRuntimeGraphRevision';

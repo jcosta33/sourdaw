@@ -56,11 +56,42 @@ const malformed: ReadonlyArray<readonly [string, SourceEdit]> = [
     ['an extra rows key', (source) => (rowsOf(source).sustain = { value: [] })],
     ['an extra slot key', (source) => Object.assign(rowsOf(source).notes!, { count: 1 })],
     ['an extra row key', (source) => Object.assign(rowsOf(source).controlChanges!.value[0]!, { label: 'mod' })],
+    ['a non-finite read start', (source) => (source.readStartBeat = Number.NEGATIVE_INFINITY)],
+    ['a non-finite read end', (source) => (source.readEndBeat = Number.NaN)],
+    ['an absent read start written as undefined', (source) => (source.readStartBeat = undefined)],
+    [
+        'a read end at its read start',
+        (source) => {
+            source.readStartBeat = 1;
+            source.readEndBeat = 1;
+        },
+    ],
+    [
+        'a missing required key beside a read bound',
+        (source) => {
+            source.readStartBeat = -2;
+            delete source.passLengthBeats;
+        },
+    ],
+    ['the retired run-up key', (source) => (source.runUpEntryBeat = -2)],
+    ['a non-finite occurrence origin depth', (source) => (source.occurrenceOriginDepthBeats = Number.NaN)],
+    ['an occurrence origin depth written as undefined', (source) => (source.occurrenceOriginDepthBeats = undefined)],
 ];
 
 describe('isFrozenMidiTakeSource', () => {
     it('admits a fragment source whose phase head lies before its window', () => {
         expect(isFrozenMidiTakeSource(frozenSource())).toBe(true);
+    });
+
+    it('admits the read bounds a Delete Time cut leaves, on either side of the entry', () => {
+        expect(isFrozenMidiTakeSource({ ...frozenSource(), readStartBeat: 3 })).toBe(true);
+        expect(isFrozenMidiTakeSource({ ...frozenSource(), readEndBeat: -10 })).toBe(true);
+        expect(isFrozenMidiTakeSource({ ...frozenSource(), readStartBeat: -10, readEndBeat: 3 })).toBe(true);
+    });
+
+    it('admits the occurrence origin depth capture records, on either side of the pass head', () => {
+        expect(isFrozenMidiTakeSource({ ...frozenSource(), occurrenceOriginDepthBeats: 4 })).toBe(true);
+        expect(isFrozenMidiTakeSource({ ...frozenSource(), occurrenceOriginDepthBeats: -3 })).toBe(true);
     });
 
     it('admits a source read back from the project document, whose objects carry symbol metadata', () => {

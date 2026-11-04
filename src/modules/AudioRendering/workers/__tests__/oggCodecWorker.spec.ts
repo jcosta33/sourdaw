@@ -1,16 +1,12 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-    OggCodecTestWorker,
-    toneSource,
-    useRealOggWorkerTransport,
-} from '../../repositories/audioEncoders/__tests__/oggCodecTestWorker';
-import ogg from '../../repositories/audioEncoders/vendor/vorbis/ogg-encode.js';
 import { audioBufferToVorbis } from '../../repositories/audioEncoders/vorbisEncoder';
+import { OggCodecTestWorker, toneSource, useRealOggWorkerTransport } from '../../testing/oggCodecTestWorker';
+import ogg from '../vendor/vorbis/ogg-encode.js';
 
 const cleanup = vi.hoisted(() => ({ calls: 0, fail: false, operationFailure: '' }));
-vi.mock('../../repositories/audioEncoders/vendor/vorbis/vorbis.wasm.js', async (importOriginal) => {
+vi.mock('../vendor/vorbis/vorbis.wasm.js', async (importOriginal) => {
     const { default: factory } = await importOriginal<{
         default: () => Promise<{
             _enc_free: (ref: number) => void;

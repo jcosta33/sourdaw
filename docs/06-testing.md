@@ -459,7 +459,7 @@ Subject: `src/modules/AudioEngine/engine/TrackNode.ts` — constructs an audio g
 
 Pass a mock `AudioContext` (see §7.4) via the constructor `deps`. Assert on the node connections and parameter calls — these are the only observable outputs of the class until the audio thread runs.
 
-Assert a parameter call's time only when the claim is timing, and then assert the frame it lands on, never the raw `ctx.currentTime` (`.agents/skills/review-stances/audio-param-frame-timing.md`). The clamp case below claims the value, so its time argument is `expect.any(Number)`.
+Assert a parameter call's time only when the claim is timing, and then assert the frame it lands on, never the raw `ctx.currentTime` (`.agents/skills/review-stances/audio-timing-format-laws.md` probes 5 to 7). The clamp case below claims the value, so its time argument is `expect.any(Number)`.
 
 ```typescript
 // src/modules/AudioEngine/engine/__tests__/TrackNode.spec.ts
@@ -484,7 +484,11 @@ describe('TrackNode', () => {
         const node = new TrackNode('track-1', { context: ctx });
 
         node.setGain(3);
-        expect(node.strip.faderNode.gain.setTargetAtTime).toHaveBeenCalledWith(FADER_MAX_GAIN, expect.any(Number), 0.01);
+        expect(node.strip.faderNode.gain.setTargetAtTime).toHaveBeenCalledWith(
+            FADER_MAX_GAIN,
+            expect.any(Number),
+            0.01
+        );
 
         node.setGain(-0.2);
         expect(node.strip.faderNode.gain.setTargetAtTime).toHaveBeenCalledWith(0, expect.any(Number), 0.01);

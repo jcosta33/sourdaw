@@ -3484,6 +3484,84 @@
                     "targetId": "track-lead-vocal"
                 }
             }
+        },
+        {
+            "id": "AC005-DEV-QUESTION-6",
+            "promptClass": "question",
+            "class": "answer-exact",
+            "questionKind": "measured",
+            "prompt": "How loud is the master in the chorus?",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "answer-measured",
+                    "target": { "kind": "master" },
+                    "rangeName": "Chorus",
+                    "topics": ["level"]
+                },
+                {
+                    "kind": "measure",
+                    "id": "measure",
+                    "target": { "kind": "master" },
+                    "rangeName": "Chorus"
+                },
+                {
+                    "kind": "metric-answer",
+                    "id": "answer",
+                    "intakeCallId": "intake",
+                    "measureCallId": "measure",
+                    "target": { "kind": "master" },
+                    "metrics": ["integratedLoudness", "rms"]
+                }
+            ],
+            "oracle": {
+                "kind": "answer",
+                "text": "Over “Chorus” (beats 48–80), Master output integrated loudness is -10.45 LUFS (exact).\n\nOver “Chorus” (beats 48–80), Master output RMS level is -13.47 dBFS (exact).",
+                "measurement": {
+                    "target": { "kind": "master" },
+                    "rangeName": "Chorus",
+                    "metrics": { "integratedLoudness": -10.45, "rms": -13.47 }
+                }
+            }
+        },
+        {
+            "id": "AC005-DEV-QUESTION-7",
+            "promptClass": "question",
+            "class": "answer-exact",
+            "questionKind": "measured",
+            "prompt": "What are the peak and RMS levels on the snare during the verse?",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "answer-measured",
+                    "target": { "kind": "track", "name": "Snare" },
+                    "rangeName": "Verse",
+                    "topics": ["level"]
+                },
+                {
+                    "kind": "measure",
+                    "id": "measure",
+                    "target": { "kind": "track", "name": "Snare" },
+                    "rangeName": "Verse"
+                },
+                {
+                    "kind": "metric-answer",
+                    "id": "answer",
+                    "intakeCallId": "intake",
+                    "measureCallId": "measure",
+                    "target": { "kind": "track", "name": "Snare" },
+                    "metrics": ["truePeak", "rms"]
+                }
+            ],
+            "oracle": {
+                "kind": "answer",
+                "text": "Over “Verse” (beats 16–48), “Snare” true peak is -27.95 dBTP (exact).\n\nOver “Verse” (beats 16–48), “Snare” RMS level is -30.97 dBFS (exact).",
+                "measurement": {
+                    "target": { "kind": "track", "name": "Snare" },
+                    "rangeName": "Verse",
+                    "metrics": { "truePeak": -27.95, "rms": -30.97 }
+                }
+            }
         }
     ]
 }

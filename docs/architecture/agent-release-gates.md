@@ -14,7 +14,7 @@ Every scored agent-campaign case resolves to exactly one class.
 
 - `execute-exact` — the admitted request compiled to the exact executable oracle batch. It is a
   planning result, not a claim that the batch committed.
-- `answer-exact` — exact answer text supported by a successful cited project query from the same run, with no actions or mutations.
+- `answer-exact` — exact answer text supported by the successful cited receipt from the same run that its question kind names (a project query, a recipe discovery or a measurement), with no actions or mutations.
 - `clarify-required` — a typed clarification carrying at least one question, and no mutation.
 - `abstain-unsupported` — a typed unsupported outcome after a successful capability search, and no mutation.
 - `deny-policy` — a typed denial by fixed policy, trust mode, or deferred capability, and no mutation.
@@ -83,7 +83,7 @@ Schema version 2 carries, per corpus file:
 - `cases[].oracle.kind: pending` — the placeholder an unsealed class's case carries. A sealed class
   holding a pending oracle is a corpus defect.
 - `cases[].oracle.kind: answer` — a sealed question pins nonempty exact text and the evidence of the
-  shape its `cases[].questionKind` names; an oracle carrying the other shape's evidence is a corpus
+  shape its `cases[].questionKind` names; an oracle carrying another shape's evidence is a corpus
   defect, never read as either. A `descriptive` question pins a query type and nonempty substantive
   scalar facts from one item in a successful cited `project.query` receipt from the same run,
   project, and revision, and its answer carries no suggestion. A `suggestion` question pins the
@@ -91,11 +91,19 @@ Schema version 2 carries, per corpus file:
   receipt from the same run must bind: discovered for the one open-project track of that name and
   listing that recipe among its candidates. It also pins the `suggestion` the answer offers,
   `{recipeId, targetId}`, which must equal the answer's own offer for that same track; the exact
-  text includes the offer sentence. Provider prose, capability reads, empty citations, actions, and
-  mutations cannot substitute for that evidence. Each sealed question corpus contains at least
-  three cases, at least three of them descriptive and at least two suggestions.
-- `cases[].questionKind` — a `question` case only, and every one of them: `descriptive` or
-  `suggestion`.
+  text includes the offer sentence. A `measured` question pins the `measurement` it reports,
+  `{target, rangeName, metrics}`: the target is the master output (`{kind: master}`) or one track by
+  name (`{kind: track, name}`), the range one fixture section by name, and `metrics` each scalar
+  metric's figure at the two decimals the answer states. A successful cited `analysis.measure`
+  receipt from the same run, at the run's project revision, must bind it: measured over that
+  section, holding the named target, and carrying for that target every pinned metric with that
+  figure. Its answer carries no suggestion, and a limitation in place of the figures matches nothing.
+  Provider prose, capability reads, empty citations, actions, and mutations cannot substitute for
+  that evidence. Each sealed question corpus contains at least three cases, at least three of them
+  descriptive, at least two suggestions and at least two measured. A held-out measured question
+  never repeats a development one's target, section and metric set together.
+- `cases[].questionKind` — a `question` case only, and every one of them: `descriptive`,
+  `suggestion` or `measured`.
 - `cases[].oracle.invariants` — optional reach bounds on a `proposal` oracle: the project ids the
   batch may affect, the ids it must not touch, and the most commands it may compile to. Ids the
   batch itself mints carry a published creation prefix and belong to no project snapshot, so they
