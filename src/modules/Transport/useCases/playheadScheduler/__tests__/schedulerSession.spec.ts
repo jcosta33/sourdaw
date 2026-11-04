@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { schedulerSession, stopActiveSources, type SourceWithFade } from '../schedulerSession';
+import { type SourceWithFade } from '../../../models/SourceWithFade';
+import { schedulerSession, stopActiveSources } from '../schedulerSession';
 
 type MockGainParam = {
     value: number;

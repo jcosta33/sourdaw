@@ -502,11 +502,15 @@ describe('scheduleAudioClips', () => {
         mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
         mockResolveClips.mockReturnValue([makeAudioClip()] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
-        const scheduled = new Set<string>(['clip-1:0:4']);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        const scheduled = new Set<string>();
+        const active: AudioBufferSourceNode[] = [];
+        scheduleAudioClips(0, 16, 0, scheduled, new Set(), active, defaultTransportState);
+        expect(mockCreateBufferSource).toHaveBeenCalledTimes(1);
 
-        scheduleAudioClips(0, 16, 0, scheduled, new Set(), [], defaultTransportState);
+        scheduleAudioClips(0, 16, 0, scheduled, new Set(), active, defaultTransportState);
 
-        expect(mockCreateBufferSource).not.toHaveBeenCalled();
+        expect(mockCreateBufferSource).toHaveBeenCalledTimes(1);
     });
 
     it('bails when trackStore.value is null', () => {
