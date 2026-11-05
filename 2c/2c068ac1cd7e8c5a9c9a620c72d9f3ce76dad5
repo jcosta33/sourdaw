@@ -1,0 +1,33 @@
+scripts/__tests__/tailwindSourceScope.spec.ts
+  s_3bb122e91d89a5::t_b2b9c4ab5cc141 3-7,19-20,23-25,27-28
+  s_3bb122e91d89a5::t_f35d0ba3aa2eb0 2
+  s_3bb122e91d89a5::t_33f32706535888 1,8-18,21-22,26
+src/styles/main.css
+  s_3bb122e91d89a5::t_18ed900559f37e 6
+  s_3bb122e91d89a5::t_11af3ccaade6ee 1-3
+  s_fec7059b7a251c::t_6fed921dbe50ab 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2c2c068ac1cd7e8c5a9c9a620c72d9f3ce76dad5",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
