@@ -1,0 +1,38 @@
+src/modules/CommandInterface/useCases/isKeyboardEditableTarget.ts
+  s_fec7059b7a251c::t_ca6e48686cd669 10
+  s_55244eb93b97d1::t_60552b9f04119f 1-5
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx
+  s_55244eb93b97d1::t_2bb166c46ed1fb 1108-1141
+src/modules/CommandInterface/presentations/views/__tests__/keyboardShortcutsContract.spec.tsx
+  s_55244eb93b97d1::t_3660182f9af565 48,146,153,155-199
+src/modules/CommandInterface/presentations/views/keyboardShortcutsContract.ts
+  s_55244eb93b97d1::t_f0d51fec13c404 94-101,103,105-107,109-116
+src/modules/CommandInterface/useCases/__tests__/isKeyboardEditableTarget.spec.ts
+  s_55244eb93b97d1::t_dbee5b3ac23107 7-11,13,21
+src/modules/TimelineEditor/presentations/hooks/usePianoRollInteractions.ts
+  s_55244eb93b97d1::t_d854db1508380f 1520-1527,1920-1922,1958
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "043dd5bde31f2eef41937d47609476343732cbef",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
