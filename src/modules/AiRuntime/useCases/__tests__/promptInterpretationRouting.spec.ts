@@ -271,8 +271,9 @@ describe('whole-request prompt interpretation routing', () => {
         const result = await parsePromptToActions({ prompt: 'create 32 audio tracks', context: createContext() });
 
         expect(result.actions).toHaveLength(32);
-        expect(result.actions[0]).toMatchObject({ type: 'addTrack', payload: { name: 'Audio 1', kind: 'audio' } });
-        expect(result.actions[31]).toMatchObject({ type: 'addTrack', payload: { name: 'Audio 32', kind: 'audio' } });
+        // Nameless: the track owner numbers them after the project's own audio tracks.
+        expect(result.actions[0]).toEqual({ type: 'addTrack', payload: { kind: 'audio' } });
+        expect(result.actions[31]).toEqual({ type: 'addTrack', payload: { kind: 'audio' } });
         expect(generateToolPlanningOutcome).not.toHaveBeenCalled();
     });
 
