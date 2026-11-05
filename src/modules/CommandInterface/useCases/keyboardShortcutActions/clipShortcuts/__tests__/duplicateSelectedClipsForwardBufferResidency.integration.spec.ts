@@ -14,6 +14,7 @@ import { defaultTrackState, takeLaneStore, trackStore } from '#/modules/Arrangem
 import {
     addClip,
     createTrack,
+    getArrangementHandlers,
     readUndoEntriesAudioBufferIds,
     readUndoHistoryAudioBufferIds,
     setTrackStoreState,
@@ -27,7 +28,7 @@ import {
     prepareCachedAudioBuffersForReplay,
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { macroStore } from '#/modules/Command/stores';
+import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     redo,
@@ -127,13 +128,20 @@ function holdAudioPersistence(): { release: () => Promise<void> } {
     };
 }
 
+function expectEveryLiveClipBufferResident(): void {
+    for (const id of liveBufferIds()) {
+        expect(audioBufferCache.has(id)).toBe(true);
+    }
+}
+
 /**
  * Duplicates clip A, undoes the duplicate, then removes A outside the history
- * (a collaborator's edit, a script): only the duplicate's redo still names A's
- * buffer.
+ * (a collaborator's edit, a script). The redo replays `duplicateClipAt`, which
+ * copies from the live source, so it has nothing to copy and must refuse rather
+ * than leave a clip on a buffer nothing keeps resident.
  */
 async function leaveBufferNamedOnlyByTheRedo(): Promise<void> {
-    duplicateSelectedClipsForward(['clip-a']);
+    await duplicateSelectedClipsForward(['clip-a']);
     await undo();
     const state = trackStore.value;
     if (!state) {
@@ -142,7 +150,7 @@ async function leaveBufferNamedOnlyByTheRedo(): Promise<void> {
     trackStore.set({ ...state, tracks: state.tracks.map((track) => ({ ...track, clips: [] })) });
 }
 
-describe('duplicateSelectedClipsForward buffer residency (#6003)', () => {
+describe('duplicateSelectedClipsForward redo never leaves a copy on a non-resident buffer (#6003)', () => {
     let installation: TransactionalIndexedDbInstallation;
 
     beforeAll(() => {
@@ -163,6 +171,8 @@ describe('duplicateSelectedClipsForward buffer residency (#6003)', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        clearHandlerRegistry();
+        registerHandlerMap(getArrangementHandlers());
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
@@ -197,6 +207,7 @@ describe('duplicateSelectedClipsForward buffer residency (#6003)', () => {
         configureDurableAudioBufferOwnership(() => Promise.resolve([]));
         clearUndoHistory();
         resetActionReplayAuthority();
+        clearHandlerRegistry();
         setTrackStoreState(structuredClone(defaultTrackState));
         takeLaneStore.set({ lanes: [] });
         flushAutomergeStorageWrites();
@@ -208,29 +219,44 @@ describe('duplicateSelectedClipsForward buffer residency (#6003)', () => {
         configureDurableAudioBufferOwnership(null);
     });
 
-    it('keeps the buffer only its redo names resident while it is not yet stored', async () => {
+    it('restores the copy on a resident buffer when its source is still present', async () => {
+        await duplicateSelectedClipsForward(['clip-a']);
+        await undo();
+        await settleAudioPersistence();
+        writeUnrelatedBuffers();
+
+        await redo();
+        expect(liveBufferIds()).toEqual([BUFFER_ID, BUFFER_ID]);
+        expect(audioBufferCache.get(BUFFER_ID)?.getChannelData(0)[0]).toBe(0.25);
+    });
+
+    it('re-creates no copy while the buffer is not yet stored once its source left outside the history', async () => {
         const persistence = holdAudioPersistence();
         try {
             await leaveBufferNamedOnlyByTheRedo();
             writeUnrelatedBuffers();
-            expect(audioBufferCache.has(BUFFER_ID)).toBe(true);
 
             await redo();
-            expect(liveBufferIds()).toEqual([BUFFER_ID]);
-            expect(audioBufferCache.get(BUFFER_ID)?.getChannelData(0)[0]).toBe(0.25);
+            expect(liveBufferIds()).toEqual([]);
+            expectEveryLiveClipBufferResident();
+            expect(undoHistoryStore.value?.past).toHaveLength(0);
+            expect(undoHistoryStore.value?.future).toHaveLength(1);
         } finally {
             await persistence.release();
         }
     });
 
-    it('rehydrates the stored buffer only its redo names before the redo re-creates the copy', async () => {
+    it('re-creates no copy on an evicted buffer once its source left outside the history', async () => {
         await leaveBufferNamedOnlyByTheRedo();
         await settleAudioPersistence();
         writeUnrelatedBuffers();
         expect(audioBufferCache.has(BUFFER_ID)).toBe(false);
 
         await redo();
-        expect(liveBufferIds()).toEqual([BUFFER_ID]);
-        expect(audioBufferCache.get(BUFFER_ID)?.getChannelData(0)[0]).toBe(0.25);
+        // A copy here would be a silent clip: it would name a buffer nothing holds.
+        expect(liveBufferIds()).toEqual([]);
+        expectEveryLiveClipBufferResident();
+        expect(undoHistoryStore.value?.past).toHaveLength(0);
+        expect(undoHistoryStore.value?.future).toHaveLength(1);
     });
 });
