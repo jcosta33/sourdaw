@@ -27,7 +27,7 @@ import { type ReactElement } from 'react';
 import { DawDiagramFrame } from '#/components/daw/DawDiagramFrame';
 import { Button } from '#/components/ui/button';
 import { logger } from '#/infra/logger/appLogger';
-import { setTrackOutput } from '#/modules/Arrangement/useCases';
+import { compileSendLevelAction, setTrackOutput } from '#/modules/Arrangement/useCases';
 import { executeAppAction } from '#/modules/Command/useCases';
 import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
 import { cn } from '#/utils/Styles/cn';
@@ -173,11 +173,17 @@ export const RoutingMatrix = (): ReactElement => {
             ariaLabel: `Connect send ${src.name} → ${dest.name}`,
             title: `Send ${src.name} → ${dest.name}`,
             disabled: false,
+            // A send at silence is still a send, so connecting it moves the
+            // existing one back up; only a bus with no send gets a new one.
             onClick: () =>
-                commitSendEdit({
-                    type: 'addSend',
-                    payload: { trackId: src.id, busId: dest.id, level: NEW_SEND_LEVEL },
-                }),
+                commitSendEdit(
+                    compileSendLevelAction(
+                        src.id,
+                        dest.id,
+                        NEW_SEND_LEVEL,
+                        src.sends.find((state) => state.busId === dest.id)
+                    )
+                ),
         };
     };
 

@@ -7,11 +7,13 @@ import { executeAppAction } from '#/modules/Command/useCases';
 import { useTracks } from '../../hooks/useTracks';
 import { RoutingMatrix } from '../RoutingMatrix';
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     setTrackOutput: vi.fn(),
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeAppAction: vi.fn(),
 }));
 
@@ -122,6 +124,26 @@ describe('RoutingMatrix', () => {
         expect(executeAppAction).toHaveBeenCalledExactlyOnceWith({
             type: 'addSend',
             payload: { trackId: 'src-1', busId: 'bus-1', level: 1 },
+        });
+    });
+
+    it('raises an existing silent send with setSend instead of adding a duplicate when connect is clicked', () => {
+        mockTracks([
+            track({
+                id: 'src-1',
+                name: 'Kick',
+                kind: 'audio',
+                sends: [{ busId: 'bus-1', level: 0, preFader: true }],
+            }),
+            track({ id: 'bus-1', name: 'Drum Bus', kind: 'bus' }),
+        ]);
+        render(<RoutingMatrix />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Connect send Kick → Drum Bus' }));
+
+        expect(executeAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'setSend',
+            payload: { trackId: 'src-1', busId: 'bus-1', level: 1, expectedLevel: 0, expectedPreFader: true },
         });
     });
 
