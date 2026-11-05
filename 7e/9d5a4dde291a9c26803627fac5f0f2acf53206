@@ -1,0 +1,20 @@
+src/modules/Arrangement/useCases/preset/__tests__/hasAutomaticTrackName.spec.ts
+  s_fec7059b7a251c::t_c1c064e62a42c6 3-4,8
+  s_fec7059b7a251c::t_c0e9c3af526939 9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7e9d5a4dde291a9c26803627fac5f0f2acf53206",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
