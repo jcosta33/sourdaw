@@ -1,0 +1,73 @@
+src/modules/Project/useCases/index.ts
+  s_55244eb93b97d1::t_62ac37eabb065c 46
+src/modules/Project/useCases/parseSemanticProjectQueryInput.ts
+  s_55244eb93b97d1::t_6692ba4ef7dafb 38
+  s_55244eb93b97d1::t_738b58c726ab07 62,68-72
+  s_55244eb93b97d1::t_63da3309d10272 127-130
+  s_55244eb93b97d1::t_b03d6968e6feee 54
+  s_55244eb93b97d1::t_ee23dd711704ac 136-141
+  s_55244eb93b97d1::t_c7a73a35982aaf 73
+src/modules/Project/useCases/getSemanticProjectQueryFiltersSchema.ts
+  s_55244eb93b97d1::t_b8d45968e2ea71 1-50
+evidence/agent-campaign/manifest.json
+  s_55244eb93b97d1::t_af5cfa276c77b6 374,527
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_55244eb93b97d1::t_eb521c8fc14e14 837-904
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_ba80576e6f5cb5::t_fd3ef20a69f703 246-287
+  s_55244eb93b97d1::t_6e0812b4120ade 19,288-322,326-328,330-353
+  s_55244eb93b97d1::t_30be63f87adcd4 354-356
+  s_55244eb93b97d1::t_06617424e47d0e 31,323-325,329
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/projectQueryStrictSelection.spec.ts
+  s_55244eb93b97d1::t_5467ddd5dc317c 1-113
+src/modules/AiRuntime/transformers/__tests__/compactWebLlmToolSchema.spec.ts
+  s_55244eb93b97d1::t_e96551c95f7d1c 409-410
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_55244eb93b97d1::t_27ab3196ebdbb2 157-203
+src/modules/AiRuntime/useCases/agentToolCatalog.ts
+  s_55244eb93b97d1::t_22284ddfaf80e2 4,106
+src/modules/Project/useCases/__tests__/getSemanticProjectQueryFiltersSchema.spec.ts
+  s_55244eb93b97d1::t_bdcd5b2905b5d9 1-94
+src/modules/AiRuntime/models/ThreadContext.ts
+  s_55244eb93b97d1::t_ed528bd7337dfc 18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3c039b18c10679246a23982b5a770df009668b6b",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_91f8b522168bd8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea993bb3-f8f9-4703-aa93-ef8a806d9107",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_f5b7135506ff1e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f206df02-3793-452b-be4f-eaed5840e469",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
