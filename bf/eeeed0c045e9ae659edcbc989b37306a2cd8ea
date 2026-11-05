@@ -1,0 +1,23 @@
+src/modules/SampleLibrary/presentations/components/SampleRow.tsx
+  s_6e1dfdb3082cbe::t_44aa88e9ca87b3 80,129-147,150-193,198-199,202,204,206,208,222
+src/modules/SampleLibrary/presentations/components/__tests__/SampleRow.spec.tsx
+  s_6e1dfdb3082cbe::t_5028b664d322f5 145-174
+src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx
+  s_6e1dfdb3082cbe::t_4c5daee4e16167 601-607
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bfeeeed0c045e9ae659edcbc989b37306a2cd8ea",
+  "prompts": {},
+  "sessions": {
+    "s_6e1dfdb3082cbe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_6e1dfdb3082cbe",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
