@@ -153,17 +153,24 @@ function contextWithLanes(lanes: { id: string; trackId: string; parameterId: str
     };
 }
 
-function compile(prompt: string, actions: AppAction[], metricGoalState?: string, context = getProjectContext()) {
+type CompileOptions = {
+    metricGoalState?: string;
+    context?: ReturnType<typeof getProjectContext>;
+    recordedConstraints?: ReturnType<typeof compilePerceptualConstraints>;
+};
+
+function compile(prompt: string, actions: AppAction[], options: CompileOptions = {}) {
     return compileAgentActionExecution({
         actions,
         actionLabels: actions.map((action) => action.type),
-        context,
+        context: options.context ?? getProjectContext(),
         intent: prompt,
         projectRevision: captureProjectRevision(),
         runId: RUN_ID,
         group: { groupId: 'perceptual-constraint-group', groupLabel: prompt },
         requiresConfirmation: true,
-        metricGoalState,
+        metricGoalState: options.metricGoalState,
+        recordedConstraints: options.recordedConstraints,
     });
 }
 
@@ -457,7 +464,7 @@ describe('excluded dimensions', () => {
     ] satisfies { label: string; prompt: string; actions: AppAction[]; reason: string }[])(
         'refuses $label',
         ({ prompt, actions, reason }) => {
-            expect(() => compile(prompt, actions, undefined, lanes())).toThrow(reason);
+            expect(() => compile(prompt, actions, { context: lanes() })).toThrow(reason);
         }
     );
 
@@ -483,7 +490,24 @@ describe('excluded dimensions', () => {
         ],
         ['scaling the fader lane', [{ type: 'scaleAutomation', payload: { laneId: 'vocal-gain-lane', factor: 0.5 } }]],
     ] satisfies [string, AppAction[]][])('admits %s under "keep the vocal intimate"', (_label, actions) => {
-        expect(() => compile(intimate, actions, undefined, lanes())).not.toThrow();
+        expect(() => compile(intimate, actions, { context: lanes() })).not.toThrow();
+    });
+
+    it('refuses at compilation an excluded edit the refined card recorded, though the refinement states none', () => {
+        const recordedConstraints = compilePerceptualConstraints(
+            'Add warmth and keep the vocal intimate',
+            getProjectContext()
+        );
+        expect(recordedConstraints.constraints).toHaveLength(1);
+        const addReverb: AppAction = {
+            type: 'addDevice',
+            payload: { trackId: 'vocal', deviceType: 'builtin-reverb', deviceId: 'vocal-reverb' },
+        };
+        // The refinement's own text states no constraint, so the refusal is the record's.
+        expect(() => compile('Add a reverb to the Vocal', [addReverb])).not.toThrow();
+        expect(() => compile('Add a reverb to the Vocal', [addReverb], { recordedConstraints })).toThrow(
+            'The request says “keep the vocal intimate”, but command 1 (addDevice builtin-reverb) edits the ambience of “Vocal”.'
+        );
     });
 
     it('admits an ambience edit on a track outside a track-scoped constraint', () => {
@@ -651,7 +675,7 @@ describe('a request with no constraint', () => {
             const withState = compile(
                 'Lower the Vocal Trim and keep it simple',
                 [setParameter('vocal-trim', 'gain-level', -1)],
-                state
+                { metricGoalState: state }
             );
             expect(metricGoalStateCodec(withState.metricGoalState)?.authorities).toEqual(expected.authorities);
             expect(metricGoalStateCodec(withState.metricGoalState)?.steps).toEqual([]);
