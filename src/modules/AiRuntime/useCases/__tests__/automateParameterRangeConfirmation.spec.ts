@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { captureCommandBatchPreflightState } from '#/app/captureCommandBatchPreflightState';
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -62,6 +63,8 @@ import {
     searchCalls,
 } from './highLevelIntentWorkflowFixture';
 import { configuredLiteralMetricState, literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 const runtimeMocks = vi.hoisted(() => ({ generateWebLlmCompletion: vi.fn(), updateDeviceParam: vi.fn() }));
 

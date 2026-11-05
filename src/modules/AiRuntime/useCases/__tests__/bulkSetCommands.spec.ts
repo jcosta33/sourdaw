@@ -1,6 +1,7 @@
 import { parse as parsePersistedValue } from 'superjson';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { Container } from '#/infra/di/Container';
 import {
     configureAutomergeStoragePort,
@@ -76,6 +77,8 @@ import {
     searchCalls,
 } from './highLevelIntentWorkflowFixture';
 import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 const runtimeMocks = vi.hoisted(() => ({ generateWebLlmCompletion: vi.fn() }));
 

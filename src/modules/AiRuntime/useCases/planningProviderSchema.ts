@@ -5,12 +5,12 @@ import {
     WORKFLOW_METRIC_CAPABILITY_IDS,
 } from '../models/WorkflowCapability';
 
-import { APPLICATION_OWNED_TOOL_SCHEMAS } from './applicationOwnedToolLoop';
 import { createMetricIntentSelectionSchema } from './createMetricIntentSelectionSchema';
+import { getApplicationOwnedToolSchemas } from './getApplicationOwnedToolSchemas';
 
 /** Exact provider-visible planning schema contract used for decision resume admission. */
 export function getPlanningProviderSchemaContract(): { schemas: readonly ToolSchema[]; identity: string } {
-    const schemas = [...APPLICATION_OWNED_TOOL_SCHEMAS, createWorkflowCapabilityToolSchema(WORKFLOW_CAPABILITY_IDS)];
+    const schemas = [...getApplicationOwnedToolSchemas(), createWorkflowCapabilityToolSchema(WORKFLOW_CAPABILITY_IDS)];
     return {
         schemas,
         identity: JSON.stringify({

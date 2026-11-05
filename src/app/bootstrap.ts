@@ -245,6 +245,7 @@ import { acquireNativeSampleBank, nativeSampleBankKey } from './nativeSampleBank
 import { prepareOfflineDeviceSetup, captureOfflineDeviceSetup } from './prepareOfflineDeviceSetup';
 import { projectNativeDeviceState } from './projectNativeDeviceState';
 import { eventBus, logger } from './registerDependencies';
+import { registerDeviceEnginePorts } from './registerDeviceEnginePorts';
 import { registerGlobalErrorHandlers } from './registerGlobalErrorHandlers';
 import { registerProjectLifecycle } from './registerProjectLifecycle';
 import { registerProjectSlotProjections } from './registerProjectSlotProjections';
@@ -262,6 +263,7 @@ initBranchState();
 registerCrdtStorageRuntime();
 registerProjectSlotProjections();
 registerProjectLifecycle();
+registerDeviceEnginePorts();
 setElasticSensitivityRootIdentityCapture(captureProjectRootIdentity);
 configureCommandBatchIdempotency({ canExecute: canExecuteCommandBatch });
 setActionHistoryMetadataPort({

@@ -1,12 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { type HostedProviderTurn } from '../../models/HostedTurnHistory';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { projectAnthropicStrictToolSchema } from '../../repositories/cloudLlm/cloudInference/projectAnthropicStrictToolSchema';
 import { projectOpenAiStrictToolSchema } from '../../repositories/cloudLlm/cloudInference/projectOpenAiStrictToolSchema';
 import { tryCompoundFastPath, tryParameterizedPath, tryPresetMatch } from '../../transformers/promptParser/parsing';
-import { APPLICATION_OWNED_TOOL_SCHEMAS, runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
+import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { executeTransformCompile } from '../executeTransformCompile';
+import { getApplicationOwnedToolSchemas } from '../getApplicationOwnedToolSchemas';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 import { projectDeclarativeTransformSnapshot } from '../projectDeclarativeTransformSnapshot';
@@ -14,6 +17,8 @@ import { projectDeclarativeTransformSnapshot } from '../projectDeclarativeTransf
 import { type ScriptedTurn } from './highLevelIntentWorkflowFixture';
 import { literalMetricIntakeTurn, nonAcousticMetricIntakeTurn } from './metricGoalWorkflowFixture';
 import { eventEnvelope, finishEnvelope, readyRequest } from './modelProviderProtocolFixture';
+
+registerDeviceEnginePorts();
 
 vi.mock('../llmOrchestration/inference', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../llmOrchestration/inference')>()),
@@ -168,7 +173,7 @@ describe('transform.compile planner tool', () => {
     });
 
     it('publishes the application-owned transform compiler to planning providers', () => {
-        expect(APPLICATION_OWNED_TOOL_SCHEMAS.map((schema) => schema.function.name)).toContain('transform.compile');
+        expect(getApplicationOwnedToolSchemas().map((schema) => schema.function.name)).toContain('transform.compile');
     });
 
     it('accepts one JSON-text wire document and rejects an object-shaped wire document', () => {
@@ -188,7 +193,7 @@ describe('transform.compile planner tool', () => {
     });
 
     it('admits the full nested JSON text through both hosted projections and the ordinary proposal route', async () => {
-        const schema = APPLICATION_OWNED_TOOL_SCHEMAS.find((tool) => tool.function.name === 'transform.compile');
+        const schema = getApplicationOwnedToolSchemas().find((tool) => tool.function.name === 'transform.compile');
         expect(schema).toBeDefined();
         if (!schema) {
             throw new Error('Expected transform.compile in the application-owned catalog');
@@ -292,7 +297,7 @@ describe('transform.compile planner tool', () => {
     });
 
     it('admits a selected compiled-only proposal through the hosted tool protocol and runtime', async () => {
-        const schema = APPLICATION_OWNED_TOOL_SCHEMAS.find((tool) => tool.function.name === 'command.batch.propose');
+        const schema = getApplicationOwnedToolSchemas().find((tool) => tool.function.name === 'command.batch.propose');
         if (!schema) {
             throw new Error('Expected command.batch.propose in the application-owned catalog');
         }

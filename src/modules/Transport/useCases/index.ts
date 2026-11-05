@@ -6,6 +6,8 @@ export { repairRuntimeGraphFromProject } from './repairRuntimeGraphFromProject';
 export { getSchedulerTimingDiagnostics } from './getSchedulerTimingDiagnostics';
 export { reconcileVcaGroupRuntimeGain } from './scheduling/applyAutomation/reconcileVcaGroupRuntimeGain';
 export { reconcileVcaRuntimeGain } from './scheduling/applyAutomation/reconcileVcaRuntimeGain';
+// Published because the composition root registers the runtime writes device modules own.
+export { deviceRuntimeParameterWriters } from './scheduling/applyAutomation/deviceRuntimeParameterWriters';
 export { resolvePlaybackNoteReceiver } from './scheduling/resolvePlaybackNoteReceiver';
 export { selectMidiNotesForLoopWindow } from './scheduling/selectMidiNotesForLoopWindow';
 export { setStopPlaybackCallback } from './playheadScheduler/setStopPlaybackCallback';

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { Container } from '#/infra/di/Container';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { MIDI_TRANSFORM_IMPLEMENTATIONS } from '#/modules/AiGeneration/useCases';
@@ -86,6 +87,8 @@ import {
 } from './highLevelIntentWorkflowFixture';
 import { landProjectEdit } from './landProjectEdit';
 import { literalMetricIntakeTurn, readMetricPublication } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 /** A request that describes a sound, names no object and no command, against a selected track. */
 const RADIO_PROMPT = 'make it sound like a radio';

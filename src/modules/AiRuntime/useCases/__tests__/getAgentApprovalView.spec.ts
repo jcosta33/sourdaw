@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { trackStore } from '#/modules/Arrangement/stores';
 import {
     buildSemanticProjectDiff,
@@ -23,6 +24,8 @@ import { getAgentApprovalView } from '../getAgentApprovalView';
 import { recordAgentProviderUsage } from '../recordAgentProviderUsage';
 
 import { createTrack } from './trackFixture';
+
+registerDeviceEnginePorts();
 
 const REVISION = 'revision-approval-view';
 const GAIN_COMMAND_ID = '33333333-3333-4333-8333-333333333331';

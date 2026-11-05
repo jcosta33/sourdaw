@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getPluginById } from '#/modules/Arrangement/useCases';
 import { FERMENTER_PARAMS, getFermenterFactoryPresets } from '#/modules/Fermenter/useCases';
 import {
@@ -37,6 +38,8 @@ import { GRAND_BOULE_DSP_PARAM_NAMES } from '../../../models/GrandBouleDspParamN
 import { TOASTER_KIT_PARAM_NAMES } from '../../../models/ToasterKitParamNames';
 import { isLatencyCompensatedByEngine } from '../isLatencyCompensatedByEngine';
 import { BUILTIN_PARAM_NAME_SHAPE, nativeBuiltinBody, type NativeBuiltinBody } from '../nativeBuiltinBodies';
+
+registerDeviceEnginePorts();
 
 const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../../../../');
 

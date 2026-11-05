@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { captureProjectRevision, createCrdtDoc, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
@@ -12,6 +13,8 @@ import { formatReceiptContext } from '../formatReceiptContext';
 import { getProjectContext } from '../getProjectContext';
 
 import { decodeReceiptContext } from './receiptContextFixture';
+
+registerDeviceEnginePorts();
 
 afterEach(() => {
     removeCrdtDoc('receipt-budget-fixture');

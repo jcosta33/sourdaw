@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { captureCommandBatchPreflightState } from '#/app/captureCommandBatchPreflightState';
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Clip, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, runtimeGraphTopology, setArrangementEventBus } from '#/modules/Arrangement/useCases';
@@ -53,6 +54,8 @@ import {
     configureAiWorkflowCommandCheckpointRuntime,
     resetAiWorkflowCommandCheckpointRuntime,
 } from './aiWorkflowCommandCheckpointRuntime';
+
+registerDeviceEnginePorts();
 
 function hasMetricAuthority(result: ReturnType<typeof admitPlanningInterpretation>): result is ReturnType<
     typeof admitPlanningInterpretation

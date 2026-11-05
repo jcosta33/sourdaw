@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     createAutomergeStorage,
@@ -48,6 +49,8 @@ import {
 } from './highLevelIntentWorkflowFixture';
 import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+
+registerDeviceEnginePorts();
 
 const mocks = vi.hoisted(() => ({
     executionOverride: 'none' as 'ambiguous-before-commit' | 'none',

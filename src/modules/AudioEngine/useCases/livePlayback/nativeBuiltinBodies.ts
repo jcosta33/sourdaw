@@ -33,12 +33,6 @@
  * file's own answer for what the body actually addresses.
  */
 
-import {
-    FERMENTER_PARAMS,
-    mapFermenterParamToDspParam,
-    mapFermenterPatchToDspPatch,
-} from '#/modules/Fermenter/useCases';
-
 import { getAudioDeviceRuntimeSink } from '../../engine/audioDeviceRuntimeSink';
 import { mapCrustParamToDspParam } from '../../models/CrustDspParamNames';
 import { mapGlutenParamToDspParam } from '../../models/GlutenDspParamNames';
@@ -48,6 +42,7 @@ import { isProofNativeParameterId } from '../../models/ProofRuntimeControl';
 import { mapToasterKitParamToDspParam } from '../../models/ToasterKitParamNames';
 
 import { captureNativeGrinderNeuralPatch } from './captureNativeGrinderNeuralPatch';
+import { nativeBodyVocabularyRegistry } from './nativeBodyVocabularyRegistry';
 
 /**
  * The wire shape `BuiltinParamName::parse` admits
@@ -188,13 +183,30 @@ function grinderNeuralSourceOnly(patch: Readonly<Record<string, unknown>>): Read
     );
 }
 
+type DeviceModuleVocabulary = Pick<NativeBuiltinBody, 'parameterName' | 'projectPatch' | 'addressesParameter'>;
+
+function registeredVocabulary(deviceType: string): DeviceModuleVocabulary {
+    const vocabulary = nativeBodyVocabularyRegistry.read('nativeBuiltinBodies', deviceType);
+    if (vocabulary === null) {
+        throw new Error(`nativeBuiltinBodies: no native body vocabulary is registered for '${deviceType}'`);
+    }
+    return vocabulary;
+}
+
 /**
- * The ids `FERMENTER_PARAMS` authors. Macro slots (`macro0`..`macro7`) are
- * deliberately excluded: project truth stores them as one `macros` array, not
- * as individually keyed `parameterValues` entries, so no lane parameter id
- * ever resolves to one.
+ * A body whose vocabulary its device module owns, asked at call time through
+ * the registry the composition root fills: this table is built when the module
+ * loads, before the root has registered anything. The body's own entry names
+ * the type, so a missing registration is a composition fault and refuses
+ * rather than guessing at the engine's names.
  */
-const FERMENTER_PARAM_IDS: ReadonlySet<string> = new Set(FERMENTER_PARAMS.map((param) => param.id));
+function deviceModuleVocabulary(deviceType: string): DeviceModuleVocabulary {
+    return {
+        parameterName: (paramId) => registeredVocabulary(deviceType).parameterName(paramId),
+        projectPatch: (values) => registeredVocabulary(deviceType).projectPatch(values),
+        addressesParameter: (paramId) => registeredVocabulary(deviceType).addressesParameter(paramId),
+    };
+}
 
 /**
  * One body's patch, in the engine's own vocabulary, from a table that answers
@@ -329,9 +341,7 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
         'fermenter',
         {
             soundsNotes: true,
-            parameterName: (paramId) => mapFermenterParamToDspParam({ paramId }),
-            projectPatch: (parameterValues) => mapFermenterPatchToDspPatch({ patch: parameterValues }),
-            addressesParameter: (paramId) => FERMENTER_PARAM_IDS.has(paramId),
+            ...deviceModuleVocabulary('fermenter'),
             // A keyboard synth: a clip note holds its key until the note ends.
             takesClipNoteReleases: true,
             latencyCompensatedByEngine: false,

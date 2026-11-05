@@ -164,6 +164,7 @@ const {
     registerCrdtStorageRuntimeMock,
     registerProjectSlotProjectionsMock,
     registerProjectLifecycleMock,
+    registerDeviceEnginePortsMock,
     captureProjectRootIdentityMock,
     setElasticSensitivityRootIdentityCaptureMock,
     captureProjectIdentityMock,
@@ -299,6 +300,7 @@ const {
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
         registerProjectSlotProjectionsMock: vi.fn<() => void>(),
         registerProjectLifecycleMock: vi.fn<() => void>(),
+        registerDeviceEnginePortsMock: vi.fn<() => void>(),
         captureProjectRootIdentityMock: vi.fn<() => string>(() => 'root-identity'),
         setElasticSensitivityRootIdentityCaptureMock: vi.fn(),
         captureProjectIdentityMock: vi.fn<() => string>(() => 'identity-1'),
@@ -796,6 +798,10 @@ vi.mock('../registerProjectLifecycle', () => ({
     registerProjectLifecycle: registerProjectLifecycleMock,
 }));
 
+vi.mock('../registerDeviceEnginePorts', () => ({
+    registerDeviceEnginePorts: registerDeviceEnginePortsMock,
+}));
+
 vi.mock('../composeGrandBoule', () => ({
     composeGrandBoule: composeGrandBouleMock,
 }));
@@ -1078,6 +1084,12 @@ describe('bootstrap', () => {
         // project switch would throw instead of resetting the modules.
         expect(registerProjectLifecycleMock).toHaveBeenCalledExactlyOnceWith();
         expect(registerProjectLifecycleMock).toHaveBeenCalledAfter(registerProjectSlotProjectionsMock);
+        // Before a project can load and play: until it runs, a native body,
+        // an automation write or the preset library would throw instead of
+        // reaching the device module that owns its answer.
+        expect(registerDeviceEnginePortsMock).toHaveBeenCalledExactlyOnceWith();
+        expect(registerDeviceEnginePortsMock).toHaveBeenCalledAfter(registerProjectLifecycleMock);
+        expect(registerDeviceEnginePortsMock).toHaveBeenCalledBefore(setProjectIdentityTransitionDependenciesMock);
         expect(agentProjectInspectionSetProviderMock).toHaveBeenCalledExactlyOnceWith(
             captureAgentProjectInspectionState
         );

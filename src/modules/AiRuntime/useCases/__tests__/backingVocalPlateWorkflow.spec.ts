@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
 import {
@@ -79,6 +80,8 @@ import {
 import { type ScriptedTurn } from './highLevelIntentWorkflowFixture';
 import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+
+registerDeviceEnginePorts();
 
 const PROMPT =
     'Remove reverbs from all backing vocals, create one shared plate bus with EQ before plate reverb and a 250 Hz high-pass, create post-fader sends at -18 dB, automate them to -10 dB over the final four bars of every chorus, protect the lead vocal, render each chorus, and receipt every created, removed, routed, automated, and rendered object.';

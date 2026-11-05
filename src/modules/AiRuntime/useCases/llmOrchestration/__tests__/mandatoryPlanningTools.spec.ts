@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getPlatformPlugins } from '#/modules/Arrangement/useCases';
 
 import {
@@ -64,6 +65,8 @@ import { prepareCreativeInterpretationCatalog } from '../../prepareCreativeInter
 import { prepareMetricIntentCatalog } from '../../prepareMetricIntentCatalog';
 import { projectPlanningProviderToolSchemas } from '../../projectPlanningProviderToolSchemas';
 import { generateToolPlanningOutcome, WEBLLM_TOOL_BUDGET } from '../inference';
+
+registerDeviceEnginePorts();
 
 const mocks = vi.hoisted(() => ({
     backendChain: { value: [] as ('cloud' | 'webllm')[] },

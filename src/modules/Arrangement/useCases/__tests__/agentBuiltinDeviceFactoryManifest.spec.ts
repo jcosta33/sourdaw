@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { isDeviceReleaseAdmitted } from '#/infra/release/deviceReleaseAdmission';
 
 import { type PluginDescriptor, BUILTIN_PLUGINS, getPluginById } from '../../models/DeviceParameter';
@@ -12,6 +13,8 @@ import {
 import { getAgentBuiltinDeviceFactoryManifest } from '../getAgentBuiltinDeviceFactoryManifest';
 import { getDeviceContractVersionForCommand } from '../getDeviceContractVersionForCommand';
 import { getFactoryPresets } from '../soundPresetLibrary';
+
+registerDeviceEnginePorts();
 
 describe('built-in descriptor manifest law', () => {
     it('publishes Arrangement-owned descriptors without inventing runtime topology or latency', () => {

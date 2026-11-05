@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { undoHistoryStore } from '#/modules/Command/stores';
 import {
@@ -37,6 +38,8 @@ import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { groundCompiledCommandBatch } from '../groundCompiledCommandBatch';
 import { readChatThreadContext } from '../readChatThreadContext';
 import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
+
+registerDeviceEnginePorts();
 
 const mocks = vi.hoisted(() => ({
     stopMeasuredPreviewAudition: vi.fn(async () => ({ status: 'idle' })),

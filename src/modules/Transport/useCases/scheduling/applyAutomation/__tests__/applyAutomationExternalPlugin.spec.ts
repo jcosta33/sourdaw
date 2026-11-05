@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { getCompensationDelay, getCurrentTime, updateDeviceParam } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
@@ -7,6 +8,8 @@ import { getAutomationValueAtBeat, isRecordingAutomation, resolveAutoMatchValue 
 import { externalPluginParameterStore } from '#/modules/PluginHost/stores';
 
 import { applyAutomation } from '../applyAutomation';
+
+registerDeviceEnginePorts();
 
 /**
  * AC-003: an automation lane on an external plugin device rides the live apply

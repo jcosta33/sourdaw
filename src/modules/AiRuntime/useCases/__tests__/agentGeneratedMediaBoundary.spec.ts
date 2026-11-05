@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getExecutableAppActionToolSchemas, getMidiTransformToolSchemas } from '#/modules/Command/useCases';
 
 import { type AgentPlanProposal, type AgentRunGrants } from '../../models/AgentRun';
@@ -8,6 +9,8 @@ import { getAgentToolCatalogSchemas } from '../agentToolCatalog';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { getAgentToolCatalogEntries } from '../getAgentToolCatalogEntries';
 import { planAgentRun } from '../planAgentRun';
+
+registerDeviceEnginePorts();
 
 const DEFERRED_GENERATION_NAME = 'agent.media.generate';
 
