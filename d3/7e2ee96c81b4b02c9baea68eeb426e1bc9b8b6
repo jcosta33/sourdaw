@@ -1,0 +1,21 @@
+src/modules/Preferences/presentations/views/ShortcutsSection.tsx
+  s_8c6882565a4b45::t_20bd2db9a06768 97-100,103,115,118-122,127
+src/modules/Preferences/presentations/views/__tests__/ShortcutsSection.spec.tsx
+  s_8c6882565a4b45::t_322c11b1982d0c 56-62,119-124,133-142,160-163,176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d37e2ee96c81b4b02c9baea68eeb426e1bc9b8b6",
+  "prompts": {},
+  "sessions": {
+    "s_8c6882565a4b45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_8c6882565a4b45",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
