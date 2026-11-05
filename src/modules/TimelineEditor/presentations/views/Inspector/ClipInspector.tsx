@@ -113,24 +113,21 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
     const [fadeOutDrag, setFadeOutDrag] = useState<number | null>(null);
 
     const commitFade = (fadeInBeats: number, fadeOutBeats: number): void => {
-        try {
-            if (fadeInBeats === clip.fadeInBeats && fadeOutBeats === clip.fadeOutBeats) {
-                return;
-            }
-            void executeUserAppAction({
-                type: 'setClipFade',
-                payload: {
-                    clipId: clip.id,
-                    fadeInBeats,
-                    fadeOutBeats,
-                    expectedFadeInBeats: clip.fadeInBeats,
-                    expectedFadeOutBeats: clip.fadeOutBeats,
-                },
-            });
-        } finally {
-            setFadeInDrag(null);
-            setFadeOutDrag(null);
+        setFadeInDrag(null);
+        setFadeOutDrag(null);
+        if (fadeInBeats === clip.fadeInBeats && fadeOutBeats === clip.fadeOutBeats) {
+            return;
         }
+        void executeUserAppAction({
+            type: 'setClipFade',
+            payload: {
+                clipId: clip.id,
+                fadeInBeats,
+                fadeOutBeats,
+                expectedFadeInBeats: clip.fadeInBeats,
+                expectedFadeOutBeats: clip.fadeOutBeats,
+            },
+        });
     };
 
     // Clip gain edits are one undoable action per gesture. The drag never
