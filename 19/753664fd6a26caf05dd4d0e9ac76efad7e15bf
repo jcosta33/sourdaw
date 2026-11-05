@@ -1,0 +1,34 @@
+src/modules/AiRuntime/presentations/components/GenerativeParamGrids.tsx
+  s_3bb122e91d89a5::t_1b30d4bdf6a3b2 136-137
+  s_3bb122e91d89a5::t_cf8bfc5db8ab92 145
+  s_3bb122e91d89a5::t_56a4fa326bc52c 115
+  s_3bb122e91d89a5::t_10c5f24a928729 127
+  s_3bb122e91d89a5::t_5be8776af7f90e 30-54,56-88,90-97,102
+  s_3bb122e91d89a5::t_6f6c60da7ddf8c 167-171,177-181,187-191
+  s_3bb122e91d89a5::t_bdb2e10394056e 55,89
+src/modules/AiRuntime/presentations/components/__tests__/GenerativeParamGrids.spec.tsx
+  s_3bb122e91d89a5::t_7e20520fe37398 20,41-48,50,52-57,59-61
+  s_3bb122e91d89a5::t_789132fb0ccdab 1-3,4,9-19,21-32,51,58,62
+  s_3bb122e91d89a5::t_e09d8895cf5134 63
+  s_3bb122e91d89a5::t_b1412cbbff8bc4 5-6
+  s_3bb122e91d89a5::t_ff82fa654fd19c 49
+.agents/skills/review-stances/rendered-ui-layout.md
+  s_3bb122e91d89a5::t_ec9bb9e6bbfe06 48-51
+  s_3bb122e91d89a5::t_1c7dc9d60e58a1 52-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "19753664fd6a26caf05dd4d0e9ac76efad7e15bf",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
