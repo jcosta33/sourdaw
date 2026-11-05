@@ -1,0 +1,49 @@
+scripts/healthGateWorkflowContract.ts
+  s_0314bb17e5dee3::t_591053f85b9e46 80-81,84
+  s_0314bb17e5dee3::t_76dd277b42cf0e 75-79
+  s_0314bb17e5dee3::t_8174f9acbce0af 82-83
+  s_0314bb17e5dee3::t_720c9fbda34c3b 72-73
+  s_0314bb17e5dee3::t_be278c66f36904 191
+.github/workflows/validation.yml
+  s_0314bb17e5dee3::t_8360023941fdfc 539-547
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_0314bb17e5dee3::t_83b72915b6778e 4683-4684,4690-4702
+  s_0314bb17e5dee3::t_dd131800dfb7ca 4685-4689
+scripts/__tests__/runIsolatedUnitShard.spec.ts
+  s_0314bb17e5dee3::t_dea28646d64f76 554-580
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_0314bb17e5dee3::t_6bc09d0538c869 988-992
+  s_0314bb17e5dee3::t_29c0dd24793181 1802-1806
+scripts/runIsolatedUnitShard.ts
+  s_0314bb17e5dee3::t_874b2205633200 511,537-542,614
+src/modules/AudioEngine/repositories/devices/toneShaping/__tests__/createDeEsser.spec.ts
+  s_0314bb17e5dee3::t_37edbf5c064c0c 306,333,342,348,409,413,565-572,575-611,613-622,624-663
+  s_0314bb17e5dee3::t_5bc4199a3c9641 1-2,213-262,265-305,307-312,315-317,319-323,325-329,331,334-341,343-347,349-351,357-360,362,365,393-400,410-412,414-415,418-419,664-679,682-686
+  s_25f143e08627d2::t_48b9ee7c4b3ca8 573-574,612,623
+.github/workflows/nightly.yml
+  s_0314bb17e5dee3::t_74caba874e2282 265-273
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6c0cbacdef234f07cdb7c575eeb98662300c3261",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_25f143e08627d2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_25f143e08627d2",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
