@@ -1,0 +1,31 @@
+src/modules/CommandInterface/useCases/onboardingTourLauncher.ts
+  s_0314bb17e5dee3::t_46551e16c00a07 1-42
+src/modules/CommandInterface/useCases/commands/ViewCommands.ts
+  s_0314bb17e5dee3::t_9fb3a36b888e7e 14,252
+src/modules/CommandInterface/useCases/index.ts
+  s_0314bb17e5dee3::t_9fb3a36b888e7e 16
+src/modules/CommandInterface/useCases/commands/__tests__/ViewCommands.spec.ts
+  s_0314bb17e5dee3::t_c7994f3064972b 14,17-23,142
+src/app/__tests__/registerSupportingServicePorts.spec.ts
+  s_0314bb17e5dee3::t_96434b7bc8b542 19,25,35,41,52,58,84,91,186-191,201,207,217,222,228,246-248,258
+src/app/registerSupportingServicePorts.ts
+  s_0314bb17e5dee3::t_99ce8c6cc518cd 55-57
+  s_0314bb17e5dee3::t_ccf12a14d9ded4 5
+  s_0314bb17e5dee3::t_9fb3a36b888e7e 11,22,42,54,66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a1b3c774548f7f849eebddf4da0cb207b985582e",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
