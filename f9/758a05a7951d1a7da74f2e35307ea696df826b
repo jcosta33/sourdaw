@@ -1,0 +1,236 @@
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_0314bb17e5dee3::t_aaea88a0d9c676 3
+  s_0314bb17e5dee3::t_bc1234c75ed78f 38-39
+src/modules/AiRuntime/useCases/__tests__/syncopatedArpeggioPromptWorkflow.spec.ts
+  s_0314bb17e5dee3::t_5afe1b3c288c05 3
+  s_0314bb17e5dee3::t_c930137fdc7e77 56-57
+src/modules/AiRuntime/useCases/__tests__/threadContextForPlanner.spec.ts
+  s_0314bb17e5dee3::t_59f0e749c54605 3
+  s_0314bb17e5dee3::t_ae7f19a45e51f5 36-37
+src/modules/AiRuntime/useCases/__tests__/comparativeRequests.spec.ts
+  s_0314bb17e5dee3::t_351ec16eaf4e2b 56-57
+  s_0314bb17e5dee3::t_9603442f5ea923 3
+src/modules/AiRuntime/useCases/__tests__/protectedTargetCollaboratorDrift.spec.ts
+  s_0314bb17e5dee3::t_5c03533c9012fd 4
+  s_0314bb17e5dee3::t_7b8702d9ef3ae0 58-59
+src/modules/AiRuntime/useCases/__tests__/mixPromptWorkflow.spec.ts
+  s_0314bb17e5dee3::t_9e8c99c5e76afe 62-63
+  s_0314bb17e5dee3::t_3682303502f86b 3
+src/modules/AiRuntime/useCases/__tests__/automationLaneBinding.spec.ts
+  s_0314bb17e5dee3::t_6f8da8723b381a 89-90
+  s_0314bb17e5dee3::t_3aaac06af006fa 4
+src/modules/AiRuntime/useCases/__tests__/getPlanningProviderToolSchemas.spec.ts
+  s_0314bb17e5dee3::t_96b43f33257716 11-12
+  s_0314bb17e5dee3::t_e5718a69e66752 3
+src/modules/AiRuntime/useCases/__tests__/agentGeneratedMediaBoundary.spec.ts
+  s_0314bb17e5dee3::t_026cb7148c82fc 3
+  s_0314bb17e5dee3::t_f5f78b03970e65 13-14
+src/modules/AiRuntime/useCases/__tests__/confirmAfterSave.spec.ts
+  s_0314bb17e5dee3::t_b3138010dd9f31 3
+  s_0314bb17e5dee3::t_fc6d3491c14020 62-63
+src/modules/AiRuntime/useCases/__tests__/creativeInterpretationPlanning.spec.ts
+  s_0314bb17e5dee3::t_2368637ba0cd67 23-24
+  s_0314bb17e5dee3::t_6ab331a7bb4538 3
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/directLevelContextWindow.spec.ts
+  s_0314bb17e5dee3::t_5605eaa4b0f062 25-26
+  s_0314bb17e5dee3::t_1ce516b6e3b88f 3-4
+src/modules/AiRuntime/useCases/__tests__/promptStemImportRecovery.spec.ts
+  s_0314bb17e5dee3::t_92c1d81a6e91db 53-54
+  s_0314bb17e5dee3::t_f15f523d4dc869 3
+src/modules/AiRuntime/useCases/__tests__/agentReconstructionBoundary.spec.ts
+  s_0314bb17e5dee3::t_790984da20de77 11-12
+  s_0314bb17e5dee3::t_e9065d39c4347d 3-4
+src/modules/AiRuntime/useCases/__tests__/transformToolCompile.spec.ts
+  s_0314bb17e5dee3::t_b3fc230f1f51b3 3-4
+  s_0314bb17e5dee3::t_1e412766734e1e 21-22
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_0314bb17e5dee3::t_ec71ee41e1dcb3 3
+  s_0314bb17e5dee3::t_122636a7b62b63 84-85
+src/modules/AiRuntime/useCases/__tests__/analysisMeasureTool.spec.ts
+  s_0314bb17e5dee3::t_5fec19b270cc27 22-23
+  s_0314bb17e5dee3::t_e3b832cbb2b6e5 3
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentCompilation.spec.ts
+  s_0314bb17e5dee3::t_d2511bcffd39e7 3
+  s_0314bb17e5dee3::t_8fccd763dc05af 26-27
+src/modules/AiRuntime/useCases/__tests__/sharedVocalFxBusesWorkflow.spec.ts
+  s_0314bb17e5dee3::t_1b411ebf02c739 3
+  s_0314bb17e5dee3::t_d99b19ad4792f3 72-73
+src/modules/AiRuntime/useCases/__tests__/creativeInterpretationExecution.spec.ts
+  s_0314bb17e5dee3::t_2582a5699b453b 91-92
+  s_0314bb17e5dee3::t_d8ee2ba507e4a7 3
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentExecution.spec.ts
+  s_0314bb17e5dee3::t_c45fe0e748e9d4 84-85
+  s_0314bb17e5dee3::t_cc45b73eaf6682 3
+src/modules/AiRuntime/useCases/__tests__/transientOnsetRead.spec.ts
+  s_0314bb17e5dee3::t_28da7d2f240893 36-37
+  s_0314bb17e5dee3::t_8f0f5e3b41018a 3
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoopCanonicalRoles.spec.ts
+  s_0314bb17e5dee3::t_bb1d96cd275369 18-19
+  s_0314bb17e5dee3::t_b5b2348a49333e 3
+src/modules/AiRuntime/useCases/__tests__/agentDomainPreviewAdapters.spec.ts
+  s_0314bb17e5dee3::t_1c18d48c66422b 31-32
+  s_0314bb17e5dee3::t_8a3113b0f0c2e9 3
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.storageFixture.spec.ts
+  s_0314bb17e5dee3::t_d72b92f181f331 28-29
+src/modules/AiRuntime/useCases/__tests__/musicalRangeResolution.spec.ts
+  s_0314bb17e5dee3::t_e0f05993685e7b 24-25
+  s_0314bb17e5dee3::t_4c6be5929242f6 7
+src/modules/AiRuntime/useCases/__tests__/resumeAgentRunDecision.spec.ts
+  s_0314bb17e5dee3::t_bdb62b07ed4172 19-20
+  s_0314bb17e5dee3::t_fb63755c78fe81 3
+src/modules/AiRuntime/useCases/__tests__/retainedTransformLocalContext.integration.spec.ts
+  s_0314bb17e5dee3::t_6a81f27fdea4cc 3
+  s_0314bb17e5dee3::t_b652aeda8e037d 38-39
+src/modules/AiRuntime/useCases/__tests__/planPromptActionsCorrectionEvidence.spec.ts
+  s_0314bb17e5dee3::t_6f82ac5ec175f2 22-23
+  s_0314bb17e5dee3::t_9c7002776ef7f6 3
+src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts
+  s_0314bb17e5dee3::t_edbff445bb08f0 68-69
+  s_0314bb17e5dee3::t_31d09e86f14361 3
+src/modules/AiRuntime/useCases/__tests__/bassCompressorPromptWorkflow.spec.ts
+  s_0314bb17e5dee3::t_01e38bfaff7ee7 60-61
+  s_0314bb17e5dee3::t_e41d3bb3a29083 3
+src/modules/AiRuntime/useCases/__tests__/deleteMutedEmptyTracksPromptWorkflow.spec.ts
+  s_0314bb17e5dee3::t_b52f19ad8cbefd 49-50
+  s_0314bb17e5dee3::t_671fdbec73cd7c 4
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentConformance.spec.ts
+  s_0314bb17e5dee3::t_1ac4fc2f5cd2fe 3
+  s_0314bb17e5dee3::t_383d8be77a2928 81-82
+src/modules/AiRuntime/useCases/__tests__/agentCapabilityCatalog.spec.ts
+  s_0314bb17e5dee3::t_39133d2a8be383 3-4
+  s_0314bb17e5dee3::t_a038816cf1aad8 10-11
+src/modules/WorkspaceShell/presentations/views/__tests__/promptBarApprovalParity.spec.tsx
+  s_0314bb17e5dee3::t_b842d80a6b8b8f 6
+  s_0314bb17e5dee3::t_6918b2fd853632 41-42
+src/modules/AiRuntime/useCases/__tests__/midiOverlapPromptWorkflow.spec.ts
+  s_0314bb17e5dee3::t_c4a89dc52eb167 3
+  s_0314bb17e5dee3::t_7e44cb594a7162 61-62
+src/modules/AiRuntime/useCases/__tests__/metricGoalAdmission.spec.ts
+  s_0314bb17e5dee3::t_ef2e89921491a7 60-61
+  s_0314bb17e5dee3::t_b55091c4a164c3 8
+src/modules/AiRuntime/useCases/__tests__/bassProcessingCopyPromptWorkflow.spec.ts
+  s_0314bb17e5dee3::t_7d6f1c1a1e698b 3
+  s_0314bb17e5dee3::t_84d91846b20cb0 62-63
+src/modules/AiRuntime/useCases/__tests__/coordinatedLevelTargetGrounding.spec.ts
+  s_0314bb17e5dee3::t_1af512c6b5db5e 11-12
+  s_0314bb17e5dee3::t_517413915e3801 3-4
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/transientOnsetLocalDiscovery.spec.ts
+  s_0314bb17e5dee3::t_166660a74a3b72 15-16
+  s_0314bb17e5dee3::t_f72e4ace97ca11 3-4
+src/modules/AiRuntime/useCases/__tests__/matchSelectorApprovalRevalidation.spec.ts
+  s_0314bb17e5dee3::t_e3444c5d514e37 3
+  s_0314bb17e5dee3::t_28aa86b9b49db4 55-56
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/projectQueryStrictSelection.spec.ts
+  s_0314bb17e5dee3::t_ee793ca23f6e7d 11-12
+  s_0314bb17e5dee3::t_f5be09b757f5af 3-4
+src/modules/AiRuntime/useCases/__tests__/measurementBudgetsAndEgress.spec.ts
+  s_0314bb17e5dee3::t_3cfec350498137 3
+  s_0314bb17e5dee3::t_31cb20ae01df88 90-91
+src/modules/AiRuntime/useCases/__tests__/relativeToLastCommit.spec.ts
+  s_0314bb17e5dee3::t_8bd3a5da6ad7d2 61-62
+  s_0314bb17e5dee3::t_07f02c040bd14e 3
+src/modules/AiRuntime/useCases/__tests__/transformToolApproval.spec.ts
+  s_0314bb17e5dee3::t_a2bd806091e742 3
+  s_0314bb17e5dee3::t_203f7653b56bc9 42-43
+src/modules/AiRuntime/useCases/__tests__/intentCommandCatalog.spec.ts
+  s_0314bb17e5dee3::t_a4c45749dd7bc4 3
+  s_0314bb17e5dee3::t_f0ec27764e3d2a 10-11
+src/modules/AiRuntime/useCases/__tests__/compiledTargetAuthority.spec.ts
+  s_0314bb17e5dee3::t_d233ccf67c0f27 3-4
+  s_0314bb17e5dee3::t_90e3803e933b15 15-16
+src/modules/AiRuntime/useCases/__tests__/referenceMeasurementTool.spec.ts
+  s_0314bb17e5dee3::t_479bfdfbd801aa 3
+  s_0314bb17e5dee3::t_58300eba13ac7a 48-49
+src/modules/AiRuntime/useCases/__tests__/refinementValueBinding.spec.ts
+  s_0314bb17e5dee3::t_dc25b857b84d08 61-62
+  s_0314bb17e5dee3::t_bd634441e50e4a 3
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_0314bb17e5dee3::t_751f59a7e02805 5
+  s_0314bb17e5dee3::t_08e8612e03925f 94-95
+src/modules/AiRuntime/useCases/__tests__/stampProcessingOnlyParameterPolicy.spec.ts
+  s_0314bb17e5dee3::t_efed3584cf5bb2 18-19
+  s_0314bb17e5dee3::t_29d76d5634eff2 3
+src/modules/AiRuntime/useCases/__tests__/agentMediaAutonomyBoundary.spec.ts
+  s_0314bb17e5dee3::t_35a9101c2ede8e 3
+  s_0314bb17e5dee3::t_1efa6f34d958d7 17-18
+src/modules/AiRuntime/useCases/__tests__/verseHallAutomationWorkflow.spec.ts
+  s_0314bb17e5dee3::t_24913582a055f7 3
+  s_0314bb17e5dee3::t_6b0c2b256c790a 55-56
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeBackingVocalPlatePlan.spec.ts
+  s_0314bb17e5dee3::t_7a8584f1a609da 3
+  s_0314bb17e5dee3::t_ac7f0cbd9e46e4 15-16
+src/modules/AiRuntime/presentations/__tests__/chatComposerWithoutBackend.spec.tsx
+  s_0314bb17e5dee3::t_16da4bbf0309ae 6
+  s_0314bb17e5dee3::t_8b607d0b82a7b3 42-43
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/deviceParameterGestureUndo.integration.spec.tsx
+  s_0314bb17e5dee3::t_527c4274b626d4 4
+  s_0314bb17e5dee3::t_2721a52a431e7b 49-50
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/openAiStrictSchemaProjection.spec.ts
+  s_0314bb17e5dee3::t_a074e01fc8a6ee 3-4
+  s_0314bb17e5dee3::t_0fd1c05c05b67b 10-11
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_0314bb17e5dee3::t_2e32d7d168c4d5 3
+  s_0314bb17e5dee3::t_389bfc34d5c9f6 42-43
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentAdversarial.spec.ts
+  s_0314bb17e5dee3::t_c373a8b93c1a78 17-18
+  s_0314bb17e5dee3::t_0c1bf22c5d53c8 3
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_0314bb17e5dee3::t_545997e03561bd 3
+  s_0314bb17e5dee3::t_323ae05f572ec0 36-37
+src/modules/AiRuntime/useCases/__tests__/bulkSetCommands.spec.ts
+  s_0314bb17e5dee3::t_b55fcf9189184e 81-82
+  s_0314bb17e5dee3::t_544d37f086908c 4
+src/modules/AiRuntime/useCases/__tests__/promptInterpretationRouting.spec.ts
+  s_0314bb17e5dee3::t_0a18edec44f3f3 13-14
+  s_0314bb17e5dee3::t_004c2eba1cb84b 3
+src/modules/AiRuntime/useCases/agentReference/__tests__/proposalProtection.spec.ts
+  s_0314bb17e5dee3::t_5ba65d764d56c7 3
+  s_0314bb17e5dee3::t_5dd0c10ef6864a 17-18
+src/modules/AiRuntime/useCases/__tests__/bassCompressorParameterPromptWorkflow.spec.ts
+  s_0314bb17e5dee3::t_11b9b1e0433665 66-67
+  s_0314bb17e5dee3::t_206db7b6e3bd80 3
+src/modules/AiRuntime/useCases/__tests__/concurrentCheckpointApproval.spec.ts
+  s_0314bb17e5dee3::t_4fa9a8d0e040f6 4
+  s_0314bb17e5dee3::t_d6934cae7d3cc2 53-54
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_0314bb17e5dee3::t_0c0582a5e7ecff 7
+  s_0314bb17e5dee3::t_8a5927b59e80c3 79-80
+src/modules/AiRuntime/useCases/__tests__/vibeMixingControlLoop.spec.ts
+  s_0314bb17e5dee3::t_5028fd55f7f39b 40-41
+  s_0314bb17e5dee3::t_680b20ec939151 3
+src/modules/AiRuntime/useCases/__tests__/agentRiskApproval.spec.ts
+  s_0314bb17e5dee3::t_a2037aac2c268c 40-41
+  s_0314bb17e5dee3::t_ac82539f44d590 3
+src/modules/AiRuntime/useCases/__tests__/automateParameterRangeConfirmation.spec.ts
+  s_0314bb17e5dee3::t_725ff5b97e3682 4
+  s_0314bb17e5dee3::t_a4712ac8812b10 67-68
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/anthropicStrictSchemaProjection.spec.ts
+  s_0314bb17e5dee3::t_b05984c8ee302d 3-4
+  s_0314bb17e5dee3::t_9680de82a11e3d 10-11
+src/modules/AiRuntime/useCases/__tests__/confirmedCompoundBusActions.spec.ts
+  s_0314bb17e5dee3::t_830ab27e16949a 14
+  s_0314bb17e5dee3::t_8657da91ff52c1 72-73
+src/modules/AiRuntime/useCases/__tests__/pendingChatActions.spec.ts
+  s_0314bb17e5dee3::t_774b6db911e9a7 33
+  s_0314bb17e5dee3::t_be9dd06d98dc9b 4
+  s_0314bb17e5dee3::t_50c07f34794b89 32
+src/modules/AiRuntime/useCases/__tests__/metricLiteralAccounting.spec.ts
+  s_0314bb17e5dee3::t_d4d19a9b122662 3
+  s_0314bb17e5dee3::t_0e43eead69cc43 24-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f9758a05a7951d1a7da74f2e35307ea696df826b",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
