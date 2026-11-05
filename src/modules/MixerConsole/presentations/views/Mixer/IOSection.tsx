@@ -3,7 +3,7 @@ import { type ReactElement, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 
 import { Button } from '#/components/ui/button';
-import { setTrackOutput } from '#/modules/Arrangement/useCases';
+import { commitTrackOutput, listTrackOutputDestinations } from '#/modules/Arrangement/useCases';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 import { type Track } from '../../../models/TrackViewTypes';
@@ -21,16 +21,18 @@ export const IOSection = ({ track }: IOSectionProps): ReactElement => {
     const [outputOpen, setOutputOpen] = useState(false);
     const outputRef = useRef<HTMLDivElement>(null);
     const { tracks } = useTracks();
-    const buses = tracks.filter((time) => time.kind === 'bus');
+    const destinations = listTrackOutputDestinations(track.id, tracks);
     useContextMenuDismiss(outputRef, () => setOutputOpen(false));
 
     const inputLabel = track.kind === 'midi' ? 'MIDI In' : 'Default';
     const outputLabel =
-        track.outputId === 'master' ? 'Master' : (buses.find((b) => b.id === track.outputId)?.name ?? track.outputId);
+        track.outputId === 'master'
+            ? 'Master'
+            : (tracks.find((candidate) => candidate.id === track.outputId)?.name ?? track.outputId);
 
     const outputTargets: { id: string; label: string }[] = [
         { id: 'master', label: 'Master' },
-        ...buses.filter((b) => b.id !== track.id).map((b) => ({ id: b.id, label: b.name })),
+        ...destinations.map((bus) => ({ id: bus.id, label: bus.name })),
     ];
 
     return (
@@ -72,7 +74,11 @@ export const IOSection = ({ track }: IOSectionProps): ReactElement => {
                                 aria-selected={track.outputId === target.id}
                                 onClick={(event) => {
                                     event.stopPropagation();
-                                    setTrackOutput(track.id, target.id);
+                                    void commitTrackOutput({
+                                        trackId: track.id,
+                                        outputId: target.id,
+                                        expectedOutputId: track.outputId,
+                                    });
                                     setOutputOpen(false);
                                 }}
                             >
