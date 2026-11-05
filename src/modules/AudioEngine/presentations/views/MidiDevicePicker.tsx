@@ -18,8 +18,17 @@ const defaultWebMidiState = {
     inputs: [],
     selectedInputId: null,
     enumerationError: null,
+    accessDenied: false,
     enumerationCompleted: false,
 };
+
+const ListingFailureHint = ({ accessDenied }: { accessDenied: boolean }): ReactElement => (
+    <DawInlineHint className="justify-start px-0 py-0 text-[10px] text-muted-foreground/70">
+        {accessDenied
+            ? 'MIDI access was not allowed for this site. Allow MIDI in the site settings control in the address bar, then reload the page.'
+            : "Couldn't list MIDI devices. Refresh to try again."}
+    </DawInlineHint>
+);
 
 export const MidiDevicePicker = (): ReactElement => {
     const state = useStore(webMidiStore, defaultWebMidiState);
@@ -57,8 +66,11 @@ export const MidiDevicePicker = (): ReactElement => {
     };
 
     const listingFailed = (state.enumerationError ?? null) !== null;
+    const accessDenied = state.accessDenied === true;
     let emptyInputsOptionLabel = 'Detecting devices...';
-    if (listingFailed) {
+    if (listingFailed && accessDenied) {
+        emptyInputsOptionLabel = 'MIDI access not allowed';
+    } else if (listingFailed) {
         emptyInputsOptionLabel = "Couldn't list MIDI devices";
     } else if (state.enumerationCompleted) {
         emptyInputsOptionLabel = 'No MIDI devices found';
@@ -110,11 +122,7 @@ export const MidiDevicePicker = (): ReactElement => {
                     Detecting MIDI devices...
                 </DawInlineHint>
             ) : null}
-            {listingFailed ? (
-                <DawInlineHint className="justify-start px-0 py-0 text-[10px] text-muted-foreground/70">
-                    Couldn&apos;t list MIDI devices. Refresh to try again.
-                </DawInlineHint>
-            ) : null}
+            {listingFailed ? <ListingFailureHint accessDenied={accessDenied} /> : null}
             {state.selectedInputId && state.inputs.length > 0 ? (
                 <DawMicroBadge tone="success" className="w-fit">
                     Connected: {state.inputs.find((index) => index.id === state.selectedInputId)?.name ?? 'Unknown'}

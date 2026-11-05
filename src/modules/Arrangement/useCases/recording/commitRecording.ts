@@ -1,5 +1,6 @@
 import { executeAppAction } from '#/modules/Command/useCases';
 import { readSecondsAtBeat, readTempoAtBeat } from '#/modules/Transport/stores';
+import { CLIP_LOOP_WINDOW_BEAT_TOLERANCE } from '#/utils/clipLoopOrigin';
 
 import { startFirstPassAtRecordPoint } from '../../models/TakeLane';
 import { clipEntrySeconds } from '../../models/TempoTimeline';
@@ -76,21 +77,28 @@ function stageFinalCapturedPass(clip: Clip, capture: RecordedCapture): void {
 }
 
 /**
- * Open a captured clip where its loop passes require. The capture terminal has
- * already placed it on its media origin or, under pre-roll, on the record
- * point; a loop recording begun inside the loop opens earlier still, at its
- * first pass. The offset is then rewritten in the unit the readers seek in —
- * the capture's lead-in before the clip's first beat in seconds, converted at
- * the tempo governing that beat — and is negative when the clip opens before
- * its media begins.
+ * Place a captured clip on the beat its loop passes require and enter its
+ * media at the capture's true origin. A loop recording begun inside the loop
+ * has completed passes reaching before the clip's opening beat, so it opens at
+ * the earliest of them; otherwise the clip keeps the beat the terminal placed
+ * it on, a punch's included. Either way the offset is the capture's lead-in
+ * before that first beat in seconds, converted at the tempo governing the beat
+ * — the unit the readers seek in — and is negative when the clip opens before
+ * its media begins. A punch that never wrapped still captured the hardware
+ * latency before its beat, so the offset is written even when no pass moves the
+ * clip; without it the take would enter its media at sample zero and sound
+ * late by that lead. A clip that keeps its beat and whose media begins on it
+ * stores no field, as the manual writer leaves an ordinary take: beats closer
+ * than the clip-loop tolerance are one instant.
  */
 function placeCapturedClip(clip: Clip, mediaOriginSeconds: number): Clip {
     const startBeat = placeRecordingClipStart(clip.id, clip.startBeat);
-    if (startBeat === clip.startBeat) {
+    const leadInSeconds = readSecondsAtBeat({ beat: startBeat }) - mediaOriginSeconds;
+    const audioOffsetBeats = (leadInSeconds * readTempoAtBeat({ beat: startBeat })) / 60;
+    if (startBeat === clip.startBeat && Math.abs(audioOffsetBeats) <= CLIP_LOOP_WINDOW_BEAT_TOLERANCE) {
         return clip;
     }
-    const leadInSeconds = readSecondsAtBeat({ beat: startBeat }) - mediaOriginSeconds;
-    return { ...clip, startBeat, audioOffsetBeats: (leadInSeconds * readTempoAtBeat({ beat: startBeat })) / 60 };
+    return { ...clip, startBeat, audioOffsetBeats };
 }
 
 /** A continuous capture must also carry the retained passes placed on its loop geometry. */

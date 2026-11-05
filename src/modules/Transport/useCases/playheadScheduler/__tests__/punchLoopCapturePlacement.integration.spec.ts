@@ -900,6 +900,57 @@ describe('punch audio capture loop placement', () => {
         expectProjectProjection();
     });
 
+    // A punch that never wraps stages no pass take to move its clip, so the
+    // clip stays on the punch beat while its first captured sample is the
+    // beat-10 sample the performer played one hardware latency earlier. The
+    // commit must carry that lead-in in the clip's source offset; without it
+    // the clip enters its media at sample zero on the punch beat and the take
+    // sounds 100 ms late.
+    it('commits a non-wrapping punch on its captured media origin instead of its start beat', async () => {
+        const tempo = transportStore.value!.tempo;
+        transportStore.set({ ...transportStore.value!, isLooping: false, playheadPosition: 10 });
+        await executeAppAction({ type: 'setPunchIn', payload: { beat: 10 } }, { skipUndo: true });
+        await executeAppAction({ type: 'setPunchOut', payload: { beat: 14 } }, { skipUndo: true });
+        await executeAppAction({ type: 'togglePunch' }, { skipUndo: true });
+        transportStore.set({ ...transportStore.value!, isPlaying: true });
+        startPlayheadScheduler();
+        await tick(0);
+        await vi.waitFor(() => expect(hardware.starts).toBe(1), { interval: 1 });
+        // The punch opens on the beat-10 tick, so its sample zero is the
+        // beat-10 sample and the 100 ms latency puts the captured media 0.1 s
+        // before the punch: 4.9 s at the 120 BPM governing beat 10.
+        expect(hardware.zeroFrame).toBe(Math.round(50 * hardware.sampleRate));
+
+        await advanceUntil(() => hardware.now >= 52);
+        await stopPlayback();
+
+        const clip = recordedClips()[0]!;
+        expect(clip).toBeDefined();
+        expect(clip.startBeat).toBeCloseTo(10, 10);
+        // The offset is the lead-in before the punch in the unit the readers
+        // seek in: 0.1 s of media at the tempo governing the clip start.
+        expect(clip.audioOffsetBeats).toBeCloseTo(0.2, 10);
+        const playedOriginSeconds =
+            secondsBetweenBeats(tempoMapStore.value!.changes, 0, clip.startBeat, tempo) -
+            (60 * (clip.audioOffsetBeats ?? 0)) / tempo;
+        expect(playedOriginSeconds).toBeCloseTo(5 - hardware.latencySeconds, 10);
+
+        const { scheduleAudioClips } = await vi.importActual<typeof import('../../scheduling/scheduleAudioClips')>(
+            '../../scheduling/scheduleAudioClips'
+        );
+        hardware.sourceStarts = [];
+        scheduleAudioClips(clip.startBeat, clip.endBeat, clip.startBeat, new Set(), new Set(), [], {
+            ...transportStore.value!,
+            isLooping: false,
+        });
+        expect(hardware.sourceStarts).toHaveLength(1);
+        // Playback enters the file past the captured pre-punch lead instead of
+        // replaying that lead from the punch beat, which is what sounds late.
+        expect(hardware.sourceStarts[0]!.sourceSeconds).toBeCloseTo(0.1, 10);
+        expectProjectProjection();
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+    });
+
     it.each([
         { route: 'manual', observation: 'scheduler' },
         { route: 'punch', observation: 'scheduler' },

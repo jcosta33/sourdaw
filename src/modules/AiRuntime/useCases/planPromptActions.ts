@@ -1,5 +1,9 @@
 import { openCachedAudioBufferHold } from '#/modules/AudioEngine/useCases';
-import { captureProjectRevision, settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
+import {
+    type captureProjectRevision,
+    projectRevisionMatchesLiveIgnoringSaveWrites,
+    settlePendingProjectWritesAndCaptureRevision,
+} from '#/modules/CrdtDocument/useCases';
 import { canonicalJson } from '#/utils/canonicalDigest';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
@@ -25,6 +29,7 @@ import { agentRunCancellation } from './cancelAgentRun';
 import { getProjectContext } from './getProjectContext';
 import { type ProviderAttemptAdmission, type ProviderAttemptAdmissionResult } from './llmOrchestration/inference';
 import { parsePromptToActions } from './parsePromptToActions';
+import { settledProjectContentMatches } from './settledProjectContentMatches';
 
 type PlanPromptActionsInput = {
     prompt: string;
@@ -224,7 +229,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
             correctableValidationFailure &&
             correctionAdmission !== undefined &&
             input.signal?.aborted !== true &&
-            captureProjectRevision() === projectRevision
+            projectRevisionMatchesLiveIgnoringSaveWrites(projectRevision)
         ) {
             agentRunLifecycle.recordError({
                 runId: streamIdentity.runId,
@@ -248,7 +253,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
             });
             const admitCorrectionAttempt: typeof correctionAdmission = (attempt) => {
                 const admission = correctionAdmission(attempt);
-                const currentRevision = captureProjectRevision();
+                const contentCurrent = projectRevisionMatchesLiveIgnoringSaveWrites(projectRevision);
                 const correctionAllowed =
                     admission.status === 'admitted' &&
                     admitBoundedAgentCorrection({
@@ -256,8 +261,8 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
                         maxAttempts: 1,
                         reservedBudgetAvailable: true,
                         cancellationRequested: input.signal?.aborted === true,
-                        stale: currentRevision !== projectRevision,
-                        sameRevision: currentRevision === projectRevision,
+                        stale: !contentCurrent,
+                        sameRevision: contentCurrent,
                         sameScope:
                             canonicalJson(getCreativeSelectionSnapshot(context)) ===
                             canonicalJson(getCreativeSelectionSnapshot(getProjectContext())),
@@ -377,7 +382,11 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
         await discardStemImportScope();
     }
 
-    if (input.signal?.aborted !== true && result.actions.length > 0 && captureProjectRevision() !== projectRevision) {
+    if (
+        input.signal?.aborted !== true &&
+        result.actions.length > 0 &&
+        !projectRevisionMatchesLiveIgnoringSaveWrites(projectRevision)
+    ) {
         if (stemImportScope) {
             await discardStemImportScope();
         }
@@ -389,7 +398,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
     if (
         input.signal?.aborted !== true &&
         result.planningOutcome?.kind === 'answer' &&
-        settlePendingProjectWritesAndCaptureRevision() !== projectRevision
+        !settledProjectContentMatches(projectRevision)
     ) {
         await settleAutoCreatedRun('failed');
         input.signal?.removeEventListener('abort', onAbort);

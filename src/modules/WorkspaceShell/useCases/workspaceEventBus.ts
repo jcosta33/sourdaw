@@ -7,6 +7,7 @@ import type {
     ConfirmPayload,
     ImportMidiPayload,
     NotifyPayload,
+    OpenPreferencesPayload,
     PromptPayload,
     ShowDevicePanelGenericPayload,
     ZoomToSelectionPayload,
@@ -15,7 +16,7 @@ import type {
 type WorkspaceEvents = {
     'panel.showDevice': ShowDevicePanelGenericPayload;
     'dialog.openExport': VoidPayload;
-    'dialog.openPreferences': VoidPayload;
+    'dialog.openPreferences': OpenPreferencesPayload;
     'project.save': VoidPayload;
     'project.new': VoidPayload;
     'command.undo': VoidPayload;

@@ -33,7 +33,24 @@ const MIDI_PORTS_CHANGED_EVENT = 'midi-ports-changed';
 type WebMidiMessageCallback = (event: WebMidiInputMessage) => void;
 
 function enumerationFailureMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
+    if (error instanceof Error) {
+        return error.message;
+    }
+    if (typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string') {
+        return error.message;
+    }
+    return String(error);
+}
+
+/**
+ * Chromium rejects `requestMIDIAccess` with `NotAllowedError` when the user or site settings refuse the
+ * permission; older builds used `SecurityError`. Classified by name, never by the localized message.
+ */
+function isPermissionDenial(error: unknown): boolean {
+    if (typeof error !== 'object' || error === null || !('name' in error)) {
+        return false;
+    }
+    return error.name === 'NotAllowedError' || error.name === 'SecurityError';
 }
 
 function claimInitGeneration(): number {
@@ -302,6 +319,7 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
 
     const initGeneration = claimInitGeneration();
     let webMidiFailure: string | null = null;
+    let webMidiDenied = false;
 
     if (capabilities.webMidiApiPresent) {
         try {
@@ -344,6 +362,7 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
                 return false;
             }
             webMidiFailure = enumerationFailureMessage(error);
+            webMidiDenied = isPermissionDenial(error);
             logger.warn('[MIDI] Web MIDI failed, trying native fallback:', error);
         }
     }
@@ -416,6 +435,10 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
         }
     }
 
-    setState({ isSupported: capabilities.webMidiApiPresent, enumerationError: webMidiFailure });
+    setState({
+        isSupported: capabilities.webMidiApiPresent,
+        enumerationError: webMidiFailure,
+        accessDenied: webMidiDenied,
+    });
     return false;
 }

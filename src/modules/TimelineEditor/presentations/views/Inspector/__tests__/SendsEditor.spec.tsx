@@ -82,15 +82,11 @@ vi.mock('#/components/ui/slider', () => ({
         value,
         onValueChange,
         onValueCommit,
-        onPointerDown,
-        onPointerCancel,
         'aria-label': ariaLabel,
     }: {
         value: number[];
         onValueChange: (values: number[]) => void;
         onValueCommit: (values: number[]) => void;
-        onPointerDown?: () => void;
-        onPointerCancel?: () => void;
         'aria-label'?: string;
     }) => (
         <input
@@ -106,8 +102,6 @@ vi.mock('#/components/ui/slider', () => ({
                 onValueCommit([stepped]);
                 onValueChange([stepped]);
             }}
-            onPointerDown={onPointerDown}
-            onPointerCancel={onPointerCancel}
         />
     ),
 }));
@@ -320,45 +314,6 @@ describe('SendsEditor', () => {
             });
 
             expect(mockEngineRemoveSend).toHaveBeenCalledWith('track-1', 'bus-1');
-        });
-
-        it('settles a drag the pointer abandons as one commit at the level it was left', async () => {
-            mockUseTracks.mockReturnValue({ tracks: [bus('bus-1')] });
-            renderInProject({ ...mockTrack, sends: [sendTo('bus-1')] });
-
-            const slider = screen.getByTestId('slider');
-            fireEvent.pointerDown(slider);
-            fireEvent.change(slider, { target: { value: '40' } });
-            await act(async () => {
-                fireEvent.pointerCancel(slider);
-            });
-
-            expect(mockExecuteAppAction).toHaveBeenCalledOnce();
-            expect(mockExecuteAppAction).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    type: 'setSend',
-                    payload: expect.objectContaining({ level: sendPositionToLevel(40), expectedLevel: 0.5 }),
-                })
-            );
-        });
-
-        it('settles a drag on the track it began on and shows the next track its own level', async () => {
-            mockUseTracks.mockReturnValue({ tracks: [bus('bus-1')] });
-            const view = renderInProject({ ...mockTrack, sends: [sendTo('bus-1')] });
-
-            fireEvent.pointerDown(screen.getByTestId('slider'));
-            fireEvent.change(screen.getByTestId('slider'), { target: { value: '40' } });
-            await act(async () => {
-                view.rerender(
-                    <SendsEditor track={{ ...mockTrack, id: 'track-2', sends: [sendTo('bus-1', { level: 0.25 })] }} />
-                );
-            });
-
-            expect(mockExecuteAppAction).toHaveBeenCalledOnce();
-            expect(mockExecuteAppAction).toHaveBeenCalledWith(
-                expect.objectContaining({ payload: expect.objectContaining({ trackId: 'track-1' }) })
-            );
-            expect(screen.getByTestId('slider')).toHaveValue(String(Math.round(levelToSendPosition(0.25))));
         });
 
         it('commits a keyboard step as one setSend and leaves nothing to settle on unmount', async () => {

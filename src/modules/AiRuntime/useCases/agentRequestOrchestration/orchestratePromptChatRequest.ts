@@ -38,6 +38,7 @@ import { getAgentExecutionModeFailure } from '../getAgentExecutionModeFailure';
 import { planPromptActions } from '../planPromptActions';
 import { readChatThreadContext } from '../readChatThreadContext';
 import { recordAgentProviderUsage } from '../recordAgentProviderUsage';
+import { settledProjectContentMatches } from '../settledProjectContentMatches';
 
 import { appendAnswerChatMessages } from './appendAnswerChatMessages';
 import { executeImmediatePromptCommand } from './executeImmediatePromptCommand';
@@ -394,7 +395,7 @@ async function completeAnsweredRun(input: {
         });
         return;
     }
-    if (settlePendingProjectWritesAndCaptureRevision() !== projectRevision) {
+    if (!settledProjectContentMatches(projectRevision)) {
         throw new AiProposalInvalidatedError();
     }
     request.options?.onResumedPlanAccepted?.();
@@ -413,7 +414,7 @@ async function completeAnsweredRun(input: {
     ) {
         return;
     }
-    if (settlePendingProjectWritesAndCaptureRevision() !== projectRevision) {
+    if (!settledProjectContentMatches(projectRevision)) {
         throw new AiProposalInvalidatedError();
     }
     agentRunLifecycle.transitionPhase({ runId: admission.runId, phase: 'completed' });
