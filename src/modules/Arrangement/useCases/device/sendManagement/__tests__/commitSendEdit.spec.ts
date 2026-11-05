@@ -10,8 +10,12 @@ const mocks = vi.hoisted(() => ({
     engineSetSend: vi.fn(),
 }));
 
+// The real Routing barrel below reaches modules that import these two, so the
+// factory names them; neither is called by the code under test.
 vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
+    getExecutableAppActionEffect: vi.fn(),
+    pushUndoEntry: vi.fn(),
 }));
 vi.mock('../../../../repositories/track/getTrackById', () => ({
     getTrackById: mocks.getTrackById,
