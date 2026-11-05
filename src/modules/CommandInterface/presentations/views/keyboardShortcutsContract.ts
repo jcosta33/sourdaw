@@ -78,22 +78,31 @@ function isUnmodifiedActivationKey(event: KeyboardEvent): boolean {
     );
 }
 
-function preservesNativeButtonActivation(event: KeyboardEvent, keyboardFocusedElement: Element | null): boolean {
-    if (!isUnmodifiedActivationKey(event)) {
-        return false;
-    }
+function isPointerFocusedButton(event: KeyboardEvent, pointerFocusedButton: Element | null): boolean {
     const target = event.target;
     return (
         target instanceof HTMLButtonElement &&
         target.ownerDocument.activeElement === target &&
-        target === keyboardFocusedElement
+        target === pointerFocusedButton
+    );
+}
+
+function preservesNativeButtonActivation(event: KeyboardEvent, pointerFocusedButton: Element | null): boolean {
+    return (
+        isUnmodifiedActivationKey(event) &&
+        event.target instanceof HTMLButtonElement &&
+        !isPointerFocusedButton(event, pointerFocusedButton)
     );
 }
 
 // Stop returns false so Escape and Enter keep their default elsewhere, which
 // would let Enter also click a mouse-focused button after stopping transport.
-function claimsButtonActivation(event: KeyboardEvent): boolean {
-    return isUnmodifiedActivationKey(event) && event.target instanceof HTMLButtonElement;
+function claimsButtonActivation(event: KeyboardEvent, pointerFocusedButton: Element | null): boolean {
+    return isUnmodifiedActivationKey(event) && isPointerFocusedButton(event, pointerFocusedButton);
+}
+
+function closestButton(target: EventTarget | null): HTMLButtonElement | null {
+    return target instanceof Element ? target.closest('button') : null;
 }
 
 /**
@@ -101,21 +110,30 @@ function claimsButtonActivation(event: KeyboardEvent): boolean {
  */
 export const useGlobalKeyboardShortcuts = (): void => {
     useEffect(() => {
-        // Chromium flips the focused element to :focus-visible on the keypress
-        // itself, so keyboard focus is read when focus arrives. A mouse-clicked
-        // button is never recorded and keeps Space and Enter as transport keys.
-        let keyboardFocusedElement: Element | null = null;
+        // Only a button that took focus because the pointer pressed it is
+        // mouse-focused. `:focus-visible` cannot tell that from script focus,
+        // autofocus, or focus restoration, which all keep native activation.
+        let pointerPressedButton: HTMLButtonElement | null = null;
+        let pointerFocusedButton: Element | null = null;
+        const pointerdownHandler = (event: PointerEvent) => {
+            pointerPressedButton = closestButton(event.target);
+        };
         const focusinHandler = (event: FocusEvent) => {
             const target = event.target;
-            keyboardFocusedElement = target instanceof Element && target.matches(':focus-visible') ? target : null;
+            pointerFocusedButton = target instanceof Element && target === pointerPressedButton ? target : null;
+            pointerPressedButton = null;
         };
         const focusoutHandler = (event: FocusEvent) => {
-            if (event.target === keyboardFocusedElement) {
-                keyboardFocusedElement = null;
+            if (event.target === pointerFocusedButton) {
+                pointerFocusedButton = null;
             }
         };
         const handler = (event: KeyboardEvent) => {
-            if (preservesNativeTabTraversal(event) || preservesNativeButtonActivation(event, keyboardFocusedElement)) {
+            pointerPressedButton = null;
+            if (event.key === 'Tab') {
+                pointerFocusedButton = null;
+            }
+            if (preservesNativeTabTraversal(event) || preservesNativeButtonActivation(event, pointerFocusedButton)) {
                 return;
             }
             // A load that replaced the CRDT authority and then failed leaves the
@@ -190,7 +208,7 @@ export const useGlobalKeyboardShortcuts = (): void => {
                 keyTarget,
             });
 
-            if (shouldPreventDefault || (!isTextEntry && claimsButtonActivation(event))) {
+            if (shouldPreventDefault || (!isTextEntry && claimsButtonActivation(event, pointerFocusedButton))) {
                 event.preventDefault();
             }
         };
@@ -200,12 +218,14 @@ export const useGlobalKeyboardShortcuts = (): void => {
         };
 
         void loadKeyboardLayoutMap();
+        window.addEventListener('pointerdown', pointerdownHandler, true);
         window.addEventListener('focusin', focusinHandler, true);
         window.addEventListener('focusout', focusoutHandler, true);
         window.addEventListener('keydown', handler);
         window.addEventListener('keyup', keyupHandler);
 
         return () => {
+            window.removeEventListener('pointerdown', pointerdownHandler, true);
             window.removeEventListener('focusin', focusinHandler, true);
             window.removeEventListener('focusout', focusoutHandler, true);
             window.removeEventListener('keydown', handler);

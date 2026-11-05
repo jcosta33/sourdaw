@@ -56,8 +56,6 @@ test('native button Enter and Space activate once without transport shortcuts; w
     expect(pausedPosition).toMatch(POSITION);
     expect(pausedPosition).not.toBe('1.1.000');
 
-    // Script focus is :focus-visible only after keyboard use; the prior mouse click would make it a pointer focus.
-    await page.keyboard.press('Shift+Tab');
     await toggle.focus();
     await page.keyboard.press('Enter');
     await expect(toggle).toHaveAttribute('aria-pressed', 'false');
@@ -122,5 +120,26 @@ test('Space and Enter stay transport keys after a mouse click leaves a button fo
     expect(before).not.toBeNull();
     await page.keyboard.press('Space');
     await expect(focused).not.toHaveAttribute('aria-pressed', before ?? '');
+    await expect(play).toHaveAttribute('aria-label', 'Play');
+});
+
+test('Enter activates a button focused by script after a mouse click elsewhere', async ({ page }) => {
+    test.setTimeout(120_000);
+    await setupWorkspace(page);
+    await launch_new_project(page);
+    await page.locator('#main-content').click();
+
+    const toggle = page.getByRole('button', { name: 'Toggle browser' });
+    const panel = page.getByRole('complementary', { name: 'Browser panel' });
+    const play = page.getByTestId('transport-play');
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+
+    await page.locator('#main-content').click();
+    await toggle.focus();
+    await expect(toggle).toBeFocused();
+    await page.keyboard.press('Enter');
+
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(panel).toBeHidden();
     await expect(play).toHaveAttribute('aria-label', 'Play');
 });
