@@ -1,0 +1,179 @@
+src/infra/dialogService/ConfirmDialog.tsx
+  s_fec7059b7a251c::t_1cea5e03aea33d 1,22,39-42,84
+src/infra/dialogService/PromptDialog.tsx
+  s_fec7059b7a251c::t_1cea5e03aea33d 60-61,63
+  s_930949da2594a7::t_106203ddd09dc3 1,7,24-43,62
+src/components/ui/dialog.tsx
+  s_fec7059b7a251c::t_023415760d36df 117
+  s_fec7059b7a251c::t_29a9d64327763a 57-58,64-77,81,83,96,98,118
+src/modules/CommandInterface/presentations/views/__tests__/CommandPalette.spec.tsx
+  s_fec7059b7a251c::t_5f5ab27d1ea356 225-241
+src/infra/dialogService/__tests__/PromptDialog.spec.tsx
+  s_fec7059b7a251c::t_5f5ab27d1ea356 153-168
+  s_930949da2594a7::t_d20d7be12d0278 103,111-115,131-151
+src/infra/dialogService/__tests__/ConfirmDialog.spec.tsx
+  s_fec7059b7a251c::t_5f5ab27d1ea356 261-276
+src/modules/CommandInterface/presentations/views/CommandPalette.tsx
+  s_fec7059b7a251c::t_1cea5e03aea33d 144-151
+  s_0314bb17e5dee3::t_d574d69a792bf0 60-86,175,177-181
+src/modules/Arrangement/useCases/clipEditing/__tests__/audioSourceWindowTrimSlip.spec.ts
+  s_fec7059b7a251c::t_29a9d64327763a 1-245
+src/modules/AudioEngine/presentations/views/__tests__/MidiDevicePicker.spec.tsx
+  s_fec7059b7a251c::t_29a9d64327763a 127-144
+src/modules/AiRuntime/useCases/__tests__/perceptualConstraints.spec.ts
+  s_fec7059b7a251c::t_29a9d64327763a 4,29,32,1048-1094
+  s_fec7059b7a251c::t_a3a86af892d165 1095-1096
+src/modules/AiRuntime/useCases/prepareMetricGoalPreview.ts
+  s_fec7059b7a251c::t_29a9d64327763a 6,349,412
+src/modules/WorkspaceShell/useCases/dialogs/__tests__/openPreferencesSection.spec.ts
+  s_fec7059b7a251c::t_29a9d64327763a 1-21
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  s_fec7059b7a251c::t_29a9d64327763a 6-9,35,114-116
+src/modules/MIDI/repositories/webMidi/state.ts
+  s_fec7059b7a251c::t_29a9d64327763a 53
+src/modules/AiRuntime/useCases/__tests__/answerOutcome.spec.ts
+  s_fec7059b7a251c::t_29a9d64327763a 37-48
+src/modules/Arrangement/useCases/freezeBounce/freezeTrack.ts
+  s_fec7059b7a251c::t_29a9d64327763a 6-10,291
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_fec7059b7a251c::t_29a9d64327763a 54,317,401-404,1175-1179
+src/modules/MIDI/models/WebMidiTypes.ts
+  s_fec7059b7a251c::t_29a9d64327763a 38-39
+src/modules/WorkspaceShell/events/index.ts
+  s_fec7059b7a251c::t_29a9d64327763a 8
+src/modules/MIDI/repositories/webMidi/lifecycle/initWebMidi.ts
+  s_fec7059b7a251c::t_29a9d64327763a 36-53,322,365,438-442
+src/modules/AudioEngine/presentations/views/MidiDevicePicker.tsx
+  s_fec7059b7a251c::t_29a9d64327763a 21,25-32,69,71-73,125
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_fec7059b7a251c::t_29a9d64327763a 41,409,428
+src/modules/AiRuntime/useCases/__tests__/answerAfterSave.spec.ts
+  s_fec7059b7a251c::t_29a9d64327763a 1-158
+src/modules/MIDI/stores/webMidiStore.ts
+  s_fec7059b7a251c::t_29a9d64327763a 21
+src/modules/AiRuntime/useCases/__tests__/planPromptActionsAfterSave.spec.ts
+  s_fec7059b7a251c::t_29a9d64327763a 1-193
+src/modules/Preferences/events/index.ts
+  s_fec7059b7a251c::t_29a9d64327763a 1
+src/modules/Preferences/events/PreferencesEvents.ts
+  s_fec7059b7a251c::t_29a9d64327763a 3-6
+src/modules/AiRuntime/useCases/__tests__/confirmAfterSave.spec.ts
+  s_fec7059b7a251c::t_29a9d64327763a 15,18,55,58,162-163,192-196,405-522
+  s_fec7059b7a251c::t_dc831b134d9a19 523
+src/components/ui/__tests__/slider.spec.tsx
+  s_fec7059b7a251c::t_29a9d64327763a 1-4,8-9,56-499
+  s_fec7059b7a251c::t_74fd71b71853e6 500
+src/modules/WorkspaceShell/events/WorkspaceEvents.ts
+  s_fec7059b7a251c::t_29a9d64327763a 1-2,15-16
+  s_fec7059b7a251c::t_831a6c9069e6ff 17
+src/modules/AiRuntime/useCases/__tests__/previewMeasurement.spec.ts
+  s_fec7059b7a251c::t_29a9d64327763a 4,76,79,787-820
+src/components/ui/slider.tsx
+  s_fec7059b7a251c::t_29a9d64327763a 9-10,20-24,47-55,70,97-98,114-115,125-127,158-159,178,181
+src/modules/WorkspaceShell/presentations/views/__tests__/MidiStatusBadgeFocusReturn.spec.tsx
+  s_fec7059b7a251c::t_29a9d64327763a 1-92
+src/modules/MIDI/repositories/webMidi/__tests__/setState.spec.ts
+  s_fec7059b7a251c::t_29a9d64327763a 61-86
+src/components/ui/slider-gesture.ts
+  s_fec7059b7a251c::t_29a9d64327763a 1-210
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/SendsSection.spec.tsx
+  s_fec7059b7a251c::t_29a9d64327763a 5,222-321
+  s_fec7059b7a251c::t_e8ef65e203d2c1 322
+src/modules/MixerConsole/presentations/views/Mixer/SendsSection.tsx
+  s_fec7059b7a251c::t_29a9d64327763a 1,27-31,54
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx
+  s_fec7059b7a251c::t_29a9d64327763a 1731-1925
+src/modules/TimelineEditor/presentations/views/Inspector/SendsEditor.tsx
+  s_fec7059b7a251c::t_29a9d64327763a 1,53-57,80
+src/modules/TimelineEditor/presentations/hooks/usePianoRollInteractions.ts
+  s_fec7059b7a251c::t_29a9d64327763a 49,110-117,389-394,658-660,798,809,1163,1516-1520
+src/modules/Arrangement/useCases/freezeBounce/__tests__/freezeTrackAfterSave.spec.ts
+  s_fec7059b7a251c::t_29a9d64327763a 1-144
+src/modules/WorkspaceShell/presentations/views/MidiStatusBadge.tsx
+  s_fec7059b7a251c::t_29a9d64327763a 11,20,48-50,69
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_fec7059b7a251c::t_29a9d64327763a 2-6,32,232,256,264-265,385-389,401
+src/modules/Bacteria/presentations/views/__tests__/BacteriaPanel.depthRetirement.integration.spec.tsx
+  s_fec7059b7a251c::t_29a9d64327763a 158,160-165,207
+src/app/registerDependencies.ts
+  s_fec7059b7a251c::t_29a9d64327763a 25,43
+src/modules/Preferences/presentations/views/__tests__/PreferencesDialog.spec.tsx
+  s_fec7059b7a251c::t_29a9d64327763a 57-72
+src/modules/Arrangement/useCases/device/sendManagement/__tests__/commitSendEdit.spec.ts
+  s_fec7059b7a251c::t_29a9d64327763a 157-202
+src/modules/Preferences/presentations/views/PreferencesDialog.tsx
+  s_fec7059b7a251c::t_29a9d64327763a 16,36-37,66,69-75
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_fec7059b7a251c::t_29a9d64327763a 32,133-137,269,484-527
+  s_fec7059b7a251c::t_5156c603d0ceeb 528-529
+src/modules/AiRuntime/useCases/settledProjectContentMatches.ts
+  s_fec7059b7a251c::t_29a9d64327763a 1-14
+src/modules/AiRuntime/useCases/executePlannedActions.ts
+  s_fec7059b7a251c::t_29a9d64327763a 11,101,162
+src/modules/AiRuntime/useCases/__tests__/planWithMeasurements.spec.ts
+  s_fec7059b7a251c::t_29a9d64327763a 4,52,56,116-117,131-134,586,589-592,601-612
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/webMidiLifecycle.spec.ts
+  s_fec7059b7a251c::t_29a9d64327763a 278-318
+src/modules/Arrangement/useCases/device/sendManagement/commitSendLevel.ts
+  s_fec7059b7a251c::t_29a9d64327763a 5,17-32,38-39,44
+src/components/ui/bipolar-slider.tsx
+  s_fec7059b7a251c::t_29a9d64327763a 1,44-65,68,77,87-88
+src/modules/WorkspaceShell/useCases/dialogs/openPreferencesSection.ts
+  s_fec7059b7a251c::t_29a9d64327763a 1-14
+src/modules/WorkspaceShell/useCases/workspaceEventBus.ts
+  s_fec7059b7a251c::t_29a9d64327763a 10,19
+src/modules/WorkspaceShell/useCases/dialogs/onDialogOpenPreferences.ts
+  s_fec7059b7a251c::t_29a9d64327763a 3,8
+src/modules/AiRuntime/useCases/__tests__/executePlannedActions.spec.ts
+  s_fec7059b7a251c::t_29a9d64327763a 35-64
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_fec7059b7a251c::t_29a9d64327763a 90-95
+src/modules/MIDI/repositories/webMidi/setState.ts
+  s_fec7059b7a251c::t_29a9d64327763a 17-23
+src/modules/AiRuntime/useCases/__tests__/projectSaveFixture.ts
+  s_fec7059b7a251c::t_29a9d64327763a 1-55
+src/modules/AiRuntime/useCases/resolveMeasuredPreviewAudition.ts
+  s_fec7059b7a251c::t_29a9d64327763a 9,165-168
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_fec7059b7a251c::t_29a9d64327763a 137,174,707-711
+src/modules/WorkspaceShell/presentations/hooks/useAppEventHandlers.ts
+  s_fec7059b7a251c::t_29a9d64327763a 8,19,29
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/answerOutcome.spec.ts
+  s_fec7059b7a251c::t_29a9d64327763a 54-59
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_fec7059b7a251c::t_29a9d64327763a 41,332
+src/modules/WorkspaceShell/presentations/views/__tests__/MidiStatusBadge.spec.tsx
+  s_fec7059b7a251c::t_29a9d64327763a 7,14-15,133-149,155-156
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "658fe5178cbe33eed5585e2d05a28ea9f51aad22",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_930949da2594a7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_930949da2594a7",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
