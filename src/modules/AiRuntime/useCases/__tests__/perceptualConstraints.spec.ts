@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { type renderTrackSubgraphOffline } from '#/modules/AudioEngine/useCases';
+import { getAutomationHandlers } from '#/modules/Automation/useCases';
+import { registerHandlerMap } from '#/modules/Command/stores';
 import { captureProjectIdentity, captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -136,11 +138,26 @@ function setParameter(deviceId: string, paramId: string, value: number): AppActi
     return { type: 'setDeviceParameter', payload: { deviceId, paramId, value } };
 }
 
-function compile(prompt: string, actions: AppAction[], metricGoalState?: string) {
+/** The project with automation lanes it already holds, which the store fixture cannot seed. */
+function contextWithLanes(lanes: { id: string; trackId: string; parameterId: string }[]) {
+    return {
+        ...getProjectContext(),
+        automationLanes: lanes.map((lane) => ({
+            ...lane,
+            name: lane.parameterId,
+            enabled: true,
+            minValue: 0,
+            maxValue: 1,
+            points: [],
+        })),
+    };
+}
+
+function compile(prompt: string, actions: AppAction[], metricGoalState?: string, context = getProjectContext()) {
     return compileAgentActionExecution({
         actions,
         actionLabels: actions.map((action) => action.type),
-        context: getProjectContext(),
+        context,
         intent: prompt,
         projectRevision: captureProjectRevision(),
         runId: RUN_ID,
@@ -183,6 +200,7 @@ async function measureBeforeApproval(prompt: string, compiled: ReturnType<typeof
 
 beforeEach(() => {
     configureProject();
+    registerHandlerMap(getAutomationHandlers());
     audio.renderTrackSubgraphOffline.mockReset().mockImplementation(async (input: RenderInput) => renderTrack(input));
     audio.renderOffline.mockReset().mockImplementation(async () => {
         throw new Error('A track-scoped constraint must not render the master.');
@@ -362,6 +380,111 @@ describe('excluded dimensions', () => {
             expect(() => compile(prompt, [action])).toThrow(reason);
         }
     );
+
+    const lanes = () =>
+        contextWithLanes([
+            { id: 'vocal-send-lane', trackId: 'vocal', parameterId: 'send:verb-bus' },
+            { id: 'vocal-gain-lane', trackId: 'vocal', parameterId: 'gain' },
+            { id: 'plate-lowcut-lane', trackId: 'verb-bus', parameterId: 'bus-plate:rev-lowcut' },
+        ]);
+    const intimate = 'Shape the Vocal and keep the vocal intimate';
+
+    it.each([
+        {
+            label: 'a new reverb parameter lane and its point',
+            prompt: intimate,
+            actions: [
+                {
+                    type: 'addAutomationLane',
+                    payload: {
+                        trackId: 'vocal',
+                        parameterId: 'vocal-room:rev-mix',
+                        parameterName: 'Room Mix',
+                        laneId: 'room-lane',
+                    },
+                },
+                { type: 'addAutomationPoint', payload: { laneId: 'room-lane', beat: 0, value: 0.8 } },
+            ],
+            reason: 'command 1 (addAutomationLane vocal-room:rev-mix) edits the ambience of “Vocal”',
+        },
+        {
+            label: 'a new send lane and its point',
+            prompt: intimate,
+            actions: [
+                {
+                    type: 'addAutomationLane',
+                    payload: {
+                        trackId: 'vocal',
+                        parameterId: 'send:verb-bus',
+                        parameterName: 'Verb',
+                        laneId: 'send-lane',
+                    },
+                },
+                { type: 'addAutomationPoint', payload: { laneId: 'send-lane', beat: 0, value: 0.8 } },
+            ],
+            reason: 'command 1 (addAutomationLane send:verb-bus) edits the ambience of “Vocal”',
+        },
+        {
+            label: 'a point on the send lane the project holds',
+            prompt: intimate,
+            actions: [{ type: 'addAutomationPoint', payload: { laneId: 'vocal-send-lane', beat: 0, value: 0.8 } }],
+            reason: 'command 1 (addAutomationPoint send:verb-bus) edits the ambience of “Vocal”',
+        },
+        {
+            label: 'scaling a reverb low-cut lane under the low-end constraint',
+            prompt: "Open up the Verb Bus but don't touch the low end",
+            actions: [{ type: 'scaleAutomation', payload: { laneId: 'plate-lowcut-lane', factor: 2 } }],
+            reason: 'command 1 (scaleAutomation bus-plate:rev-lowcut) edits the low end of “Verb Bus”',
+        },
+        {
+            label: 'routing the vocal into the reverb bus',
+            prompt: intimate,
+            actions: [{ type: 'setTrackOutput', payload: { trackId: 'vocal', outputId: 'verb-bus' } }],
+            reason: 'command 1 (setTrackOutput to Verb Bus) edits the ambience of “Vocal”',
+        },
+        {
+            label: 'a sidechain into the vocal, which no reader places',
+            prompt: intimate,
+            actions: [{ type: 'addSidechainRoute', payload: { sourceTrackId: 'bass', targetTrackId: 'vocal' } }],
+            reason: 'command 1 (addSidechainRoute routing and processing) changes “Vocal” in a way the application cannot show leaves its ambience alone',
+        },
+        {
+            label: 'a point on a lane neither the project nor the batch holds',
+            prompt: intimate,
+            actions: [{ type: 'addAutomationPoint', payload: { laneId: 'ghost-lane', beat: 0, value: 0.8 } }],
+            reason: 'command 1 (addAutomationPoint automation) changes a track the batch does not name in a way the application cannot show leaves its ambience alone',
+        },
+    ] satisfies { label: string; prompt: string; actions: AppAction[]; reason: string }[])(
+        'refuses $label',
+        ({ prompt, actions, reason }) => {
+            expect(() => compile(prompt, actions, undefined, lanes())).toThrow(reason);
+        }
+    );
+
+    it.each([
+        ['muting the vocal', [{ type: 'muteTrack', payload: { trackId: 'vocal', muted: true, expectedMuted: false } }]],
+        [
+            'soloing the vocal',
+            [{ type: 'soloTrack', payload: { trackId: 'vocal', soloed: true, expectedSoloed: false } }],
+        ],
+        [
+            'turning the vocal down',
+            [{ type: 'setTrackGain', payload: { trackId: 'vocal', deltaDb: -2, expectedGain: 1 } }],
+        ],
+        [
+            'a new fader lane and its point',
+            [
+                {
+                    type: 'addAutomationLane',
+                    payload: { trackId: 'vocal', parameterId: 'gain', parameterName: 'Volume', laneId: 'fader-lane' },
+                },
+                { type: 'addAutomationPoint', payload: { laneId: 'fader-lane', beat: 0, value: 0.8 } },
+            ],
+        ],
+        ['scaling the fader lane', [{ type: 'scaleAutomation', payload: { laneId: 'vocal-gain-lane', factor: 0.5 } }]],
+    ] satisfies [string, AppAction[]][])('admits %s under "keep the vocal intimate"', (_label, actions) => {
+        expect(() => compile(intimate, actions, undefined, lanes())).not.toThrow();
+    });
 
     it('admits an ambience edit on a track outside a track-scoped constraint', () => {
         const addReverb: AppAction = {

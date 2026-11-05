@@ -1,10 +1,22 @@
+import { getExecutableAppActionEffect, getExecutableAppActionGroundingRules } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
+import { isRecord } from '#/utils/structuralEquality';
 
 import { type PerceptualConstraint, type PerceptualExcludedDimension } from '../../models/PerceptualConstraint';
 import { type ProjectContext } from '../../models/ProjectContext';
+import { proposalCommandShape } from '../agentReference/proposalCommandShape';
 
-type Edit = { dimension: PerceptualExcludedDimension; trackId: string | null; detail: string };
+type ActionEffect = NonNullable<ReturnType<typeof getExecutableAppActionEffect>>;
+type EffectDimension = ActionEffect['dimensions'][number];
+type TargetCapability = NonNullable<
+    ReturnType<typeof getExecutableAppActionGroundingRules>
+>['targetRules'][number]['capability'];
+
+/** `unclassified` is an edit that reaches a scoped track in a way no reader here can place, so it fails every exclusion. */
+type EditDimension = PerceptualExcludedDimension | 'unclassified';
+type Edit = { dimension: EditDimension; trackId: string | null; detail: string };
 type DeviceFacts = { type: string | null; trackId: string | null };
+type AutomatedParameter = { trackId: string | null; parameterId: string };
 
 /** Devices whose whole job is spectral shaping: removing or bypassing one changes the low end it shapes. */
 const SPECTRAL_DEVICE_TYPES = new Set(['builtin-eq', 'builtin-filter']);
@@ -19,11 +31,32 @@ const SPATIAL_DEVICE_TYPES = new Set([
 /** Parameters on other devices that set where their low end is cut or summed to mono. */
 const LOW_END_PARAMETER_IDS = new Set(['rev-lowcut', 'delay-lowcut', 'conv-lowcut', 'width-mono-bass']);
 const SPATIAL_PARAMETER_PREFIXES = ['rev-', 'conv-', 'delay-', 'chorus-', 'width-'];
+/** The channel strip's own level and pan lanes, as the automation lanes name them. */
+const CHANNEL_PARAMETER_IDS = new Set(['gain', 'pan']);
+const SEND_PARAMETER_PREFIX = 'send:';
+/** The effect dimensions through which a command can change what a track sounds like. */
+const SOUND_DIMENSIONS: ReadonlySet<EffectDimension> = new Set(['processing', 'routing', 'automation']);
+/**
+ * Targets that name a channel strip or a group of them, never a device on one. A processing or
+ * automation write reaching only these moves a fader or a pan, which shapes neither space nor spectrum.
+ */
+const CHANNEL_TARGET_CAPABILITIES: ReadonlySet<TargetCapability> = new Set([
+    'track',
+    'routable-source',
+    'vca-group',
+    'vca-member-track',
+]);
 
 const DIMENSION_LABELS: Readonly<Record<PerceptualExcludedDimension, string>> = {
     'low-frequency-band': 'low end',
     ambience: 'ambience',
 };
+
+/** A command's arguments as the registry's target declarations name them. */
+function readPayload(action: AppAction): Readonly<Record<string, unknown>> {
+    const payload: unknown = 'payload' in action ? action.payload : undefined;
+    return isRecord(payload) ? payload : {};
+}
 
 function readDeviceFacts(deviceId: string, actions: readonly AppAction[], context: ProjectContext): DeviceFacts {
     for (const track of context.tracks) {
@@ -76,31 +109,112 @@ function deviceTypeDimensions(deviceType: string | null): PerceptualExcludedDime
     return SPATIAL_DEVICE_TYPES.has(deviceType) ? ['ambience'] : [];
 }
 
-function edits(dimensions: PerceptualExcludedDimension[], trackId: string | null, detail: string): Edit[] {
+function edits(dimensions: readonly EditDimension[], trackId: string | null, detail: string): Edit[] {
     return dimensions.map((dimension) => ({ dimension, trackId, detail }));
 }
 
-function readParameterEdits(action: AppAction, actions: readonly AppAction[], context: ProjectContext): Edit[] {
-    if (action.type === 'setDeviceParameter') {
-        const facts = readDeviceFacts(action.payload.deviceId, actions, context);
-        const deviceType = action.payload.expectedDeviceType ?? facts.type;
-        const trackId = action.payload.expectedTrackId ?? facts.trackId;
-        return edits(parameterDimensions(deviceType, action.payload.paramId), trackId, action.payload.paramId);
+/**
+ * What a lane's parameter id automates: the channel's own fader or pan, a send, or a device
+ * parameter as `<deviceId>:<paramId>`. Any other id is one this reader cannot place.
+ */
+function automatedParameterDimensions(
+    parameterId: string,
+    actions: readonly AppAction[],
+    context: ProjectContext
+): EditDimension[] {
+    if (CHANNEL_PARAMETER_IDS.has(parameterId)) {
+        return [];
     }
-    if (action.type === 'automateParameterRange') {
-        const separator = action.payload.parameterId.indexOf(':');
-        if (separator < 0) {
-            return [];
-        }
-        const deviceId = action.payload.parameterId.slice(0, separator);
-        const paramId = action.payload.parameterId.slice(separator + 1);
-        const facts = readDeviceFacts(deviceId, actions, context);
-        return edits(parameterDimensions(facts.type, paramId), action.payload.trackId, paramId);
+    if (parameterId.startsWith(SEND_PARAMETER_PREFIX)) {
+        return ['ambience'];
     }
-    return [];
+    const separator = parameterId.indexOf(':');
+    if (separator < 0) {
+        return ['unclassified'];
+    }
+    const deviceId = parameterId.slice(0, separator);
+    const paramId = parameterId.slice(separator + 1);
+    return parameterDimensions(readDeviceFacts(deviceId, actions, context).type, paramId);
 }
 
-function readDeviceChainEdits(action: AppAction, actions: readonly AppAction[], context: ProjectContext): Edit[] {
+/** A lane by id, in the project or created earlier in the same batch. */
+function readLane(laneId: string, actions: readonly AppAction[], context: ProjectContext): AutomatedParameter | null {
+    const lane = (context.automationLanes ?? []).find((candidate) => candidate.id === laneId);
+    if (lane !== undefined) {
+        return { trackId: lane.trackId, parameterId: lane.parameterId };
+    }
+    for (const action of actions) {
+        if (action.type === 'addAutomationLane' && action.payload.laneId === laneId) {
+            return { trackId: action.payload.trackId, parameterId: action.payload.parameterId };
+        }
+    }
+    return null;
+}
+
+/**
+ * The parameter an automation write draws: the one it names beside its track, or the one its lane
+ * target automates, read from the registry's own target declaration.
+ */
+function readAutomatedParameter(
+    action: AppAction,
+    actions: readonly AppAction[],
+    context: ProjectContext
+): AutomatedParameter | null {
+    const payload = readPayload(action);
+    if (typeof payload.parameterId === 'string' && typeof payload.trackId === 'string') {
+        return { trackId: payload.trackId, parameterId: payload.parameterId };
+    }
+    const laneRule = getExecutableAppActionGroundingRules(action.type)?.targetRules.find(
+        (rule) => rule.capability === 'automation-lane'
+    );
+    const laneId = laneRule === undefined ? undefined : payload[laneRule.argument];
+    return typeof laneId === 'string' ? readLane(laneId, actions, context) : null;
+}
+
+function readAutomationEdits(
+    action: AppAction,
+    effect: ActionEffect,
+    actions: readonly AppAction[],
+    context: ProjectContext
+): Edit[] | null {
+    if (!effect.dimensions.includes('automation')) {
+        return null;
+    }
+    const automated = readAutomatedParameter(action, actions, context);
+    if (automated === null) {
+        return null;
+    }
+    const dimensions = automatedParameterDimensions(automated.parameterId, actions, context);
+    return edits(dimensions, automated.trackId, automated.parameterId);
+}
+
+/** A track routed into a bus takes on that bus's processing: its space, or its spectral shaping. */
+function readOutputEdits(action: AppAction, context: ProjectContext): Edit[] | null {
+    if (action.type !== 'setTrackOutput') {
+        return null;
+    }
+    const destination = context.tracks.find((track) => track.id === action.payload.outputId);
+    const dimensions = [
+        ...new Set((destination?.devices ?? []).flatMap((device) => deviceTypeDimensions(device.type))),
+    ];
+    return edits(dimensions, action.payload.trackId, `to ${destination?.name ?? action.payload.outputId}`);
+}
+
+function readParameterEdits(action: AppAction, actions: readonly AppAction[], context: ProjectContext): Edit[] | null {
+    if (action.type !== 'setDeviceParameter') {
+        return null;
+    }
+    const facts = readDeviceFacts(action.payload.deviceId, actions, context);
+    const deviceType = action.payload.expectedDeviceType ?? facts.type;
+    const trackId = action.payload.expectedTrackId ?? facts.trackId;
+    return edits(parameterDimensions(deviceType, action.payload.paramId), trackId, action.payload.paramId);
+}
+
+function readDeviceChainEdits(
+    action: AppAction,
+    actions: readonly AppAction[],
+    context: ProjectContext
+): Edit[] | null {
     if (action.type === 'addDevice') {
         // An added EQ or filter sits at its defaults until a parameter write shapes it; added space is space.
         const spatial = SPATIAL_DEVICE_TYPES.has(action.payload.deviceType);
@@ -118,25 +232,63 @@ function readDeviceChainEdits(action: AppAction, actions: readonly AppAction[], 
         const dimensions = [...new Set(types.flatMap(deviceTypeDimensions))];
         return edits(dimensions, action.payload.trackId, action.payload.presetId);
     }
-    return [];
+    return null;
 }
 
-function readSendEdits(action: AppAction): Edit[] {
+function readSendEdits(action: AppAction): Edit[] | null {
     if (action.type === 'addSend' || action.type === 'setSend' || action.type === 'removeSend') {
         return edits(['ambience'], action.payload.trackId, 'send');
     }
     if (action.type === 'automateSendRange' || action.type === 'automateSendRanges') {
         return action.payload.trackIds.flatMap((trackId) => edits(['ambience'], trackId, 'send automation'));
     }
-    return [];
+    return null;
+}
+
+/** A write that moves only channel strips: processing or automation whose every target is one. */
+function isChannelStripWrite(action: AppAction, effect: ActionEffect): boolean {
+    const targets = getExecutableAppActionGroundingRules(action.type)?.targetRules ?? [];
+    return (
+        targets.length > 0 &&
+        effect.dimensions.every((dimension) => dimension === 'processing' || dimension === 'automation') &&
+        targets.every((rule) => CHANNEL_TARGET_CAPABILITIES.has(rule.capability))
+    );
+}
+
+/**
+ * Every command whose declared effect reaches a track's processing, routing or automation that no
+ * reader above places is refused on the tracks it touches. An arrangement edit carries the
+ * automation and routing of the content it moves, and the holds measure what it changes.
+ */
+function readUnclassifiedEdits(action: AppAction, effect: ActionEffect, context: ProjectContext): Edit[] {
+    const reachesSound = effect.dimensions.some((dimension) => SOUND_DIMENSIONS.has(dimension));
+    if (!reachesSound || effect.dimensions.includes('arrangement') || isChannelStripWrite(action, effect)) {
+        return [];
+    }
+    const trackIds = new Set(context.tracks.map((track) => track.id));
+    const owners = proposalCommandShape
+        .touchedObjectIds(action.type, readPayload(action), context)
+        .filter((id) => trackIds.has(id));
+    const reach = effect.dimensions.join(' and ');
+    if (owners.length === 0) {
+        return edits(['unclassified'], null, reach);
+    }
+    return owners.flatMap((trackId) => edits(['unclassified'], trackId, reach));
 }
 
 function readActionEdits(action: AppAction, actions: readonly AppAction[], context: ProjectContext): Edit[] {
-    return [
-        ...readParameterEdits(action, actions, context),
-        ...readDeviceChainEdits(action, actions, context),
-        ...readSendEdits(action),
-    ];
+    const effect = getExecutableAppActionEffect(action.type);
+    if (effect === null) {
+        return [];
+    }
+    return (
+        readParameterEdits(action, actions, context) ??
+        readDeviceChainEdits(action, actions, context) ??
+        readSendEdits(action) ??
+        readOutputEdits(action, context) ??
+        readAutomationEdits(action, effect, actions, context) ??
+        readUnclassifiedEdits(action, effect, context)
+    );
 }
 
 /** An owner the batch does not reveal is inside every scope: an unknown edit is never assumed elsewhere. */
@@ -149,6 +301,15 @@ function nameOf(trackId: string | null, context: ProjectContext): string {
         return 'a track the batch does not name';
     }
     return `“${context.tracks.find((track) => track.id === trackId)?.name ?? trackId}”`;
+}
+
+function describeEdit(constraint: PerceptualConstraint, edit: Edit, command: string, context: ProjectContext): string {
+    const label = DIMENSION_LABELS[constraint.protection.dimension];
+    const owner = nameOf(edit.trackId, context);
+    if (edit.dimension === 'unclassified') {
+        return `The request says “${constraint.clause}”, but ${command} changes ${owner} in a way the application cannot show leaves its ${label} alone.`;
+    }
+    return `The request says “${constraint.clause}”, but ${command} edits the ${label} of ${owner}.`;
 }
 
 /**
@@ -167,12 +328,13 @@ export function findExcludedDimensionEdit(input: {
     for (const [index, action] of input.actions.entries()) {
         for (const edit of readActionEdits(action, input.actions, input.context)) {
             const constraint = input.constraints.find(
-                (candidate) => candidate.protection.dimension === edit.dimension && inScope(candidate, edit.trackId)
+                (candidate) =>
+                    (edit.dimension === 'unclassified' || candidate.protection.dimension === edit.dimension) &&
+                    inScope(candidate, edit.trackId)
             );
             if (constraint !== undefined) {
-                return {
-                    reason: `The request says “${constraint.clause}”, but command ${String(index + 1)} (${action.type} ${edit.detail}) edits the ${DIMENSION_LABELS[edit.dimension]} of ${nameOf(edit.trackId, input.context)}.`,
-                };
+                const command = `command ${String(index + 1)} (${action.type} ${edit.detail})`;
+                return { reason: describeEdit(constraint, edit, command, input.context) };
             }
         }
     }
