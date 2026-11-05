@@ -1,0 +1,70 @@
+src/modules/AiRuntime/useCases/agentReference/proposalGroundingBasis.ts
+  s_55244eb93b97d1::t_e12307cf8ed45e 43,47-54
+  s_55244eb93b97d1::t_21aa035e9c9ec1 8
+src/modules/AiRuntime/AGENTS.md
+  s_55244eb93b97d1::t_638297df5a7261 40
+src/modules/AiRuntime/useCases/compileAgentActionExecution.ts
+  s_55244eb93b97d1::t_7c8b21dbdc1146 87
+  s_55244eb93b97d1::t_78540cbb214e5c 95-99
+  s_55244eb93b97d1::t_e3b5908389202a 5
+  s_55244eb93b97d1::t_5dd0f0dabab478 13
+  s_55244eb93b97d1::t_257cea0d78a561 26-27
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_55244eb93b97d1::t_7172e325df620c 398
+src/modules/AiRuntime/useCases/perceptualConstraints/readRequestPerceptualConstraints.ts
+  s_55244eb93b97d1::t_c77d55fbf62217 1-19
+src/modules/AiRuntime/useCases/__tests__/refinePendingProposal.spec.ts
+  s_55244eb93b97d1::t_21da99426f1745 815-826,829-893
+  s_55244eb93b97d1::t_32c1f60f6464ea 47
+  s_55244eb93b97d1::t_65c281cd848dc1 274-275
+  s_55244eb93b97d1::t_c8f70353d9302d 827-828
+  s_55244eb93b97d1::t_de5bd2d3c2e9e6 894
+src/modules/AiRuntime/useCases/groundCompiledCommandBatch.ts
+  s_55244eb93b97d1::t_a0dca2c8a1e393 34
+  s_55244eb93b97d1::t_9043304fde81c5 234-244,248-249,251
+  s_55244eb93b97d1::t_e18da43b9a5b10 8
+  s_55244eb93b97d1::t_c8f5e46a35efe6 472-477,479,487
+  s_55244eb93b97d1::t_3c367174355537 376-380
+src/modules/AiRuntime/transformers/unionPerceptualConstraintReadings.ts
+  s_55244eb93b97d1::t_f52c954df806d2 1-29
+src/modules/AiRuntime/models/ProposalGroundingBasis.ts
+  s_55244eb93b97d1::t_1be7acbf408001 1-2
+  s_55244eb93b97d1::t_f9be11f5a6feb4 54-58
+src/modules/AiRuntime/useCases/compilePreviewMeasurementProposal.ts
+  s_55244eb93b97d1::t_4beabe6960256d 157-161
+  s_55244eb93b97d1::t_b1b44f86a74b34 6
+  s_55244eb93b97d1::t_c5c3216b6e7cc7 23
+  s_55244eb93b97d1::t_3aa5d605ac1676 40-41
+src/modules/AiRuntime/useCases/perceptualConstraints/withPerceptualConstraintAuthority.ts
+  s_55244eb93b97d1::t_078d4e29655cd8 58-64,91
+  s_55244eb93b97d1::t_2a494eb7c1d06a 71
+  s_55244eb93b97d1::t_83a79ec7ce8513 65-66
+  s_55244eb93b97d1::t_dcdb879e41eb2e 67-70
+  s_55244eb93b97d1::t_7e0908ecdf733d 72-74
+  s_55244eb93b97d1::t_74d4a4166eb374 88-90
+  s_55244eb93b97d1::t_f8ff9c4db60a4e 92
+  s_55244eb93b97d1::t_d23f5c95e5a116 79
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_55244eb93b97d1::t_035f4d941b3c5f 1972
+src/modules/AiRuntime/useCases/perceptualConstraints/compilePerceptualConstraints.ts
+  s_55244eb93b97d1::t_7c5436553dd6aa 249
+  s_55244eb93b97d1::t_eef31ef4160af9 11
+src/modules/AiRuntime/useCases/agentRequestOrchestration/materializePromptCommandPlan.ts
+  s_55244eb93b97d1::t_be01485c67f2ab 165
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0473186c96b8eda77da911da505a0eba64984da1",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
