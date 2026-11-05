@@ -390,3 +390,35 @@ describe('a metric-goal preview keeps the verdict a card earned before render sh
         );
     });
 });
+
+describe('a shared preview measurement reads every metric any of its subjects needs', { timeout: 120_000 }, () => {
+    // The held vocal is the second subject of the whole-batch chunk, behind a track no hold reads.
+    const HELD_SECOND = ['bass', 'vocal', 'keys'] as const;
+
+    beforeEach(() => {
+        configureProject(THREE_TRACKS);
+        startRun();
+    });
+
+    it.each([
+        { label: 'admits a passing card', vocalCutDb: -1 },
+        { label: 'refuses a card with a held metric outside tolerance', vocalCutDb: -12 },
+    ])('$label whose held subject is not first in its measurement', async ({ vocalCutDb }) => {
+        const { compiled, state } = compileRecipeCard(HELD_SECOND, vocalCutDb);
+        const { evaluation, requests } = await previewCard(compiled, state);
+        expect(requests.filter((request) => request.prefix === HELD_SECOND.length)).toEqual([
+            {
+                prefix: HELD_SECOND.length,
+                ids: ['bass', 'keys', 'vocal'],
+                metrics: ['dynamicRangeEstimate', 'rms', 'spectralCentroid'],
+                endBeat: RANGE.endBeat,
+            },
+        ]);
+        expect(verdict(evaluation)).toEqual(expectedVerdict(HELD_SECOND, vocalCutDb));
+        expect(evaluation.reason).toBe(
+            vocalCutDb === -1
+                ? 'The actual preview satisfies the frozen objective criteria. This does not establish perceived sound quality.'
+                : DYNAMIC_RANGE_REFUSAL
+        );
+    });
+});
