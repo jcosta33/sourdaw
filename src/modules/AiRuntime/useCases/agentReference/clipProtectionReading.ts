@@ -35,6 +35,9 @@ const protectionClauseStartPattern = new RegExp(String.raw`^${protectionVerb}\b`
 const allProtectionVerbsPattern = new RegExp(String.raw`\b${protectionVerb}\b`, 'giu');
 const exclusionVerbPattern = /\b(?:excluding|except)\b/giu;
 const protectionClauseBoundaryPattern = new RegExp(protectionClauseBoundary, 'giu');
+// The courtesy words a request opens with ahead of its verb, any number in any order and nothing else.
+const courtesyOpeningPattern =
+    /^(?:(?:please|can\s+you|could\s+you|would\s+you|just|now|ok|okay|actually|also)[\s,]*)*$/iu;
 const referenceSeparatorPattern = /,\s*(?:and\b\s*)?|\s+and\s+/giu;
 
 /** A list member's text and where it stands in the request. */
@@ -54,7 +57,7 @@ function hasDanglingProtectionClause(maskedPrompt: string, completeVerbStarts: R
         const precedingBoundary = boundaries.findLast((boundary) => boundary.index + boundary[0].length <= verb.index);
         const clauseStart = precedingBoundary ? precedingBoundary.index + precedingBoundary[0].length : 0;
         const prefix = maskedPrompt.slice(clauseStart, verb.index).trim();
-        if (prefix.length === 0 || /\b(?:and|then)\s*$/iu.test(prefix)) {
+        if (courtesyOpeningPattern.test(prefix) || /\b(?:and|then)\s*$/iu.test(prefix)) {
             return true;
         }
     }
