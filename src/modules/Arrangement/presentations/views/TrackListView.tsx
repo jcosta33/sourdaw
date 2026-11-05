@@ -338,7 +338,7 @@ export const TrackListView = ({
                             </TooltipTrigger>
                             <TooltipContent>Add Folder</TooltipContent>
                         </Tooltip>
-                        <AddTrackMenu trackCount={tracks.length} />
+                        <AddTrackMenu />
                     </Row>
                 }
             >
@@ -424,17 +424,14 @@ export const TrackListView = ({
     );
 };
 
-const AddTrackMenu = ({ trackCount }: { trackCount: number }): ReactElement => {
+const AddTrackMenu = (): ReactElement => {
     const createTrackOfKind = (kind: 'audio' | 'midi' | 'bus') => {
-        const labels = { audio: 'Audio', midi: 'MIDI', bus: 'Bus' };
         // The undoable `addTrack` action, not the bare use case: the use case
         // captures no inverse (issue #3696), so a menu-created track left no
         // history. The handler's `discardCreatedTrack` inverse removes
-        // precisely the created track and redo restores its id.
-        void executeUserAppAction({
-            type: 'addTrack',
-            payload: { name: `${labels[kind]} ${trackCount + 1}`, kind },
-        });
+        // precisely the created track and redo restores its id. The handler
+        // also names it, numbering per kind.
+        void executeUserAppAction({ type: 'addTrack', payload: { kind } });
     };
 
     const templates = getTrackTemplates();

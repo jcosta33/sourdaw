@@ -126,7 +126,7 @@ export const handleRemoveTrackGainAutomationRange = createHandler<'removeTrackGa
         return removeTrackGainAutomationRange(laneIds) ? { status: 'written' } : { status: 'conflict' };
     },
     describe: (action) => ({
-        label: `Restore impact-bus gains outside ${action.payload.sectionName}`,
+        label: `Restore bus gains outside ${action.payload.sectionName}`,
         inverseAction: currentStateMatches(action) ? { type: 'automateTrackGainRange', payload: action.payload } : null,
     }),
     undoable: true,

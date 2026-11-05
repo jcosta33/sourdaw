@@ -347,7 +347,8 @@ const validators = {
         param.stems.length >= 2 &&
         param.stems.length <= 32 &&
         param.stems.every(isStemImportAssignment),
-    addTrack: (param): param is PayloadOf<'addTrack'> => isObj(param) && isString(param.name) && isString(param.kind),
+    addTrack: (param): param is PayloadOf<'addTrack'> =>
+        isObj(param) && (param.name === undefined || isString(param.name)) && isString(param.kind),
     removeTrack: (param): param is PayloadOf<'removeTrack'> =>
         isObj(param) &&
         hasOnlyKeys(param, [

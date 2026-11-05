@@ -370,6 +370,33 @@ describe('a metric-goal preview proves a six-track card the unshared preview cou
     });
 });
 
+describe(
+    'a metric-goal preview proves an eight-track held card within one turn of receipts',
+    { timeout: 120_000 },
+    () => {
+        beforeEach(() => {
+            configureProject(EIGHT_TRACKS);
+            startRun();
+        });
+
+        it.each([
+            { label: 'admits a passing card', vocalCutDb: -1 },
+            { label: 'refuses a card with a held metric outside tolerance', vocalCutDb: -12 },
+        ])('$label', async ({ vocalCutDb }) => {
+            const { compiled, state } = compileRecipeCard(EIGHT_TRACKS, vocalCutDb);
+            const { evaluation, receipts } = await previewCard(compiled, state);
+            expect(receipts.some((receipt) => receipt.error?.code === 'turn-receipt-budget-spent')).toBe(false);
+            expect(receipts.map((receipt) => receipt.status)).toEqual(Array(9).fill('success'));
+            expect(verdict(evaluation)).toEqual(expectedVerdict(EIGHT_TRACKS, vocalCutDb));
+            expect(evaluation.reason).toBe(
+                vocalCutDb === -1
+                    ? 'The actual preview satisfies the frozen objective criteria. This does not establish perceived sound quality.'
+                    : DYNAMIC_RANGE_REFUSAL
+            );
+        });
+    }
+);
+
 describe('a metric-goal preview keeps the verdict a card earned before render sharing', { timeout: 120_000 }, () => {
     beforeEach(() => {
         configureProject(THREE_TRACKS);

@@ -68,8 +68,31 @@ describe('trackStrategy', () => {
         ).toEqual({
             index: 2,
             name: 'addTrack',
-            reason: 'Expected a safe name and one of audio, midi, or folder',
+            reason: 'Expected an optional safe name and one of audio, midi, or folder',
         });
+    });
+
+    it('leaves a nameless track for the owner to name and still refuses an unsafe or non-string name', () => {
+        expect(
+            bridgeTrackToolCall({
+                call: { name: 'addTrack', arguments: { kind: 'midi' } },
+                context: projectContext,
+                index: 0,
+            })
+        ).toEqual({ type: 'addTrack', payload: { kind: 'midi', select: false } });
+        for (const name of [42, '', '<b>Lead</b>']) {
+            expect(
+                bridgeTrackToolCall({
+                    call: { name: 'addTrack', arguments: { name, kind: 'midi' } },
+                    context: projectContext,
+                    index: 1,
+                })
+            ).toEqual({
+                index: 1,
+                name: 'addTrack',
+                reason: 'Expected an optional safe name and one of audio, midi, or folder',
+            });
+        }
     });
 });
 

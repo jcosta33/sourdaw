@@ -252,6 +252,31 @@ function successRead(
         },
         measured.recipeSource
     );
+    const measuredSummary = `Measured the proposal preview against the project for ${String(targets.length)} target(s) over beats ${String(startBeat)} to ${String(endBeat)}.`;
+    const data = {
+        kind: 'analysis-measurement',
+        schemaVersion: 1,
+        subject: 'preview',
+        scope: parsed.scope,
+        sourceRevisionDigest: digest(input.projectRevision),
+        range: {
+            startBeat,
+            endBeat,
+            sectionId,
+            baselineSeconds: rendered.baseline.rangeSeconds,
+            previewSeconds: rendered.preview.rangeSeconds,
+        },
+        metrics: parsed.metrics,
+        targets: targets.map((target, index) => ({
+            targetId: target.targetId,
+            targetKind: target.targetKind,
+            baseline: target.baseline,
+            preview: target.preview,
+            deltas: target.deltas,
+            baselineRender: artifactOf(pairs[index]![0]),
+            previewRender: artifactOf(pairs[index]![1]),
+        })),
+    };
     const receipt: ApplicationToolReceipt = {
         schema: 'sourdaw.application-tool-receipt',
         schemaVersion: 1,
@@ -260,38 +285,26 @@ function successRead(
         turn: input.turn,
         status: 'success',
         revision: input.projectRevision,
+        data,
+        summary: measuredSummary,
+        warnings: boundedWarnings(rendered, retentionWarnings),
+        error: null,
+    };
+    if (input.preview.origin === 'approval-preview') {
+        // The card already holds the batch and no provider adopts it, so its proof is figures alone.
+        return { receipt, commands, measuredPreview };
+    }
+    const adoptable: ApplicationToolReceipt = {
+        ...receipt,
         data: {
-            kind: 'analysis-measurement',
-            schemaVersion: 1,
-            subject: 'preview',
-            scope: parsed.scope,
-            sourceRevisionDigest: digest(input.projectRevision),
-            range: {
-                startBeat,
-                endBeat,
-                sectionId,
-                baselineSeconds: rendered.baseline.rangeSeconds,
-                previewSeconds: rendered.preview.rangeSeconds,
-            },
-            metrics: parsed.metrics,
-            targets: targets.map((target, index) => ({
-                targetId: target.targetId,
-                targetKind: target.targetKind,
-                baseline: target.baseline,
-                preview: target.preview,
-                deltas: target.deltas,
-                baselineRender: artifactOf(pairs[index]![0]),
-                previewRender: artifactOf(pairs[index]![1]),
-            })),
+            ...data,
             commands: materializeTransformToolCalls([
                 { callId: input.callId, revision: input.projectRevision, commands },
             ]),
         },
-        summary: `Measured the proposal preview against the project for ${String(targets.length)} target(s) over beats ${String(startBeat)} to ${String(endBeat)}. Adopt exactly these commands with compiledCallIds ["${input.callId}"].`,
-        warnings: boundedWarnings(rendered, retentionWarnings),
-        error: null,
+        summary: `${measuredSummary} Adopt exactly these commands with compiledCallIds ["${input.callId}"].`,
     };
-    return { receipt, commands, measuredPreview };
+    return { receipt: adoptable, commands, measuredPreview };
 }
 
 function sourceRecipe(input: ExecutePreviewMeasurementInput) {

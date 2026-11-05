@@ -200,7 +200,7 @@ describe('InstrumentsTab', () => {
         // the track enters undo history (#4618).
         expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
             type: 'addTrack',
-            payload: { name: 'MIDI', kind: 'midi' },
+            payload: { kind: 'midi' },
         });
     });
 
