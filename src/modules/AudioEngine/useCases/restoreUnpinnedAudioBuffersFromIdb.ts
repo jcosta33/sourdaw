@@ -6,15 +6,16 @@ type RestoreUnpinnedAudioBuffersFromIdbInput = {
 };
 
 type RestoreUnpinnedAudioBuffersFromIdbOutput = {
-    /** Ids storage holds no record for and this session never stored. */
+    /** Ids storage holds no record for and this session holds no PCM for. */
     absentIds: readonly string[];
     release: () => void;
 };
 
 /**
  * Make buffers resident from the PCM storage holds for them, stored this
- * session or an earlier one, for a caller about to play them outside a
- * project load. The pinned set and project reservations stay as they are, and
+ * session or an earlier one, or from the PCM a write of this session that has
+ * not landed still holds, for a caller about to play them outside a project
+ * load. The pinned set and project reservations stay as they are, and
  * no record is rewritten. Every named id is held until the returned release
  * runs. Only an id reported absent may be cached anew without overwriting
  * stored audio.

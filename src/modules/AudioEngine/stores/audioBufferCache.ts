@@ -1752,8 +1752,9 @@ async function rehydrateEvictedDurableBuffers(ids: readonly string[]): Promise<v
 }
 
 type UnpinnedStoredPcmRead =
-    | { status: 'absent'; id: string }
+    | { status: 'absent'; id: string; source: CachedAudioDurabilitySource | undefined }
     | { status: 'refused'; id: string }
+    | { status: 'session'; buffer: AudioBuffer; id: string; source: CachedAudioDurabilitySource }
     | {
           status: 'staged';
           buffer: AudioBuffer;
@@ -1764,9 +1765,42 @@ type UnpinnedStoredPcmRead =
       };
 
 type UnpinnedStoredPcmRestoration = {
-    /** Ids storage holds no record for and this session never stored. */
+    /** Ids storage holds no record for and this session holds no PCM for. */
     absent: string[];
 };
+
+/**
+ * The PCM a source of this session still holds for a write that has not
+ * landed (pending, failed or never started): the same audio storage would hold.
+ * The project-durability path persists exactly this data from these states.
+ */
+function readSessionPcm(source: CachedAudioDurabilitySource): SerializedBuffer | undefined {
+    const holdsUnwrittenPcm =
+        source.status === 'pending' || source.status === 'failed' || source.status === 'unpersisted';
+    if (!holdsUnwrittenPcm || !source.isAuthoritative()) {
+        return undefined;
+    }
+    try {
+        return materializeCachedAudioDurabilitySource(source);
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * With no record stored, a source of this session that still holds the PCM
+ * supplies it; a source a removal emptied, or none, leaves the id absent.
+ */
+function readWithoutStoredRecord(id: string, source: CachedAudioDurabilitySource | undefined): UnpinnedStoredPcmRead {
+    if (source === undefined || source.status === 'removed') {
+        return { status: 'absent', id, source };
+    }
+    const data = readSessionPcm(source);
+    if (!data) {
+        return { status: 'refused', id };
+    }
+    return { status: 'session', buffer: createRuntimeBuffer(data), id, source };
+}
 
 async function readUnpinnedStoredPcm(tx: IDBTransaction, id: string): Promise<UnpinnedStoredPcmRead> {
     const [data, meta] = await Promise.all([
@@ -1775,7 +1809,7 @@ async function readUnpinnedStoredPcm(tx: IDBTransaction, id: string): Promise<Un
     ]);
     const source = durabilitySourceById.get(id);
     if (data === undefined && meta === undefined) {
-        return { status: source === undefined ? 'absent' : 'refused', id };
+        return readWithoutStoredRecord(id, source);
     }
     if (
         preparedAudioBufferLifecycle.shouldSuppressNonLeaseRead(id, readPreparedOwner(meta)) ||
@@ -1803,9 +1837,12 @@ async function readUnpinnedStoredPcm(tx: IDBTransaction, id: string): Promise<Un
  * load it leaves the pinned set and project reservations alone, and unlike the
  * undo rehydration it admits a record no source of this session knows. The
  * record is not rewritten: the restored buffer's source is the record itself.
- * A prepared-lease, invalid or superseded record stays out, and a failed read
- * restores nothing and reports no id absent, so a caller never treats stored
- * audio it could not read as missing.
+ * With no record yet, a write of this session that has not landed supplies the
+ * PCM it holds, and that source is left as it is: a pending write keeps
+ * running and a failed one waits for the durability retry, so nothing is
+ * written here. A prepared-lease, invalid or superseded record stays out, and
+ * a failed read restores nothing and reports no id absent, so a caller never
+ * treats stored audio it could not read as missing.
  */
 async function restoreUnpinnedStoredBuffers(ids: readonly string[]): Promise<UnpinnedStoredPcmRestoration> {
     const candidateIds = [...new Set(ids)].filter((id) => !cache.has(id));
@@ -1830,12 +1867,15 @@ async function restoreUnpinnedStoredBuffers(ids: readonly string[]): Promise<Unp
             continue;
         }
         // A write or removal that landed while storage was read supersedes it.
-        const sourceAtRead = read.status === 'staged' ? read.source : undefined;
-        if (durabilitySourceById.get(read.id) !== sourceAtRead) {
+        if (durabilitySourceById.get(read.id) !== read.source) {
             continue;
         }
         if (read.status === 'absent') {
             absent.push(read.id);
+            continue;
+        }
+        if (read.status === 'session') {
+            audioCacheSet(read.id, read.buffer, read.source.freezeProjectId, true);
             continue;
         }
         audioCacheSet(read.id, read.buffer, read.metadata?.freezeProjectId, read.metadata !== undefined);

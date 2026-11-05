@@ -25,7 +25,9 @@ type AudioRealm = {
     clearRuntime: typeof import('../audioBufferCache').clearRuntimeAudioBufferCache;
     ensure: typeof import('../../useCases/ensureCachedAudioBuffersDurable').ensureCachedAudioBuffersDurable;
     get: typeof import('../../useCases/getCachedAudioBuffer').getCachedAudioBuffer;
+    persistPrepared: typeof import('../audioBufferCache').audioBufferCache.persistPreparedBuffer;
     prepare: typeof import('../../useCases/prepareCachedAudioBuffersFromIdb').prepareCachedAudioBuffersFromIdb;
+    remove: typeof import('../audioBufferCache').audioBufferCache.remove;
     restoreUnpinned: typeof import('../../useCases/restoreUnpinnedAudioBuffersFromIdb').restoreUnpinnedAudioBuffersFromIdb;
     setOwnershipProvider: typeof import('../durableAudioBufferOwnership').setDurableAudioBufferOwnershipProvider;
 };
@@ -79,7 +81,9 @@ async function loadRealm(): Promise<AudioRealm> {
         clearRuntime: store.clearRuntimeAudioBufferCache,
         ensure: ensure.ensureCachedAudioBuffersDurable,
         get: get.getCachedAudioBuffer,
+        persistPrepared: store.audioBufferCache.persistPreparedBuffer,
         prepare: prepare.prepareCachedAudioBuffersFromIdb,
+        remove: store.audioBufferCache.remove,
         restoreUnpinned: restoreUnpinned.restoreUnpinnedAudioBuffersFromIdb,
         setOwnershipProvider: ownership.setDurableAudioBufferOwnershipProvider,
     };
@@ -94,6 +98,43 @@ async function persistSample(realm: AudioRealm, id: string, value: number): Prom
         throw new Error(`Expected durable receipt, received ${receipt.status}`);
     }
     receipt.release();
+}
+
+/** Unprotected writes enough to evict every buffer nothing protects. */
+function evictUnprotected(realm: AudioRealm): void {
+    for (let index = 0; index < MAX_AUDIO_BUFFER_ENTRIES; index++) {
+        realm.cache({ bufferId: `filler-${index}`, buffer: runtimeBuffer(index / MAX_AUDIO_BUFFER_ENTRIES) });
+    }
+}
+
+const AUDIO_STORAGE_LOCK = 'sourdaw:project-audio-storage';
+
+/** Every storage write queued so far has settled once this resolves. */
+async function settleQueuedWrites(): Promise<void> {
+    await lockManager.locks.request(AUDIO_STORAGE_LOCK, { mode: 'exclusive' }, async () => undefined);
+}
+
+/** Holds the storage lock, so every write queued meanwhile stays pending. */
+async function holdStorageWrites(): Promise<{ release: () => Promise<void> }> {
+    let granted!: () => void;
+    let releaseLock!: () => void;
+    const grant = new Promise<void>((resolve) => {
+        granted = resolve;
+    });
+    const held = lockManager.locks.request(AUDIO_STORAGE_LOCK, { mode: 'exclusive' }, () => {
+        granted();
+        return new Promise<void>((resolve) => {
+            releaseLock = resolve;
+        });
+    });
+    await grant;
+    return {
+        release: async () => {
+            releaseLock();
+            await held;
+            await settleQueuedWrites();
+        },
+    };
 }
 
 /** A later launch: the stored records survive, nothing is resident. */
@@ -117,7 +158,7 @@ describe('restoring stored audio without pinning it', () => {
             realm.setOwnershipProvider(null);
             realm.clearRuntime();
         }
-        await lockManager.locks.request('sourdaw:project-audio-storage', { mode: 'exclusive' }, async () => undefined);
+        await settleQueuedWrites();
         vi.unstubAllGlobals();
         vi.restoreAllMocks();
     });
@@ -155,10 +196,7 @@ describe('restoring stored audio without pinning it', () => {
 
         const { release } = await later.restoreUnpinned({ bufferIds: ['preview-sample'] });
         release();
-        // Enough unprotected writes to evict every buffer the project does not pin.
-        for (let index = 0; index < MAX_AUDIO_BUFFER_ENTRIES; index++) {
-            later.cache({ bufferId: `filler-${index}`, buffer: runtimeBuffer(index / MAX_AUDIO_BUFFER_ENTRIES) });
-        }
+        evictUnprotected(later);
 
         expect(cachedSample(later, 'project-clip')).toBe(Math.fround(0.5));
         expect(cachedSample(later, 'preview-sample')).toBeNull();
@@ -177,5 +215,111 @@ describe('restoring stored audio without pinning it', () => {
         expect(absentIds).toEqual(['never-stored']);
         expect(later.get({ bufferId: 'never-stored' })).toBeNull();
         expect(cachedSample(later, 'stored-sample')).toBe(Math.fround(0.25));
+    });
+
+    it('restores an evicted sample whose write is still pending from the PCM this session holds', async () => {
+        const realm = await loadRealm();
+        const writes = await holdStorageWrites();
+        realm.cache({ bufferId: 'pending-sample', buffer: runtimeBuffer(0.25) });
+        evictUnprotected(realm);
+        await flushIndexedDbTasks();
+        expect(cachedSample(realm, 'pending-sample')).toBeNull();
+        expect(controls.committed.has('pending-sample')).toBe(false);
+        controls.resetByteCounters();
+
+        const { absentIds, release } = await realm.restoreUnpinned({ bufferIds: ['pending-sample'] });
+        release();
+        const bytesWrittenByRestore = controls.bytesWritten();
+        await writes.release();
+
+        expect(absentIds).toEqual([]);
+        expect(cachedSample(realm, 'pending-sample')).toBe(Math.fround(0.25));
+        expect(bytesWrittenByRestore).toBe(0);
+    });
+
+    it('restores an evicted sample whose write failed from the PCM this session holds', async () => {
+        const realm = await loadRealm();
+        controls.failRequestsFrom(BUFFER_STORE);
+        realm.cache({ bufferId: 'failed-sample', buffer: runtimeBuffer(0.25) });
+        evictUnprotected(realm);
+        await settleQueuedWrites();
+        controls.allowRequests();
+        expect(cachedSample(realm, 'failed-sample')).toBeNull();
+        expect(controls.committed.has('failed-sample')).toBe(false);
+        controls.resetByteCounters();
+
+        const { absentIds, release } = await realm.restoreUnpinned({ bufferIds: ['failed-sample'] });
+        release();
+        await flushIndexedDbTasks();
+
+        expect(absentIds).toEqual([]);
+        expect(cachedSample(realm, 'failed-sample')).toBe(Math.fround(0.25));
+        expect(controls.bytesWritten()).toBe(0);
+    });
+
+    it('reports a sample this session removed absent', async () => {
+        const realm = await loadRealm();
+        await persistSample(realm, 'removed-sample', 0.25);
+        realm.remove('removed-sample');
+        await settleQueuedWrites();
+        expect(controls.committed.has('removed-sample')).toBe(false);
+
+        const { absentIds, release } = await realm.restoreUnpinned({ bufferIds: ['removed-sample'] });
+        release();
+
+        expect(absentIds).toEqual(['removed-sample']);
+        expect(realm.get({ bufferId: 'removed-sample' })).toBeNull();
+    });
+
+    it('reports nothing absent and restores nothing when storage cannot be read', async () => {
+        const earlier = await loadRealm();
+        await persistSample(earlier, 'stored-sample', 0.25);
+        const later = await relaunch();
+        controls.failRequestsFrom(BUFFER_STORE);
+
+        const { absentIds, release } = await later.restoreUnpinned({
+            bufferIds: ['stored-sample', 'never-stored'],
+        });
+        release();
+        controls.allowRequests();
+
+        expect(absentIds).toEqual([]);
+        expect(later.get({ bufferId: 'stored-sample' })).toBeNull();
+        expect(later.get({ bufferId: 'never-stored' })).toBeNull();
+    });
+
+    it('keeps out a stored record another launch wrote over the one this session stored', async () => {
+        const first = await loadRealm();
+        await persistSample(first, 'shared-sample', 0.25);
+        evictUnprotected(first);
+        await flushIndexedDbTasks();
+        expect(cachedSample(first, 'shared-sample')).toBeNull();
+        vi.resetModules();
+        const second = await loadRealm();
+        await persistSample(second, 'shared-sample', 0.75);
+        expect(controls.committed.get('shared-sample')?.channelData[0]?.[0]).toBe(Math.fround(0.75));
+
+        const { absentIds, release } = await first.restoreUnpinned({ bufferIds: ['shared-sample'] });
+        release();
+
+        expect(absentIds).toEqual([]);
+        expect(first.get({ bufferId: 'shared-sample' })).toBeNull();
+    });
+
+    it('keeps out a record a prepared lease still holds', async () => {
+        const earlier = await loadRealm();
+        const persisted = await earlier.persistPrepared({
+            id: 'leased-sample',
+            buffer: runtimeBuffer(0.25),
+            leaseId: 'leased-sample-lease',
+        });
+        expect(persisted.status).toBe('persisted');
+        const later = await relaunch();
+
+        const { absentIds, release } = await later.restoreUnpinned({ bufferIds: ['leased-sample'] });
+        release();
+
+        expect(absentIds).toEqual([]);
+        expect(later.get({ bufferId: 'leased-sample' })).toBeNull();
     });
 });

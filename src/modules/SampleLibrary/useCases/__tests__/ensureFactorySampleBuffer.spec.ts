@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // `cache` stands in for the AudioEngine buffer cache and `stored` for the PCM
-// its IndexedDB store holds, from this launch or an earlier one; `unreadable`
+// its IndexedDB store holds, from this launch or an earlier one; `unwritten`
+// for the PCM a write of this session holds before it lands; `unreadable`
 // holds ids whose stored record exists but cannot be read now. Each case
 // observes which source (memory, storage, a fresh render) supplied the buffer.
 type TestRoot = { id: string; status?: string; fileCount?: number };
@@ -9,6 +10,7 @@ type TestRoot = { id: string; status?: string; fileCount?: number };
 const mocks = vi.hoisted(() => {
     const cache = new Map<string, AudioBuffer>();
     const stored = new Map<string, AudioBuffer>();
+    const unwritten = new Map<string, AudioBuffer>();
     const unreadable = new Set<string>();
     const libraryStoreValue: { value: { roots: TestRoot[]; samples: { id: string; libraryRootId: string }[] } } = {
         value: { roots: [], samples: [] },
@@ -16,6 +18,7 @@ const mocks = vi.hoisted(() => {
     return {
         cache,
         stored,
+        unwritten,
         unreadable,
         libraryStoreValue,
         audioContext: {},
@@ -28,7 +31,7 @@ const mocks = vi.hoisted(() => {
         restoreUnpinnedAudioBuffersFromIdb: vi.fn(async ({ bufferIds }: { bufferIds: readonly string[] }) => {
             const absentIds: string[] = [];
             for (const id of bufferIds) {
-                const buffer = stored.get(id);
+                const buffer = stored.get(id) ?? unwritten.get(id);
                 if (cache.has(id) || unreadable.has(id)) {
                     continue;
                 }
@@ -115,6 +118,7 @@ describe('ensureFactorySampleBuffer', () => {
         vi.clearAllMocks();
         mocks.cache.clear();
         mocks.stored.clear();
+        mocks.unwritten.clear();
         mocks.unreadable.clear();
         rendered = Array.from({ length: PACK_SIZE }, (_, index) => createRenderedSample(index));
         vi.mocked(renderFactorySamples).mockResolvedValue(rendered);
@@ -162,6 +166,19 @@ describe('ensureFactorySampleBuffer', () => {
             bufferIds: ['factory-test-1'],
         });
         expect(mocks.releaseHold).toHaveBeenCalledTimes(1);
+        expect(renderFactorySamples).not.toHaveBeenCalled();
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+    });
+
+    it('restores an evicted sample whose write has not landed from the PCM it holds, without a render', async () => {
+        const unwritten = storedBuffer('factory-test-1');
+        mocks.unwritten.set('factory-test-1', unwritten);
+
+        await expect(ensureFactorySampleBuffer({ sampleId: 'factory-test-1' })).resolves.toEqual({
+            status: 'resolved',
+            buffer: unwritten,
+        });
+
         expect(renderFactorySamples).not.toHaveBeenCalled();
         expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
     });
@@ -229,6 +246,23 @@ describe('ensureFactorySampleBuffer', () => {
 
         expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
         expect(mocks.libraryStoreValue.value.samples).toEqual([]);
+    });
+
+    it('caches nothing when the user disconnects the root as the render settles', async () => {
+        // The pack's own check has passed; the disconnect lands with its ready status.
+        mocks.updateLibraryRootStatus
+            .mockImplementationOnce(() => undefined)
+            .mockImplementationOnce(() => {
+                mocks.libraryStoreValue.value = { roots: [], samples: [] };
+            });
+
+        await expect(ensureFactorySampleBuffer({ sampleId: 'factory-test-3' })).resolves.toEqual({
+            status: 'unavailable',
+        });
+
+        expect(renderFactorySamples).toHaveBeenCalledTimes(1);
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.cache.has('factory-test-3')).toBe(false);
     });
 
     it('reports a factory sample unavailable once the user disconnected its root', async () => {
