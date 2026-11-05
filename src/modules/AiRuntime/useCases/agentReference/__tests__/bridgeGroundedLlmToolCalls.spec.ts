@@ -8072,6 +8072,73 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(malformed.rejections[0]?.reason).toContain('incomplete or malformed');
     });
 
+    it('admits renaming the clip a bare and hands the request to and refuses the protected one', () => {
+        const context = createNamedClipSourceContext();
+        const admitted = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-lead', name: 'Bridge Solo' } }],
+            'leave Intro alone and rename Lead to Bridge Solo',
+            context
+        );
+        const refused = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Bridge Solo' } }],
+            'leave Intro alone and rename Intro to Bridge Solo',
+            context
+        );
+
+        expect(admitted.rejections).toEqual([]);
+        expect(admitted.actions).toHaveLength(1);
+        expect(refused.actions).toEqual([]);
+        expect(refused.rejections[0]?.reason).toContain('protected');
+    });
+
+    it('refuses renaming a protected clip whose name starts with an instruction verb', () => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-copy-beta', name: 'Gamma' } }],
+            "Don't touch Alpha and Copy Beta. Rename Copy Beta to Gamma.",
+            withNamedClip(withNamedClip(createClipContext(), 'clip-alpha', 'Alpha'), 'clip-copy-beta', 'Copy Beta')
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('protected');
+    });
+
+    it('refuses renaming a protected clip beside a clip named like a protection opening', () => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-alpha', name: 'Gamma' } }],
+            "Don't touch Alpha and rename Alpha to Gamma.",
+            withNamedClip(withNamedClip(createClipContext(), 'clip-alpha', 'Alpha'), 'clip-touch', 'Touch')
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('protected');
+    });
+
+    it('refuses renaming a clip when a clip name only partly overlaps the protection opening', () => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-alpha', name: 'Gamma' } }],
+            "Don't touch Alpha and rename Alpha to Gamma.",
+            withNamedClip(withNamedClip(createClipContext(), 'clip-alpha', 'Alpha'), 'clip-touch-alpha', 'Touch Alpha')
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('incomplete or malformed');
+    });
+
+    it('refuses renaming a clip when a clip name contains the protection opening', () => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-alpha', name: 'Gamma' } }],
+            'Do not touch Alpha and rename Alpha to Gamma.',
+            withNamedClip(
+                withNamedClip(createClipContext(), 'clip-alpha', 'Alpha'),
+                'clip-do-not-touch-alpha',
+                'Do not touch Alpha'
+            )
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('incomplete or malformed');
+    });
+
     it('rejects renaming a quoted literal protected clip when another clip is selected', () => {
         const result = bridge(
             [{ name: 'renameClip', arguments: { clipId: 'clip-literal-selected', name: 'Bridge Solo' } }],

@@ -31,7 +31,7 @@ import {
     removeCrdtDoc,
     registerCrdtStorageRuntime,
     resetCrdtProjectAuthority,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
+    projectRevisionMatchesLiveIgnoringSaveWrites,
 } from '#/modules/CrdtDocument/useCases';
 
 import { AgentWorkspace } from '../AgentWorkspace';
@@ -87,9 +87,7 @@ describe('Prompt Bar canonical approval parity', () => {
         vi.spyOn(handlers.removeTrack, 'execute');
         registerHandlerMap(handlers);
         commandProjectRevisionPort.setProvider(captureProjectRevision);
-        commandProjectRevisionPort.setLiveMatchIgnoringCommandCheckpoint(
-            projectRevisionMatchesLiveIgnoringCommandCheckpoint
-        );
+        commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(projectRevisionMatchesLiveIgnoringSaveWrites);
         commandBatchPreflightPort.setProvider(() => ({
             projectId: captureProjectIdentity(),
             targetFingerprints: { 'review-track': 'review-track' },
