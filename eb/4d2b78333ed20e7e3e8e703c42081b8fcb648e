@@ -1,0 +1,25 @@
+src/modules/Command/useCases/__tests__/undoRedoReplayConflicts.spec.ts
+  s_fec7059b7a251c::t_a799d90580b4a9 504,506-687
+  s_fec7059b7a251c::t_e53138a7637b13 503
+  s_fec7059b7a251c::t_0f5db25f4481fd 505
+docs/architecture/06-crdt-collaboration.md
+  s_fec7059b7a251c::t_1a55dde917fbc5 42
+src/modules/Command/useCases/undo.ts
+  s_fec7059b7a251c::t_1d2353cf3b390c 133-145,300-305,317-318,320,335-337,372,394-395
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eb4d2b78333ed20e7e3e8e703c42081b8fcb648e",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
