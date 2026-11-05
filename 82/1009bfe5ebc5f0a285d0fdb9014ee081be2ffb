@@ -1,0 +1,52 @@
+src/modules/Command/useCases/__tests__/legacyInverseReplayAdmission.spec.ts
+  s_0314bb17e5dee3::t_df4f150c7846c2 1-117,119-170
+  s_0314bb17e5dee3::t_04e9050f743d6a 118
+src/modules/Arrangement/useCases/__tests__/getLegacyTrimInverseReplayFailure.spec.ts
+  s_0314bb17e5dee3::t_9680db9e38c4e6 1-121
+src/app/registerKernelPorts.ts
+  s_55244eb93b97d1::t_d36333d79fab79 1,3,9,18,29-33,39
+src/modules/Arrangement/useCases/clipEditing/__tests__/trimClipStartLoopOrigin.spec.ts
+  s_55244eb93b97d1::t_8136eaa1187471 3,124-125
+src/modules/Arrangement/useCases/getLegacyTrimInverseReplayFailure.ts
+  s_55244eb93b97d1::t_7a4c822e75de4d 3-5,21-26
+src/modules/Arrangement/useCases/index.ts
+  s_55244eb93b97d1::t_c313a63a5ad99e 53
+src/modules/Command/useCases/__tests__/legacyMidiTrimReplay.integration.spec.ts
+  s_55244eb93b97d1::t_b4635694315461 6,204-205
+src/modules/Command/useCases/executeActionGroupUndo.ts
+  s_55244eb93b97d1::t_58dc30bdcc5e23 5,85
+src/modules/Command/useCases/getLegacyInverseReplayFailure.ts
+  s_55244eb93b97d1::t_f47254ea651e54 1-19
+src/modules/Command/useCases/index.ts
+  s_55244eb93b97d1::t_737ddac30e1066 125
+src/modules/Command/useCases/legacyInverseReplayAdmission.ts
+  s_55244eb93b97d1::t_dbb8f11e54ba64 1-50
+src/modules/Command/useCases/revertActionGroup.ts
+  s_55244eb93b97d1::t_a4e2bd10ee2936 7,90
+src/modules/Command/useCases/undo.ts
+  s_55244eb93b97d1::t_0f228c9ec0e879 11,97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "821009bfe5ebc5f0a285d0fdb9014ee081be2ffb",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
