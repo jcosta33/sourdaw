@@ -1,0 +1,25 @@
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollRenderer.spec.ts
+  s_fec7059b7a251c::t_c7c4cf89566503 473-548
+  s_fec7059b7a251c::t_9bffb0c9b22c73 19-21
+src/modules/TimelineEditor/presentations/helpers/audibleNoteWindow.ts
+  s_fec7059b7a251c::t_af5aef8cf94be1 15,17,24-30
+src/modules/TimelineEditor/presentations/hooks/usePianoRollRenderer.ts
+  s_fec7059b7a251c::t_7e6932f79f33cb 373-375
+  s_fec7059b7a251c::t_e4b202d2c5dee1 376
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8844ea991fe61b0dca378eef0c59c73d1b97c407",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
