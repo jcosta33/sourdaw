@@ -167,7 +167,7 @@ const {
     setElasticSensitivityRootIdentityCaptureMock,
     captureProjectIdentityMock,
     captureProjectRevisionMock,
-    projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
+    projectRevisionMatchesLiveIgnoringSaveWritesMock,
     agentProjectInspectionSetProviderMock,
     setArrangementEventBusMock,
     setRecordingMidiAdmissionPortMock,
@@ -178,6 +178,7 @@ const {
     setNotificationEventBusMock,
     setProjectIdentityTransitionDependenciesMock,
     commandRuntimeRepairPortMock,
+    commandProjectRevisionPortMock,
     externalClientManifestPortMock,
     repairRuntimeGraphFromProjectMock,
     sessionUndoWitnessStampPortMock,
@@ -312,9 +313,7 @@ const {
         setElasticSensitivityRootIdentityCaptureMock: vi.fn(),
         captureProjectIdentityMock: vi.fn<() => string>(() => 'identity-1'),
         captureProjectRevisionMock: vi.fn<() => string>(() => 'revision-1'),
-        projectRevisionMatchesLiveIgnoringCommandCheckpointMock: vi.fn<(expectedRevision: string) => boolean>(
-            () => true
-        ),
+        projectRevisionMatchesLiveIgnoringSaveWritesMock: vi.fn<(expectedRevision: string) => boolean>(() => true),
         agentProjectInspectionSetProviderMock: vi.fn(),
         setArrangementEventBusMock: vi.fn<(eventBus: ArrangementEventBus) => void>(),
         setRecordingMidiAdmissionPortMock: vi.fn(),
@@ -329,6 +328,7 @@ const {
         },
         setNotificationEventBusMock: vi.fn<(eventBus: NotificationEventBus) => void>(),
         commandRuntimeRepairPortMock: { setProvider: vi.fn() },
+        commandProjectRevisionPortMock: { setProvider: vi.fn(), setLiveMatchIgnoringSaveWrites: vi.fn() },
         externalClientManifestPortMock: { setProvider: vi.fn() },
         repairRuntimeGraphFromProjectMock: vi.fn(() => Promise.resolve()),
         sessionUndoWitnessStampPortMock: { setProvider: vi.fn() },
@@ -524,7 +524,7 @@ vi.mock('#/modules/Command/useCases', () => ({
         setGuard: noop,
     },
     setActionHistoryMetadataPort: noop,
-    commandProjectRevisionPort: { setProvider: noop, setLiveMatchIgnoringCommandCheckpoint: noop },
+    commandProjectRevisionPort: commandProjectRevisionPortMock,
     commandDeviceVersionsPort: { setDeviceTypeResolver: noop, setResolver: noop },
     commandTrackDefaultsPort: { setTrackColorProvider: noop },
     commandRuntimeRepairPort: commandRuntimeRepairPortMock,
@@ -555,7 +555,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectIdentity: captureProjectIdentityMock,
     captureProjectRootIdentity: captureProjectRootIdentityMock,
     captureProjectRevision: captureProjectRevisionMock,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint: projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
+    projectRevisionMatchesLiveIgnoringSaveWrites: projectRevisionMatchesLiveIgnoringSaveWritesMock,
     createCommandPreviewWorkspace: noop,
     createCommandRecoveryWorkspace: noop,
     getCrdtDoc: noop,
@@ -1152,6 +1152,12 @@ describe('bootstrap', () => {
     it('wires command recovery to the awaited runtime graph repair owner', () => {
         expect(commandRuntimeRepairPortMock.setProvider).toHaveBeenCalledExactlyOnceWith(
             repairRuntimeGraphFromProjectMock
+        );
+    });
+
+    it('lets command finalization tolerate a save by registering the save-insensitive revision matcher', () => {
+        expect(commandProjectRevisionPortMock.setLiveMatchIgnoringSaveWrites).toHaveBeenCalledExactlyOnceWith(
+            projectRevisionMatchesLiveIgnoringSaveWritesMock
         );
     });
 

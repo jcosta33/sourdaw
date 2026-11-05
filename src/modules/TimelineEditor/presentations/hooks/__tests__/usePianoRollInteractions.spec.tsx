@@ -160,7 +160,7 @@ type HarnessArgs = Omit<HookArgs, 'canvasRef'>;
 type Note = HookArgs['notes'][number];
 
 // ── Geometry (chromatic scale, unfolded) ─────────────────────────────────
-// getVisiblePitches yields pitches 83 → 24 top-to-bottom, ROW_HEIGHT = 16,
+// getVisiblePitches yields pitches 127 → 0 top-to-bottom, ROW_HEIGHT = 16,
 // RULER_HEIGHT = 22. Fixture beatWidth = 40, gridSnap = 1.
 const ROW = 16;
 const RULER = 22;
@@ -169,7 +169,7 @@ const BEAT_W = 40;
 const PITCH_RAIL_W = 40;
 
 /** clientY at the vertical middle of the row for a pitch. */
-const yForPitch = (pitch: number): number => RULER + (83 - pitch) * ROW + 8;
+const yForPitch = (pitch: number): number => RULER + (127 - pitch) * ROW + 8;
 
 const makeNote = (id: string, pitch: number, startBeat: number, duration: number, velocity = 100): Note => ({
     id,
@@ -546,6 +546,15 @@ describe('usePianoRollInteractions', () => {
                 expect.any(Function)
             );
             expect(setSelectedNoteIds).toHaveBeenCalledWith(new Set());
+        });
+
+        it.each([96, 127, 21, 0])('stamps a note at pitch %i, outside the old 24..83 range', (pitch) => {
+            const { canvas } = renderRoll({ notes: [] });
+
+            fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(pitch) });
+            fireEvent.mouseUp(canvas, { clientX: 45, clientY: yForPitch(pitch) });
+
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', pitch, 1, 1, PREFERRED_DEFAULT_VELOCITY);
         });
 
         it('stamps in the cell containing the pointer when the click lands in the right half of a cell', () => {

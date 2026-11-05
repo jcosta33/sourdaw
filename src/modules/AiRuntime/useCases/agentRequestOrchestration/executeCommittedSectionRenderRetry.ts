@@ -5,7 +5,7 @@ import {
     finalizeRecoveredCommandBatchEffects,
     type createVerifiedBatchReceipt,
 } from '#/modules/Command/useCases';
-import { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from '#/modules/CrdtDocument/useCases';
+import { projectRevisionMatchesLiveIgnoringSaveWrites } from '#/modules/CrdtDocument/useCases';
 import { type AgentWorkOwnerIdentity } from '#/utils/agentRenderReceipt';
 
 import { describeAgentRunHardLimit } from '../../models/AgentResourceLimits';
@@ -443,7 +443,7 @@ export async function executeCommittedSectionRenderRetry(input: {
         return finishAlreadyComplete(confirmation, durableReceipt, input.commandBatch);
     }
     const sourceRevision = confirmation.followUpProjectRevision;
-    if (!sourceRevision || !projectRevisionMatchesLiveIgnoringCommandCheckpoint(sourceRevision)) {
+    if (!sourceRevision || !projectRevisionMatchesLiveIgnoringSaveWrites(sourceRevision)) {
         return failStaleRevision(confirmation);
     }
     if (!canExecuteCommandBatchEffects()) {

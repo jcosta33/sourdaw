@@ -512,55 +512,74 @@ describe('handleGlueClips atomic integration', () => {
         expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
     });
 
-    it('keeps the glue and undo entry when a hidden alternative duplicates a source id', async () => {
-        await executeAppActionBatch([{ type: 'glueClips', payload: { clipIds: ['clip-a', 'clip-b'] } }], {
-            source: 'prompt',
-            requireCompensation: true,
-        });
-        const glued = trackStore.value!.tracks[0]!.clips[0]!;
-        const duplicateSource = ClipDummy.create({
-            id: 'clip-a',
-            trackId: 'track-midi',
-            type: 'midi',
-            startBeat: 20,
-            endBeat: 24,
-        });
-        trackStore.set({
-            ...trackStore.value!,
-            tracks: trackStore.value!.tracks.map((track) =>
-                track.id === 'track-midi'
-                    ? {
-                          ...track,
-                          alternatives: track.alternatives.map((alternative, index) =>
-                              index === 0 ? { ...alternative, clips: [duplicateSource] } : alternative
-                          ),
-                      }
-                    : track
-            ),
+    describe('a source id duplicated in an alternative after the glue', () => {
+        const duplicateSource = () =>
+            ClipDummy.create({ id: 'clip-a', trackId: 'track-midi', type: 'midi', startBeat: 20, endBeat: 24 });
+        const setAlternativeClips = (alternativeId: string, clips: ReturnType<typeof duplicateSource>[]) => {
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: trackStore.value!.tracks.map((track) =>
+                    track.id === 'track-midi'
+                        ? {
+                              ...track,
+                              alternatives: track.alternatives.map((alternative) =>
+                                  alternative.id === alternativeId ? { ...alternative, clips } : alternative
+                              ),
+                          }
+                        : track
+                ),
+            });
+        };
+        const addHiddenAlternative = () => {
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: trackStore.value!.tracks.map((track) =>
+                    track.id === 'track-midi'
+                        ? {
+                              ...track,
+                              alternatives: [...track.alternatives, { id: 'alt-hidden', name: 'Hidden', clips: [] }],
+                          }
+                        : track
+                ),
+            });
+        };
+        const glue = () =>
+            executeAppActionBatch([{ type: 'glueClips', payload: { clipIds: ['clip-a', 'clip-b'] } }], {
+                source: 'prompt',
+                requireCompensation: true,
+            });
+
+        it('keeps the glue and undo entry when a hidden alternative duplicates a source id', async () => {
+            await glue();
+            const glued = trackStore.value!.tracks[0]!.clips[0]!;
+            addHiddenAlternative();
+            setAlternativeClips('alt-hidden', [duplicateSource()]);
+
+            const staleUndoNotification = notifications.length;
+            await undo();
+            expectWarningNotification(staleUndoNotification, 'Cannot undo "Glue clips": project state has changed');
+
+            expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: glued.id }]);
+            expect(
+                trackStore.value!.tracks[0]!.alternatives.find((alternative) => alternative.id === 'alt-hidden')!.clips
+            ).toMatchObject([{ id: 'clip-a' }]);
+
+            setAlternativeClips('alt-hidden', []);
+            await undo();
+            expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
         });
 
-        const staleUndoNotification = notifications.length;
-        await undo();
-        expectWarningNotification(staleUndoNotification, 'Cannot undo "Glue clips": project state has changed');
+        it('undoes the glue when only the active alternative stale stored copy holds the id', async () => {
+            await glue();
+            const activeAlternativeId = trackStore.value!.tracks[0]!.activeAlternativeId;
+            setAlternativeClips(activeAlternativeId, [duplicateSource()]);
 
-        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: glued.id }]);
-        expect(trackStore.value!.tracks[0]!.alternatives[0]!.clips).toMatchObject([{ id: 'clip-a' }]);
+            const before = notifications.length;
+            await undo();
 
-        trackStore.set({
-            ...trackStore.value!,
-            tracks: trackStore.value!.tracks.map((track) =>
-                track.id === 'track-midi'
-                    ? {
-                          ...track,
-                          alternatives: track.alternatives.map((alternative, index) =>
-                              index === 0 ? { ...alternative, clips: [] } : alternative
-                          ),
-                      }
-                    : track
-            ),
+            expect(notifications.slice(before)).toEqual([]);
+            expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
         });
-        await undo();
-        expect(trackStore.value!.tracks[0]!.clips).toMatchObject([{ id: 'clip-a' }, { id: 'clip-b' }]);
     });
 
     it('keeps undo and redo retryable while step recording targets an affected clip', async () => {

@@ -226,6 +226,31 @@ describe('handleRemoveTrack', () => {
             expect(mocks.finalizeRuntimeRemoval).not.toHaveBeenCalled();
         });
 
+        it('reads the active alternative from the track clips when matching the alternative-content guard', async () => {
+            const deletedClip = ClipDummy.create({ id: 'c-deleted', trackId: 't1' });
+            const track = TrackDummy.create({
+                id: 't1',
+                clips: [],
+                activeAlternativeId: 'alt-active',
+                alternatives: [{ id: 'alt-active', name: 'Active', clips: [deletedClip] }],
+            });
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [track], selectedTrackId: null });
+
+            const stale = await handleRemoveTrack.execute({
+                type: 'removeTrack',
+                payload: { trackId: 't1', expectedAlternativeClipIds: ['c-deleted'] },
+            });
+            expect(stale).toEqual({ status: 'conflict' });
+            expect(mocks.removeTrack).not.toHaveBeenCalled();
+
+            const current = await handleRemoveTrack.execute({
+                type: 'removeTrack',
+                payload: { trackId: 't1', expectedAlternativeClipIds: [] },
+            });
+            expect(current).not.toEqual({ status: 'conflict' });
+            expect(mocks.removeTrack).toHaveBeenCalledTimes(1);
+        });
+
         it('rejects either VCA membership guard mismatch before project or runtime removal', async () => {
             const track = TrackDummy.create({ id: 't1', vcaGroupId: 'vca-linked' });
             mocks.getTrackStoreState.mockReturnValue({ tracks: [track], selectedTrackId: null });
