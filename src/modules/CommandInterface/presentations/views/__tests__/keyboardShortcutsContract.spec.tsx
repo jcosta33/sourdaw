@@ -306,6 +306,24 @@ describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#2
             expect(event.defaultPrevented).toBe(false);
         });
 
+        it.each([
+            ['Tab', false],
+            ['Shift+Tab', true],
+        ])('leaves %s on the focused piano-roll canvas for native traversal', (_label, shiftKey) => {
+            openSessionWithCommandHandlers();
+            mocks.handleKeydown.mockReturnValue(true);
+            render(<Host />);
+            const canvas = mount(document.createElement('canvas'));
+            canvas.tabIndex = 0;
+            canvas.focus();
+            expect(document.activeElement).toBe(canvas);
+
+            const event = dispatchKey(canvas, { key: 'Tab', shiftKey });
+
+            expect(mocks.handleKeydown).not.toHaveBeenCalled();
+            expect(event.defaultPrevented).toBe(false);
+        });
+
         it('still delegates workspace-mode Tab from the body and arrangement canvas', () => {
             openSessionWithCommandHandlers();
             mocks.handleKeydown.mockReturnValue(true);

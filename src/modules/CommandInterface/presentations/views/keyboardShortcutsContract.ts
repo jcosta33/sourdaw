@@ -26,12 +26,15 @@ function preservesNativeTabTraversal(event: KeyboardEvent): boolean {
         return false;
     }
     const target = event.target;
-    if (!(target instanceof HTMLElement) || target instanceof HTMLCanvasElement) {
+    if (!(target instanceof HTMLElement)) {
         return false;
     }
-    // Chromium can place native sequential focus on an overflow scrollport
-    // with tabIndex -1. It is still the focused DOM surface, so preserve its
-    // unmodified Tab traversal instead of treating it as workspace mode.
+    // The focused DOM surface keeps its unmodified Tab traversal instead of
+    // treating Tab as workspace mode. That covers the focused piano-roll
+    // canvas, which leaves the canvas for its toolbar and automation tray,
+    // and an overflow scrollport Chromium focuses natively with tabIndex -1.
+    // An unfocused canvas (the arrangement timeline) is never the active
+    // element, so Tab over it still toggles the workspace.
     if (
         target === target.ownerDocument.activeElement &&
         target !== target.ownerDocument.body &&
