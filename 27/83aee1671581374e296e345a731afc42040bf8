@@ -1,0 +1,120 @@
+src/modules/CrdtDocument/AGENTS.md
+  s_0314bb17e5dee3::t_2e6f4fd167ba9d 24
+src/modules/CrdtDocument/useCases/crdtBranching/branchSwitchTransport.ts
+  s_0314bb17e5dee3::t_28d99371ccca6d 1-48
+src/app/registerKernelPorts.ts
+  s_55244eb93b97d1::t_ac44076835d7e9 4,6,11,24,41
+  s_55244eb93b97d1::t_d36333d79fab79 1,3,9,18,29-33,39
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchRootIdentity.integration.spec.ts
+  s_91f8b522168bd8::t_6eccd6b2800d90 9,104-106
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchSwitchProjectIdentity.integration.spec.ts
+  s_55244eb93b97d1::t_de0260305bc7ca 4,21-22
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchSwitchStopsTransport.integration.spec.ts
+  s_55244eb93b97d1::t_208922f9ba0b19 4,102-103
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchSwitchTransportProjection.integration.spec.ts
+  s_55244eb93b97d1::t_104f83514427af 4,51-52
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchingPersistenceAdapter.spec.ts
+  s_55244eb93b97d1::t_701e8c4181dcbb 5,49-50
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/recordingTerminalRealBranches.integration.spec.ts
+  s_55244eb93b97d1::t_d8a82456a2a812 7,335-336
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/switchBranch.spec.ts
+  s_91f8b522168bd8::t_bc7ca593f08fb6 6,161-162
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/switchSanitizedPeerBranch.integration.spec.ts
+  s_55244eb93b97d1::t_147b276e246b78 5,26-27
+src/modules/CrdtDocument/useCases/index.ts
+  s_91f8b522168bd8::t_23619224087e5e 35
+src/modules/CrdtDocument/useCases/crdtBranching/switchBranch.ts
+  s_0314bb17e5dee3::t_22449033e1837a 15,59,131,166
+src/modules/Command/useCases/__tests__/legacyInverseReplayAdmission.spec.ts
+  s_0314bb17e5dee3::t_df4f150c7846c2 1-117,119-170
+  s_0314bb17e5dee3::t_04e9050f743d6a 118
+src/modules/Arrangement/useCases/__tests__/getLegacyTrimInverseReplayFailure.spec.ts
+  s_0314bb17e5dee3::t_9680db9e38c4e6 1-121
+src/modules/Arrangement/useCases/clipEditing/__tests__/trimClipStartLoopOrigin.spec.ts
+  s_55244eb93b97d1::t_8136eaa1187471 3,124-125
+src/modules/Arrangement/useCases/getLegacyTrimInverseReplayFailure.ts
+  s_55244eb93b97d1::t_7a4c822e75de4d 3-5,21-26
+src/modules/Arrangement/useCases/index.ts
+  s_55244eb93b97d1::t_c313a63a5ad99e 54
+src/modules/Command/useCases/__tests__/legacyMidiTrimReplay.integration.spec.ts
+  s_55244eb93b97d1::t_b4635694315461 6,204-205
+src/modules/Command/useCases/executeActionGroupUndo.ts
+  s_55244eb93b97d1::t_58dc30bdcc5e23 5,85
+src/modules/Command/useCases/getLegacyInverseReplayFailure.ts
+  s_55244eb93b97d1::t_f47254ea651e54 1-19
+src/modules/Command/useCases/index.ts
+  s_55244eb93b97d1::t_737ddac30e1066 125
+src/modules/Command/useCases/legacyInverseReplayAdmission.ts
+  s_55244eb93b97d1::t_dbb8f11e54ba64 1-50
+src/modules/Command/useCases/revertActionGroup.ts
+  s_55244eb93b97d1::t_a4e2bd10ee2936 7,90
+src/modules/Command/useCases/undo.ts
+  s_55244eb93b97d1::t_0f228c9ec0e879 11,97
+src/app/__tests__/registerKernelPorts.spec.ts
+  s_0314bb17e5dee3::t_3a689dc8bc5f65 1-141
+.dependency-cruiser-known-violations-module-tiers.json
+  s_a73f7bcc4a21d9::t_42358372ad792b 16-22
+tests/e2e/audioOwnership.native.spec.ts
+  s_90f13b297451d3::t_298b15fe0367e5 3
+src/modules/Command/AGENTS.md
+  s_0314bb17e5dee3::t_e7650b7863abb0 23
+release/open-source-inventory.json
+  s_0314bb17e5dee3::t_45748fbeade1c4 1214
+  s_0314bb17e5dee3::t_5eea8fdab16403 1217
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2783aee1671581374e296e345a731afc42040bf8",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_8bac8c79821eef": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_8bac8c79821eef",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_90f13b297451d3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_90f13b297451d3",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_91f8b522168bd8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea993bb3-f8f9-4703-aa93-ef8a806d9107",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_a73f7bcc4a21d9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_a73f7bcc4a21d9",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
