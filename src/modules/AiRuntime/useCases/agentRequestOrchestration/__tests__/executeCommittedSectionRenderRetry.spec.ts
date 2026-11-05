@@ -55,6 +55,7 @@ vi.mock('#/modules/AudioRendering/useCases', () => ({
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureRevision,
     projectRevisionMatchesLiveIgnoringSaveWrites: mocks.projectRevisionMatchesLiveIgnoringSaveWrites,
+    settlePendingProjectWritesAndCaptureRevision: mocks.captureRevision,
 }));
 
 vi.mock('../../../stores/chatStore', () => ({

@@ -10,7 +10,7 @@ import { renderAgentProjectSections } from '../renderAgentProjectSections';
 const mocks = vi.hoisted(() => ({
     cancelExport: vi.fn(),
     captureProjectRevision: vi.fn(),
-    projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn(),
+    settledProjectRevisionMatchesLiveIgnoringSaveWrites: vi.fn(),
     renderOffline: vi.fn(),
 }));
 
@@ -22,7 +22,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureProjectRevision,
-    projectRevisionMatchesLiveIgnoringSaveWrites: mocks.projectRevisionMatchesLiveIgnoringSaveWrites,
+    settledProjectRevisionMatchesLiveIgnoringSaveWrites: mocks.settledProjectRevisionMatchesLiveIgnoringSaveWrites,
 }));
 
 function createAudioBuffer() {
@@ -72,7 +72,7 @@ describe('rebindAgentProjectSectionArtifactRevisions', () => {
         vi.clearAllMocks();
         clearAgentSectionRenderArtifacts();
         mocks.captureProjectRevision.mockReturnValue('revision-a');
-        mocks.projectRevisionMatchesLiveIgnoringSaveWrites.mockImplementation(
+        mocks.settledProjectRevisionMatchesLiveIgnoringSaveWrites.mockImplementation(
             (revision: string) => mocks.captureProjectRevision() === revision
         );
         mocks.renderOffline.mockResolvedValue(createAudioBuffer());

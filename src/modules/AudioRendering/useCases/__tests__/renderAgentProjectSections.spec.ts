@@ -13,7 +13,7 @@ import { wouldAgentSectionRenderSetExceedRetention } from '../wouldAgentSectionR
 
 const mocks = vi.hoisted(() => ({
     captureProjectRevision: vi.fn(),
-    projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn(),
+    settledProjectRevisionMatchesLiveIgnoringSaveWrites: vi.fn(),
     renderOffline: vi.fn(),
 }));
 
@@ -27,7 +27,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureProjectRevision,
-    projectRevisionMatchesLiveIgnoringSaveWrites: mocks.projectRevisionMatchesLiveIgnoringSaveWrites,
+    settledProjectRevisionMatchesLiveIgnoringSaveWrites: mocks.settledProjectRevisionMatchesLiveIgnoringSaveWrites,
 }));
 
 function createAudioBuffer(
@@ -68,7 +68,7 @@ describe('renderAgentProjectSections', () => {
         vi.clearAllMocks();
         clearAgentSectionRenderArtifacts();
         mocks.captureProjectRevision.mockReturnValue('revision-a');
-        mocks.projectRevisionMatchesLiveIgnoringSaveWrites.mockImplementation(
+        mocks.settledProjectRevisionMatchesLiveIgnoringSaveWrites.mockImplementation(
             (revision: string) => mocks.captureProjectRevision() === revision
         );
         mocks.renderOffline.mockResolvedValue(createAudioBuffer());
@@ -718,7 +718,7 @@ describe('renderAgentProjectSections', () => {
 
     it('attaches when live revision advanced only for the command-batch checkpoint', async () => {
         mocks.captureProjectRevision.mockReturnValue('revision-checkpoint');
-        mocks.projectRevisionMatchesLiveIgnoringSaveWrites.mockReturnValue(true);
+        mocks.settledProjectRevisionMatchesLiveIgnoringSaveWrites.mockReturnValue(true);
 
         await renderAgentProjectSections({ jobs: [createJob()], sourceRevision: 'revision-a' });
 
@@ -731,7 +731,7 @@ describe('renderAgentProjectSections', () => {
         const job = createJob();
         await renderAgentProjectSections({ jobs: [job], sourceRevision: 'revision-a' });
         mocks.captureProjectRevision.mockReturnValue('revision-b');
-        mocks.projectRevisionMatchesLiveIgnoringSaveWrites.mockImplementation(
+        mocks.settledProjectRevisionMatchesLiveIgnoringSaveWrites.mockImplementation(
             (revision: string) => revision === 'revision-b'
         );
 
