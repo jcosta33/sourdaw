@@ -26,7 +26,7 @@ const Host = (): null => {
     return null;
 };
 
-// Reads the `isInput` flag the contract passed on the most recent keydown.
+// Reports whether the contract classified the most recent keydown as text entry.
 // jsdom returns `undefined` (not `false`) for `HTMLElement.isContentEditable`
 // on non-editable nodes, so the contract's `... || target.isContentEditable`
 // can yield `undefined` for an ungated target; that is still "not gated".
@@ -34,7 +34,13 @@ const Host = (): null => {
 function lastIsInput(): boolean {
     const calls = mocks.handleKeydown.mock.calls;
     expect(calls.length).toBeGreaterThan(0);
-    return Boolean(calls[calls.length - 1]![0].isInput);
+    return calls[calls.length - 1]![0].keyTarget === 'textEntry';
+}
+
+function lastKeyTarget(): string {
+    const calls = mocks.handleKeydown.mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    return calls[calls.length - 1]![0].keyTarget;
 }
 
 function stubTogglePlaybackHandler(): ActionHandler {
@@ -154,7 +160,7 @@ describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#2
 
         expect(mocks.handleKeydown).toHaveBeenCalledTimes(1);
         expect(mocks.handleKeydown.mock.calls[0]![0]).toMatchObject({ key: 'z', mod: true });
-        expect(lastIsInput()).toBe(false);
+        expect(lastKeyTarget()).toBe('noteEditor');
     });
 
     it('routes Space to the global layer while a [data-canvas-editor] has focus', () => {
@@ -167,7 +173,7 @@ describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#2
         dispatchKey(canvas, { key: ' ' });
 
         expect(mocks.handleKeydown).toHaveBeenCalledTimes(1);
-        expect(lastIsInput()).toBe(false);
+        expect(lastKeyTarget()).toBe('noteEditor');
     });
 
     it('skips a key the focused canvas editor claimed with preventDefault in its React handler', () => {
@@ -226,7 +232,7 @@ describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#2
 
     it.each(['Home', 'End', ' '])('keeps native %s navigation inside a select', (key) => {
         openSessionWithCommandHandlers();
-        mocks.handleKeydown.mockImplementation((descriptor) => !descriptor.isInput);
+        mocks.handleKeydown.mockImplementation((descriptor) => descriptor.keyTarget !== 'textEntry');
         render(<Host />);
         const select = mount(document.createElement('select'));
 
@@ -377,7 +383,7 @@ describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#2
             const event = dispatchKey(button, { key, metaKey: true });
 
             expect(mocks.handleKeydown).toHaveBeenCalledExactlyOnceWith(
-                expect.objectContaining({ key, mod: true, isInput: false })
+                expect.objectContaining({ key, mod: true, keyTarget: 'workspace' })
             );
             expect(event.defaultPrevented).toBe(true);
         });

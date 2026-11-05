@@ -574,13 +574,14 @@ export const PianoRoll = ({
                             className="sticky outline-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70"
                             style={{ left: PITCH_RAIL_WIDTH, cursor: hoverCursor }}
                             tabIndex={0}
-                            // Marks this surface as a canvas editor that owns
-                            // its destructive keys: `handleKeyDown` deletes the
-                            // selected MIDI notes on Delete/Backspace. The
-                            // global keyboard contract reads
-                            // `closest('[data-canvas-editor]')` and gates the
-                            // arrangement clip-delete shortcut here so a focused
-                            // piano roll does not also delete the clip.
+                            // Marks this surface as a canvas editor. The global
+                            // keyboard contract reads
+                            // `closest('[data-canvas-editor]')` and, while it has
+                            // focus, admits only editor-safe shortcuts
+                            // (transport, undo/redo, save, panel toggles) so
+                            // arrangement commands do not act from inside the
+                            // roll. Keys `handleKeyDown` consumes are claimed
+                            // with preventDefault and skipped globally.
                             data-canvas-editor=""
                             onMouseDown={handleMouseDown}
                             onMouseMove={handleMouseMove}

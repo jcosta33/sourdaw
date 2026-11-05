@@ -5,8 +5,18 @@ import { projectLoadFailureStore, projectStore } from '#/modules/Project/stores'
 
 import { isKeyboardEditableTarget } from '../../useCases/isKeyboardEditableTarget';
 import { isWithinModalSurface } from '../../useCases/isWithinModalSurface';
-import { handleKeydown } from '../../useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown';
+import {
+    handleKeydown,
+    type KeyTarget,
+} from '../../useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown';
 import { handleKeyup } from '../../useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeyup';
+
+function resolveKeyTarget(isTextEntry: boolean, target: EventTarget | null): KeyTarget {
+    if (isTextEntry) {
+        return 'textEntry';
+    }
+    return target instanceof Element && target.closest('[data-canvas-editor]') !== null ? 'noteEditor' : 'workspace';
+}
 
 function shouldDispatchShortcutAppActions(): boolean {
     if (projectLoadFailureStore.value !== null) {
@@ -132,10 +142,13 @@ export const useGlobalKeyboardShortcuts = (): void => {
             // A native select owns Home, End, Space, and arrow navigation just
             // like a text field. Keep this adapter-local so native Edit routing
             // retains its narrower shared editable-target contract.
-            const isInput =
+            const isTextEntry =
                 target instanceof HTMLSelectElement ||
                 isKeyboardEditableTarget(target) ||
                 isWithinModalSurface(event.target);
+            // A focused canvas editor (`data-canvas-editor`) keeps only the
+            // editor-safe global shortcuts; see NOTE_EDITOR_SHORTCUT_IDS.
+            const keyTarget = resolveKeyTarget(isTextEntry, target);
 
             const shouldPreventDefault = handleKeydown({
                 key: event.key,
@@ -143,7 +156,7 @@ export const useGlobalKeyboardShortcuts = (): void => {
                 shift: event.shiftKey,
                 alt: event.altKey,
                 repeat: event.repeat,
-                isInput,
+                keyTarget,
             });
 
             if (shouldPreventDefault) {

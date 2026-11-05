@@ -201,7 +201,7 @@ const notificationEventBusMock = {
 };
 
 function descriptor(overrides: Partial<KeyDescriptor> & { key: string }): KeyDescriptor {
-    return { mod: false, shift: false, alt: false, repeat: false, isInput: false, ...overrides };
+    return { mod: false, shift: false, alt: false, repeat: false, keyTarget: 'workspace', ...overrides };
 }
 
 function callbackDefinition(input: { id: string; key: string; callbackId: string }): MinimalDefinition {
@@ -237,7 +237,7 @@ describe('handleKeydown', () => {
     });
 
     it('does not toggle voice when v is pressed inside an input field', () => {
-        const prevent = handleKeydown(descriptor({ key: 'v', isInput: true }));
+        const prevent = handleKeydown(descriptor({ key: 'v', keyTarget: 'textEntry' }));
 
         expect(prevent).toBe(false);
         expect(eventBus.emit).not.toHaveBeenCalled();
@@ -279,7 +279,7 @@ describe('handleKeydown', () => {
     });
 
     it('blocks plain keys while typing in an input field', () => {
-        const prevent = handleKeydown(descriptor({ key: 'Home', isInput: true }));
+        const prevent = handleKeydown(descriptor({ key: 'Home', keyTarget: 'textEntry' }));
 
         expect(prevent).toBe(false);
         expect(seekPlayhead).not.toHaveBeenCalled();
@@ -542,7 +542,7 @@ describe('handleKeydown', () => {
             it('does not close the panel from a text field', () => {
                 bindEscape();
 
-                handleKeydown(descriptor({ key: 'Escape', isInput: true }));
+                handleKeydown(descriptor({ key: 'Escape', keyTarget: 'textEntry' }));
 
                 expect(closeCollaborationPanel).not.toHaveBeenCalled();
             });
@@ -678,11 +678,11 @@ describe('handleKeydown', () => {
                 }),
             ];
 
-            const blocked = handleKeydown(descriptor({ key: 'F1', isInput: true }));
+            const blocked = handleKeydown(descriptor({ key: 'F1', keyTarget: 'textEntry' }));
             expect(blocked).toBe(false);
             expect(toggleMixer).not.toHaveBeenCalled();
 
-            const allowed = handleKeydown(descriptor({ key: 'F2', isInput: true }));
+            const allowed = handleKeydown(descriptor({ key: 'F2', keyTarget: 'textEntry' }));
             expect(allowed).toBe(true);
             expect(toggleCommandPalette).toHaveBeenCalledTimes(1);
         });
@@ -1444,6 +1444,92 @@ describe('handleKeydown', () => {
                     level: 'warning',
                 });
             });
+        });
+    });
+
+    describe('note editor key target', () => {
+        const loadShippedDefinitions = (): void => {
+            const realState = realShortcutStoreModule.shortcutStore.value;
+            if (!realState) {
+                throw new Error('expected the shipped shortcut definitions');
+            }
+            shortcutStoreMock.value.definitions = realState.definitions;
+        };
+
+        it.each([
+            ['transport.togglePlayback', { key: ' ' }],
+            ['transport.toggleMetronome', { key: 'm' }],
+            ['transport.toggleRecording', { key: 'r' }],
+            ['transport.toggleLoop', { key: 'l' }],
+            ['transport.panicAllNotes', { key: 'Escape', shift: true }],
+            ['editing.undo', { key: 'z', mod: true }],
+            ['editing.redo', { key: 'z', mod: true, shift: true }],
+            ['project.saveProject', { key: 's', mod: true }],
+            ['project.openExportDialog', { key: 'e', mod: true, shift: true }],
+            ['project.openPreferencesDialog', { key: ',', mod: true }],
+            ['workspace.toggleCommandPalette', { key: 'k', mod: true }],
+            ['workspace.toggleSidebar', { key: 'b', mod: true }],
+            ['workspace.toggleInspector', { key: 'i', mod: true }],
+            ['workspace.toggleMixer', { key: 'm', mod: true }],
+            ['workspace.toggleChatPanel', { key: 'j', mod: true }],
+            ['workspace.toggleTrackList', { key: 't', mod: true }],
+            ['workspace.toggleVirtualKeyboard', { key: 'k', mod: true, shift: true }],
+            ['workspace.showAutomationPanel', { key: 'a', mod: true, shift: true }],
+        ] as const)('dispatches %s from a focused note editor', (_id, keys) => {
+            loadShippedDefinitions();
+
+            const prevent = handleKeydown(descriptor({ ...keys, keyTarget: 'noteEditor' }));
+
+            expect(prevent).toBe(true);
+        });
+
+        it.each([
+            ['editing.cutClip', { key: 'x', mod: true }],
+            ['editing.copyClip', { key: 'c', mod: true }],
+            ['editing.pasteClip', { key: 'v', mod: true }],
+            ['arrangement.addMidiTrack', { key: 'n' }],
+            ['arrangement.addAudioTrack', { key: 'n', shift: true }],
+            ['workspace.selectAllClips', { key: 'a', mod: true }],
+            ['arrangement.duplicateClip', { key: 'd', mod: true }],
+            ['arrangement.deleteTimeRange', { key: 'Backspace', mod: true }],
+            ['view.zoomToFit', { key: 'f' }],
+            ['view.cycleAutomationVisibility', { key: 'a' }],
+            ['transport.stopPlayback', { key: 'Escape' }],
+            ['transport.stopPlayback (Enter)', { key: 'Enter' }],
+            ['seek to start', { key: 'Home' }],
+            ['marker navigation', { key: ']' }],
+            ['tool letter', { key: 'd' }],
+        ] as const)('does not fire %s from a focused note editor', (_id, keys) => {
+            loadShippedDefinitions();
+            clipSelectionStoreMock.value = {
+                selectedClipId: 'clip-1',
+                selectedClipIds: ['clip-1'],
+                marqueeSelection: null,
+            };
+
+            const prevent = handleKeydown(descriptor({ ...keys, keyTarget: 'noteEditor' }));
+
+            expect(prevent).toBe(false);
+            expect(executeUserAppAction).not.toHaveBeenCalled();
+            expect(stopPlaybackMock).not.toHaveBeenCalled();
+            expect(selectAllClips).not.toHaveBeenCalled();
+            expect(seekPlayhead).not.toHaveBeenCalled();
+            expect(goToNextMarkerMock).not.toHaveBeenCalled();
+            expect(startToolSwap).not.toHaveBeenCalled();
+            expect(setEditingTool).not.toHaveBeenCalled();
+            expect(cycleAutomationVisibility).not.toHaveBeenCalled();
+        });
+
+        it('does not arm the AI leader chord from a focused note editor', () => {
+            loadShippedDefinitions();
+
+            handleKeydown(descriptor({ key: 'g' }));
+            expect(handleKeydown(descriptor({ key: 'b' }))).toBe(true);
+
+            handleKeydown(descriptor({ key: 'g', keyTarget: 'noteEditor' }));
+            const followUp = handleKeydown(descriptor({ key: 'b' }));
+
+            expect(followUp).toBe(false);
         });
     });
 });
