@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
@@ -24,6 +25,8 @@ import { getProjectContext } from '../getProjectContext';
 import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
 
 import { moveTrackFader, seedSavableProject, writeProjectSave } from './projectSaveFixture';
+
+registerSupportingServicePorts();
 
 // The completion checks are the real ones over a real CRDT document and a real save write; only the
 // planner, which would ask a provider, and the Prompt Bar notice are replaced.

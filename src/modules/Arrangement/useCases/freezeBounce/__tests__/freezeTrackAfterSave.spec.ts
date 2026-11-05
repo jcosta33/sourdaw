@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -24,6 +25,8 @@ import { trackStore } from '../../../stores';
 import { createTrack } from '../../createTrack';
 import { getArrangementHandlers, setArrangementEventBus } from '../../index';
 import { renderTrackOffline } from '../renderOffline';
+
+registerSupportingServicePorts();
 
 // The Freeze action, its transaction, the failure diagnostic's settlement and the revision check
 // are the real ones over a real CRDT document and a real save write; only the offline render, which

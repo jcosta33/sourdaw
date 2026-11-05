@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
@@ -52,6 +53,7 @@ import { seedSavableProject, writeProjectSave } from './projectSaveFixture';
 import { decodeReceiptContext, readReceiptSummary } from './receiptContextFixture';
 
 registerDeviceEnginePorts();
+registerSupportingServicePorts();
 
 const audio = vi.hoisted(() => ({
     renderTrackSubgraphOffline: vi.fn(),

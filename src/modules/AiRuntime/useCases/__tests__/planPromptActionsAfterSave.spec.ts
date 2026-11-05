@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
@@ -20,6 +21,8 @@ import { planPromptActions } from '../planPromptActions';
 
 import { readyRequest } from './modelProviderProtocolFixture';
 import { moveTrackFader, seedSavableProject, writeProjectSave } from './projectSaveFixture';
+
+registerSupportingServicePorts();
 
 // The revision checks are the real ones over a real CRDT document and a real save write; only the
 // planner, which would ask a provider, is replaced.
