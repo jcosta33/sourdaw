@@ -129,16 +129,12 @@ release and provenance drift in `release-provenance-drift.md`.
    spec versus laundered defect. Under a preservation claim, a rewritten expected value is a
    contradiction to raise; recheck unchanged assertions in touched spec files and run the nearest
    untouched witnesses of the same surface. When a change declares "every X owes Y", census every
-   existing X in a spec that reads the real files and cannot pass by matching nothing. When the X are
-   specs that must now register or configure something before they reach a guarded path, take the
-   census over current `origin/main` again just before delivery, reached directly or through any
-   caller: the ruleset is non-strict, so a spec merged after the head's base never ran against the new
-   requirement and fails on `main` once both land. When a
+   existing X in a spec that reads the real files and cannot pass by matching nothing. When a
    published report depends on a qualified measurement, read the whole artifact, static summaries
    included, and require dependent claims withheld. A deliberate workflow edit updates its owning
    assertion and regenerated snapshot together: the snapshot diff holds only the intended change, and
    mutating that value (a depth-two checkout for a full-history edit) must fail the assertion.
-   (#2988, #3060, #1084, #974, #5199, #6126, #6174)
+   (#2988, #3060, #1084, #974, #5199)
 
 ## Retired lessons
 
