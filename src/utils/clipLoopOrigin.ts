@@ -330,3 +330,66 @@ export function isBeatInClipLoopWindow({
         relativeBeat < windowFloorBeat + loopLengthBeats - CLIP_LOOP_WINDOW_BEAT_TOLERANCE
     );
 }
+
+type ClipLoopPassGridInput = ClipLoopOriginInput &
+    Readonly<{
+        endBeat: number;
+        loopLengthBeats: number;
+        /** The expansion's pass count from the clip's own head (`projectClipLoopExpansion`). */
+        iterationCount: number;
+    }>;
+
+type ClipLoopPassGrid = Readonly<{
+    /** Where pass 0 opens: the anchor's last seam at or before the head. Each later pass opens a loop after it. */
+    firstPassStartBeat: number;
+    /** How many passes reach the clip, the first and last of them partial. */
+    passCount: number;
+    /**
+     * The first pass's occurrence relative to the anchor's own pass when a
+     * leftward trim opened passes ahead of the anchor (a negative advance), zero
+     * otherwise: added to the occurrence the source start yields, it keeps the
+     * anchor's pass on the occurrence it had before the trim.
+     */
+    passesAheadOfAnchor: number;
+}>;
+
+/**
+ * The pass grid every MIDI loop reader iterates (#4988). Passes open on the
+ * seams the loop anchor laid down, not on the clip's own head, so a looping
+ * clip trimmed or cut off that grid cuts and re-strikes notes, and counts
+ * occurrences, exactly where the uncut source does. Inside a pass a row plays
+ * at `relative + advance`, its phase in the anchored loop, which the anchored
+ * window (`isBeatInClipLoopWindow`) keeps inside `[0, loopLength)`.
+ *
+ * The head's distance past its seam is the advance reduced into the loop; a
+ * remainder within `CLIP_LOOP_WINDOW_BEAT_TOLERANCE` of either seam is the seam.
+ * Without an anchor, or with the head on a seam, the grid is the expansion
+ * unchanged: passes from the head, `iterationCount` of them.
+ */
+export function resolveClipLoopPassGrid({
+    startBeat,
+    endBeat,
+    loopOriginBeat,
+    loopEnabled,
+    loopLengthBeats,
+    iterationCount,
+}: ClipLoopPassGridInput): ClipLoopPassGrid {
+    const advanceBeats = resolveClipLoopOriginAdvance({ startBeat, loopOriginBeat, loopEnabled });
+    if (advanceBeats === 0 || !(loopLengthBeats > 0)) {
+        return { firstPassStartBeat: startBeat, passCount: iterationCount, passesAheadOfAnchor: 0 };
+    }
+    const remainderBeats = ((advanceBeats % loopLengthBeats) + loopLengthBeats) % loopLengthBeats;
+    const headOnSeam =
+        remainderBeats <= CLIP_LOOP_WINDOW_BEAT_TOLERANCE ||
+        loopLengthBeats - remainderBeats <= CLIP_LOOP_WINDOW_BEAT_TOLERANCE;
+    const headPastSeamBeats = headOnSeam ? 0 : remainderBeats;
+    const passesAheadOfAnchor = advanceBeats < 0 ? Math.round((advanceBeats - headPastSeamBeats) / loopLengthBeats) : 0;
+    if (headOnSeam) {
+        return { firstPassStartBeat: startBeat, passCount: iterationCount, passesAheadOfAnchor };
+    }
+    return {
+        firstPassStartBeat: startBeat - headPastSeamBeats,
+        passCount: Math.ceil((endBeat - startBeat + headPastSeamBeats) / loopLengthBeats),
+        passesAheadOfAnchor,
+    };
+}

@@ -26,6 +26,7 @@ import { isFaustInstrumentModule, registerFaustDSP } from '#/modules/PluginHost/
 import { getDrumKitDefByIndex, scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 import { dbToGain } from '#/utils/audioLevelLaw';
+import { resolveLoopAnchoredStartBeat } from '#/utils/clipLoopOrigin';
 
 import { defaultTransportState } from '../../../models/TransportState';
 import {
@@ -78,7 +79,7 @@ const realNoteExpression = vi.hoisted(async () => {
     };
 });
 const shouldPlayProbability = vi.hoisted(() =>
-    vi.fn((_input: { eventId: string; absoluteOccurrenceIndex: number }) => true)
+    vi.fn((_input: Parameters<typeof import('#/modules/MIDI/useCases').shouldPlayMidiEvent>[0]) => true)
 );
 const registerScheduledSourceMock = vi.hoisted(() => vi.fn<(node: AudioScheduledSourceNode) => void>());
 /** What the engine double answers with: the context's sample rate and each track strip's device nodes. */
@@ -6427,5 +6428,189 @@ describe('scheduleMidiNotes carries the loop anchor through selection, admission
             { pitch: 60, time: 0, duration: 0.5 },
             { pitch: 60, time: 0, duration: 0.5 },
         ]);
+    });
+});
+
+/**
+ * A looping clip cut off its loop grid — the right fragment of a split, or the
+ * clip itself start-trimmed to the same beat — must play every pass the
+ * uncut clip plays there: each note struck and held exactly as the source
+ * strikes and holds it, and each chance note rolled on the occurrence the
+ * source rolls it on. Both cut states carry the source's anchor (0) under a
+ * head at 6, half a loop off the grid, so the source's pass seams fall at the
+ * fragment's 8 and 12, not at its own head plus whole loops. The synth path
+ * runs the real projection and the real probability roll; the comping double
+ * stamps the anchored source start production's resolver stamps.
+ */
+describe('scheduleMidiNotes plays a looping clip cut off its loop grid on the source passes', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        forgetStoredControllerEngagements();
+        (trackStore as { value: unknown }).value = { tracks: [] };
+        (midiStore as { value: unknown }).value = null;
+        (automationStore as { value: unknown }).value = null;
+        (tempoMapStore as { value: unknown }).value = { changes: [] };
+        (timeSignatureMapStore as { value: unknown }).value = { changes: [] };
+        vi.mocked(resolveClipsWithComping).mockImplementation((_trackId, clips) =>
+            clips.map((clip) => ({
+                ...clip,
+                regionStartBeat: clip.startBeat,
+                regionEndBeat: clip.endBeat,
+                sourceStartBeat: resolveLoopAnchoredStartBeat({
+                    startBeat: clip.startBeat,
+                    loopOriginBeat: clip.loopOriginBeat,
+                    loopEnabled: clip.loopEnabled ?? false,
+                }),
+            }))
+        );
+        vi.mocked(projectClipMidiEvents).mockImplementation((input) => realMidiUseCases.projectClipMidiEvents(input));
+        vi.mocked(processYeastMidi).mockImplementation((input) => Promise.resolve([...input.events]));
+        vi.mocked(projectCommittedGroove).mockImplementation(({ events }) => events);
+        engineStub.sampleRate = 48_000;
+        vi.mocked(ensureTrackStrip).mockImplementation(
+            (trackId) =>
+                ({
+                    gainNode: {},
+                    preFaderTap: { connect: vi.fn() },
+                    deviceNodes: engineStub.nodesFor(trackId),
+                }) as never
+        );
+        shouldPlayProbability.mockImplementation(realMidiUseCases.shouldPlayMidiEvent);
+        vi.mocked(getCurrentTime).mockReturnValue(0);
+    });
+
+    const PROBABILITY_SEED = 6;
+
+    /**
+     * The source's rows: one held inside the loop (1.5–2.5), one crossing the
+     * loop seam (3.5–4.5, which the loop wraps onto the pass head), and a
+     * 50% chance note at 1 whose rolls under seed 6 sound occurrences 1 and 2
+     * and drop occurrence 3.
+     */
+    function sourceRows(): MidiNote[] {
+        return [
+            { id: 'n-held', pitch: 60, startBeat: 1.5, duration: 1, velocity: 100 },
+            { id: 'n-seam', pitch: 64, startBeat: 3.5, duration: 1, velocity: 100 },
+            { id: 'n-chance', pitch: 67, startBeat: 1, duration: 0.25, velocity: 100, probability: 50 },
+        ] as MidiNote[];
+    }
+
+    function uncutClip(): Clip {
+        return midiClip({ startBeat: 0, endBeat: 16, loopEnabled: true, loopLength: 4, loopOriginBeat: 0 });
+    }
+
+    /** What the split writer stores for the right fragment of a cut at 6: the source trimmed to 6, rows untouched. */
+    function splitFragment(): Clip {
+        return midiClip({
+            startBeat: 6,
+            endBeat: 16,
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 0,
+            midiOffsetBeats: 6,
+        });
+    }
+
+    /** What a start trim to 6 stores: the offset wrapped to its phase 2, every row ridden by the wrap's −4. */
+    function startTrimmedClip(): Clip {
+        return midiClip({
+            startBeat: 6,
+            endBeat: 16,
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 0,
+            midiOffsetBeats: 2,
+        });
+    }
+
+    function startTrimmedRows(): MidiNote[] {
+        return sourceRows().map((row) => ({ ...row, startBeat: row.startBeat - 4 }));
+    }
+
+    type Voice = { pitch: number; beat: number; duration: number };
+
+    /**
+     * Every note-on the window [8, 16) strikes, in beats (the clock reads beat 0
+     * at 0 s, 120 BPM). The Yeast rack's blocks follow the scheduler windows, so
+     * that route schedules the span as two one-loop windows.
+     */
+    async function voicesFor(clip: Clip, rows: MidiNote[], route: 'synth' | 'yeast' = 'synth'): Promise<Voice[]> {
+        vi.mocked(scheduleNote).mockClear();
+        shouldPlayProbability.mockClear();
+        const devices = route === 'yeast' ? [{ id: 'yeast-rack', type: 'yeast' }] : [];
+        (trackStore as { value: unknown }).value = { tracks: [midiTrack({ clips: [clip], devices })] };
+        (midiStore as { value: unknown }).value = {
+            probabilitySeed: PROBABILITY_SEED,
+            notesByClipId: { [clip.id]: rows },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+        if (route === 'yeast') {
+            await scheduleMidiNotes(8, 12, 0, new Set<string>(), [], defaultTransportState, 120);
+            await scheduleMidiNotes(12, 16, 0, new Set<string>(), [], defaultTransportState, 120);
+        } else {
+            await scheduleMidiNotes(8, 16, 0, new Set<string>(), [], defaultTransportState, 120);
+        }
+        return vi
+            .mocked(scheduleNote)
+            .mock.calls.map((call) => ({ pitch: call[2], beat: call[3] * 2, duration: call[4] * 2 }))
+            .sort((left, right) => left.beat - right.beat || left.pitch - right.pitch);
+    }
+
+    /** The occurrence each roll of the chance note was handed, in roll order. */
+    function chanceOccurrences(): number[] {
+        const chanceRolls = shouldPlayProbability.mock.calls.filter(([input]) => input.eventId === 'n-chance');
+        return chanceRolls.map(([input]) => input.absoluteOccurrenceIndex);
+    }
+
+    const SOURCE_VOICES: Voice[] = [
+        { pitch: 64, beat: 8, duration: 0.5 },
+        { pitch: 67, beat: 9, duration: 0.25 },
+        { pitch: 60, beat: 9.5, duration: 1 },
+        { pitch: 64, beat: 11.5, duration: 0.5 },
+        { pitch: 64, beat: 12, duration: 0.5 },
+        { pitch: 60, beat: 13.5, duration: 1 },
+        { pitch: 64, beat: 15.5, duration: 0.5 },
+    ];
+
+    it('pins the uncut source: the seam note re-strikes on each pass head, the held note never does', async () => {
+        expect(await voicesFor(uncutClip(), sourceRows())).toEqual(SOURCE_VOICES);
+        expect(chanceOccurrences()).toEqual([2, 3]);
+    });
+
+    it('strikes and holds every note of the split right fragment where the uncut source does', async () => {
+        // The fragment's own head-plus-loop boundaries fall at 10 and 14: the
+        // held note at 9.5 must not be cut and re-struck at 10, and the seam
+        // note must re-strike at the source seams 8 and 12, not sustain over them.
+        expect(await voicesFor(splitFragment(), sourceRows())).toEqual(SOURCE_VOICES);
+    });
+
+    it('rolls the split fragment chance note on the occurrence the uncut source rolls it on', async () => {
+        await voicesFor(splitFragment(), sourceRows());
+        expect(chanceOccurrences()).toEqual([2, 3]);
+    });
+
+    it('strikes and holds every note of the start-trimmed clip where the untrimmed source does', async () => {
+        expect(await voicesFor(startTrimmedClip(), startTrimmedRows())).toEqual(SOURCE_VOICES);
+    });
+
+    it('rolls the start-trimmed chance note on the occurrence the untrimmed source rolls it on', async () => {
+        await voicesFor(startTrimmedClip(), startTrimmedRows());
+        expect(chanceOccurrences()).toEqual([2, 3]);
+    });
+
+    // The rack's output re-enters the same pass projection, so the Yeast route
+    // strikes, cuts and rolls the source exactly as the synth route does; its
+    // chance roll happens earlier, once per pass, as the rack's input is prepared.
+    it('pins the uncut source on the Yeast rack route', async () => {
+        expect(await voicesFor(uncutClip(), sourceRows(), 'yeast')).toEqual(SOURCE_VOICES);
+    });
+
+    it('sounds the split fragment on the Yeast rack route exactly as the uncut source', async () => {
+        expect(await voicesFor(splitFragment(), sourceRows(), 'yeast')).toEqual(SOURCE_VOICES);
+    });
+
+    it('sounds the start-trimmed clip on the Yeast rack route exactly as the untrimmed source', async () => {
+        expect(await voicesFor(startTrimmedClip(), startTrimmedRows(), 'yeast')).toEqual(SOURCE_VOICES);
     });
 });

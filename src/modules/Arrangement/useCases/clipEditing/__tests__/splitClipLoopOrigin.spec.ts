@@ -270,17 +270,20 @@ describe('splitClip loop anchoring', () => {
                 pitch: midiStore.value?.notesByClipId[rightId!]?.find((note) => note.id === event.id)?.pitch,
                 startBeat: event.startBeat,
             }));
-        expect(pitchesOf(2)).toEqual([
+        // The fragment's passes open on the source's seams 0, 4, 8 and 12; the
+        // first opens before the fragment head at 2, which cuts n-head there.
+        expect(pitchesOf(0)).toEqual([{ pitch: 62, startBeat: 3 }]);
+        expect(pitchesOf(4)).toEqual([
             { pitch: 60, startBeat: 5 },
-            { pitch: 62, startBeat: 3 },
-        ]);
-        expect(pitchesOf(6)).toEqual([
-            { pitch: 60, startBeat: 9 },
             { pitch: 62, startBeat: 7 },
         ]);
-        expect(pitchesOf(10)).toEqual([
-            { pitch: 60, startBeat: 13 },
+        expect(pitchesOf(8)).toEqual([
+            { pitch: 60, startBeat: 9 },
             { pitch: 62, startBeat: 11 },
+        ]);
+        expect(pitchesOf(12)).toEqual([
+            { pitch: 60, startBeat: 13 },
+            { pitch: 62, startBeat: 15 },
         ]);
     });
 

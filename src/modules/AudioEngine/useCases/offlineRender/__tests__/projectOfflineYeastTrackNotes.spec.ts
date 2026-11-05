@@ -300,9 +300,12 @@ describe('projectOfflineYeastTrackNotes — the anchored loop window on routed r
      * anchored window reads [2, 6) in stored-figure coordinates: the row at
      * relative 3 is in-region material and the row at relative 6.5 sits past
      * the region end, audible at 8.5 and 12.5 only because the pass mapping
-     * places it there.
+     * places it there. The anchored clip's passes open on the anchor's seams;
+     * the two that reach the in-region row are 4 and 8 (the seam-0 pass places
+     * it at 1, before the head, and this stub projector cuts nothing). The
+     * unanchored control's passes open on its own head, 2 and 6.
      */
-    function projectTrimmedClipRows(loopOriginBeat: number | undefined) {
+    function projectTrimmedClipRows(loopOriginBeat: number | undefined, passStartBeats: readonly number[]) {
         function projectMidiEvents<Event extends ProjectableEvent>(
             input: Parameters<OfflineMidiEventProjector>[0]
         ): readonly Event[] {
@@ -313,7 +316,7 @@ describe('projectOfflineYeastTrackNotes — the anchored loop window on routed r
         );
         return projectOfflineYeastTrackNotes({
             trackId: 'track-1',
-            iterations: [2, 6].map((iterationStartBeat) => ({
+            iterations: passStartBeats.map((iterationStartBeat) => ({
                 sourceNotes: [
                     { id: 'in-window', pitch: 61, startBeat: 3, duration: 0.25, velocity: 100 },
                     { id: 'past-region', pitch: 72, startBeat: 6.5, duration: 0.25, velocity: 100 },
@@ -344,7 +347,7 @@ describe('projectOfflineYeastTrackNotes — the anchored loop window on routed r
         // clip-groove phase offers it to the rack: the 6.5 row reads past the
         // [2, 6) window in both passes and never renders; the 3 row sounds at
         // its pass positions 5 and 9.
-        const notes = projectTrimmedClipRows(4);
+        const notes = projectTrimmedClipRows(4, [4, 8]);
 
         expect(notes.map((note) => [note.pitch, note.startBeat])).toEqual([
             [61, 5],
@@ -356,7 +359,7 @@ describe('projectOfflineYeastTrackNotes — the anchored loop window on routed r
         // Without the anchor the pre-anchor projector admitted everything the
         // pass mapping placed, and it still must: the anchorless fallback
         // bound (`relative < loopLength`) would drop exactly these lifted rows.
-        const notes = projectTrimmedClipRows(undefined);
+        const notes = projectTrimmedClipRows(undefined, [2, 6]);
 
         expect(notes.map((note) => [note.pitch, note.startBeat])).toEqual([
             [61, 5],
@@ -376,7 +379,7 @@ describe('projectOfflineYeastTrackNotes — the anchored loop window on routed r
      * here while the live twin voiced it; membership on the source figure
      * keeps one clip rendering as one clip.
      */
-    function projectGrooveDisplacedBoundaryRow(loopOriginBeat: number | undefined) {
+    function projectGrooveDisplacedBoundaryRow(loopOriginBeat: number | undefined, iterationStartBeat: number) {
         function projectMidiEvents<Event extends ProjectableEvent>(
             input: Parameters<OfflineMidiEventProjector>[0]
         ): readonly Event[] {
@@ -398,7 +401,7 @@ describe('projectOfflineYeastTrackNotes — the anchored loop window on routed r
                     clipId: 'clip-1',
                     clipStartBeat: 2,
                     clipEndBeat: 10,
-                    iterationStartBeat: 2,
+                    iterationStartBeat,
                     loopLengthBeats: 4,
                     midiOffsetBeats: 2,
                     loopEnabled: true,
@@ -418,14 +421,18 @@ describe('projectOfflineYeastTrackNotes — the anchored loop window on routed r
     }
 
     it('voices a groove-displaced boundary row whose routed figure sits past the ceiling', () => {
-        const notes = projectGrooveDisplacedBoundaryRow(0);
+        // On the anchor's grid the row sits 3.9 into the first pass, which
+        // opens on the seam 0 (its relative 1.9 plus the advance 2), and the
+        // groove's quarter beat routes it to 4.15; this stub projector neither
+        // wraps nor cuts, so that placement reads straight off the pass.
+        const notes = projectGrooveDisplacedBoundaryRow(0, 0);
 
-        // Rendered at its displaced placement, 2 + 3.9 + 0.25 − 2 = 4.15.
         expect(notes.map((note) => [note.pitch, note.startBeat])).toEqual([[61, 4.15]]);
     });
 
     it('control: voices the same displaced row when the clip carries no anchor', () => {
-        const notes = projectGrooveDisplacedBoundaryRow(undefined);
+        // The clip-head pass at 2 places it unwrapped: 2 + 3.9 + 0.25 − 2 = 4.15.
+        const notes = projectGrooveDisplacedBoundaryRow(undefined, 2);
 
         expect(notes.map((note) => [note.pitch, note.startBeat])).toEqual([[61, 4.15]]);
     });
