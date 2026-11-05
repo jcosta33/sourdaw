@@ -84,6 +84,23 @@ describe('Slider', () => {
             );
         };
 
+        // A caller that renders its preview through a transform, as BipolarSlider does
+        // between its own range and 0..100, so the rendered value carries float noise.
+        const NoisyLevelSlider = ({ onChange, onCommit }: { onChange: SliderHandler; onCommit: SliderHandler }) => {
+            const [value, setValue] = useState([20]);
+            return (
+                <Slider
+                    value={value.map((position) => position + 1e-9)}
+                    onValueChange={(next) => {
+                        setValue(next);
+                        onChange(next);
+                    }}
+                    onValueCommit={onCommit}
+                    aria-label="Level"
+                />
+            );
+        };
+
         const renderLevelSlider = (): Harness => {
             const commits: number[][] = [];
             const changes: number[][] = [];
@@ -260,6 +277,46 @@ describe('Slider', () => {
             fireEvent.blur(window);
             harness.view.unmount();
             expect(harness.commits).toEqual([[65]]);
+        });
+
+        it('commits a pointer release without reporting the value the caller rendered as a new change', () => {
+            const calls: [string, number[]][] = [];
+            render(
+                <NoisyLevelSlider
+                    onChange={(next) => calls.push(['change', next])}
+                    onCommit={(next) => calls.push(['commit', next])}
+                />
+            );
+            const root = screen.getByRole('slider', { name: 'Level' }).closest('[data-slot="slider"]');
+            if (!(root instanceof HTMLElement)) {
+                throw new Error('Missing Slider root');
+            }
+            let held = false;
+            Object.defineProperties(root, {
+                setPointerCapture: { configurable: true, value: () => (held = true) },
+                releasePointerCapture: { configurable: true, value: () => (held = false) },
+                hasPointerCapture: { configurable: true, value: () => held },
+            });
+            vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
+                x: 0,
+                y: 0,
+                top: 0,
+                bottom: 20,
+                left: 0,
+                right: 100,
+                width: 100,
+                height: 20,
+                toJSON: () => ({}),
+            });
+            fireEvent.pointerDown(root, { pointerId: 1, button: 0, clientX: 40, clientY: 10 });
+            fireEvent.pointerMove(root, { pointerId: 1, clientX: 65, clientY: 10 });
+            fireEvent.pointerUp(root, { pointerId: 1 });
+            fireEvent.lostPointerCapture(root, { pointerId: 1 });
+            expect(calls).toEqual([
+                ['change', [40]],
+                ['change', [65]],
+                ['commit', [65 + 1e-9]],
+            ]);
         });
 
         it('commits a keyboard step once, previewed before it commits, and adds nothing on a later blur or unmount', () => {

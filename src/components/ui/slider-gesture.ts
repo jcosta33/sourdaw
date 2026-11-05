@@ -37,6 +37,8 @@ type GestureState = {
     pointerId: number | null;
     /** The value last committed, so Radix reporting or committing it again adds nothing. */
     settled: string | null;
+    /** A step key is down: Radix commits its step before reporting it, so the commit reports it first. */
+    keyStep: boolean;
 };
 
 // The keys Radix turns into a committed step (`onHomeKeyDown`, `onEndKeyDown`, `onStepKeyDown`).
@@ -99,7 +101,7 @@ export function useSliderGesture({
     onBlur,
     onKeyDownCapture,
 }: SliderGestureProps) {
-    const stateRef = useRef<GestureState>({ pending: null, pointerId: null, settled: null });
+    const stateRef = useRef<GestureState>({ pending: null, pointerId: null, settled: null, keyStep: false });
     useSettleWhenPageOrSliderGoes(stateRef, onValueCommit !== undefined);
 
     const handleValueChange = (value: number[]): void => {
@@ -119,13 +121,17 @@ export function useSliderGesture({
         const state = stateRef.current;
         const pending = state.pending;
         const committed = String(value);
+        const keyStep = state.keyStep;
         state.pending = null;
+        state.keyStep = false;
         // A pointerup after the gesture was already settled, at the same value.
         if (pending === null && state.settled === committed) {
             return;
         }
         // A keyboard step commits before Radix reports it: preview first, as a pointer edit does.
-        if (pending === null || String(pending.value) !== committed) {
+        // A pointer release commits the value the caller already rendered from its previews,
+        // which can differ from the last report by float noise, and is not a new change.
+        if (keyStep && (pending === null || String(pending.value) !== committed)) {
             onValueChange?.(value);
         }
         state.settled = committed;
@@ -150,6 +156,7 @@ export function useSliderGesture({
         const state = stateRef.current;
         settleGesture(state);
         state.settled = null;
+        state.keyStep = false;
         state.pointerId = event.pointerId;
     };
 
@@ -166,6 +173,7 @@ export function useSliderGesture({
         onKeyDownCapture?.(event);
         if (STEP_KEYS.has(event.key)) {
             stateRef.current.settled = null;
+            stateRef.current.keyStep = true;
         }
     };
 
