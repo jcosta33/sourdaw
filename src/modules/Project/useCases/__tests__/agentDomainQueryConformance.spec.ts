@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import {
     installTransactionalIndexedDb,
@@ -43,6 +44,7 @@ import { getProjectProtocolContracts } from '../getProjectProtocolContracts';
 import { queryAgentDiscovery } from '../queryAgentDiscovery';
 
 registerDeviceEnginePorts();
+registerSupportingServicePorts();
 
 // Every built-in descriptor is matched by a runtime factory on this platform, so
 // the runtime half is spied on to answer for a type no factory claims.

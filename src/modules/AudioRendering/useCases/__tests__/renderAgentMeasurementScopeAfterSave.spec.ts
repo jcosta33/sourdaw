@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -65,6 +66,8 @@ function moveFader(gain: number): void {
 function measureMaster(sourceRevision: string) {
     return renderAgentMeasurementScope({ scope: { kind: 'master' }, startBeat: 0, endBeat: 4, sourceRevision });
 }
+
+registerSupportingServicePorts();
 
 beforeEach(() => {
     configureAutomergeStoragePort(null);

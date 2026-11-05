@@ -11,15 +11,41 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 async function loadFreshModules() {
     vi.resetModules();
-    const [arrangement, collaboration, collaborationStores, controlSurface, midi, app] = await Promise.all([
+    const [
+        arrangement,
+        collaboration,
+        collaborationStores,
+        controlSurface,
+        controlSurfaceStores,
+        midi,
+        project,
+        sampleLibrary,
+        sampleLibraryStores,
+        app,
+    ] = await Promise.all([
         import('#/modules/Arrangement/useCases'),
         import('#/modules/Collaboration/useCases'),
         import('#/modules/Collaboration/stores'),
         import('#/modules/ControlSurface/useCases'),
+        import('#/modules/ControlSurface/stores'),
         import('#/modules/MIDI/useCases'),
+        import('#/modules/Project/useCases'),
+        import('#/modules/SampleLibrary/useCases'),
+        import('#/modules/SampleLibrary/stores'),
         import('../registerSupportingServicePorts'),
     ]);
-    return { arrangement, collaboration, collaborationStores, controlSurface, midi, app };
+    return {
+        arrangement,
+        collaboration,
+        collaborationStores,
+        controlSurface,
+        controlSurfaceStores,
+        midi,
+        project,
+        sampleLibrary,
+        sampleLibraryStores,
+        app,
+    };
 }
 
 type FreshModules = Awaited<ReturnType<typeof loadFreshModules>>;
@@ -40,10 +66,12 @@ beforeEach(async () => {
 
 describe('registerSupportingServicePorts before registration', () => {
     it('refuses every port read and names the function that registers it', () => {
-        const { arrangement, midi } = modules;
+        const { arrangement, midi, project } = modules;
         const reads: [string, () => unknown][] = [
             ['transferCaller', () => arrangement.collaborationAssetTransfer.read('transferCaller')],
             ['learnCaller', () => midi.midiLearnRouting.read('learnCaller')],
+            ['projectionCaller', () => project.midiLearnProjection.read('projectionCaller')],
+            ['discoveryCaller', () => project.sampleDiscoverySource.read('discoveryCaller')],
         ];
 
         for (const [caller, read] of reads) {
@@ -92,21 +120,51 @@ describe('registerSupportingServicePorts after registration', () => {
         expect(routing.applyMidiMappings).toBe(controlSurface.handleMidiMessage);
     });
 
+    it("saves ControlSurface's live MIDI learn state", () => {
+        const { controlSurfaceStores, project } = modules;
+        const projection = project.midiLearnProjection.read('spec');
+        const initial = controlSurfaceStores.midiLearnStore.value;
+        if (!initial) {
+            throw new Error('the MIDI learn store starts with its initial state');
+        }
+
+        expect(projection.readMidiLearn()).toBe(initial);
+        const learned = { ...initial, mappings: [] };
+        controlSurfaceStores.midiLearnStore.set(learned);
+        expect(projection.readMidiLearn()).toBe(learned);
+        controlSurfaceStores.midiLearnStore.set(null);
+        expect(projection.readMidiLearn()).toBeNull();
+    });
+
+    it("discovers samples through SampleLibrary's own library state and catalog search", () => {
+        const { project, sampleLibrary, sampleLibraryStores } = modules;
+        const source = project.sampleDiscoverySource.read('spec');
+
+        expect(source.readLibrary()).toBe(sampleLibraryStores.libraryStore.value);
+        expect(source.searchCatalog).toBe(sampleLibrary.searchAgentCatalog);
+    });
+
     it('treats a repeated registration as a no-op', () => {
-        const { arrangement, midi, app } = modules;
+        const { arrangement, midi, project, app } = modules;
         const transfer = arrangement.collaborationAssetTransfer.read('spec');
         const routing = midi.midiLearnRouting.read('spec');
+        const projection = project.midiLearnProjection.read('spec');
+        const source = project.sampleDiscoverySource.read('spec');
 
         expect(() => app.registerSupportingServicePorts()).not.toThrow();
 
         expect(arrangement.collaborationAssetTransfer.read('spec')).toBe(transfer);
         expect(midi.midiLearnRouting.read('spec')).toBe(routing);
+        expect(project.midiLearnProjection.read('spec')).toBe(projection);
+        expect(project.sampleDiscoverySource.read('spec')).toBe(source);
     });
 
     it('refuses a registration that differs from the registered one', () => {
-        const { arrangement, midi } = modules;
+        const { arrangement, midi, project } = modules;
         const transfer = arrangement.collaborationAssetTransfer.read('spec');
         const routing = midi.midiLearnRouting.read('spec');
+        const projection = project.midiLearnProjection.read('spec');
+        const source = project.sampleDiscoverySource.read('spec');
 
         expect(() =>
             arrangement.collaborationAssetTransfer.configure({ ...transfer, isSessionActive: () => true })
@@ -114,8 +172,16 @@ describe('registerSupportingServicePorts after registration', () => {
         expect(() => midi.midiLearnRouting.configure({ ...routing, applyMidiMappings: () => undefined })).toThrow(
             /midiLearnRouting\.configure: .*differs/
         );
+        expect(() => project.midiLearnProjection.configure({ readMidiLearn: () => null })).toThrow(
+            /midiLearnProjection\.configure: .*differs/
+        );
+        expect(() => project.sampleDiscoverySource.configure({ ...source, readLibrary: () => null })).toThrow(
+            /sampleDiscoverySource\.configure: .*differs/
+        );
 
         expect(arrangement.collaborationAssetTransfer.read('spec')).toBe(transfer);
         expect(midi.midiLearnRouting.read('spec')).toBe(routing);
+        expect(project.midiLearnProjection.read('spec')).toBe(projection);
+        expect(project.sampleDiscoverySource.read('spec')).toBe(source);
     });
 });

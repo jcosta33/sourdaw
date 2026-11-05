@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import {
     resetAutomergeStorageProjections,
     runWithAutomergeStorageTransaction,
@@ -68,6 +69,8 @@ function legacyProjectMeta(): Record<string, unknown> {
 function documentProjectId(): unknown {
     return (getCrdtDoc<Record<string, Record<string, unknown>>>('root')?.projectMeta ?? {}).projectId;
 }
+
+registerSupportingServicePorts();
 
 describe('migrateActiveProjectIdentity against a live legacy Automerge document', () => {
     beforeEach(() => {

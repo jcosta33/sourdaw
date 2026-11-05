@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { normalizeTrack } from '#/modules/Arrangement/useCases';
 import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
@@ -179,6 +180,8 @@ function replaceRootWithMalformedAdjustmentLayers(): void {
         },
     });
 }
+
+registerSupportingServicePorts();
 
 describe('exportProjectFile round-trip shape', () => {
     beforeEach(() => {
