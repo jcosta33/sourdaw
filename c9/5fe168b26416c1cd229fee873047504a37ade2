@@ -1,0 +1,43 @@
+src/modules/AiRuntime/AGENTS.md
+  s_3a60faff0d3185::t_1a36c895b8d998 40
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_3a60faff0d3185::t_db26297e1a2aa2 8075-8141
+src/modules/AiRuntime/useCases/agentReference/__tests__/getExplicitlyProtectedClips.spec.ts
+  s_3a60faff0d3185::t_b434f060b80dfc 102-237
+src/modules/AiRuntime/useCases/agentReference/blankRanges.ts
+  s_3a60faff0d3185::t_fe955d2c2a3538 1-9
+src/modules/AiRuntime/useCases/agentReference/clipProtectionReading.ts
+  s_3a60faff0d3185::t_9aaecad45bf369 5,9,113-135,169-171
+  s_55244eb93b97d1::t_411cf4204c288c 6
+src/modules/AiRuntime/useCases/agentReference/readProtectionSlots.ts
+  s_3a60faff0d3185::t_7e2ddc7c51a1bf 23-24,46-52,110-117,122,125-131,142-143,157,204,351
+  s_55244eb93b97d1::t_50766dac5532a4 132-134,136-141
+  s_55244eb93b97d1::t_a4b55d0d767de2 135
+  s_55244eb93b97d1::t_2798d62eaea2ce 150
+src/modules/AiRuntime/useCases/agentReference/readExplicitProtections.ts
+  s_55244eb93b97d1::t_628a23ff2b7cdf 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c95fe168b26416c1cd229fee873047504a37ade2",
+  "prompts": {},
+  "sessions": {
+    "s_3a60faff0d3185": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_3a60faff0d3185",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
