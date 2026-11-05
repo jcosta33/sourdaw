@@ -1,7 +1,6 @@
 import { isExactAutomationLaneSnapshots, isExactClipAutomationMoveSnapshots } from '#/modules/Automation/useCases';
 import { decodeMidiClipDataSnapshots, isExactMidiClipDataActionSnapshot } from '#/modules/MIDI/useCases';
-import { captureAudioSourceState, hasValidAudioSourceTiles } from '#/utils/audioSourceTime';
-import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+import { hasValidAudioSourceTiles } from '#/utils/audioSourceTime';
 import {
     type AppAction,
     type HandlerSessionActionEntry,
@@ -23,6 +22,7 @@ import { reverseRestorePlan } from '../../useCases/timeOperations/reverseRestore
 import { hasFiniteNumbers } from './hasFiniteNumbers';
 import { isClipSplitOrderSnapshot } from './isClipSplitOrderSnapshot';
 import { isRemoveClipSessionPayload } from './isRemoveClipSessionPayload';
+import { splitLeftSourceMatches } from './splitLeftSourceMatches';
 
 import type { TakeLane } from '../../models/TakeLane';
 import type { Clip } from '../../stores/trackStore';
@@ -260,75 +260,6 @@ function splitSnapshotCaptureOwnersMatch(value: Record<string, unknown>, clipId:
                     (entry.gainEnvelope === null && entry.warpState === null))
         )
     );
-}
-
-function preservedSplitFields(clip: Record<string, unknown>): Record<string, unknown> {
-    return Object.fromEntries(
-        Object.entries(clip).filter(([key]) => key !== 'name' && key !== 'endBeat' && key !== 'fadeOutBeats')
-    );
-}
-
-function splitAudioSourceFieldsMatch(
-    original: Record<string, unknown>,
-    split: Record<string, unknown>,
-    tempo: number
-): boolean {
-    if (
-        original.rightClip !== null ||
-        split.rightClip === null ||
-        typeof original.trackId !== 'string' ||
-        !isRecord(original.leftClip) ||
-        typeof original.leftClip.id !== 'string' ||
-        !isClipSnapshot(original.leftClip, original.leftClip.id, original.trackId) ||
-        original.leftClip.type !== 'audio' ||
-        !isRecord(split.leftClip)
-    ) {
-        return false;
-    }
-    const clip = original.leftClip;
-    const loop = projectClipLoopExpansion({
-        clipDurationBeats: clip.endBeat - clip.startBeat,
-        configuredLoopLengthBeats: clip.loopLength,
-        loopEnabled: clip.loopEnabled ?? false,
-    });
-    const source = captureAudioSourceState(clip, loop.loopLengthBeats, tempo);
-    if (!source) {
-        return false;
-    }
-    const promoted = {
-        ...clip,
-        ...source,
-    };
-    if (clip.loopEnabled) {
-        promoted.loopLength = loop.loopLengthBeats;
-        promoted.loopOriginBeat = clip.loopOriginBeat ?? clip.startBeat;
-    }
-    return valuesEqual(preservedSplitFields(promoted), preservedSplitFields(split.leftClip));
-}
-
-function splitLeftSourceMatches(expected: Record<string, unknown>, replacement: Record<string, unknown>): boolean {
-    const left = expected.leftClip;
-    const otherLeft = replacement.leftClip;
-    if (!isRecord(left) || !isRecord(otherLeft)) {
-        return false;
-    }
-    // Historical splits changed only these fields. New audio captures prove
-    // their additional source promotion against the stored old governing tempo.
-    if (expected.audioSourceTempoAtStart === undefined && replacement.audioSourceTempoAtStart === undefined) {
-        return valuesEqual(preservedSplitFields(left), preservedSplitFields(otherLeft));
-    }
-    const tempo = expected.audioSourceTempoAtStart;
-    if (
-        typeof tempo !== 'number' ||
-        !Number.isFinite(tempo) ||
-        tempo <= 0 ||
-        tempo !== replacement.audioSourceTempoAtStart
-    ) {
-        return false;
-    }
-    const original = expected.rightClip === null ? expected : replacement;
-    const split = expected.rightClip === null ? replacement : expected;
-    return splitAudioSourceFieldsMatch(original, split, tempo);
 }
 
 function splitRightSourceMatches(
