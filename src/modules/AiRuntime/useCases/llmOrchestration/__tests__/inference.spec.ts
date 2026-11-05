@@ -24,11 +24,11 @@ import { agentResourceLimitsStore } from '../../../stores/agentResourceLimitsSto
 import { estimateConservativePromptTokens } from '../../../transformers/estimateConservativePromptTokens';
 import { serializeWebLlmToolPlanningPrompt } from '../../../transformers/serializeWebLlmToolPlanningPrompt';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
-import { getAgentToolCatalogSchemas } from '../../agentToolCatalog';
 import {
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
     ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
+    getAgentToolCatalogSchemas,
     PROJECT_DISCOVERY_TOOL_NAME,
     RECIPE_DISCOVERY_TOOL_NAME,
     RECIPE_EXPANSION_TOOL_NAME,
@@ -320,13 +320,13 @@ describe('generateToolPlanningOutcome', () => {
             }
             const projected = projectOpenAiStrictToolSchema(projectQuery).function.parameters;
             const projectedFilters = isRecord(projected.properties) ? projected.properties.filters : undefined;
+            if (!isRecord(projectedFilters)) {
+                throw new Error('project.query publishes no filters schema');
+            }
             const strictReply = {
                 ...unsetOptionals(projected),
                 type: 'object',
-                filters: {
-                    ...(isRecord(projectedFilters) ? unsetOptionals(projectedFilters) : {}),
-                    exactName: 'Lead Vocal',
-                },
+                filters: { ...unsetOptionals(projectedFilters), exactName: 'Lead Vocal' },
             };
             expect(strictReply).toMatchObject({
                 page: null,
