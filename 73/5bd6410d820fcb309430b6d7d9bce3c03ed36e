@@ -1,0 +1,23 @@
+src/components/ui/dialog.tsx
+  s_55244eb93b97d1::t_852d385e89e810 72-81,85
+src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx
+  s_55244eb93b97d1::t_319bf5e30caea8 8,278-289
+src/modules/WorkspaceShell/presentations/views/__tests__/LaunchScreen.spec.tsx
+  s_55244eb93b97d1::t_c4ed5bbee36b7e 95-145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "735bd6410d820fcb309430b6d7d9bce3c03ed36e",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
