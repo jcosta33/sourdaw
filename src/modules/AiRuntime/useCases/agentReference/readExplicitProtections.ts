@@ -14,6 +14,7 @@ import {
     type Token,
 } from './protectionObjectForms';
 import { protectionSlots, type Range, type Slot } from './readProtectionSlots';
+import { blankRanges } from './blankRanges';
 import { refinementRequestReading, type ReferenceCandidate } from './refinementRequestReading';
 
 /**
@@ -397,13 +398,6 @@ function getExtraCandidates(context: ProjectContext): ReferenceCandidate[] {
             .trim(),
         denotes: new Set([object.id]),
     }));
-}
-
-function blankRanges(text: string, ranges: readonly Range[]): string {
-    return ranges.reduce(
-        (blanked, { start, end }) => `${blanked.slice(0, start)}${'□'.repeat(end - start)}${blanked.slice(end)}`,
-        text
-    );
 }
 
 function normalizeName(name: string): string {

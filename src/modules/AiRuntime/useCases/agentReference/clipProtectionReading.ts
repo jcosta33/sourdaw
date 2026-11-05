@@ -3,8 +3,10 @@ import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuot
 import { getSelectedClipReferenceIds } from '../../transformers/promptParser/selectedClipReference';
 
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
+import { blankRanges } from './blankRanges';
 import { CONNECTIVE_WORDS, CONVENTIONAL_WORDS, protectionObjectForms } from './protectionObjectForms';
 import { protectionSlots, type Range, type Slot } from './readProtectionSlots';
+import { refinementRequestReading } from './refinementRequestReading';
 import { resolveAgentReference } from './resolveAgentReference';
 
 export type ExplicitlyProtectedClip = { id: string; name: string };
@@ -108,6 +110,29 @@ function readSlotReference(prompt: string, slot: Slot): string {
     return slot.lead === 'prohibition' ? reference.replace(trailingClauseSeparatorPattern, '') : reference;
 }
 
+type NameBlanking = { text: string; ambiguous: boolean };
+
+/**
+ * Blank every project object's name so a verb inside a name never reads as the next instruction. A name wholly
+ * inside a protection's opening words stays readable. A name that otherwise overlaps them, by containing them
+ * or by straddling them, cannot be told from the opener, so the reading is ambiguous.
+ */
+function blankObjectNames(maskedText: string, prompt: string, context: ProjectContext): NameBlanking {
+    const starts = protectionSlots.startRanges(maskedText);
+    const insideStart = (reference: Range) =>
+        starts.some((start) => reference.start >= start.start && reference.end <= start.end);
+    const overlapsStart = (reference: Range) =>
+        starts.some((start) => reference.start < start.end && reference.end > start.start);
+    const references = refinementRequestReading.references(prompt, refinementRequestReading.candidates(context));
+    return {
+        text: blankRanges(
+            maskedText,
+            references.filter((reference) => !overlapsStart(reference))
+        ),
+        ambiguous: references.some((reference) => overlapsStart(reference) && !insideStart(reference)),
+    };
+}
+
 function getProtectedReferenceTexts(prompt: string, context: ProjectContext): ProtectedReferenceParse {
     const quoteScan = scanPromptQuotedText(prompt);
     const clips = context.tracks.flatMap((track) => track.clips);
@@ -141,7 +166,9 @@ function getProtectedReferenceTexts(prompt: string, context: ProjectContext): Pr
         addReference(prompt.slice(referenceStart, referenceStart + match[1].length), referenceStart);
     }
 
-    for (const slot of protectionSlots.read(quoteScan.maskedText)) {
+    const blanking = blankObjectNames(quoteScan.maskedText, prompt, context);
+    complete &&= !blanking.ambiguous;
+    for (const slot of protectionSlots.read(blanking.text)) {
         const range = slot.completeRange;
         if (
             range === null ||
