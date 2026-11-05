@@ -248,6 +248,43 @@ describe('restoreTakesForClip', () => {
         ]);
     });
 
+    it("drops a take whose clip only the active alternative's stale stored copy still names", () => {
+        // `x` was deleted from t1's main row after the last alternative switch, so
+        // the active alternative's stored copy still names it; `y` lives in an
+        // inactive alternative, which the track holds now.
+        trackStore.set({
+            tracks: [
+                TrackDummy.create({
+                    id: 't1',
+                    clips: [ClipDummy.create({ id: 'c1', trackId: 't1' })],
+                    activeAlternativeId: 'alt-1',
+                    alternatives: [
+                        {
+                            id: 'alt-1',
+                            name: 'Alternative 1',
+                            clips: ['c1', 'x'].map((id) => ClipDummy.create({ id, trackId: 't1' })),
+                        },
+                        {
+                            id: 'alt-2',
+                            name: 'Alternative 2',
+                            clips: [ClipDummy.create({ id: 'y', trackId: 't1' })],
+                        },
+                    ],
+                }),
+            ],
+            selectedTrackId: 't1',
+            ghostClips: [],
+        });
+        mocks.takeLaneStoreValue.value = { lanes: [] };
+        const staleTake = createTake('x', 'Deleted from the main row', 0, 4);
+        const inactiveTake = createTake('y', 'Held by an inactive alternative', 4, 8);
+        const retiredLane = laneWithTakes('t1', [staleTake, inactiveTake]);
+
+        restoreTakesForClip([{ laneIndex: 0, lane: retiredLane, retiredTakeIds: [staleTake.id, inactiveTake.id] }]);
+
+        expect(mocks.takeLaneStoreValue.value?.lanes[0]?.takes.map((take) => take.id)).toEqual([inactiveTake.id]);
+    });
+
     it('re-adds the retired take onto a lane thinned by the removal', () => {
         const take = createTake('c1', 'Retired take', 0, 4);
         const survivorTake = createTake('c2', 'Survivor', 4, 8);

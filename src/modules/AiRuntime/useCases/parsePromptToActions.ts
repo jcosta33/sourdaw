@@ -1327,6 +1327,11 @@ const planPromptIntent = inject({ logger })(
                             // form above, which restates them inside the prompt.
                             {
                                 ...(readonly ? { maxOutputTokens: READONLY_ANSWER_MAX_OUTPUT_TOKENS } : {}),
+                                // General planning answers a call off its schema with a correctable receipt;
+                                // a narrower profile or phase keeps refusing it with its turn, below.
+                                ...(readonly || phase !== 'planning'
+                                    ? {}
+                                    : { answersSchemaInvalidCalls: true as const }),
                                 firstUserMessage: initialPlanningContext.message,
                                 history,
                                 budgetNote,

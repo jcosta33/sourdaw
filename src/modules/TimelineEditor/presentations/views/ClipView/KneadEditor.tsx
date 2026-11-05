@@ -16,7 +16,7 @@ import { analyzeClipPitch, updateClipKneadState } from '#/modules/Knead/useCases
 import { projectStore } from '#/modules/Project/stores';
 import { setProjectKeyRoot, setProjectScaleName } from '#/modules/Project/useCases';
 import { transportStore, defaultTransportState } from '#/modules/Transport/stores';
-import { quantizeCentsToScale, SCALE_NAMES, KEY_NAMES } from '#/utils/Music/MusicalScale';
+import { getScaleLabel, quantizeCentsToScale, SCALE_NAMES, KEY_NAMES } from '#/utils/Music/MusicalScale';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { useTracks } from '../../hooks/useTracks';
@@ -780,11 +780,10 @@ export const KneadEditor = ({ trackId, clipId }: { trackId: string; clipId: stri
                                     value={scaleName}
                                     onChange={(event) => handleScaleChange(event.target.value)}
                                     aria-label="Scale"
-                                    className="capitalize"
                                 >
                                     {SCALE_NAMES.map((name) => (
                                         <option key={name} value={name} className="bg-surface-elevated text-foreground">
-                                            {name.replaceAll(/([A-Z])/g, ' $1')}
+                                            {getScaleLabel(name)}
                                         </option>
                                     ))}
                                 </DawCompactSelect>

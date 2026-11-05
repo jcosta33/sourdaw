@@ -1,0 +1,225 @@
+import { isBeatAdmittedByAnchoredClipLoopWindow, resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
+
+import { MAX_GROOVE_STAGE_DISPLACEMENT_BEATS } from '../../services/midiSchedulerWindowGeometry';
+
+import { type ScheduledMidiNote } from './getScheduledMidiNoteIndex';
+
+type YeastLoopPhaseIndexInput = {
+    notes: readonly ScheduledMidiNote[];
+    loopLengthBeats: number;
+    midiOffsetBeats: number;
+    /** The owning clip's start — not the iteration's; the anchor's trim advance reads against it. */
+    clipStartBeat: number;
+    loopOriginBeat: number | undefined;
+    loopEnabled: boolean;
+};
+type YeastLoopPhaseEntry = {
+    endPhaseBeat: number;
+    note: ScheduledMidiNote;
+    phaseBeat: number;
+};
+type YeastLoopPhaseIndex = {
+    clipStartBeat: number;
+    loopEnabled: boolean;
+    loopLengthBeats: number;
+    loopOriginBeat: number | undefined;
+    midiOffsetBeats: number;
+    sortedEnds: readonly YeastLoopPhaseEntry[];
+    sortedEntries: readonly YeastLoopPhaseEntry[];
+};
+type AddYeastLoopPhaseCandidatesInput = YeastLoopPhaseIndexInput & {
+    candidates: Set<ScheduledMidiNote>;
+    iterationStartBeat: number;
+    fromBeat: number;
+    toBeat: number;
+};
+
+// MIDI writes replace note arrays rather than mutating them, so array identity
+// invalidates this cache whenever project truth changes.
+const yeastLoopPhaseIndexes = new WeakMap<readonly ScheduledMidiNote[], YeastLoopPhaseIndex>();
+
+function positiveModulo(value: number, divisor: number): number {
+    return ((value % divisor) + divisor) % divisor;
+}
+
+function lowerBoundPhase(entries: readonly YeastLoopPhaseEntry[], phaseBeat: number): number {
+    let low = 0;
+    let high = entries.length;
+    while (low < high) {
+        const middle = low + Math.floor((high - low) / 2);
+        if (entries[middle]!.phaseBeat < phaseBeat) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    return low;
+}
+
+function lowerBoundEnd(entries: readonly YeastLoopPhaseEntry[], endPhaseBeat: number): number {
+    let low = 0;
+    let high = entries.length;
+    while (low < high) {
+        const middle = low + Math.floor((high - low) / 2);
+        if (entries[middle]!.endPhaseBeat < endPhaseBeat) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    return low;
+}
+
+/**
+ * Phase view of the events a looped pass places away from its note's raw
+ * start, which the content-window query cannot reach. A pass plays each note
+ * as `loopPassNoteSegments` cuts it, so the events are:
+ *
+ * - a start before the pass head, re-anchored by the loop (the wrap class):
+ *   starts already before the head, plus starts within one groove stage's
+ *   displacement after it, which the clip groove can pull across the head
+ *   (`MAX_GROOVE_STAGE_DISPLACEMENT_BEATS` bounds that displacement). Indexed
+ *   at the wrapped start and at its release, which a pass never places past
+ *   the pass end.
+ * - a note that runs past the pass end (the crossing class, which a groove
+ *   stage can push across too): its in-pass part is released on the pass end,
+ *   and its tail is its own note struck on the pass head, released at the
+ *   overflow. Indexed at phase 0 and at both releases.
+ *
+ * Every entry is a fixed offset into a pass, so the release query stays
+ * unnormalized. An estimate a groove stage can move is found because both
+ * queries carry that stage's slack.
+ */
+function getYeastLoopPhaseIndex({
+    notes,
+    loopLengthBeats,
+    midiOffsetBeats,
+    clipStartBeat,
+    loopOriginBeat,
+    loopEnabled,
+}: YeastLoopPhaseIndexInput): YeastLoopPhaseIndex {
+    const cached = yeastLoopPhaseIndexes.get(notes);
+    if (
+        cached?.loopLengthBeats === loopLengthBeats &&
+        cached.midiOffsetBeats === midiOffsetBeats &&
+        cached.clipStartBeat === clipStartBeat &&
+        cached.loopOriginBeat === loopOriginBeat &&
+        cached.loopEnabled === loopEnabled
+    ) {
+        return cached;
+    }
+
+    const orderByNote = new Map<ScheduledMidiNote, number>();
+    const sortedEntries: YeastLoopPhaseEntry[] = [];
+    const sortedEnds: YeastLoopPhaseEntry[] = [];
+    // Iterations open on the anchor's pass grid: a row sits its
+    // offset-relative start plus the trim advance into its pass.
+    const loopAdvanceBeats = resolveClipLoopOriginAdvance({ startBeat: clipStartBeat, loopOriginBeat, loopEnabled });
+    for (let index = 0; index < notes.length; index++) {
+        const note = notes[index]!;
+        orderByNote.set(note, index);
+        const relativeStartBeat = note.startBeat - midiOffsetBeats;
+        const passRelativeStartBeat = relativeStartBeat + loopAdvanceBeats;
+        const phaseBeat = positiveModulo(passRelativeStartBeat, loopLengthBeats);
+        const keptBeats = Math.min(note.duration, loopLengthBeats);
+        const wrapsBeforeHead = passRelativeStartBeat < MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
+        // A start the groove can pull across the head lands just before the
+        // pass end and crosses it with nearly all of its length.
+        const crossesPassEnd =
+            (wrapsBeforeHead && passRelativeStartBeat >= 0) ||
+            phaseBeat + keptBeats > loopLengthBeats - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
+        if (!wrapsBeforeHead && !crossesPassEnd) {
+            continue;
+        }
+        // #5198 — the anchored loop window is the index's membership too: a row
+        // past the trimmed region end never sounds on any pass, so it must not
+        // enter the index the looped windows read. An unanchored clip keeps the
+        // pre-anchor index — the admission helper admits without a test there.
+        if (
+            !isBeatAdmittedByAnchoredClipLoopWindow({
+                relativeBeat: relativeStartBeat,
+                startBeat: clipStartBeat,
+                loopOriginBeat,
+                loopLengthBeats,
+                loopEnabled,
+            })
+        ) {
+            continue;
+        }
+        if (wrapsBeforeHead) {
+            const entry = { endPhaseBeat: Math.min(phaseBeat + note.duration, loopLengthBeats), note, phaseBeat };
+            sortedEntries.push(entry);
+            sortedEnds.push(entry);
+        }
+        if (crossesPassEnd) {
+            const headTail = { endPhaseBeat: Math.max(0, phaseBeat + keptBeats - loopLengthBeats), note, phaseBeat: 0 };
+            sortedEntries.push(headTail);
+            sortedEnds.push(headTail, { endPhaseBeat: loopLengthBeats, note, phaseBeat });
+            if (wrapsBeforeHead && passRelativeStartBeat >= 0) {
+                sortedEnds.push({ endPhaseBeat: keptBeats, note, phaseBeat: 0 });
+            }
+        }
+    }
+    sortedEntries.sort(
+        (left, right) => left.phaseBeat - right.phaseBeat || orderByNote.get(left.note)! - orderByNote.get(right.note)!
+    );
+    const created = {
+        clipStartBeat,
+        loopEnabled,
+        loopLengthBeats,
+        loopOriginBeat,
+        midiOffsetBeats,
+        sortedEnds: sortedEnds.sort((left, right) => left.endPhaseBeat - right.endPhaseBeat),
+        sortedEntries,
+    };
+    yeastLoopPhaseIndexes.set(notes, created);
+    return created;
+}
+
+/**
+ * Adds the notes a looped iteration places inside `[fromBeat, toBeat)` away
+ * from their raw start: their wrapped start, their pass-head tail, or either
+ * release. The window normalizes into loop phase for starts and may itself
+ * straddle the seam; the release query reads offsets into the pass as they are.
+ */
+export function addYeastLoopPhaseCandidates({
+    candidates,
+    iterationStartBeat,
+    fromBeat,
+    toBeat,
+    ...indexInput
+}: AddYeastLoopPhaseCandidatesInput): void {
+    const { loopLengthBeats } = indexInput;
+    const loopIndex = getYeastLoopPhaseIndex(indexInput);
+    const phaseStartBeat = fromBeat - iterationStartBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
+    const phaseEndBeat = toBeat - iterationStartBeat + MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
+    const phaseWidthBeats = phaseEndBeat - phaseStartBeat;
+    if (phaseWidthBeats >= loopLengthBeats) {
+        for (const { note } of loopIndex.sortedEntries) {
+            candidates.add(note);
+        }
+    } else {
+        const normalizedStartBeat = positiveModulo(phaseStartBeat, loopLengthBeats);
+        const normalizedEndBeat = normalizedStartBeat + phaseWidthBeats;
+        const phaseStartIndex = lowerBoundPhase(loopIndex.sortedEntries, normalizedStartBeat);
+        if (normalizedEndBeat <= loopLengthBeats) {
+            const phaseEndIndex = lowerBoundPhase(loopIndex.sortedEntries, normalizedEndBeat);
+            for (let index = phaseStartIndex; index < phaseEndIndex; index++) {
+                candidates.add(loopIndex.sortedEntries[index]!.note);
+            }
+        } else {
+            const wrappedEndIndex = lowerBoundPhase(loopIndex.sortedEntries, normalizedEndBeat - loopLengthBeats);
+            for (let index = phaseStartIndex; index < loopIndex.sortedEntries.length; index++) {
+                candidates.add(loopIndex.sortedEntries[index]!.note);
+            }
+            for (let index = 0; index < wrappedEndIndex; index++) {
+                candidates.add(loopIndex.sortedEntries[index]!.note);
+            }
+        }
+    }
+    const releaseStartIndex = lowerBoundEnd(loopIndex.sortedEnds, phaseStartBeat);
+    const releaseEndIndex = lowerBoundEnd(loopIndex.sortedEnds, phaseEndBeat);
+    for (let index = releaseStartIndex; index < releaseEndIndex; index++) {
+        candidates.add(loopIndex.sortedEnds[index]!.note);
+    }
+}

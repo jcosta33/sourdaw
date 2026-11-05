@@ -24,6 +24,12 @@ describe('scale labels', () => {
     it('falls back to the identifier for an unknown scale', () => {
         expect(getScaleLabel('custom')).toBe('custom');
     });
+
+    it('falls back to the identifier for names that are Object.prototype members', () => {
+        expect(getScaleLabel('__proto__')).toBe('__proto__');
+        expect(getScaleLabel('constructor')).toBe('constructor');
+        expect(getScaleLabel('toString')).toBe('toString');
+    });
 });
 
 describe('scale data', () => {
