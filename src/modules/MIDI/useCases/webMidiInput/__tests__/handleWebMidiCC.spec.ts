@@ -35,6 +35,7 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
 const apply_note_expression = vi.hoisted(() => vi.fn());
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: vi.fn() },
     writeNativeBuiltinParameters: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     audioEngine: {

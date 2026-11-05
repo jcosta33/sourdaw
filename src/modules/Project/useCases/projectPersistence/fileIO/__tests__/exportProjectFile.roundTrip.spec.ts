@@ -54,6 +54,7 @@ vi.mock('#/modules/Routing/useCases', () => ({
     wireSidechainRoutes: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: vi.fn() },
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import * as synthVoices from '#/modules/Synth/useCases';
 import { tempoMapStore } from '#/modules/Transport/stores';
 
 import { createWebMidiNoteKey } from '../../../models/WebMidiTypes';
@@ -28,6 +29,7 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
 const apply_note_expression = vi.hoisted(() => vi.fn());
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: () => synthVoices },
     writeNativeBuiltinParameters: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     audioEngine: {

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { registerFaustDSP } from '#/modules/PluginHost/useCases';
+import * as synthVoices from '#/modules/Synth/useCases';
 import {
     scheduleDrumKitNote as scheduleDrumKitNoteReal,
     getDrumKitDefByIndex as getDrumKitDefByIndexReal,
@@ -12,6 +13,10 @@ import { createAudioPreviewIntents } from '../../services/audioPreview/createAud
 import { getDrumKitByIndex as getDrumKitByIndexReal } from '../audioEngineQueries/getDrumKitByIndex';
 import { playAuditionNote } from '../audition';
 import { startFaustNote as startFaustNoteReal } from '../faustScheduler/startFaustNote';
+import { builtinSynthVoice } from '../scheduling/builtinSynthVoice';
+
+// The voices this spec's notes sound through, as the composition root registers them.
+builtinSynthVoice.configure(synthVoices);
 
 const scheduleDrumKitNote = vi.mocked(scheduleDrumKitNoteReal);
 const getDrumKitDefByIndex = vi.mocked(getDrumKitDefByIndexReal);

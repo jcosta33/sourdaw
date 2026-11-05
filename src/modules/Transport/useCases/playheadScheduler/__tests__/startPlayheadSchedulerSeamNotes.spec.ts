@@ -135,6 +135,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
  */
 const scheduleClickSpy = vi.hoisted(() => vi.fn<(time: number, isAccent: boolean, volume: number) => void>());
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: () => synthVoices },
     ensureCachedAudioBuffersDurable: vi.fn(),
     createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
     analyzePitchForClip: vi.fn(),
@@ -188,7 +189,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 const scheduleNoteSpy = vi.hoisted(() =>
     vi.fn<(ctx: unknown, destination: unknown, pitch: number, startTime: number, ...rest: unknown[]) => unknown>()
 );
-vi.mock('#/modules/Synth/useCases', () => ({
+// The built-in synth voice this spec's notes sound through, read through the AudioEngine port.
+const synthVoices = vi.hoisted(() => ({
     getDrumKitDefByIndex: () => null,
     scheduleDrumKitNote: vi.fn(),
     scheduleKitNote: vi.fn(),

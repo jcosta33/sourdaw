@@ -15,6 +15,7 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: vi.fn() },
     writeNativeBuiltinParameters: vi.fn(),
     applyNoteExpression: vi.fn(),
     startFaustNote: vi.fn(),

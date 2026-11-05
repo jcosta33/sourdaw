@@ -203,6 +203,7 @@ export { resolveTrackClipsWithComping } from './offlineRender/resolveTrackClipsW
 export { scheduleAdjustmentLayers } from './adjustmentLayer/scheduleAdjustmentLayers';
 export { getSharedAdjustmentLayerApplier } from './adjustmentLayer/sharedAdjustmentLayerApplier';
 
+export { builtinSynthVoice } from './scheduling/builtinSynthVoice';
 export { scheduleClick } from './scheduling/scheduleClick';
 export { stopAllScheduled } from './scheduling/stopAllScheduled';
 export { registerScheduledSource } from './scheduling/registerScheduledSource';

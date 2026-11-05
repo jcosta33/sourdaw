@@ -262,6 +262,7 @@ vi.mock('#/modules/Knead/useCases', async () => {
     };
 });
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: vi.fn() },
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     suspendAutoInputMonitoring: vi.fn(() => vi.fn()),

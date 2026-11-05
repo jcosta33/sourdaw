@@ -1,5 +1,6 @@
 import { deviceFactoryPresetSources } from '#/modules/Arrangement/useCases';
 import {
+    builtinSynthVoice,
     engineAttachmentTracking,
     nativeBodyVocabularyRegistry,
     neuralModelContent,
@@ -23,6 +24,14 @@ import {
     templateArpeggiatorAuthoring,
     templateDeviceContent,
 } from '#/modules/Project/useCases';
+import {
+    getDrumKitDefByIndex,
+    getSynthParamsFromDevices,
+    scheduleDrumKitNote,
+    scheduleKitNote,
+    scheduleNote,
+    scheduleNoteOffline,
+} from '#/modules/Synth/useCases';
 import { toasterStore } from '#/modules/Toaster/stores';
 import { getDefaultPadNames, getStoredDrumVoiceMetadata } from '#/modules/Toaster/useCases';
 import {
@@ -49,6 +58,7 @@ type DeviceEnginePorts = {
     templateArpeggiatorAuthoring: Parameters<typeof templateArpeggiatorAuthoring.configure>[0];
     templateDeviceContent: Parameters<typeof templateDeviceContent.configure>[0];
     storedDrumVoices: Parameters<typeof storedDrumVoices.configure>[0];
+    builtinSynthVoice: Parameters<typeof builtinSynthVoice.configure>[0];
 };
 
 let productionPorts: DeviceEnginePorts | null = null;
@@ -110,17 +120,26 @@ function buildProductionPorts(): DeviceEnginePorts {
             defaultPadNames: getDefaultPadNames,
         },
         storedDrumVoices: { voicesOf: getStoredDrumVoiceMetadata },
+        builtinSynthVoice: {
+            scheduleNote,
+            scheduleNoteOffline,
+            scheduleKitNote,
+            scheduleDrumKitNote,
+            getDrumKitDefByIndex,
+            getSynthParamsFromDevices,
+        },
     };
 }
 
 /**
  * Engine and core modules may not import a device module, so the device
  * modules' parameter vocabularies, runtime writes, factory presets, MIDI
- * processing, note releases, live state, saved racks, template content and
- * stored kit voices reach them through ports this composition root fills. Called by bootstrap and again when `App` loads,
- * because `main.tsx` loads the two independently and the preset browser can
- * render before bootstrap has run; registering the same ports twice is a
- * no-op.
+ * processing, note releases, live state, saved racks, template content,
+ * stored kit voices and the built-in synth and drum synth voices reach them
+ * through ports this composition root fills. Called by bootstrap and again
+ * when `App` loads, because `main.tsx` loads the two independently and the
+ * preset browser can render before bootstrap has run; registering the same
+ * ports twice is a no-op.
  */
 export function registerDeviceEnginePorts(): void {
     productionPorts ??= buildProductionPorts();
@@ -138,4 +157,5 @@ export function registerDeviceEnginePorts(): void {
     templateArpeggiatorAuthoring.configure(productionPorts.templateArpeggiatorAuthoring);
     templateDeviceContent.configure(productionPorts.templateDeviceContent);
     storedDrumVoices.configure(productionPorts.storedDrumVoices);
+    builtinSynthVoice.configure(productionPorts.builtinSynthVoice);
 }

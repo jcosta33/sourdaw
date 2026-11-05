@@ -33,6 +33,7 @@ vi.mock('../../../repositories/webMidi/getMpeEnabled', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: vi.fn() },
     audioEngine: {
         context: audio_clock,
         getTrackStrip: get_track_strip,

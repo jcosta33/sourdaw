@@ -26,6 +26,7 @@ async function loadFreshModules() {
         levain,
         toaster,
         project,
+        synth,
         app,
     ] = await Promise.all([
         import('#/modules/Arrangement/useCases'),
@@ -43,6 +44,7 @@ async function loadFreshModules() {
         import('#/modules/Levain/useCases'),
         import('#/modules/Toaster/useCases'),
         import('#/modules/Project/useCases'),
+        import('#/modules/Synth/useCases'),
         import('../registerDeviceEnginePorts'),
     ]);
     return {
@@ -61,6 +63,7 @@ async function loadFreshModules() {
         levain,
         toaster,
         project,
+        synth,
         app,
     };
 }
@@ -104,6 +107,7 @@ describe('registerDeviceEnginePorts before registration', () => {
             ['swingCaller', () => transport.kitSwing.read('swingCaller')],
             ['attachmentCaller', () => audioEngine.engineAttachmentTracking.read('attachmentCaller')],
             ['modelCaller', () => audioEngine.neuralModelContent.read('modelCaller')],
+            ['synthVoiceCaller', () => audioEngine.builtinSynthVoice.read('synthVoiceCaller')],
             ['velocityCaller', () => midi.velocityCalibration.read('velocityCaller')],
             ['articulationCaller', () => midi.articulationIdResolvers.read('articulationCaller', 'levain')],
         ];
@@ -359,6 +363,18 @@ describe('registerDeviceEnginePorts after registration', () => {
         expect(project.storedDrumVoices.read('spec').voicesOf(undefined)).toEqual({ status: 'unknown' });
     });
 
+    it("sounds notes through Synth's own built-in synth and drum synth voices", () => {
+        const { audioEngine, synth } = modules;
+        const voice = audioEngine.builtinSynthVoice.read('spec');
+
+        expect(voice.scheduleNote).toBe(synth.scheduleNote);
+        expect(voice.scheduleNoteOffline).toBe(synth.scheduleNoteOffline);
+        expect(voice.scheduleKitNote).toBe(synth.scheduleKitNote);
+        expect(voice.scheduleDrumKitNote).toBe(synth.scheduleDrumKitNote);
+        expect(voice.getDrumKitDefByIndex).toBe(synth.getDrumKitDefByIndex);
+        expect(voice.getSynthParamsFromDevices).toBe(synth.getSynthParamsFromDevices);
+    });
+
     it('treats a repeated registration as a no-op', () => {
         const { arrangement, audioEngine, transport, midi, project, app } = modules;
         const vocabulary = audioEngine.nativeBodyVocabularyRegistry.read('spec', 'fermenter');
@@ -375,6 +391,7 @@ describe('registerDeviceEnginePorts after registration', () => {
         const authoring = project.templateArpeggiatorAuthoring.read('spec');
         const content = project.templateDeviceContent.read('spec');
         const voices = project.storedDrumVoices.read('spec');
+        const synthVoice = audioEngine.builtinSynthVoice.read('spec');
 
         expect(() => app.registerDeviceEnginePorts()).not.toThrow();
 
@@ -392,6 +409,7 @@ describe('registerDeviceEnginePorts after registration', () => {
         expect(project.templateArpeggiatorAuthoring.read('spec')).toBe(authoring);
         expect(project.templateDeviceContent.read('spec')).toBe(content);
         expect(project.storedDrumVoices.read('spec')).toBe(voices);
+        expect(audioEngine.builtinSynthVoice.read('spec')).toBe(synthVoice);
     });
 
     it('refuses a registration that differs from the registered one', () => {
@@ -460,6 +478,16 @@ describe('registerDeviceEnginePorts after registration', () => {
 
         expect(transport.liveMidiProcessor.read('spec')).toBe(processor);
         expect(audioEngine.engineAttachmentTracking.read('spec')).toBe(tracking);
+    });
+
+    it('refuses a built-in synth voice registration that differs from the registered one', () => {
+        const { audioEngine } = modules;
+        const voice = audioEngine.builtinSynthVoice.read('spec');
+
+        expect(() => audioEngine.builtinSynthVoice.configure({ ...voice, getDrumKitDefByIndex: () => null })).toThrow(
+            /builtinSynthVoice\.configure: .*differs/
+        );
+        expect(audioEngine.builtinSynthVoice.read('spec')).toBe(voice);
     });
 
     it('refuses a project save, template or track-role registration that differs from the registered one', () => {

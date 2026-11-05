@@ -36,6 +36,7 @@ const { persistDevicePatchMock, persistedProjectPatches } = vi.hoisted(() => {
     };
 });
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: vi.fn() },
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),
