@@ -6,7 +6,7 @@ import {
     renderOfflineInput,
     type captureOfflineRenderProjectSource,
 } from '#/modules/AudioEngine/useCases';
-import { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from '#/modules/CrdtDocument/useCases';
+import { projectRevisionMatchesLiveIgnoringSaveWrites } from '#/modules/CrdtDocument/useCases';
 import { getAudioBufferContentAddress } from '#/utils/agentRenderReceipt';
 
 /**
@@ -138,7 +138,7 @@ async function renderMeasurementTarget(
     if (input.signal?.aborted) {
         return { status: 'cancelled' };
     }
-    if (!projectRevisionMatchesLiveIgnoringCommandCheckpoint(input.sourceRevision)) {
+    if (!projectRevisionMatchesLiveIgnoringSaveWrites(input.sourceRevision)) {
         return refused('stale-revision', target.targetId);
     }
     input.onRenderStart?.();
@@ -160,7 +160,7 @@ async function renderMeasurementTarget(
     if (input.signal?.aborted) {
         return { status: 'cancelled' };
     }
-    if (!projectRevisionMatchesLiveIgnoringCommandCheckpoint(input.sourceRevision)) {
+    if (!projectRevisionMatchesLiveIgnoringSaveWrites(input.sourceRevision)) {
         return refused('stale-revision', target.targetId);
     }
     return {

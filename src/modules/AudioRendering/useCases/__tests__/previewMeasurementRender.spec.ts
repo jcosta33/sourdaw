@@ -22,6 +22,7 @@ import {
     createCrdtDoc,
     DOC_PREFIX_ROOT,
     mutateCrdtDoc,
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -31,6 +32,13 @@ import {
     createGrandBouleStore,
     resetGrandBouleStores,
 } from '#/modules/GrandBoule/stores';
+import {
+    arrangementStore,
+    defaultArrangementId,
+    defaultProjectStoreState,
+    projectStore,
+} from '#/modules/Project/stores';
+import { buildProjectData } from '#/modules/Project/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { projectPpqEndpoints, resolveTempoAtBeat } from '#/modules/Transport/useCases';
 import {
@@ -305,6 +313,78 @@ afterEach(() => {
     clearAgentMeasurementArtifacts();
     configureAutomergeStoragePort(null);
     removeCrdtDoc('root');
+});
+
+/**
+ * The root writes `saveProject` performs: a fresh save timestamp, then `buildProjectData`'s refresh of the
+ * active arrangement's copy of the live slots. Nothing a musician edited moves.
+ */
+async function writeSave(): Promise<void> {
+    const project = projectStore.value ?? defaultProjectStoreState;
+    projectStore.set({ ...project, updatedAt: project.updatedAt + 30_000, dirty: true });
+    await buildProjectData({ includeAudioBuffers: false });
+    flushAutomergeStorageWrites();
+}
+
+function seedActiveArrangement(): void {
+    arrangementStore.set({
+        activeArrangementId: defaultArrangementId,
+        arrangements: [
+            {
+                id: defaultArrangementId,
+                name: 'Arrangement 1',
+                tracks: { tracks: [], selectedTrackId: null },
+                automation: { lanes: [] },
+                midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+            },
+        ],
+    });
+    flushAutomergeStorageWrites();
+}
+
+describe('renderAgentPreviewMeasurementScope after a save', () => {
+    beforeEach(() => {
+        projectStore.set(defaultProjectStoreState);
+        seedActiveArrangement();
+    });
+
+    afterEach(() => {
+        projectStore.set(defaultProjectStoreState);
+    });
+
+    it('renders when a save lands before the comparison is captured', async () => {
+        const preview = openPreview(() => setTracks(withVocal(currentTracks(), { gain: LIVE_GAIN / 2 })));
+        await writeSave();
+        expect(projectRevisionMatchesLiveIgnoringCommandCheckpoint(preview.sourceRevision)).toBe(false);
+
+        const result = await measure(VOCAL, preview);
+
+        expect(result.status).toBe('rendered');
+        expect(engine.renderTrackSubgraphOffline).toHaveBeenCalledTimes(2);
+    });
+
+    it('renders when a save lands while the renders run, and still refuses a content edit there', async () => {
+        const preview = openPreview(() => setTracks(withVocal(currentTracks(), { gain: LIVE_GAIN / 2 })));
+        engine.renderTrackSubgraphOffline.mockImplementation(async () => {
+            await writeSave();
+            return sineBuffer(0.5);
+        });
+
+        const saved = await measure(VOCAL, preview);
+
+        expect(saved.status).toBe('rendered');
+        expect(projectRevisionMatchesLiveIgnoringCommandCheckpoint(preview.sourceRevision)).toBe(false);
+        expect(engine.renderTrackSubgraphOffline).toHaveBeenCalledTimes(2);
+
+        const edited = openPreview(() => setTracks(withVocal(currentTracks(), { gain: LIVE_GAIN / 4 })));
+        engine.renderTrackSubgraphOffline.mockImplementation(async () => {
+            setTracks(withVocal(currentTracks(), { gain: 0.3 }));
+            await writeSave();
+            return sineBuffer(0.5);
+        });
+
+        await expect(measure(VOCAL, edited)).resolves.toMatchObject({ status: 'refused', code: 'stale-revision' });
+    });
 });
 
 describe('renderAgentPreviewMeasurementScope', () => {
