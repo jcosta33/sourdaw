@@ -70,7 +70,7 @@ test.describe('Session view', () => {
     test('Adding a track adds a session column for that track', async ({ page }) => {
         await add_track(page, 'MIDI');
         // The new track's disabled empty-slot buttons prove its session column rendered.
-        await expect(page.getByRole('button', { name: 'MIDI scene 1 - empty' })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'MIDI 1 scene 1 - empty' })).toBeVisible();
     });
 });
 
