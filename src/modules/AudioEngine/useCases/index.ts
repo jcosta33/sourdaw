@@ -141,6 +141,11 @@ export { claimNativeSessionRearm } from './livePlayback/claimNativeSessionRearm'
 export { nativeSessionRearmClaimHolds } from './livePlayback/nativeSessionRearmClaimHolds';
 // Published because the composition root registers the body vocabularies device modules own.
 export { nativeBodyVocabularyRegistry } from './livePlayback/nativeBodyVocabularyRegistry';
+// Published because the composition root registers the device modules' engine
+// attachment record and neural model library, and Transport's graph repair
+// retracts the attachments.
+export { engineAttachmentTracking } from './livePlayback/engineAttachmentTracking';
+export { neuralModelContent } from './livePlayback/neuralModelContent';
 export { hasLiveNativeGraphSession } from './livePlayback/hasLiveNativeGraphSession';
 // Published because the project-leaving use cases own the commit point the pedal latch is scoped to.
 export { forgetProjectLatchedPedals } from './livePlayback/forgetProjectLatchedPedals';

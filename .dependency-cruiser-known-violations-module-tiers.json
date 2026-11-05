@@ -11,8 +11,6 @@
       "CrdtDocument",
       "Crumbs",
       "ElasticAudio",
-      "GrandBoule",
-      "Grinder",
       "Knead",
       "Levain",
       "MIDI",
@@ -68,22 +66,12 @@
   {
     "type": "module-tier",
     "from": "AudioEngine",
-    "to": "Crumbs"
-  },
-  {
-    "type": "module-tier",
-    "from": "AudioEngine",
     "to": "CvGate"
   },
   {
     "type": "module-tier",
     "from": "AudioEngine",
     "to": "ElasticAudio"
-  },
-  {
-    "type": "module-tier",
-    "from": "AudioEngine",
-    "to": "Grinder"
   },
   {
     "type": "module-tier",
@@ -104,11 +92,6 @@
     "type": "module-tier",
     "from": "AudioEngine",
     "to": "Transport"
-  },
-  {
-    "type": "module-tier",
-    "from": "AudioEngine",
-    "to": "Yeast"
   },
   {
     "type": "module-tier",
@@ -168,27 +151,12 @@
   {
     "type": "module-tier",
     "from": "MIDI",
-    "to": "GrandBoule"
-  },
-  {
-    "type": "module-tier",
-    "from": "MIDI",
-    "to": "Levain"
-  },
-  {
-    "type": "module-tier",
-    "from": "MIDI",
     "to": "Synth"
   },
   {
     "type": "module-tier",
     "from": "MIDI",
     "to": "WorkspaceShell"
-  },
-  {
-    "type": "module-tier",
-    "from": "MIDI",
-    "to": "Yeast"
   },
   {
     "type": "module-tier",
@@ -243,21 +211,6 @@
   {
     "type": "module-tier",
     "from": "Transport",
-    "to": "Crumbs"
-  },
-  {
-    "type": "module-tier",
-    "from": "Transport",
     "to": "Synth"
-  },
-  {
-    "type": "module-tier",
-    "from": "Transport",
-    "to": "Toaster"
-  },
-  {
-    "type": "module-tier",
-    "from": "Transport",
-    "to": "Yeast"
   }
 ]

@@ -2,13 +2,13 @@ import { activeRecordingRef, trackStore, takeLaneStore } from '#/modules/Arrange
 import { getAudioContext } from '#/modules/AudioEngine/useCases';
 import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { grooveTemplateStore, midiStore } from '#/modules/MIDI/stores';
-import { readYeastRack } from '#/modules/Yeast/stores';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { getTempoAtBeat } from '../../models/TempoMap';
 import { getTransportState } from '../../repositories/transport/getTransportState';
 import { tempoMapStore } from '../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
+import { liveMidiProcessor } from '../scheduling/liveMidiProcessor';
 import { prepareInitialMidiWindow } from '../scheduling/prepareInitialMidiWindow';
 
 import { INITIAL_HIGH_WATER_OFFSET_BEATS, projectLoopSeamWindow } from './projectLoopSeamWindow';
@@ -55,6 +55,10 @@ function projectPreparedTracks(trackState: TrackState, recordingClipIds: Readonl
     };
 }
 
+function readRackProcessors(rackId: string): unknown {
+    return liveMidiProcessor.read('captureInitialMidiProgramme').readRackProcessors(rackId);
+}
+
 /**
  * Whether a store still projects to the inputs it held at capture. A store write
  * rebuilds every track from the document, so unchanged inputs are compared by
@@ -88,7 +92,7 @@ function captureInitialMidiProgramme(cancellation: SchedulerCancellation) {
     const racks = (trackState?.tracks ?? []).flatMap((track) =>
         track.devices
             .filter((device) => device.type === 'yeast')
-            .map((device) => ({ id: device.id, processors: structuredClone(readYeastRack(device.id).processors) }))
+            .map((device) => ({ id: device.id, processors: structuredClone(readRackProcessors(device.id)) }))
     );
     const tracksCurrent = witnessProjection(
         () => trackStore.value,
@@ -104,7 +108,7 @@ function captureInitialMidiProgramme(cancellation: SchedulerCancellation) {
     );
     const isCurrent = () =>
         cancellation.isCurrent() &&
-        racks.every((rack) => valuesEqual(readYeastRack(rack.id).processors, rack.processors)) &&
+        racks.every((rack) => valuesEqual(readRackProcessors(rack.id), rack.processors)) &&
         tracksCurrent() &&
         lanesCurrent() &&
         notesCurrent() &&

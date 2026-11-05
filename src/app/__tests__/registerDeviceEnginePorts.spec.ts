@@ -10,21 +10,60 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 async function loadFreshModules() {
     vi.resetModules();
-    const [arrangement, audioEngine, transport, fermenter, app] = await Promise.all([
+    const [
+        arrangement,
+        audioEngine,
+        transport,
+        midi,
+        fermenter,
+        yeast,
+        yeastStores,
+        crumbs,
+        crumbsStores,
+        grinderStores,
+        toasterStores,
+        grandBouleStores,
+        levain,
+        app,
+    ] = await Promise.all([
         import('#/modules/Arrangement/useCases'),
         import('#/modules/AudioEngine/useCases'),
         import('#/modules/Transport/useCases'),
+        import('#/modules/MIDI/useCases'),
         import('#/modules/Fermenter/useCases'),
+        import('#/modules/Yeast/useCases'),
+        import('#/modules/Yeast/stores'),
+        import('#/modules/Crumbs/useCases'),
+        import('#/modules/Crumbs/stores'),
+        import('#/modules/Grinder/stores'),
+        import('#/modules/Toaster/stores'),
+        import('#/modules/GrandBoule/stores'),
+        import('#/modules/Levain/useCases'),
         import('../registerDeviceEnginePorts'),
     ]);
-    return { arrangement, audioEngine, transport, fermenter, app };
+    return {
+        arrangement,
+        audioEngine,
+        transport,
+        midi,
+        fermenter,
+        yeast,
+        yeastStores,
+        crumbs,
+        crumbsStores,
+        grinderStores,
+        toasterStores,
+        grandBouleStores,
+        levain,
+        app,
+    };
 }
 
 type FreshModules = Awaited<ReturnType<typeof loadFreshModules>>;
 
 let modules: FreshModules;
 
-// The first load transforms four whole module barrels, which can outlast the
+// The first load transforms many whole module barrels, which can outlast the
 // default hook timeout on a cold cache; each later fresh load reuses that work.
 const WARM_UP_TIMEOUT_MS = 60_000;
 
@@ -49,6 +88,31 @@ describe('registerDeviceEnginePorts before registration', () => {
         expect(() => arrangement.deviceFactoryPresetSources.read('presetCaller')).toThrow(
             /^presetCaller: .*registerDeviceEnginePorts\(\) from #\/app\/registerDeviceEnginePorts/
         );
+    });
+
+    it('refuses every MIDI, panic, swing, attachment and model port read and names the registering function', () => {
+        const { audioEngine, transport, midi } = modules;
+        const reads: [string, () => unknown][] = [
+            ['processorCaller', () => transport.liveMidiProcessor.read('processorCaller')],
+            ['panicCaller', () => transport.notePanicParticipants.read('panicCaller')],
+            ['swingCaller', () => transport.kitSwing.read('swingCaller')],
+            ['attachmentCaller', () => audioEngine.engineAttachmentTracking.read('attachmentCaller')],
+            ['modelCaller', () => audioEngine.neuralModelContent.read('modelCaller')],
+            ['velocityCaller', () => midi.velocityCalibration.read('velocityCaller')],
+            ['articulationCaller', () => midi.articulationIdResolvers.read('articulationCaller', 'levain')],
+        ];
+
+        for (const [caller, read] of reads) {
+            expect(read).toThrow(
+                new RegExp(`^${caller}: .*registerDeviceEnginePorts\\(\\) from #/app/registerDeviceEnginePorts`)
+            );
+        }
+    });
+
+    it('refuses an articulated note rather than voicing it without the articulation table', () => {
+        expect(() =>
+            modules.midi.resolveMidiNoteArticulationId({ deviceType: 'levain', articulation: 'spiccato' })
+        ).toThrow(/^resolveMidiNoteArticulationId: .*not registered/);
     });
 
     it('refuses the preset library rather than listing it without the device presets', () => {
@@ -125,17 +189,129 @@ describe('registerDeviceEnginePorts after registration', () => {
         expect(libraryFermenterPresets).toEqual(expected);
     });
 
+    it("answers Yeast's live block processing and rack processors exactly as Yeast does", () => {
+        const { transport, yeast, yeastStores } = modules;
+        const processor = transport.liveMidiProcessor.read('spec');
+        const deviceId = 'yeast-port-spec';
+        const processors = [
+            { id: 'arp-1', type: 'arpeggiator' as const, name: 'Arpeggiator', bypassed: false, params: { rate: 3 } },
+        ];
+        yeastStores.setActiveYeastDevice(deviceId);
+        yeastStores.yeastStore.set({ processors, uiLevel: 1 });
+
+        expect(processor.processBlock).toBe(yeast.processYeastMidi);
+        expect(processor.readRackProcessors(deviceId)).toBe(yeastStores.readYeastRack(deviceId).processors);
+        expect(processor.readRackProcessors(deviceId)).toEqual(processors);
+        expect(processor.readRackProcessors('yeast-without-rack')).toEqual(
+            yeastStores.readYeastRack('yeast-without-rack').processors
+        );
+    });
+
+    it('answers the note panic with Yeast settling its generated notes and then Crumbs releasing its voices', () => {
+        const { transport, yeast, crumbs } = modules;
+        const participants = transport.notePanicParticipants.read('spec');
+
+        expect(participants.settleGeneratedNotes).toBe(yeast.yeastPanic);
+        expect(participants.voiceReleases).toHaveLength(1);
+        expect(participants.voiceReleases[0]).toBe(crumbs.panicCrumbs);
+    });
+
+    it("answers a Toaster kit's live swing exactly as the Toaster store holds it, undefined included", () => {
+        const { transport, toasterStores } = modules;
+        const swing = transport.kitSwing.read('spec');
+        const { defaultToasterState, toasterStore } = toasterStores;
+        toasterStore.set({
+            'toaster-port-spec': { ...defaultToasterState, kit: { ...defaultToasterState.kit, swing: 0.37 } },
+        });
+
+        expect(swing.currentSwing('toaster-port-spec')).toBe(0.37);
+        expect(swing.currentSwing('toaster-without-state')).toBeUndefined();
+
+        toasterStore.set(null);
+        expect(swing.currentSwing('toaster-port-spec')).toBeUndefined();
+    });
+
+    it("records, reads and retracts engine attachments in Crumbs' own attachment record", () => {
+        const { audioEngine, crumbs, crumbsStores } = modules;
+        const tracking = audioEngine.engineAttachmentTracking.read('spec');
+
+        tracking.markAttached('crumbs-port-spec');
+        expect(crumbsStores.readAttachedCrumbsInstanceIds()).toEqual(new Set(['crumbs-port-spec']));
+        expect(tracking.readAttachedInstanceIds()).toBe(crumbsStores.readAttachedCrumbsInstanceIds());
+
+        expect(tracking.retractEveryAttachment).toBe(crumbs.retractEveryCrumbsEngineAttachment);
+        tracking.retractEveryAttachment();
+        expect(crumbsStores.readAttachedCrumbsInstanceIds().size).toBe(0);
+        expect(tracking.readAttachedInstanceIds().size).toBe(0);
+    });
+
+    it("answers a neural model's content through Grinder's own library read", () => {
+        const { audioEngine, grinderStores } = modules;
+
+        expect(audioEngine.neuralModelContent.read('spec').modelContent).toBe(
+            grinderStores.readGrinderNeuralModelContent
+        );
+    });
+
+    it("answers a played velocity through Grand Boule's calibration, and null where the device holds none", () => {
+        const { midi, grandBouleStores } = modules;
+        const calibration = midi.velocityCalibration.read('spec');
+        const calibrated = grandBouleStores.createGrandBouleStore('grand-boule-port-spec');
+        const defaults = grandBouleStores.createDefaultGrandBouleState();
+        const curve = { ...defaults.midiCalibration, velocityCurveExponent: 2, velocityFloor: 0.1 };
+        calibrated.set({ ...defaults, midiCalibration: curve });
+
+        for (const velocity of [0, 1, 64, 100, 127]) {
+            expect(calibration.calibratedVelocity('grand-boule-port-spec', velocity)).toBe(
+                grandBouleStores.applyVelocityCurve(velocity, curve)
+            );
+        }
+        expect(calibration.calibratedVelocity('grand-boule-port-spec', 64)).not.toBe(64 / 127);
+
+        grandBouleStores.createGrandBouleStore('grand-boule-without-state').set(null);
+        expect(calibration.calibratedVelocity('grand-boule-without-state', 100)).toBeNull();
+    });
+
+    it("answers Levain's articulation ids exactly as Levain's table does, and none for other instruments", () => {
+        const { midi, levain } = modules;
+
+        expect(midi.articulationIdResolvers.read('spec', 'levain')).toBe(levain.getLevainArticulationId);
+        expect(midi.articulationIdResolvers.read('spec', 'fermenter')).toBeNull();
+        for (const articulation of ['sustain', 'spiccato', 'harmonics', 'not-an-articulation', 'constructor']) {
+            expect(midi.resolveMidiNoteArticulationId({ deviceType: 'levain', articulation })).toBe(
+                levain.getLevainArticulationId(articulation)
+            );
+        }
+        expect(midi.resolveMidiNoteArticulationId({ deviceType: 'levain', articulation: 'spiccato' })).toBe(7);
+        expect(midi.resolveMidiNoteArticulationId({ deviceType: 'fermenter', articulation: 'spiccato' })).toBeNull();
+        expect(midi.resolveMidiNoteArticulationId({ deviceType: 'levain', articulation: undefined })).toBeNull();
+    });
+
     it('treats a repeated registration as a no-op', () => {
-        const { arrangement, audioEngine, transport, app } = modules;
+        const { arrangement, audioEngine, transport, midi, app } = modules;
         const vocabulary = audioEngine.nativeBodyVocabularyRegistry.read('spec', 'fermenter');
         const writer = transport.deviceRuntimeParameterWriters.read('spec', 'fermenter');
         const sources = arrangement.deviceFactoryPresetSources.read('spec');
+        const processor = transport.liveMidiProcessor.read('spec');
+        const participants = transport.notePanicParticipants.read('spec');
+        const swing = transport.kitSwing.read('spec');
+        const tracking = audioEngine.engineAttachmentTracking.read('spec');
+        const model = audioEngine.neuralModelContent.read('spec');
+        const calibration = midi.velocityCalibration.read('spec');
+        const articulation = midi.articulationIdResolvers.read('spec', 'levain');
 
         expect(() => app.registerDeviceEnginePorts()).not.toThrow();
 
         expect(audioEngine.nativeBodyVocabularyRegistry.read('spec', 'fermenter')).toBe(vocabulary);
         expect(transport.deviceRuntimeParameterWriters.read('spec', 'fermenter')).toBe(writer);
         expect(arrangement.deviceFactoryPresetSources.read('spec')).toEqual(sources);
+        expect(transport.liveMidiProcessor.read('spec')).toBe(processor);
+        expect(transport.notePanicParticipants.read('spec')).toBe(participants);
+        expect(transport.kitSwing.read('spec')).toBe(swing);
+        expect(audioEngine.engineAttachmentTracking.read('spec')).toBe(tracking);
+        expect(audioEngine.neuralModelContent.read('spec')).toBe(model);
+        expect(midi.velocityCalibration.read('spec')).toBe(calibration);
+        expect(midi.articulationIdResolvers.read('spec', 'levain')).toBe(articulation);
     });
 
     it('refuses a registration that differs from the registered one', () => {
@@ -163,5 +339,46 @@ describe('registerDeviceEnginePorts after registration', () => {
                 { module: 'Fermenter', presets: fermenter.getFermenterFactoryPresets },
             ])
         ).toThrow(/source 'Fermenter' differs/);
+    });
+
+    it('refuses a MIDI, panic, swing, attachment or model registration that differs from the registered one', () => {
+        const { audioEngine, transport, midi, yeast, crumbs } = modules;
+        const processor = transport.liveMidiProcessor.read('spec');
+        const tracking = audioEngine.engineAttachmentTracking.read('spec');
+
+        expect(() =>
+            transport.liveMidiProcessor.configure({
+                processBlock: yeast.processYeastMidi,
+                readRackProcessors: () => [],
+            })
+        ).toThrow(/liveMidiProcessor\.configure: .*differs/);
+        expect(() =>
+            transport.notePanicParticipants.configure({
+                settleGeneratedNotes: yeast.yeastPanic,
+                voiceReleases: [],
+            })
+        ).toThrow(/notePanicParticipants\.configure: .*differ/);
+        expect(() =>
+            transport.notePanicParticipants.configure({
+                settleGeneratedNotes: yeast.yeastPanic,
+                voiceReleases: [crumbs.panicCrumbs, crumbs.panicCrumbs],
+            })
+        ).toThrow(/notePanicParticipants\.configure: .*differ/);
+        expect(() => transport.kitSwing.configure({ currentSwing: () => 0 })).toThrow(/kitSwing\.configure: .*differs/);
+        expect(() =>
+            audioEngine.engineAttachmentTracking.configure({ ...tracking, retractEveryAttachment: () => undefined })
+        ).toThrow(/engineAttachmentTracking\.configure: .*differs/);
+        expect(() => audioEngine.neuralModelContent.configure({ modelContent: () => undefined })).toThrow(
+            /neuralModelContent\.configure: .*differs/
+        );
+        expect(() => midi.velocityCalibration.configure({ calibratedVelocity: () => null })).toThrow(
+            /velocityCalibration\.configure: .*differs/
+        );
+        expect(() => midi.articulationIdResolvers.configure({ levain: () => null })).toThrow(
+            /resolver for 'levain' differs/
+        );
+
+        expect(transport.liveMidiProcessor.read('spec')).toBe(processor);
+        expect(audioEngine.engineAttachmentTracking.read('spec')).toBe(tracking);
     });
 });

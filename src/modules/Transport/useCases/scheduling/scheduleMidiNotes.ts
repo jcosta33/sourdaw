@@ -31,7 +31,6 @@ import {
     transposeForChordTrack,
 } from '#/modules/MIDI/useCases';
 import { scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
-import { toasterStore } from '#/modules/Toaster/stores';
 import { isBeatInClipLoopWindow, resolveClipLoopPassGrid } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import {
@@ -67,6 +66,7 @@ import { detachSoundingNoteExpression } from './detachSoundingNoteExpression';
 import { getScheduledMidiNoteIndex, type ScheduledMidiNote } from './getScheduledMidiNoteIndex';
 import { holdNoteExpression } from './holdNoteExpression';
 import { keepHeldNoteExpressionOnReceiver } from './keepHeldNoteExpressionOnReceiver';
+import { kitSwing } from './kitSwing';
 import { listMutedMidiClips } from './listMutedMidiClips';
 import { prepareYeastTrackNotes, type PreparedYeastTrackNotes } from './prepareYeastTrackNotes';
 import { releaseUnrestoredStoredControllers } from './releaseUnrestoredStoredControllers';
@@ -931,7 +931,7 @@ export async function scheduleMidiNotes(
                               evaluateAutomationValue: getAutomationValueAtBeat,
                               isAutomationRecording: isRecordingAutomation,
                               getCurrentSwingValue: (deviceId) =>
-                                  toasterStore.value?.[deviceId]?.kit.swing ??
+                                  kitSwing.read('scheduleMidiNotes').currentSwing(deviceId) ??
                                   toasterTarget.device.parameterValues.swing ??
                                   0,
                           }),
