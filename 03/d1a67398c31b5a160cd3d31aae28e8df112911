@@ -1,0 +1,19 @@
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.projectDirectory.integration.spec.ts
+  s_0314bb17e5dee3::t_fef50d79150322 441-442,635-636
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "03d1a67398c31b5a160cd3d31aae28e8df112911",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
