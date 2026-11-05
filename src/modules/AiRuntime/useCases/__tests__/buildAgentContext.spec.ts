@@ -10,7 +10,6 @@ import { type ProjectContext, type ProjectContextTrack } from '../../models/Proj
 import { type LlmActionCapabilityData } from '../../transformers/llmActionBridge';
 import { getDrumRoutingPromptScope } from '../agentReference/getDrumRoutingPromptScope';
 import { getSidechainRoutingPromptScope } from '../agentReference/getSidechainRoutingPromptScope';
-import { getWholeProjectVibeMixScope } from '../agentReference/getWholeProjectVibeMixScope';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { buildAgentContext } from '../buildAgentContext';
 import { prepareCreativeInterpretationCatalog } from '../prepareCreativeInterpretationCatalog';
@@ -1045,81 +1044,32 @@ describe('buildAgentContext', () => {
             expect(contextOmissionsOf(built.localMessage)).toEqual([]);
         });
 
-        // A vibe mix protects every locked clip, so its capability grows with the session; past the
-        // capability budget it cannot ride along whole.
-        function vibeMixProject(lockedClipCount: number): ProjectContext {
-            const busTemplate = fiveTrackProject.tracks[0]!;
-            const bus = (id: string, name: string) => ({
-                ...busTemplate,
-                id,
-                name,
-                kind: 'bus',
-                clips: [],
-                clipCount: 0,
-            });
-            const fixtureSections = fiveTrackProject.sections ?? [];
-            return {
-                ...fiveTrackProject,
-                sections: [
-                    ...fixtureSections,
-                    { id: planningFixtureIds.section(5), name: 'Chorus 2', startBeat: 112, endBeat: 144 },
-                ],
-                tracks: [
-                    ...withTrackChanged(4, (track) => ({
-                        ...track,
-                        clips: Array.from({ length: lockedClipCount }, (_, clipIndex) => ({
-                            ...track.clips[0]!,
-                            id: planningFixtureIds.clip(4, clipIndex),
-                            name: `Pad take ${String(clipIndex + 1)}`,
-                            locked: true,
-                        })),
-                    })),
-                    bus(planningFixtureIds.track(90), 'Drum Bus'),
-                    bus(planningFixtureIds.track(91), 'Bass Bus'),
-                    { ...bus(planningFixtureIds.track(92), 'Master'), kind: 'master' },
-                ],
-            };
-        }
-
-        function capabilitiesFor(project: ProjectContext) {
-            const scope = getWholeProjectVibeMixScope(project, 'revision-1');
-            if (scope === null) {
-                throw new Error('Expected the vibe-mix workflow to scope this project.');
-            }
-            return { ...capabilityData, wholeProjectVibeMixCapability: scope.capability };
-        }
-
-        // A smaller entry after one that did not fit is still tried: the oversized vibe mix is left
-        // out, and the creative catalog after it in the order is kept.
+        // A smaller entry after one that did not fit is still tried: the oversized workflow
+        // capability is left out, and the creative catalog after it in the order is kept.
         it('keeps a smaller entry after one that did not fit, and names the one left out', () => {
-            const project = vibeMixProject(250);
-            const capabilities = capabilitiesFor(project);
-            expect(JSON.stringify(capabilities.wholeProjectVibeMixCapability).length).toBeGreaterThan(8_192);
+            const drumRouting = buildDrumRoutingCapability(4, 40);
+            expect(JSON.stringify(drumRouting).length).toBeGreaterThan(8_192);
 
             const built = buildAgentContext({
                 fixedPolicy: 'policy',
-                prompt: 'make the second chorus hit harder',
-                context: project,
-                capabilityData: capabilities,
+                prompt: 'adjust the mix',
+                context: fiveTrackProject,
+                capabilityData: { ...capabilityData, drumRoutingCapability: drumRouting },
             });
 
             const schemas = parseMessageSection(built.localMessage, 'capability_schemas') as {
                 availableCapabilities: string;
             };
             const kept = JSON.parse(schemas.availableCapabilities) as Record<string, unknown>;
-            expect(kept).toEqual({ creativeInterpretationCatalog: capabilities.creativeInterpretationCatalog });
+            expect(kept).toEqual({ creativeInterpretationCatalog: capabilityData.creativeInterpretationCatalog });
             expect(contextOmissionsOf(built.localMessage)).toContain(
-                'capability_schemas.availableCapabilities leaves out wholeProjectVibeMixCapability, which did not fit what the 8192-character capability budget had left after the entries it keeps; no tool returns capability data, so plan without it or ask for a hosted model.'
+                'capability_schemas.availableCapabilities leaves out drumRoutingCapability, which did not fit what the 8192-character capability budget had left after the entries it keeps; no tool returns capability data, so plan without it or ask for a hosted model.'
             );
         });
 
-        // The session the review reproduced: drum routing and the vibe mix are both offered by the
-        // project, with the creative catalog beside them, and together they overflow the budget.
-        // The vibe mix carries the only targets and gain grounding admits for this request, so the
-        // smaller workflow entry must not lose its place to a larger one or to the catalog.
-        function drumAndVibeSession(lockedClipCount: number) {
+        // A session whose project shape offers the drum routing workflow, read through the real scope.
+        function drumRoutingSession() {
             const base = createPlanningProject({ ...context, availableDeviceTypes: catalogue }, 16);
-            const baseSections = base.sections ?? [];
             const busTemplate = base.tracks[0]!;
             const bus = (index: number, name: string, kind = 'bus') => ({
                 ...busTemplate,
@@ -1129,23 +1079,8 @@ describe('buildAgentContext', () => {
                 clips: [],
                 clipCount: 0,
             });
-            const padTrack = base.tracks[4]!;
-            const lockedPad = {
-                ...padTrack,
-                clips: [
-                    ...padTrack.clips,
-                    ...Array.from({ length: lockedClipCount }, (_, clipIndex) => ({
-                        ...padTrack.clips[0]!,
-                        id: planningFixtureIds.clip(40, clipIndex),
-                        name: `Pad take ${String(clipIndex + 1)}`,
-                        locked: true,
-                    })),
-                ],
-            };
             const tracks = [
-                ...base.tracks.slice(0, 4),
-                lockedPad,
-                ...base.tracks.slice(5),
+                ...base.tracks,
                 bus(90, 'Drum Bus'),
                 bus(91, 'Parallel Compression'),
                 bus(92, 'Bass Bus'),
@@ -1157,10 +1092,6 @@ describe('buildAgentContext', () => {
             // before it would consult clip content or instruments.
             const project: ProjectContext = {
                 ...base,
-                sections: [
-                    ...baseSections,
-                    { id: planningFixtureIds.section(5), name: 'Chorus 2', startBeat: 112, endBeat: 144 },
-                ],
                 tracks: tracks.map((track) => ({
                     ...track,
                     canonicalRole: getCanonicalTrackRole({
@@ -1169,49 +1100,51 @@ describe('buildAgentContext', () => {
                 })),
             };
             const drumRouting = getDrumRoutingPromptScope(project, 'revision-1');
-            const vibeMix = getWholeProjectVibeMixScope(project, 'revision-1');
-            if (drumRouting.status !== 'request' || vibeMix === null) {
-                throw new Error('Expected the session to offer both drum routing and the vibe mix.');
+            if (drumRouting.status !== 'request') {
+                throw new Error('Expected the session to offer drum routing.');
             }
-            return { project, drumRouting: drumRouting.capability, vibeMix: vibeMix.capability };
+            return { project, drumRouting: drumRouting.capability };
         }
 
-        // Two workflow capabilities the project offers, the vibe mix the smaller, which together
-        // overflow the budget: the smaller is kept whatever their names' order.
+        // Two workflow capabilities the project offers, the bass processing copy the smaller, which
+        // together overflow the budget: the smaller is kept whatever their names' order.
         it('keeps the smaller of two workflow capabilities that do not both fit', () => {
-            const { project, drumRouting, vibeMix } = drumAndVibeSession(60);
+            const session = drumRoutingSession();
+            const { drumRouting } = session;
             const drumLength = JSON.stringify(drumRouting).length;
-            const vibeLength = JSON.stringify(vibeMix).length;
-            expect(vibeLength).toBeLessThan(drumLength);
-            expect(drumLength + vibeLength).toBeGreaterThan(8_192);
+            const bassCopy = padTo(buildBassProcessingCopyCapability(), drumLength - 100);
+            const bassLength = JSON.stringify(bassCopy).length;
+            expect(bassLength).toBeLessThan(drumLength);
+            expect(drumLength + bassLength).toBeGreaterThan(8_192);
 
             const built = buildAgentContext({
                 fixedPolicy: 'policy',
-                prompt: 'make the second chorus hit harder',
-                context: project,
-                capabilityData: { drumRoutingCapability: drumRouting, wholeProjectVibeMixCapability: vibeMix },
+                prompt: 'adjust the mix',
+                context: session.project,
+                capabilityData: { drumRoutingCapability: drumRouting, bassProcessingCopyCapability: bassCopy },
             });
 
             const schemas = parseMessageSection(built.localMessage, 'capability_schemas') as {
                 availableCapabilities: string;
             };
-            expect(JSON.parse(schemas.availableCapabilities)).toEqual({ wholeProjectVibeMixCapability: vibeMix });
+            expect(JSON.parse(schemas.availableCapabilities)).toEqual({ bassProcessingCopyCapability: bassCopy });
             expect(contextOmissionsOf(built.localMessage)).toContainEqual(
                 expect.stringContaining('leaves out drumRoutingCapability, which did not fit')
             );
         });
 
         it('keeps the smaller workflow capability a request can use ahead of larger entries', () => {
-            const prompt = 'make the second chorus hit harder';
-            const { project, drumRouting, vibeMix } = drumAndVibeSession(0);
+            const prompt = 'adjust the mix';
+            const { project } = drumRoutingSession();
+            const bassCopy = buildBassProcessingCopyCapability();
             const capabilities = {
                 creativeInterpretationCatalog: prepareCreativeInterpretationCatalog({
                     prompt,
                     context: project,
                     projectRevision: 'revision-1',
                 }),
-                drumRoutingCapability: drumRouting,
-                wholeProjectVibeMixCapability: vibeMix,
+                drumRoutingCapability: buildDrumRoutingCapability(4, 40),
+                bassProcessingCopyCapability: bassCopy,
             };
             expect(JSON.stringify(capabilities).length).toBeGreaterThan(8_192);
 
@@ -1226,10 +1159,10 @@ describe('buildAgentContext', () => {
                 availableCapabilities: string;
             };
             const kept = JSON.parse(schemas.availableCapabilities) as Record<string, unknown>;
-            expect(kept.wholeProjectVibeMixCapability).toEqual(vibeMix);
+            expect(kept.bassProcessingCopyCapability).toEqual(bassCopy);
             const omitted = Object.keys(capabilities).filter((key) => !(key in kept));
             expect(omitted.length).toBeGreaterThan(0);
-            expect(omitted).not.toContain('wholeProjectVibeMixCapability');
+            expect(omitted).not.toContain('bassProcessingCopyCapability');
             expect(contextOmissionsOf(built.localMessage)).toContainEqual(
                 expect.stringContaining(`leaves out ${omitted.join(', ')}, which did not fit`)
             );
@@ -1277,16 +1210,16 @@ describe('buildAgentContext', () => {
             }
             // Each fits alone; together they cannot, and the requested entry costs more.
             const requested = padTo(sidechain.capability, 5_500);
-            const offered = padTo(drumAndVibeSession(0).vibeMix, 2_750);
+            const offered = padTo(buildBassProcessingCopyCapability(), 2_750);
             const requestedCost = JSON.stringify({ sidechainRoutingCapability: requested }).length;
-            const offeredCost = JSON.stringify({ wholeProjectVibeMixCapability: offered }).length;
+            const offeredCost = JSON.stringify({ bassProcessingCopyCapability: offered }).length;
             expect(requestedCost).toBeLessThanOrEqual(8_192);
             expect(offeredCost).toBeLessThanOrEqual(8_192);
             expect(requestedCost + offeredCost - 1).toBeGreaterThan(8_192);
             expect(requestedCost).toBeGreaterThan(offeredCost);
             const capabilities = {
                 sidechainRoutingCapability: requested,
-                wholeProjectVibeMixCapability: offered,
+                bassProcessingCopyCapability: offered,
             };
 
             const built = buildAgentContext({
@@ -1298,49 +1231,51 @@ describe('buildAgentContext', () => {
 
             expect(keptCapabilitiesOf(built.localMessage)).toEqual({ sidechainRoutingCapability: requested });
             expect(contextOmissionsOf(built.localMessage)).toContainEqual(
-                expect.stringContaining('leaves out wholeProjectVibeMixCapability, which did not fit')
+                expect.stringContaining('leaves out bassProcessingCopyCapability, which did not fit')
             );
         });
 
         // Cost is what an entry adds to the serialized object, key included. The drum routing value
-        // is the longer by 4 characters, but its key is shorter by 8, so it costs 4 fewer: with room
+        // is the longer by 4 characters, but its key is shorter by 7, so it costs 3 fewer: with room
         // for one entry but not both, it is the one kept.
         it('keeps the entry that costs less, key included, when only one of two fits', () => {
-            const session = drumAndVibeSession(0);
+            const session = drumRoutingSession();
             if (session.drumRouting === undefined) {
                 throw new Error('Expected the session to offer the drum routing capability.');
             }
             const valueLength = 5_400;
             const drumRouting = padTo(session.drumRouting, valueLength + 4);
-            const vibeMix = padTo(session.vibeMix, valueLength);
+            const bassCopy = padTo(buildBassProcessingCopyCapability(), valueLength);
             const drumCost = JSON.stringify({ drumRoutingCapability: drumRouting }).length;
-            const vibeCost = JSON.stringify({ wholeProjectVibeMixCapability: vibeMix }).length;
-            expect(drumCost).toBeLessThan(vibeCost);
-            expect(drumCost + vibeCost - 1).toBeGreaterThan(8_192);
+            const bassCost = JSON.stringify({ bassProcessingCopyCapability: bassCopy }).length;
+            expect(drumCost).toBeLessThan(bassCost);
+            expect(drumCost + bassCost - 1).toBeGreaterThan(8_192);
 
             const built = buildAgentContext({
                 fixedPolicy: 'policy',
-                prompt: 'make the second chorus hit harder',
+                prompt: 'adjust the mix',
                 context: session.project,
-                capabilityData: { drumRoutingCapability: drumRouting, wholeProjectVibeMixCapability: vibeMix },
+                capabilityData: { drumRoutingCapability: drumRouting, bassProcessingCopyCapability: bassCopy },
             });
 
             expect(keptCapabilitiesOf(built.localMessage)).toEqual({ drumRoutingCapability: drumRouting });
             expect(contextOmissionsOf(built.localMessage)).toContainEqual(
-                expect.stringContaining('leaves out wholeProjectVibeMixCapability, which did not fit')
+                expect.stringContaining('leaves out bassProcessingCopyCapability, which did not fit')
             );
         });
 
         it('keeps every capability entry, workflow capabilities before the creative catalog, when they all fit', () => {
-            const project = vibeMixProject(3);
-            const capabilities = capabilitiesFor(project);
+            const capabilities = {
+                ...capabilityData,
+                bassProcessingCopyCapability: buildBassProcessingCopyCapability(),
+            };
 
             const built = buildAgentContext({
                 fixedPolicy: 'policy',
-                prompt: 'make the second chorus hit harder',
-                context: project,
+                prompt: 'adjust the mix',
+                context: fiveTrackProject,
                 capabilityData: {
-                    wholeProjectVibeMixCapability: capabilities.wholeProjectVibeMixCapability,
+                    bassProcessingCopyCapability: capabilities.bassProcessingCopyCapability,
                     ...capabilityData,
                 },
             });
@@ -1349,7 +1284,7 @@ describe('buildAgentContext', () => {
                 availableCapabilities: string;
             };
             const kept = JSON.parse(schemas.availableCapabilities) as Record<string, unknown>;
-            expect(Object.keys(kept)).toEqual(['wholeProjectVibeMixCapability', 'creativeInterpretationCatalog']);
+            expect(Object.keys(kept)).toEqual(['bassProcessingCopyCapability', 'creativeInterpretationCatalog']);
             expect(kept).toEqual(capabilities);
             expect(contextOmissionsOf(built.localMessage)).toEqual([]);
         });

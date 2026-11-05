@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { logger } from '#/infra/logger/appLogger';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
@@ -12,6 +13,8 @@ import { mutateCrdtDoc } from '../../mutateCrdtDoc';
 import { runCrdtPersistenceOperation } from '../../runCrdtPersistenceOperation';
 import { forkProjectBranch } from '../forkProjectBranch';
 import { switchBranch } from '../switchBranch';
+
+registerDeviceEnginePorts();
 
 // A branch switch replaces the root document with another branch's, so a
 // transport left running would keep recording into the incoming branch and the

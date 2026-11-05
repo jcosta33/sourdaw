@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { registerProjectLifecycle } from '#/app/registerProjectLifecycle';
 import { clipSelectionStore, defaultClipSelectionState, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { clearUndoHistory } from '#/modules/Command/useCases';
@@ -22,6 +23,8 @@ import { setProjectIdentityTransitionDependencies } from '../../projectIdentityT
 import { saveProject } from '../../saveProject/saveProject';
 import { applyImportedProjectData } from '../applyImportedProjectData';
 import { serializeProjectMidi } from '../serializeProjectMidi';
+
+registerDeviceEnginePorts();
 
 // Capture the ids the owner restore use case is asked to load — the keystone consequence is
 // that this list is NON-empty once the clip-shape mapping resolves bufferId.

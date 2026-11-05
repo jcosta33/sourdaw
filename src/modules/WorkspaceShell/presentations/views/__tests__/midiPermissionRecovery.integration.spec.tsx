@@ -3,11 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { createEventBus } from '#/infra/events/createEventBus';
-import {
-    type MidiNoteOffPayload,
-    type MidiNoteOnPayload,
-    type MidiPedalCcPayload,
-} from '#/modules/WorkspaceShell/events';
+import { type MidiNoteOffPayload, type MidiNoteOnPayload, type MidiPedalCcPayload } from '#/modules/MIDI/events';
 import { type YeastNotesOffPayload } from '#/modules/Yeast/events';
 
 type MidiEvents = {

@@ -658,7 +658,7 @@ export function materializeActionStateGuards(
             for (const trackId of action.payload.trackIds) {
                 const track = tracksById.get(trackId);
                 if (!track || track.kind !== 'bus') {
-                    return { status: 'rejected', reason: `Impact bus is unavailable: ${trackId}` };
+                    return { status: 'rejected', reason: `Bus is unavailable: ${trackId}` };
                 }
                 if (
                     track.frozen === true ||
@@ -675,7 +675,7 @@ export function materializeActionStateGuards(
                             (!lane.clipId && lane.trackId === trackId && lane.parameterId === 'gain')
                     )
                 ) {
-                    return { status: 'rejected', reason: `Impact bus cannot accept gain automation: ${trackId}` };
+                    return { status: 'rejected', reason: `Bus cannot accept gain automation: ${trackId}` };
                 }
                 expectedTracks.push({
                     trackId,

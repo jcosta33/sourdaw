@@ -27,10 +27,19 @@ import {
 import { startMouseDrag } from '../../../helpers/mouseDrag';
 import { AutomationLaneRow } from '../AutomationLaneRow';
 
-const { mockWorkspaceStoreRef, mockTransportStoreRef, mockWorkspaceState, mockTransportState } = vi.hoisted(() => ({
+const {
+    mockWorkspaceStoreRef,
+    mockTimelineEditingStoreRef,
+    mockTransportStoreRef,
+    mockWorkspaceState,
+    mockTimelineEditingState,
+    mockTransportState,
+} = vi.hoisted(() => ({
     mockWorkspaceStoreRef: {},
+    mockTimelineEditingStoreRef: {},
     mockTransportStoreRef: {},
-    mockWorkspaceState: { activeTool: 'pointer', snapValue: 1 },
+    mockWorkspaceState: { activeTool: 'pointer' },
+    mockTimelineEditingState: { snapValue: 1 },
     mockTransportState: { playheadPosition: 0 },
 }));
 
@@ -109,7 +118,20 @@ vi.mock('../../../helpers/automationDrag', () => ({
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store: unknown) => (store === mockWorkspaceStoreRef ? mockWorkspaceState : mockTransportState)),
+    useStore: vi.fn((store: unknown) => {
+        if (store === mockWorkspaceStoreRef) {
+            return mockWorkspaceState;
+        }
+        if (store === mockTimelineEditingStoreRef) {
+            return mockTimelineEditingState;
+        }
+        return mockTransportState;
+    }),
+}));
+
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    timelineEditingStore: mockTimelineEditingStoreRef,
 }));
 
 vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
@@ -119,7 +141,7 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
 
 vi.mock('#/modules/WorkspaceShell/stores', () => ({
     workspaceStore: mockWorkspaceStoreRef,
-    defaultWorkspaceState: { activeTool: 'pointer', snapValue: 1 },
+    defaultWorkspaceState: { activeTool: 'pointer' },
 }));
 
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
@@ -170,7 +192,7 @@ describe('AutomationLaneRow', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockWorkspaceState.activeTool = 'pointer';
-        mockWorkspaceState.snapValue = 1;
+        mockTimelineEditingState.snapValue = 1;
         mockTransportState.playheadPosition = 0;
         playheadPositionRef.current = 0;
     });

@@ -2,6 +2,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
 import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
 import {
@@ -51,6 +52,8 @@ import { executePlayheadSeek } from '../../transportControls/executePlayheadSeek
 import { pausePlayback } from '../../transportControls/pausePlayback';
 import { recordingLifecycle } from '../../transportControls/recordingLifecycle';
 import { startPlayback } from '../../transportControls/startPlayback';
+
+registerDeviceEnginePorts();
 
 /**
  * Play's initial-playback witness refuses only when an input the prepared

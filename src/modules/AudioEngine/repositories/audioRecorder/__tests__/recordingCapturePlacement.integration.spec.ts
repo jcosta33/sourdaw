@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { createEventBus } from '#/infra/events/createEventBus';
 import {
     configureAutomergeStoragePort,
@@ -59,6 +60,8 @@ import { nativeRecordingCaptureClockState } from '../../../useCases/livePlayback
 import { startAudioRecording } from '../recording';
 import { activeSessions } from '../recordingSession';
 import { stopAudioRecording } from '../stopAudioRecording';
+
+registerDeviceEnginePorts();
 
 type Processor = {
     port: { onmessage: ((event: { data: unknown }) => void) | null; postMessage: (message: unknown) => void };

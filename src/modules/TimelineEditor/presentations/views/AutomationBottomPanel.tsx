@@ -45,7 +45,6 @@ const SPARKLINE_HEIGHT = 24;
 
 type AutomationPanelWorkspaceState = {
     activeTool: EditingTool;
-    snapValue: number;
     trackListWidth: number;
     trackListOpen: boolean;
 };

@@ -179,7 +179,6 @@ describe('executableAppActionRegistry', () => {
                 argument: 'trackIds',
                 capability: 'routable-source',
                 cardinality: 'many',
-                promptRole: 'members',
             },
         ]);
         expect(executableAppActionDescriptorByType.get('automateSendRanges')?.targetRules).toEqual([

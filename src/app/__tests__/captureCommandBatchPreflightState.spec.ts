@@ -37,6 +37,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     clipHasActiveGainEnvelope: vi.fn(),
     getGainEnvelopeSeries: vi.fn(),
     gainEnvelopeStore: { value: { envelopes: {} }, subscribe: vi.fn() },
+    timelineEditingStore: { value: null },
     trackStore: mocks.trackStore,
     resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
         () => ({ status: 'ineligible' })

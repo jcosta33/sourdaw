@@ -80,9 +80,13 @@ export const handleSetSend = createHandler<'setSend'>({
         if (!requested.ok) {
             return { status: 'conflict', reason: requested.reason };
         }
-        const runtimeEffect = setSend(alpha.payload.trackId, alpha.payload.busId, requested.linear, existing.preFader, {
-            deferRuntimeEffect: true,
-        });
+        const runtimeEffect = setSend(
+            alpha.payload.trackId,
+            alpha.payload.busId,
+            requested.linear,
+            alpha.payload.preFader ?? existing.preFader,
+            { deferRuntimeEffect: true }
+        );
         if (!runtimeEffect) {
             return { status: 'conflict' };
         }
@@ -106,13 +110,17 @@ export const handleSetSend = createHandler<'setSend'>({
             return false;
         }
         const requested = requestedLevel(action, existing.level);
-        return requested.ok && existing.level === requested.linear;
+        return (
+            requested.ok &&
+            existing.level === requested.linear &&
+            (action.payload.preFader ?? existing.preFader) === existing.preFader
+        );
     },
     describe: (alpha, context) => {
-        const label = 'Set send level';
         const state = getTrackStoreState();
         const track = state?.tracks.find((time) => time.id === alpha.payload.trackId);
         const target = state?.tracks.find((time) => time.id === alpha.payload.busId);
+        const label = 'Set send level';
         if (
             !track ||
             !target ||
@@ -141,16 +149,19 @@ export const handleSetSend = createHandler<'setSend'>({
         if (!requested.ok) {
             return { label, inverseAction: null };
         }
+        const requestedPreFader = alpha.payload.preFader ?? existing.preFader;
+        const movesTapPointOnly = requestedPreFader !== existing.preFader && requested.linear === existing.level;
         return {
-            label,
+            label: movesTapPointOnly ? 'Set send pre-fader' : label,
             inverseAction: {
                 type: 'setSend',
                 payload: {
                     trackId: alpha.payload.trackId,
                     busId: alpha.payload.busId,
                     level: existing.level,
+                    preFader: existing.preFader,
                     expectedLevel: requested.linear,
-                    expectedPreFader: existing.preFader,
+                    expectedPreFader: requestedPreFader,
                 },
             },
             // Without this, `redo.ts` would replay the forward action's own
@@ -166,6 +177,7 @@ export const handleSetSend = createHandler<'setSend'>({
                     trackId: alpha.payload.trackId,
                     busId: alpha.payload.busId,
                     level: requested.linear,
+                    preFader: requestedPreFader,
                     expectedLevel: existing.level,
                     expectedPreFader: existing.preFader,
                 },

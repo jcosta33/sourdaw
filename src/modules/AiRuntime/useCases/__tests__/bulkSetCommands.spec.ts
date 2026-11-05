@@ -46,7 +46,6 @@ import {
 } from '../../stores/pendingActionConfirmationStore';
 import { getBulkDeviceInsertionTrackScope } from '../agentReference/getBulkDeviceInsertionTrackScope';
 import { getDrumRoutingPromptScope } from '../agentReference/getDrumRoutingPromptScope';
-import { getWholeProjectVibeMixScope } from '../agentReference/getWholeProjectVibeMixScope';
 import { proposeNextScheduledBatch } from '../agentRequestOrchestration/proposeNextScheduledBatch';
 import { rebaseBulkSetSliceEvidence } from '../agentRequestOrchestration/rebaseBulkSetSliceEvidence';
 import { revalidateApprovedMatchSelectors } from '../agentRequestOrchestration/revalidateApprovedMatchSelectors';
@@ -433,54 +432,6 @@ describe('drum routing scope', () => {
                 createDrumContext([createTrack('track-kick', 'Kick', { canonicalRole: nameDerived('kick') })])
             )
         ).toEqual({ status: 'invalid', reason: 'MF-01 found no unambiguous drum tracks' });
-    });
-});
-
-describe('whole-project vibe-mix scope', () => {
-    const context = createContext(
-        [
-            createTrack('bus-drums', 'Drum Bus', { kind: 'bus' }),
-            createTrack('bus-bass', 'Bass Bus', { kind: 'bus' }),
-            createTrack('track-vocal', 'Lead Vocal'),
-            createTrack('master', 'Master', { kind: 'master' }),
-        ],
-        {
-            sections: [
-                { id: 'section-chorus-one', name: 'Chorus One', startBeat: 0, endBeat: 8 },
-                { id: 'section-chorus-two', name: 'Chorus Two', startBeat: 8, endBeat: 16 },
-            ],
-        }
-    );
-
-    it('discovers the drum and bass impact buses through the shared selector resolver', () => {
-        expect(getWholeProjectVibeMixScope(context)?.targetIds).toEqual(['bus-drums', 'bus-bass']);
-        expect(
-            resolvedSelectorsMatching('track', {
-                all: [{ kind: 'bus' }, { nameIncludes: 'drum' }, { nameIncludes: 'bus' }],
-            })
-        ).toHaveLength(1);
-        expect(
-            resolvedSelectorsMatching('track', {
-                all: [{ kind: 'bus' }, { nameIncludes: 'bass' }, { nameIncludes: 'bus' }],
-            })
-        ).toHaveLength(1);
-    });
-
-    it('claims no scope when the shared resolver names no bus', () => {
-        resolverSpy.mockReturnValue(resolverFoundNothing);
-
-        expect(getWholeProjectVibeMixScope(context)).toBeNull();
-    });
-
-    it('refuses two buses that both name the role', () => {
-        const withSecondDrumBus = createContext(
-            [...context.tracks, createTrack('bus-drums-two', 'Drum Bus 2', { kind: 'bus' })],
-            {
-                sections: context.sections,
-            }
-        );
-
-        expect(getWholeProjectVibeMixScope(withSecondDrumBus)).toBeNull();
     });
 });
 

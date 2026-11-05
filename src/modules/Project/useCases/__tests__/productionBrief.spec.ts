@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { defaultTrackState } from '#/modules/Arrangement/stores';
+import { defaultTrackState, timelineEditingStore } from '#/modules/Arrangement/stores';
 import {
     addClip,
     addMarker,
@@ -13,7 +13,6 @@ import { addAutomationLane, addAutomationPoint } from '#/modules/Automation/useC
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, redo, undo } from '#/modules/Command/useCases';
 import { addChordEvent, clearChordTrack } from '#/modules/MIDI/useCases';
-import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { toggleRippleEditing } from '#/modules/WorkspaceShell/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -120,7 +119,7 @@ describe('production brief', () => {
                 },
             ],
         });
-        if (workspaceStore.value?.rippleEditing) {
+        if (timelineEditingStore.value?.rippleEditing) {
             toggleRippleEditing();
         }
         addClip({
@@ -134,7 +133,7 @@ describe('production brief', () => {
     });
 
     afterEach(() => {
-        if (workspaceStore.value?.rippleEditing) {
+        if (timelineEditingStore.value?.rippleEditing) {
             toggleRippleEditing();
         }
         clearUndoHistory();

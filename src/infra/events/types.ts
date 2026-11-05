@@ -1,5 +1,8 @@
 export type EventMap = Record<string, unknown>;
 
+/** Payload for events that carry no data. */
+export type VoidPayload = undefined;
+
 export type EventHandler<TPayload> = (payload: TPayload) => void | Promise<void>;
 
 export type WildcardHandler<TEvents extends EventMap> = (

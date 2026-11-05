@@ -215,6 +215,21 @@ function ownedPidRunning(pid: number, cgroup: string): boolean {
     }
 }
 
+// A cold interpreter start on a shared runner has taken longer than Vitest's
+// default case timeout. The spawn is bounded below the case so a hung probe
+// fails with its own output instead of wedging the worker.
+const PYTHON_UNIT_PROBE_SPAWN_TIMEOUT_MS = 15_000;
+const PYTHON_UNIT_PROBE_TEST_TIMEOUT_MS = 20_000;
+
+function expectPythonUnitProbePasses(fixture: string): void {
+    const probe = spawnSync('/usr/bin/python3', [`scripts/__tests__/fixtures/hostedAptInstall/${fixture}`], {
+        encoding: 'utf8',
+        timeout: PYTHON_UNIT_PROBE_SPAWN_TIMEOUT_MS,
+    });
+    expect(probe.error, probe.stderr).toBeUndefined();
+    expect(probe.status, probe.stderr).toBe(0);
+}
+
 // A process-control stub proves workflow control flow only. It is never a
 // containment oracle; the Linux cases below use the real system manager.
 describe('hosted root installation admission', () => {
@@ -247,19 +262,21 @@ printf '{"event":"downstream"}\n' >> '${f.root}/events.jsonl'
         }
     });
 
-    it('re-observes the bound unit when its cgroup disappears during a read', () => {
-        const probe = spawnSync('/usr/bin/python3', ['scripts/__tests__/fixtures/hostedAptInstall/observation.py'], {
-            encoding: 'utf8',
-        });
-        expect(probe.status, probe.stderr).toBe(0);
-    });
+    it(
+        're-observes the bound unit when its cgroup disappears during a read',
+        () => {
+            expectPythonUnitProbePasses('observation.py');
+        },
+        PYTHON_UNIT_PROBE_TEST_TIMEOUT_MS
+    );
 
-    it('reports installer progress before terminal without replaying earlier output', () => {
-        const probe = spawnSync('/usr/bin/python3', ['scripts/__tests__/fixtures/hostedAptInstall/progress.py'], {
-            encoding: 'utf8',
-        });
-        expect(probe.status, probe.stderr).toBe(0);
-    });
+    it(
+        'reports installer progress before terminal without replaying earlier output',
+        () => {
+            expectPythonUnitProbePasses('progress.py');
+        },
+        PYTHON_UNIT_PROBE_TEST_TIMEOUT_MS
+    );
 
     it('fixture acknowledges a separate-session unpack before accepting finish', async () => {
         const f = fixture();

@@ -63,7 +63,6 @@ import { decodeMidiClipDataSnapshots, getMidiNoteTransformHandlers } from '#/mod
 import { productionBriefActionBatchAdmission } from '#/modules/Project/useCases';
 import { readSecondsAtBeat, readTempoAtBeat, tempoMapStore } from '#/modules/Transport/stores';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
-import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import { projectAudioLoopPassSegments, resolveAudioTakeSource } from '#/utils/audioSourceTime';
 import { isBeatInClipLoopWindow } from '#/utils/clipLoopOrigin';
@@ -81,6 +80,7 @@ import { createTake, createTakeLane, placeTakeOnClipMedia } from '../../../model
 import { createTrack, type Clip } from '../../../models/Track';
 import { gainEnvelopeStore, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
+import { defaultTimelineEditingState, timelineEditingStore } from '../../../stores/timelineEditingStore';
 import { timelineViewStore } from '../../../stores/timelineViewStore';
 import { trackStore } from '../../../stores/trackStore';
 import { setWarpState, warpStateStore } from '../../../stores/warpStates';
@@ -464,7 +464,7 @@ function savedSplitSnapshot(
 }
 
 async function persistRemovalWithDistinctOwners(grouped = false) {
-    workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+    timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
     if (grouped) {
         trackStore.set({
             ...trackStore.value!,
@@ -550,7 +550,7 @@ async function persistRemovalAcrossRecordingTracks(
     grouped = false,
     groupId = grouped ? 'recording-host-group' : undefined
 ) {
-    workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+    timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
     const otherTrack = createTrack({ id: 'other-track', name: 'Other track', kind: 'midi' });
     trackStore.set({ ...trackStore.value!, tracks: [...trackStore.value!.tracks, otherTrack] });
     const primaryTake = {
@@ -598,7 +598,7 @@ async function persistRemovalAcrossRecordingTracks(
 }
 
 async function persistSplitRetirement(): Promise<void> {
-    workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+    timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
     flushAutomergeStorageWrites();
     stopProjectionBridge = setupProjectionBridge();
     projectCrdtToStores();
@@ -639,7 +639,7 @@ async function persistRetiredSourceContent(
     grouped: boolean,
     variant: RetirementSourceVariant
 ) {
-    workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+    timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
     trackStore.set({ ...trackStore.value!, selectedTrackId: null });
     if (variant === 'placed-audio') {
         trackStore.set({
@@ -841,7 +841,7 @@ async function persistSequentialRippleGroup(secondRipples = true): Promise<void>
     projectCrdtToStores();
     for (const clipId of ['clip-a', 'clip-c']) {
         if (clipId === 'clip-c' && !secondRipples) {
-            workspaceStore.set({ ...workspaceStore.value!, rippleEditing: false });
+            timelineEditingStore.set({ ...timelineEditingStore.value!, rippleEditing: false });
         }
         await executeAppAction(
             { type: 'removeClip', payload: { clipId } },
@@ -860,7 +860,7 @@ async function persistSequentialRippleGroup(secondRipples = true): Promise<void>
 }
 
 async function persistSplitRemoveGroup() {
-    workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+    timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
     flushAutomergeStorageWrites();
     prepareAutomationMove();
     setEnvelope('clip-a', {
@@ -1105,7 +1105,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
         midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         automationStore.set({ lanes: [] });
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: true });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: true });
         hydrateProductionContracts();
         flushAutomergeStorageWrites();
     });
@@ -1125,7 +1125,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         automationStore.set({ lanes: [] });
-        workspaceStore.set({ ...defaultWorkspaceState });
+        timelineEditingStore.set({ ...defaultTimelineEditingState });
         sessionStorage.removeItem(UNDO_SESSION_KEY);
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
@@ -2461,7 +2461,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
 
     describe.each([false, true])('relative removal placement saved=%s', (saved) => {
         it.each([false, true])('preserves peer prepends, clip order and overlap hits grouped=%s', async (grouped) => {
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
             timelineViewStore.set({ scrollX: 0, scrollY: 0, pixelsPerBeat: 20, autoScrollEnabled: false });
             trackStore.set({
                 tracks: [
@@ -2540,7 +2540,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     });
 
     it('restores saved removal using farther witnesses after both immediate neighbors disappear', async () => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         timelineViewStore.set({ scrollX: 0, scrollY: 0, pixelsPerBeat: 20, autoScrollEnabled: false });
         const original = [
             createClipFixture('clip-a', 0, 4),
@@ -2605,7 +2605,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         { clipOrder: ['clip-a', 'clip-a'] },
         { clipOrder: ['clip-b', 'clip-a'] },
     ])('drops saved removal with a malformed order $clipOrder before hydration', async ({ clipOrder }) => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a', ripple: false } });
         await vi.waitFor(() =>
             expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past).toHaveLength(1)
@@ -2631,7 +2631,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     });
 
     it('refuses saved removal before any write when its surviving witnesses reverse', async () => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         trackStore.set({
             tracks: [
                 TrackDummy.create({
@@ -2708,7 +2708,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     ] as const)(
         'saved cross-track $name restores order and the real overlap hit for two cycles',
         async ({ movedId, peer, restored, away }) => {
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
             timelineViewStore.set({ scrollX: 0, scrollY: 0, pixelsPerBeat: 20, autoScrollEnabled: false });
             trackStore.set({
                 tracks: [
@@ -2796,7 +2796,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     );
 
     it('refuses a saved cross-track return when its captured neighbors have reversed', async () => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         trackStore.set({
             tracks: [
                 TrackDummy.create({
@@ -2843,7 +2843,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     });
 
     it('drops a saved cross-track move with a malformed captured clip slot before Undo', async () => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         trackStore.set({
             tracks: [
                 TrackDummy.create({
@@ -3037,7 +3037,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     });
 
     it('retains the saved Redo inverse through a synchronous descendant peer publication', async () => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         flushAutomergeStorageWrites();
         stopProjectionBridge = setupProjectionBridge();
         projectCrdtToStores();
@@ -3101,7 +3101,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     it.each(['none', 'source', 'target'] as const)(
         'replays a saved sequential duplicate then removal against its created owner prefix: peer=%s',
         async (peer) => {
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
             midiStore.set({
                 probabilitySeed: 1,
                 notesByClipId: {
@@ -3217,7 +3217,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     it.each(['source-midi', 'publication-observer', 'creator-throw'] as const)(
         'aborts a saved duplicate/remove group without publishing after %s diverges',
         async (failure) => {
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
             midiStore.set({
                 ...midiStore.value!,
                 notesByClipId: {
@@ -3324,7 +3324,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     );
 
     it('replays saved split-created MIDI followed by removal for two hydrated cycles', async () => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         midiStore.set({
             ...midiStore.value!,
             notesByClipId: {
@@ -3368,7 +3368,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     });
 
     it('keeps a saved split paired take capture when a listener publishes another root', async () => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         flushAutomergeStorageWrites();
         stopProjectionBridge = setupProjectionBridge();
         projectCrdtToStores();
@@ -3437,7 +3437,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     it.each(['ordinary', 'ambiguous'] as const)(
         'keeps a saved remove inverse after a listener publishes another root terminal=%s',
         async (terminal) => {
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
             flushAutomergeStorageWrites();
             stopProjectionBridge = setupProjectionBridge();
             projectCrdtToStores();
@@ -3526,7 +3526,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     it.each([false, true])(
         'restores a saved middle clip in its exact slot and retains peer material=%s',
         async (withPeer) => {
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
             const left = createClipFixture('clip-a', 0, 4);
             const middle = { ...createClipFixture('clip-b', 4, 8), gain: 0.75, fadeInBeats: 0.25 };
             const right = createClipFixture('clip-c', 8, 12);
@@ -3574,7 +3574,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     );
 
     it('keeps legacy persisted removal entries without a clip slot or retired takes replayable', async () => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         trackStore.set({
             ...trackStore.value!,
             tracks: [
@@ -3661,7 +3661,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     });
 
     it('projects a restored clip into an empty owner track between its adjacent tracks', async () => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         trackStore.set({
             tracks: [
                 TrackDummy.create({
@@ -3700,7 +3700,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     it.each(['clip-a', 'clip-b'] as const)(
         'replays a saved grouped split and removal of %s in exact track order for two cycles',
         async (removedId) => {
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
             flushAutomergeStorageWrites();
             stopProjectionBridge = setupProjectionBridge();
             projectCrdtToStores();
@@ -3749,7 +3749,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     it.each([false, true])(
         'saved grouped remove then split retains its sole re-keyed take and late-right material=%s',
         async (withLateRight) => {
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: true });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: true });
             const removed = {
                 ...createClipFixture('clip-a', 0, 2),
                 type: 'audio' as const,
@@ -3856,7 +3856,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             }
             const forward = ownerProjections();
             // A new browser document resets this UI preference; replay must not.
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
             reloadSavedProject();
             expect(ownerProjections()).toEqual(forward);
             for (let cycle = 0; cycle < 2; cycle += 1) {
@@ -3905,7 +3905,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 markReverted: markActionHistoryEntryReverted,
                 clear: clearActionHistory,
             });
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: ripple });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: ripple });
             const peerClip = { ...createClipFixture('peer-mode-clip', 20, 24), trackId: 'peer-mode-track' };
             trackStore.set({
                 ...trackStore.value!,
@@ -3963,7 +3963,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             const before = ownerProjections();
             // Change the UI preference while the real dispatcher is held at
             // snapshot admission. The committed producer must choose the new mode.
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: !ripple });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: !ripple });
             let admit!: () => void;
             let entered!: () => void;
             const admission = new Promise<void>((resolve) => {
@@ -3991,7 +3991,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             );
             await waiting;
             expect(ownerProjections()).toEqual(before);
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: ripple });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: ripple });
             admit();
             await dispatch;
             registerCrdtStorageRuntime();
@@ -4008,12 +4008,12 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 type: 'removeClip',
                 payload: { clipId: 'clip-a', ripple },
             });
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: !ripple });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: !ripple });
             reloadSavedProject();
             for (let cycle = 0; cycle < 2; cycle += 1) {
                 expect((await undo()).headConsumed).toBe(true);
                 expect(ownerProjections()).toEqual(before);
-                expect(workspaceStore.value?.rippleEditing).toBe(!ripple);
+                expect(timelineEditingStore.value?.rippleEditing).toBe(!ripple);
                 await vi.waitFor(() =>
                     expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
                 );
@@ -4022,14 +4022,14 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 expect(undoHistoryStore.value?.future).toHaveLength(0);
                 expect(ownerProjections()).toEqual(forward);
                 expect(takeLaneStore.value?.lanes.find((lane) => lane.id === peerLane.id)).toEqual(peerLane);
-                expect(workspaceStore.value?.rippleEditing).toBe(!ripple);
+                expect(timelineEditingStore.value?.rippleEditing).toBe(!ripple);
                 reloadSavedProject();
             }
         }
     );
 
     it.each(['absent redo', 'absent choice'] as const)('retains legacy removal replay with %s', async (legacy) => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
         const forward = ownerProjections();
         expect((await undo()).headConsumed).toBe(true);
@@ -4089,7 +4089,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     });
 
     it('replays a saved grouped ripple removal then split repeatedly', async () => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: true });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: true });
         const removedLane = automationLane('remove-split-a', 'clip-a');
         const shiftedLane = automationLane('remove-split-b', 'clip-b');
         shiftedLane.points = [{ id: 'remove-split-point', beat: 6.5, value: 0.75, curve: 'linear', tension: 0 }];
@@ -4271,7 +4271,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
 
     describe.each([false, true])('MIDI identity repair grouped=%s', (grouped) => {
         async function persistMidiRemoval(): Promise<void> {
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
             const otherTrack = createTrack({ id: 'identity-track', name: 'Identity track', kind: 'midi' });
             otherTrack.clips = [{ ...createClipFixture('clip-c', 8, 12), trackId: otherTrack.id }];
             trackStore.set({ ...trackStore.value!, tracks: [...trackStore.value!.tracks, otherTrack] });
@@ -4376,7 +4376,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     it.each(['disjoint', 'warp-local', 'gain-local'] as const)(
         'saved MIDI removal replays with a %s peer identity',
         async (namespace) => {
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
             const otherClip = {
                 ...createClipFixture('other-audio', 10, 14),
                 trackId: 'other-track',
@@ -4816,7 +4816,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     });
 
     it('restores a saved grouped removal after its duplicate reused the freed clip identity', async () => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         const originalTake = { ...createTake('clip-a', 'Original pass', 0, 4), id: 'reused-pass' };
         const originalLane = {
             ...createTakeLane(TRACK_ID),
@@ -4892,7 +4892,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     });
 
     it('rejects a saved removal whose retired recording host alone was redirected', async () => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         trackStore.set({
             ...trackStore.value!,
             tracks: [...trackStore.value!.tracks, TrackDummy.create({ id: 'empty-host', clips: [] })],
@@ -4936,7 +4936,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     });
 
     it('rejects a substituted real retirement proof after the same clip lane and take ids were reused on another host', async () => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         const other = createTrack({ id: 'reused-source-host', name: 'Other host', kind: 'midi' });
         trackStore.set({ ...trackStore.value!, tracks: [...trackStore.value!.tracks, other] });
         const take = createTake('clip-a', 'First event', 0, 4);
@@ -5032,7 +5032,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     });
 
     it.each([false, true])('keeps saved removal after a real audio move across tracks=%s', async (crossTrack) => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         const source = { ...createClipFixture('clip-a', 0, 4), type: 'audio' as const, audioBufferId: 'recorded' };
         const take = { ...createTake(source.id, 'Recorded pass', 0, 4), selected: true };
         const lane = {
@@ -5116,7 +5116,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     });
 
     it('preflights saved grouped removals whose retired lane id was reused between the real Commands', async () => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         const firstTake = { ...createTake('clip-a', 'First owner', 0, 4), id: 'first-owner-take' };
         const secondTake = { ...createTake('clip-b', 'Second owner', 4, 8), id: 'second-owner-take' };
         trackStore.set({
@@ -5168,7 +5168,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     });
 
     it('refuses conflicting take owners reserved by an earlier saved removal sibling', async () => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         const retired = { ...createTake('clip-a', 'Original owner', 0, 4), id: 'reused-sibling-take' };
         takeLaneStore.set({ lanes: [{ ...createTakeLane(TRACK_ID), id: 'sibling-lane', takes: [retired] }] });
         flushAutomergeStorageWrites();
@@ -5202,7 +5202,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         it.each(['same-lane', 'same-track-replacement', 'foreign-lane'] as const)(
             'refuses saved removal Undo when a %s peer owns its retired take id',
             async (occupancy) => {
-                workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+                timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
                 const removed = { ...createClipFixture('clip-a', 0, 4), type: 'audio' as const };
                 const survivor = { ...createClipFixture('clip-b', 4, 8), type: 'audio' as const };
                 const other = { ...survivor, id: 'other-clip', trackId: 'other-track' };
@@ -5551,7 +5551,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     });
 
     it('keeps a later edit to an unchanged captured take and a live selection through saved split replay', async () => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         const left = createTake('clip-a', 'Split take', 0, 4);
         const untouched = createTake('clip-b', 'Unchanged take', 4, 8);
         takeLaneStore.set({
@@ -5747,7 +5747,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     it.each(['clipSatellites', 'clipAutomationLanes'] as const)(
         'refuses a hydrated grouped split whose pre-split %s guard is missing',
         async (field) => {
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
             const otherTrack = createTrack({ id: 'other-track', name: 'Other track', kind: 'midi' });
             otherTrack.clips = [{ ...createClipFixture('clip-c', 8, 12), trackId: otherTrack.id }];
             trackStore.set({ ...trackStore.value!, tracks: [...trackStore.value!.tracks, otherTrack] });
@@ -5954,7 +5954,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     });
 
     it('rejects a saved non-ripple removal with a forged but geometrically valid shifted peer', async () => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         trackStore.set({
             ...trackStore.value!,
             tracks: trackStore.value!.tracks.map((track) => ({
@@ -6811,7 +6811,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     it.each(['gain', 'warp'] as const)(
         'rejects a saved removeClip with duplicate %s satellite identities before real Undo',
         async (owner) => {
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
             trackStore.set({ ...trackStore.value!, selectedTrackId: null });
             setEnvelope('clip-a', {
                 clipId: 'clip-a',
@@ -7194,7 +7194,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
 
         // ...and replays it even with ripple editing now OFF, where a live
         // re-plan would find nothing to shift.
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         void handleRestoreDrawnClip.execute(persistedPast[0]!.redoAction as never);
         expect(clipOnTrack(TRACK_ID, 'clip-draw-1')?.startBeat).toBe(2);
         expect(clipOnTrack(TRACK_ID, 'clip-b')?.startBeat).toBe(6);
@@ -7312,7 +7312,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     it.each([false, true])(
         'split Redo refuses a right-fragment identity recreated by a synced peer on another track, grouped=%s',
         async (grouped) => {
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
             if (grouped) {
                 const otherTrack = createTrack({ id: 'group-track', name: 'Group track', kind: 'midi' });
                 otherTrack.clips = [{ ...createClipFixture('clip-c', 8, 12), trackId: otherTrack.id }];
@@ -7399,7 +7399,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         ] as const)(
             'refuses %s replay after a %s foreign lane collision before every owner write',
             async (operation, collision) => {
-                workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+                timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
                 const otherTrack = createTrack({ id: 'other-track', name: 'Other track', kind: 'midi' });
                 otherTrack.clips = [{ ...createClipFixture('other-clip', 8, 12), trackId: otherTrack.id }];
                 trackStore.set({ ...trackStore.value!, tracks: [...trackStore.value!.tracks, otherTrack] });
@@ -7904,7 +7904,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     it.each([false, true])(
         'removeClip retains placed audio pass fields and refuses a live foreign retired lane owner=%s',
         async (foreignOwner) => {
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
             const audio: Clip = {
                 ...createClipFixture('recorded-audio', 8, 16),
                 type: 'audio',
@@ -9105,7 +9105,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     ])(
         'preserves split captures after refused Undo deniedFirst=$deniedFirst grouped=$grouped',
         async ({ deniedFirst, grouped }) => {
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
             flushAutomergeStorageWrites();
             stopProjectionBridge = setupProjectionBridge();
             projectCrdtToStores();
@@ -9195,7 +9195,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     )(
         'installs split captures only for its own committed Undo terminal=$terminal grouped=$grouped',
         async ({ terminal, grouped }) => {
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
             flushAutomergeStorageWrites();
             stopProjectionBridge = setupProjectionBridge();
             projectCrdtToStores();
@@ -9329,7 +9329,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     it.each([false, true])(
         'four repairs: keeps a paired remove capture unchanged when Redo aborts at commit grouped=%s',
         async (grouped) => {
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
             flushAutomergeStorageWrites();
             stopProjectionBridge = setupProjectionBridge();
             projectCrdtToStores();
@@ -9417,7 +9417,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     ])(
         'four repairs: installs fresh remove capture only after committed Redo $grouped warning=$warning ambiguous=$ambiguous foreign=$foreign',
         async ({ grouped, warning, ambiguous, foreign }) => {
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
             flushAutomergeStorageWrites();
             stopProjectionBridge = setupProjectionBridge();
             projectCrdtToStores();
@@ -9631,7 +9631,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             },
         },
     ])('rejects malformed $name capture before real undo writes', async ({ corrupt }) => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         await executeAppAction({ type: 'removeClip', payload: { clipId: 'clip-a' } }, { source: 'manual' });
         await vi.waitFor(() =>
             expect((parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).past as unknown[]).length).toBe(1)
@@ -9657,7 +9657,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     });
 
     it('restores valid audio, link, and pitch captures without dropping optional fields', async () => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         const original = {
             ...createClipFixture('clip-a', 0, 4),
             type: 'audio' as const,
@@ -9721,7 +9721,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     });
 
     it('keeps a real addClip capture with omitted optional values through remove and session reload', async () => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         await executeAppAction(
             {
                 type: 'addClip',
@@ -9761,7 +9761,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     ])(
         'loop anchor survives saved $operation replay grouped=$grouped enabled=$enabled',
         async ({ operation, grouped, enabled }) => {
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
             trackStore.set({
                 ...trackStore.value!,
                 selectedTrackId: null,
@@ -9835,7 +9835,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     );
 
     it.each([false, true])('peer-owned restored clip refuses saved remove Redo grouped=%s', async (grouped) => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         flushAutomergeStorageWrites();
         stopProjectionBridge = setupProjectionBridge();
         projectCrdtToStores();
@@ -9891,7 +9891,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             [false, true].map((grouped) => ({ facet, grouped }))
         )
     )('saved remove Redo authenticates peer-only $facet edits: grouped=$grouped', async ({ facet, grouped }) => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         trackStore.set({
             ...trackStore.value!,
             tracks: trackStore.value!.tracks.map((track) => {
@@ -10073,7 +10073,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     )(
         'saved remove Redo preserves a foreign pending capture grouped=$grouped settle=$settle peerMidi=$peerMidi',
         async ({ grouped, settle, peerMidi }) => {
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
             const committedNote = { id: 'captured-note', pitch: 60, startBeat: 0, duration: 1, velocity: 90 };
             const committedTake = { ...createTake('clip-a', 'Committed take A', 0, 4), selected: true };
             const committedLane = {
@@ -10205,7 +10205,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         }
     );
     it('drops a saved removal with negative clip placement before hydration', async () => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         prepareAutomationMove();
         midiStore.set({
             probabilitySeed: 1,
@@ -10266,7 +10266,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     ] as const)(
         'refuses %s source publication when the actual retiring lane host changes at %s',
         async (operation, timing) => {
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
             const other = createTrack({ id: 'late-source-host', name: 'Other host', kind: 'midi' });
             trackStore.set({ ...trackStore.value!, tracks: [...trackStore.value!.tracks, other] });
             flushAutomergeStorageWrites();
@@ -10369,7 +10369,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     );
 
     it('refuses split Undo while a foreign unpublished take owns its capture input', async () => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         flushAutomergeStorageWrites();
         stopProjectionBridge = setupProjectionBridge();
         projectCrdtToStores();
@@ -10426,7 +10426,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     });
 
     it('refuses a second forward batch removal while its take capture is foreign unpublished state', async () => {
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         trackStore.set({ ...trackStore.value!, selectedTrackId: null });
         const committedTake = { ...createTake('clip-b', 'Committed forward take A', 4, 8), selected: true };
         const committedLane = {
@@ -10493,7 +10493,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     it.each(['note', 'take', 'distinct'] as const)(
         'replays a saved remove then duplicate after discard frees identity source=%s',
         async (source) => {
-            workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+            timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
             const noteId = 'captured-reusable-identity';
             const takeId = 'captured-reusable-take';
             let copyId = 'independent-copy-identity';

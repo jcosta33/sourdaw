@@ -2,7 +2,6 @@ import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { activeRecordingRef } from '#/modules/Arrangement/stores';
 import { applyNoteExpression, audioEngine, startFaustNote } from '#/modules/AudioEngine/useCases';
-import { applyVelocityCurve, createGrandBouleStore } from '#/modules/GrandBoule/stores';
 import { isBypassedNoteReceiver, resolveDrumKitBy, resolveDrumKitOutputGain } from '#/utils/deviceTypeMatching';
 
 import { createWebMidiNoteKey, type ActiveNoteData } from '../../models/WebMidiTypes';
@@ -30,6 +29,7 @@ import { resolveInstrumentTrack } from './resolveInstrumentTrack';
 import { resolveLiveInputNoteReceiver } from './resolveLiveInputNoteReceiver';
 import { resolveNativeNoteSink } from './resolveNativeNoteSink';
 import { retireDrainOfRemovedYeast } from './retireDrainOfRemovedYeast';
+import { velocityCalibration } from './velocityCalibration';
 import { voiceYeastNoteOn } from './voiceYeastNoteOn';
 
 /**
@@ -441,9 +441,9 @@ export const handleWebMidiNoteOn = inject({
                 const deviceNode = resolveDeviceNode(strip, { deviceId: grandBouleDevice.id, type: 'grand-boule' });
                 if (deviceNode?.grandBouleControls?.ready) {
                     const playedDeviceId = deviceNode.deviceId;
-                    const grandBouleStore = createGrandBouleStore(playedDeviceId);
-                    const calibration = grandBouleStore.value?.midiCalibration;
-                    const finalVelocity = calibration ? applyVelocityCurve(velocity, calibration) : velocity / 127;
+                    const finalVelocity =
+                        velocityCalibration.read('handleWebMidiNoteOn').calibratedVelocity(playedDeviceId, velocity) ??
+                        velocity / 127;
                     deviceNode.grandBouleControls.noteOn(note, finalVelocity, dispatchFrame, channel);
                     postStartBend();
                     noteData.grandBouleDeviceId = playedDeviceId;

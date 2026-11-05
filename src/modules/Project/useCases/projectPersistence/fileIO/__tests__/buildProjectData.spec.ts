@@ -100,8 +100,15 @@ vi.mock('../../../../stores/arrangementStore', async (importOriginal) => {
     };
 });
 
+import { readYeastRack } from '#/modules/Yeast/stores';
+
 import { sanitize_arrangement_store_state } from '../../../../stores/arrangementStore';
 import { buildProjectData } from '../buildProjectData';
+import { rackProcessorReader } from '../rackProcessorReader';
+
+// The composition root's rack reader over the doubled Yeast barrel: the
+// registrar itself cannot load while whole module barrels are mocked.
+rackProcessorReader.configure({ readProcessors: (deviceId) => readYeastRack(deviceId).processors });
 
 // Minimal runtime track for the builder's walks (devices, clips,
 // alternatives, freezeState). The Arrangement stores module is mocked here,

@@ -1,14 +1,14 @@
 import { Container } from '#/infra/di/Container';
 
+import type { VoidPayload } from '#/infra/events/types';
+import type { ToggleVoiceCommandPayload } from '#/modules/Command/events';
+import type { MidiOutPayload } from '#/modules/MIDI/events';
 import type {
     ConfirmPayload,
     ImportMidiPayload,
-    MidiOutPayload,
     NotifyPayload,
     PromptPayload,
     ShowDevicePanelGenericPayload,
-    ToggleVoiceCommandPayload,
-    VoidPayload,
     ZoomToSelectionPayload,
 } from '../events/WorkspaceEvents';
 
