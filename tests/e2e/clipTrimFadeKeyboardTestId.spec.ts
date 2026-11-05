@@ -1,5 +1,6 @@
+import { import_and_select_audio_clip } from './audioClipFixture';
 import { expect, test } from './e2eTest';
-import { import_and_select_audio_clip, launch_new_project, setupWorkspace } from './e2eUtils';
+import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
