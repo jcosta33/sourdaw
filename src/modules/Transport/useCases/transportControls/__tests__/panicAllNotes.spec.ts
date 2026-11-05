@@ -30,6 +30,13 @@ vi.mock('#/modules/MIDI/useCases', () => ({ panicLiveNotes: panic_live_notes }))
 vi.mock('#/modules/Crumbs/useCases', () => ({ panicCrumbs: panic_crumbs }));
 vi.mock('../panicYeastRuntime', () => ({ panicYeastRuntime: panic_yeast_runtime }));
 
+// The participants the composition root registers, filled from the Crumbs
+// barrel this spec doubles. The Yeast settle is reached only through
+// `panicYeastRuntime`, which is doubled above, so it is never called here.
+const { panicCrumbs } = await import('#/modules/Crumbs/useCases');
+const { notePanicParticipants } = await import('../notePanicParticipants');
+notePanicParticipants.configure({ settleGeneratedNotes: vi.fn(), voiceReleases: [panicCrumbs] });
+
 const { panicAllNotes } = await import('../panicAllNotes');
 
 describe('panicAllNotes', () => {

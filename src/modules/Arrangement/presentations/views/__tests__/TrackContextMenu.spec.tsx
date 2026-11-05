@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { act, cleanup, render, screen, fireEvent, within, createEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { TooltipProvider } from '#/components/ui/tooltip';
 import {
     configureAutomergeStoragePort,
@@ -53,6 +54,8 @@ import { useTracks } from '../../hooks/useTracks';
 import { TrackContextMenu } from '../TrackContextMenu';
 
 import type { actionHistoryStore } from '#/modules/CrdtDocument/stores';
+
+registerDeviceEnginePorts();
 
 // Mock external dependencies
 vi.mock('../../../useCases/removeTrack', () => ({

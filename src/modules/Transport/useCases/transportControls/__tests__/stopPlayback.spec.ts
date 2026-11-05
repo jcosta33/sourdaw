@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
 import { audioEngine, stopAllScheduled, stopNativeLiveGraphSession } from '#/modules/AudioEngine/useCases';
+import { panicCrumbs } from '#/modules/Crumbs/useCases';
 import { resetMidiState } from '#/modules/MIDI/useCases';
 import { yeastPanic } from '#/modules/Yeast/useCases';
 
@@ -11,8 +12,14 @@ import { updateTransportState } from '../../../repositories/transport/updateTran
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
 import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
 import { stopPlayheadScheduler } from '../../playheadScheduler/stopPlayheadScheduler';
+import { notePanicParticipants } from '../notePanicParticipants';
 import { stopActiveRecording } from '../stopActiveRecording';
 import { stopPlayback } from '../stopPlayback';
+
+// The MIDI barrel is mocked whole here, so the composition root's registrar
+// cannot load; the participants it registers are filled directly, with the
+// Yeast panic this spec doubles.
+notePanicParticipants.configure({ settleGeneratedNotes: yeastPanic, voiceReleases: [panicCrumbs] });
 
 const previewIntents = vi.hoisted(() => {
     let exclusive: AbortController | null = null;
