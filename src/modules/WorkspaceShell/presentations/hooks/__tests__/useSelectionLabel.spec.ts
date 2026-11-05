@@ -11,6 +11,7 @@ const trackState = vi.hoisted(() => ({ value: null as { tracks: TrackShape[] } |
 const clipSubscribers = vi.hoisted(() => new Set<() => void>());
 const trackSubscribers = vi.hoisted(() => new Set<() => void>());
 const transportSubscribers = vi.hoisted(() => new Set<() => void>());
+const meterSubscribers = vi.hoisted(() => new Set<() => void>());
 type TransportMeter = { timeSignatureNumerator: number; timeSignatureDenominator: number };
 const transportState = vi.hoisted(() => ({ value: null as TransportMeter | null }));
 const meterMap = vi.hoisted(() => ({
@@ -24,9 +25,9 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
             return meterMap.value;
         },
         subscribe: vi.fn((cb: () => void) => {
-            transportSubscribers.add(cb);
+            meterSubscribers.add(cb);
             return () => {
-                transportSubscribers.delete(cb);
+                meterSubscribers.delete(cb);
             };
         }),
     },
@@ -111,6 +112,7 @@ describe('useSelectionLabel', () => {
         clipSubscribers.clear();
         trackSubscribers.clear();
         transportSubscribers.clear();
+        meterSubscribers.clear();
     });
 
     it('returns an empty label when no clips are selected', () => {
@@ -161,7 +163,7 @@ describe('useSelectionLabel', () => {
         expect(result.current).toBe('1 clip · 0.3.0');
     });
 
-    it('rounds a recorded clip length to the nearest sixteenth', () => {
+    it('floors a recorded clip length to the sixteenth it reaches', () => {
         clipSelection.value = { selectedClipIds: ['clip-r'] };
         trackState.value = {
             tracks: [{ clips: [{ id: 'clip-r', startBeat: 31.666666666666668, endBeat: 35.54133333333297 }] }],
@@ -205,14 +207,33 @@ describe('useSelectionLabel', () => {
         expect(result.current).toBe('1 clip · 1.1.0');
     });
 
-    it('sizes a bar by the meter change governing the clip start', () => {
+    it('counts each bar of a clip spanning a meter change in its own meter', () => {
         meterMap.value = { changes: [{ id: 'ts-1', beat: 8, numerator: 3, denominator: 4 }] };
         clipSelection.value = { selectedClipIds: ['clip-m'] };
         trackState.value = {
-            tracks: [{ clips: [{ id: 'clip-m', startBeat: 8, endBeat: 17 }] }],
+            tracks: [{ clips: [{ id: 'clip-m', startBeat: 0, endBeat: 12 }] }],
         };
 
         const { result } = renderHook(() => useSelectionLabel());
+
+        // Two 4/4 bars, one 3/4 bar and one beat; a flat 4/4 reading would say 3 bars.
+        expect(result.current).toBe('1 clip · 3.1.0');
+    });
+
+    it('re-derives the label when only the meter map changes', () => {
+        clipSelection.value = { selectedClipIds: ['clip-n'] };
+        trackState.value = {
+            tracks: [{ clips: [{ id: 'clip-n', startBeat: 0, endBeat: 9 }] }],
+        };
+        const { result } = renderHook(() => useSelectionLabel());
+        expect(result.current).toBe('1 clip · 2.1.0');
+
+        meterMap.value = { changes: [{ id: 'ts-1', beat: 0, numerator: 3, denominator: 4 }] };
+        act(() => {
+            for (const cb of meterSubscribers) {
+                cb();
+            }
+        });
 
         expect(result.current).toBe('1 clip · 3 bars');
     });

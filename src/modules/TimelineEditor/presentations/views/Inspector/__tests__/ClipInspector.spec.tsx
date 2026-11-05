@@ -277,7 +277,7 @@ describe('ClipInspector', () => {
                 clip={{ ...defaultProps.clip, startBeat: 31.666666666666668, endBeat: 35.54133333333297 }}
             />
         );
-        expect(screen.getByText('8.4.4')).toBeInTheDocument();
+        expect(screen.getByText('8.4.3')).toBeInTheDocument();
         expect(screen.getByText('9.4.3')).toBeInTheDocument();
         expect(screen.getByText('0.3.3')).toBeInTheDocument();
         expect(screen.queryByText(/\d\.\d{4,}/)).not.toBeInTheDocument();

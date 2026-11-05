@@ -8,7 +8,7 @@ const fourFour = { changes: [], defaultNumerator: 4, defaultDenominator: 4 };
 
 describe('musical position queries', () => {
     it('format through the given 4/4 meter', () => {
-        expect(formatMusicalPosition({ ...fourFour, beat: 31.666666666666668 })).toBe('8.4.4');
+        expect(formatMusicalPosition({ ...fourFour, beat: 31.666666666666668 })).toBe('8.4.3');
         expect(
             formatMusicalLength({ ...fourFour, startBeat: 31.666666666666668, lengthBeats: 3.874666666666304 })
         ).toBe('0.3.3');
