@@ -1,6 +1,10 @@
 import { type MidiNote } from '#/modules/MIDI/stores';
 import { projectCommittedGroove } from '#/modules/MIDI/useCases';
-import { isBeatInEnabledClipLoopWindow, resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
+import {
+    CLIP_LOOP_WINDOW_BEAT_TOLERANCE,
+    isBeatInEnabledClipLoopWindow,
+    resolveClipLoopOriginAdvance,
+} from '#/utils/clipLoopOrigin';
 import {
     LOOP_PASS_GROOVE_INSTANCE_SUFFIX,
     LOOP_PASS_OVERFLOW_INSTANCE_SUFFIX,
@@ -9,6 +13,7 @@ import {
     loopPassNoteOverflowBeats,
     loopPassProducedNoteStartBeat,
     loopPassSourceInstanceId,
+    passSegmentSoundingEndBeat,
 } from '#/utils/loopPassNoteSegments';
 
 import {
@@ -66,6 +71,8 @@ export type LiveYeastIteration = {
      */
     clipStartBeat?: number;
     loopOriginBeat?: number;
+    /** The owning clip's end, whose closing line a release on it is owned on; absent, every release is half-open. */
+    clipEndBeat?: number;
     sourceNotes: readonly LiveYeastNote[];
 };
 
@@ -128,12 +135,19 @@ type LiveSegmentEventContext = {
     pitch: number;
     /** The note-on's duration when the pass does not loop; a looped segment's is its own length. */
     durationPpq: number | undefined;
+    clipEndBeat: number | undefined;
 };
 
 /** A head off the grid opens the first pass before the clip does; the clip head cuts what that pass places ahead of it. */
 function cutLiveSegmentAtClipHead(segment: LivePassSegment, clipHeadBeat: number | undefined): LivePassSegment {
     const cutBeats = clipHeadBeat === undefined ? 0 : Math.max(0, clipHeadBeat - segment.startBeat);
     return { ...segment, startBeat: segment.startBeat + cutBeats, headCutBeats: segment.headCutBeats + cutBeats };
+}
+
+/** The segment cut at its pass's sounding end, or none when nothing of it sounds (`passSegmentSoundingEndBeat`). */
+function cutLiveSegmentAtSoundingEnd(segment: LivePassSegment, soundingEndBeat: number): LivePassSegment[] {
+    const endBeat = passSegmentSoundingEndBeat(segment.startBeat, segment.endBeat, soundingEndBeat);
+    return endBeat === undefined ? [] : [{ ...segment, endBeat }];
 }
 
 /**
@@ -209,11 +223,41 @@ function recordLiveSegmentInstance(
     }
 }
 
-/** Hands the rack the segment's note-on and note-off this block owns: each one whose beat lies in `[from, to)`. */
+/**
+ * Whether the block owns a release at `endBeat`: the block whose `[from, to)` holds it, except on the clip's
+ * closing line, where the block with `from < clipEnd <= to` (the last the clip plays in) owns it. A window that
+ * opens on the clip end no longer schedules the clip, so a release there would otherwise reach no live block,
+ * while the bounce hands it to the rack; an inner loop seam stays half-open.
+ */
+function ownsLiveRelease(
+    endBeat: number,
+    block: LiveSegmentEventContext['block'],
+    clipEndBeat: number | undefined
+): boolean {
+    if (clipEndBeat !== undefined && Math.abs(endBeat - clipEndBeat) <= CLIP_LOOP_WINDOW_BEAT_TOLERANCE) {
+        return clipEndBeat > block.fromBeat && clipEndBeat <= block.toBeat;
+    }
+    return endBeat >= block.fromBeat && endBeat < block.toBeat;
+}
+
+/**
+ * Hands the rack the segment's note-on this block owns, the one whose beat lies in `[from, to)`, and the
+ * note-off it owns (`ownsLiveRelease`).
+ */
 function pushLiveSegmentEvents(
     inputEvents: LiveMidiProcessorEvent[],
     { instanceId, startBeat, endBeat, velocity }: LivePassSegment,
-    { block, changes, transport, sampleRate, routeId, channel, pitch, durationPpq }: LiveSegmentEventContext
+    {
+        block,
+        changes,
+        transport,
+        sampleRate,
+        routeId,
+        channel,
+        pitch,
+        durationPpq,
+        clipEndBeat,
+    }: LiveSegmentEventContext
 ): void {
     const noteStartSamples = beatToSamples(changes, startBeat, transport.tempo, sampleRate);
     const noteEndSamples = beatToSamples(changes, endBeat, transport.tempo, sampleRate);
@@ -230,7 +274,7 @@ function pushLiveSegmentEvents(
             kind: { type: 'noteOn', channel, note: pitch, velocity },
         });
     }
-    if (endBeat >= block.fromBeat && endBeat < block.toBeat) {
+    if (ownsLiveRelease(endBeat, block, clipEndBeat)) {
         inputEvents.push({
             timeSamples: noteEndSamples,
             trackId: routeId,
@@ -331,7 +375,8 @@ export async function processLiveYeastTrackBlock({
                 // afterwards dropped every note whose offset was wider than one
                 // scheduler window. A non-looped clip clamps a displaced start
                 // to the iteration start — the boundary clamp
-                // `projectClipMidiEvents` applies — and keeps its original end.
+                // `projectClipMidiEvents` applies — and keeps its original end,
+                // up to where the pass stops sounding (cut below).
                 //
                 // A looped pass plays the note as every route segments it
                 // (`loopPassNoteSegments`): a start before the head re-anchors
@@ -399,11 +444,16 @@ export async function processLiveYeastTrackBlock({
                     );
                 }
                 const passGeometry = { noteId: sourceNote.id, passStartBeat, loopLengthBeats, clipHeadBeat };
+                // The pass stops sounding at its end, or at the clip end when
+                // that comes first: what starts there or later is never
+                // struck, and what rings past it is released there, as the
+                // synth route and the bounce cut it.
+                const soundingEndBeat = iteration.iterationEndBeat;
                 const rackSegments = passSegments
                     .flatMap((passSegment) =>
                         loops ? placeProjectGrooveDisplacement(passSegment, passGeometry) : [passSegment]
                     )
-                    .filter((rackSegment) => rackSegment.endBeat > rackSegment.startBeat);
+                    .flatMap((rackSegment) => cutLiveSegmentAtSoundingEnd(rackSegment, soundingEndBeat));
                 const eventContext = {
                     block,
                     changes,
@@ -412,7 +462,10 @@ export async function processLiveYeastTrackBlock({
                     routeId: iteration.routeId,
                     channel: sourceNote.channel ?? 0,
                     pitch: groovedNote.pitch,
-                    durationPpq: loops ? undefined : Math.max(0, groovedNote.duration),
+                    durationPpq: loops
+                        ? undefined
+                        : Math.max(0, Math.min(groovedNote.duration, soundingEndBeat - audibleStartBeat)),
+                    clipEndBeat: iteration.clipEndBeat,
                 };
                 for (const rackSegment of rackSegments) {
                     recordLiveSegmentInstance(rackSegment, headCutBeatsByInstance, sequencerGroovedInstances);

@@ -31,6 +31,8 @@ type SchedulerTrack = NonNullable<(typeof trackStore)['value']>['tracks'][number
 type SelectYeastNotesForSchedulerWindowInput = {
     notes: readonly ScheduledMidiNote[];
     iterationStartBeat: number;
+    /** Where the pass stops sounding: its pass end, or the clip end when that comes first. */
+    iterationEndBeat: number;
     midiOffsetBeats: number;
     loopEnabled: boolean;
     loopLengthBeats: number;
@@ -43,6 +45,7 @@ type SelectYeastNotesForSchedulerWindowInput = {
 function selectYeastNotesForSchedulerWindow({
     notes,
     iterationStartBeat,
+    iterationEndBeat,
     midiOffsetBeats,
     loopEnabled,
     loopLengthBeats,
@@ -60,7 +63,16 @@ function selectYeastNotesForSchedulerWindow({
     // content` survived the clamp, so `maxDurationBeats` covers every one of
     // them.
     const schedulesIterationBoundary = iterationStartBeat >= fromBeat && iterationStartBeat < toBeat;
-    const leadingIntervalLookbehindBeats = schedulesIterationBoundary ? maxDurationBeats : 0;
+    // The window holding the cut where the clip end stops the pass short
+    // releases every note still sounding there, however long before it the
+    // note started. A loop pass that runs its whole length ends its notes on
+    // the pass end itself, which the phase index below finds.
+    const loops = loopEnabled && loopLengthBeats > 0;
+    const cutsSoundingNotes =
+        (!loops || iterationEndBeat < iterationStartBeat + loopLengthBeats) &&
+        iterationEndBeat > fromBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS &&
+        iterationEndBeat <= toBeat + MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
+    const leadingIntervalLookbehindBeats = schedulesIterationBoundary || cutsSoundingNotes ? maxDurationBeats : 0;
     // The iteration opens on the anchor's pass grid, where the content's
     // offset-relative zero sounds the trim advance in.
     const contentZeroBeat =
@@ -83,14 +95,19 @@ function selectYeastNotesForSchedulerWindow({
     for (let index = noteEndStartIndex; index < noteEndEndIndex; index++) {
         candidates.add(sortedNoteEnds[index]!);
     }
-    if (loopEnabled && loopLengthBeats > 0) {
+    if (loops) {
         // A looped pass also places notes away from their raw start: a start
         // wrapped from before the head, a tail struck on the head, and their
-        // releases. The phase index finds those for this window.
+        // releases. The phase index finds those for this window, and at a cut
+        // every one that can still sound there, up to one loop before it.
+        let phaseFromBeat = fromBeat;
+        if (cutsSoundingNotes) {
+            phaseFromBeat = Math.min(fromBeat, iterationEndBeat - Math.min(maxDurationBeats, loopLengthBeats));
+        }
         addYeastLoopPhaseCandidates({
             candidates,
             iterationStartBeat,
-            fromBeat,
+            fromBeat: phaseFromBeat,
             toBeat,
             notes,
             loopLengthBeats,
@@ -197,6 +214,7 @@ function prepareFrozenClipYeastIterations(
             loopEnabled: false,
             loopLengthBeats: repeat.strideBeats,
             clipStartBeat: clip.startBeat,
+            clipEndBeat: clip.endBeat,
             sourceNotes,
         } satisfies LiveYeastIteration;
         cancellation?.yeastRouteLineage.set(routeId, descriptor);
@@ -244,6 +262,7 @@ function prepareRawClipYeastIterations(
         const candidateNotes = selectYeastNotesForSchedulerWindow({
             notes: sourceNotes,
             iterationStartBeat,
+            iterationEndBeat,
             midiOffsetBeats: clip.midiOffsetBeats ?? 0,
             loopEnabled: clip.loopEnabled ?? false,
             loopLengthBeats: loopLength,
@@ -267,6 +286,7 @@ function prepareRawClipYeastIterations(
             loopLengthBeats: loopLength,
             clipStartBeat: clip.startBeat,
             loopOriginBeat: clip.loopOriginBeat,
+            clipEndBeat: clip.endBeat,
             sourceNotes,
         } satisfies LiveYeastIteration;
         cancellation?.yeastRouteLineage.set(routeId, iterationDescriptor);

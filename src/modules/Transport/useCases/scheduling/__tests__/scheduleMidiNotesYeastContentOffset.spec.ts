@@ -514,8 +514,7 @@ describe('scheduleMidiNotes — Yeast track with a committed clip groove displac
         // the beat it has left on the pass head, released one beat in. Every
         // release is owned by a window no note-on of its pass shares, so each
         // must reach the rack from the window holding it, or the note-on
-        // sounds and its note-off never arrives. The sweep stops at 8, before
-        // the second pass's own release.
+        // sounds and its note-off never arrives.
         await sweepScheduledVoices({
             clip: { endBeat: 8, loopEnabled: true, loopLength: 4 },
             note: { startBeat: 0.02, duration: 1.18 },
@@ -535,6 +534,8 @@ describe('scheduleMidiNotes — Yeast track with a committed clip groove displac
             { type: 'noteOn', beat: expect.closeTo(4, 6), instance: passHeadTail(1) },
             { type: 'noteOff', beat: expect.closeTo(5, 6), instance: passHeadTail(1) },
             { type: 'noteOn', beat: expect.closeTo(7.82, 6), instance: passNote(1) },
+            // The second pass ends on the clip end (8), so the window closing there owns its release, as the bounce posts it.
+            { type: 'noteOff', beat: expect.closeTo(8, 6), instance: passNote(1) },
         ]);
     });
 
