@@ -377,6 +377,12 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     // grid cell; we stash the intended pitch/beat here so the mouse-up handler
     // can commit a stamp when no meaningful drag occurred.
     const pendingStampRef = useRef<{ pitch: number; beat: number } | null>(null);
+    // The cell the current click sequence stamped. A double-click on empty grid
+    // lands its second click on that fresh note; the dblclick must not delete
+    // it. Matched by cell, not id, because a frozen-take stamp is inserted
+    // asynchronously and has no id here. The cell was empty when the sequence
+    // began, so no earlier note can share it.
+    const stampedByClickRef = useRef<{ pitch: number; beat: number } | null>(null);
 
     const [ctxMenu, setCtxMenu] = useState<PianoRollMenu>(null);
     const [hoverCursor, setHoverCursor] = useState<string>('crosshair');
@@ -640,6 +646,9 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         hoverIntentRef.current?.release();
         hoverIntentRef.current = null;
         hoverNoteIdRef.current = null;
+        if (event.detail < 2) {
+            stampedByClickRef.current = null;
+        }
 
         const canvas = canvasRef.current;
         if (!canvas) {
@@ -1140,6 +1149,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                         () => appendNotesToClip(targetClipId, [note])
                     );
                 }
+                stampedByClickRef.current = pendingStamp;
                 setSelectedNoteIds(new Set());
             } else if (!event.shiftKey) {
                 // Alt-drag (explicit select) with no movement clears selection, matching
@@ -1492,6 +1502,11 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         }
         const hit = hitTest(x, rawY - getPianoRollRowTop(0));
         if (hit) {
+            const stamped = stampedByClickRef.current;
+            stampedByClickRef.current = null;
+            if (stamped && hit.note.pitch === stamped.pitch && hit.note.startBeat === stamped.beat) {
+                return;
+            }
             if (editFrozen(hit.note.id, null)) {
                 return;
             }

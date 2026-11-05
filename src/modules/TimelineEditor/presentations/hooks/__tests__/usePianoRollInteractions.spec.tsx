@@ -1728,6 +1728,70 @@ describe('usePianoRollInteractions', () => {
             );
         });
 
+        describe('double-click on empty grid', () => {
+            // Empty cell: pitch 70, x = 45px -> beat 1. The stamp lands as a note the
+            // store then feeds back through `notes`, as it does in the app.
+            const click = (canvas: HTMLElement, detail: number): void => {
+                fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70), detail });
+                fireEvent.mouseUp(canvas, { clientX: 45, clientY: yForPitch(70), detail });
+            };
+            const stampedNote = (): Note => {
+                const call = mocks.addMidiNote.mock.results[0]?.value as Note | undefined;
+                if (!call) {
+                    throw new Error('The first click stamped no note.');
+                }
+                return call;
+            };
+
+            it('keeps the note its first click stamped, with one Draw MIDI note undo entry', () => {
+                const args = buildArgs({ notes: [] });
+                const view = render(<Harness args={args} />);
+                const canvas = screen.getByLabelText('piano-roll-test-surface');
+
+                click(canvas, 1);
+                view.rerender(<Harness args={{ ...args, notes: [stampedNote()] }} />);
+                click(canvas, 2);
+                fireEvent.doubleClick(canvas, { clientX: 45, clientY: yForPitch(70), detail: 2 });
+
+                expect(mocks.addMidiNote).toHaveBeenCalledTimes(1);
+                expect(mocks.removeMidiNote).not.toHaveBeenCalled();
+                expect(mocks.moveMidiNote).not.toHaveBeenCalled();
+                expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(1);
+                expect(mocks.pushUndoEntry).toHaveBeenCalledWith(
+                    'Draw MIDI note',
+                    expect.any(Function),
+                    expect.any(Function)
+                );
+            });
+
+            it('still deletes a note that existed before the double-click began', () => {
+                const { canvas } = renderRoll({ notes: [makeNote('old', 70, 1, 1)] });
+
+                fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70), detail: 1 });
+                fireEvent.mouseUp(canvas, { clientX: 45, clientY: yForPitch(70), detail: 1 });
+                fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70), detail: 2 });
+                fireEvent.mouseUp(canvas, { clientX: 45, clientY: yForPitch(70), detail: 2 });
+                fireEvent.doubleClick(canvas, { clientX: 45, clientY: yForPitch(70), detail: 2 });
+
+                expect(mocks.addMidiNote).not.toHaveBeenCalled();
+                expect(mocks.removeMidiNote).toHaveBeenCalledWith('clip-1', 'old');
+            });
+
+            it('deletes a note stamped by an earlier, separate click when it is double-clicked later', () => {
+                const args = buildArgs({ notes: [] });
+                const view = render(<Harness args={args} />);
+                const canvas = screen.getByLabelText('piano-roll-test-surface');
+
+                click(canvas, 1);
+                const stamped = stampedNote();
+                view.rerender(<Harness args={{ ...args, notes: [stamped] }} />);
+                click(canvas, 1);
+                fireEvent.doubleClick(canvas, { clientX: 45, clientY: yForPitch(70), detail: 2 });
+
+                expect(mocks.removeMidiNote).toHaveBeenCalledWith('clip-1', stamped.id);
+            });
+        });
+
         it('context menu opens at the cursor with the beat under it', () => {
             const { canvas } = renderRoll();
 
