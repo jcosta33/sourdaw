@@ -4,7 +4,7 @@ Mastering limiter, saturator, and multiband dynamic peak controller (brickwall l
 
 ## Public Contract Surface
 
-Public surface: `stores/index.ts`, `presentations/views/index.ts`. The parameter bridge, presets and metering controls under `useCases/` are internal.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`. The only public use case is `resetCrustForProject`, the project-switch reset the composition root registers with Project's lifecycle; the parameter bridge, presets and metering controls under `useCases/` are internal.
 
 ## Key Subsystems
 

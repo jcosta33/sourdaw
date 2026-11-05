@@ -336,6 +336,71 @@ describe('caller-bound measurement receipt sequence', () => {
         }
     );
 
+    const offSchema = <T extends ToolCallResult>(call: T, id: string): ToolCallResult => ({
+        ...call,
+        id,
+        argumentSchemaViolation: { kind: 'invalid-value', path: '/range' },
+    });
+    const schemaRefusal = (callId: string) =>
+        expect.objectContaining({
+            callId,
+            status: 'failure',
+            error: expect.objectContaining({ code: 'invalid-tool-arguments', retryable: true }),
+        });
+
+    // Red when an off-schema measurement on the step runs or witnesses the step, or when the step does
+    // not answer it in native history: the step then reads as one with no measurement.
+    it('answers an off-schema measurement on the step without running it, leaving the step unmeasured', async () => {
+        const run = runSequence(
+            [[intake], [read('read-2')], [read('read-3')], [offSchema(measure, 'measure-off-schema')], [terminal]],
+            { history: true }
+        );
+        const result = await run.result;
+        expect(result).toMatchObject({ status: 'complete', turns: 5, toolCalls: [terminal] });
+        expect(result).not.toHaveProperty('terminalMeasurementSettlement');
+        expect(run.execute).not.toHaveBeenCalled();
+        expect(result.receipts.filter((entry) => entry.turn === 4)).toEqual([
+            expect.objectContaining({ error: expect.objectContaining({ code: 'measurement-not-requested' }) }),
+        ]);
+        expect(run.requestTurn.mock.calls[4]?.[0]).toMatchObject({
+            history: expect.arrayContaining([
+                expect.objectContaining({ turn: 4, receipts: [schemaRefusal('measure-off-schema')] }),
+            ]),
+        });
+    });
+
+    // Red when an off-schema proposal on the step is kept and charged, or an off-schema measure takes
+    // the step's one measurement from the valid one beside it.
+    it('runs the valid step measurement beside off-schema calls, which are answered and spend nothing', async () => {
+        const run = runSequence(
+            [
+                [intake],
+                [read('read-2')],
+                [read('read-3')],
+                [offSchema(measure, 'measure-off-schema'), offSchema(terminal, 'terminal-off-schema'), measure],
+                [terminal],
+            ],
+            { history: true, limits: { maxTotalCalls: 5 } }
+        );
+        const result = await run.result;
+        // Intake, two reads and the one measurement leave exactly one call for the final proposal.
+        expect(result).toMatchObject({ status: 'complete', turns: 5, toolCalls: [terminal] });
+        expect(run.execute).toHaveBeenCalledOnce();
+        expect(vi.mocked(run.execute).mock.calls[0]?.[1]).toMatchObject({ callId: 'measure', turn: 4 });
+        expect(run.requestTurn.mock.calls[4]?.[0]).toMatchObject({
+            history: expect.arrayContaining([
+                expect.objectContaining({
+                    turn: 4,
+                    receipts: [
+                        schemaRefusal('measure-off-schema'),
+                        schemaRefusal('terminal-off-schema'),
+                        expect.objectContaining({ callId: 'measure', status: 'success' }),
+                    ],
+                }),
+            ]),
+        });
+    });
+
     it('releases a proposal sent on the unheld measurement step unverified, with no further turn', async () => {
         const run = runSequence([[intake], [read('read-2')], [read('read-3')], [terminal], []]);
         const result = await run.result;

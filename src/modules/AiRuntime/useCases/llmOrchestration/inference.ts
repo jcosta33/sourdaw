@@ -31,6 +31,7 @@ import {
     type ModelProviderResult,
     type ModelProviderSession,
     type ModelProviderStreamIdentity,
+    type ModelProviderToolCallSchemaMismatch,
 } from '../../models/ModelProviderProtocol';
 import { MODEL_TEXT_MAX_INPUT_TOKENS } from '../../models/ModelTextRequestLimits';
 import { type ToolSchema } from '../../models/ToolDefinitions';
@@ -105,6 +106,11 @@ type HostedTurnRequest = {
     localReceiptContextComplete?: boolean;
     /** Application-selected ceiling; absent callers retain the configured planning budget. */
     maxOutputTokens?: number;
+    /**
+     * The caller answers a call whose schema the provider did not enforce, and whose arguments miss
+     * it, with a correctable receipt of its own. Absent, such a call fails the attempt as before.
+     */
+    answersSchemaInvalidCalls?: true;
 };
 
 /**
@@ -201,6 +207,29 @@ function admissibleSchemaValue(value: unknown, schema: unknown): unknown {
         return admissible;
     }
     return value;
+}
+
+/**
+ * Whether a call's schema mismatch is the caller's to answer: only when the caller said it answers
+ * one and the provider did not enforce that tool's schema. A WebLLM reply is free text parsed into
+ * calls, so nothing enforced it; a hosted one followed the request's strictness, tool by tool.
+ */
+function toolCallSchemaMismatch(input: {
+    backend: RunnableAiBackend;
+    cloudToolPlan: HostedToolPlan | null;
+    toolName: string;
+    answersSchemaInvalidCalls: boolean;
+}): ModelProviderToolCallSchemaMismatch {
+    if (!input.answersSchemaInvalidCalls) {
+        return 'fail-attempt';
+    }
+    if (input.backend === 'webllm') {
+        return 'admit-as-violation';
+    }
+    const plan = input.cloudToolPlan;
+    const enforced =
+        plan !== null && plan.strictToolSchemas && plan.nonStrictToolNames?.includes(input.toolName) !== true;
+    return enforced ? 'fail-attempt' : 'admit-as-violation';
 }
 
 function admissibleToolCallArguments(
@@ -805,6 +834,12 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                                 name: call.name,
                                 arguments: admissibleToolCallArguments(call.arguments, advertisedTool),
                             },
+                            schemaMismatch: toolCallSchemaMismatch({
+                                backend,
+                                cloudToolPlan,
+                                toolName: call.name,
+                                answersSchemaInvalidCalls: hostedTurn?.answersSchemaInvalidCalls === true,
+                            }),
                         });
                     }
                     const normalizedResult = providerSource.finish({ reason: 'stop' });
@@ -820,16 +855,23 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     logger.info(
                         `[AI Engine] (${backend}) ${String(outcome.toolCalls.length)} tool call(s): ${outcome.toolCalls.map((call) => call.name).join(', ')}`
                     );
-                    const normalizedToolCalls = normalizedResult.output.toolCalls.map((call, index) => ({
-                        ...(providerCallIds[index] === undefined ? {} : { id: providerCallIds[index] }),
-                        name: call.name,
-                        arguments: call.arguments,
-                    }));
+                    const normalizedToolCalls: ToolCallResult[] = normalizedResult.output.toolCalls.map(
+                        (call, index) => ({
+                            ...(providerCallIds[index] === undefined ? {} : { id: providerCallIds[index] }),
+                            name: call.name,
+                            arguments: call.arguments,
+                            ...(call.argumentSchemaViolation === undefined
+                                ? {}
+                                : { argumentSchemaViolation: call.argumentSchemaViolation }),
+                        })
+                    );
                     if (strictHostedProposalWire) {
                         for (const [index, call] of normalizedToolCalls.entries()) {
+                            // A call that misses its wire schema keeps the arguments it was refused for.
                             if (
-                                call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME &&
-                                call.name !== ANALYSIS_MEASURE_TOOL_NAME
+                                call.argumentSchemaViolation !== undefined ||
+                                (call.name !== COMMAND_BATCH_PROPOSAL_TOOL_NAME &&
+                                    call.name !== ANALYSIS_MEASURE_TOOL_NAME)
                             ) {
                                 continue;
                             }
@@ -859,7 +901,9 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     outcome = {
                         status: 'complete',
                         toolCalls: normalizedToolCalls,
-                        proposal: extractAgentPlanProposal(normalizedToolCalls),
+                        proposal: extractAgentPlanProposal(
+                            normalizedToolCalls.filter((call) => call.argumentSchemaViolation === undefined)
+                        ),
                         ...(cloudToolPlan === null || hostedProvider === undefined
                             ? {}
                             : {

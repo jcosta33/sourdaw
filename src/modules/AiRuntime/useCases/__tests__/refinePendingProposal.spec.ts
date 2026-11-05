@@ -333,6 +333,7 @@ describe('refining the pending proposal', () => {
         });
         clearAiHistory();
         clearPendingActionConfirmations();
+        agentRunLifecycle.clear();
         setArrangementEventBus({ emit: () => Promise.resolve() });
         setNotificationEventBus(notificationEventBus);
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
@@ -363,6 +364,7 @@ describe('refining the pending proposal', () => {
         clearHandlerRegistry();
         clearAiHistory();
         clearPendingActionConfirmations();
+        agentRunLifecycle.clear();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         automationStore.set({ lanes: [] });
         transportStore.set(defaultTransportState);

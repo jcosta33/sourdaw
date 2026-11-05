@@ -1,4 +1,5 @@
 import { markerStore } from '#/modules/Arrangement/stores';
+import { restoreMarkerSnapshot } from '#/modules/Arrangement/useCases';
 
 import type { MarkerStoreState } from '#/modules/Arrangement/stores';
 
@@ -16,7 +17,7 @@ export function addSections(sections: SectionInput[]): void {
         name: section.name,
         color: section.color ?? defaultColor,
     }));
-    markerStore.set({
+    restoreMarkerSnapshot({
         markers: existing.markers,
         sections: [...existing.sections, ...newSections],
     });

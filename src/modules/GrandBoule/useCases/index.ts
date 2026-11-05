@@ -10,3 +10,4 @@ export { setGrandBouleMorphPosition } from './setGrandBouleMorphPosition';
 export { captureOfflineGrandBoule } from './captureOfflineGrandBoule';
 export { initGrandBouleDocumentReconciliation } from './initGrandBouleDocumentReconciliation';
 export { reconcileGrandBouleDevicesFromProject } from './reconcileGrandBouleDevicesFromProject';
+export { resetGrandBouleForProject } from './resetGrandBouleForProject';

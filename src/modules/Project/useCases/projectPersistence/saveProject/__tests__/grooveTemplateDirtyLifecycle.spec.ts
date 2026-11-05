@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { registerProjectLifecycle } from '#/app/registerProjectLifecycle';
 import { defaultGrooveTemplateState } from '#/modules/MIDI/stores';
 import { getMidiGrooveHandlers, hydrateGrooveTemplates } from '#/modules/MIDI/useCases';
 
@@ -13,6 +14,7 @@ describe('groove template project dirty lifecycle', () => {
     let unsubscribe: (() => void) | undefined;
 
     beforeEach(() => {
+        registerProjectLifecycle();
         hydrateGrooveTemplates(structuredClone(defaultGrooveTemplateState));
         projectStore.set({ ...structuredClone(defaultProjectStoreState), loading: false, initialized: true });
         unsubscribe = initGrooveTemplateDirtyTracking();

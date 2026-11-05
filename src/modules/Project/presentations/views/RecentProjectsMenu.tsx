@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useEffect } from 'react';
+import { type ReactElement, type KeyboardEvent, type MouseEvent, useState } from 'react';
 
 import {
     ChevronDown,
@@ -16,11 +16,19 @@ import {
 import { DawKeycap } from '#/components/daw/DawKeycap';
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from '#/components/ui/popover';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '#/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { openExportDialog } from '#/modules/WorkspaceShell/useCases';
 import { isDesktopRuntime } from '#/utils/desktopRuntime';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+import { cn } from '#/utils/Styles/cn';
 
 import { type TemplateCategory } from '../../models/ProjectTemplateTypes';
 import { exportProjectFile } from '../../useCases/projectPersistence/fileIO/exportProjectFile';
@@ -60,17 +68,20 @@ const formatRelativeTime = (timestamp: number): string => {
     return new Date(timestamp).toLocaleDateString();
 };
 
+const ITEM_CLASS =
+    'w-full justify-start gap-2 rounded-none px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 focus:bg-accent/50 transition-colors';
+const SEPARATOR_CLASS = 'mx-2 my-1 bg-border';
+
 export const RecentProjectsMenu = (): ReactElement => {
-    const [open, setOpen] = useState(false);
     const [entries, setEntries] = useState<RecentProjectEntry[]>([]);
     const [templateChooserOpen, setTemplateChooserOpen] = useState(false);
     const [templateChooserCategory, setTemplateChooserCategory] = useState<TemplateCategory | 'all'>('all');
 
-    useEffect(() => {
-        if (open) {
+    const handleOpenChange = (nextOpen: boolean) => {
+        if (nextOpen) {
             setEntries(getRecentProjects());
         }
-    }, [open]);
+    };
 
     const handleNewProject = () => {
         const isStillChosen = pendingProjectReplacements.capture();
@@ -86,44 +97,36 @@ export const RecentProjectsMenu = (): ReactElement => {
             }
             void newProject(undefined, { outgoingProject, shouldProceed: isStillChosen });
         })();
-        setOpen(false);
     };
 
     const handleNewFromTemplate = () => {
-        setOpen(false);
         setTemplateChooserCategory('all');
         setTemplateChooserOpen(true);
     };
 
     const handleLoadDemo = () => {
-        setOpen(false);
         setTemplateChooserCategory('demo');
         setTemplateChooserOpen(true);
     };
 
     const handleSave = () => {
         void saveProject({ requestFolderSelection: true });
-        setOpen(false);
     };
 
     const handleExportAudio = () => {
-        setOpen(false);
         openExportDialog();
     };
 
     const handleExportProject = () => {
         void exportProjectFile();
-        setOpen(false);
     };
 
     const handleImportProject = () => {
-        setOpen(false);
         void pickAndImportProjectFile();
     };
 
     const handleOpenProjectFolder = () => {
         void openProjectDirectoryFromPicker();
-        setOpen(false);
     };
 
     const handleLoad = (entry: RecentProjectEntry) => {
@@ -134,7 +137,6 @@ export const RecentProjectsMenu = (): ReactElement => {
         // this project until that replacement activates.
         if (isOpenProjectKey(entry.key)) {
             pendingProjectReplacements.withdraw();
-            setOpen(false);
             return;
         }
         const isStillChosen = pendingProjectReplacements.capture();
@@ -159,21 +161,27 @@ export const RecentProjectsMenu = (): ReactElement => {
                 notifyUser(`Could not open "${entry.name}" — see logs for details.`, 'error');
             }
         })();
-        setOpen(false);
     };
 
-    const handleRemove = (key: string, event: React.MouseEvent) => {
-        event.stopPropagation();
+    const handleRemove = (key: string, event?: MouseEvent) => {
+        event?.stopPropagation();
         removeFromRecentProjects(key);
         setEntries(getRecentProjects());
     };
 
+    const handleEntryKeyDown = (entry: RecentProjectEntry, event: KeyboardEvent) => {
+        if (event.key === 'Delete' || event.key === 'Backspace') {
+            event.preventDefault();
+            handleRemove(entry.key);
+        }
+    };
+
     return (
         <div className="relative shrink-0">
-            <Popover open={open} onOpenChange={setOpen}>
+            <DropdownMenu onOpenChange={handleOpenChange}>
                 <Tooltip>
                     <TooltipTrigger asChild>
-                        <PopoverTrigger asChild>
+                        <DropdownMenuTrigger asChild>
                             <Button
                                 variant="ghost"
                                 size="icon-sm"
@@ -182,66 +190,37 @@ export const RecentProjectsMenu = (): ReactElement => {
                             >
                                 <ChevronDown data-testid="project-menu-chevron" className="size-3" aria-hidden="true" />
                             </Button>
-                        </PopoverTrigger>
+                        </DropdownMenuTrigger>
                     </TooltipTrigger>
                     <TooltipContent>Project menu</TooltipContent>
                 </Tooltip>
-                <PopoverContent
+                <DropdownMenuContent
                     align="start"
+                    loop
                     sideOffset={4}
-                    role="menu"
                     aria-label="Project menu"
                     className="w-64 max-h-[calc(100vh-3rem)] overflow-y-auto overscroll-contain rounded-md border border-border bg-surface-overlay p-0 py-1 shadow-lg"
                 >
                     {/* ── Create ── */}
-                    <Button
-                        variant="bare"
-                        size="bare"
-                        type="button"
-                        className="flex w-full items-center justify-start gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
-                        role="menuitem"
-                        data-testid="menu-new-project"
-                        onClick={handleNewProject}
-                    >
+                    <DropdownMenuItem className={ITEM_CLASS} data-testid="menu-new-project" onSelect={handleNewProject}>
                         <Plus className="size-3 text-muted-foreground" aria-hidden="true" />
                         New Project
-                    </Button>
+                    </DropdownMenuItem>
 
-                    <Button
-                        variant="bare"
-                        size="bare"
-                        type="button"
-                        className="flex w-full items-center justify-start gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
-                        role="menuitem"
-                        onClick={handleNewFromTemplate}
-                    >
+                    <DropdownMenuItem className={ITEM_CLASS} onSelect={handleNewFromTemplate}>
                         <LayoutTemplate className="size-3 text-muted-foreground" aria-hidden="true" />
                         New from Template…
-                    </Button>
+                    </DropdownMenuItem>
 
-                    <Button
-                        variant="bare"
-                        size="bare"
-                        type="button"
-                        className="flex w-full items-center justify-start gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
-                        role="menuitem"
-                        onClick={handleLoadDemo}
-                    >
+                    <DropdownMenuItem className={ITEM_CLASS} onSelect={handleLoadDemo}>
                         <Sparkles className="size-3 text-[var(--color-accent-mint)]" aria-hidden="true" />
                         Load Demo Project…
-                    </Button>
+                    </DropdownMenuItem>
 
-                    <div className="mx-2 my-1 h-px bg-border" role="separator" />
+                    <DropdownMenuSeparator className={SEPARATOR_CLASS} />
 
                     {/* ── Save & Export ── */}
-                    <Button
-                        variant="bare"
-                        size="bare"
-                        type="button"
-                        className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
-                        role="menuitem"
-                        onClick={handleSave}
-                    >
+                    <DropdownMenuItem className={cn(ITEM_CLASS, 'justify-between')} onSelect={handleSave}>
                         <Row as="span" gap={2}>
                             <Save className="size-3 text-muted-foreground" aria-hidden="true" />
                             Save
@@ -249,16 +228,9 @@ export const RecentProjectsMenu = (): ReactElement => {
                         <DawKeycap compact className="border-transparent bg-transparent px-0 text-muted-foreground/60">
                             ⌘S
                         </DawKeycap>
-                    </Button>
+                    </DropdownMenuItem>
 
-                    <Button
-                        variant="bare"
-                        size="bare"
-                        type="button"
-                        className="flex w-full items-center justify-between px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
-                        role="menuitem"
-                        onClick={handleExportAudio}
-                    >
+                    <DropdownMenuItem className={cn(ITEM_CLASS, 'justify-between')} onSelect={handleExportAudio}>
                         <Row as="span" gap={2}>
                             <Music className="size-3 text-muted-foreground" aria-hidden="true" />
                             Export Audio…
@@ -266,71 +238,42 @@ export const RecentProjectsMenu = (): ReactElement => {
                         <DawKeycap compact className="border-transparent bg-transparent px-0 text-muted-foreground/60">
                             ⌘⇧E
                         </DawKeycap>
-                    </Button>
+                    </DropdownMenuItem>
 
-                    <div className="mx-2 my-1 h-px bg-border" role="separator" />
+                    <DropdownMenuSeparator className={SEPARATOR_CLASS} />
 
                     {/* ── Project File I/O ── */}
                     {!isDesktopRuntime() && typeof window.showDirectoryPicker === 'function' && (
-                        <Button
-                            variant="bare"
-                            size="bare"
-                            type="button"
-                            className="flex w-full items-center justify-start gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
-                            role="menuitem"
-                            onClick={handleOpenProjectFolder}
-                        >
+                        <DropdownMenuItem className={ITEM_CLASS} onSelect={handleOpenProjectFolder}>
                             <FileUp className="size-3 text-muted-foreground" aria-hidden="true" />
                             Open Project Folder…
-                        </Button>
+                        </DropdownMenuItem>
                     )}
-                    <Button
-                        variant="bare"
-                        size="bare"
-                        type="button"
-                        className="flex w-full items-center justify-start gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
-                        role="menuitem"
-                        onClick={handleExportProject}
-                    >
+                    <DropdownMenuItem className={ITEM_CLASS} onSelect={handleExportProject}>
                         <FileDown className="size-3 text-muted-foreground" aria-hidden="true" />
                         Export Project File…
-                    </Button>
+                    </DropdownMenuItem>
 
-                    <Button
-                        variant="bare"
-                        size="bare"
-                        type="button"
-                        className="flex w-full items-center justify-start gap-2 px-3 py-1.5 text-xs text-foreground hover:bg-accent/50 transition-colors"
-                        role="menuitem"
-                        onClick={handleImportProject}
-                    >
+                    <DropdownMenuItem className={ITEM_CLASS} onSelect={handleImportProject}>
                         <FileUp className="size-3 text-muted-foreground" aria-hidden="true" />
                         Import Project File…
-                    </Button>
+                    </DropdownMenuItem>
 
                     {/* ── Recent Projects ── */}
-                    {entries.length > 0 ? <div className="mx-2 my-1 h-px bg-border" role="separator" /> : null}
+                    {entries.length > 0 ? <DropdownMenuSeparator className={SEPARATOR_CLASS} /> : null}
 
                     {entries.length > 0 ? (
-                        <div className="px-3 py-1 text-[9px] font-semibold text-muted-foreground/60 uppercase tracking-wider">
+                        <DropdownMenuLabel className="px-3 py-1 text-[9px] font-semibold text-muted-foreground/60 uppercase tracking-wider">
                             Recent
-                        </div>
+                        </DropdownMenuLabel>
                     ) : null}
 
                     {entries.map((entry) => (
-                        <Row
-                            gap={2}
-                            className="group px-3 py-1.5 hover:bg-accent/50 transition-colors cursor-pointer"
+                        <DropdownMenuItem
+                            className={cn(ITEM_CLASS, 'group cursor-pointer')}
                             key={entry.key}
-                            role="menuitem"
-                            tabIndex={0}
-                            onClick={() => handleLoad(entry)}
-                            onKeyDown={(event) => {
-                                if (event.key === 'Enter' || event.key === ' ') {
-                                    event.preventDefault();
-                                    handleLoad(entry);
-                                }
-                            }}
+                            onSelect={() => handleLoad(entry)}
+                            onKeyDown={(event) => handleEntryKeyDown(entry, event)}
                         >
                             <Clock className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
                             <div className="flex-1 min-w-0">
@@ -343,7 +286,8 @@ export const RecentProjectsMenu = (): ReactElement => {
                                 variant="bare"
                                 size="bare"
                                 type="button"
-                                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-destructive/20 transition-all"
+                                tabIndex={-1}
+                                className="opacity-0 group-hover:opacity-100 group-focus:opacity-100 p-0.5 rounded hover:bg-destructive/20 transition-all"
                                 aria-label={`Remove ${entry.name} from recent projects`}
                                 onClick={(event) => handleRemove(entry.key, event)}
                             >
@@ -352,10 +296,10 @@ export const RecentProjectsMenu = (): ReactElement => {
                                     aria-hidden="true"
                                 />
                             </Button>
-                        </Row>
+                        </DropdownMenuItem>
                     ))}
-                </PopoverContent>
-            </Popover>
+                </DropdownMenuContent>
+            </DropdownMenu>
             <TemplateChooser
                 open={templateChooserOpen}
                 initialCategory={templateChooserCategory}

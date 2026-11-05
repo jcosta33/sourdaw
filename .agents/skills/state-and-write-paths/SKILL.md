@@ -40,7 +40,7 @@ Feature A never mutates feature B’s project slice. Cross-feature intent goes t
 
 **Why:** multi-writer truth makes undo, CRDT, and collaboration undefined.
 
-**Enforced by:** ESLint `sourdaw/no-foreign-store-write` (warn) for store writes; otherwise review only.
+**Enforced by:** ESLint `sourdaw/no-foreign-store-write` (error) for store writes; otherwise review only.
 
 ### 3. Stores are a public read contract, not a write API for business truth
 
@@ -48,7 +48,7 @@ Foreign modules may `useStore` / select. `store.set` only inside the owning modu
 
 **Why:** write discipline is what prevents global mutability.
 
-**Enforced by:** ESLint `sourdaw/no-foreign-store-write` (**warn** only, so the foreign-write rule is policy); dependency-cruiser `components-no-business-store-access` (**error**).
+**Enforced by:** ESLint `sourdaw/no-foreign-store-write` (**error**); dependency-cruiser `components-no-business-store-access` (**error**).
 
 ### 4. Project truth is serializable; engine/runtime state is not
 

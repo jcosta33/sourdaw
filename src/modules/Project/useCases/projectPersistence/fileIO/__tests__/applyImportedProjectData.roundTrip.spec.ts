@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { registerProjectLifecycle } from '#/app/registerProjectLifecycle';
 import { clipSelectionStore, defaultClipSelectionState, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { clearUndoHistory } from '#/modules/Command/useCases';
 import { midiStore, selectMidiNotesForRecordingPass } from '#/modules/MIDI/stores';
@@ -130,6 +131,10 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return { ...actual, stopRecording };
 });
+// The project lifecycle registration reaches AiRuntime only to cancel agent
+// runs on a reset, and this spec stubs the reset; the real AiRuntime barrel
+// builds its tool catalog from Command exports the Command mock below omits.
+vi.mock('#/modules/AiRuntime/useCases', () => ({ cancelActiveAgentRuns: vi.fn() }));
 vi.mock('#/modules/Command/useCases', () => ({
     commitRedoInverseCapture: vi.fn(),
     readUndoEntryForInverse: vi.fn<typeof import('#/modules/Command/useCases').readUndoEntryForInverse>(() => null),
@@ -142,7 +147,9 @@ vi.mock('#/modules/Command/useCases', () => ({
     resetActionReplayAuthority: vi.fn(),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     isAppActionCommittedError: vi.fn(() => false),
+    isAppActionConflictError: vi.fn(() => false),
     pushUndoEntry: vi.fn(),
+    reconcileSessionUndoForProject: vi.fn(),
     syncActionReplayMetadata: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
@@ -166,6 +173,8 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     getCrdtDoc: vi.fn(),
     getCrdtDocIds: vi.fn(),
     hasCrdtDoc: vi.fn(),
+    loadCrdtProject: vi.fn(),
+    prepareExternalProjectDocument: vi.fn(),
     mutateCrdtDoc: vi.fn(),
     persistCrdtProject,
     beginBranchSession: vi.fn(),
@@ -174,6 +183,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn(() => true),
     removeCrdtDoc: vi.fn(),
     projectBranchSession: vi.fn(),
+    projectCrdtToStores: vi.fn(),
     replaceCrdtDoc: vi.fn(),
     replaceCrdtDocInLineage: vi.fn(),
     resetCrdtProject,
@@ -186,6 +196,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     waitForCrdtDocumentTransition: vi.fn(),
 }));
 vi.mock('#/modules/Routing/useCases', () => ({
+    addSidechainRoute: vi.fn(),
     addSidechainRouteSnapshot: vi.fn(),
     ensureBusStrip: vi.fn(),
     getAllSidechainRoutes: vi.fn(),
@@ -406,6 +417,7 @@ function frozenMidiTakeLanes(): NonNullable<ProjectData['takeLanes']> {
 
 describe('applyImportedProjectData round-trip hydration', () => {
     beforeEach(() => {
+        registerProjectLifecycle();
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         projectStore.set({ ...structuredClone(defaultProjectStoreState), loading: false, initialized: true });
         engineGraph.value = 'old-project';
