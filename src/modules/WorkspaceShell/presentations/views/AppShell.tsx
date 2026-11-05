@@ -51,7 +51,7 @@ import { MixerPanel } from '#/modules/MixerConsole/presentations/views';
 import { OnboardingTour } from '#/modules/Onboarding/presentations/views';
 import { defaultOnboardingState, onboardingStore } from '#/modules/Onboarding/stores';
 import { isOnboardingCompleted, startOnboardingTour } from '#/modules/Onboarding/useCases';
-import { PreferencesDialog } from '#/modules/Preferences/presentations/views';
+import { PreferencesDialog, type PreferencesSection } from '#/modules/Preferences/presentations/views';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
 import { repairProjectData, unlockProjectScopedBrief } from '#/modules/Project/useCases';
@@ -313,6 +313,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const showAlphaNotice = project.initialized && !alphaDismissed;
     const [exportOpen, setExportOpen] = useState(false);
     const [prefsOpen, setPrefsOpen] = useState(false);
+    const [prefsSection, setPrefsSection] = useState<PreferencesSection | undefined>(undefined);
     const [bottomTabState, setBottomTabState] = useState<BottomTabState>({ value: 'mixer', selectedClipId: null });
     const selectedClipChanged = bottomTabState.selectedClipId !== selectedClipId;
     const selectedClipBottomTab = selectedClipChanged && selectedClipId !== null ? 'editor' : bottomTabState.value;
@@ -396,7 +397,10 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
 
     useAppEventHandlers({
         onOpenExport: () => setExportOpen(true),
-        onOpenPreferences: () => setPrefsOpen(true),
+        onOpenPreferences: (request) => {
+            setPrefsSection(request?.section);
+            setPrefsOpen(true);
+        },
     });
 
     useEffect(() => {
@@ -1167,7 +1171,11 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 <AiActionHistoryPanel />
                 <MixAnalysisPanel />
                 <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />
-                <PreferencesDialog open={prefsOpen} onClose={() => setPrefsOpen(false)} />
+                <PreferencesDialog
+                    open={prefsOpen}
+                    requestedSection={prefsSection}
+                    onClose={() => setPrefsOpen(false)}
+                />
 
                 <AlphaNoticeDialog
                     open={showAlphaNotice}

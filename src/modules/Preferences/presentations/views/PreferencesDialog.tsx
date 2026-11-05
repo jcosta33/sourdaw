@@ -32,9 +32,12 @@ import { ShortcutsSection } from './ShortcutsSection';
 type PreferencesDialogProps = {
     open: boolean;
     onClose: () => void;
+    /** Section to show each time the dialog opens; absent keeps the section the user last viewed. */
+    requestedSection?: PreferencesSection;
 };
 
-type PreferencesSection = 'general' | 'appearance' | 'layout' | 'audio' | 'midi' | 'performance' | 'ai' | 'shortcuts';
+export type PreferencesSection =
+    'general' | 'appearance' | 'layout' | 'audio' | 'midi' | 'performance' | 'ai' | 'shortcuts';
 
 type NavItem = {
     id: PreferencesSection;
@@ -62,9 +65,16 @@ type SectionProps = {
 
 // ── Main dialog ───────────────────────────────────────────────────────
 
-export const PreferencesDialog = ({ open, onClose }: PreferencesDialogProps): ReactElement => {
+export const PreferencesDialog = ({ open, onClose, requestedSection }: PreferencesDialogProps): ReactElement => {
     const prefs = useStore<Preferences>(preferencesStore, defaultPreferences);
     const [section, setSection] = useState<PreferencesSection>('general');
+    const [wasOpen, setWasOpen] = useState(false);
+    if (open !== wasOpen) {
+        setWasOpen(open);
+        if (open && requestedSection !== undefined) {
+            setSection(requestedSection);
+        }
+    }
 
     const update = (partial: Partial<Preferences>): void => {
         updatePreferences({ patch: partial });

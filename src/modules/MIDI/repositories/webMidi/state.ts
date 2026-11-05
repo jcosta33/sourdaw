@@ -50,6 +50,7 @@ export const webMidiState: { current: WebMidiState } = {
         // `initWebMidi` re-reads with the active scheme before first use.
         selectedInputId: null,
         enumerationError: null,
+        accessDenied: false,
         enumerationCompleted: false,
     },
 };
