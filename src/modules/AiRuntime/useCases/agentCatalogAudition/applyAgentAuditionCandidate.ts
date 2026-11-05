@@ -1,4 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
+import { stageClipAudioAsset } from '#/modules/Arrangement/useCases';
 import { cacheAudioBuffer, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
@@ -7,7 +8,7 @@ import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 import { getAudioBufferContentAddress } from '#/utils/agentRenderReceipt';
 
 import { type AgentAuditionReceipt, type AgentAuditionRejectionReason } from './auditionAgentCatalogCandidate';
-import { decodeCatalogCandidateFile } from './decodeCatalogCandidateFile';
+import { readCatalogCandidateBuffer } from './decodeCatalogCandidateFile';
 
 /**
  * Place auditioned audio on the timeline.
@@ -22,6 +23,10 @@ import { decodeCatalogCandidateFile } from './decodeCatalogCandidateFile';
  * file can be replaced, re-rendered or truncated between hearing it and placing
  * it, and audio nobody auditioned must not reach the project under an audition
  * receipt's authority.
+ *
+ * A factory candidate has no file: it is placed on its own resident buffer id,
+ * which the browser and other clips share. That buffer is never cached again
+ * and never discarded here; only the staged asset lease is this call's to release.
  */
 
 const SECONDS_PER_MINUTE = 60;
@@ -77,7 +82,13 @@ type ApplyAgentAuditionCandidateResult =
       };
 
 type VerifiedAudio =
-    | { readonly status: 'verified'; readonly file: File; readonly buffer: AudioBuffer }
+    | {
+          readonly status: 'verified';
+          readonly buffer: AudioBuffer;
+          /** The factory sample's own buffer id; absent when the buffer was decoded for this call alone. */
+          readonly residentBufferId: string | undefined;
+          readonly file: File | undefined;
+      }
     | { readonly status: 'rejected'; readonly reason: ApplyAgentAuditionRejectionReason };
 
 type AddClipPayload = {
@@ -92,6 +103,7 @@ type AddClipPayload = {
 
 type PlacementPlan = {
     readonly buffer: AudioBuffer;
+    readonly residentBufferId: string | undefined;
     readonly trackId: string;
     readonly startBeat: number;
     readonly endBeat: number;
@@ -115,7 +127,7 @@ async function verifyAuditionedAudio(receipt: AgentAuditionReceipt): Promise<Ver
         return { status: 'rejected', reason: resolved.reason };
     }
 
-    const buffer = await decodeCatalogCandidateFile(resolved.file);
+    const buffer = await readCatalogCandidateBuffer(resolved.source);
     if (!buffer) {
         return { status: 'rejected', reason: 'undecodable-audio' };
     }
@@ -127,18 +139,24 @@ async function verifyAuditionedAudio(receipt: AgentAuditionReceipt): Promise<Ver
     if (contentAddress !== receipt.contentAddress) {
         return { status: 'rejected', reason: 'content-address-mismatch' };
     }
-    return { status: 'verified', file: resolved.file, buffer };
+    if (resolved.source.kind === 'buffer') {
+        return { status: 'verified', buffer, residentBufferId: resolved.source.audioBufferId, file: undefined };
+    }
+    return { status: 'verified', buffer, residentBufferId: undefined, file: resolved.source.file };
 }
 
 async function stageAuditionedAsset(
     assetTransfer: AssetTransfer,
-    file: File
+    verified: Extract<VerifiedAudio, { status: 'verified' }>,
+    clipName: string
 ): Promise<StagedAsset | 'failed' | undefined> {
-    if (!assetTransfer) {
-        return undefined;
-    }
     try {
-        return await assetTransfer.stageLocalAsset(file, file.name);
+        if (verified.file) {
+            return await assetTransfer?.stageLocalAsset(verified.file, verified.file.name);
+        }
+        // A resident buffer has no file to stage, so its PCM is encoded and
+        // staged the way a timeline drop of the same sample does.
+        return (await stageClipAudioAsset(verified.buffer, clipName)) ?? undefined;
     } catch {
         return 'failed';
     }
@@ -165,7 +183,8 @@ function buildAddClipPayload(plan: PlacementPlan, audioBufferId: string): AddCli
 }
 
 function releasePreparedMedia(plan: PlacementPlan, audioBufferId: string | undefined): void {
-    if (audioBufferId !== undefined) {
+    // A resident factory buffer is shared with the browser and other clips.
+    if (audioBufferId !== undefined && plan.residentBufferId === undefined) {
         discardDecodedAudioFile(audioBufferId);
     }
     if (plan.staged) {
@@ -185,7 +204,7 @@ function readThrownDetail(error: unknown): string {
 async function attemptPlacement(plan: PlacementPlan): Promise<PlacementAttempt> {
     let audioBufferId: string | undefined;
     try {
-        audioBufferId = cacheAudioBuffer({ buffer: plan.buffer });
+        audioBufferId = plan.residentBufferId ?? cacheAudioBuffer({ buffer: plan.buffer });
         const batchResult = await executeAppActionBatch(
             [{ type: 'addClip', payload: buildAddClipPayload(plan, audioBufferId) }],
             {
@@ -240,17 +259,19 @@ export async function applyAgentAuditionCandidate({
     }
 
     const assetTransfer = getAssetTransfer();
-    const staged = await stageAuditionedAsset(assetTransfer, verified.file);
+    const clipName = receipt.candidate.displayName;
+    const staged = await stageAuditionedAsset(assetTransfer, verified, clipName);
     if (staged === 'failed') {
         return { status: 'rejected', reason: 'asset-staging-failed' };
     }
 
     const plan: PlacementPlan = {
         buffer: verified.buffer,
+        residentBufferId: verified.residentBufferId,
         trackId,
         startBeat,
         endBeat: readClipEndBeat(verified.buffer, startBeat),
-        clipName: receipt.candidate.displayName,
+        clipName,
         staged,
         assetTransfer,
     };

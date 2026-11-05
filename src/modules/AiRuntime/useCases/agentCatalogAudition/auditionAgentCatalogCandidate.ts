@@ -2,14 +2,15 @@ import { analyzeAgentAuditionBuffer } from '#/modules/AudioAnalysis/useCases';
 import { resolveAgentCatalogCandidate } from '#/modules/SampleLibrary/useCases';
 import { getAudioBufferContentAddress } from '#/utils/agentRenderReceipt';
 
-import { decodeCatalogCandidateFile } from './decodeCatalogCandidateFile';
+import { readCatalogCandidateBuffer } from './decodeCatalogCandidateFile';
 
 /**
  * Hear one catalog candidate without touching the project.
  *
- * The decoded buffer stays local to this call: it is never handed to
+ * A file candidate's decoded buffer stays local to this call: it is never handed to
  * `audioBufferCache`, so an audition leaves the engine's shared buffer identity
- * space exactly as it found it, and nothing an agent auditioned can be played,
+ * space exactly as it found it (a factory candidate is measured on its own
+ * resident buffer, which this call neither copies nor caches), and nothing an agent auditioned can be played,
  * frozen or exported by accident. What survives is a receipt — a content address
  * plus objective measurements — which is data, not audio, and can therefore
  * cross a saga step, a persisted run, or a user approval unchanged.
@@ -50,7 +51,7 @@ export async function auditionAgentCatalogCandidate({
         return { status: 'rejected', reason: resolved.reason };
     }
 
-    const buffer = await decodeCatalogCandidateFile(resolved.file);
+    const buffer = await readCatalogCandidateBuffer(resolved.source);
     if (!buffer) {
         return { status: 'rejected', reason: 'undecodable-audio' };
     }
