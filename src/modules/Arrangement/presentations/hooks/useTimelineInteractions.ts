@@ -667,20 +667,14 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         }
         if (dragState.mode === 'stretch') {
             let newEnd = Math.max(dragState.startBeat + 0.25, snapToGrid(rawBeat));
+            const trimmedClip = trackStore.value?.tracks
+                .flatMap((track) => track.clips)
+                .find((clip) => clip.id === dragState.clipId);
 
-            if (preferencesStore.value?.snapToZeroCrossing) {
-                const state = trackStore.value;
-                const clip = state?.tracks
-                    .flatMap((time) => time.clips)
-                    .find((context) => context.id === dragState.clipId);
-                if (clip && clip.type === 'audio') {
-                    newEnd = snapToZeroCrossing(clip, newEnd);
-                }
+            if (preferencesStore.value?.snapToZeroCrossing && trimmedClip?.type === 'audio') {
+                newEnd = snapToZeroCrossing(trimmedClip, newEnd);
             }
             // The edge stops where the commit (trimClipEnd) will: the end of the clip's source.
-            const trimmedClip = trackStore.value?.tracks
-                .flatMap((time) => time.clips)
-                .find((context) => context.id === dragState.clipId);
             if (trimmedClip) {
                 newEnd = limitClipEndToSource(trimmedClip, newEnd);
             }
