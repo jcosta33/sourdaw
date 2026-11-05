@@ -1,0 +1,54 @@
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_fec7059b7a251c::t_0b27dde4f3565e 916-920
+  s_fec7059b7a251c::t_6d9c2bdaab48a3 979-983
+  s_fec7059b7a251c::t_e52775d4e9df7e 991-995
+src/modules/Arrangement/useCases/index.ts
+  s_fec7059b7a251c::t_99af2c9d9c8aab 185
+src/modules/TimelineEditor/presentations/views/Inspector/SendsEditor.tsx
+  s_fec7059b7a251c::t_0c2d38b6673cb8 63,65-66,71-77
+  s_fec7059b7a251c::t_84b3692609bdb8 13
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/SendsEditor.spec.tsx
+  s_fec7059b7a251c::t_96e42c99db2387 1,4
+  s_fec7059b7a251c::t_93ef1c094156d1 269,327,347,367
+  s_fec7059b7a251c::t_f58340657aaa8c 256-265
+src/modules/Arrangement/useCases/device/sendManagement/commitSendLevel.ts
+  s_fec7059b7a251c::t_e9e232a5762fa5 1-24,26-36
+  s_fec7059b7a251c::t_de197b545c21a1 25
+src/modules/MixerConsole/presentations/views/Mixer/SendsSection.tsx
+  s_fec7059b7a251c::t_d70e880b2772f3 48
+  s_fec7059b7a251c::t_92bd6ba687d957 8
+  s_fec7059b7a251c::t_a59a2ebf3bf648 37,39-40,45-47,49-51
+src/modules/Arrangement/useCases/device/sendManagement/__tests__/commitSendEdit.spec.ts
+  s_fec7059b7a251c::t_82042bc2d8e2b5 123-129,133-139
+  s_fec7059b7a251c::t_06182755a05bb8 4
+  s_fec7059b7a251c::t_9e16fd84fd5ee2 91-122,130-132,140-146,148-168
+  s_fec7059b7a251c::t_3292bf760a7841 147
+src/modules/Arrangement/useCases/device/sendManagement/compileSendLevelAction.ts
+  s_fec7059b7a251c::t_2acfa316195491 9-11,17,19,28-29
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/SendsSection.spec.tsx
+  s_fec7059b7a251c::t_bd1f59d2d3b3b4 258-264,282,284-286
+  s_fec7059b7a251c::t_e76426c9f81370 179,224
+  s_fec7059b7a251c::t_b7b4ca2c613fd6 78-84,90
+  s_fec7059b7a251c::t_ef4d7c689cf881 5
+  s_fec7059b7a251c::t_9da8fc940de989 145,166
+  s_fec7059b7a251c::t_5b56484499e7f4 118
+  s_fec7059b7a251c::t_9933128deb1e3f 237-257,265-281,283,287-288
+  s_fec7059b7a251c::t_c06363c1bf0c9c 1,4
+  s_fec7059b7a251c::t_09da96fd0db038 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4a9736bfe7b430fdd2c6ddbbcd046b441e35fbc0",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
