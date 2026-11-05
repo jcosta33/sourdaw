@@ -40,7 +40,7 @@ import {
 import { projectStore } from '#/modules/Project/stores';
 import { setProjectKeyRoot, setProjectScaleName } from '#/modules/Project/useCases';
 import { DEFAULT_NOTE_VELOCITY, HIGH_RESOLUTION_MAX, MAX_MIDI_DATA_7BIT, PITCH_BEND_CENTER } from '#/utils/midiData';
-import { SCALE_PATTERNS, KEY_NAMES } from '#/utils/Music/MusicalScale';
+import { getScalePattern, KEY_NAMES } from '#/utils/Music/MusicalScale';
 import { cn } from '#/utils/Styles/cn';
 
 import { editPianoRollTakeNote } from '../../helpers/editPianoRollTakeNote';
@@ -537,7 +537,7 @@ export const PianoRoll = ({
                         {visiblePitches.map((pitch, row) => {
                             const noteIndex = pitch % 12;
                             const isBlack = [1, 3, 6, 8, 10].includes(noteIndex);
-                            const isInScale = SCALE_PATTERNS[scaleName]?.includes((noteIndex - keyRoot + 12) % 12);
+                            const isInScale = getScalePattern(scaleName)?.includes((noteIndex - keyRoot + 12) % 12);
                             return (
                                 <div
                                     key={row}

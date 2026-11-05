@@ -65,7 +65,7 @@ import {
     NOTE_NAMES,
     ROW_HEIGHT,
     RULER_HEIGHT,
-    SCALES,
+    getScaleIntervals,
     EMPTY_NOTES,
     PITCH_RAIL_WIDTH,
     getVisiblePitches,
@@ -509,7 +509,7 @@ function drawNoteGrid(
     scaleType: string,
     scaleRoot: number
 ): void {
-    const scaleIntervals = SCALES[scaleType] ?? SCALES.chromatic!;
+    const scaleIntervals = getScaleIntervals(scaleType);
     const endPx = startPx + widthPx;
 
     for (let row = 0; row < visiblePitches.length; row++) {

@@ -24,4 +24,12 @@ describe('createScaleFilter', () => {
         const fx = createScaleFilter(0, 'not-a-scale');
         expect(fx.process([n(62)]).length).toBeGreaterThan(0);
     });
+
+    it.each(['__proto__', 'constructor', 'toString'])(
+        'falls back to major for the Object.prototype name %s',
+        (name) => {
+            const fx = createScaleFilter(0, name);
+            expect(fx.process([n(60), n(61)]).map((x) => x.pitch)).toEqual([60]);
+        }
+    );
 });

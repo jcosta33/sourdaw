@@ -1,7 +1,7 @@
-import { type MidiEffect, SCALES } from '../../models/MidiEffectTypes';
+import { type MidiEffect, SCALES, getScale } from '../../models/MidiEffectTypes';
 
 export function createScaleFilter(root = 0, scaleName = 'major'): MidiEffect {
-    const scaleNotes = SCALES[scaleName] ?? SCALES.major!;
+    const scaleNotes = getScale(scaleName) ?? SCALES.major!;
     return {
         id: 'midi-fx-scale-filter',
         name: `Scale Filter (${scaleName}, root ${root})`,
