@@ -6,6 +6,7 @@ import { type Clip } from '../../models/Track';
 import { liveTempoTimeline } from '../liveTempoTimeline';
 
 import { audioClipSourceEndBeat } from './audioClipSourceEndBeat';
+import { canBeLimitedToSource } from './canBeLimitedToSource';
 
 /**
  * The end a request to move a clip's end to `requestedEndBeat` may write. A
@@ -19,7 +20,7 @@ export function limitClipEndToSource(
     requestedEndBeat: number,
     timeline: TempoTimeline = liveTempoTimeline
 ): number {
-    if (requestedEndBeat <= clip.endBeat || clip.type !== 'audio' || !clip.audioBufferId) {
+    if (requestedEndBeat <= clip.endBeat || !canBeLimitedToSource(clip)) {
         return requestedEndBeat;
     }
     const buffer = getCachedAudioBuffer({ bufferId: clip.audioBufferId });

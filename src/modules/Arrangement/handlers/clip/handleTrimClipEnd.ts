@@ -1,7 +1,8 @@
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type ClipStretchStateSnapshot } from '#/utils/handlerContract';
+import { type AppAction, type ClipStretchStateSnapshot, type HandlerDescribeResult } from '#/utils/handlerContract';
 
 import { type Clip } from '../../models/Track';
+import { canBeLimitedToSource } from '../../useCases/clipEditing/canBeLimitedToSource';
 import { limitClipEndToSource } from '../../useCases/clipEditing/limitClipEndToSource';
 import { trimClipEnd } from '../../useCases/clipEditing/trimClipEnd';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
@@ -16,27 +17,34 @@ function stretchState(clip: Clip, endBeat: number): ClipStretchStateSnapshot {
     };
 }
 
-/**
- * Undo puts the pre-trim end back. A trim back to it suffices unless the clip
- * ended past its source before this trim shortened it: the source bound would
- * then stop that trim short, so the exact geometry restore replays it instead.
- */
-function inverseOfTrim(clip: Clip, newEndBeat: number): AppAction {
-    const trimBack: AppAction = { type: 'trimClipEnd', payload: { clipId: clip.id, newEndBeat: clip.endBeat } };
-    if (!Number.isFinite(newEndBeat) || newEndBeat <= clip.startBeat) {
-        return trimBack;
-    }
-    const trimmedEndBeat = limitClipEndToSource(clip, newEndBeat);
-    if (limitClipEndToSource({ ...clip, endBeat: trimmedEndBeat }, clip.endBeat) === clip.endBeat) {
-        return trimBack;
-    }
+function restoreEnd(clip: Clip, fromEndBeat: number, toEndBeat: number): AppAction {
     return {
         type: 'restoreClipStretchState',
         payload: {
             clipId: clip.id,
-            expected: stretchState(clip, trimmedEndBeat),
-            replacement: stretchState(clip, clip.endBeat),
+            expected: stretchState(clip, fromEndBeat),
+            replacement: stretchState(clip, toEndBeat),
         },
+    };
+}
+
+/**
+ * Undo puts the pre-trim end back and redo writes the end this trim wrote.
+ * Where the source bound can apply, both replay that exact geometry: the bound
+ * reads the decoded-buffer cache, so recomputing it at replay could land on a
+ * different end than the history step recorded.
+ */
+function describeTrim(clip: Clip, newEndBeat: number): HandlerDescribeResult {
+    const label = 'Trim clip end';
+    const trimBack: AppAction = { type: 'trimClipEnd', payload: { clipId: clip.id, newEndBeat: clip.endBeat } };
+    if (!Number.isFinite(newEndBeat) || newEndBeat <= clip.startBeat || !canBeLimitedToSource(clip)) {
+        return { label, inverseAction: trimBack };
+    }
+    const trimmedEndBeat = limitClipEndToSource(clip, newEndBeat);
+    return {
+        label,
+        inverseAction: restoreEnd(clip, trimmedEndBeat, clip.endBeat),
+        redoAction: restoreEnd(clip, clip.endBeat, trimmedEndBeat),
     };
 }
 
@@ -55,7 +63,7 @@ export const handleTrimClipEnd = createHandler<'trimClipEnd'>({
                 return { label, inverseAction: null };
             }
 
-            return { label, inverseAction: inverseOfTrim(clip, alpha.payload.newEndBeat) };
+            return describeTrim(clip, alpha.payload.newEndBeat);
         } catch {
             return { label, inverseAction: null };
         }
