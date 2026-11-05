@@ -1,9 +1,11 @@
 import { type MidiNote } from '#/modules/MIDI/stores';
 import { projectCommittedGroove } from '#/modules/MIDI/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
-import { isBeatAdmittedByAnchoredClipLoopWindow, resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
+import { isBeatInEnabledClipLoopWindow, resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 import {
+    LOOP_PASS_GROOVE_INSTANCE_SUFFIX,
     LOOP_PASS_OVERFLOW_INSTANCE_SUFFIX,
+    loopPassGrooveDisplacedNoteStartBeat,
     loopPassNoteEndBeat,
     loopPassNoteOverflowBeats,
     loopPassProducedNoteStartBeat,
@@ -40,6 +42,8 @@ export type LiveYeastNote = {
      * recorded expression curves count from the uncut start. Absent when nothing was cut.
      */
     beatsIntoNote?: number;
+    /** Set on a segment the project groove moved out of its pass, placed before the rack; the groove is not applied again. */
+    sequencerGrooveApplied?: boolean;
     articulation?: string;
     sourceEventId?: string;
     noteInstanceId?: string;
@@ -96,6 +100,150 @@ type PendingIdentifiedLiveYeastNote = {
     index: number;
 };
 
+/** One note a pass hands the rack: a segment of a source note, by its own instance. */
+type LivePassSegment = {
+    instanceId: string;
+    startBeat: number;
+    endBeat: number;
+    velocity: number;
+    /** How far into its source note the segment begins. */
+    headCutBeats: number;
+    /** Set when the project groove was applied before the rack; it is not applied again. */
+    sequencerGrooveApplied?: boolean;
+};
+
+type LivePassGeometry = {
+    noteId: string;
+    passStartBeat: number;
+    loopLengthBeats: number;
+    clipHeadBeat: number | undefined;
+};
+
+type LiveSegmentEventContext = {
+    block: { fromBeat: number; toBeat: number };
+    changes: readonly TempoChange[];
+    transport: TransportState;
+    sampleRate: number;
+    routeId: string;
+    channel: number;
+    pitch: number;
+    /** The note-on's duration when the pass does not loop; a looped segment's is its own length. */
+    durationPpq: number | undefined;
+};
+
+/** A head off the grid opens the first pass before the clip does; the clip head cuts what that pass places ahead of it. */
+function cutLiveSegmentAtClipHead(segment: LivePassSegment, clipHeadBeat: number | undefined): LivePassSegment {
+    const cutBeats = clipHeadBeat === undefined ? 0 : Math.max(0, clipHeadBeat - segment.startBeat);
+    return { ...segment, startBeat: segment.startBeat + cutBeats, headCutBeats: segment.headCutBeats + cutBeats };
+}
+
+/**
+ * The pass segment as the rack is handed it. Where the project groove would
+ * move its start out of its pass (`loopPassGrooveDisplacedNoteStartBeat`),
+ * the segment is placed where the loop puts it, grooved, and what then rings
+ * past the pass end is its own note struck on the pass head. The project
+ * groove follows the rack, and by the time the rack returns this note the
+ * windows of its pass may have played the beat it lands on, so the placement
+ * happens before the rack, where the window holding each landing owns it, as
+ * the bounce places it. Otherwise the segment is handed on unchanged.
+ */
+function placeProjectGrooveDisplacement(
+    segment: LivePassSegment,
+    { noteId, passStartBeat, loopLengthBeats, clipHeadBeat }: LivePassGeometry
+): LivePassSegment[] {
+    const [groovedNote] = projectCommittedGroove({
+        events: [{ id: noteId, startBeat: segment.startBeat, velocity: segment.velocity }],
+        consumerType: 'sequencer',
+        consumerId: 'project',
+    });
+    const displacedStartBeat =
+        groovedNote && loopPassGrooveDisplacedNoteStartBeat(groovedNote.startBeat, passStartBeat, loopLengthBeats);
+    if (!groovedNote || displacedStartBeat === undefined) {
+        return [segment];
+    }
+    const durationBeats = segment.endBeat - segment.startBeat;
+    const displacedEndBeat = loopPassNoteEndBeat(displacedStartBeat, durationBeats, passStartBeat, loopLengthBeats);
+    const overflowBeats = loopPassNoteOverflowBeats(displacedStartBeat, durationBeats, passStartBeat, loopLengthBeats);
+    const displacedInstanceId = `${segment.instanceId}${LOOP_PASS_GROOVE_INSTANCE_SUFFIX}`;
+    const placedSegments = [
+        cutLiveSegmentAtClipHead(
+            {
+                instanceId: displacedInstanceId,
+                startBeat: displacedStartBeat,
+                endBeat: displacedEndBeat,
+                velocity: groovedNote.velocity,
+                headCutBeats: segment.headCutBeats,
+                sequencerGrooveApplied: true,
+            },
+            clipHeadBeat
+        ),
+    ];
+    if (overflowBeats > 0) {
+        placedSegments.push(
+            cutLiveSegmentAtClipHead(
+                {
+                    instanceId: `${displacedInstanceId}${LOOP_PASS_OVERFLOW_INSTANCE_SUFFIX}`,
+                    startBeat: passStartBeat,
+                    endBeat: passStartBeat + overflowBeats,
+                    velocity: groovedNote.velocity,
+                    headCutBeats: segment.headCutBeats + displacedEndBeat - displacedStartBeat,
+                    sequencerGrooveApplied: true,
+                },
+                clipHeadBeat
+            )
+        );
+    }
+    return placedSegments;
+}
+
+/** Records what the rack's output needs to know of a segment's instance: the cut it begins with, and a groove already applied. */
+function recordLiveSegmentInstance(
+    { instanceId, headCutBeats, sequencerGrooveApplied }: LivePassSegment,
+    headCutBeatsByInstance: Map<string, number>,
+    sequencerGroovedInstances: Set<string>
+): void {
+    if (headCutBeats > 0) {
+        headCutBeatsByInstance.set(instanceId, headCutBeats);
+    }
+    if (sequencerGrooveApplied === true) {
+        sequencerGroovedInstances.add(instanceId);
+    }
+}
+
+/** Hands the rack the segment's note-on and note-off this block owns: each one whose beat lies in `[from, to)`. */
+function pushLiveSegmentEvents(
+    inputEvents: LiveYeastMidiEvent[],
+    { instanceId, startBeat, endBeat, velocity }: LivePassSegment,
+    { block, changes, transport, sampleRate, routeId, channel, pitch, durationPpq }: LiveSegmentEventContext
+): void {
+    const noteStartSamples = beatToSamples(changes, startBeat, transport.tempo, sampleRate);
+    const noteEndSamples = beatToSamples(changes, endBeat, transport.tempo, sampleRate);
+    if (startBeat >= block.fromBeat && startBeat < block.toBeat) {
+        inputEvents.push({
+            timeSamples: noteStartSamples,
+            durationSamples: Math.max(0, noteEndSamples - noteStartSamples),
+            durationPpq: durationPpq ?? endBeat - startBeat,
+            trackId: routeId,
+            sourceEventId: `${instanceId}:on`,
+            noteInstanceId: instanceId,
+            timePpq: startBeat,
+            tempoBpm: getTempoAtBeat(changes, startBeat, transport.tempo),
+            kind: { type: 'noteOn', channel, note: pitch, velocity },
+        });
+    }
+    if (endBeat >= block.fromBeat && endBeat < block.toBeat) {
+        inputEvents.push({
+            timeSamples: noteEndSamples,
+            trackId: routeId,
+            sourceEventId: `${instanceId}:off`,
+            noteInstanceId: instanceId,
+            timePpq: endBeat,
+            tempoBpm: getTempoAtBeat(changes, endBeat, transport.tempo),
+            kind: { type: 'noteOff', channel, note: pitch },
+        });
+    }
+}
+
 export async function processLiveYeastTrackBlock({
     context,
     rackId,
@@ -121,6 +269,8 @@ export async function processLiveYeastTrackBlock({
     // The beats of a note the clip's head cut off before Yeast saw it, by note instance: the notes Yeast plays
     // from that instance begin that far into the note they came from.
     const headCutBeatsByInstance = new Map<string, number>();
+    // The note instances the project groove already placed before the rack.
+    const sequencerGroovedInstances = new Set<string>();
 
     for (const block of splitRangeAtTempoChanges(changes, fromBeat, toBeat)) {
         if (!isCurrent()) {
@@ -144,16 +294,17 @@ export async function processLiveYeastTrackBlock({
 
         for (const iteration of iterations) {
             for (const sourceNote of iteration.sourceNotes) {
-                // #5198 — the anchored loop window owns membership on the row's
-                // stored figure, the same relative beat the synth path's
-                // admission reads: a row past the trimmed region end stays
-                // silent on every pass even though the wrap below would
-                // re-anchor it into the iteration. A descriptor without the
+                // #5198 — the loop window owns membership on the row's stored
+                // figure, the same relative beat the synth path's admission
+                // reads: a row past the trimmed region end, or stored at or
+                // past an anchorless loop's length, stays silent on every pass
+                // even though the wrap below would re-anchor it into the
+                // iteration. A descriptor without the
                 // clip's anchor pair predates the field and admits without the
                 // window, exactly as before the anchor existed.
                 if (
                     iteration.clipStartBeat !== undefined &&
-                    !isBeatAdmittedByAnchoredClipLoopWindow({
+                    !isBeatInEnabledClipLoopWindow({
                         relativeBeat: sourceNote.startBeat - iteration.midiOffsetBeats,
                         startBeat: iteration.clipStartBeat,
                         loopOriginBeat: iteration.loopOriginBeat,
@@ -215,66 +366,57 @@ export async function processLiveYeastTrackBlock({
                     ? loopPassNoteOverflowBeats(passNoteStartBeat, groovedNote.duration, passStartBeat, loopLengthBeats)
                     : 0;
                 const sourceInstanceId = `${iteration.routeId}:${sourceNote.id}`;
-                const segmentCount = overflowBeats > 0 ? 2 : 1;
-                for (let segment = 0; segment < segmentCount; segment++) {
-                    const isPassHeadTail = segment === 1;
-                    let noteStartBeat = isPassHeadTail ? passStartBeat : passNoteStartBeat;
-                    const noteEndBeat = isPassHeadTail ? passStartBeat + overflowBeats : passNoteEndBeat;
-                    // How far into its note the segment begins: a clamped start
-                    // cut its head off, a re-anchored start cut nothing, and the
-                    // pass-head tail begins where the in-pass segment ends.
-                    let headCutBeats = passNoteStartBeat - audibleStartBeat;
-                    if (loops) {
-                        headCutBeats = isPassHeadTail ? passNoteEndBeat - passNoteStartBeat : 0;
-                    }
-                    // A head off the grid opens the first pass before the clip
-                    // does; the clip head cuts what that pass places ahead of it.
-                    if (loops && iteration.clipStartBeat !== undefined && noteStartBeat < iteration.clipStartBeat) {
-                        headCutBeats += iteration.clipStartBeat - noteStartBeat;
-                        noteStartBeat = iteration.clipStartBeat;
-                    }
-                    if (noteEndBeat <= noteStartBeat) {
-                        continue;
-                    }
-                    const noteStartSamples = beatToSamples(changes, noteStartBeat, transport.tempo, sampleRate);
-                    const noteEndSamples = beatToSamples(changes, noteEndBeat, transport.tempo, sampleRate);
-                    const noteInstanceId = isPassHeadTail
-                        ? `${sourceInstanceId}${LOOP_PASS_OVERFLOW_INSTANCE_SUFFIX}`
-                        : sourceInstanceId;
-                    if (headCutBeats > 0) {
-                        headCutBeatsByInstance.set(noteInstanceId, headCutBeats);
-                    }
-                    const ownsNoteOn = noteStartBeat >= block.fromBeat && noteStartBeat < block.toBeat;
-                    const ownsNoteOff = noteEndBeat >= block.fromBeat && noteEndBeat < block.toBeat;
-                    if (ownsNoteOn) {
-                        inputEvents.push({
-                            timeSamples: noteStartSamples,
-                            durationSamples: Math.max(0, noteEndSamples - noteStartSamples),
-                            durationPpq: loops ? noteEndBeat - noteStartBeat : Math.max(0, groovedNote.duration),
-                            trackId: iteration.routeId,
-                            sourceEventId: `${noteInstanceId}:on`,
-                            noteInstanceId,
-                            timePpq: noteStartBeat,
-                            tempoBpm: getTempoAtBeat(changes, noteStartBeat, transport.tempo),
-                            kind: {
-                                type: 'noteOn',
-                                channel: sourceNote.channel ?? 0,
-                                note: groovedNote.pitch,
+                // A head off the grid opens the first pass before the clip
+                // does; the clip head cuts what that pass places ahead of it.
+                const clipHeadBeat = loops ? iteration.clipStartBeat : undefined;
+                // How far into its note a segment begins: a clamped start cut
+                // its head off, a re-anchored start cut nothing, and the
+                // pass-head tail begins where the in-pass segment ends.
+                const passSegments: LivePassSegment[] = [
+                    cutLiveSegmentAtClipHead(
+                        {
+                            instanceId: sourceInstanceId,
+                            startBeat: passNoteStartBeat,
+                            endBeat: passNoteEndBeat,
+                            velocity: groovedNote.velocity,
+                            headCutBeats: loops ? 0 : passNoteStartBeat - audibleStartBeat,
+                        },
+                        clipHeadBeat
+                    ),
+                ];
+                if (overflowBeats > 0) {
+                    passSegments.push(
+                        cutLiveSegmentAtClipHead(
+                            {
+                                instanceId: `${sourceInstanceId}${LOOP_PASS_OVERFLOW_INSTANCE_SUFFIX}`,
+                                startBeat: passStartBeat,
+                                endBeat: passStartBeat + overflowBeats,
                                 velocity: groovedNote.velocity,
+                                headCutBeats: passNoteEndBeat - passNoteStartBeat,
                             },
-                        });
-                    }
-                    if (ownsNoteOff) {
-                        inputEvents.push({
-                            timeSamples: noteEndSamples,
-                            trackId: iteration.routeId,
-                            sourceEventId: `${noteInstanceId}:off`,
-                            noteInstanceId,
-                            timePpq: noteEndBeat,
-                            tempoBpm: getTempoAtBeat(changes, noteEndBeat, transport.tempo),
-                            kind: { type: 'noteOff', channel: sourceNote.channel ?? 0, note: groovedNote.pitch },
-                        });
-                    }
+                            clipHeadBeat
+                        )
+                    );
+                }
+                const passGeometry = { noteId: sourceNote.id, passStartBeat, loopLengthBeats, clipHeadBeat };
+                const rackSegments = passSegments
+                    .flatMap((passSegment) =>
+                        loops ? placeProjectGrooveDisplacement(passSegment, passGeometry) : [passSegment]
+                    )
+                    .filter((rackSegment) => rackSegment.endBeat > rackSegment.startBeat);
+                const eventContext = {
+                    block,
+                    changes,
+                    transport,
+                    sampleRate,
+                    routeId: iteration.routeId,
+                    channel: sourceNote.channel ?? 0,
+                    pitch: groovedNote.pitch,
+                    durationPpq: loops ? undefined : Math.max(0, groovedNote.duration),
+                };
+                for (const rackSegment of rackSegments) {
+                    recordLiveSegmentInstance(rackSegment, headCutBeatsByInstance, sequencerGroovedInstances);
+                    pushLiveSegmentEvents(inputEvents, rackSegment, eventContext);
                 }
             }
         }
@@ -391,6 +533,9 @@ export async function processLiveYeastTrackBlock({
             const headCutBeats = event.noteInstanceId ? headCutBeatsByInstance.get(event.noteInstanceId) : undefined;
             if (headCutBeats !== undefined) {
                 outputNote.beatsIntoNote = headCutBeats;
+            }
+            if (event.noteInstanceId !== undefined && sequencerGroovedInstances.has(event.noteInstanceId)) {
+                outputNote.sequencerGrooveApplied = true;
             }
             targetNotes.push(outputNote);
             continue;
