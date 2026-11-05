@@ -613,10 +613,7 @@ const EmptyArrangeOverlay = (): ReactElement => {
                         type="button"
                         className="group flex flex-col items-center gap-2 p-3 rounded-xl border border-border/30 bg-surface-base/50 hover:bg-[var(--color-accent-cyan)]/10 hover:border-[var(--color-accent-cyan)]/30 transition-all cursor-pointer"
                         onClick={() => {
-                            void executeUserAppAction({
-                                type: 'addTrack',
-                                payload: { name: 'Audio 1', kind: 'audio' },
-                            });
+                            void executeUserAppAction({ type: 'addTrack', payload: { kind: 'audio' } });
                         }}
                     >
                         <Row
@@ -637,7 +634,7 @@ const EmptyArrangeOverlay = (): ReactElement => {
                         type="button"
                         className="group flex flex-col items-center gap-2 p-3 rounded-xl border border-border/30 bg-surface-base/50 hover:bg-[var(--color-accent-lavender)]/10 hover:border-[var(--color-accent-lavender)]/30 transition-all cursor-pointer"
                         onClick={() => {
-                            void executeUserAppAction({ type: 'addTrack', payload: { name: 'MIDI 1', kind: 'midi' } });
+                            void executeUserAppAction({ type: 'addTrack', payload: { kind: 'midi' } });
                         }}
                     >
                         <Row

@@ -392,7 +392,7 @@ for (const fault of ['transient', 'permanent', 'evaluation']) {
                 await expect(page.getByRole('group', { name: 'Playback controls' })).toBeVisible({ timeout: 30_000 });
                 await expect(page.getByTestId('project-name')).toHaveText(PROJECT_NAME);
                 await expect(
-                    page.getByRole('grid', { name: 'Track list', exact: true }).getByText('Audio', { exact: true })
+                    page.getByRole('grid', { name: 'Track list', exact: true }).getByText('Audio 1', { exact: true })
                 ).toBeVisible();
                 expect(leafRequests).toBe(1);
                 expect(failures).toEqual([]);

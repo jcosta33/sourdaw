@@ -18,7 +18,7 @@ export const trackCommands: CallableCommandEntry[] = [
         description: 'Create a new audio track',
         category: 'Track',
         shortcut: '⇧N',
-        action: { type: 'addTrack', payload: { name: 'Audio', kind: 'audio' } },
+        action: { type: 'addTrack', payload: { kind: 'audio' } },
     },
     {
         id: 'add-midi-track',
@@ -26,7 +26,7 @@ export const trackCommands: CallableCommandEntry[] = [
         description: 'Create a new MIDI track',
         category: 'Track',
         shortcut: 'N',
-        action: { type: 'addTrack', payload: { name: 'MIDI', kind: 'midi' } },
+        action: { type: 'addTrack', payload: { kind: 'midi' } },
     },
     {
         id: 'add-bus',

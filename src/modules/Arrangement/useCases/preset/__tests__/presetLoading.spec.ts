@@ -110,7 +110,7 @@ describe('compileLoadPresetActions', () => {
             });
         }
 
-        it.each(['Dark Pulse', 'MIDI', 'MIDI 3', 'Audio 12'])(
+        it.each(['Dark Pulse', 'MIDI', 'MIDI 3', 'MIDI 12'])(
             'emits a guarded rename after the load while the name %s is automatic',
             (name) => {
                 mocks.getFactoryPresets.mockReturnValue([preset(), preset({ id: 'dark', name: 'Dark Pulse' })]);
@@ -126,13 +126,16 @@ describe('compileLoadPresetActions', () => {
             }
         );
 
-        it.each(['My Lead', 'Dark Pulse', 'Audio drums'])('emits no rename after a user rename to %s', (name) => {
-            withTrackName(name);
+        it.each(['My Lead', 'Dark Pulse', 'Audio drums', 'Audio 12', 'Bus 1'])(
+            'emits no rename after a user rename to %s',
+            (name) => {
+                withTrackName(name);
 
-            const plan = compileLoadPresetActions({ presetId: 'preset-1', trackId: 'track-1' });
+                const plan = compileLoadPresetActions({ presetId: 'preset-1', trackId: 'track-1' });
 
-            expect(plan?.actions.map((action) => action.type)).toEqual(['loadPreset']);
-        });
+                expect(plan?.actions.map((action) => action.type)).toEqual(['loadPreset']);
+            }
+        );
 
         it('treats a preset name of another track kind as a user name', () => {
             mocks.getFactoryPresets.mockReturnValue([
