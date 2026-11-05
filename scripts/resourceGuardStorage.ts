@@ -99,7 +99,8 @@ function parseLsofFile(
         report(reason);
         return undefined;
     };
-    if (!/^f(?:\d+|cwd|twd|txt|mem|rtd|pd|fp\.)$/.test(fields[0] ?? '')) {
+    // macOS lsof prints descriptors numbered 10000 and above as `*` plus the last three digits.
+    if (!/^f(?:\d+|\*\d{3}|cwd|twd|txt|mem|rtd|pd|fp\.)$/.test(fields[0] ?? '')) {
         return unavailable('invalid-descriptor');
     }
     const type = fields.find((field) => field.startsWith('t'))?.slice(1);

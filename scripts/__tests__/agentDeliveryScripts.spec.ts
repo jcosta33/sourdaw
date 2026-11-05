@@ -1587,12 +1587,18 @@ describe('package scripts and gitignore', () => {
      * closure plus the loader's own static closure. A source copied into the graph without a real
      * import, or dropped from it while still imported, reddens.
      */
-    it('declares exactly each command static local import closure, so over- and under-declaration redden', () => {
-        const readSource = readRepositorySource();
-        for (const command of Object.keys(trustedDependencyGraphs) as TrustedGithubWriteCommand[]) {
-            assertDeclaredClosure(command, trustedDependencyGraphs[command], readSource);
+    // Reads every trusted command's whole closure synchronously, which slow runners stretch past
+    // the 5 s default without any change in behaviour.
+    it(
+        'declares exactly each command static local import closure, so over- and under-declaration redden',
+        { timeout: 30_000 },
+        () => {
+            const readSource = readRepositorySource();
+            for (const command of Object.keys(trustedDependencyGraphs) as TrustedGithubWriteCommand[]) {
+                assertDeclaredClosure(command, trustedDependencyGraphs[command], readSource);
+            }
         }
-    });
+    );
 
     /**
      * The entry the closure is walked from must come from the runtime's own command table, never from

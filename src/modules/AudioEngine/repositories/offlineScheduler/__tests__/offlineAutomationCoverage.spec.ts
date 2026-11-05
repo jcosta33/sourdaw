@@ -300,7 +300,8 @@ describe('offline device-param automation capability coverage', () => {
         // parameter pairs from that count.
         // 182 → 180: #2076 removed the bacteria `morphX`/`morphY` descriptor
         // entries, taking their two device-level-exempt pairs with them.
-        expect(census.deviceLevelExemptions).toBe(180);
+        // Retiring inert breakdown depth removes one more exempt pair.
+        expect(census.deviceLevelExemptions).toBe(179);
         // Dutch Oven's 21 named residuals now carry pinned additive ordinals.
         // Toaster swing remains in the distinct host note-timing route.
         expect(census.parameterLevelExemptions).toBe(2);

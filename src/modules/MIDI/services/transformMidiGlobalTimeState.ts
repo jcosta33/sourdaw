@@ -63,6 +63,16 @@ export type MidiGlobalTimeCommand =
            * whole-note copy is what the unsplit comped clip sounds.
            */
           retainOnSourceWindows?: readonly { start: number; end: number }[];
+          /**
+           * The source loops, so the target is a fragment of its loop and
+           * not of the rows after the cut: the target receives an exact copy
+           * of every source row in the source's own coordinates and the
+           * source keeps all of its rows, and `discardBeforeBeat` and
+           * `retainOnSourceWindows` partition nothing. The fragment's content
+           * offset and loop anchor (`midiFragmentWindowEntry`) make the copy
+           * play the source's passes from the cut on.
+           */
+          copiesLoopMaterial?: true;
       }
     | {
           type: 'remove-clips';
@@ -722,6 +732,77 @@ function placeSplitEvents<TRow extends SplitEventRow>(
     return next;
 }
 
+/**
+ * A looping source's cut (`copiesLoopMaterial`): the target holds every source
+ * row unchanged but for its id, so the loop the source plays is the loop the
+ * fragment plays, and the source keeps every row of its loop. Each note copy
+ * draws its id from the replay plan as a split's right half does; controller
+ * and bend copies take ids from the target clip and the source row's index.
+ */
+function copyLoopMaterial(
+    state: MidiGlobalTimeState,
+    command: Extract<MidiGlobalTimeCommand, { type: 'split-notes' }>,
+    cursor: IdentityCursor
+): TransformCommandResult {
+    const sourceNotes = state.notesByClipId[command.sourceClipId] ?? [];
+    const sourceControlChanges = state.ccByClipId[command.sourceClipId] ?? [];
+    const sourcePitchBends = state.pitchBendByClipId[command.sourceClipId] ?? [];
+    let nextState = state;
+
+    if (sourceNotes.length > 0) {
+        const copies: MidiNote[] = [];
+        for (const [sourceNoteIndex, note] of sourceNotes.entries()) {
+            const targetNoteId = takeTargetNoteId(cursor, {
+                role: 'split-right',
+                sourceClipId: command.sourceClipId,
+                sourceNoteId: note.id,
+                sourceNoteIndex,
+                targetClipId: command.targetClipId,
+            });
+            if (!targetNoteId) {
+                return { status: 'rejected', state };
+            }
+            copies.push({ ...note, id: targetNoteId });
+        }
+        const existingTargetNotes = state.notesByClipId[command.targetClipId] ?? [];
+        nextState = {
+            ...nextState,
+            notesByClipId: {
+                ...nextState.notesByClipId,
+                [command.targetClipId]: [...existingTargetNotes, ...copies],
+            },
+        };
+    }
+    if (sourceControlChanges.length > 0) {
+        const existingTargetEvents = state.ccByClipId[command.targetClipId] ?? [];
+        nextState = {
+            ...nextState,
+            ccByClipId: {
+                ...nextState.ccByClipId,
+                [command.targetClipId]: [
+                    ...existingTargetEvents,
+                    ...cloneControllerEvents(sourceControlChanges, 'cc-split', command.targetClipId),
+                ],
+            },
+        };
+    }
+    if (sourcePitchBends.length > 0) {
+        const existingTargetEvents = state.pitchBendByClipId[command.targetClipId] ?? [];
+        nextState = {
+            ...nextState,
+            pitchBendByClipId: {
+                ...nextState.pitchBendByClipId,
+                [command.targetClipId]: [
+                    ...existingTargetEvents,
+                    ...cloneControllerEvents(sourcePitchBends, 'pb-split', command.targetClipId),
+                ],
+            },
+        };
+    }
+
+    return { status: 'ready', hasChanges: true, state: nextState };
+}
+
 function transformSplit(
     state: MidiGlobalTimeState,
     command: Extract<MidiGlobalTimeCommand, { type: 'split-notes' }>,
@@ -746,6 +827,9 @@ function transformSplit(
     const sourcePitchBends = state.pitchBendByClipId[command.sourceClipId] ?? [];
     if (sourceNotes.length === 0 && sourceControlChanges.length === 0 && sourcePitchBends.length === 0) {
         return { status: 'ready', hasChanges: false, state };
+    }
+    if (command.copiesLoopMaterial === true) {
+        return copyLoopMaterial(state, command, cursor);
     }
 
     let nextState = state;

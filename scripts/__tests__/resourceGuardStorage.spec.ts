@@ -4778,6 +4778,20 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
         expect(referencesStoragePath('/owned/tmp-sibling/held', ['/owned/tmp'])).toBe(false);
     });
 
+    it('accepts only the three-digit truncated form of descriptors numbered 10000 and above', () => {
+        expect(parseLsofCensus('p10\0\nf*042\0tREG\0n/owned/tmp/held\0\n')).toEqual({
+            pids: new Set([10]),
+            paths: ['/owned/tmp/held'],
+        });
+        for (const descriptor of ['f*', 'f*12', 'f*1234', 'f*abc', 'f**12']) {
+            const reasons: string[] = [];
+            expect(
+                parseLsofCensus(`p10\0\n${descriptor}\0tREG\0n/owned/tmp/held\0\n`, (reason) => reasons.push(reason))
+            ).toBeUndefined();
+            expect(reasons).toEqual(['invalid-descriptor']);
+        }
+    });
+
     it('keeps whole and scoped inspection diagnostics outside warning-success proof reasons', () => {
         for (const reason of [
             'lsof-fields-unusable:file-inspection-diagnostic',

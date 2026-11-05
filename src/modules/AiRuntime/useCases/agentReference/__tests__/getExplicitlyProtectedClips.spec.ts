@@ -89,6 +89,20 @@ function getProtectedClips(prompt: string, projectContext = context) {
 }
 
 describe('getExplicitlyProtectedClips', () => {
+    it.each([
+        "Don't touch Lead, but rename Verse to Chorus",
+        'without touching Lead, but set note velocities in Verse to 96',
+    ])('protects the clip a prohibition names and reads the request complete: %s', (prompt) => {
+        expect(getExplicitClipProtection(prompt, context)).toEqual({
+            clips: [{ id: lead.id, name: lead.name }],
+            complete: true,
+        });
+    });
+
+    it('reads a prohibition list ending in a dangling and as incomplete', () => {
+        expect(getExplicitClipProtection('without touching Lead and', context).complete).toBe(false);
+    });
+
     it('retains the exact clip candidate beside a same-name track in an aggregate protection', () => {
         const clip = createClip('clip-overall-level', 'Overall Level');
         const project = {

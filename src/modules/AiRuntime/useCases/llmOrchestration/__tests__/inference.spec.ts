@@ -16,6 +16,7 @@ import {
     AUTO_TOOL_CHOICE,
     type HostedToolChoiceDirective,
 } from '../../../repositories/cloudLlm/cloudInference/hostedToolPlan';
+import { projectOpenAiStrictToolSchema } from '../../../repositories/cloudLlm/cloudInference/projectOpenAiStrictToolSchema';
 import { type OpenAiCompatibleCloudRuntime } from '../../../repositories/cloudLlm/cloudSession';
 import { getWebLlmContextWindowSize } from '../../../repositories/webLlm/getWebLlmContextWindowSize';
 import { agentReferenceStore } from '../../../stores/agentReferenceStore';
@@ -27,6 +28,7 @@ import {
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
     ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
+    getAgentToolCatalogSchemas,
     PROJECT_DISCOVERY_TOOL_NAME,
     RECIPE_DISCOVERY_TOOL_NAME,
     RECIPE_EXPANSION_TOOL_NAME,
@@ -238,6 +240,117 @@ describe('generateToolPlanningOutcome', () => {
             state: 'ready',
             backend: 'cloud',
             modelId: 'hosted-model',
+        });
+    });
+
+    describe('project.query filters on a non-strict hosted provider', () => {
+        function projectQuerySchemas(): ToolSchema[] {
+            return getAgentToolCatalogSchemas().filter((schema) => schema.function.name === 'project.query');
+        }
+
+        function replyWithQueryArguments(queryArguments: Record<string, unknown>): void {
+            mocks.backendChain.value = ['cloud'];
+            mocks.generateCloudToolCalls.mockResolvedValue({
+                providerRequestId: null,
+                calls: [{ id: 'query-call', name: 'project.query', arguments: queryArguments }],
+                strictToolSchemas: false,
+                usage: null,
+            });
+        }
+
+        it('admits a filter the owner publishes', async () => {
+            replyWithQueryArguments({ type: 'object', filters: { exactName: 'Lead Vocal' } });
+
+            await expect(
+                generateToolPlanningOutcome('system', 'find the lead vocal', projectQuerySchemas())
+            ).resolves.toMatchObject({
+                status: 'complete',
+                toolCalls: [
+                    { name: 'project.query', arguments: { type: 'object', filters: { exactName: 'Lead Vocal' } } },
+                ],
+            });
+        });
+
+        // A schema-invalid reply is refused at provider admission, before the application loop runs,
+        // so the model gets no tool receipt to correct itself with: the attempt fails.
+        it.each([
+            { label: 'an unknown filter key', filters: { unknownFilter: 'x' } },
+            { label: 'a wrong-typed filter value', filters: { startBeat: '4' } },
+        ])('fails the attempt for $label instead of returning a recoverable tool error', async ({ filters }) => {
+            replyWithQueryArguments({ type: 'object', filters });
+
+            await expect(
+                generateToolPlanningOutcome('system', 'find the lead vocal', projectQuerySchemas())
+            ).rejects.toThrow('The model provider request failed.');
+        });
+    });
+
+    describe('project.query on a strict hosted provider', () => {
+        function isRecord(value: unknown): value is Record<string, unknown> {
+            return typeof value === 'object' && value !== null && !Array.isArray(value);
+        }
+
+        function isNullable(node: Record<string, unknown>): boolean {
+            return Array.isArray(node.type) && node.type.includes('null');
+        }
+
+        /** The reply a strict model sends: every property the projection made nullable is null. */
+        function unsetOptionals(projected: Record<string, unknown>): Record<string, unknown> {
+            const properties = isRecord(projected.properties) ? projected.properties : {};
+            const reply: Record<string, unknown> = {};
+            for (const [key, property] of Object.entries(properties)) {
+                if (!isRecord(property)) {
+                    continue;
+                }
+                if (isNullable(property)) {
+                    reply[key] = null;
+                } else if (property.type === 'object') {
+                    reply[key] = unsetOptionals(property);
+                }
+            }
+            return reply;
+        }
+
+        it('reads the nulls a strict reply sends for unset optional arguments as absent', async () => {
+            const projectQuery = getAgentToolCatalogSchemas().find(
+                (schema) => schema.function.name === 'project.query'
+            );
+            if (projectQuery === undefined) {
+                throw new Error('project.query is not published');
+            }
+            const projected = projectOpenAiStrictToolSchema(projectQuery).function.parameters;
+            const projectedFilters = isRecord(projected.properties) ? projected.properties.filters : undefined;
+            if (!isRecord(projectedFilters)) {
+                throw new Error('project.query publishes no filters schema');
+            }
+            const strictReply = {
+                ...unsetOptionals(projected),
+                type: 'object',
+                filters: { ...unsetOptionals(projectedFilters), exactName: 'Lead Vocal' },
+            };
+            expect(strictReply).toMatchObject({
+                page: null,
+                sinceRevision: null,
+                filters: { muted: null, startBeat: null },
+            });
+            mocks.backendChain.value = ['cloud'];
+            mocks.generateCloudToolCalls.mockResolvedValue({
+                providerRequestId: null,
+                calls: [{ id: 'query-call', name: 'project.query', arguments: strictReply }],
+                strictToolSchemas: true,
+                usage: null,
+            });
+
+            const outcome = await generateToolPlanningOutcome('system', 'find the lead vocal', [projectQuery]);
+
+            expect(outcome.status).toBe('complete');
+            expect(outcome.status === 'complete' && outcome.toolCalls).toEqual([
+                {
+                    id: 'query-call',
+                    name: 'project.query',
+                    arguments: { type: 'object', filters: { exactName: 'Lead Vocal' } },
+                },
+            ]);
         });
     });
 

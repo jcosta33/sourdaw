@@ -14,6 +14,8 @@ import { restoreTakesForClip } from '../comping/restoreTakesForClip';
 
 import { splitClip } from './splitClip';
 
+import type { Clip } from '../../models/Track';
+
 export function splitClipWithUndo(clipId: string, splitBeat: number): void {
     if (!Number.isFinite(splitBeat)) {
         return;
@@ -39,6 +41,9 @@ export function splitClipWithUndo(clipId: string, splitBeat: number): void {
     const savedEndBeat = origClip.endBeat;
     const savedName = origClip.name;
     const savedFadeOut = origClip.fadeOutBeats;
+    // A looping split writes the loop length the source played onto the left
+    // (`loopingMidiLengthEntry`); a source that stored none gets it back absent.
+    const savedLoopLength = origClip.loopLength;
 
     // Freeze the source clip's MIDI data before splitClip repartitions it
     // (straddling notes get trimmed on the left copy). Undo must reinstate this
@@ -88,7 +93,7 @@ export function splitClipWithUndo(clipId: string, splitBeat: number): void {
             retiredTakeLanes = captureRetiredTakeLanes([rightClipId]);
             removeClip(rightClipId);
             updateClip(clipId, (context) => ({
-                ...context,
+                ...withStoredLoopLength(context, savedLoopLength),
                 endBeat: savedEndBeat,
                 name: savedName,
                 fadeOutBeats: savedFadeOut,
@@ -141,4 +146,12 @@ export function splitClipWithUndo(clipId: string, splitBeat: number): void {
             return newRightClipId;
         }
     );
+}
+
+function withStoredLoopLength(clip: Clip, loopLength: number | undefined): Clip {
+    if (loopLength !== undefined) {
+        return { ...clip, loopLength };
+    }
+    const { loopLength: _splitLoopLength, ...unsized } = clip;
+    return unsized;
 }
