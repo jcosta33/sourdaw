@@ -106,6 +106,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     clearClipSelection: vi.fn(),
     selectAllClips: vi.fn(),
     selectClipWithFocus: vi.fn(),
+    setClipSelection: vi.fn(),
+    prepareDuplicateClipTargetId: vi.fn(() => 'copy-1'),
     setMarqueeSelection: vi.fn(),
     cancelActiveTimelineGesture: vi.fn(() => false),
     executeUndoableDuplicateTimeRange: vi.fn(),
