@@ -1,0 +1,28 @@
+src/modules/SampleLibrary/presentations/components/SampleRow.tsx
+  s_fec7059b7a251c::t_73671e29004b25 201
+  s_fec7059b7a251c::t_543600614dbe2c 227
+  s_fec7059b7a251c::t_e77e57a83a32e4 219
+  s_fec7059b7a251c::t_deae0d45d5a6d0 175-176
+  s_fec7059b7a251c::t_40f5808544f065 134
+  s_fec7059b7a251c::t_ce716e0ef7f2bf 183
+src/modules/SampleLibrary/presentations/components/__tests__/SampleRow.spec.tsx
+  s_fec7059b7a251c::t_d224e28acff7ce 194-196,199-200,204-224,228-230
+  s_fec7059b7a251c::t_f292755261bb02 183
+  s_fec7059b7a251c::t_4f5aa72f99c4e9 225-227
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7ef7c18641671d8f668cc7dc9bc5f8426866ed2a",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
