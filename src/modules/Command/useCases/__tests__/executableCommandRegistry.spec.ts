@@ -1216,14 +1216,14 @@ const EXPECTED_COMMANDS = [
     ),
     expectedCommand(
         'automateTrackGainRange',
-        'Lift each named track or bus by a bounded relative dB amount as gain automation inside one named arrangement section.',
+        'Lift each named bus by a bounded relative dB amount as gain automation inside one named arrangement section.',
         {
             trackIds: {
                 type: 'array',
                 items: { type: 'string' },
                 minItems: 1,
                 uniqueItems: true,
-                description: 'Every exact existing track or bus the request names',
+                description: 'The exact buses the request names',
             },
             sectionName: { type: 'string', description: 'Existing arrangement section name the request names' },
             gainDb: {

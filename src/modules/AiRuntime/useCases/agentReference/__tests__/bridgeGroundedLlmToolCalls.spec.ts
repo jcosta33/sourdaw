@@ -280,7 +280,11 @@ describe('compiler graph alignment', () => {
 describe('automateTrackGainRange grounding', () => {
     const NAMED_LIFT = { trackIds: ['bus-drums', 'bus-bass'], sectionName: 'Chorus Two', gainDb: 1.5 };
 
-    function groundBusGainRange(prompt: string, arguments_: Record<string, unknown> = NAMED_LIFT) {
+    function groundBusGainRange(
+        prompt: string,
+        arguments_: Record<string, unknown> = NAMED_LIFT,
+        otherTracks: readonly ProjectContext['tracks'][number][] = []
+    ) {
         const drumBus = createTrack({ id: 'bus-drums', name: 'Drum Bus', kind: 'bus' });
         const bassBus = createTrack({ id: 'bus-bass', name: 'Bass Bus', kind: 'bus' });
         const leadVocal = createTrack({ id: 'track-lead-vocal', name: 'Lead Vocal' });
@@ -291,7 +295,7 @@ describe('automateTrackGainRange grounding', () => {
                 { id: 'section-chorus-one', name: 'Chorus One', startBeat: 32, endBeat: 48 },
                 { id: 'section-chorus-two', name: 'Chorus Two', startBeat: 56, endBeat: 72 },
             ],
-            tracks: [drumBus, bassBus, leadVocal, master],
+            tracks: [drumBus, bassBus, leadVocal, ...otherTracks, master],
         };
         return bridge(
             [{ name: 'automateTrackGainRange', arguments: arguments_ }],
@@ -309,6 +313,37 @@ describe('automateTrackGainRange grounding', () => {
         expect(groundBusGainRange(prompt)).toEqual({
             actions: [{ type: 'automateTrackGainRange', payload: NAMED_LIFT }],
             rejections: [],
+        });
+    });
+
+    it('grounds a single named bus', () => {
+        const singleLift = { ...NAMED_LIFT, trackIds: ['bus-drums'] };
+
+        expect(groundBusGainRange('Lift Drum Bus by 1.5 dB in Chorus Two', singleLift)).toEqual({
+            actions: [{ type: 'automateTrackGainRange', payload: singleLift }],
+            rejections: [],
+        });
+    });
+
+    // The lift stays bus-only: a named audio track grounds as a reference and is refused as no bus.
+    it('refuses a named audio track beside a bus', () => {
+        const bass = createTrack({ id: 'track-bass', name: 'Bass' });
+
+        expect(
+            groundBusGainRange(
+                'Lift Bass and Drum Bus by 1.5 dB in Chorus Two',
+                { ...NAMED_LIFT, trackIds: ['track-bass', 'bus-drums'] },
+                [bass]
+            )
+        ).toEqual({
+            actions: [],
+            rejections: [
+                {
+                    index: 0,
+                    name: 'automateTrackGainRange',
+                    reason: 'Expected every bus to have gain headroom, enabled automation, and no existing gain lane',
+                },
+            ],
         });
     });
 
