@@ -129,7 +129,8 @@ function collectEvents(masked: string): Event[] {
             end: match.index + match[0].length,
             kind: 'cut' as const,
             cutAt:
-                match[0].toLowerCase() === 'then' && instructionStartPattern.test(masked.slice(match.index + 4))
+                match[0].toLowerCase() === 'then' &&
+                instructionStartPattern.test(masked.slice(match.index + match[0].length))
                     ? joiningAndStart(masked, match.index)
                     : match.index,
         })).filter((cut) => !insideStart(cut.index))
