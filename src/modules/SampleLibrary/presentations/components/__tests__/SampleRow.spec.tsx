@@ -180,7 +180,32 @@ describe('SampleRow — overlay and decode-warning contracts', () => {
         const classes = overlay?.className.split(/\s+/) ?? [];
         expect(classes).toContain('pointer-events-none');
         expect(classes).toContain('group-hover:pointer-events-auto');
-        expect(classes).toContain('group-has-[button:focus-visible]:pointer-events-auto');
+        expect(classes).toContain('group-has-[button:focus]:pointer-events-auto');
+    });
+
+    it('reveals a favorite or find-similar button focused by mouse click, not only by keyboard', () => {
+        render(<SampleRow sample={createSample()} isPlaying={false} {...baseProps} onAddToTrack={vi.fn()} />);
+        const findSimilar = screen.getByRole('button', { name: 'Find samples similar to a' });
+        const favorite = screen.getByRole('button', { name: 'Add a to favorites' });
+        findSimilar.focus();
+        expect(document.activeElement).toBe(findSimilar);
+
+        const overlayClasses = findSimilar.parentElement?.className.split(/\s+/) ?? [];
+        expect(overlayClasses).toContain('group-has-[button:focus]:pointer-events-auto');
+        expect(overlayClasses).toContain('group-has-[button:focus]:opacity-100');
+        expect(
+            overlayClasses.filter((c) => c.includes('focus-visible:opacity') || c.includes('focus-visible]'))
+        ).toEqual([]);
+
+        const favoriteClasses = favorite.className.split(/\s+/);
+        expect(favoriteClasses).toContain('group-has-[button:focus]:opacity-100');
+        expect(favoriteClasses).toContain('focus:opacity-100');
+        expect(
+            favoriteClasses.filter((c) => c.includes('focus-visible:opacity') || c.includes('focus-visible]'))
+        ).toEqual([]);
+
+        const metadata = screen.getByText('1.2s').parentElement;
+        expect(metadata?.className.split(/\s+/)).toContain('group-has-[button:focus]:invisible');
     });
 
     it('never hides the decode warning behind a container-width threshold', () => {
