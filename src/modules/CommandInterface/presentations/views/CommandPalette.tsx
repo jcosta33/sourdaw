@@ -57,6 +57,33 @@ const CommandOption = ({ cmd, index, activeIndex, onSelect, onHover }: CommandOp
     );
 };
 
+type CommandListboxProps = {
+    id: string;
+    results: CommandEntry[];
+    activeIndex: number;
+    onSelect: (entry: CommandEntry) => void;
+    onHover: (index: number) => void;
+};
+
+const CommandListbox = ({ id, results, activeIndex, onSelect, onHover }: CommandListboxProps): ReactElement => (
+    <div id={id} role="listbox" aria-label="Commands" className="max-h-72 overflow-y-auto bg-surface-base py-1">
+        {results.map((cmd, index) => (
+            <CommandOption
+                key={cmd.id}
+                cmd={cmd}
+                index={index}
+                activeIndex={activeIndex}
+                onSelect={() => onSelect(cmd)}
+                onHover={() => onHover(index)}
+            />
+        ))}
+
+        {results.length === 0 ? (
+            <p className="px-3 py-4 text-center text-sm text-muted-foreground">No commands found</p>
+        ) : null}
+    </div>
+);
+
 export const CommandPalette = (): ReactElement | null => {
     const commandPaletteOpen = useStore(workspaceStore)?.commandPaletteOpen ?? false;
     const [query, setQuery] = useState('');
@@ -145,27 +172,13 @@ export const CommandPalette = (): ReactElement | null => {
                     />
                 </Row>
 
-                <div
+                <CommandListbox
                     id={listboxId}
-                    role="listbox"
-                    aria-label="Commands"
-                    className="max-h-72 overflow-y-auto bg-surface-base py-1"
-                >
-                    {results.map((cmd, index) => (
-                        <CommandOption
-                            key={cmd.id}
-                            cmd={cmd}
-                            index={index}
-                            activeIndex={activeIndex}
-                            onSelect={() => execute(cmd)}
-                            onHover={() => setSelectedIndex(index)}
-                        />
-                    ))}
-
-                    {results.length === 0 ? (
-                        <p className="px-3 py-4 text-center text-sm text-muted-foreground">No commands found</p>
-                    ) : null}
-                </div>
+                    results={results}
+                    activeIndex={activeIndex}
+                    onSelect={execute}
+                    onHover={setSelectedIndex}
+                />
             </DialogContent>
         </Dialog>
     );
