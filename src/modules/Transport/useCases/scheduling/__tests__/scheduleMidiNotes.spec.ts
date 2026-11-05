@@ -6530,9 +6530,12 @@ describe('scheduleMidiNotes plays a looping clip cut off its loop grid on the so
     type Voice = { pitch: number; beat: number; duration: number };
 
     /**
-     * Every note-on the window [8, 16) strikes, in beats (the clock reads beat 0
-     * at 0 s, 120 BPM). The Yeast rack's blocks follow the scheduler windows, so
-     * that route schedules the span as two one-loop windows.
+     * Every note-on the span [8, 16) strikes, in beats (the clock reads beat 0
+     * at 0 s, 120 BPM). The synth route sweeps it in half-beat scheduler
+     * windows, as playback does: a window that narrow reads the loop
+     * selector's phase index rather than taking every row as a candidate. The
+     * Yeast rack's blocks follow the scheduler windows, so that route
+     * schedules the span as two one-loop windows.
      */
     async function voicesFor(clip: Clip, rows: MidiNote[], route: 'synth' | 'yeast' = 'synth'): Promise<Voice[]> {
         vi.mocked(scheduleNote).mockClear();
@@ -6549,7 +6552,9 @@ describe('scheduleMidiNotes plays a looping clip cut off its loop grid on the so
             await scheduleMidiNotes(8, 12, 0, new Set<string>(), [], defaultTransportState, 120);
             await scheduleMidiNotes(12, 16, 0, new Set<string>(), [], defaultTransportState, 120);
         } else {
-            await scheduleMidiNotes(8, 16, 0, new Set<string>(), [], defaultTransportState, 120);
+            for (let fromBeat = 8; fromBeat < 16; fromBeat += 0.5) {
+                await scheduleMidiNotes(fromBeat, fromBeat + 0.5, 0, new Set<string>(), [], defaultTransportState, 120);
+            }
         }
         return vi
             .mocked(scheduleNote)
