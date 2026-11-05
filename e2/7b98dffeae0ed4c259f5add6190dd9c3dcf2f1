@@ -1,0 +1,21 @@
+src/modules/TimelineEditor/presentations/hooks/usePianoRollInteractions.ts
+  s_91f8b522168bd8::t_f143fe740074ba 380-385,649-651,1152,1505-1509
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx
+  s_91f8b522168bd8::t_23686c23af457d 1731-1794
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e27b98dffeae0ed4c259f5add6190dd9c3dcf2f1",
+  "prompts": {},
+  "sessions": {
+    "s_91f8b522168bd8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea993bb3-f8f9-4703-aa93-ef8a806d9107",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
