@@ -158,6 +158,17 @@ describe('usePianoRollRenderer', () => {
     // The backing store must therefore not grow with content at all — a clip
     // 100x longer than the viewport gets the same backing store as an empty
     // one, and the extra beats live in CSS layout instead (PianoRoll.tsx).
+    it.each(['__proto__', 'constructor', 'toString'])(
+        'paints the grid for the Object.prototype scale name %s as chromatic',
+        (scaleType) => {
+            const deps = buildDeps({ scaleType });
+            renderHook(() => usePianoRollRenderer(deps));
+
+            expect(() => runTick()).not.toThrow();
+            expect(deps.canvasRef.current!.width).toBe(VIEWPORT_W);
+        }
+    );
+
     it('keeps the backing store at the viewport size no matter how long the clip is', () => {
         const emptyDeps = buildDeps();
         renderHook(() => usePianoRollRenderer(emptyDeps));

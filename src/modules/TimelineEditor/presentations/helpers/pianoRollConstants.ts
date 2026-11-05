@@ -20,6 +20,10 @@ export { NOTE_NAMES } from '#/utils/noteNames';
 export const EMPTY_NOTES: MidiNote[] = [];
 export const SCALES = SCALE_PATTERNS;
 const CHROMATIC_PATTERN: readonly number[] = SCALE_PATTERNS.chromatic!;
+
+/** Pitch classes of the named scale; unknown names, including Object.prototype members, read as chromatic. */
+export const getScaleIntervals = (scaleType: string): readonly number[] =>
+    getScalePattern(scaleType) ?? CHROMATIC_PATTERN;
 export const SCALE_ROOT_LABELS = KEY_NAMES;
 /** The editor spans the whole MIDI range, as every established DAW piano roll does. */
 export const LOWEST_PITCH = 0;
@@ -191,7 +195,7 @@ export const INITIAL_DRAG_STATE: DragState = {
 
 /** Compute visible pitches based on scale filter and folding. */
 export const getVisiblePitches = (scaleType: string, scaleRoot: number, isFolded: boolean): number[] => {
-    const scaleIntervals = getScalePattern(scaleType) ?? CHROMATIC_PATTERN;
+    const scaleIntervals = getScaleIntervals(scaleType);
     const pitches: number[] = [];
     for (let pitch = HIGHEST_PITCH; pitch >= LOWEST_PITCH; pitch--) {
         const relativeNote = ((pitch % 12) - scaleRoot + 12) % 12;
