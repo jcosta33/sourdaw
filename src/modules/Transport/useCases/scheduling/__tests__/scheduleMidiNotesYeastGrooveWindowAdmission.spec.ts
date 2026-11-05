@@ -1136,6 +1136,42 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
                     );
                 }
             );
+
+            describe('when the note already crosses the pass end', () => {
+                // The row at 3.9 lasts 2 beats. The clip groove (slot 0 −0.5)
+                // pulls it to 3.65, still in its pass: 0.35 beats end on the
+                // pass end and a 1.65-beat tail is struck on the head. The
+                // sequencer groove leaves the in-pass segment (slot 7) where it
+                // is and pulls the tail (slot 0) back across the head onto
+                // 3.75, its 1.4 beats left struck on the head again and
+                // released at 1.4, two stages before the 1.9 the uncut row
+                // would release its tail at.
+                const crossingRows = [{ id: 'twice-pulled-crossing', startBeat: 3.9, duration: 2 }];
+
+                it('renders the segment, the pulled tail and its head strike on every pass in the bounce', () => {
+                    expect(offlineVoices(clip, crossingRows, twoStageState)).toEqual(
+                        [0, 4, 8].flatMap((passStart) => [
+                            { beat: passStart, durationBeats: 1.4 },
+                            { beat: passStart + 3.65, durationBeats: 0.35 },
+                            { beat: passStart + 3.75, durationBeats: 0.25 },
+                        ])
+                    );
+                });
+
+                it.each(LONG_PULL_PARTITIONS)(
+                    'plays there live and hands the rack every release the bounce does under $partition',
+                    async ({ widths }) => {
+                        const live = await liveVoices(clip, crossingRows, twoStageState, windowEdges(widths));
+                        const offlineRackInput: RackInputEvent[] = [];
+                        const bounced = offlineVoices(clip, crossingRows, twoStageState, offlineRackInput);
+                        expect(live.voices).toEqual(bounced);
+                        const beforeClipEnd = (noteOff: RackNoteOff) => noteOff.beat < CLIP_END_BEAT;
+                        expect(rackNoteOffs(liveRackInput(), 'twice-pulled-crossing').filter(beforeClipEnd)).toEqual(
+                            rackNoteOffs(offlineRackInput, 'twice-pulled-crossing').filter(beforeClipEnd)
+                        );
+                    }
+                );
+            });
         });
 
         describe('a note the clip groove and then the sequencer groove push across the pass end', () => {
