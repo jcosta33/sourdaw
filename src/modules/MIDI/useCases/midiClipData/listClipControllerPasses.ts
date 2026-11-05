@@ -2,6 +2,7 @@ import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
 import { SAME_BEAT_TOLERANCE } from '../../models/SameBeatTolerance';
+import { type MidiClipPriorPass } from '../../services/projectMidiClipWindow';
 
 export type ControllerProjectionClip = {
     startBeat: number;
@@ -26,9 +27,9 @@ export type ClipControllerPass = {
     closingLineBeat: number | undefined;
     /**
      * Set on the clip's first window only, when its head lies a whole loop or more past the loop anchor: the
-     * loop region end the pass before the head ended on, whose values the uncut loop holds at the head.
+     * pass before the head, whose values the uncut loop holds at the head.
      */
-    priorPassEndBeat?: number;
+    priorPass?: MidiClipPriorPass;
 };
 
 type IterationRange = { startIndex: number; endIndex: number };
@@ -133,7 +134,10 @@ export function listClipControllerPasses(
             closingLineBeat: isClosingPass && !hasWrappedSegment ? clip.endBeat : undefined,
         };
         if (iteration === 0 && headFollowsAPass) {
-            entryWindow.priorPassEndBeat = regionStartBeat + expansion.loopLengthBeats;
+            entryWindow.priorPass = {
+                endBeat: regionStartBeat + expansion.loopLengthBeats,
+                beatOffset: entryWindow.beatOffset - expansion.loopLengthBeats,
+            };
         }
         passes.push(entryWindow);
         if (hasWrappedSegment) {

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { projectChannelBend } from '#/modules/MIDI/useCases';
+
 import { projectNoteExpressionCurves } from '../projectNoteExpressionCurves';
 
 /** 120 BPM at 48 kHz: one beat is half a second, 24000 frames. */
@@ -786,6 +788,66 @@ describe('projectNoteExpressionCurves', () => {
                 [frameAtBeat(1), 200],
                 [frameAtBeat(2), 300],
             ]);
+        });
+    });
+
+    describe('on a looping clip whose head is cut a loop or more past its anchor', () => {
+        // The uncut source: loop [0, 4) of content anchored at timeline 1 and
+        // first trimmed to 3, wrapping at timeline 5, 9, 13 and 17. Delete Time
+        // over [1, 9.5) opens the clip on content 0.5 at timeline 1. The only
+        // bend row, at content 3.5, played at timeline 8.5 in the pass before.
+        const uncut = {
+            startBeat: 3,
+            endBeat: 19,
+            midiOffsetBeats: 2,
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 1,
+        };
+        const excised = { ...uncut, startBeat: 1, endBeat: 10.5, midiOffsetBeats: 8.5, loopOriginBeat: -7.5 };
+        const excisedShiftBeats = 8.5;
+        const pitchBends = [{ id: 'pass-before', beat: 3.5, value: 6_000, channel: 0 }];
+
+        const channelBendOf = (clip: typeof uncut) =>
+            projectChannelBend({ clips: [{ clip, controlChanges: [], pitchBends }], frameAtBeat });
+
+        /** The note-on expression of a note at content `contentBeat`, held two beats from its uncut start. */
+        function startOf(
+            clip: typeof uncut,
+            note: { pitchBend?: number },
+            noteStartBeat: number,
+            playedFromBeat = noteStartBeat
+        ) {
+            return projectNoteExpressionCurves({
+                note: { pressure: 10, slide: 64, channel: 0, ...note },
+                channelBend: channelBendOf(clip),
+                startBeat: playedFromBeat,
+                beatsIntoNote: playedFromBeat - noteStartBeat,
+                releaseFrame: frameAtBeat(noteStartBeat + 2),
+                frameAtBeat,
+            }).atStart;
+        }
+
+        it('starts a note with no bend of its own under the bend the pass before left, as the uncut clip does', () => {
+            // Content 1.5: timeline 2 on the excised clip, 10.5 on the uncut one.
+            const excisedStart = startOf(excised, {}, 2);
+
+            expect(excisedStart).toEqual({ pressure: 10, slide: 64, pitchBend: 6_000, pitchBendRangeSemitones: 2 });
+            expect(excisedStart).toEqual(startOf(uncut, {}, 2 + excisedShiftBeats));
+        });
+
+        it('keeps a note struck after the cut on its own bend, since the pass before bent the channel earlier', () => {
+            expect(startOf(excised, { pitchBend: 2_000 }, 2)).toBeUndefined();
+            expect(startOf(uncut, { pitchBend: 2_000 }, 2 + excisedShiftBeats)).toBeUndefined();
+        });
+
+        it('keeps a note the cut took the head off on the bend it was struck with before the cut', () => {
+            // Struck at content 0.1, timeline 0.6 before the excised head and 9.1
+            // on the uncut clip: after the pass before's bend at 8.5.
+            expect(startOf(excised, { pitchBend: 2_000 }, 0.6, 1)).toBeUndefined();
+            expect(
+                startOf(uncut, { pitchBend: 2_000 }, 0.6 + excisedShiftBeats, 1 + excisedShiftBeats)
+            ).toBeUndefined();
         });
     });
 });
