@@ -570,8 +570,8 @@ describe('de-esser render warm-up deadlines', () => {
     // The bundle bound leaves room for a loaded runner to start a real Node
     // child; the stalled-child case shortens it to keep the case quick.
     const SHORT_DEADLINES: WarmupDeadlines = { launch: 200, newPage: 200, bundle: 8_000, goto: 200, addScriptTag: 200 };
-    function neverSettles<T>(): Promise<T> {
-        return new Promise<T>(() => {});
+    function stalledLaunch(): Promise<WarmupBrowser<WarmupPage>> {
+        return new Promise<WarmupBrowser<WarmupPage>>(() => {});
     }
     const absent = (attempt: LaunchAttempt): Promise<never> =>
         Promise.reject(
@@ -609,7 +609,7 @@ describe('de-esser render warm-up deadlines', () => {
 
     it('fails a bundled launch that never settles by name instead of skipping', async () => {
         const setup = prepareRenderSetup({
-            launch: () => neverSettles(),
+            launch: stalledLaunch,
             bundleCommand: printsBundle,
             deadlines: SHORT_DEADLINES,
         });
@@ -620,7 +620,7 @@ describe('de-esser render warm-up deadlines', () => {
 
     it('fails a system Chrome launch that never settles by name once the bundled browser is absent', async () => {
         const setup = prepareRenderSetup({
-            launch: bundledAbsentThen(() => neverSettles()),
+            launch: bundledAbsentThen(stalledLaunch),
             bundleCommand: printsBundle,
             deadlines: SHORT_DEADLINES,
         });
