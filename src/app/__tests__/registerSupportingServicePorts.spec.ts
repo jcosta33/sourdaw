@@ -16,11 +16,13 @@ async function loadFreshModules() {
         browserAi,
         collaboration,
         collaborationStores,
+        commandInterface,
         controlSurface,
         controlSurfaceStores,
         cvGateStores,
         midi,
         midiStores,
+        onboarding,
         project,
         sampleLibrary,
         sampleLibraryStores,
@@ -30,11 +32,13 @@ async function loadFreshModules() {
         import('#/modules/BrowserAi/useCases'),
         import('#/modules/Collaboration/useCases'),
         import('#/modules/Collaboration/stores'),
+        import('#/modules/CommandInterface/useCases'),
         import('#/modules/ControlSurface/useCases'),
         import('#/modules/ControlSurface/stores'),
         import('#/modules/CvGate/stores'),
         import('#/modules/MIDI/useCases'),
         import('#/modules/MIDI/stores'),
+        import('#/modules/Onboarding/useCases'),
         import('#/modules/Project/useCases'),
         import('#/modules/SampleLibrary/useCases'),
         import('#/modules/SampleLibrary/stores'),
@@ -45,11 +49,13 @@ async function loadFreshModules() {
         browserAi,
         collaboration,
         collaborationStores,
+        commandInterface,
         controlSurface,
         controlSurfaceStores,
         cvGateStores,
         midi,
         midiStores,
+        onboarding,
         project,
         sampleLibrary,
         sampleLibraryStores,
@@ -75,13 +81,14 @@ beforeEach(async () => {
 
 describe('registerSupportingServicePorts before registration', () => {
     it('refuses every port read and names the function that registers it', () => {
-        const { arrangement, browserAi, midi, project } = modules;
+        const { arrangement, browserAi, commandInterface, midi, project } = modules;
         const reads: [string, () => unknown][] = [
             ['transferCaller', () => arrangement.collaborationAssetTransfer.read('transferCaller')],
             ['learnCaller', () => midi.midiLearnRouting.read('learnCaller')],
             ['projectionCaller', () => project.midiLearnProjection.read('projectionCaller')],
             ['cvGateCaller', () => project.cvGateProjection.read('cvGateCaller')],
             ['noteEditCaller', () => browserAi.midiNoteEditSource.read('noteEditCaller')],
+            ['tourCaller', () => commandInterface.onboardingTourLauncher.read('tourCaller')],
             ['discoveryCaller', () => project.sampleDiscoverySource.read('discoveryCaller')],
         ];
 
@@ -176,6 +183,12 @@ describe('registerSupportingServicePorts after registration', () => {
         expect(heard).toEqual(heardWhileSubscribed);
     });
 
+    it("starts Onboarding's own tour from the palette", () => {
+        const { commandInterface, onboarding } = modules;
+
+        expect(commandInterface.onboardingTourLauncher.read('spec').startTour).toBe(onboarding.startOnboardingTour);
+    });
+
     it("discovers samples through SampleLibrary's own library state and catalog search", () => {
         const { project, sampleLibrary, sampleLibraryStores } = modules;
         const source = project.sampleDiscoverySource.read('spec');
@@ -185,12 +198,13 @@ describe('registerSupportingServicePorts after registration', () => {
     });
 
     it('treats a repeated registration as a no-op', () => {
-        const { arrangement, browserAi, midi, project, app } = modules;
+        const { arrangement, browserAi, commandInterface, midi, project, app } = modules;
         const transfer = arrangement.collaborationAssetTransfer.read('spec');
         const routing = midi.midiLearnRouting.read('spec');
         const projection = project.midiLearnProjection.read('spec');
         const cvGate = project.cvGateProjection.read('spec');
         const noteEdits = browserAi.midiNoteEditSource.read('spec');
+        const tour = commandInterface.onboardingTourLauncher.read('spec');
         const source = project.sampleDiscoverySource.read('spec');
 
         expect(() => app.registerSupportingServicePorts()).not.toThrow();
@@ -200,16 +214,18 @@ describe('registerSupportingServicePorts after registration', () => {
         expect(project.midiLearnProjection.read('spec')).toBe(projection);
         expect(project.cvGateProjection.read('spec')).toBe(cvGate);
         expect(browserAi.midiNoteEditSource.read('spec')).toBe(noteEdits);
+        expect(commandInterface.onboardingTourLauncher.read('spec')).toBe(tour);
         expect(project.sampleDiscoverySource.read('spec')).toBe(source);
     });
 
     it('refuses a registration that differs from the registered one', () => {
-        const { arrangement, browserAi, midi, project } = modules;
+        const { arrangement, browserAi, commandInterface, midi, project } = modules;
         const transfer = arrangement.collaborationAssetTransfer.read('spec');
         const routing = midi.midiLearnRouting.read('spec');
         const projection = project.midiLearnProjection.read('spec');
         const cvGate = project.cvGateProjection.read('spec');
         const noteEdits = browserAi.midiNoteEditSource.read('spec');
+        const tour = commandInterface.onboardingTourLauncher.read('spec');
         const source = project.sampleDiscoverySource.read('spec');
 
         expect(() =>
@@ -227,6 +243,9 @@ describe('registerSupportingServicePorts after registration', () => {
         expect(() => browserAi.midiNoteEditSource.configure({ subscribe: () => () => undefined })).toThrow(
             /midiNoteEditSource\.configure: .*differs/
         );
+        expect(() => commandInterface.onboardingTourLauncher.configure({ startTour: () => undefined })).toThrow(
+            /onboardingTourLauncher\.configure: .*differs/
+        );
         expect(() => project.sampleDiscoverySource.configure({ ...source, readLibrary: () => null })).toThrow(
             /sampleDiscoverySource\.configure: .*differs/
         );
@@ -236,6 +255,7 @@ describe('registerSupportingServicePorts after registration', () => {
         expect(project.midiLearnProjection.read('spec')).toBe(projection);
         expect(project.cvGateProjection.read('spec')).toBe(cvGate);
         expect(browserAi.midiNoteEditSource.read('spec')).toBe(noteEdits);
+        expect(commandInterface.onboardingTourLauncher.read('spec')).toBe(tour);
         expect(project.sampleDiscoverySource.read('spec')).toBe(source);
     });
 });
