@@ -42,11 +42,29 @@ describe('nextDefaultTrackName', () => {
 });
 
 describe('isDefaultTrackName', () => {
-    it.each(['MIDI', 'MIDI 12', 'Audio 3', 'Bus 1', 'Folder', 'Master 2'])('recognises %s', (name) => {
-        expect(isDefaultTrackName(name)).toBe(true);
+    it.each([
+        ['midi', 'MIDI'],
+        ['midi', 'MIDI 12'],
+        ['audio', 'Audio 3'],
+        ['bus', 'Bus 1'],
+        ['folder', 'Folder'],
+        ['master', 'Master 2'],
+    ] as const)('recognises a %s track called %s', (kind, name) => {
+        expect(isDefaultTrackName({ kind, name })).toBe(true);
     });
 
-    it.each(['Lead', 'MIDI 2 copy', 'midi 2', 'Audio-3', 'Bass Bus 1', ''])('rejects %s', (name) => {
-        expect(isDefaultTrackName(name)).toBe(false);
+    it.each([
+        ['midi', 'Lead'],
+        ['midi', 'MIDI 2 copy'],
+        ['midi', 'midi 2'],
+        ['audio', 'Audio-3'],
+        ['bus', 'Bass Bus 1'],
+        ['midi', ''],
+        ['audio', 'Bus 1'],
+        ['midi', 'Audio 2'],
+        ['midi', 'Folder'],
+        ['audio', 'Master'],
+    ] as const)('rejects a %s track called %s', (kind, name) => {
+        expect(isDefaultTrackName({ kind, name })).toBe(false);
     });
 });

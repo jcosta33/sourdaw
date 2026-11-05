@@ -25,4 +25,11 @@ describe('hasAutomaticTrackName', () => {
         expect(hasAutomaticTrackName({ kind: 'midi', name: 'Lead' })).toBe(false);
         expect(hasAutomaticTrackName({ kind: 'midi', name: 'MIDI 2 copy' })).toBe(false);
     });
+
+    it("treats another kind's default name the user gave a track as chosen", () => {
+        expect(hasAutomaticTrackName({ kind: 'audio', name: 'Bus 1' })).toBe(false);
+        expect(hasAutomaticTrackName({ kind: 'midi', name: 'Folder' })).toBe(false);
+        expect(hasAutomaticTrackName({ kind: 'audio', name: 'Master' })).toBe(false);
+        expect(hasAutomaticTrackName({ kind: 'midi', name: 'Audio 2' })).toBe(false);
+    });
 });

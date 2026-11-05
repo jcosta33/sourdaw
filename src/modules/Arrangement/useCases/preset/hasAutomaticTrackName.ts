@@ -14,7 +14,7 @@ import { getUserPresets } from './presetStorage/getUserPresets';
 export function hasAutomaticTrackName(track: Pick<Track, 'name' | 'kind'>): boolean {
     const { name } = track;
     return (
-        isDefaultTrackName(name) ||
+        isDefaultTrackName(track) ||
         [...getFactoryPresets(), ...getUserPresets()].some(
             (preset) => preset.trackKind === track.kind && preset.name === name
         )

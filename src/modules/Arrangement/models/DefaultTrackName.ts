@@ -2,8 +2,8 @@
  * The default track name law: a track created without a name is called "<Kind label> N", where N
  * is one more than the highest number among tracks of the same kind already called "<Kind label>"
  * or "<Kind label> N", as Logic and Studio One number new tracks per kind. A bare label counts as 1,
- * because tracks created before this law ("MIDI", "Audio") stand for the first of their kind. Every
- * name the law produces is a default name, so a preset load treats it as automatic.
+ * because tracks created before this law ("MIDI", "Audio") stand for the first of their kind. A name
+ * is a default only beside its own kind: an audio track the user called "Bus 1" chose that name.
  */
 
 import { type TrackKind } from './Track';
@@ -20,9 +20,9 @@ const DEFAULT_TRACK_NAME_PATTERN = new RegExp(`^(${Object.values(TRACK_KIND_LABE
 
 type NamedTrack = { readonly kind: string; readonly name: string };
 
-/** Whether the name is one this law assigns to some kind: a bare label or a label and a number. */
-export function isDefaultTrackName(name: string): boolean {
-    return DEFAULT_TRACK_NAME_PATTERN.test(name);
+/** Whether the track's name is one this law assigns to its kind: the kind's bare label or its label and a number. */
+export function isDefaultTrackName(track: { readonly kind: TrackKind; readonly name: string }): boolean {
+    return readDefaultTrackNumber(track, track.kind) !== null;
 }
 
 function readDefaultTrackNumber(track: NamedTrack, kind: TrackKind): number | null {
