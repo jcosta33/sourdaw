@@ -1,0 +1,19 @@
+src/utils/clipLoopOrigin.ts
+  s_237b57bb31b7b0::t_9aedd639db864b 244-245
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5792b6afac5f18b9ae191bf74c05fc552ef5240e",
+  "prompts": {},
+  "sessions": {
+    "s_237b57bb31b7b0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_237b57bb31b7b0",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
