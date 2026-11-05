@@ -596,6 +596,8 @@ describe('excluded dimensions', () => {
                 {
                     vocal: { sends: ['verb-bus'], outputId: 'stem-bus' },
                     'stem-bus': { outputId: 'glue-bus' },
+                    // A send back up the chain: the reading must end on a routing cycle.
+                    'glue-bus': { sends: ['stem-bus'] },
                     bass: { sends: ['bass-return'] },
                 },
                 [
@@ -603,6 +605,7 @@ describe('excluded dimensions', () => {
                     { id: 'stem-bus', name: 'Stem Bus', devices: [] },
                     { id: 'glue-bus', name: 'Glue Bus', devices: [device('glue-eq', 'builtin-eq')] },
                     { id: 'drum-bus', name: 'Drum Bus', devices: [device('drum-eq', 'builtin-eq')] },
+                    { id: 'spare-bus', name: 'Spare Bus', devices: [] },
                 ]
             );
 
@@ -638,6 +641,18 @@ describe('excluded dimensions', () => {
                     setParameter('drum-eq', 'eq-low-gain', -3),
                 ],
                 reason: 'command 2 (setDeviceParameter eq-low-gain) edits the low end of “Drum Bus”',
+            },
+            {
+                label: 'a reverb added on a bus the same batch routes the vocal into',
+                prompt: intimate,
+                actions: [
+                    { type: 'setTrackOutput', payload: { trackId: 'vocal', outputId: 'spare-bus' } },
+                    {
+                        type: 'addDevice',
+                        payload: { trackId: 'spare-bus', deviceType: 'builtin-reverb', deviceId: 'spare-verb' },
+                    },
+                ],
+                reason: 'command 2 (addDevice builtin-reverb) edits the ambience of “Spare Bus”',
             },
         ] satisfies { label: string; prompt: string; actions: AppAction[]; reason: string }[])(
             'refuses $label',
