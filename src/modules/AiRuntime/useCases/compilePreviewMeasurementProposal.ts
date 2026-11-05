@@ -3,6 +3,7 @@ import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases'
 
 import { COMMAND_BATCH_PROPOSAL_TOOL_NAME } from '../models/AgentToolCatalogNames';
 import { type CreativeRequestAuthority } from '../models/CreativeInterpretation';
+import { type PerceptualConstraintReading } from '../models/PerceptualConstraint';
 import { type ProjectContext } from '../models/ProjectContext';
 import {
     type AdoptedRecipe,
@@ -18,8 +19,8 @@ import { compileArbitraryCommandList } from './compileArbitraryCommandList';
 import { compilePlannedActionCommandBatch } from './compilePlannedActionCommandBatch';
 import { materializeActionStateGuards } from './materializeActionStateGuards';
 import { materializeTransformToolCalls } from './materializeTransformToolCalls';
-import { compilePerceptualConstraints } from './perceptualConstraints/compilePerceptualConstraints';
 import { findExcludedDimensionEdit } from './perceptualConstraints/findExcludedDimensionEdit';
+import { readRequestPerceptualConstraints } from './perceptualConstraints/readRequestPerceptualConstraints';
 import { readPlanningMarkerSignatures } from './readPlanningMarkerSignatures';
 import { validateActions } from './validateActions';
 
@@ -36,6 +37,8 @@ type CompilePreviewMeasurementProposalInput = {
     revision: string;
     runId: string;
     creativeAuthority: CreativeRequestAuthority | undefined;
+    /** The constraints the card a refinement replaces recorded, when the batch is one. */
+    recordedConstraints?: PerceptualConstraintReading;
 };
 
 type CommandBatchEnvelope = Extract<
@@ -151,7 +154,11 @@ function admitRetainedCommands(input: CompilePreviewMeasurementProposalInput, re
         return { status: 'rejected' as const, reason: 'The proposal list conflicts with locked production intent.' };
     }
     const excludedEdit = findExcludedDimensionEdit({
-        constraints: compilePerceptualConstraints(input.prompt, input.context).constraints,
+        constraints: readRequestPerceptualConstraints({
+            prompt: input.prompt,
+            context: input.context,
+            recorded: input.recordedConstraints,
+        }).constraints,
         actions: guarded.actions,
         context: input.context,
     });

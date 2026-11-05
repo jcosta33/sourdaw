@@ -2,14 +2,15 @@ import { compileVersionedCommandBatchEnvelope, parseVersionedCommandBatchEnvelop
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import { type AgentExecutionMode, type AgentTrustCeiling } from '../models/AgentExecutionMode';
+import { type PerceptualConstraintReading } from '../models/PerceptualConstraint';
 
 import { bindMetricGoalsToBatch } from './bindMetricGoalsToBatch';
 import { compileAgentRiskApproval } from './compileAgentRiskApproval';
 import { compilePlannedActionCommandBatch } from './compilePlannedActionCommandBatch';
 import { getAgentExecutionModeFailure } from './getAgentExecutionModeFailure';
 import { metricGoalStateCodec } from './metricGoalStateCodec';
-import { compilePerceptualConstraints } from './perceptualConstraints/compilePerceptualConstraints';
 import { findExcludedDimensionEdit } from './perceptualConstraints/findExcludedDimensionEdit';
+import { readRequestPerceptualConstraints } from './perceptualConstraints/readRequestPerceptualConstraints';
 import { withPerceptualConstraintAuthority } from './perceptualConstraints/withPerceptualConstraintAuthority';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
 
@@ -22,6 +23,8 @@ type CompileAgentActionExecutionInput = Omit<
     metricGoalState?: string;
     schedulePosition?: number;
     trustCeiling?: AgentTrustCeiling;
+    /** The constraints the batch's grounding recorded, those of the card it refines among them. */
+    recordedConstraints?: PerceptualConstraintReading;
 };
 
 function compileAutoCommitAgentBatch(
@@ -81,6 +84,7 @@ export function compileAgentActionExecution(input: CompileAgentActionExecutionIn
         trustCeiling = 'destructive-commit',
         metricGoalState,
         schedulePosition,
+        recordedConstraints,
         ...commandInput
     } = input;
     if (mode === 'explain' || mode === 'plan') {
@@ -88,7 +92,11 @@ export function compileAgentActionExecution(input: CompileAgentActionExecutionIn
     }
     // Every proposal route compiles here, so a batch editing a dimension the request excludes is
     // refused before it is previewed, persisted or shown for approval.
-    const constraints = compilePerceptualConstraints(commandInput.intent, commandInput.context);
+    const constraints = readRequestPerceptualConstraints({
+        prompt: commandInput.intent,
+        context: commandInput.context,
+        recorded: recordedConstraints,
+    });
     const excludedEdit = findExcludedDimensionEdit({
         constraints: constraints.constraints,
         actions: commandInput.actions,

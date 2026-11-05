@@ -55,11 +55,28 @@ function readConstraintGoals(reading: PerceptualConstraintReading, context: Proj
     return [...measured, ...unsupported];
 }
 
+/** What one constraint goal asks for, whichever authority or reading position states it. */
+function readHoldKey(goal: MetricGoal): string | null {
+    if (goal.source.kind !== 'constraint') {
+        return null;
+    }
+    const { constraintId, clause } = goal.source;
+    return JSON.stringify([
+        constraintId,
+        clause,
+        goal.relation,
+        goal.metricId,
+        goal.band,
+        goal.targetIds,
+        goal.tolerance,
+    ]);
+}
+
 /**
  * Joins the request's perceptual constraints to its frozen metric goals, as `hold` criteria on the
  * constrained scope over the whole arrangement, so the one admission that gates Confirm also refuses a
  * preview that moves a constrained metric past its tolerance. A request with no constraint keeps its
- * state exactly; a state already holding this request's constraint authority is never joined twice.
+ * state exactly, and a hold the state already holds, the card's own in a refinement, is never joined twice.
  */
 export function withPerceptualConstraintAuthority(input: {
     state: MetricGoalState | null;
@@ -68,7 +85,11 @@ export function withPerceptualConstraintAuthority(input: {
     context: ProjectContext;
     commandBatch: CommandBatch;
 }): MetricGoalState | null {
-    const goals = readConstraintGoals(input.reading, input.context);
+    const original = input.state ?? { schemaVersion: 1, authorities: [], steps: [], proofs: [], binding: null };
+    // A refinement inherits the card's state with the holds its constraints already joined, so only
+    // a hold no authority of the state holds yet is joined, and never twice.
+    const held = new Set(original.authorities.flatMap((authority) => authority.goals.map(readHoldKey)));
+    const goals = readConstraintGoals(input.reading, input.context).filter((goal) => !held.has(readHoldKey(goal)));
     if (goals.length === 0) {
         return input.state;
     }
@@ -79,10 +100,6 @@ export function withPerceptualConstraintAuthority(input: {
     const envelope = parsed.envelope;
     const requestDigest = digest(input.prompt.trim());
     const authorityId = `perceptual-constraints-${digest({ requestDigest, reading: input.reading })}`;
-    const original = input.state ?? { schemaVersion: 1, authorities: [], steps: [], proofs: [], binding: null };
-    if (original.authorities.some((authority) => authority.authorityId === authorityId)) {
-        return input.state;
-    }
     const authority: MetricRequestAuthority = {
         schemaVersion: 1,
         authorityId,

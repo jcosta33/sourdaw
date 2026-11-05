@@ -8,6 +8,7 @@ import {
 } from '../../models/PerceptualConstraint';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type SemanticCommandListRoleFamily } from '../../models/SemanticCommandList';
+import { unionPerceptualConstraintReadings } from '../../transformers/unionPerceptualConstraintReadings';
 import { escapeRegExp } from '../agentReference/groundingStrategies/escapeRegExp';
 import { resolveRoleFamily } from '../canonicalRoleFamilies';
 import { maskTrackReferences } from '../maskTrackReferences';
@@ -231,10 +232,6 @@ function readQualityConstraints(
     }
 }
 
-function sameConstraint(left: PerceptualConstraint, right: PerceptualConstraint): boolean {
-    return left.constraintId === right.constraintId && JSON.stringify(left.scope) === JSON.stringify(right.scope);
-}
-
 /**
  * Reads the request's perceptual constraints: a prohibition or preservation of the low end ("don't
  * touch the low end", "leave the low end of the Bass alone") and a preserved quality ("keep the vocal
@@ -249,10 +246,5 @@ export function compilePerceptualConstraints(prompt: string, context: ProjectCon
     const reading: PerceptualConstraintReading = { constraints: [], unsupported: [] };
     readLowEndConstraints(masked, prompt, context, reading);
     readQualityConstraints(masked, prompt, context, reading);
-    return {
-        constraints: reading.constraints.filter(
-            (constraint, index) => reading.constraints.findIndex((other) => sameConstraint(other, constraint)) === index
-        ),
-        unsupported: reading.unsupported,
-    };
+    return unionPerceptualConstraintReadings(reading);
 }
