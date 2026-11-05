@@ -1,3 +1,5 @@
+import type { PreferencesSection } from '#/modules/Preferences/events';
+
 /** Payload for the unified device-panel event — one event for every panel open. */
 export type ShowDevicePanelGenericPayload = { deviceType: string; deviceId: string | null };
 
@@ -9,6 +11,9 @@ export type { NotifyPayload, ConfirmPayload, PromptPayload } from '#/utils/Notif
 
 /** Payload for the zoom-to-selection event. */
 export type ZoomToSelectionPayload = { startBeat: number; endBeat: number };
+
+/** Payload for opening Preferences; `undefined` keeps the section the user last viewed. */
+export type OpenPreferencesPayload = { section: PreferencesSection } | undefined;
 
 /** Payload for MIDI import event. */
 export type ImportMidiPayload = { file: File };
