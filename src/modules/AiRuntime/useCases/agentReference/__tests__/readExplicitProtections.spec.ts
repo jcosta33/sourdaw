@@ -1033,9 +1033,9 @@ describe('readExplicitProtections', () => {
 
     describe('a capitalized protection verb after a comma or dash is a request', () => {
         it.each([
-            'Turn the Drums down 3 dB, Keep the Drum Bus unchanged',
-            'Turn the Drums down 3 dB - Keep the Drum Bus unchanged',
-            'Turn the Drums down 3 dB — Keep the Drum Bus unchanged',
+            'Turn the Drums down 3 dB, Keep the Drum Bus alone',
+            'Turn the Drums down 3 dB - Keep the Drum Bus alone',
+            'Turn the Drums down 3 dB — Keep the Drum Bus alone',
             'Turn the Drums down 3 dB, keep the Drum Bus unchanged',
         ])('protects the Drum Bus in "%s"', (prompt) => {
             expect(readExplicitProtections(prompt, context).protectedTrackIds).toEqual([drumBus.id]);

@@ -303,6 +303,20 @@ describe('getExplicitlyProtectedClips', () => {
             ).toBe(false);
         });
 
+        it.each([
+            ['Rename Vocals - Keep Them Separate to Lead', ['Vocals - Keep Them Separate', 'Pad']],
+            ['Rename Intro - Leave Me Alone to Outro', ['Intro - Leave Me Alone', 'Pad']],
+        ])('reads a dash inside a clip name as part of the name: %s', (prompt, names) => {
+            expect(getExplicitClipProtection(prompt, clipsOf(...names))).toEqual({ clips: [], complete: true });
+        });
+
+        it('keeps a comma before a clip named like a protection as ambiguous', () => {
+            expect(
+                getExplicitClipProtection('Mute Bass, Keep Alive and rename Pad to Lead', clipsOf('Keep Alive', 'Pad'))
+                    .complete
+            ).toBe(false);
+        });
+
         it('opens nothing for a capitalised word that is no protection verb', () => {
             expect(
                 getExplicitClipProtection('Make it louder, Rename Alpha to Gamma', clipsOf('Alpha', 'Beta'))

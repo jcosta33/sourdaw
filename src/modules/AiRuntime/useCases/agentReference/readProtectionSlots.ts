@@ -81,18 +81,21 @@ export type Range = { start: number; end: number };
  * A capitalized word inside a sentence belongs to a title-cased name ("Keep Them Separate"), not to a request,
  * unless a conjunction or a comma or dash opens its clause ("but Keep the Drum Bus unchanged", "Alright, Keep Alpha alone").
  */
-function opensTitleCasedPhrase(masked: string, index: number): boolean {
+function opensTitleCasedPhrase(masked: string, index: number, names: readonly Range[]): boolean {
     return (
         /^\p{Lu}/u.test(masked.slice(index)) &&
         !opensClause(masked, index) &&
         !followsConjunction(masked, index) &&
-        !followsPunctuationBoundary(masked, index)
+        !followsPunctuationBoundary(masked, index, names)
     );
 }
 
-/** Whether a comma or a dash ends the text right before the index. */
-function followsPunctuationBoundary(masked: string, index: number): boolean {
-    return /[,\-–—]$/u.test(masked.slice(0, index).trimEnd());
+/** Whether a comma or a dash ends the text right before the index, outside every project object name in `names`. */
+function followsPunctuationBoundary(masked: string, index: number, names: readonly Range[]): boolean {
+    const before = masked.slice(0, index).trimEnd();
+    const punctuation = before.length - 1;
+    const insideName = names.some((name) => punctuation >= name.start && punctuation < name.end);
+    return /[,\-–—]$/u.test(before) && !insideName;
 }
 
 function followsConjunction(masked: string, index: number): boolean {
@@ -124,20 +127,20 @@ function joiningAndStart(masked: string, index: number): number {
     return joining === null ? index : joining.index;
 }
 
-function collectStarts(masked: string): Event[] {
+function collectStarts(masked: string, names: readonly Range[]): Event[] {
     return startPatterns.flatMap(({ kind, pattern }) =>
         Array.from(masked.matchAll(pattern), (match) => ({
             index: match.index,
             end: match.index + match[0].length,
             kind,
             cutAt: match.index,
-        })).filter((start) => !opensTitleCasedPhrase(masked, start.index))
+        })).filter((start) => !opensTitleCasedPhrase(masked, start.index, names))
     );
 }
 
 /** The spans of the words that open a protection, so a caller blanking object names can leave them readable. */
-function readProtectionStartRanges(masked: string): Range[] {
-    return collectStarts(masked).map(({ index, end }) => ({ start: index, end }));
+function readProtectionStartRanges(masked: string, names: readonly Range[] = []): Range[] {
+    return collectStarts(masked, names).map(({ index, end }) => ({ start: index, end }));
 }
 
 /** A `then` opening an instruction cuts where its joining `and` starts, so the conjunction stays with the instruction. */
@@ -150,8 +153,8 @@ function readBoundaryCutAt(masked: string, match: RegExpExecArray): number {
     return joiningAndStart(masked, match.index);
 }
 
-function collectEvents(masked: string): Event[] {
-    const starts = collectStarts(masked);
+function collectEvents(masked: string, names: readonly Range[]): Event[] {
+    const starts = collectStarts(masked, names);
     const insideStart = (index: number) => starts.some((start) => index >= start.index && index < start.end);
     const cuts: Event[] = [hardBoundaryPattern, conjunctionPattern].flatMap((pattern) =>
         Array.from(masked.matchAll(pattern), (match) => ({
@@ -191,12 +194,12 @@ function continuesProtectionOwner(masked: string, event: Event, lead: Piece['lea
 }
 
 /** The text cut at boundaries, instruction verbs and conjunctions, and before every protection start. */
-function splitPieces(masked: string): Piece[] {
+function splitPieces(masked: string, names: readonly Range[]): Piece[] {
     const pieces: Piece[] = [];
     let cursor = 0;
     let lead: Piece['lead'] = null;
     let memberSeparators: Range[] = [];
-    for (const event of collectEvents(masked)) {
+    for (const event of collectEvents(masked, names)) {
         if (event.index < cursor) {
             continue;
         }
@@ -341,9 +344,9 @@ function readsOtherwise(masked: string, pieces: readonly Piece[], index: number)
 }
 
 /** Every slot of the text, a carve-out right after a protection marked as only exempting from it. */
-function readSlots(masked: string): Slot[] {
+function readSlots(masked: string, names: readonly Range[] = []): Slot[] {
     const slots: Slot[] = [];
-    const pieces = splitPieces(masked);
+    const pieces = splitPieces(masked, names);
     let previousProtects = false;
     for (const [index, piece] of pieces.entries()) {
         const slot = readSlot(masked, piece);

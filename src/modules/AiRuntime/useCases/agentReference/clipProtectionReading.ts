@@ -117,7 +117,7 @@ function readSlotReference(prompt: string, slot: Slot): string {
     return slot.lead === 'prohibition' ? reference.replace(trailingClauseSeparatorPattern, '') : reference;
 }
 
-type NameBlanking = { text: string; ambiguous: boolean };
+type NameBlanking = { text: string; names: Range[]; ambiguous: boolean };
 
 /**
  * Blank every project object's name so a verb inside a name never reads as the next instruction. A name wholly
@@ -125,17 +125,18 @@ type NameBlanking = { text: string; ambiguous: boolean };
  * or by straddling them, cannot be told from the opener, so the reading is ambiguous.
  */
 function blankObjectNames(maskedText: string, prompt: string, context: ProjectContext): NameBlanking {
-    const starts = protectionSlots.startRanges(maskedText);
+    const references = refinementRequestReading.references(prompt, refinementRequestReading.candidates(context));
+    const starts = protectionSlots.startRanges(maskedText, references);
     const insideStart = (reference: Range) =>
         starts.some((start) => reference.start >= start.start && reference.end <= start.end);
     const overlapsStart = (reference: Range) =>
         starts.some((start) => reference.start < start.end && reference.end > start.start);
-    const references = refinementRequestReading.references(prompt, refinementRequestReading.candidates(context));
     return {
         text: blankRanges(
             maskedText,
             references.filter((reference) => !overlapsStart(reference))
         ),
+        names: references,
         ambiguous: references.some((reference) => overlapsStart(reference) && !insideStart(reference)),
     };
 }
@@ -175,7 +176,7 @@ function getProtectedReferenceTexts(prompt: string, context: ProjectContext): Pr
 
     const blanking = blankObjectNames(quoteScan.maskedText, prompt, context);
     complete &&= !blanking.ambiguous;
-    for (const slot of protectionSlots.read(blanking.text)) {
+    for (const slot of protectionSlots.read(blanking.text, blanking.names)) {
         const range = slot.completeRange;
         if (
             range === null ||
