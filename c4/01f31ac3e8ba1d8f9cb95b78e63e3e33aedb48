@@ -1,0 +1,38 @@
+src/modules/TimelineEditor/presentations/helpers/__tests__/pianoRollOpeningScroll.spec.ts
+  s_fec7059b7a251c::t_2058ad7f500b1b 48
+  s_fec7059b7a251c::t_739b1e2e4320e6 1-47,49-78
+src/modules/TimelineEditor/presentations/helpers/pianoRollOpeningScroll.ts
+  s_55244eb93b97d1::t_f19a9cfede41af 1-41,52-74,76-83
+  s_55244eb93b97d1::t_89ad2dd4a23373 42-51,75
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollOpeningScroll.spec.tsx
+  s_55244eb93b97d1::t_71cc77c3e5506a 1-13,15-178
+  s_55244eb93b97d1::t_22e3106426b616 14
+src/modules/TimelineEditor/presentations/hooks/usePianoRollOpeningScroll.ts
+  s_55244eb93b97d1::t_9a68cedc14df63 1-73
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx
+  s_55244eb93b97d1::t_70442fac5effa9 61,454,521-523,590-593,598-601
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c401f31ac3e8ba1d8f9cb95b78e63e3e33aedb48",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
