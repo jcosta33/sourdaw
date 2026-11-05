@@ -1,0 +1,112 @@
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_55244eb93b97d1::t_120bc5a91b5fd0 1228,1233,2765,2773-2776
+  s_55244eb93b97d1::t_41ec2029905446 1219,1226
+src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts
+  s_55244eb93b97d1::t_12ea2d5bfbac63 77
+  s_55244eb93b97d1::t_7e4f0d0ee9a495 34,44,55-59,61-62,66-72,78-82,97-106,126-127,136,139-147,149,151,154-157,159,162,166-171,173,175-179,181-195,197,200-202,205-206,208,210-213,215-216,232,234,240-244,247-253,265-288,305-319,370-375,377,415-421,424-425,427,430,450-451,485,500,513,516,522-523,527-529,533-539,541-542,545,550-552,554-555,558-560,562,564-567,569-570,574-576,578-579,582-583,585,587-592
+  s_55244eb93b97d1::t_804057031f5818 83
+  s_fec7059b7a251c::t_43b1995ddedf25 73-76,163-165,172,174,207,209,214,217-221,223-228,231,233,235-237,239,245-246,254-264,517-518,520,531,543-544,546-549,553
+  s_4d6701e8969790::t_8c906f1168e13c 15,17-23,43,49-51,289-304,380-414,594-758
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_55244eb93b97d1::t_e7d9899bf612b2 2428,2436-2437,2439,2449,2454
+  s_55244eb93b97d1::t_aac35607df4b78 2438
+  s_55244eb93b97d1::t_41ec2029905446 2427,2447
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_55244eb93b97d1::t_0ca1bf4335d946 1323,1327,1404-1407,1413-1421,1472-1476,1478-1482
+  s_55244eb93b97d1::t_46b371f6bad909 1408-1412
+  s_55244eb93b97d1::t_4dd7cca1e00131 1434
+  s_55244eb93b97d1::t_aac35607df4b78 1324
+  s_55244eb93b97d1::t_79cb9b0fe1d8f4 8154
+  s_fec7059b7a251c::t_f067d767b029b9 153,1308-1322,1325-1326,1333-1343,1346,1435-1436,1477,4119-4147,5238-5242,5245
+  s_aaa00b6f988ced::t_a3cd1abe3479d9 4148-4168,5243-5244
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_55244eb93b97d1::t_4242b70984e06a 281,293,303,310-312,318,403-420,422-426,428-450
+  s_55244eb93b97d1::t_18b3b560a45dfa 280
+  s_55244eb93b97d1::t_5258727e1d43b4 294-296,299,307,326-350
+  s_55244eb93b97d1::t_6f24b26f9d2862 351
+  s_fec7059b7a251c::t_f4c59fce6dd523 282-292,297-298,306,314,319-325,352-402,421,427
+src/modules/AiRuntime/useCases/__tests__/automateTrackGainRangeAdmission.spec.ts
+  s_55244eb93b97d1::t_cd1a7cd8e4e767 87,106,110,127,153
+  s_55244eb93b97d1::t_8c852a97bf3358 140
+  s_55244eb93b97d1::t_dc4a0a6c59430e 88-90
+  s_55244eb93b97d1::t_8c9f8c0bc7e3bd 103-105
+  s_55244eb93b97d1::t_dbcfd9387150c2 107-109
+  s_55244eb93b97d1::t_9777daba1a01c3 111-112
+  s_55244eb93b97d1::t_88b30a443daa7d 26-28,63-85,92-102,114,130,135,182,184,189,192-193
+  s_aaa00b6f988ced::t_be46d3a3b9d969 156-181,183,194,197-206
+evidence/agent-campaign/manifest.json
+  s_55244eb93b97d1::t_1a578748f715c8 539
+  s_aaa00b6f988ced::t_1397986c506dca 695
+src/modules/AiRuntime/models/WorkflowCapability.ts
+  s_fec7059b7a251c::t_5db63e9bdebdc0 3
+src/modules/AiRuntime/useCases/agentReference/getApplicationProtectedObjects.ts
+  s_55244eb93b97d1::t_b089ae2af00018 31
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_55244eb93b97d1::t_4202f8d2bfe2bb 342
+evidence/agent-campaign/corpora/source-examples.json
+  s_55244eb93b97d1::t_d6289d030f98d4 31-32
+src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts
+  s_55244eb93b97d1::t_cfc7060e2f4a20 1047-1048,1050-1051,1055-1057,1064,1066,1070-1071,1083,1103-1104,1106,1109-1110,1112-1113,1115-1118,1122-1124,1130,1137-1139,1146-1147,1162,1165,1213,1215,1222,1234,1239,1242,1248,1250-1252,1256,1258,1263,1268-1271,1275-1276,1278,1287
+src/modules/AiRuntime/useCases/__tests__/materializeActionStateGuardsGainRange.spec.ts
+  s_55244eb93b97d1::t_b3b57baeea2516 75-76
+  s_0314bb17e5dee3::t_8d4c454b81841a 5-9,99-204
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_55244eb93b97d1::t_fb7b26529a2bbf 821
+src/modules/AiRuntime/transformers/llmActionStrategies/automationRangeStrategy.ts
+  s_55244eb93b97d1::t_41ec2029905446 239,267
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/automationRangeStrategy.spec.ts
+  s_55244eb93b97d1::t_5258727e1d43b4 132
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/readSourceSetLiftShape.ts
+  s_55244eb93b97d1::t_4209d0969c65d9 1-44
+  s_fec7059b7a251c::t_0d63ff592c1dde 45-48
+src/modules/AiRuntime/useCases/materializeActionStateGuards.ts
+  s_0314bb17e5dee3::t_d2545d00fbb6ca 661,678
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5c5bd39c5bd4e215c41e1575f1aa10407f7bc5ae",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_4d6701e8969790": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_4d6701e8969790",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_aaa00b6f988ced": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_aaa00b6f988ced",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
