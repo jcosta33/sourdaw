@@ -640,7 +640,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Arrangement/useCases/freezeBounce/__tests__/agentFreezeRenderReceipt.spec.ts",
-                    "digest": "7e7c5d4eff18a91b281a4f46b093b77047c176160db44be78bcf60ba979843d2"
+                    "digest": "d65e4c1844644bd754ed631736e26a4c9b7baf036a4640af7710f75996c953e9"
                 },
                 {
                     "path": "src/modules/AudioRendering/useCases/__tests__/agentOfflineRender.spec.ts",

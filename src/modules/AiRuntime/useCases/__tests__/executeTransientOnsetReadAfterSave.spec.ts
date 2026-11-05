@@ -74,7 +74,7 @@ async function readRecheck(projectRevision: string): Promise<() => boolean> {
         call: { name: 'analysis.detectTransients', arguments: { clipId: 'clip-1' } },
         callId: 'call-1',
         turn: 1,
-    } as Parameters<typeof reader.execute>[0]);
+    });
     reader.dispose();
     const input = mocks.readSource.mock.calls[0]?.[0];
     if (input === undefined) {
