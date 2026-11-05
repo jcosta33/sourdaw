@@ -55,3 +55,61 @@ describe('resetShortcutMappings', () => {
         });
     });
 });
+
+describe('setShortcutMapping reassignment', () => {
+    const reassignState: ShortcutStoreState = {
+        definitions: [
+            {
+                id: 'transport.toggleMetronome',
+                label: 'Toggle Metronome',
+                category: 'transport',
+                defaultKeys: ['m'],
+                action: { type: 'appAction', action: { type: 'toggleMetronome' } },
+            },
+            {
+                id: 'transport.toggleLoop',
+                label: 'Toggle Loop',
+                category: 'transport',
+                defaultKeys: ['l'],
+                action: { type: 'appAction', action: { type: 'toggleLoop' } },
+            },
+            {
+                id: 'workspace.toggleInspector',
+                label: 'Toggle Inspector',
+                category: 'view',
+                defaultKeys: ['mod+i', 'alt+i'],
+                action: { type: 'callback', id: 'toggleInspector' },
+            },
+            {
+                id: 'loopStation.pad.r2c8.play',
+                label: 'Loop Station: Play row 3 col 9',
+                category: 'transport',
+                defaultKeys: ['l'],
+                action: { type: 'callback', id: 'loopStationPad.play.r2c8' },
+            },
+        ],
+        customMappings: {},
+    };
+
+    beforeEach(() => {
+        shortcutStore.set({ definitions: reassignState.definitions, customMappings: {} });
+    });
+
+    it('moves the combo off the global binding that held it, leaving it explicitly unbound', () => {
+        setShortcutMapping('transport.toggleMetronome', 'l');
+
+        expect(shortcutStore.value?.customMappings).toStrictEqual({
+            'transport.toggleMetronome': ['l'],
+            'transport.toggleLoop': [],
+        });
+    });
+
+    it('removes only the reassigned combo from a binding that keeps another key', () => {
+        setShortcutMapping('transport.toggleMetronome', 'alt+i');
+
+        expect(shortcutStore.value?.customMappings).toStrictEqual({
+            'transport.toggleMetronome': ['alt+i'],
+            'workspace.toggleInspector': ['mod+i'],
+        });
+    });
+});

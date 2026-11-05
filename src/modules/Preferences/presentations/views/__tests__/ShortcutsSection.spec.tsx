@@ -1,66 +1,13 @@
-import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { shortcutStore, type ShortcutDefinition } from '#/modules/CommandInterface/stores';
+import { confirmUser } from '#/utils/Notification/confirmUser';
 
 import { ShortcutsSection } from '../ShortcutsSection';
 
-const mocks = vi.hoisted(() => ({
-    setShortcutMapping: vi.fn(),
-    resetShortcutMappings: vi.fn(),
-}));
-
-vi.mock('#/modules/CommandInterface/useCases', () => ({
-    setShortcutMapping: mocks.setShortcutMapping,
-    resetShortcutMappings: mocks.resetShortcutMappings,
-}));
-
-vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn(() => ({
-        definitions: [
-            {
-                id: 'transport.togglePlayback',
-                label: 'Toggle Playback',
-                category: 'transport',
-                defaultKeys: ['Space'],
-                action: { type: 'appAction', action: { type: 'togglePlayback' } },
-            },
-            {
-                id: 'editing.undo',
-                label: 'Undo',
-                category: 'editing',
-                defaultKeys: ['mod+z'],
-                action: { type: 'callback', id: 'undo' },
-            },
-        ],
-        customMappings: {
-            'editing.undo': ['mod+z'],
-        },
-    })),
-}));
-
-vi.mock('#/modules/CommandInterface/stores', () => ({
-    shortcutStore: {
-        name: 'shortcutStore',
-        value: {
-            definitions: [
-                {
-                    id: 'transport.togglePlayback',
-                    label: 'Toggle Playback',
-                    category: 'transport',
-                    defaultKeys: ['Space'],
-                    action: { type: 'appAction', action: { type: 'togglePlayback' } },
-                },
-                {
-                    id: 'editing.undo',
-                    label: 'Undo',
-                    category: 'editing',
-                    defaultKeys: ['mod+z'],
-                    action: { type: 'callback', id: 'undo' },
-                },
-            ],
-            customMappings: { 'editing.undo': ['mod+z'] },
-        },
-        set: vi.fn(),
-    },
+vi.mock('#/utils/Notification/confirmUser', () => ({
+    confirmUser: vi.fn(),
 }));
 
 vi.mock('../../components/CaptureKeyButton', () => ({
@@ -73,9 +20,45 @@ vi.mock('../preferencesShared', () => ({
     SectionTitle: ({ title }: { title: string }) => <h2>{title}</h2>,
 }));
 
+function definition(id: string, label: string, defaultKeys: string[]): ShortcutDefinition {
+    return { id, label, category: 'transport', defaultKeys, action: { type: 'callback', id } };
+}
+
+const DEFINITIONS: ShortcutDefinition[] = [
+    definition('transport.togglePlayback', 'Toggle Playback', ['Space']),
+    definition('transport.toggleMetronome', 'Toggle Metronome', ['m']),
+    definition('transport.toggleLoop', 'Toggle Loop', ['l']),
+    { ...definition('editing.undo', 'Undo', ['mod+z']), category: 'editing' },
+];
+
+function setCustomMappings(customMappings: Record<string, string[]>): void {
+    act(() => {
+        shortcutStore.set({ definitions: DEFINITIONS, customMappings });
+    });
+}
+
+/** The binding button in the row labelled `label`. */
+function bindingButton(label: string): HTMLElement {
+    const button = screen.getByText(label).nextElementSibling;
+    if (!(button instanceof HTMLElement)) {
+        throw new Error(`expected a binding button beside ${label}`);
+    }
+    return button;
+}
+
+function startCapture(label: string): void {
+    fireEvent.click(bindingButton(label));
+    expect(screen.getByText(/Press the desired key combination/)).toBeInTheDocument();
+}
+
 describe('ShortcutsSection', () => {
     beforeEach(() => {
-        vi.clearAllMocks();
+        vi.mocked(confirmUser).mockReset();
+        setCustomMappings({});
+    });
+
+    afterEach(() => {
+        cleanup();
     });
 
     it('renders category headers for every populated category', () => {
@@ -85,21 +68,76 @@ describe('ShortcutsSection', () => {
         expect(screen.getByText('Editing')).toBeInTheDocument();
     });
 
-    it('renders both custom-mapped and default-mapped labels', () => {
+    it('clears every custom mapping on `Reset to Defaults`', () => {
+        setCustomMappings({ 'editing.undo': ['mod+y'] });
         render(<ShortcutsSection />);
-        expect(screen.getByText('Toggle Playback')).toBeInTheDocument();
-        expect(screen.getByText('Undo')).toBeInTheDocument();
-    });
 
-    it('resets custom mappings through the Command use case on `Reset to Defaults`', () => {
-        render(<ShortcutsSection />);
         fireEvent.click(screen.getByText('Reset to Defaults'));
-        expect(mocks.resetShortcutMappings).toHaveBeenCalledTimes(1);
+
+        expect(shortcutStore.value?.customMappings).toStrictEqual({});
+        expect(bindingButton('Undo')).toHaveTextContent('⌘ Z');
     });
 
-    it('enters capture mode when a binding button is clicked', () => {
+    it('renders a combo with the shared keycap labels', () => {
+        setCustomMappings({ 'editing.undo': ['mod+Backspace'] });
         render(<ShortcutsSection />);
-        fireEvent.click(screen.getByText('Space'));
-        expect(screen.getByText(/Press the desired key combination/)).toBeInTheDocument();
+
+        expect(bindingButton('Undo')).toHaveTextContent('⌘ ⌫');
+    });
+
+    it('stores alt+d when capturing macOS Option+D, which reports ∂', () => {
+        render(<ShortcutsSection />);
+        startCapture('Toggle Metronome');
+
+        fireEvent.keyDown(window, { key: '∂', code: 'KeyD', altKey: true });
+
+        expect(shortcutStore.value?.customMappings).toStrictEqual({ 'transport.toggleMetronome': ['alt+d'] });
+        expect(confirmUser).not.toHaveBeenCalled();
+    });
+
+    it('ends the capture on Escape without binding anything', () => {
+        render(<ShortcutsSection />);
+        startCapture('Toggle Metronome');
+
+        fireEvent.keyDown(window, { key: 'Escape', code: 'Escape' });
+
+        expect(screen.queryByText(/Press the desired key combination/)).not.toBeInTheDocument();
+        expect(shortcutStore.value?.customMappings).toStrictEqual({});
+        expect(bindingButton('Toggle Metronome')).toHaveTextContent('M');
+    });
+
+    it('asks before taking a key another command holds, and moves it on confirm', async () => {
+        vi.mocked(confirmUser).mockResolvedValue(true);
+        render(<ShortcutsSection />);
+        startCapture('Toggle Metronome');
+
+        fireEvent.keyDown(window, { key: 'l', code: 'KeyL' });
+
+        expect(confirmUser).toHaveBeenCalledWith(
+            expect.objectContaining({ message: 'L is assigned to Toggle Loop. Reassign it to Toggle Metronome?' })
+        );
+        await vi.waitFor(() => {
+            expect(shortcutStore.value?.customMappings).toStrictEqual({
+                'transport.toggleMetronome': ['l'],
+                'transport.toggleLoop': [],
+            });
+        });
+        expect(bindingButton('Toggle Metronome')).toHaveTextContent('L');
+        expect(bindingButton('Toggle Loop')).toHaveTextContent('Unassigned');
+    });
+
+    it('leaves both commands unchanged when the reassignment is cancelled', async () => {
+        vi.mocked(confirmUser).mockResolvedValue(false);
+        render(<ShortcutsSection />);
+        startCapture('Toggle Metronome');
+
+        fireEvent.keyDown(window, { key: 'l', code: 'KeyL' });
+
+        expect(confirmUser).toHaveBeenCalledTimes(1);
+        // The section's continuation was queued on this promise before ours.
+        await vi.mocked(confirmUser).mock.results[0]?.value;
+        expect(shortcutStore.value?.customMappings).toStrictEqual({});
+        expect(bindingButton('Toggle Metronome')).toHaveTextContent('M');
+        expect(bindingButton('Toggle Loop')).toHaveTextContent('L');
     });
 });

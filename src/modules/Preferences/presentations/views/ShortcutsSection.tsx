@@ -7,9 +7,17 @@ import { DawUtilityPanel } from '#/components/daw/DawUtilityPanel';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent } from '#/components/ui/dialog';
+import { currentKeyboardLayoutMap, loadKeyboardLayoutMap } from '#/infra/keyboardLayout/keyboardLayoutMap';
 import { useStore } from '#/infra/store/useStore';
 import { shortcutStore, type ShortcutDefinition, type ShortcutStoreState } from '#/modules/CommandInterface/stores';
-import { resetShortcutMappings, setShortcutMapping } from '#/modules/CommandInterface/useCases';
+import {
+    findShortcutConflicts,
+    formatShortcutCombo,
+    resetShortcutMappings,
+    setShortcutMapping,
+    shortcutComboFromKeyPress,
+} from '#/modules/CommandInterface/useCases';
+import { confirmUser } from '#/utils/Notification/confirmUser';
 import { cn } from '#/utils/Styles/cn';
 
 import { CaptureKeyButton } from '../components/CaptureKeyButton';
@@ -37,71 +45,41 @@ const CATEGORY_LABELS: Record<ShortcutDefinition['category'], string> = {
     workflow: 'Workflow',
 };
 
-/** Convert a captured `KeyboardEvent` to the combo string the store expects. */
-function keyboardEventToCombo(event: KeyboardEvent): string {
-    const modifiers: string[] = [];
-    if (event.metaKey || event.ctrlKey) {
-        modifiers.push('mod');
-    }
-    if (event.shiftKey) {
-        modifiers.push('shift');
-    }
-    if (event.altKey) {
-        modifiers.push('alt');
-    }
-    const key = event.key === ' ' ? 'Space' : event.key;
-    return [...modifiers, key].join('+');
+const CAPTURE_IGNORED_KEYS = ['Meta', 'Shift', 'Alt', 'Control', 'CapsLock'];
+
+/** A bare Escape ends the capture; Escape with modifiers (Shift+Escape is MIDI panic) is still bindable. */
+function isCaptureCancel(event: KeyboardEvent): boolean {
+    return event.key === 'Escape' && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
 }
 
-/** Render a combo string as a user-facing key label. Accepts any store combo. */
-function formatCombo(combo: string): string {
-    if (combo === '+') {
-        return '+';
+/**
+ * Binds `combo` to the definition, asking first when other commands already
+ * hold it (Logic Pro and REAPER key-command convention): confirming moves the
+ * key to this command, cancelling changes nothing.
+ */
+async function assignShortcut(definitionId: string, combo: string): Promise<void> {
+    const state = shortcutStore.value;
+    const target = state?.definitions.find((definition) => definition.id === definitionId);
+    if (!state || !target) {
+        return;
     }
-    let keyPart: string;
-    let modifiers: string[];
-    if (combo.endsWith('++')) {
-        keyPart = '+';
-        modifiers = combo.slice(0, -2).split('+');
-    } else {
-        const parts = combo.split('+');
-        const popped = parts.pop() ?? '';
-        keyPart = popped;
-        modifiers = parts;
+    const holders = findShortcutConflicts(state, definitionId, combo);
+    if (holders.length > 0) {
+        const holderLabels = holders.map((holder) => holder.label).join(', ');
+        const reassign = await confirmUser({
+            title: 'Shortcut already in use',
+            message: `${formatShortcutCombo(combo)} is assigned to ${holderLabels}. Reassign it to ${target.label}?`,
+            confirmLabel: 'Reassign',
+        });
+        if (!reassign) {
+            return;
+        }
     }
-
-    const symbols: string[] = [];
-    if (modifiers.includes('mod')) {
-        symbols.push('⌘');
-    }
-    if (modifiers.includes('alt')) {
-        symbols.push('⌥');
-    }
-    if (modifiers.includes('shift')) {
-        symbols.push('⇧');
-    }
-
-    let key = keyPart;
-    if (key === 'Space' || key === ' ') {
-        key = 'Space';
-    } else if (key === 'Enter') {
-        key = '⏎';
-    } else if (key === 'Backspace') {
-        key = '⌫';
-    } else if (key === 'Delete') {
-        key = 'Del';
-    } else if (key === 'Escape') {
-        key = 'Esc';
-    } else if (key.length === 1) {
-        key = key.toUpperCase();
-    }
-
-    symbols.push(key);
-    return symbols.join(' ');
-}
-
-function updateMapping(definitionId: string, combo: string): void {
     setShortcutMapping(definitionId, combo);
+}
+
+function formatBinding(keys: string[]): string {
+    return keys.length === 0 ? 'Unassigned' : keys.map(formatShortcutCombo).join(' / ');
 }
 
 function resetMappings(): void {
@@ -121,15 +99,21 @@ export const ShortcutsSection = (): ReactElement => {
         if (!editingId) {
             return undefined;
         }
+        // Capture phase on window, ahead of the global shortcut listener and the
+        // dialogs' own Escape handling, so the press binds and nothing else runs.
         const handleKey = (event: KeyboardEvent) => {
             event.preventDefault();
             event.stopPropagation();
-            if (['Meta', 'Shift', 'Alt', 'Control', 'CapsLock'].includes(event.key)) {
+            if (CAPTURE_IGNORED_KEYS.includes(event.key)) {
                 return;
             }
-            updateMapping(editingId, keyboardEventToCombo(event));
             setEditingId(null);
+            if (isCaptureCancel(event)) {
+                return;
+            }
+            void assignShortcut(editingId, shortcutComboFromKeyPress(event, currentKeyboardLayoutMap()));
         };
+        void loadKeyboardLayoutMap();
         window.addEventListener('keydown', handleKey, true);
         return () => window.removeEventListener('keydown', handleKey, true);
     }, [editingId]);
@@ -174,7 +158,7 @@ export const ShortcutsSection = (): ReactElement => {
                         <div className="grid grid-cols-[1fr_auto] gap-y-2 gap-x-4">
                             {(grouped.get(category) ?? []).map((def) => {
                                 const keys = state.customMappings[def.id] ?? def.defaultKeys;
-                                const display = keys.map(formatCombo).join(' / ');
+                                const display = formatBinding(keys);
                                 const isEditing = editingId === def.id;
                                 return (
                                     <Row justify="between" className="group col-span-2" key={def.id}>
