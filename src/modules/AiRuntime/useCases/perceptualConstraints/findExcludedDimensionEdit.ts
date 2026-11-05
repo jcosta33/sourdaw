@@ -239,6 +239,31 @@ function readRoutingEdits(action: AppAction, actions: readonly AppAction[], cont
     return edits(dimensions, action.payload.trackId, `to ${destination?.name ?? destinationId}`);
 }
 
+/**
+ * Removing a track removes its devices, so every track that sounds through it loses the space or
+ * spectral shaping the track and everything it reaches, bus to bus, applied. The removed track is the
+ * edit's owner, so a constraint holds it exactly when its scope reaches that track.
+ */
+function readTrackRemovalEdits(
+    action: AppAction,
+    effect: ActionEffect,
+    actions: readonly AppAction[],
+    context: ProjectContext
+): Edit[] | null {
+    if (!effect.removes?.includes('track')) {
+        return null;
+    }
+    const trackIds = new Set(context.tracks.map((track) => track.id));
+    const removedIds = proposalCommandShape
+        .touchedObjectIds(action.type, readPayload(action), context)
+        .filter((id) => trackIds.has(id));
+    return removedIds.flatMap((removedId) => {
+        const dimensions = reachedChainDimensions(readReachedTrackIds([removedId], actions, context), context);
+        const name = context.tracks.find((track) => track.id === removedId)?.name ?? removedId;
+        return edits(dimensions, removedId, `removing ${name}`);
+    });
+}
+
 function readParameterEdits(action: AppAction, actions: readonly AppAction[], context: ProjectContext): Edit[] | null {
     if (action.type !== 'setDeviceParameter') {
         return null;
@@ -313,6 +338,7 @@ function readActionEdits(action: AppAction, actions: readonly AppAction[], conte
         readParameterEdits(action, actions, context) ??
         readDeviceChainEdits(action, actions, context) ??
         readRoutingEdits(action, actions, context) ??
+        readTrackRemovalEdits(action, effect, actions, context) ??
         readSendEdits(action) ??
         readAutomationEdits(action, effect, actions, context) ??
         readUnclassifiedEdits(action, effect, context)

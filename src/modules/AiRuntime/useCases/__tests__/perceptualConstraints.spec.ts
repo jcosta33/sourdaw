@@ -674,6 +674,69 @@ describe('excluded dimensions', () => {
         });
     });
 
+    describe('removing a track', () => {
+        const lowEnd = "Clean up the mix but don't touch the low end of the Bass";
+        const routed = () =>
+            contextWithRouting(
+                {
+                    vocal: { sends: ['return-a'], outputId: 'bus-a' },
+                    bass: { outputId: 'low-bus' },
+                    'hop-bus': { outputId: 'verb-bus-b' },
+                },
+                [
+                    { id: 'bus-a', name: 'Bus A', devices: [device('a-verb', 'builtin-reverb')] },
+                    { id: 'return-a', name: 'Return A', devices: [device('r-verb', 'builtin-reverb')] },
+                    { id: 'hop-bus', name: 'Hop Bus', devices: [] },
+                    { id: 'verb-bus-b', name: 'Verb Bus B', devices: [device('b-verb', 'builtin-reverb')] },
+                    { id: 'low-bus', name: 'Low Bus', devices: [device('low-eq', 'builtin-eq')] },
+                    { id: 'stray-verb', name: 'Stray Verb', devices: [device('s-verb', 'builtin-reverb')] },
+                    { id: 'eq-only', name: 'EQ Only', devices: [] },
+                ]
+            );
+        const remove = (trackId: string): AppAction => ({ type: 'removeTrack', payload: { trackId } });
+        const removeFrom = (context: ProjectContext, trackId: string) =>
+            readExcludedEdit(intimate, [remove(trackId)], context);
+
+        it.each([
+            { label: 'the bus the vocal outputs to', trackId: 'bus-a', name: 'Bus A' },
+            { label: 'the return the vocal sends to', trackId: 'return-a', name: 'Return A' },
+        ])('refuses removing $label', ({ trackId, name }) => {
+            expect(removeFrom(routed(), trackId)).toContain(
+                `command 1 (removeTrack removing ${name}) edits the ambience of “${name}”`
+            );
+        });
+
+        it('refuses removing a device-less bus whose reach holds a reverb', () => {
+            const context = contextWithRouting(
+                { vocal: { outputId: 'hop-bus' }, 'hop-bus': { outputId: 'verb-bus-b' } },
+                [
+                    { id: 'hop-bus', name: 'Hop Bus', devices: [] },
+                    { id: 'verb-bus-b', name: 'Verb Bus B', devices: [device('b-verb', 'builtin-reverb')] },
+                ]
+            );
+            expect(removeFrom(context, 'hop-bus')).toContain(
+                'command 1 (removeTrack removing Hop Bus) edits the ambience of “Hop Bus”'
+            );
+        });
+
+        it('refuses removing the bus a bass outputs to under the low-end constraint', () => {
+            expect(readExcludedEdit(lowEnd, [remove('low-bus')], routed())).toContain(
+                'command 1 (removeTrack removing Low Bus) edits the low end of “Low Bus”'
+            );
+        });
+
+        it('admits removing a reverb bus the vocal does not reach', () => {
+            expect(removeFrom(routed(), 'stray-verb')).toBeNull();
+        });
+
+        it('admits removing a bus the vocal reaches when nothing it reaches shapes space', () => {
+            const context = contextWithRouting({ vocal: { outputId: 'eq-only' } }, [
+                { id: 'eq-only', name: 'EQ Only', devices: [] },
+            ]);
+            expect(removeFrom(context, 'eq-only')).toBeNull();
+        });
+    });
+
     describe('the routing a batch leaves behind', () => {
         const lowEnd = "Clean up the mix but don't touch the low end of the Vocal";
         const routed = () =>
