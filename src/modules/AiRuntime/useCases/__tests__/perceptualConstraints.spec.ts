@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { type renderTrackSubgraphOffline } from '#/modules/AudioEngine/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
@@ -24,6 +25,8 @@ import { prepareMetricGoalPreview } from '../prepareMetricGoalPreview';
 import { validateAgentRiskApproval } from '../validateAgentRiskApproval';
 
 import { configureMetricGoalProject, metricGoalAudioBuffer, resetMetricGoalProject } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 const audio = vi.hoisted(() => ({
     renderTrackSubgraphOffline: vi.fn(),

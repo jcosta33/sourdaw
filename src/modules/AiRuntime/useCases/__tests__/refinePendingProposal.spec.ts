@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { logger } from '#/infra/logger/appLogger';
 import {
     configureAutomergeStoragePort,
@@ -56,6 +57,8 @@ import {
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
 import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 /**
  * AC-002 (#4380): a request that refines the pending proposal yields a replacement derived from it,
