@@ -98,16 +98,16 @@ export function resolveLoopedOffsetBeats({
 
 /**
  * The membership law for the readers that own candidates at absolute or
- * rack-owned coordinates — the Yeast chains, live and offline. The anchored
- * window when the clip carries one; unconditional admission otherwise. The
- * unanchored `isBeatInClipLoopWindow` fallback (`relative < loopLength`) is
- * deliberately NOT applied: these readers preselected their candidates by
- * scheduler window before the anchor existed, and grafting that fallback onto
- * them now would silently change loop-off and legacy-anchorless behavior the
- * anchor must never touch.
+ * rack-owned coordinates — the Yeast chains, live and offline. A looped clip
+ * admits exactly the rows `isBeatInClipLoopWindow` admits on the synth route:
+ * the anchored window when the clip carries one, and `relative < loopLength`
+ * when it does not, so a row stored at or past the loop length sounds on no
+ * pass of any route — the loop brace, not the stored row, bounds what a pass
+ * plays. A clip with its loop off admits unconditionally: these readers
+ * preselect their candidates by scheduler window, and the clip end bounds them.
  */
-export function isBeatAdmittedByAnchoredClipLoopWindow(input: ClipLoopWindowMembershipInput): boolean {
-    if (input.loopEnabled !== true || !isPresentLoopOriginBeat(input.loopOriginBeat)) {
+export function isBeatInEnabledClipLoopWindow(input: ClipLoopWindowMembershipInput): boolean {
+    if (input.loopEnabled !== true) {
         return true;
     }
     return isBeatInClipLoopWindow(input);

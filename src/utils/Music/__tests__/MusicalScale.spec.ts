@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 
 import {
     getScaleLabel,
+    getScalePattern,
     SCALE_LABELS,
     SCALE_PATTERNS,
     SCALE_NAMES,
@@ -126,5 +127,20 @@ describe('quantizeMidiNoteToScale', () => {
         const result = quantizeMidiNoteToScale(127, 1, 'major');
         expect(result).toBeGreaterThanOrEqual(0);
         expect(result).toBeLessThanOrEqual(127);
+    });
+});
+
+describe('getScalePattern', () => {
+    it('returns the pattern for a known scale', () => {
+        expect(getScalePattern('dorian')).toEqual([0, 2, 3, 5, 7, 9, 10]);
+    });
+
+    it.each(['__proto__', 'constructor', 'toString'])('returns undefined for Object.prototype member %s', (name) => {
+        expect(getScalePattern(name)).toBeUndefined();
+    });
+
+    it.each(['__proto__', 'constructor', 'toString'])('quantizes as chromatic for %s', (name) => {
+        expect(quantizeCentsToScale(150, 0, name)).toBe(150);
+        expect(quantizeMidiNoteToScale(61, 0, name)).toBe(61);
     });
 });

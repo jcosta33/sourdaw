@@ -30,7 +30,7 @@ test.describe('Virtual keyboard — mouse glide', () => {
         // Scroll the keyboard to its middle so the picked keys sit inside the
         // visible viewport — mouse coordinates hit whatever is on top at
         // those coords, and off-viewport keys are clipped by the scroll
-        // container. C4 (MIDI 60) and MIDI 62 are adjacent white keys there.
+        // container. C4 (MIDI 60) and D4 (MIDI 62) are adjacent white keys there.
         await page.evaluate(() => {
             const scroller = document.querySelector('[aria-label="Virtual Piano Keyboard"] .overflow-x-auto');
             if (scroller) {
@@ -38,7 +38,7 @@ test.describe('Virtual keyboard — mouse glide', () => {
             }
         });
         const start = keyboard.getByRole('button', { name: 'C4 (MIDI 60)' });
-        const end = keyboard.getByRole('button', { name: 'MIDI 62', exact: true });
+        const end = keyboard.getByRole('button', { name: 'D4 (MIDI 62)', exact: true });
         await expect(start).toBeVisible();
         await expect(end).toBeVisible();
 

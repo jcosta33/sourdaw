@@ -44,6 +44,7 @@ import {
     isWithinTransientSurface,
 } from '#/modules/CommandInterface/useCases';
 import { triggerLiveNoteOn, triggerLiveNoteOff } from '#/modules/MIDI/useCases';
+import { formatMidiNoteName } from '#/utils/noteNames';
 import { cn } from '#/utils/Styles/cn';
 import { isDragGestureActive, isPlainEscapePress } from '#/utils/UI/activeDragGesture';
 
@@ -126,6 +127,12 @@ type BlackKeyDef = {
     midi: number;
     leftPx: number;
 };
+
+/** The name a key announces: its pitch and octave, then its MIDI number. */
+function keyAriaLabel(midiNote: number): string {
+    const pitchName = formatMidiNoteName(midiNote);
+    return pitchName === null ? `MIDI ${midiNote}` : `${pitchName} (MIDI ${midiNote})`;
+}
 
 /** Convert a white-key index within the full keyboard (0 = C-1) to its MIDI note number */
 function whiteIdxToMidi(whiteIdx: number): number {
@@ -893,7 +900,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                                         // a glissando that began on a white key.
                                         onPointerMove={isValid ? glideToPoint : undefined}
                                         data-midi-note={midiNote}
-                                        aria-label={isC ? `C${displayOctave} (MIDI ${midiNote})` : `MIDI ${midiNote}`}
+                                        aria-label={keyAriaLabel(midiNote)}
                                         aria-pressed={isPressed}
                                         role="button"
                                     >
@@ -936,7 +943,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                                     onPointerEnter={(event) => onBlackPointerEnter(midiNote, event)}
                                     onPointerMove={glideToPoint}
                                     data-midi-note={midiNote}
-                                    aria-label={`MIDI ${midiNote}`}
+                                    aria-label={keyAriaLabel(midiNote)}
                                     aria-pressed={isPressed}
                                     role="button"
                                 />
