@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { createTrack, normalizeTrack } from '#/modules/Arrangement/useCases';
 import { getToasterPresetDeviceState } from '#/modules/Toaster/useCases';
 
@@ -7,6 +8,8 @@ import { getCanonicalTrackRole } from '../getCanonicalTrackRole';
 import { hydrateArrangementTracks } from '../projectPersistence/fileIO/hydrateArrangementTracks';
 import { hydrateProjectMidi } from '../projectPersistence/fileIO/hydrateProjectMidi';
 import { serializeArrangementTracks } from '../projectPersistence/fileIO/serializeArrangementTracks';
+
+registerDeviceEnginePorts();
 
 type Input = Parameters<typeof getCanonicalTrackRole>[0];
 function input(name = 'Track 1'): Input {

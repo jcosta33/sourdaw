@@ -71,8 +71,8 @@ vi.mock('#/modules/WorkspaceShell/useCases', async () => {
 });
 // Non-spread listing of MIDI names the remaining graph imports through the
 // barrel — Arrangement handler/use-case wiring (removeTrack, armTrack, clip
-// glue/split, handleDiscardDuplicatedClip, freeze bounce, …) and CrdtDocument
-// `prepareDrumPreviewBranches` for `projectDrumPreviewCandidateNotes`.
+// glue/split, handleDiscardDuplicatedClip, freeze bounce, …) and the composition
+// root's `registerProjectSlotProjections` for `projectDrumPreviewCandidateNotes`.
 vi.mock('#/modules/MIDI/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
     return {
@@ -177,6 +177,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: vi.fn(() => ({ currentTime: 0, sampleRate: 48000 })),
     getAudioDevices: vi.fn(() => Promise.resolve([])),
     getCachedAudioBuffer: vi.fn(),
+    restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
+    holdAudioBufferForSession: vi.fn(),
     getCompensationDelay: vi.fn(() => 0),
     getDeviceChainTailSeconds: vi.fn(() => 0),
     getMasterAnalyser: vi.fn(() => null),

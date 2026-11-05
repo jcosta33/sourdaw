@@ -35,6 +35,7 @@ import {
 import { connectFolder } from '../../useCases/connectFolder/connectFolder';
 import { disconnectLibraryRoot } from '../../useCases/connectFolder/disconnectLibraryRoot';
 import { rescanRoot } from '../../useCases/connectFolder/rescanRoot';
+import { ensureFactorySampleBuffer } from '../../useCases/ensureFactorySampleBuffer';
 import { findSimilarSamples } from '../../useCases/findSimilarSamples';
 import { isNativeSampleLibraryRuntimeAvailable } from '../../useCases/isNativeSampleLibraryRuntimeAvailable';
 import { readNativeLibrarySampleFile } from '../../useCases/readNativeLibrarySampleFile';
@@ -246,7 +247,15 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
         }
 
         if (root.id === FACTORY_LIBRARY_ROOT_ID) {
-            notifyUser(`"${sample.displayName}" can't be previewed — audio buffer is not available.`, 'warning');
+            const factoryBuffer = await ensureFactorySampleBuffer({ sampleId: sample.id });
+            if (previewRequestIdRef.current !== requestId) {
+                return;
+            }
+            if (factoryBuffer.status !== 'resolved') {
+                notifyUser(`"${sample.displayName}" can't be previewed — audio buffer is not available.`, 'warning');
+                return;
+            }
+            previewRef.current.play(sample.id, factoryBuffer.buffer);
             return;
         }
 
@@ -598,7 +607,13 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                             );
                         })}
 
-                        <div ref={listRef} role="listbox" aria-label="Samples" aria-orientation="vertical">
+                        <div
+                            ref={listRef}
+                            role="listbox"
+                            aria-label="Samples"
+                            aria-orientation="vertical"
+                            className="@container"
+                        >
                             {shownFiles.map((sample, index) => (
                                 <SampleRow
                                     key={sample.id}

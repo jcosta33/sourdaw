@@ -3,6 +3,8 @@ import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
 import { logger } from '#/infra/logger/appLogger';
 import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
@@ -54,6 +56,8 @@ import { recordingLifecycle } from '../../transportControls/recordingLifecycle';
 import { startPlayback } from '../../transportControls/startPlayback';
 import { stopPlayback } from '../../transportControls/stopPlayback';
 import { toggleRecording } from '../../transportControls/toggleRecording';
+
+registerDeviceEnginePorts();
 
 const TRACK_ID = 'track-recording';
 const INPUT_START_FAILURE = 'Punch-in recording failed to start — the take was discarded.';
@@ -331,6 +335,7 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         branchStore.set({
             branches: [

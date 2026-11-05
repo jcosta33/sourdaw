@@ -73,4 +73,41 @@ describe('serializeMidiStateForClips', () => {
             },
         });
     });
+
+    it('serializes what the prior batch members restore when they are given', () => {
+        midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        const note = { id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 100 };
+        const cc = { id: 'cc-1', controller: 64, value: 127, beat: 2, channel: 0 };
+
+        const serialized = serializeMidiStateForClips(
+            ['copy'],
+            [
+                {
+                    type: 'restoreClip',
+                    payload: {
+                        clipId: 'copy',
+                        trackId: 'track-1',
+                        clipSnapshot: { id: 'copy', trackId: 'track-1', startBeat: 0, endBeat: 4 },
+                        ripplePlan: null,
+                        midiNotesSnapshot: [note],
+                        midiCcSnapshot: [cc],
+                        midiPitchBendSnapshot: null,
+                        retiredTakeLanes: [],
+                    },
+                },
+            ]
+        );
+
+        expect(JSON.parse(serialized)).toEqual({
+            copy: {
+                notes: { present: true, value: [note] },
+                cc: { present: true, value: [cc] },
+                pitchBends: { present: false, value: [] },
+                migrated: false,
+            },
+        });
+        expect(JSON.parse(serializeMidiStateForClips(['copy']))).toMatchObject({
+            copy: { notes: { present: false }, cc: { present: false } },
+        });
+    });
 });

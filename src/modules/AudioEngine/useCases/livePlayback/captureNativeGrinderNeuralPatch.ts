@@ -1,11 +1,11 @@
-import { readGrinderNeuralModelContent } from '#/modules/Grinder/stores';
-
 import { type NativeGrinderModel } from '../../models/AudioGraphBackend';
+
+import { neuralModelContent } from './neuralModelContent';
 
 export function captureNativeGrinderNeuralPatch(
     parameterValues: Readonly<Record<string, unknown>>
 ): NativeGrinderModel | undefined {
-    const modelJson = readGrinderNeuralModelContent(parameterValues);
+    const modelJson = neuralModelContent.read('captureNativeGrinderNeuralPatch').modelContent(parameterValues);
     if (modelJson === undefined) {
         return undefined;
     }

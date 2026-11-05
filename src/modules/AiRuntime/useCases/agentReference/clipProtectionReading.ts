@@ -2,9 +2,11 @@ import { type ProjectContext } from '../../models/ProjectContext';
 import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuotedText';
 import { getSelectedClipReferenceIds } from '../../transformers/promptParser/selectedClipReference';
 
+import { blankRanges } from './blankRanges';
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { CONNECTIVE_WORDS, CONVENTIONAL_WORDS, protectionObjectForms } from './protectionObjectForms';
-import { protectionSlots, type Range } from './readProtectionSlots';
+import { PROTECTION_VERB, protectionSlots, type Range, type Slot } from './readProtectionSlots';
+import { refinementRequestReading } from './refinementRequestReading';
 import { resolveAgentReference } from './resolveAgentReference';
 
 export type ExplicitlyProtectedClip = { id: string; name: string };
@@ -14,25 +16,32 @@ export type ExplicitClipProtection = {
 };
 type ProjectClip = ProjectContext['tracks'][number]['clips'][number];
 
-const protectionVerb = String.raw`(?:leave|leaving|keep|keeping|preserve|preserving)`;
 const protectionClauseBoundary = String.raw`(?:;|[.!?](?=\s|$))`;
 const protectionReferenceCharacter = String.raw`(?:(?!${protectionClauseBoundary})[\s\S])`;
 const protectionPattern = new RegExp(
-    String.raw`\b${protectionVerb}\s+(${protectionReferenceCharacter}+?)\s+unchanged\b`,
+    String.raw`\b${PROTECTION_VERB}\s+(${protectionReferenceCharacter}+?)\s+unchanged\b`,
     'giu'
 );
-const nextInstructionVerb = String.raw`(?:${protectionVerb}|set|change|adjust|add|create|make|mute|remove|delete|rename|insert|move|copy|duplicate|trim|split|glue|stretch|quantize|transpose|normalize|fade|route|solo|arm)`;
+const nextInstructionVerb = String.raw`(?:${PROTECTION_VERB}|set|change|adjust|add|create|make|mute|remove|delete|rename|insert|move|copy|duplicate|trim|split|glue|stretch|quantize|transpose|normalize|fade|route|solo|arm)`;
 const nextInstruction = String.raw`(?:(?:and|then)\s+)*${nextInstructionVerb}\b`;
 const exclusionPattern = new RegExp(
     String.raw`\b(?:excluding|except)\s+(${protectionReferenceCharacter}+?)(?=${protectionClauseBoundary}|,\s*(?=${nextInstruction})|\s+(?=(?:and|then)\s+${nextInstruction})|$)`,
     'giu'
 );
-const emptyProtectionPattern = new RegExp(String.raw`\b${protectionVerb}\s+unchanged\b`, 'iu');
-const protectionVerbPattern = new RegExp(String.raw`\b${protectionVerb}\b`, 'iu');
-const protectionClauseStartPattern = new RegExp(String.raw`^${protectionVerb}\b`, 'iu');
-const allProtectionVerbsPattern = new RegExp(String.raw`\b${protectionVerb}\b`, 'giu');
+const emptyProtectionPattern = new RegExp(String.raw`\b${PROTECTION_VERB}\s+unchanged\b`, 'iu');
+const protectionVerbPattern = new RegExp(String.raw`\b${PROTECTION_VERB}\b`, 'iu');
+const protectionClauseStartPattern = new RegExp(String.raw`^${PROTECTION_VERB}\b`, 'iu');
+const allProtectionVerbsPattern = new RegExp(String.raw`\b${PROTECTION_VERB}\b`, 'giu');
 const exclusionVerbPattern = /\b(?:excluding|except)\b/giu;
 const protectionClauseBoundaryPattern = new RegExp(protectionClauseBoundary, 'giu');
+// The courtesy words a request opens with ahead of its verb, any number in any order, joined by any run of
+// whitespace and punctuation, and nothing else.
+const courtesyWords = String.raw`(?:please|can\s+you|could\s+you|would\s+you|just|now|ok|okay|actually|also|hi|hey|hello|thanks|thank\s+you|kindly|sorry)`;
+const courtesySeparators = String.raw`[\s,.!…–—-]*`;
+const courtesyOpeningPattern = new RegExp(
+    String.raw`^${courtesySeparators}(?:${courtesyWords}(?![\p{L}\p{N}'])${courtesySeparators})*$`,
+    'iu'
+);
 const referenceSeparatorPattern = /,\s*(?:and\b\s*)?|\s+and\s+/giu;
 
 /** A list member's text and where it stands in the request. */
@@ -52,7 +61,7 @@ function hasDanglingProtectionClause(maskedPrompt: string, completeVerbStarts: R
         const precedingBoundary = boundaries.findLast((boundary) => boundary.index + boundary[0].length <= verb.index);
         const clauseStart = precedingBoundary ? precedingBoundary.index + precedingBoundary[0].length : 0;
         const prefix = maskedPrompt.slice(clauseStart, verb.index).trim();
-        if (prefix.length === 0 || /\b(?:and|then)\s*$/iu.test(prefix)) {
+        if (courtesyOpeningPattern.test(prefix) || /\b(?:and|then)\s*$/iu.test(prefix)) {
             return true;
         }
     }
@@ -95,6 +104,43 @@ function splitProtectedReferenceList(reference: string, offset: number): Referen
     return { complete: true, references };
 }
 
+/** A clause protects when a protection verb or a prohibition opens it, never a bare closer or a carve-out. */
+function opensProtectionClause(slot: Slot, maskedPrompt: string, range: Range): boolean {
+    return slot.lead === 'prohibition' || protectionClauseStartPattern.test(maskedPrompt.slice(range.start));
+}
+
+const trailingClauseSeparatorPattern = /\s*[,;]\s*(?:(?:and|but|then)\s*)?$/iu;
+
+/** A prohibition has no closing word, so its slot runs to the next clause: drop the separator that joins them. */
+function readSlotReference(prompt: string, slot: Slot): string {
+    const reference = prompt.slice(slot.start, slot.end);
+    return slot.lead === 'prohibition' ? reference.replace(trailingClauseSeparatorPattern, '') : reference;
+}
+
+type NameBlanking = { text: string; names: Range[]; ambiguous: boolean };
+
+/**
+ * Blank every project object's name so a verb inside a name never reads as the next instruction. A name wholly
+ * inside a protection's opening words stays readable. A name that otherwise overlaps them, by containing them
+ * or by straddling them, cannot be told from the opener, so the reading is ambiguous.
+ */
+function blankObjectNames(maskedText: string, prompt: string, context: ProjectContext): NameBlanking {
+    const references = refinementRequestReading.references(prompt, refinementRequestReading.candidates(context));
+    const starts = protectionSlots.startRanges(maskedText, references);
+    const insideStart = (reference: Range) =>
+        starts.some((start) => reference.start >= start.start && reference.end <= start.end);
+    const overlapsStart = (reference: Range) =>
+        starts.some((start) => reference.start < start.end && reference.end > start.start);
+    return {
+        text: blankRanges(
+            maskedText,
+            references.filter((reference) => !overlapsStart(reference))
+        ),
+        names: references,
+        ambiguous: references.some((reference) => overlapsStart(reference) && !insideStart(reference)),
+    };
+}
+
 function getProtectedReferenceTexts(prompt: string, context: ProjectContext): ProtectedReferenceParse {
     const quoteScan = scanPromptQuotedText(prompt);
     const clips = context.tracks.flatMap((track) => track.clips);
@@ -118,7 +164,7 @@ function getProtectedReferenceTexts(prompt: string, context: ProjectContext): Pr
         if (match.index === undefined || match[1] === undefined) {
             continue;
         }
-        if (/^(?:leave|leaving|keep|keeping|preserve|preserving)\b/iu.test(match[0])) {
+        if (protectionClauseStartPattern.test(match[0])) {
             completeVerbStarts.add(match.index);
         } else {
             completeExclusionStarts.add(match.index);
@@ -128,17 +174,19 @@ function getProtectedReferenceTexts(prompt: string, context: ProjectContext): Pr
         addReference(prompt.slice(referenceStart, referenceStart + match[1].length), referenceStart);
     }
 
-    for (const slot of protectionSlots.read(quoteScan.maskedText)) {
+    const blanking = blankObjectNames(quoteScan.maskedText, prompt, context);
+    complete &&= !blanking.ambiguous;
+    for (const slot of protectionSlots.read(blanking.text, blanking.names)) {
         const range = slot.completeRange;
         if (
             range === null ||
             !slot.strict ||
             completeVerbStarts.has(range.start) ||
-            !protectionClauseStartPattern.test(quoteScan.maskedText.slice(range.start))
+            !opensProtectionClause(slot, quoteScan.maskedText, range)
         ) {
             continue;
         }
-        const reference = prompt.slice(slot.start, slot.end);
+        const reference = readSlotReference(prompt, slot);
         if (
             !isAggregateControlReference(reference) &&
             resolveProtectedClipIds(reference, clips, context).length === 0

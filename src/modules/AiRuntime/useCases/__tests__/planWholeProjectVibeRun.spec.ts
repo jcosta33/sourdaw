@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../../models/LlmActionLimits';
@@ -16,6 +17,8 @@ import { RECIPE_EXPANSION_MAX_COMMANDS } from '../../models/RecipeExpansionLimit
 import { type VibeRunBatch, type VibeRunMeasurement } from '../../models/VibeRunPlan';
 import { expandMixRecipe } from '../expandMixRecipe';
 import { planWholeProjectVibeRun } from '../planWholeProjectVibeRun';
+
+registerDeviceEnginePorts();
 
 type MixRecipe = ReturnType<typeof getMixRecipeCatalog>['recipes'][number];
 type PlannerContext = Pick<ProjectContext, 'tracks' | 'sections' | 'productionBrief'>;

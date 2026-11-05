@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { type Clip, trackStore } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 import {
@@ -19,6 +20,8 @@ import { disposePlayheadScheduler } from '../../playheadScheduler/disposePlayhea
 import { forgetHeldNoteExpression } from '../forgetHeldNoteExpression';
 import { heldNotesByTrack } from '../heldNoteExpressionState';
 import { scheduleMidiNotes } from '../scheduleMidiNotes';
+
+registerDeviceEnginePorts();
 
 // What a stored bend becomes at a frame is the contract under test: the engine's curve projection and
 // its dimension registry, and the MIDI module's channel bend projection, are the real ones, and only the

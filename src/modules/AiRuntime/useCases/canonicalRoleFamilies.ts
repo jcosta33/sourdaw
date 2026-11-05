@@ -1,5 +1,6 @@
 import { getCanonicalTrackRoleOptions } from '#/modules/Project/useCases';
 
+import { type ProjectContextTrack } from '../models/ProjectContext';
 import { type SemanticCommandListRoleFamily } from '../models/SemanticCommandList';
 
 /**
@@ -47,3 +48,11 @@ export const CANONICAL_ROLE_TO_RECIPE_ROLE: Readonly<Record<CanonicalRole, Seman
     utility: null,
     unknown: null,
 };
+
+/** A track's role family, read from its canonical role; a track with no recognized role has none. */
+export function resolveRoleFamily(
+    track: Pick<ProjectContextTrack, 'canonicalRole'>
+): SemanticCommandListRoleFamily | null {
+    const role = CANONICAL_ROLE_OPTIONS.find((candidate) => candidate === track.canonicalRole?.role) ?? 'unknown';
+    return CANONICAL_ROLE_TO_RECIPE_ROLE[role];
+}

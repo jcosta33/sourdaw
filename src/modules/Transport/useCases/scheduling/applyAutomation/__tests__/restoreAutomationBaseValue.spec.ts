@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { scheduleSendAutomation, updateDeviceParam, updateMidiFxParam } from '#/modules/AudioEngine/useCases';
 import { applyFermenterRuntimeParam } from '#/modules/Fermenter/useCases';
 
 import { restoreAutomationBaseValue } from '../restoreAutomationBaseValue';
+
+registerDeviceEnginePorts();
 
 vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const mod = await importOriginal<typeof import('#/modules/Arrangement/stores')>();

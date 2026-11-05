@@ -1,6 +1,37 @@
 import { describe, it, expect } from 'vitest';
 
-import { SCALE_PATTERNS, SCALE_NAMES, KEY_NAMES, quantizeCentsToScale, quantizeMidiNoteToScale } from '../MusicalScale';
+import {
+    getScaleLabel,
+    getScalePattern,
+    SCALE_LABELS,
+    SCALE_PATTERNS,
+    SCALE_NAMES,
+    KEY_NAMES,
+    quantizeCentsToScale,
+    quantizeMidiNoteToScale,
+} from '../MusicalScale';
+
+describe('scale labels', () => {
+    it('labels every pattern with words, never its identifier', () => {
+        expect(Object.keys(SCALE_LABELS).sort()).toEqual(Object.keys(SCALE_PATTERNS).sort());
+        expect(getScaleLabel('harmonicMinor')).toBe('Harmonic Minor');
+        expect(getScaleLabel('melodicMinor')).toBe('Melodic Minor');
+        expect(getScaleLabel('pentatonicMajor')).toBe('Pentatonic Major');
+        expect(getScaleLabel('pentatonicMinor')).toBe('Pentatonic Minor');
+        expect(getScaleLabel('wholeTone')).toBe('Whole Tone');
+        expect(getScaleLabel('major')).toBe('Major');
+    });
+
+    it('falls back to the identifier for an unknown scale', () => {
+        expect(getScaleLabel('custom')).toBe('custom');
+    });
+
+    it('falls back to the identifier for names that are Object.prototype members', () => {
+        expect(getScaleLabel('__proto__')).toBe('__proto__');
+        expect(getScaleLabel('constructor')).toBe('constructor');
+        expect(getScaleLabel('toString')).toBe('toString');
+    });
+});
 
 describe('scale data', () => {
     it('should expose every pattern name via SCALE_NAMES', () => {
@@ -48,6 +79,24 @@ describe('quantizeCentsToScale', () => {
 });
 
 describe('quantizeMidiNoteToScale', () => {
+    // C# major pentatonic = pitch classes 1,3,5,8,10. The nearest degree to 127 (pc 7) is 128, out of range;
+    // the nearest in-range degree below is 125 (pc 5).
+    it('stays in scale when the nearest degree is above the MIDI range', () => {
+        expect(quantizeMidiNoteToScale(127, 1, 'pentatonicMajor')).toBe(125);
+    });
+
+    // B major pentatonic = pitch classes 11,1,3,6,8. The nearest degree to 0 is -1, out of range;
+    // the lowest in-range degree is 1 (C#).
+    it('stays in scale when the nearest degree is below the MIDI range', () => {
+        expect(quantizeMidiNoteToScale(0, 11, 'pentatonicMajor')).toBe(1);
+    });
+
+    it('leaves an in-range snap at the edge unchanged', () => {
+        // C major: 127 (G) is in scale; 1 (C#) snaps down to 0 (C), still in range.
+        expect(quantizeMidiNoteToScale(127, 0, 'major')).toBe(127);
+        expect(quantizeMidiNoteToScale(1, 0, 'major')).toBe(0);
+    });
+
     it('should leave a note already on a scale degree unchanged', () => {
         expect(quantizeMidiNoteToScale(60, 0, 'major')).toBe(60);
     });
@@ -78,5 +127,20 @@ describe('quantizeMidiNoteToScale', () => {
         const result = quantizeMidiNoteToScale(127, 1, 'major');
         expect(result).toBeGreaterThanOrEqual(0);
         expect(result).toBeLessThanOrEqual(127);
+    });
+});
+
+describe('getScalePattern', () => {
+    it('returns the pattern for a known scale', () => {
+        expect(getScalePattern('dorian')).toEqual([0, 2, 3, 5, 7, 9, 10]);
+    });
+
+    it.each(['__proto__', 'constructor', 'toString'])('returns undefined for Object.prototype member %s', (name) => {
+        expect(getScalePattern(name)).toBeUndefined();
+    });
+
+    it.each(['__proto__', 'constructor', 'toString'])('quantizes as chromatic for %s', (name) => {
+        expect(quantizeCentsToScale(150, 0, name)).toBe(150);
+        expect(quantizeMidiNoteToScale(61, 0, name)).toBe(61);
     });
 });

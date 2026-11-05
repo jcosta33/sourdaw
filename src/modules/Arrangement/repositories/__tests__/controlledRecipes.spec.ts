@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import {
     MIX_RECIPE_CATALOG_VERSION,
     MIX_RECIPE_DESCRIPTOR_EFFECTS,
@@ -7,6 +9,8 @@ import {
 } from '../../models/MixRecipe';
 import { getMixRecipeCatalog } from '../../useCases/getMixRecipeCatalog';
 import { buildMixRecipeCatalog } from '../mixRecipes/mixRecipeCatalog';
+
+registerDeviceEnginePorts();
 
 const expected = [
     {

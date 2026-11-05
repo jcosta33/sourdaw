@@ -94,10 +94,6 @@ vi.mock('../../../useCases/removeTrack', () => ({
     removeTrack: vi.fn(),
 }));
 
-vi.mock('../../../useCases/trackViewActions/setWorkspaceMode', () => ({
-    setWorkspaceMode: vi.fn(),
-}));
-
 vi.mock('#/modules/Preferences/stores', () => ({
     preferencesStore: {},
 }));
@@ -875,7 +871,8 @@ describe('TrackListView', () => {
         expect(executeUserAppAction).toHaveBeenCalledTimes(1);
         expect(executeUserAppAction).toHaveBeenCalledWith({
             type: 'addTrack',
-            payload: { name: 'Audio 3', kind: 'audio' },
+            // The track owner names it; the menu invents no name.
+            payload: { kind: 'audio' },
         });
         expect(addTrack).not.toHaveBeenCalled();
     });

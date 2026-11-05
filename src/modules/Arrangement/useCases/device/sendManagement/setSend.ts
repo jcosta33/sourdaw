@@ -20,19 +20,23 @@ type DeferredSendRuntimeEffect = {
     afterAmbiguousCommit: () => void;
 };
 
+/**
+ * `preFader` left undefined keeps an existing send's tap point; a new send
+ * starts post-fader.
+ */
 export function setSend(trackId: string, busId: string, level: number, preFader?: boolean): boolean;
 export function setSend(
     trackId: string,
     busId: string,
     level: number,
-    preFader: boolean,
+    preFader: boolean | undefined,
     options: { deferRuntimeEffect: true }
 ): DeferredSendRuntimeEffect | null;
 export function setSend(
     trackId: string,
     busId: string,
     level: number,
-    preFader = false,
+    preFader?: boolean,
     options: SetSendOptions = {}
 ): boolean | DeferredSendRuntimeEffect | null {
     const track = getTrackById(trackId);
@@ -66,16 +70,16 @@ export function setSend(
         return false;
     }
     const existingSend = track?.sends.find((state) => state.busId === busId);
-    const resolvedPreFader = existingSend ? existingSend.preFader : preFader;
+    const resolvedPreFader = preFader ?? existingSend?.preFader ?? false;
 
     updateTrack(trackId, (time) => {
         const existingIndex = time.sends.findIndex((state) => state.busId === busId);
         const sends = [...time.sends];
         if (existingIndex >= 0) {
             const existing = sends[existingIndex]!;
-            sends[existingIndex] = { busId, level, preFader: existing.preFader };
+            sends[existingIndex] = { busId, level, preFader: preFader ?? existing.preFader };
         } else {
-            sends.push({ busId, level, preFader });
+            sends.push({ busId, level, preFader: resolvedPreFader });
         }
         return { ...time, sends };
     });

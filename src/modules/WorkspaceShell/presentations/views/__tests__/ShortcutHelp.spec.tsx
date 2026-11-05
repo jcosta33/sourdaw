@@ -71,6 +71,14 @@ describe('ShortcutHelp', () => {
         expect(viewRows()).not.toContainEqual({ description: 'Cycle Automation Visibility', keys: 'A' });
     });
 
+    it('renders a remapped combo with the same keycap labels as the Preferences editor', () => {
+        setCustomMappings({ 'workspace.showAutomationPanel': ['mod+Backspace'] });
+        render(<ShortcutHelp />);
+        fireEvent.keyDown(window, { key: '?' });
+
+        expect(viewRows()).toContainEqual({ description: 'Show Automation Panel', keys: '⌘ ⌫' });
+    });
+
     it('reports open state to the shell', () => {
         const states: boolean[] = [];
         render(<ShortcutHelp onOpenChange={(open) => states.push(open)} />);

@@ -1,7 +1,6 @@
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type ProjectContext } from '../../models/ProjectContext';
-import { type WholeProjectVibeMixPlan } from '../../models/WholeProjectVibeMixPlan';
 import { type WorkflowCapabilityId } from '../../models/WorkflowCapability';
 
 import { getArticulationTransferPromptScope } from './getArticulationTransferPromptScope';
@@ -27,10 +26,9 @@ export function getApplicationProtectedObjects(input: {
     actions: readonly AppAction[];
     context: ProjectContext;
     prompt: string;
-    wholeProjectVibeMixPlan?: WholeProjectVibeMixPlan;
     workflowCapabilityId?: WorkflowCapabilityId;
 }): ApplicationProtectedObject[] {
-    const { actions, context, prompt, wholeProjectVibeMixPlan, workflowCapabilityId } = input;
+    const { actions, context, prompt, workflowCapabilityId } = input;
     const readProtections = readExplicitProtections(prompt, context);
     const excludedFrozenTrackIds = new Set(
         getBulkDeviceInsertionTrackScope(prompt, context)?.excludedFrozenTrackIds ?? []
@@ -54,7 +52,6 @@ export function getApplicationProtectedObjects(input: {
               };
           })
         : [];
-    const planProtections = wholeProjectVibeMixPlan?.globalConstraints.map(({ id, name }) => ({ id, name })) ?? [];
     const drumRoutingScope = workflowCapabilityId === 'drum-routing' ? getDrumRoutingPromptScope(context) : null;
     const drumRoutingProtections =
         drumRoutingScope?.status === 'request'
@@ -122,7 +119,6 @@ export function getApplicationProtectedObjects(input: {
         ...context.tracks.filter((track) => readProtectedTracks.has(track.id)).map(({ id, name }) => ({ id, name })),
         ...explicitClipProtection.clips,
         ...protectedParameters,
-        ...planProtections,
         ...drumRoutingProtections,
         ...drumRenderComparisonProtections,
         ...drumPreviewBranchProtections,

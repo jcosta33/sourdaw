@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getExecutableAppActionToolSchemas, getMidiTransformToolSchemas } from '#/modules/Command/useCases';
 
 import { type AgentDataCategory, assertRemoteAgentDataPolicy } from '../../models/AgentDataPolicy';
@@ -12,6 +13,8 @@ import { getAgentToolCatalogSchemas } from '../agentToolCatalog';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { getAgentToolCatalogEntries } from '../getAgentToolCatalogEntries';
 import { planAgentRun } from '../planAgentRun';
+
+registerDeviceEnginePorts();
 
 const DEFERRED_LISTENING_NAME = 'agent.media.listen';
 

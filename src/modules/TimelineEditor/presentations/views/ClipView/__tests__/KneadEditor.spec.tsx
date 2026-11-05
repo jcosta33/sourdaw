@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
@@ -350,6 +350,17 @@ describe('KneadEditor', () => {
 
                 fireEvent.change(sliders[1]!, { target: { value: '70' } });
                 expect(lastUpdater()(makeClipState([makeBlob()])).humanizePercent).toBe(70);
+            });
+
+            it('lists each scale by its label while the option value stays the identifier', () => {
+                render(<KneadEditor {...defaultProps} />);
+                const scaleSelect = screen.getByRole('combobox', { name: 'Scale' });
+
+                expect(within(scaleSelect).getByRole('option', { name: 'Harmonic Minor' })).toHaveValue(
+                    'harmonicMinor'
+                );
+                expect(within(scaleSelect).getByRole('option', { name: 'Whole Tone' })).toHaveValue('wholeTone');
+                expect(within(scaleSelect).queryByRole('option', { name: 'harmonic Minor' })).not.toBeInTheDocument();
             });
 
             it('key and scale selects write the project settings', () => {

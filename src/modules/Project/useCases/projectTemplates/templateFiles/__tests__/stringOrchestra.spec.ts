@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { sanitizeTrackSnapshot, trackStore } from '#/modules/Arrangement/stores';
 import {
     createLevainTemplateDeviceState,
@@ -15,6 +16,8 @@ import { serializeArrangementTracks } from '../../../projectPersistence/fileIO/s
 import { getTemplates } from '../../templateDefinitions/getTemplates';
 
 import type { Track } from '#/modules/Arrangement/stores';
+
+registerDeviceEnginePorts();
 
 const { templateCalls, seededStates } = vi.hoisted(() => ({
     templateCalls: [] as string[],

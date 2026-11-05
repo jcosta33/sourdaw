@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -51,6 +52,8 @@ import {
 import { readCreativeInterpretationCatalog } from './highLevelIntentWorkflowFixture';
 import { nonAcousticMetricIntakeTurn } from './metricGoalWorkflowFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+
+registerDeviceEnginePorts();
 
 function arpeggioIntake(userMessage: string, providerView: string | readonly ToolSchema[]) {
     const catalog = readCreativeInterpretationCatalog(userMessage, providerView);

@@ -1,5 +1,6 @@
 import { sanitizeTrackSnapshot } from '#/modules/Arrangement/stores';
 import {
+    engineAttachmentTracking,
     rearmCommittedTrackInputMonitoring,
     reconcileAutoInputMonitoring,
     resetAudioGraph,
@@ -7,7 +8,6 @@ import {
     suspendAutoInputMonitoring,
 } from '#/modules/AudioEngine/useCases';
 import { captureProjectRootIdentity, DOC_PREFIX_ROOT, getCrdtDoc } from '#/modules/CrdtDocument/useCases';
-import { retractEveryCrumbsEngineAttachment } from '#/modules/Crumbs/useCases';
 import { resetMidiState } from '#/modules/MIDI/useCases';
 import { resetExternalPluginRuntimeForGraphRebuild } from '#/modules/PluginHost/useCases';
 
@@ -43,7 +43,7 @@ async function rebuildRuntimeGraph(wasPlaying: boolean, resumePosition: number, 
     // here all the same. Nothing below refills it — the rebuild builds Web
     // Audio and sends no graph batch — so the next Play does, reporting the
     // instances it finds held and re-projecting the strips it binds.
-    retractEveryCrumbsEngineAttachment();
+    engineAttachmentTracking.read('repairRuntimeGraphFromProject').retractEveryAttachment();
     resetAudioGraph();
     const rebuild = ensureTrackStrips({ collectExternalPluginActivations: true });
     if (rebuild.status === 'failed') {

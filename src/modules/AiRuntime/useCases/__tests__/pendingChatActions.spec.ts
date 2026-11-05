@@ -1,6 +1,7 @@
 import { parse } from 'superjson';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { logger } from '#/infra/logger/appLogger';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
@@ -28,6 +29,8 @@ import {
     resetAiWorkflowCommandCheckpointRuntime,
 } from './aiWorkflowCommandCheckpointRuntime';
 import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 type ExecuteAppActionBatch = (typeof import('#/modules/Command/useCases'))['executeAppActionBatch'];
 type AppAction = Parameters<ExecuteAppActionBatch>[0][number];
@@ -98,7 +101,7 @@ vi.mock('#/modules/CrdtDocument/useCases', async (import_original) => ({
     captureProjectMutationAuthorization: projectMutationAuthorization.capture,
     captureProjectRevision: () => mocks.projectRevision.value,
     captureUnownedProjectMutations: () => mocks.unownedMutationEpoch.value,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint: mocks.projectRevisionMatchesLive,
+    projectRevisionMatchesLiveIgnoringSaveWrites: mocks.projectRevisionMatchesLive,
     DOC_BRANCHES: '__branches__',
     DOC_PREFIX_ROOT: 'root',
     compactProject: vi.fn(),

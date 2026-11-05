@@ -4,7 +4,7 @@ Owns MIDI note data, CC/pitch-bend/articulation events, note transform algorithm
 
 ## Public Contract Surface
 
-Public surface: `useCases/index.ts`, `stores/index.ts`. The module exports no views; the piano roll UI lives in `TimelineEditor`.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `events/index.ts` (the MIDI input and output payloads the app bus carries). The module exports no views; the piano roll UI lives in `TimelineEditor`.
 
 ## Key Subsystems
 

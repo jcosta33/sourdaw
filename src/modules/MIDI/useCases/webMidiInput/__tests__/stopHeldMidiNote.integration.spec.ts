@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -56,6 +57,8 @@ import { processRealtimeMidiInput } from '../../../repositories/webMidi/processR
 import { setMpeEnabledInternal } from '../../../repositories/webMidi/setMpeEnabledInternal';
 import { activeNotes } from '../../../repositories/webMidi/state';
 import { handleWebMidiMessage } from '../handleWebMidiMessage';
+
+registerDeviceEnginePorts();
 
 const TRACK_ID = 'track-recording';
 let disposeRecordingAdmission = (): void => {};

@@ -277,73 +277,177 @@ describe('compiler graph alignment', () => {
     });
 });
 
-describe('automateTrackGainRange capability grounding', () => {
-    function groundExactVibeMix(trackIds: string[]) {
+describe('automateTrackGainRange grounding', () => {
+    const NAMED_LIFT = { trackIds: ['bus-drums', 'bus-bass'], sectionName: 'Chorus Two', gainDb: 1.5 };
+    const DRUM_BUS_LIFT = { ...NAMED_LIFT, trackIds: ['bus-drums'] };
+    const CHORUS_SECTIONS = [
+        { id: 'section-chorus-one', name: 'Chorus One', startBeat: 32, endBeat: 48 },
+        { id: 'section-chorus-two', name: 'Chorus Two', startBeat: 56, endBeat: 72 },
+    ];
+    // "Chorus" is only part of the "Chorus Two" a request names, never that section.
+    const VERSE_AND_CHORUS_SECTIONS = [
+        { id: 'section-verse', name: 'Verse', startBeat: 0, endBeat: 32 },
+        { id: 'section-chorus', name: 'Chorus', startBeat: 32, endBeat: 48 },
+    ];
+    const SHAPE_REASON = 'Gain lift request must state only its buses, one dB figure and one whole existing section';
+
+    function groundBusGainRange(
+        prompt: string,
+        arguments_: Record<string, unknown> = NAMED_LIFT,
+        otherTracks: readonly ProjectContext['tracks'][number][] = [],
+        sections: readonly { id: string; name: string; startBeat: number; endBeat: number }[] = CHORUS_SECTIONS
+    ) {
         const drumBus = createTrack({ id: 'bus-drums', name: 'Drum Bus', kind: 'bus' });
         const bassBus = createTrack({ id: 'bus-bass', name: 'Bass Bus', kind: 'bus' });
         const leadVocal = createTrack({ id: 'track-lead-vocal', name: 'Lead Vocal' });
-        const exactContext: ProjectContext = {
+        const busContext: ProjectContext = {
             ...projectContext,
             automationLanes: [],
-            sections: [
-                { id: 'section-chorus-one', name: 'Chorus One', startBeat: 32, endBeat: 48 },
-                { id: 'section-chorus-two', name: 'Chorus Two', startBeat: 56, endBeat: 72 },
-            ],
-            tracks: [drumBus, bassBus, leadVocal, master],
+            sections: [...sections],
+            tracks: [drumBus, bassBus, leadVocal, ...otherTracks, master],
         };
         return bridge(
-            [
-                {
-                    name: 'automateTrackGainRange',
-                    arguments: {
-                        trackIds,
-                        sectionName: 'Chorus Two',
-                        gainDb: 1.5,
-                    },
-                },
-            ],
-            // A paraphrase, not the demo sentence: grounding authority is the
-            // typed call plus app-derived scope, never the wording (#2002).
-            'Lift the rhythm section in the second chorus a touch — vocals, tempo map, and the master chain must stay untouched.',
-            exactContext,
+            [{ name: 'automateTrackGainRange', arguments: arguments_ }],
+            prompt,
+            busContext,
             [],
-            [{ sectionId: 'section-chorus-two', name: 'Chorus Two', startBeat: 56, endBeat: 72 }]
+            sections.map(({ id, name, startBeat, endBeat }) => ({ sectionId: id, name, startBeat, endBeat }))
         );
     }
 
-    it('grounds the exact app-owned EX-02 bus set through the direct provider path without compiler evidence', () => {
-        const result = groundExactVibeMix(['bus-drums', 'bus-bass']);
-
-        expect(result).toEqual({
-            actions: [
-                {
-                    type: 'automateTrackGainRange',
-                    payload: {
-                        trackIds: ['bus-drums', 'bus-bass'],
-                        sectionName: 'Chorus Two',
-                        gainDb: 1.5,
-                    },
-                },
-            ],
+    it.each([
+        { prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two', arguments_: NAMED_LIFT },
+        { prompt: 'Lift Drum Bus and Bass Bus in Chorus Two by 1.5 dB', arguments_: NAMED_LIFT },
+        { prompt: 'Lift Drum Bus by 1.5 dB in Chorus Two', arguments_: DRUM_BUS_LIFT },
+        { prompt: 'Lift Drum Bus in Chorus Two by 1.5 dB', arguments_: DRUM_BUS_LIFT },
+    ])('grounds "$prompt" through its ordinary target rule', ({ prompt, arguments_ }) => {
+        expect(groundBusGainRange(prompt, arguments_)).toEqual({
+            actions: [{ type: 'automateTrackGainRange', payload: arguments_ }],
             rejections: [],
         });
     });
 
-    it('grounds the same exact app-owned EX-02 bus set when the provider reverses its order', () => {
-        const result = groundExactVibeMix(['bus-bass', 'bus-drums']);
+    // The lift stays bus-only: a named audio track grounds as a reference and is refused as no bus.
+    it('refuses a named audio track beside a bus', () => {
+        const bass = createTrack({ id: 'track-bass', name: 'Bass' });
 
-        expect(result).toEqual({
-            actions: [
+        expect(
+            groundBusGainRange(
+                'Lift Bass and Drum Bus by 1.5 dB in Chorus Two',
+                { ...NAMED_LIFT, trackIds: ['track-bass', 'bus-drums'] },
+                [bass]
+            )
+        ).toEqual({
+            actions: [],
+            rejections: [
                 {
-                    type: 'automateTrackGainRange',
-                    payload: {
-                        trackIds: ['bus-drums', 'bus-bass'],
-                        sectionName: 'Chorus Two',
-                        gainDb: 1.5,
-                    },
+                    index: 0,
+                    name: 'automateTrackGainRange',
+                    reason: 'Expected every bus to have gain headroom, enabled automation, and no existing gain lane',
                 },
             ],
-            rejections: [],
+        });
+    });
+
+    // The shared section reading takes any section whose name the text contains, so the lift's own
+    // shape is what holds the section to the one the request names in whole.
+    it.each([
+        { prompt: 'Lift Drum Bus by 1.5 dB in Chorus Two', arguments_: { ...DRUM_BUS_LIFT, sectionName: 'Chorus' } },
+        { prompt: 'Lift Drum Bus in Chorus Two by 1.5 dB', arguments_: { ...DRUM_BUS_LIFT, sectionName: 'Chorus' } },
+        {
+            prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two',
+            arguments_: { ...NAMED_LIFT, sectionName: 'Chorus' },
+        },
+        {
+            prompt: 'Lift Drum Bus and Bass Bus in Chorus Two by 1.5 dB',
+            arguments_: { ...NAMED_LIFT, sectionName: 'Chorus' },
+        },
+    ])('refuses "$prompt" as the shorter section it only contains', ({ prompt, arguments_ }) => {
+        expect(groundBusGainRange(prompt, arguments_, [], VERSE_AND_CHORUS_SECTIONS)).toEqual({
+            actions: [],
+            rejections: [{ index: 0, name: 'automateTrackGainRange', reason: SHAPE_REASON }],
+        });
+    });
+
+    // One call lifts every member over the whole section, so a qualifier narrowing either is refused
+    // for a single bus and for a list alike.
+    it.each([
+        {
+            prompt: 'Lift Drum Bus by 1.5 dB in Chorus Two, but not in the first half',
+            arguments_: DRUM_BUS_LIFT,
+            reason: SHAPE_REASON,
+        },
+        {
+            prompt: 'Lift Drum Bus by 1.5 dB in Chorus Two except the last bar',
+            arguments_: DRUM_BUS_LIFT,
+            reason: SHAPE_REASON,
+        },
+        {
+            // The list reading already refuses a clause naming no other track beside the list.
+            prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two, but not in the first half',
+            arguments_: NAMED_LIFT,
+            reason: 'Provider action is not grounded in the user request',
+        },
+        {
+            prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two except the last bar',
+            arguments_: NAMED_LIFT,
+            reason: SHAPE_REASON,
+        },
+    ])('refuses the qualified lift "$prompt"', ({ prompt, arguments_, reason }) => {
+        expect(groundBusGainRange(prompt, arguments_)).toEqual({
+            actions: [],
+            rejections: [{ index: 0, name: 'automateTrackGainRange', reason }],
+        });
+    });
+
+    // No project shape stands in for the request any more (#4372): only the literal lift grounds.
+    it.each([
+        {
+            case: 'the retired vibe phrase naming both buses',
+            prompt: 'Make the Drum Bus and Bass Bus hit harder in Chorus Two',
+            arguments_: NAMED_LIFT,
+            reason: 'Provider action is not grounded in the user request',
+        },
+        {
+            case: 'a paraphrase naming no bus',
+            prompt: 'Lift the rhythm section in the second chorus a touch — vocals, tempo map, and the master chain must stay untouched.',
+            arguments_: NAMED_LIFT,
+            reason: 'Target trackIds is not grounded in the user request',
+        },
+        {
+            case: 'a section the project does not hold',
+            prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in the Bridge',
+            arguments_: { ...NAMED_LIFT, sectionName: 'Bridge' },
+            reason: 'Provider value sectionName does not match the user request',
+        },
+        {
+            case: 'no figure',
+            prompt: 'Lift Drum Bus and Bass Bus in Chorus Two',
+            arguments_: NAMED_LIFT,
+            reason: 'Provider value gainDb does not match the user request',
+        },
+        {
+            case: 'a figure the request does not state',
+            prompt: 'Lift Drum Bus and Bass Bus by 2 dB in Chorus Two',
+            arguments_: NAMED_LIFT,
+            reason: 'Provider value gainDb does not match the user request',
+        },
+        {
+            case: 'a later clause singling a member out',
+            prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two, but not the Bass Bus',
+            arguments_: NAMED_LIFT,
+            reason: 'Provider action is not grounded in the user request',
+        },
+        {
+            case: 'a bus the request does not name',
+            prompt: 'Lift Drum Bus by 1.5 dB in Chorus Two',
+            arguments_: NAMED_LIFT,
+            reason: 'Provider target trackIds does not match the exactly grounded project references',
+        },
+    ])('refuses $case', ({ prompt, arguments_, reason }) => {
+        expect(groundBusGainRange(prompt, arguments_)).toEqual({
+            actions: [],
+            rejections: [{ index: 0, name: 'automateTrackGainRange', reason }],
         });
     });
 });
@@ -3950,7 +4054,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
         );
 
         expect(result.actions).toEqual([]);
-        expect(result.rejections[0]?.reason).toBe('Expected a safe name and one of audio, midi, or folder');
+        expect(result.rejections[0]?.reason).toBe('Expected an optional safe name and one of audio, midi, or folder');
     });
 
     it('rejects a bare anaphoric bus target after an intervening compatible track target', () => {
@@ -8072,6 +8176,73 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(malformed.rejections[0]?.reason).toContain('incomplete or malformed');
     });
 
+    it('admits renaming the clip a bare and hands the request to and refuses the protected one', () => {
+        const context = createNamedClipSourceContext();
+        const admitted = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-lead', name: 'Bridge Solo' } }],
+            'leave Intro alone and rename Lead to Bridge Solo',
+            context
+        );
+        const refused = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Bridge Solo' } }],
+            'leave Intro alone and rename Intro to Bridge Solo',
+            context
+        );
+
+        expect(admitted.rejections).toEqual([]);
+        expect(admitted.actions).toHaveLength(1);
+        expect(refused.actions).toEqual([]);
+        expect(refused.rejections[0]?.reason).toContain('protected');
+    });
+
+    it('refuses renaming a protected clip whose name starts with an instruction verb', () => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-copy-beta', name: 'Gamma' } }],
+            "Don't touch Alpha and Copy Beta. Rename Copy Beta to Gamma.",
+            withNamedClip(withNamedClip(createClipContext(), 'clip-alpha', 'Alpha'), 'clip-copy-beta', 'Copy Beta')
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('protected');
+    });
+
+    it('refuses renaming a protected clip beside a clip named like a protection opening', () => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-alpha', name: 'Gamma' } }],
+            "Don't touch Alpha and rename Alpha to Gamma.",
+            withNamedClip(withNamedClip(createClipContext(), 'clip-alpha', 'Alpha'), 'clip-touch', 'Touch')
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('protected');
+    });
+
+    it('refuses renaming a clip when a clip name only partly overlaps the protection opening', () => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-alpha', name: 'Gamma' } }],
+            "Don't touch Alpha and rename Alpha to Gamma.",
+            withNamedClip(withNamedClip(createClipContext(), 'clip-alpha', 'Alpha'), 'clip-touch-alpha', 'Touch Alpha')
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('incomplete or malformed');
+    });
+
+    it('refuses renaming a clip when a clip name contains the protection opening', () => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-alpha', name: 'Gamma' } }],
+            'Do not touch Alpha and rename Alpha to Gamma.',
+            withNamedClip(
+                withNamedClip(createClipContext(), 'clip-alpha', 'Alpha'),
+                'clip-do-not-touch-alpha',
+                'Do not touch Alpha'
+            )
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('incomplete or malformed');
+    });
+
     it('rejects renaming a quoted literal protected clip when another clip is selected', () => {
         const result = bridge(
             [{ name: 'renameClip', arguments: { clipId: 'clip-literal-selected', name: 'Bridge Solo' } }],
@@ -9076,6 +9247,122 @@ describe('explicit clip exclusions on the ordinary direct route', () => {
             actions: [velocityAction],
             rejections: [],
         });
+    });
+
+    describe('a clip protected with a prohibition or with leave-alone', () => {
+        const alphaCall = { name: 'setAllVelocities', arguments: { clipId: 'clip-guitar-0', velocity: 96 } };
+        const alphaAction = { type: 'setAllVelocities', payload: { clipId: 'clip-guitar-0', velocity: 96 } };
+        const betaCall = { name: 'setAllVelocities', arguments: { clipId: 'clip-guitar-1', velocity: 96 } };
+        const betaAction = { type: 'setAllVelocities', payload: { clipId: 'clip-guitar-1', velocity: 96 } };
+        const alphaRefusal = {
+            actions: [],
+            rejections: [
+                { index: 0, name: '<batch>', reason: 'Request changes "Alpha", which a protection in it leaves alone' },
+            ],
+        };
+
+        it.each([
+            'leave Alpha alone',
+            'without touching Alpha',
+            "don't touch Alpha",
+            'do not change Alpha',
+            'without changing Alpha',
+        ])('refuses an edit to Alpha when the request says: %s', (protection) => {
+            expect(
+                bridge([alphaCall], `set note velocities in Alpha to 96, ${protection}`, withGuitarObjects(['Alpha']))
+            ).toEqual(alphaRefusal);
+        });
+
+        it.each(['leave Alpha alone', 'without touching Alpha', "don't touch Alpha", 'do not change Alpha'])(
+            'edits Beta and not Alpha when the request says: %s',
+            (protection) => {
+                expect(
+                    bridge(
+                        [betaCall],
+                        `set note velocities in Beta to 96, ${protection}`,
+                        withGuitarObjects(['Alpha', 'Beta'])
+                    )
+                ).toEqual({ actions: [betaAction], rejections: [] });
+            }
+        );
+
+        it.each([
+            ["Don't touch Alpha, but rename Beta to Gamma"],
+            ['without touching Alpha, but rename Beta to Gamma'],
+            ['do not change Alpha, and rename Beta to Gamma'],
+            ['without touching Alpha; rename Beta to Gamma'],
+        ])('renames Beta beside a prohibition that ends at a separator: %s', (prompt) => {
+            expect(
+                bridge(
+                    [{ name: 'renameClip', arguments: { clipId: 'clip-guitar-1', name: 'Gamma' } }],
+                    prompt,
+                    withGuitarObjects(['Alpha', 'Beta'])
+                )
+            ).toEqual({
+                actions: [{ type: 'renameClip', payload: { clipId: 'clip-guitar-1', name: 'Gamma' } }],
+                rejections: [],
+            });
+        });
+
+        it('edits Beta when a prohibition of Alpha is followed by a velocity clause', () => {
+            expect(
+                bridge(
+                    [betaCall],
+                    'without touching Alpha, but set note velocities in Beta to 96',
+                    withGuitarObjects(['Alpha', 'Beta'])
+                )
+            ).toEqual({ actions: [betaAction], rejections: [] });
+        });
+
+        it('refuses renaming Alpha beside a prohibition of Alpha that ends at a separator', () => {
+            const result = bridge(
+                [{ name: 'renameClip', arguments: { clipId: 'clip-guitar-0', name: 'Gamma' } }],
+                'without touching Alpha, but rename Alpha to Gamma',
+                withGuitarObjects(['Alpha', 'Beta'])
+            );
+            expect(result.actions).toEqual([]);
+            expect(result.rejections[0]?.reason).toBe('Provider clip rename target is explicitly protected');
+        });
+
+        it.each([
+            ['without touching Alpha and', withGuitarObjects(['Alpha'])],
+            [
+                'without touching Alpha and Omega, but set note velocities in Beta to 96',
+                withGuitarObjects(['Alpha', 'Beta']),
+            ],
+        ])('keeps refusing a prohibition list that is dangling or names nothing: %s', (prompt, project) => {
+            expect(bridge([betaCall], `set note velocities in Beta to 96, ${prompt}`, project).actions).toEqual([]);
+        });
+
+        it('does not protect a clip through a prohibition that names its track', () => {
+            expect(
+                bridge(
+                    [alphaCall],
+                    'set note velocities in Alpha to 96, without touching Vocals',
+                    withGuitarObjects(['Alpha'])
+                )
+            ).toEqual({ actions: [alphaAction], rejections: [] });
+        });
+
+        it.each(['leave Alpha alone', 'without touching Alpha'])(
+            'ends the protection at a sentence boundary: %s',
+            (protection) => {
+                expect(
+                    bridge(
+                        [betaCall],
+                        `${protection}. Then set note velocities in Beta to 96`,
+                        withGuitarObjects(['Alpha', 'Beta'])
+                    )
+                ).toEqual({ actions: [betaAction], rejections: [] });
+                expect(
+                    bridge(
+                        [alphaCall],
+                        `${protection}. Then set note velocities in Alpha to 96`,
+                        withGuitarObjects(['Alpha', 'Beta'])
+                    )
+                ).toEqual(alphaRefusal);
+            }
+        );
     });
 
     it.each(['excluding Piano MIDI', 'excluding "Piano MIDI"'])(

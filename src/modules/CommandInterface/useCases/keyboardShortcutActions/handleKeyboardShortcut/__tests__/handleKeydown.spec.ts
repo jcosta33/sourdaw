@@ -39,6 +39,7 @@ import { setNotificationEventBus } from '#/utils/Notification/notificationEventB
 import { beginDragGesture } from '#/utils/UI/activeDragGesture';
 
 import { parseLoopStationPadCallbackId, type ShortcutAction } from '../../../../stores/shortcutStore';
+import { resolveShortcutKey } from '../../../resolveShortcutKey';
 import { getAllClipIds } from '../../../selectionHelpers/getAllClipIds';
 import { duplicateSelectedClipsForward } from '../../clipShortcuts/duplicateSelectedClipsForward';
 import { duplicateTrack } from '../../trackShortcuts/duplicateTrack';
@@ -119,6 +120,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     clearClipSelection: vi.fn(),
     selectAllClips: vi.fn(),
     selectClipWithFocus: vi.fn(),
+    prepareDuplicateClipTargetId: vi.fn(() => 'copy-1'),
     setMarqueeSelection: vi.fn(),
     getLastClipEndBeat: getLastClipEndBeatMock,
 }));
@@ -201,7 +203,7 @@ const notificationEventBusMock = {
 };
 
 function descriptor(overrides: Partial<KeyDescriptor> & { key: string }): KeyDescriptor {
-    return { mod: false, shift: false, alt: false, repeat: false, isInput: false, ...overrides };
+    return { mod: false, shift: false, alt: false, repeat: false, keyTarget: 'workspace', ...overrides };
 }
 
 function callbackDefinition(input: { id: string; key: string; callbackId: string }): MinimalDefinition {
@@ -237,7 +239,7 @@ describe('handleKeydown', () => {
     });
 
     it('does not toggle voice when v is pressed inside an input field', () => {
-        const prevent = handleKeydown(descriptor({ key: 'v', isInput: true }));
+        const prevent = handleKeydown(descriptor({ key: 'v', keyTarget: 'textEntry' }));
 
         expect(prevent).toBe(false);
         expect(eventBus.emit).not.toHaveBeenCalled();
@@ -279,7 +281,7 @@ describe('handleKeydown', () => {
     });
 
     it('blocks plain keys while typing in an input field', () => {
-        const prevent = handleKeydown(descriptor({ key: 'Home', isInput: true }));
+        const prevent = handleKeydown(descriptor({ key: 'Home', keyTarget: 'textEntry' }));
 
         expect(prevent).toBe(false);
         expect(seekPlayhead).not.toHaveBeenCalled();
@@ -542,7 +544,7 @@ describe('handleKeydown', () => {
             it('does not close the panel from a text field', () => {
                 bindEscape();
 
-                handleKeydown(descriptor({ key: 'Escape', isInput: true }));
+                handleKeydown(descriptor({ key: 'Escape', keyTarget: 'textEntry' }));
 
                 expect(closeCollaborationPanel).not.toHaveBeenCalled();
             });
@@ -678,11 +680,11 @@ describe('handleKeydown', () => {
                 }),
             ];
 
-            const blocked = handleKeydown(descriptor({ key: 'F1', isInput: true }));
+            const blocked = handleKeydown(descriptor({ key: 'F1', keyTarget: 'textEntry' }));
             expect(blocked).toBe(false);
             expect(toggleMixer).not.toHaveBeenCalled();
 
-            const allowed = handleKeydown(descriptor({ key: 'F2', isInput: true }));
+            const allowed = handleKeydown(descriptor({ key: 'F2', keyTarget: 'textEntry' }));
             expect(allowed).toBe(true);
             expect(toggleCommandPalette).toHaveBeenCalledTimes(1);
         });
@@ -711,6 +713,96 @@ describe('handleKeydown', () => {
             const whileArmed = handleKeydown(descriptor({ key: '1' }));
             expect(triggerPad).toHaveBeenCalledWith({ row: 0, column: 0, record: false });
             expect(whileArmed).toBe(true);
+        });
+    });
+
+    describe('shipped bindings under Alt, Shift and an armed Loop Station', () => {
+        function useShippedDefinitions(): void {
+            const realState = realShortcutStoreModule.shortcutStore.value;
+            if (!realState) {
+                throw new Error('expected the shipped shortcut definitions');
+            }
+            shortcutStoreMock.value.definitions = realState.definitions;
+            vi.mocked(parseLoopStationPadCallbackId).mockImplementation(
+                realShortcutStoreModule.parseLoopStationPadCallbackId
+            );
+        }
+
+        // The descriptor the keyboard adapter builds for a real keydown.
+        function pressed(init: { key: string; code: string; shift?: boolean; alt?: boolean }): KeyDescriptor {
+            const shift = init.shift ?? false;
+            const alt = init.alt ?? false;
+            const key = resolveShortcutKey({ key: init.key, code: init.code, shiftKey: shift, altKey: alt }, null);
+            return descriptor({ key, shift, alt });
+        }
+
+        beforeEach(useShippedDefinitions);
+        afterEach(() => {
+            vi.mocked(parseLoopStationPadCallbackId).mockImplementation(() => null);
+        });
+
+        it('runs the alt+d duplicate-to-next-bar binding from macOS Option+D, which reports ∂', () => {
+            clipSelectionStoreMock.value.selectedClipId = 'clip-3';
+
+            const prevent = handleKeydown(pressed({ key: '∂', code: 'KeyD', alt: true }));
+
+            expect(prevent).toBe(true);
+            expect(executeUserAppAction).toHaveBeenCalledWith({
+                type: 'duplicateClipToNextBar',
+                payload: { clipId: 'clip-3', targetClipId: 'copy-1' },
+            });
+        });
+
+        it('records Loop Station pad r0c0 from Shift+1, which reports !', () => {
+            loopStationStoreMock.value.armed = true;
+
+            const prevent = handleKeydown(pressed({ key: '!', code: 'Digit1', shift: true }));
+
+            expect(prevent).toBe(true);
+            expect(triggerPad).toHaveBeenCalledWith({ row: 0, column: 0, record: true });
+        });
+
+        it('plays pad r1c3 on an armed R, and toggles recording on an unarmed R', () => {
+            loopStationStoreMock.value.armed = true;
+            handleKeydown(pressed({ key: 'r', code: 'KeyR' }));
+
+            expect(triggerPad).toHaveBeenCalledWith({ row: 1, column: 3, record: false });
+            expect(executeUserAppAction).not.toHaveBeenCalled();
+
+            vi.mocked(triggerPad).mockClear();
+            loopStationStoreMock.value.armed = false;
+            handleKeydown(pressed({ key: 'r', code: 'KeyR' }));
+
+            expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'toggleRecording' });
+            expect(triggerPad).not.toHaveBeenCalled();
+        });
+
+        it('records pad r3c5 on an armed Shift+N instead of adding an audio track', () => {
+            loopStationStoreMock.value.armed = true;
+
+            handleKeydown(pressed({ key: 'N', code: 'KeyN', shift: true }));
+
+            expect(triggerPad).toHaveBeenCalledWith({ row: 3, column: 5, record: true });
+            expect(executeUserAppAction).not.toHaveBeenCalled();
+        });
+
+        it('plays pad r3c3 on an armed V, and leaves an unarmed V unhandled', () => {
+            loopStationStoreMock.value.armed = true;
+            expect(handleKeydown(pressed({ key: 'v', code: 'KeyV' }))).toBe(true);
+            expect(triggerPad).toHaveBeenCalledWith({ row: 3, column: 3, record: false });
+
+            vi.mocked(triggerPad).mockClear();
+            loopStationStoreMock.value.armed = false;
+            expect(handleKeydown(pressed({ key: 'v', code: 'KeyV' }))).toBe(false);
+            expect(triggerPad).not.toHaveBeenCalled();
+        });
+
+        it('does not select the tool a digit selects when that digit is pressed with Shift', () => {
+            shortcutStoreMock.value.definitions = [];
+
+            handleKeydown(pressed({ key: '!', code: 'Digit1', shift: true }));
+
+            expect(setEditingTool).not.toHaveBeenCalled();
         });
     });
 
@@ -831,7 +923,87 @@ describe('handleKeydown', () => {
 
             handleKeydown(descriptor({ key: 'F1' }));
 
-            expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'duplicateClip', payload: { clipId: 'clip-9' } });
+            expect(executeUserAppAction).toHaveBeenCalledWith({
+                type: 'duplicateClip',
+                payload: { clipId: 'clip-9', targetClipId: 'copy-1' },
+            });
+        });
+
+        describe('selecting the copy', () => {
+            const dupDefinition = (type: 'duplicateClip' | 'duplicateClipToNextBar'): MinimalDefinition => ({
+                id: 'test.dup',
+                defaultKeys: ['F1'],
+                action: { type: 'appAction', action: { type, payload: { clipId: 'selected' } } },
+            });
+
+            /** The dispatched action lands the copy in the track store, as a committed duplicate does. */
+            function commitCopyOnDispatch(): void {
+                vi.mocked(executeUserAppAction).mockImplementationOnce((action) => {
+                    if (action.type !== 'duplicateClip' && action.type !== 'duplicateClipToNextBar') {
+                        return Promise.resolve();
+                    }
+                    const copyId = action.payload.targetClipId ?? '';
+                    trackStoreMock.value.tracks = [
+                        { id: 't1', clips: [{ id: action.payload.clipId, startBeat: 0, endBeat: 4 }] },
+                        { id: 't2', clips: [{ id: copyId, startBeat: 4, endBeat: 8 }] },
+                    ];
+                    return Promise.resolve();
+                });
+            }
+
+            it.each(['duplicateClip', 'duplicateClipToNextBar'] as const)(
+                'selects the copy a committed %s creates',
+                async (type) => {
+                    shortcutStoreMock.value.definitions = [dupDefinition(type)];
+                    clipSelectionStoreMock.value.selectedClipId = 'clip-9';
+                    clipSelectionStoreMock.value.selectedClipIds = ['clip-9'];
+                    commitCopyOnDispatch();
+
+                    handleKeydown(descriptor({ key: 'F1' }));
+
+                    await vi.waitFor(() => {
+                        expect(selectClipWithFocus).toHaveBeenCalledExactlyOnceWith('copy-1');
+                    });
+                }
+            );
+
+            it.each(['duplicateClip', 'duplicateClipToNextBar'] as const)(
+                'leaves the source selected when %s leaves no copy behind',
+                async (type) => {
+                    shortcutStoreMock.value.definitions = [dupDefinition(type)];
+                    clipSelectionStoreMock.value.selectedClipId = 'clip-9';
+                    vi.mocked(executeUserAppAction).mockResolvedValueOnce(undefined);
+
+                    handleKeydown(descriptor({ key: 'F1' }));
+
+                    await vi.waitFor(() => {
+                        expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+                    });
+                    await Promise.resolve();
+                    expect(selectClipWithFocus).not.toHaveBeenCalled();
+                }
+            );
+
+            it('chains a second press from the copy the first press selected', async () => {
+                shortcutStoreMock.value.definitions = [dupDefinition('duplicateClip')];
+                clipSelectionStoreMock.value.selectedClipId = 'clip-9';
+                vi.mocked(selectClipWithFocus).mockImplementationOnce((clipId) => {
+                    clipSelectionStoreMock.value.selectedClipId = clipId;
+                    clipSelectionStoreMock.value.selectedClipIds = [clipId];
+                });
+                commitCopyOnDispatch();
+
+                handleKeydown(descriptor({ key: 'F1' }));
+                await vi.waitFor(() => {
+                    expect(clipSelectionStoreMock.value.selectedClipId).toBe('copy-1');
+                });
+                handleKeydown(descriptor({ key: 'F1' }));
+
+                expect(executeUserAppAction).toHaveBeenLastCalledWith({
+                    type: 'duplicateClip',
+                    payload: expect.objectContaining({ clipId: 'copy-1' }),
+                });
+            });
         });
 
         it('dispatches duplicateClipToNextBar only when a clip is selected', () => {
@@ -853,7 +1025,7 @@ describe('handleKeydown', () => {
             handleKeydown(descriptor({ key: 'F1' }));
             expect(executeUserAppAction).toHaveBeenCalledWith({
                 type: 'duplicateClipToNextBar',
-                payload: { clipId: 'clip-7' },
+                payload: { clipId: 'clip-7', targetClipId: 'copy-1' },
             });
         });
 
@@ -880,7 +1052,7 @@ describe('handleKeydown', () => {
             expect(executeUserAppAction).toHaveBeenCalledTimes(1);
             expect(executeUserAppAction).toHaveBeenCalledWith({
                 type: 'duplicateClipToNextBar',
-                payload: { clipId: 'clip-b' },
+                payload: { clipId: 'clip-b', targetClipId: 'copy-1' },
             });
         });
     });
@@ -1444,6 +1616,132 @@ describe('handleKeydown', () => {
                     level: 'warning',
                 });
             });
+        });
+    });
+
+    describe('note editor key target', () => {
+        const loadShippedDefinitions = (): void => {
+            const realState = realShortcutStoreModule.shortcutStore.value;
+            if (!realState) {
+                throw new Error('expected the shipped shortcut definitions');
+            }
+            shortcutStoreMock.value.definitions = realState.definitions;
+        };
+
+        const appAction = (type: string) => () =>
+            expect(executeUserAppAction).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type }));
+        const called = (mock: unknown) => () => expect(mock).toHaveBeenCalledTimes(1);
+
+        it.each([
+            ['transport.togglePlayback', { key: ' ' }, appAction('togglePlayback')],
+            ['transport.toggleMetronome', { key: 'm' }, appAction('toggleMetronome')],
+            ['transport.toggleRecording', { key: 'r' }, appAction('toggleRecording')],
+            ['transport.toggleLoop', { key: 'l' }, appAction('toggleLoop')],
+            ['transport.panicAllNotes', { key: 'Escape', shift: true }, called(panicAllNotesMock)],
+            ['editing.undo', { key: 'z', mod: true }, called(undo)],
+            ['editing.redo', { key: 'z', mod: true, shift: true }, called(redo)],
+            ['project.saveProject', { key: 's', mod: true }, appAction('saveProject')],
+            ['project.openExportDialog', { key: 'e', mod: true, shift: true }, called(openExportDialog)],
+            ['project.openPreferencesDialog', { key: ',', mod: true }, called(openPreferencesDialog)],
+            ['workspace.toggleCommandPalette', { key: 'k', mod: true }, called(toggleCommandPalette)],
+            ['workspace.toggleSidebar', { key: 'b', mod: true }, appAction('toggleSidebar')],
+            ['workspace.toggleInspector', { key: 'i', mod: true }, appAction('toggleInspector')],
+            ['workspace.toggleMixer', { key: 'm', mod: true }, called(toggleMixer)],
+            ['workspace.toggleChatPanel', { key: 'j', mod: true }, appAction('toggleChatPanel')],
+            ['workspace.toggleTrackList', { key: 't', mod: true }, called(toggleTrackList)],
+            ['workspace.toggleVirtualKeyboard', { key: 'k', mod: true, shift: true }, called(toggleVirtualKeyboard)],
+            [
+                'workspace.showAutomationPanel',
+                { key: 'a', mod: true, shift: true },
+                () => expect(showDevicePanel).toHaveBeenCalledExactlyOnceWith('automation', null),
+            ],
+        ] as const)('dispatches %s from a focused note editor', (_id, keys, expectEffect) => {
+            loadShippedDefinitions();
+
+            const prevent = handleKeydown(descriptor({ ...keys, keyTarget: 'noteEditor' }));
+
+            expect(prevent).toBe(true);
+            expectEffect();
+        });
+
+        it('swallows a held repeat of an admitted toggle without running it again', () => {
+            loadShippedDefinitions();
+
+            const prevent = handleKeydown(descriptor({ key: ' ', repeat: true, keyTarget: 'noteEditor' }));
+
+            expect(prevent).toBe(true);
+            expect(executeUserAppAction).not.toHaveBeenCalled();
+        });
+
+        it.each([
+            ['editing.cutClip', { key: 'x', mod: true }],
+            ['editing.copyClip', { key: 'c', mod: true }],
+            ['editing.pasteClip', { key: 'v', mod: true }],
+            ['arrangement.addMidiTrack', { key: 'n' }],
+            ['arrangement.addAudioTrack', { key: 'n', shift: true }],
+            ['workspace.selectAllClips', { key: 'a', mod: true }],
+            ['arrangement.duplicateClip', { key: 'd', mod: true }],
+            ['arrangement.deleteTimeRange', { key: 'Backspace', mod: true }],
+            ['view.zoomToFit', { key: 'f' }],
+            ['view.cycleAutomationVisibility', { key: 'a' }],
+            ['transport.stopPlayback', { key: 'Escape' }],
+            ['transport.stopPlayback (Enter)', { key: 'Enter' }],
+            ['seek to start', { key: 'Home' }],
+            ['marker navigation', { key: ']' }],
+            ['tool letter', { key: 'd' }],
+            ['editing.deleteSelection (Delete)', { key: 'Delete' }],
+            ['editing.deleteSelection (Backspace)', { key: 'Backspace' }],
+            ['view.toggleWorkspaceMode (Tab)', { key: 'Tab' }],
+            ['view.toggleWorkspaceMode (Shift+Tab)', { key: 'Tab', shift: true }],
+        ] as const)('does not fire %s from a focused note editor', (_id, keys) => {
+            loadShippedDefinitions();
+            trackStoreMock.value.tracks = [{ id: 't1', clips: [{ id: 'clip-1', startBeat: 0, endBeat: 4 }] }];
+            clipSelectionStoreMock.value = {
+                selectedClipId: 'clip-1',
+                selectedClipIds: ['clip-1'],
+                marqueeSelection: null,
+            };
+
+            const prevent = handleKeydown(descriptor({ ...keys, keyTarget: 'noteEditor' }));
+
+            expect(prevent).toBe(false);
+            expect(clearClipSelection).not.toHaveBeenCalled();
+            expect(toggleWorkspaceMode).not.toHaveBeenCalled();
+            expect(executeUserAppAction).not.toHaveBeenCalled();
+            expect(stopPlaybackMock).not.toHaveBeenCalled();
+            expect(selectAllClips).not.toHaveBeenCalled();
+            expect(seekPlayhead).not.toHaveBeenCalled();
+            expect(goToNextMarkerMock).not.toHaveBeenCalled();
+            expect(startToolSwap).not.toHaveBeenCalled();
+            expect(setEditingTool).not.toHaveBeenCalled();
+            expect(cycleAutomationVisibility).not.toHaveBeenCalled();
+        });
+
+        it('does not arm the AI leader chord from a focused note editor', () => {
+            loadShippedDefinitions();
+            clipSelectionStoreMock.value.selectedClipId = 'clip-1';
+
+            handleKeydown(descriptor({ key: 'g' }));
+            expect(handleKeydown(descriptor({ key: 'b' }))).toBe(true);
+            expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+            vi.mocked(executeUserAppAction).mockClear();
+
+            handleKeydown(descriptor({ key: 'g', keyTarget: 'noteEditor' }));
+            const followUp = handleKeydown(descriptor({ key: 'b' }));
+
+            expect(followUp).toBe(false);
+            expect(executeUserAppAction).not.toHaveBeenCalled();
+        });
+
+        it('does not resolve an armed AI leader chord from a focused note editor', () => {
+            loadShippedDefinitions();
+            clipSelectionStoreMock.value.selectedClipId = 'clip-1';
+
+            handleKeydown(descriptor({ key: 'g' }));
+            const chord = handleKeydown(descriptor({ key: 'b', keyTarget: 'noteEditor' }));
+
+            expect(chord).toBe(false);
+            expect(executeUserAppAction).not.toHaveBeenCalled();
         });
     });
 });

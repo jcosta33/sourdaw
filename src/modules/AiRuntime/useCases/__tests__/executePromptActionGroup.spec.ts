@@ -82,6 +82,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     getCrdtDoc: vi.fn(() => undefined),
     getCrdtDocIds: vi.fn(() => []),
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
+    projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn(() => true),
     subscribeToCrdtChanges: vi.fn<typeof import('#/modules/CrdtDocument/useCases').subscribeToCrdtChanges>(() =>
         vi.fn()
     ),

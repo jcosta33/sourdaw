@@ -1,6 +1,5 @@
-import { getWarpState, setWarpState, trackStore } from '#/modules/Arrangement/stores';
+import { getWarpState, setWarpState, timelineEditingStore, trackStore } from '#/modules/Arrangement/stores';
 import { pushUndoEntry } from '#/modules/Command/useCases';
-import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 export type QuantizeTransientsResult =
     { ok: true; moved: number } | { ok: false; reason: 'CLIP_NOT_FOUND' | 'CLIP_NOT_AUDIO' | 'NO_MARKERS' };
@@ -38,7 +37,7 @@ function findClip(clipId: string): QuantizableClip | null {
 
 /**
  * Snap every non-locked transient marker's `warpedBeat` to the nearest grid
- * position (`workspaceStore.snapValue`, in beats). One undo entry covers the
+ * position (`timelineEditingStore.snapValue`, in beats). One undo entry covers the
  * marker rewrite.
  *
  * `stretchMode` is left exactly as the user set it. This used to flip
@@ -56,7 +55,7 @@ export function quantizeTransients(clipId: string): QuantizeTransientsResult {
     }
 
     const before = getWarpState(clipId);
-    const grid = workspaceStore.value?.snapValue ?? 1;
+    const grid = timelineEditingStore.value?.snapValue ?? 1;
 
     if (before.markers.length === 0) {
         return { ok: false, reason: 'NO_MARKERS' };

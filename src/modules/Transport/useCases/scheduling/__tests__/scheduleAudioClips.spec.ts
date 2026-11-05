@@ -10,7 +10,6 @@ import {
     getCachedAudioBuffer,
     getCurrentTime,
 } from '#/modules/AudioEngine/useCases';
-import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import {
     MICRO_FADE_SECONDS,
     clampClipFadeInDurationSeconds,
@@ -67,6 +66,12 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 // real loop projection.
 vi.mock('#/modules/Arrangement/useCases', () => ({
     resolveClipsWithComping: vi.fn(() => []),
+    collaborationAssetTransfer: {
+        read: () => ({
+            isSessionActive: () => collaborationAssetState.sessionActive,
+            current: () => collaborationAssetState.transfer,
+        }),
+    },
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
@@ -74,17 +79,10 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 vi.mock('../scheduleFrozenTrack', () => ({
     scheduleFrozenTrack: vi.fn(() => false),
 }));
-const collaborationStoreState: { value: { isEnabled: boolean } | null } = { value: null };
-vi.mock('#/modules/Collaboration/stores', () => ({
-    collaborationStore: {
-        get value() {
-            return collaborationStoreState.value;
-        },
-    },
-}));
-vi.mock('#/modules/Collaboration/useCases', () => ({
-    getAssetTransfer: vi.fn(() => null),
-}));
+const collaborationAssetState: {
+    sessionActive: boolean;
+    transfer: { requestAsset: (hash: string) => void } | null;
+} = { sessionActive: false, transfer: null };
 // `TempoMap` is deliberately NOT stubbed: it is a pure leaf with its own spec,
 // and the timing these tests pin is exactly the question of which conversion the
 // scheduler asks it for. With an empty map every query falls back to
@@ -160,14 +158,14 @@ describe('scheduleAudioClips', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         trackStoreState.value = { tracks: [] };
-        collaborationStoreState.value = null;
+        collaborationAssetState.sessionActive = false;
         tempoMapStore.value = { changes: [] };
         // Reset implementations that other tests override via mockReturnValue —
         // clearAllMocks only clears call records, not per-test return values.
         vi.mocked(getCurrentTime).mockReturnValue(0);
         vi.mocked(getCompensationDelay).mockReturnValue(0);
         vi.mocked(getGainEnvelopeSeries).mockReturnValue(undefined);
-        vi.mocked(getAssetTransfer).mockReturnValue(null);
+        collaborationAssetState.transfer = null;
         mockResolveClips.mockReturnValue([]);
         // The seam records are scheduler-session singletons: a case that leaves
         // either standing would floor the next case's emissions as handovers.
@@ -502,11 +500,15 @@ describe('scheduleAudioClips', () => {
         mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
         mockResolveClips.mockReturnValue([makeAudioClip()] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };
-        const scheduled = new Set<string>(['clip-1:0:4']);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        const scheduled = new Set<string>();
+        const active: AudioBufferSourceNode[] = [];
+        scheduleAudioClips(0, 16, 0, scheduled, new Set(), active, defaultTransportState);
+        expect(mockCreateBufferSource).toHaveBeenCalledTimes(1);
 
-        scheduleAudioClips(0, 16, 0, scheduled, new Set(), [], defaultTransportState);
+        scheduleAudioClips(0, 16, 0, scheduled, new Set(), active, defaultTransportState);
 
-        expect(mockCreateBufferSource).not.toHaveBeenCalled();
+        expect(mockCreateBufferSource).toHaveBeenCalledTimes(1);
     });
 
     it('bails when trackStore.value is null', () => {
@@ -561,8 +563,8 @@ describe('scheduleAudioClips', () => {
     // whether the request is still alive, and it re-opens the hash on abort.
     it('asks AssetTransfer for a missing asset on every tick while collaboration is enabled', () => {
         const requestAsset = vi.fn();
-        vi.mocked(getAssetTransfer).mockReturnValue({ requestAsset } as never);
-        collaborationStoreState.value = { isEnabled: true };
+        collaborationAssetState.transfer = { requestAsset };
+        collaborationAssetState.sessionActive = true;
         mockGetCachedAudioBuffer.mockReturnValue(null);
         mockResolveClips.mockReturnValue([makeAudioClip({ audioBufferId: 'buf-1', assetHash: 'hash-1' })] as never);
         trackStoreState.value = { tracks: [makeAudioTrack([])] };

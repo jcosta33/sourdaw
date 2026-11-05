@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { createAppError } from '#/infra/errors/createAppError';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
@@ -18,6 +19,8 @@ import { getAgentToolCatalogEntries } from '../getAgentToolCatalogEntries';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 
+registerDeviceEnginePorts();
+
 const engine = vi.hoisted(() => ({
     renderOffline: vi.fn(),
     renderTrackSubgraphOffline: vi.fn(),
@@ -25,7 +28,7 @@ const engine = vi.hoisted(() => ({
     cancelExport: vi.fn(),
 }));
 const transport = vi.hoisted(() => ({ readSecondsAtBeat: vi.fn() }));
-const crdt = vi.hoisted(() => ({ projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn() }));
+const crdt = vi.hoisted(() => ({ projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn() }));
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
@@ -42,7 +45,7 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
 
 vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint: crdt.projectRevisionMatchesLiveIgnoringCommandCheckpoint,
+    projectRevisionMatchesLiveIgnoringSaveWrites: crdt.projectRevisionMatchesLiveIgnoringSaveWrites,
 }));
 
 vi.mock('../../transformers/promptParser/parsing', async (importOriginal) => {
@@ -231,7 +234,7 @@ beforeEach(() => {
     engine.isExportActive.mockReset().mockReturnValue(false);
     engine.cancelExport.mockReset();
     transport.readSecondsAtBeat.mockReset().mockImplementation(({ beat }: { beat: number }) => beat * 0.5);
-    crdt.projectRevisionMatchesLiveIgnoringCommandCheckpoint.mockReset().mockReturnValue(true);
+    crdt.projectRevisionMatchesLiveIgnoringSaveWrites.mockReset().mockReturnValue(true);
     vi.mocked(generateToolPlanningOutcome).mockReset();
     vi.mocked(tryPresetMatch).mockReturnValue([]);
     vi.mocked(tryParameterizedPath).mockReturnValue([]);
@@ -452,7 +455,7 @@ describe('analysis.measure', () => {
     });
 
     it('refuses a project that changed before the render without rendering', async () => {
-        crdt.projectRevisionMatchesLiveIgnoringCommandCheckpoint.mockReturnValue(false);
+        crdt.projectRevisionMatchesLiveIgnoringSaveWrites.mockReturnValue(false);
 
         const { receipt } = await measureOnce({ scope: MASTER, range: CHORUS });
 
@@ -462,7 +465,7 @@ describe('analysis.measure', () => {
     });
 
     it('refuses a project that changed only during the render and retains nothing', async () => {
-        crdt.projectRevisionMatchesLiveIgnoringCommandCheckpoint.mockReturnValueOnce(true).mockReturnValue(false);
+        crdt.projectRevisionMatchesLiveIgnoringSaveWrites.mockReturnValueOnce(true).mockReturnValue(false);
 
         const { receipt } = await measureOnce({ scope: MASTER, range: CHORUS });
 
@@ -672,7 +675,7 @@ describe('analysis.measure', () => {
             rejectionReason: 'Provider planning rejected: Provider requested an unavailable application tool.',
         });
         expect(engine.renderOffline).not.toHaveBeenCalled();
-        expect(crdt.projectRevisionMatchesLiveIgnoringCommandCheckpoint).not.toHaveBeenCalled();
+        expect(crdt.projectRevisionMatchesLiveIgnoringSaveWrites).not.toHaveBeenCalled();
     });
 
     it('passes a mono render unavailable low-frequency stereo reading through unchanged', async () => {

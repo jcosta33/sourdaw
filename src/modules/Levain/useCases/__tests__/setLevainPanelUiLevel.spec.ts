@@ -1,6 +1,7 @@
 import { load, save } from '@automerge/automerge';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { batchStoreUpdates } from '#/infra/store/createStore';
 import {
     configureAutomergeStoragePort,
@@ -301,6 +302,7 @@ beforeEach(() => {
     removeCrdtDoc('root');
     createCrdtDoc('root');
     registerCrdtStorageRuntime();
+    registerProjectSlotProjections();
     agentProjectRepairStateStore.set(null);
     vi.mocked(notifyUser).mockClear();
     clearHandlerRegistry();

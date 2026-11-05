@@ -6,6 +6,13 @@ export { repairRuntimeGraphFromProject } from './repairRuntimeGraphFromProject';
 export { getSchedulerTimingDiagnostics } from './getSchedulerTimingDiagnostics';
 export { reconcileVcaGroupRuntimeGain } from './scheduling/applyAutomation/reconcileVcaGroupRuntimeGain';
 export { reconcileVcaRuntimeGain } from './scheduling/applyAutomation/reconcileVcaRuntimeGain';
+// Published because the composition root registers the runtime writes device modules own.
+export { deviceRuntimeParameterWriters } from './scheduling/applyAutomation/deviceRuntimeParameterWriters';
+// Published because the composition root registers the MIDI effect rack, kit
+// swing and note panic participants device modules own.
+export { liveMidiProcessor } from './scheduling/liveMidiProcessor';
+export { kitSwing } from './scheduling/kitSwing';
+export { notePanicParticipants } from './transportControls/notePanicParticipants';
 export { resolvePlaybackNoteReceiver } from './scheduling/resolvePlaybackNoteReceiver';
 export { selectMidiNotesForLoopWindow } from './scheduling/selectMidiNotesForLoopWindow';
 export { setStopPlaybackCallback } from './playheadScheduler/setStopPlaybackCallback';
@@ -71,6 +78,7 @@ export { replaceTimeSignatureMap } from './timeSignatureChanges/replaceTimeSigna
 export { getTransportHandlers } from './getTransportHandlers';
 
 export { preferencesSeededTransportState } from './preferencesSeededTransportState';
+export { seedTransportForNewProject } from './seedTransportForNewProject';
 export { defaultTransportState } from './transportQueries/helpers';
 export { getTransportState } from './transportQueries/getTransportState';
 export { getTempoMapState } from './transportQueries/getTempoMapState';
@@ -79,3 +87,7 @@ export { getTimeSignatureAtBeat } from './transportQueries/getTimeSignatureAtBea
 export { getBarStartBeat } from './transportQueries/getBarStartBeat';
 export { getTimelineRulerGrid } from './transportQueries/getTimelineRulerGrid';
 export { updateTransportState } from './transportQueries/updateTransportState';
+export { formatMusicalPosition } from './transportQueries/formatMusicalPosition';
+export { formatMusicalLength } from './transportQueries/formatMusicalLength';
+export { formatMusicalLengthParts } from './transportQueries/formatMusicalLengthParts';
+export { measureMusicalLength } from './transportQueries/measureMusicalLength';

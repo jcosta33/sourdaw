@@ -44,7 +44,7 @@ test.describe('Mixer sends + output routing — state changes', () => {
     test('raising a send level moves the send slider value', async ({ page }) => {
         // Scope to the Audio channel strip: every strip (incl. master/bus) has
         // a Send to Bus 1 slider, so the Audio group is the unambiguous target.
-        const audio = page.getByRole('group', { name: 'Audio channel' });
+        const audio = page.getByRole('group', { name: 'Audio 1 channel' });
         const send = audio.getByRole('slider', { name: 'Send to Bus 1' });
         await expect(send).toBeVisible({ timeout: 10_000 });
 
@@ -57,14 +57,14 @@ test.describe('Mixer sends + output routing — state changes', () => {
     });
 
     test('toggling a send flips pre/post latch label and aria-label', async ({ page }) => {
-        const audio = page.getByRole('group', { name: 'Audio channel' });
+        const audio = page.getByRole('group', { name: 'Audio 1 channel' });
         const send = audio.getByRole('slider', { name: 'Send to Bus 1' });
         const latch = audio.getByRole('button', { name: /Toggle send to Bus 1 .*-fader/i });
         await expect(latch).toBeVisible({ timeout: 10_000 });
 
         // The send must exist before its pre/post flag can toggle — a brand-new
-        // send at zero level has no send object (toggleSendPreFader no-ops until
-        // setSend creates one), so raise the level first.
+        // send at zero level has no send object (a PRE/POST edit needs an existing
+        // send), so raise the level first.
         await send.focus();
         await page.keyboard.press('ArrowUp');
         await page.waitForTimeout(200);
@@ -86,7 +86,7 @@ test.describe('Mixer sends + output routing — state changes', () => {
     test('routing a channel to a bus updates the output readout', async ({ page }) => {
         // Scope to the Audio channel strip so the master/bus output buttons
         // do not collide.
-        const audio = page.getByRole('group', { name: 'Audio channel' });
+        const audio = page.getByRole('group', { name: 'Audio 1 channel' });
         const outputButton = audio.locator('button[aria-haspopup="listbox"]');
         await expect(outputButton).toContainText('Master');
 

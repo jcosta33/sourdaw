@@ -561,6 +561,13 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // call. It slices and verifies immutable Command metadata; no device
         // or AudioEngine write occurs here.
         'src/modules/AiRuntime/useCases/prepareMetricGoalPreview.ts': 5,
+        // Count provenance: new file, measured 1 — the declaration of the pure
+        // perceptual-constraint reader, which turns request text into excluded
+        // dimensions and hold goals. It holds no device or AudioEngine write.
+        'src/modules/AiRuntime/useCases/perceptualConstraints/compilePerceptualConstraints.ts': 1,
+        // Count provenance: new file, measured 3 — that reader's imported name,
+        // its module path and its one call. No device or AudioEngine write.
+        'src/modules/AiRuntime/useCases/perceptualConstraints/readRequestPerceptualConstraints.ts': 3,
         // Pending-effect continuation records keep only command-envelope types;
         // their two matches are type imports and type projections, never device IO.
         'src/modules/AiRuntime/useCases/createAgentRunPendingEffectContinuation.ts': 2,
@@ -896,11 +903,25 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // one compile call in the dispatch door. The compiled action commits
         // through `executeAppAction`; the file holds no store or engine write.
         'src/modules/Arrangement/useCases/device/executeAddDeviceAction.ts': 3,
-        // Count provenance: was 6, measured 4 — the `compileAddDeviceAction`
-        // re-export left the barrel with the dispatch-door rewire (#2980);
-        // the compileReorderDevicesAction and compileLoadPresetActions
-        // re-exports remain (identifier + module path each).
-        'src/modules/Arrangement/useCases/index.ts': 4,
+        // Count provenance: was 4, measured 8 — the compileReorderDevicesAction and
+        // compileLoadPresetActions re-exports remain (identifier + module path
+        // each), and the compileSendLevelAction and compileSendPreFaderAction
+        // re-exports add an identifier and a module path apiece. The send
+        // builders return a send action; the barrel writes nothing.
+        'src/modules/Arrangement/useCases/index.ts': 8,
+        // Count provenance: new file entry, measured 1 — the declaration of
+        // `compileSendLevelAction`. It returns a setSend/addSend action for
+        // executeAppAction to commit; it reads and writes no store or device.
+        'src/modules/Arrangement/useCases/device/sendManagement/compileSendLevelAction.ts': 1,
+        // Count provenance: new file entry, measured 3 — the `compileSendLevelAction`
+        // import (identifier and module path) and its call. It reads the send from
+        // the track repository and commits the compiled action through
+        // `commitSendEdit`; no store or device write.
+        'src/modules/Arrangement/useCases/device/sendManagement/commitSendLevel.ts': 3,
+        // Count provenance: new file entry, measured 1 — the declaration of
+        // `compileSendPreFaderAction`, which returns a setSend action; no store
+        // or device write.
+        'src/modules/Arrangement/useCases/device/sendManagement/compileSendPreFaderAction.ts': 1,
         'src/modules/Arrangement/useCases/preset/compileLoadPresetActions.ts': 1,
         'src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts': 3,
         // AudioEngine: compileRuntimeDeviceControl / compileRuntimeGraphDelta /
@@ -955,9 +976,23 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // delegates to `executeAddDeviceAction`; no compiler named.
         // 'src/modules/ContentBrowser/presentations/views/Sidebar/effectsTabHelpers.tsx': removed (0),
         'src/modules/MixerConsole/presentations/views/Mixer/DeviceChainSection.tsx': 2,
+        // Count provenance: new file entry, measured 2 — the `compileSendPreFaderAction`
+        // import and its call for the PRE/POST toggle; level commits go through
+        // `commitSendLevel`. The compiled send action is committed through
+        // executeAppAction; the strip writes no store or device.
+        'src/modules/MixerConsole/presentations/views/Mixer/SendsSection.tsx': 2,
+        // Count provenance: new file entry, measured 2 — the `compileSendLevelAction`
+        // import and its single call for a connect click. The compiled send action
+        // is committed through executeAppAction; no device write.
+        'src/modules/Routing/presentations/views/RoutingMatrix.tsx': 2,
         // Count provenance: 0 in code, was 2 — the Enable Pitch Editor button
         // now dispatches through `executeAddDeviceAction`; no compiler named.
         // 'src/modules/TimelineEditor/presentations/views/ClipView/KneadEditor.tsx': removed (0),
+        // Count provenance: new file entry, measured 2 — the `compileSendPreFaderAction`
+        // import and its call in `SendCard`; level commits go through
+        // `commitSendLevel`. The compiled send action is committed through
+        // executeAppAction; no store or device write.
+        'src/modules/TimelineEditor/presentations/views/Inspector/SendsEditor.tsx': 2,
         'src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx': 2,
         'src/modules/Toaster/useCases/compileToasterTrackStackActions.ts': 3,
         'src/modules/Toaster/useCases/index.ts': 2,
@@ -1013,7 +1048,12 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/stores/trackStore.ts': 2,
         // Snapshot capture reads serializable device topology for a later command.
         'src/modules/Arrangement/useCases/captureTrackClipStates.ts': 1,
-        'src/modules/Arrangement/useCases/device/addDevice.ts': 2,
+        // Count provenance: was 2, measured 1 — the second hit was the
+        // `parameterValues: Record<string, number>` annotation on a local the
+        // added-device composition built. That composition moved to the pure
+        // `composeAddedDeviceParameterValues`, which writes nothing, so the
+        // remaining hit is the device chain this file writes to the project.
+        'src/modules/Arrangement/useCases/device/addDevice.ts': 1,
         'src/modules/Arrangement/useCases/device/addExternalDevice.ts': 2,
         'src/modules/Arrangement/useCases/device/addMidiFx.ts': 1,
         'src/modules/Arrangement/useCases/device/bypassDevice.ts': 1,

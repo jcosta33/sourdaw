@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -28,7 +29,7 @@ import {
 import {
     captureProjectRevision,
     createCrdtDoc,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
+    projectRevisionMatchesLiveIgnoringSaveWrites,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -86,6 +87,8 @@ import {
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
 
+registerDeviceEnginePorts();
+
 // Only the engine's render boundary is replaced: compilation, grounding, the isolated preview,
 // target resolution, retention and the measurement figures are the real ones.
 const engine = vi.hoisted(() => ({
@@ -141,9 +144,7 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => {
     const original = await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>();
     return {
         ...original,
-        projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(
-            original.projectRevisionMatchesLiveIgnoringCommandCheckpoint
-        ),
+        projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn(original.projectRevisionMatchesLiveIgnoringSaveWrites),
     };
 });
 
@@ -390,11 +391,11 @@ async function abortAsRendersHandBack(controller: AbortController, renders: numb
         finished += 1;
         return buffer;
     });
-    vi.mocked(projectRevisionMatchesLiveIgnoringCommandCheckpoint).mockImplementation((revision) => {
+    vi.mocked(projectRevisionMatchesLiveIgnoringSaveWrites).mockImplementation((revision) => {
         if (finished === renders) {
             controller.abort();
         }
-        return actual.projectRevisionMatchesLiveIgnoringCommandCheckpoint(revision);
+        return actual.projectRevisionMatchesLiveIgnoringSaveWrites(revision);
     });
 }
 
@@ -445,7 +446,7 @@ beforeEach(() => {
     vi.mocked(measureAgentScopeRender).mockReset();
     vi.mocked(previewVersionedCommandBatchEnvelope).mockReset();
     vi.mocked(getAudioBufferContentAddress).mockReset();
-    vi.mocked(projectRevisionMatchesLiveIgnoringCommandCheckpoint).mockReset();
+    vi.mocked(projectRevisionMatchesLiveIgnoringSaveWrites).mockReset();
     vi.mocked(generateToolPlanningOutcome).mockReset();
     vi.mocked(tryPresetMatch).mockReturnValue([]);
     vi.mocked(tryParameterizedPath).mockReturnValue([]);

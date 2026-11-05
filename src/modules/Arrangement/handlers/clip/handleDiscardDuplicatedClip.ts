@@ -1,4 +1,3 @@
-import { projectMidiNotesByClipIdThroughRestores } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
@@ -8,6 +7,8 @@ import { captureRetiredTakeLanes } from '../../useCases/comping/captureRetiredTa
 import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip';
 import { isGeneratedMidiStateCurrent } from '../isGeneratedMidiStateCurrent';
 import { projectClipThroughPriorBatchActions, type ProjectedClipState } from '../projectClipThroughPriorBatchActions';
+
+import { refreshCreatedClipStateGuard } from './stampCreatedClipStateGuard';
 
 type DiscardDuplicatedClipAction = Extract<AppAction, { type: 'discardDuplicatedClip' }>;
 
@@ -40,9 +41,7 @@ export const handleDiscardDuplicatedClip = createHandler<'discardDuplicatedClip'
             entityId: action.payload.clipId,
             entityType: 'clip',
             guard,
-            projectedMidiNotesByClipId: projectMidiNotesByClipIdThroughRestores(
-                context.actions.slice(0, context.actionIndex)
-            ),
+            priorBatchActions: context.actions.slice(0, context.actionIndex),
             projectedClipState: projectedClipStateFor(action, context),
         });
     },
@@ -69,16 +68,23 @@ export const handleDiscardDuplicatedClip = createHandler<'discardDuplicatedClip'
     describe: () => ({ label: 'Discard duplicated clip' }),
     /**
      * The entry's redo re-created the clip this discard removed, so put back the
-     * takes the discard captured. A redo that re-created nothing — a no-op replay,
-     * or a route that mints a fresh id instead of reusing the captured one — leaves
-     * the named clip absent, and re-attaching a lane to a clip identity nothing
-     * carries would leave the takes orphaned rather than restored.
+     * takes the discard captured, then re-pin the guard to the clip the redo made:
+     * the guard always describes what the most recent execute or redo produced,
+     * so the next undo refuses only on a change made after it. A redo that
+     * re-created nothing — a no-op replay, or a route that mints a fresh id
+     * instead of reusing the captured one — leaves the named clip absent, and
+     * re-attaching a lane to a clip identity nothing carries would leave the
+     * takes orphaned rather than restored.
      */
     afterRedoReplay: (action) => {
         if (resolveEligibleClipWriteTarget({ clipId: action.payload.clipId }).status === 'missing') {
             return;
         }
         restoreTakesForClip(action.payload.retiredTakeLanes ?? []);
+        const guard = action.payload.generatedMidiStateGuard;
+        if (guard) {
+            action.payload.generatedMidiStateGuard = refreshCreatedClipStateGuard(guard, action.payload.clipId);
+        }
     },
     undoable: false,
 });

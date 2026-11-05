@@ -114,6 +114,11 @@ export { setNotePressure } from './midiEvent/setNotePressure';
 export { setNoteSlide } from './midiEvent/setNoteSlide';
 export { setNotePitchBend } from './midiEvent/setNotePitchBend';
 export { resolveMidiNoteArticulationId } from './resolveMidiNoteArticulationId';
+// Published because the composition root registers the articulation tables and
+// velocity calibration device modules own.
+export { articulationIdResolvers } from './articulationIdResolvers';
+export { velocityCalibration } from './webMidiInput/velocityCalibration';
+export { midiLearnRouting } from './webMidiInput/midiLearnRouting';
 
 // ── MIDI Note CRUD ────────────────────────────────────────────────────────────
 export { addMidiNote } from './midiNoteCrud/addMidiNote';

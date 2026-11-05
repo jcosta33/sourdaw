@@ -8,6 +8,7 @@ const liveInput = vi.hoisted(() => {
     return input;
 });
 
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -67,6 +68,8 @@ import { isTransportIdle } from '../isTransportIdle';
 import { recordingLifecycle } from '../recordingLifecycle';
 import { stopActiveRecording } from '../stopActiveRecording';
 import { toggleRecording } from '../toggleRecording';
+
+registerSupportingServicePorts();
 
 function sendMidi(...bytes: number[]): void {
     liveInput.dispatchEvent(Object.assign(new Event('midimessage'), { data: Uint8Array.from(bytes) }));

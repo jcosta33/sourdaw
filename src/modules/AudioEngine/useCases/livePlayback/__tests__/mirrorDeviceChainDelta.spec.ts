@@ -14,6 +14,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { type Device, type DeviceStateChunk, type Track } from '#/modules/Arrangement/stores';
 
 import { setAudioDeviceRuntimeSink } from '../../../engine/audioDeviceRuntimeSink';
@@ -32,6 +33,8 @@ import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
 import { rearmNativeLiveAutomationWriterInPlace } from '../rearmNativeLiveAutomationWriterInPlace';
 import { rearmNativeLiveMidiWriterInPlace } from '../rearmNativeLiveMidiWriterInPlace';
 import { recordNativeChainReleases } from '../recordNativeChainReleases';
+
+registerDeviceEnginePorts();
 
 const mocks = vi.hoisted(() => ({
     notifyUser: vi.fn<(message: string, level: string) => void>(),

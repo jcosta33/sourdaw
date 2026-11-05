@@ -13,3 +13,4 @@ export { getToasterPresets } from './toasterQueries';
 export { setToasterGrooveAssignmentExecutor } from './setToasterGrooveAssignmentExecutor';
 export { getStoredDrumVoiceMetadata } from './getStoredDrumVoiceMetadata';
 export { captureOfflineToaster } from './captureOfflineToaster';
+export { resetToasterForProject } from './resetToasterForProject';

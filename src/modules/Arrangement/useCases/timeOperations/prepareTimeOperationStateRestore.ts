@@ -1,9 +1,9 @@
 import { batchStoreUpdates } from '#/infra/store/createStore';
-import { restampLoopOriginEntry, shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { hasExactAudioSourceFields } from '#/utils/hasExactAudioSourceFields';
 
 import { type Clip } from '../../models/Track';
+import { getHeldClips } from '../../models/TrackAlternativeClips';
 import { getTrackState, type TrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { collectLiveClipIds } from '../../services/collectLiveClipIds';
@@ -14,6 +14,7 @@ import { reconcileTransitionBaseGaps } from '../comping/reconcileTakeReKeySource
 import { restoreTakesForClip } from '../comping/restoreTakesForClip';
 
 import { clipSatelliteStateCodec } from './clipSatelliteStateCodec';
+import { deletedRightContentEntry } from './deletedRightContentEntry';
 import { isValidClipSatelliteStateRestorePlan } from './isValidClipSatelliteStateRestorePlan';
 import { prepareClipSatelliteStateRestore } from './prepareClipSatelliteStateRestore';
 import { prepareTakeLaneStateRestore } from './prepareTakeLaneStateRestore';
@@ -237,9 +238,10 @@ function takeRetirementsMatchDeletedRange(
     const afterIds = collectLiveClipIds(after.tracks);
     // A right fragment can replace its source id without erasing its material.
     // Only a clip wholly inside the original delete span belongs to retirement.
+    // Erased means held before and not after, so both sides read held clips.
     const erasedIds = new Set(
         before.tracks.flatMap((track) =>
-            [...track.clips, ...track.alternatives.flatMap((alternative) => alternative.clips)]
+            getHeldClips(track)
                 .filter(
                     (clip) =>
                         clip.startBeat >= range.startBeat && clip.endBeat <= range.endBeat && !afterIds.has(clip.id)
@@ -324,12 +326,6 @@ function deletedSatelliteOwners(
             }
             // Only the exact right survivor produced by Delete Time owns the
             // source's satellites. A changed local id alone is no authority.
-            let rightLoopOrigin: ReturnType<typeof shiftLoopOriginEntry>;
-            if (clip.type === 'midi') {
-                rightLoopOrigin = restampLoopOriginEntry(clip, range.startBeat);
-            } else {
-                rightLoopOrigin = shiftLoopOriginEntry(clip, -duration);
-            }
             const survivors = nextTrack.clips.filter(
                 (candidate) =>
                     !beforeIds.has(candidate.id) &&
@@ -340,8 +336,7 @@ function deletedSatelliteOwners(
                         startBeat: range.startBeat,
                         endBeat: clip.endBeat - duration,
                         audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (range.endBeat - clip.startBeat),
-                        midiOffsetBeats: 0,
-                        ...rightLoopOrigin,
+                        ...deletedRightContentEntry(clip, range),
                     })
             );
             if (survivors.length === 1) {

@@ -1,6 +1,7 @@
 import * as Automerge from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
 import {
@@ -163,6 +164,7 @@ describe('audio cut UI wrapper / typed Undo authority', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         clearHandlerRegistry();
         sessionStorage.removeItem('sourdaw-undo-session');
         hydrateProductionContracts();

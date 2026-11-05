@@ -1,4 +1,4 @@
-import { resolveMusicalRange } from '#/modules/Arrangement/useCases';
+import { nextDefaultTrackName, resolveMusicalRange } from '#/modules/Arrangement/useCases';
 import { getNotesForClip, projectDrumPreviewCandidateNotes } from '#/modules/MIDI/useCases';
 import { getBarStartBeat } from '#/modules/Transport/useCases';
 import { FADER_MAX_GAIN, resolveSendLevelFields, SEND_LEVEL_LAW, toLevelDb } from '#/utils/audioLevelLaw';
@@ -454,14 +454,12 @@ export function materializeActionStateGuards(
             if (tracksById.has(action.payload.id)) {
                 return { status: 'rejected', reason: `Track identity is already in use: ${action.payload.id}` };
             }
+            // A nameless track is pinned to the owner's default name for its kind among the
+            // tracks projected so far, so the proposal, its guards and its replay name it once.
+            const name = action.payload.name ?? nextDefaultTrackName(action.payload.kind, [...tracksById.values()]);
             tracksById.set(
                 action.payload.id,
-                createProjectedTrack(
-                    action.payload.id,
-                    action.payload.name,
-                    action.payload.kind,
-                    action.payload.initialDeviceId
-                )
+                createProjectedTrack(action.payload.id, name, action.payload.kind, action.payload.initialDeviceId)
             );
             deviceIdsByTrack.set(
                 action.payload.id,
@@ -470,7 +468,9 @@ export function materializeActionStateGuards(
                     : []
             );
             frozenByTrack.set(action.payload.id, false);
-            materialized.push(action);
+            materialized.push(
+                action.payload.name === undefined ? { ...action, payload: { ...action.payload, name } } : action
+            );
             continue;
         }
         if (action.type === 'addDevice') {
@@ -658,7 +658,7 @@ export function materializeActionStateGuards(
             for (const trackId of action.payload.trackIds) {
                 const track = tracksById.get(trackId);
                 if (!track || track.kind !== 'bus') {
-                    return { status: 'rejected', reason: `Impact bus is unavailable: ${trackId}` };
+                    return { status: 'rejected', reason: `Bus is unavailable: ${trackId}` };
                 }
                 if (
                     track.frozen === true ||
@@ -675,7 +675,7 @@ export function materializeActionStateGuards(
                             (!lane.clipId && lane.trackId === trackId && lane.parameterId === 'gain')
                     )
                 ) {
-                    return { status: 'rejected', reason: `Impact bus cannot accept gain automation: ${trackId}` };
+                    return { status: 'rejected', reason: `Bus cannot accept gain automation: ${trackId}` };
                 }
                 expectedTracks.push({
                     trackId,

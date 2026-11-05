@@ -1,6 +1,7 @@
 import { change, clone, merge, type Doc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -82,6 +83,7 @@ describe('projecting the document into the transport store', () => {
         createCrdtDoc('root');
         resetAutomergeStorageProjections('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         transportStore.set(defaultTransportState);
         flushAutomergeStorageWrites();
         unsubscribe_projection = setupProjectionBridge();

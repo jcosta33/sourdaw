@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -33,6 +34,8 @@ import { pickAndImportProjectFile } from '../../fileIO/pickAndImportProjectFile'
 import { saveProjectBeforeReplacement } from '../../saveProject/saveProjectBeforeReplacement';
 import { resetCrdtProjectWithTransportStopped } from '../resetCrdtProjectWithTransportStopped';
 import { unsavedClosedTakes } from '../unsavedClosedTakes';
+
+registerDeviceEnginePorts();
 
 const TRACK_ID = 'track-recording';
 

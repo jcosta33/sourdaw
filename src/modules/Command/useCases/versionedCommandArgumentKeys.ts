@@ -227,7 +227,7 @@ const schemaDefinitions = [
             outputId: 0,
             withoutDefaultDevice: 33,
         },
-        required: ['name', 'kind'],
+        required: ['kind'],
         additionalProperties: false,
     },
     {
@@ -2713,6 +2713,7 @@ const schemaDefinitions = [
             level: 1,
             levelDb: 1,
             deltaDb: 1,
+            preFader: 33,
             expectedLevel: 1,
             expectedPreFader: 33,
         },

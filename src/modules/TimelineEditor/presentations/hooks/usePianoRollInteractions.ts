@@ -46,12 +46,12 @@ import {
 } from '#/modules/MIDI/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { getTransportState } from '#/modules/Transport/useCases';
-import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { clampMidiData7 } from '#/utils/midiData';
 import { quantizeMidiNoteToScale } from '#/utils/Music/MusicalScale';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
+import { type ClipPlacement, resolveAudibleNoteWindow } from '../helpers/audibleNoteWindow';
 import { editPianoRollTakeNote, insertPianoRollTakeNote } from '../helpers/editPianoRollTakeNote';
 import {
     ROW_HEIGHT,
@@ -115,15 +115,6 @@ function resolveTrackIdForClip(clipId: string, defaultTrackId: string): string {
     return track ? track.id : defaultTrackId;
 }
 
-/** The arrangement placement fields the playhead conversion needs from a clip. */
-type ClipPlacement = {
-    startBeat: number;
-    endBeat: number;
-    midiOffsetBeats: number;
-    loopEnabled: boolean;
-    configuredLoopLengthBeats?: number;
-};
-
 /**
  * Read a clip's arrangement placement from the arrangement store. Clips opened
  * alongside the primary one may live on any track, so every track is searched.
@@ -141,6 +132,7 @@ function resolveClipPlacement(clipId: string): ClipPlacement | undefined {
                 midiOffsetBeats: clip.midiOffsetBeats ?? 0,
                 loopEnabled: clip.loopEnabled ?? false,
                 configuredLoopLengthBeats: clip.loopLength,
+                loopOriginBeat: clip.loopOriginBeat,
             };
         }
     }
@@ -164,14 +156,10 @@ function arrangementPlayheadToClipBeat(playheadBeat: number, placement: ClipPlac
     if (playheadBeat < placement.startBeat || playheadBeat >= placement.endBeat) {
         return undefined;
     }
-    const { loopLengthBeats } = projectClipLoopExpansion({
-        clipDurationBeats: placement.endBeat - placement.startBeat,
-        configuredLoopLengthBeats: placement.configuredLoopLengthBeats,
-        loopEnabled: placement.loopEnabled,
-    });
+    const windowLengthBeats = resolveAudibleNoteWindow(placement)?.windowLengthBeats;
     const intoClip =
-        placement.loopEnabled && loopLengthBeats > 0 && Number.isFinite(loopLengthBeats)
-            ? (playheadBeat - placement.startBeat) % loopLengthBeats
+        placement.loopEnabled && windowLengthBeats !== undefined
+            ? (playheadBeat - placement.startBeat) % windowLengthBeats
             : playheadBeat - placement.startBeat;
     return intoClip + placement.midiOffsetBeats;
 }
@@ -1517,6 +1505,14 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     };
 
     const handleKeyDown = (event: KeyboardEvent<HTMLCanvasElement>): void => {
+        // The focused piano roll owns Delete / Backspace even with nothing
+        // selected: claiming the key (preventDefault) keeps the global layer
+        // from deleting arrangement clips behind the editor. Every key this
+        // handler consumes is claimed the same way; keys it leaves alone
+        // (undo, Space, save, ...) stay with the global shortcut layer.
+        if (event.key === 'Delete' || event.key === 'Backspace') {
+            event.preventDefault();
+        }
         if ((event.key === 'Delete' || event.key === 'Backspace') && selectedNoteIds.size > 0) {
             // A9: group selected notes by owning clip for multi-clip delete
             const notesWithClip: Array<{ note: MidiNote; ownerClipId: string }> = [];
@@ -1909,6 +1905,9 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         }
 
         if (stepInput) {
+            if (event.key === 'Enter' || (event.key === ' ' && event.ctrlKey)) {
+                event.preventDefault();
+            }
             if (event.key === 'ArrowRight') {
                 event.preventDefault();
                 stepRecordAdvance();
@@ -1944,6 +1943,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             };
             const preset = velocityPresets[event.key];
             if (preset !== undefined) {
+                event.preventDefault();
                 const { noteToClip, allNotesMap } = buildNoteOwnershipMaps(notes, clipId, openedClipNotes);
                 const selectedNotesWithClip: Array<{ viewId: string; id: string; clipId: string; velocity: number }> =
                     [];

@@ -89,6 +89,316 @@ function getProtectedClips(prompt: string, projectContext = context) {
 }
 
 describe('getExplicitlyProtectedClips', () => {
+    it.each([
+        "Don't touch Lead, but rename Verse to Chorus",
+        'without touching Lead, but set note velocities in Verse to 96',
+    ])('protects the clip a prohibition names and reads the request complete: %s', (prompt) => {
+        expect(getExplicitClipProtection(prompt, context)).toEqual({
+            clips: [{ id: lead.id, name: lead.name }],
+            complete: true,
+        });
+    });
+
+    describe('a protection joined to the next instruction by a bare and', () => {
+        const alpha = createClip('clip-alpha', 'Alpha');
+        const beta = createClip('clip-beta', 'Beta');
+        const copyBeta = createClip('clip-copy-beta', 'Copy Beta');
+        const alphaBeta = { ...context, tracks: [createTrack('track-pair', 'Pair', [alpha, beta])] };
+        const alphaCopyBeta = { ...context, tracks: [createTrack('track-copy', 'Pair', [alpha, copyBeta])] };
+        const alphaOnly = [{ id: alpha.id, name: alpha.name }];
+
+        it.each([
+            'leave Alpha alone and rename Beta',
+            'leave Alpha alone, and rename Beta',
+            'leave Alpha alone and then rename Beta',
+            'leave Alpha alone then rename Beta',
+            'without touching Alpha and rename Beta to Gamma',
+            'without touching Alpha and then rename Beta',
+            'without touching Alpha then rename Beta',
+            "Don't touch Alpha and rename Beta to Gamma",
+            'leave Alpha alone, but rename Beta to Gamma',
+            "Don't touch Alpha, but rename Beta to Gamma",
+        ])('ends the protection before the next instruction and reads it complete: %s', (prompt) => {
+            expect(getExplicitClipProtection(prompt, alphaBeta)).toEqual({ clips: alphaOnly, complete: true });
+        });
+
+        it.each([
+            'leave Alpha and Beta alone',
+            'leave Alpha and Beta alone and rename Gamma',
+            'without touching Alpha and Beta',
+            'without touching Alpha and Beta and rename Gamma',
+        ])('still protects every member of a list: %s', (prompt) => {
+            expect(getExplicitClipProtection(prompt, alphaBeta)).toEqual({
+                clips: [alpha, beta].map(({ id, name }) => ({ id, name })),
+                complete: true,
+            });
+        });
+
+        it.each(['leave Alpha alone and', 'without touching Alpha and', 'without touching Alpha and then'])(
+            'keeps a dangling and incomplete: %s',
+            (prompt) => {
+                expect(getExplicitClipProtection(prompt, alphaBeta).complete).toBe(false);
+            }
+        );
+
+        it('does not cut a clip name that starts with an instruction verb', () => {
+            expect(getExplicitClipProtection('leave Alpha and Copy Beta alone', alphaCopyBeta)).toEqual({
+                clips: [alpha, copyBeta].map(({ id, name }) => ({ id, name })),
+                complete: true,
+            });
+        });
+
+        it.each([
+            "Don't touch Alpha and Copy Beta",
+            'without touching Alpha and Copy Beta',
+            "Don't touch Alpha, Copy Beta",
+        ])('keeps a verb-named clip inside a prohibition list: %s', (prompt) => {
+            expect(getExplicitClipProtection(prompt, alphaCopyBeta)).toEqual({
+                clips: [alpha, copyBeta].map(({ id, name }) => ({ id, name })),
+                complete: true,
+            });
+        });
+
+        it('keeps a word outside the instruction verbs after and as incomplete', () => {
+            expect(getExplicitClipProtection('leave Alpha alone and Beta', alphaBeta).complete).toBe(false);
+        });
+    });
+
+    describe('a protection verb that follows only courtesy openers', () => {
+        const track = (names: string[]) =>
+            createTrack(
+                'track-courtesy',
+                'Pair',
+                names.map((name) => createClip(`clip-${name}`, name))
+            );
+
+        it.each([
+            ['Please leave Intro alone and rename Intro to Bridge Solo', ['Intro', 'Alone']],
+            ['Please Keep Alpha alone and rename Alpha to Gamma', ['Alpha', 'Beta']],
+            ['Could you please leave Alpha alone and rename Alpha to Gamma', ['Alpha', 'Alone']],
+        ])('reads an unbound protection as incomplete: %s', (prompt, names) => {
+            expect(getExplicitClipProtection(prompt, { ...context, tracks: [track(names)] }).complete).toBe(false);
+        });
+
+        it.each([
+            'please',
+            'can you',
+            'could you',
+            'would you',
+            'just',
+            'now',
+            'ok',
+            'okay',
+            'actually',
+            'also',
+            'hi',
+            'hey',
+            'hello',
+            'thanks',
+            'thank you',
+            'kindly',
+            'sorry',
+        ])('reads the opener %s as opening its clause', (opener) => {
+            expect(
+                getExplicitClipProtection(`${opener} leave Intro alone and rename Intro to Bridge Solo`, {
+                    ...context,
+                    tracks: [track(['Intro', 'Alone'])],
+                }).complete
+            ).toBe(false);
+        });
+
+        it('keeps a verb after any other word as mid-clause', () => {
+            expect(
+                getExplicitClipProtection('Make Intro louder but keep it punchy', {
+                    ...context,
+                    tracks: [track(['Intro'])],
+                })
+            ).toEqual({ clips: [], complete: true });
+        });
+
+        it('still protects the clip a courtesy-prefixed protection binds', () => {
+            expect(
+                getExplicitClipProtection('Please leave Intro alone and rename Outro to Bridge', {
+                    ...context,
+                    tracks: [track(['Intro', 'Outro'])],
+                })
+            ).toEqual({ clips: [{ id: 'clip-Intro', name: 'Intro' }], complete: true });
+        });
+
+        it('keeps the request without a courtesy word as incomplete', () => {
+            expect(
+                getExplicitClipProtection('leave Intro alone and rename Intro', {
+                    ...context,
+                    tracks: [track(['Intro', 'Alone'])],
+                }).complete
+            ).toBe(false);
+        });
+
+        it('reads a courtesy request without a protection verb as complete with no clips', () => {
+            expect(
+                getExplicitClipProtection('Please rename Intro to Bridge', { ...context, tracks: [track(['Intro'])] })
+            ).toEqual({ clips: [], complete: true });
+        });
+    });
+
+    describe('a protection verb that opens a clause after a comma or dash', () => {
+        const clipsOf = (...names: string[]) => ({
+            ...context,
+            tracks: [
+                createTrack(
+                    'track-boundary',
+                    'Pair',
+                    names.map((name) => createClip(`clip-${name}`, name))
+                ),
+            ],
+        });
+
+        it.each([
+            'Thanks, Keep Alpha alone and rename Alpha to Gamma',
+            'Please - Keep Alpha alone and rename Alpha to Gamma',
+            'Alright, Keep Alpha alone and rename Alpha to Gamma',
+            'Hi there, Keep Alpha alone and rename Alpha to Gamma',
+            'Make it louder, Keep Alpha alone and rename Alpha to Gamma',
+            'Make it louder - Keep Alpha alone and rename Alpha to Gamma',
+            'Make it louder \u2014 Keep Alpha alone and rename Alpha to Gamma',
+            'Make it louder, keep Alpha alone and rename Alpha to Gamma',
+        ])('protects the clip it binds: %s', (prompt) => {
+            expect(getExplicitClipProtection(prompt, clipsOf('Alpha', 'Beta'))).toEqual({
+                clips: [{ id: 'clip-Alpha', name: 'Alpha' }],
+                complete: true,
+            });
+        });
+
+        it.each([
+            'Retain Intro alone and rename Intro to Bridge',
+            'retain Intro alone and rename Intro to Bridge',
+            'Retaining Intro alone, rename Intro to Bridge',
+        ])('reads retain as a protection verb: %s', (prompt) => {
+            expect(getExplicitClipProtection(prompt, clipsOf('Intro', 'Outro'))).toEqual({
+                clips: [{ id: 'clip-Intro', name: 'Intro' }],
+                complete: true,
+            });
+        });
+
+        it.each([
+            'Make it louder, Keep Alpha alone and rename Beta to Gamma',
+            'Keep Alpha alone and rename Beta to Gamma',
+        ])('reads a protection form around a clip named like one as incomplete: %s', (prompt) => {
+            expect(getExplicitClipProtection(prompt, clipsOf('Keep Alpha', 'Beta'))).toEqual({
+                clips: [],
+                complete: false,
+            });
+        });
+
+        it('reads a clip literally named like a protection as a name', () => {
+            expect(
+                getExplicitClipProtection('Make it louder, rename Keep Alpha to Gamma', clipsOf('Keep Alpha', 'Beta'))
+            ).toEqual({ clips: [], complete: true });
+        });
+
+        it('keeps a capitalised verb after a courtesy opener as incomplete', () => {
+            expect(
+                getExplicitClipProtection('Please Keep Alpha alone and rename Alpha to Gamma', clipsOf('Alpha', 'Beta'))
+                    .complete
+            ).toBe(false);
+        });
+
+        it.each([
+            ['Rename Vocals - Keep Them Separate to Lead', ['Vocals - Keep Them Separate', 'Pad']],
+            ['Rename Intro - Leave Me Alone to Outro', ['Intro - Leave Me Alone', 'Pad']],
+        ])('reads a dash inside a clip name as part of the name: %s', (prompt, names) => {
+            expect(getExplicitClipProtection(prompt, clipsOf(...names))).toEqual({ clips: [], complete: true });
+        });
+
+        it('keeps a comma before a clip named like a protection as ambiguous', () => {
+            expect(
+                getExplicitClipProtection('Mute Bass, Keep Alive and rename Pad to Lead', clipsOf('Keep Alive', 'Pad'))
+                    .complete
+            ).toBe(false);
+        });
+
+        it('opens nothing for a capitalised word that is no protection verb', () => {
+            expect(
+                getExplicitClipProtection('Make it louder, Rename Alpha to Gamma', clipsOf('Alpha', 'Beta'))
+            ).toEqual({ clips: [], complete: true });
+        });
+    });
+
+    describe('a clip named like the words that open a protection', () => {
+        const alpha = createClip('clip-alpha', 'Alpha');
+
+        it.each([
+            ["Don't touch Alpha and rename Alpha to Gamma", 'Touch'],
+            ['without touching Alpha and rename Alpha to Gamma', 'Touching'],
+            ['no changes to Alpha and rename Alpha to Gamma', 'Changes'],
+        ])('still reads the protection of %s beside a clip named %s', (prompt, name) => {
+            const sameNamed = createClip('clip-same-named', name);
+            const track = createTrack('track-same-named', 'Pair', [alpha, sameNamed]);
+
+            expect(getExplicitClipProtection(prompt, { ...context, tracks: [track] })).toEqual({
+                clips: [{ id: alpha.id, name: alpha.name }],
+                complete: true,
+            });
+        });
+
+        it.each([['leave Alpha alone and rename Alpha to Gamma', 'Leave', 'Alpha']])(
+            'reads the protection beside a clip name that lies inside its opener: %s',
+            (prompt, name, other) => {
+                const named = createClip('clip-named', name);
+                const rest = createClip('clip-rest', other);
+                const track = createTrack('track-named', 'Pair', [named, rest]);
+                const result = getExplicitClipProtection(prompt, { ...context, tracks: [track] });
+
+                expect(result.complete).toBe(true);
+                expect(result.clips.map(({ name: protectedName }) => protectedName)).toEqual(
+                    prompt.startsWith('leave') ? [other] : [name]
+                );
+            }
+        );
+    });
+
+    it('reads a clip name that only partly overlaps the opening words as incomplete', () => {
+        const track = createTrack('track-straddle', 'Pair', [
+            createClip('clip-alpha', 'Alpha'),
+            createClip('clip-beta', 'Beta'),
+            createClip('clip-touch-alpha', 'Touch Alpha'),
+        ]);
+
+        expect(
+            getExplicitClipProtection("Don't touch Alpha and rename Alpha to Gamma", { ...context, tracks: [track] })
+                .complete
+        ).toBe(false);
+    });
+
+    it('reads a clip name that contains the opening words as incomplete', () => {
+        const track = createTrack('track-contains', 'Pair', [
+            createClip('clip-alpha', 'Alpha'),
+            createClip('clip-beta', 'Beta'),
+            createClip('clip-do-not-touch-alpha', 'Do not touch Alpha'),
+        ]);
+
+        expect(
+            getExplicitClipProtection('Do not touch Alpha and rename Alpha to Gamma', { ...context, tracks: [track] })
+        ).toEqual({ clips: [{ id: 'clip-alpha', name: 'Alpha' }], complete: false });
+    });
+
+    it.each([
+        ["Don't touch keep me and rename Beta to Gamma", 'keep me'],
+        ["Don't touch except me and rename Beta to Gamma", 'except me'],
+    ])('reads a clip name holding a protection word as incomplete: %s', (prompt, name) => {
+        const named = createClip('clip-named', name);
+        const track = createTrack('track-named', 'Pair', [named, createClip('clip-beta', 'Beta')]);
+
+        expect(getExplicitClipProtection(prompt, { ...context, tracks: [track] })).toEqual({
+            clips: [],
+            complete: false,
+        });
+    });
+
+    it('reads a prohibition list ending in a dangling and as incomplete', () => {
+        expect(getExplicitClipProtection('without touching Lead and', context).complete).toBe(false);
+    });
+
     it('retains the exact clip candidate beside a same-name track in an aggregate protection', () => {
         const clip = createClip('clip-overall-level', 'Overall Level');
         const project = {

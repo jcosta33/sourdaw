@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { ANALYSIS_MEASURE_MAX_TARGETS } from '../../models/AnalysisMeasureLimits';
 import { createAnswerInterpretationToolSchema } from '../../models/AnswerInterpretation';
 import { COMMAND_BATCH_DECLINE_MAX_QUESTIONS } from '../../models/CommandBatchDecline';
@@ -12,6 +14,8 @@ import { prepareAnswerInterpretationCatalog } from '../../useCases/prepareAnswer
 import { prepareCreativeInterpretationCatalog } from '../../useCases/prepareCreativeInterpretationCatalog';
 import { matchesJsonSchema } from '../../validators/matchesJsonSchema';
 import { compactWebLlmToolSchema } from '../compactWebLlmToolSchema';
+
+registerDeviceEnginePorts();
 
 function jointInterpretationSchema(): ToolSchema {
     const context = getProjectContext();
@@ -406,8 +410,8 @@ describe('compactWebLlmToolSchema', () => {
             {
                 label: 'project.query with a filter it does not list',
                 tool: 'project.query',
-                refused: { type: projectQueryType(), filters: { exactName: 'Kick' } },
-                admitted: { type: projectQueryType(), filters: {} },
+                refused: { type: projectQueryType(), filters: { unknownFilter: 'Kick' } },
+                admitted: { type: projectQueryType(), filters: { exactName: 'Kick' } },
             },
             {
                 label: 'command.batch.decline clarify with one question more than it takes',

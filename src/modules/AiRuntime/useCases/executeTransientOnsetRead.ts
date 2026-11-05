@@ -1,4 +1,4 @@
-import { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from '#/modules/CrdtDocument/useCases';
+import { projectRevisionMatchesLiveIgnoringSaveWrites } from '#/modules/CrdtDocument/useCases';
 import { readClipTransientOnsets } from '#/modules/ElasticAudio/useCases';
 import { getSettledProjectId } from '#/modules/Project/stores';
 import { digest } from '#/utils/canonicalDigest';
@@ -119,8 +119,7 @@ async function readEntry(input: {
             clipId: parsed.clipId,
             sensitivity: parsed.sensitivity,
             projectId,
-            isProjectRevisionCurrent: () =>
-                projectRevisionMatchesLiveIgnoringCommandCheckpoint(session.input.projectRevision),
+            isProjectRevisionCurrent: () => projectRevisionMatchesLiveIgnoringSaveWrites(session.input.projectRevision),
             maxSourceSeconds: Math.min(limits.measurementMeasuredSeconds, MAX_SOURCE_SECONDS),
             maxChannelSamples: MAX_CHANNEL_SAMPLES,
             timeoutMs: Math.min(limits.measurementWallClockMs, MAX_ANALYSIS_MS),

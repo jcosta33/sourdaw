@@ -643,7 +643,6 @@ async function dispatchPromptPlan(input: {
             actions: result.actions,
             context,
             prompt: request.userText,
-            wholeProjectVibeMixPlan: result.wholeProjectVibeMixPlan,
             workflowCapabilityId: result.workflowCapabilityId,
             inheritedProtectedUnchanged: [
                 refinedCardProtections,

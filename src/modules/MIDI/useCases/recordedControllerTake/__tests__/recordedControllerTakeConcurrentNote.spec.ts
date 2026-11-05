@@ -10,6 +10,7 @@ import { heldPedalState } from '../../../repositories/webMidi/heldPedalState';
 import { recordedControllerTakeState } from '../../../repositories/webMidi/recordedControllerTakeState';
 import { defaultMidiStoreState, midiStore } from '../../../stores/midiStore';
 import { appendRecordedMidiNote } from '../../appendRecordedMidiNote';
+import { midiLearnRouting } from '../../webMidiInput/midiLearnRouting';
 import { beginRecordedControllerTake } from '../beginRecordedControllerTake';
 import { bufferRecordedMidiCC } from '../bufferRecordedMidiCC';
 import { commitRecordedControllers } from '../commitRecordedControllers';
@@ -30,9 +31,11 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     },
 }));
 
-vi.mock('#/modules/ControlSurface/useCases', () => ({
+midiLearnRouting.configure({
     getMidiLearnState: () => null,
-}));
+    completeMidiLearn: vi.fn(),
+    applyMidiMappings: vi.fn(),
+});
 
 vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
     getTargetTrackId: () => 'track-1',

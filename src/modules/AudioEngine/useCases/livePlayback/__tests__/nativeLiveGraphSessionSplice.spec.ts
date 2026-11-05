@@ -10,6 +10,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { trackStore, type Device, type Track } from '#/modules/Arrangement/stores';
 
 import {
@@ -21,6 +22,8 @@ import { disarmNativeLiveAutomationWriter } from '../disarmNativeLiveAutomationW
 import { nativeLiveAutomationWriter, type LiveAutomationWriterPass } from '../nativeLiveAutomationWriterState';
 import { nativeLiveGraphSessionSplice } from '../nativeLiveGraphSessionSplice';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
+
+registerDeviceEnginePorts();
 
 const mocks = vi.hoisted(() => ({
     notifyUser: vi.fn<(message: string, level: string) => void>(),

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -81,6 +82,7 @@ beforeEach(async () => {
     removeCrdtDoc('root');
     createCrdtDoc('root');
     registerCrdtStorageRuntime();
+    registerProjectSlotProjections();
     stopProjection = setupProjectionBridge();
     projectCrdtToStores();
     transportStore.set(defaultTransportState);

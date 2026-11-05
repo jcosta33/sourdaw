@@ -2,18 +2,34 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { startRecording } from '#/modules/Arrangement/useCases';
 import { startAudioRecording } from '#/modules/AudioEngine/useCases';
+import { panicCrumbs } from '#/modules/Crumbs/useCases';
+import { toasterStore } from '#/modules/Toaster/stores';
+import { readYeastRack } from '#/modules/Yeast/stores';
 import { processYeastMidi, yeastPanic } from '#/modules/Yeast/useCases';
 
 import { defaultTransportState } from '../../../models/TransportState';
 import { captureGestureBeat } from '../../../stores/captureGestureBeat';
 import { setGestureClockSource } from '../../../stores/gestureClockSource';
 import { playheadClockRef } from '../../../stores/playheadClockRef';
+import { kitSwing } from '../../scheduling/kitSwing';
+import { liveMidiProcessor } from '../../scheduling/liveMidiProcessor';
 import { metronomeSchedulingState } from '../../scheduling/metronomeSchedulingState';
+import { notePanicParticipants } from '../../transportControls/notePanicParticipants';
 import { startPlayback } from '../../transportControls/startPlayback';
 import { stopPlayback } from '../../transportControls/stopPlayback';
 import { toggleRecording } from '../../transportControls/toggleRecording';
 import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
 import { schedulerSession } from '../schedulerSession';
+
+// The engine and Arrangement barrels are mocked whole here, so the composition
+// root's registrar cannot load; the device ports it registers are filled
+// directly, from the Yeast and Toaster barrels this spec doubles.
+liveMidiProcessor.configure({
+    processBlock: processYeastMidi,
+    readRackProcessors: (rackId) => readYeastRack(rackId).processors,
+});
+notePanicParticipants.configure({ settleGeneratedNotes: yeastPanic, voiceReleases: [panicCrumbs] });
+kitSwing.configure({ currentSwing: (deviceId) => toasterStore.value?.[deviceId]?.kit.swing });
 
 /** The actual browser start, MIDI/audio producers and tempo law run together.
  * Only engine calls, external Yeast work and foreign stores are controlled. */
@@ -119,6 +135,9 @@ vi.mock('#/modules/Automation/useCases', () => ({
     isRecordingAutomation: vi.fn(() => false),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    collaborationAssetTransfer: {
+        read: () => ({ isSessionActive: () => false, current: () => null }),
+    },
     getTrackStoreState: () => trackStoreState.value,
     takeOwnsRecordingRoot: vi.fn(() => true),
     admitRecordingCaptureClock: vi.fn(),
@@ -233,8 +252,6 @@ vi.mock('#/modules/Yeast/useCases', () => ({
     getYeastSchedulingLookahead: () => ({ earlyBeats: 0, lateBeats: 0 }),
 }));
 vi.mock('#/modules/Yeast/stores', () => ({ readYeastRack: () => ({ processors: [] }) }));
-vi.mock('#/modules/Collaboration/stores', () => ({ collaborationStore: { value: null } }));
-vi.mock('#/modules/Collaboration/useCases', () => ({ getAssetTransfer: () => null }));
 vi.mock('../../ensureTrackStrips', () => ({ ensureTrackStrips: vi.fn() }));
 vi.mock('../../transportControls/stopActiveRecording', () => ({ stopActiveRecording: () => Promise.resolve() }));
 // scheduleMetronome and resetMetronomeBeat run for real: the seam anchor is

@@ -110,7 +110,6 @@ import {
     type SyncopatedArpeggioRequestScope,
 } from './getSyncopatedArpeggioPromptScope';
 import { getUnresolvedClipProtectionMembers } from './getUnresolvedClipProtectionMembers';
-import { getWholeProjectVibeMixScope } from './getWholeProjectVibeMixScope';
 import {
     bindDecibelFiguresToReferences,
     type PromptReferenceSpan,
@@ -151,6 +150,7 @@ import { groundPostTargetEvidenceAdmission } from './groundingStrategies/postTar
 import { groundPostTargetScopeAdmission } from './groundingStrategies/postTargetScopeAdmissionStrategy';
 import { groundPreScopeAdmission } from './groundingStrategies/preScopeAdmissionStrategy';
 import { type ActionPromptScope, type PromptClause } from './groundingStrategies/promptScope';
+import { readSourceSetLiftShape } from './groundingStrategies/readSourceSetLiftShape';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { type PromptClauseSpan, splitAttachedSourceClauses } from './groundingStrategies/splitAttachedSourceClauses';
 import { stripPoliteGlueCommandCarrier } from './groundingStrategies/stripPoliteGlueCommandCarrier';
@@ -289,14 +289,6 @@ type ResolveBatchLocalCreationReferenceResult =
     | { status: 'none' }
     | { status: 'resolved'; binding: BatchLocalCreationBinding }
     | { status: 'rejected'; reason: string };
-
-function hasExactTargetIdSet(assertedIds: unknown, expectedIds: readonly string[]): boolean {
-    if (!Array.isArray(assertedIds)) {
-        return false;
-    }
-    const assertedIdSet = new Set(assertedIds);
-    return assertedIdSet.size === expectedIds.length && expectedIds.every((targetId) => assertedIdSet.has(targetId));
-}
 
 function canonicalJson(value: unknown): string {
     if (Array.isArray(value)) {
@@ -1313,12 +1305,34 @@ type CoordinatedLevelList = {
     scope: PromptClauseScope | null;
 };
 
-/** The one track target a level action's coordinated list may fill, when the action has one. */
+/**
+ * Whether the action's only target is a set of routable sources with no prompt role: one call takes
+ * every source the request names, so its request is held to one exact shape (`readSourceSetLiftShape`).
+ */
+function hasOnlySourceSetTarget(groundingRules: GroundingRules): boolean {
+    const [targetRule, ...otherRules] = groundingRules.targetRules;
+    return (
+        targetRule !== undefined &&
+        otherRules.length === 0 &&
+        targetRule.promptRole === undefined &&
+        targetRule.capability === 'routable-source' &&
+        targetRule.cardinality === 'many'
+    );
+}
+
+/**
+ * The one target a level action's coordinated list may fill, when the action has one: a single track
+ * of an action stating a decibel level form, which takes one call per member, or a source set, which
+ * takes every member in one call.
+ */
 function getCoordinatedListTargetRule(
     groundingRules: GroundingRules,
     decibelLevelForms: readonly string[]
 ): GroundingRules['targetRules'][number] | undefined {
     const [targetRule, ...otherRules] = groundingRules.targetRules;
+    if (hasOnlySourceSetTarget(groundingRules)) {
+        return targetRule;
+    }
     if (
         decibelLevelForms.length === 0 ||
         targetRule === undefined ||
@@ -1388,6 +1402,24 @@ function endsOnItsOneFigure(maskedList: string): boolean {
 }
 
 /**
+ * The scope a coordinated list grounds for a set target: one slot, since one call takes every
+ * member, and the whole list as its text, where the set reading finds each member by name.
+ */
+function getCoordinatedSetScope(
+    list: CoordinatedTrackList,
+    clause: PromptClause,
+    intentPhrase: string
+): PromptClauseScope {
+    return {
+        ...clause,
+        start: list.start,
+        end: list.end,
+        directional: false,
+        matchedIntentPhrase: intentPhrase,
+    };
+}
+
+/**
  * Coordinated track lists that state this action's level change: read with the list as one member,
  * the clauses must name the action exactly as a single-target clause does, so a list adds no grammar
  * a single track lacks.
@@ -1399,6 +1431,9 @@ function endsOnItsOneFigure(maskedList: string): boolean {
  * respectively", "then up 1 dB") can single out a member without naming it, which no word list can
  * enumerate, so either grounds nothing for any member. So does an unresolved member, or any other
  * clause naming a member, whatever that clause asks of it.
+ *
+ * A set target takes the whole list in one call, so its list grounds one slot; what the request may
+ * say after the list is read for every source-set call alike, list or single target, in grounding.
  */
 function getCoordinatedLevelLists(input: {
     actionName: string;
@@ -1434,14 +1469,17 @@ function getCoordinatedLevelLists(input: {
         ) {
             return [];
         }
-        const scope =
-            list.memberIds === null ||
-            list.memberNamedOutsideList ||
-            !list.everyOtherClauseNamesAnotherTrack ||
-            !endsOnItsOneFigure(clause.masked)
-                ? null
-                : getCoordinatedListScope(list, list.memberIds, clause, intent.phrase);
-        return [{ firstClauseIndex: list.firstClauseIndex, lastClauseIndex: list.lastClauseIndex, scope }];
+        const range = { firstClauseIndex: list.firstClauseIndex, lastClauseIndex: list.lastClauseIndex };
+        if (list.memberIds === null || list.memberNamedOutsideList || !list.everyOtherClauseNamesAnotherTrack) {
+            return [{ ...range, scope: null }];
+        }
+        if (targetRule.cardinality === 'many') {
+            return [{ ...range, scope: getCoordinatedSetScope(list, clause, intent.phrase) }];
+        }
+        const scope = endsOnItsOneFigure(clause.masked)
+            ? getCoordinatedListScope(list, list.memberIds, clause, intent.phrase)
+            : null;
+        return [{ ...range, scope }];
     });
 }
 
@@ -4078,6 +4116,56 @@ function isNameEvidence(evidence: AgentReferenceEvidence): boolean {
     return evidence === 'exact-name' || evidence === 'fuzzy-name';
 }
 
+/**
+ * The refusal for a source-set call whose request is not exactly its targets, one figure and one
+ * whole section, or whose section is not the one the request names; null when both hold. The text
+ * runs from the call's own clause to the end of the request, so a later clause qualifying the lift
+ * is read too.
+ */
+function groundSourceSetLiftShape(
+    call: ToolCallResult,
+    scopeStart: number | undefined,
+    prompt: string,
+    context: ProjectContext
+): string | null {
+    const shape =
+        scopeStart === undefined
+            ? null
+            : readSourceSetLiftShape(maskProjectReferences(prompt, context).slice(scopeStart), context.sections ?? []);
+    if (shape === null) {
+        return 'Gain lift request must state only its buses, one dB figure and one whole existing section';
+    }
+    const assertedSection = call.arguments.sectionName;
+    if (
+        typeof assertedSection !== 'string' ||
+        normalizePromptText(assertedSection) !== normalizePromptText(shape.sectionName)
+    ) {
+        return getValueMismatchReason('sectionName');
+    }
+    return null;
+}
+
+/**
+ * A grounded source set in the order the request names its members, never the order the provider
+ * listed them: the set reading checks membership only, so the provider's order would otherwise
+ * become the command's.
+ */
+function orderByRequestMention(ids: unknown, prompt: string, context: ProjectContext): unknown {
+    if (!Array.isArray(ids)) {
+        return ids;
+    }
+    const firstMention = (id: unknown): number => {
+        const track = context.tracks.find((candidate) => candidate.id === id);
+        const positions = (track ? [track.id, track.name] : [])
+            .map((reference) =>
+                new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(reference)}(?![\\p{L}\\p{N}])`, 'iu').exec(prompt)
+            )
+            .flatMap((match) => (match === null ? [] : [match.index]));
+        return positions.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...positions);
+    };
+    return ids.toSorted((left, right) => firstMention(left) - firstMention(right));
+}
+
 function resolveAgentReferenceArray({
     assertedIds,
     capability,
@@ -4731,8 +4819,6 @@ function groundToolCall({
             : null;
     const sidechainRoutingScope =
         call.name === 'addSidechainRoute' ? getSidechainRoutingPromptScope(prompt, context) : null;
-    const wholeProjectVibeMixScope =
-        call.name === 'automateTrackGainRange' ? getWholeProjectVibeMixScope(context) : null;
     for (const targetRule of groundingRules.targetRules) {
         const assertedValue = groundedArguments[targetRule.argument];
         if (
@@ -4794,14 +4880,6 @@ function groundToolCall({
                     route.targetTrackId === groundedArguments.targetTrackId &&
                     route.targetDeviceId === groundedArguments.targetDeviceId
             )
-        ) {
-            continue;
-        }
-        if (
-            wholeProjectVibeMixScope &&
-            call.name === 'automateTrackGainRange' &&
-            targetRule.argument === 'trackIds' &&
-            hasExactTargetIdSet(assertedValue, wholeProjectVibeMixScope.targetIds)
         ) {
             continue;
         }
@@ -5156,6 +5234,14 @@ function groundToolCall({
           );
     if (valueRejection) {
         return rejection(index, call.name, valueRejection);
+    }
+    if (hasOnlySourceSetTarget(groundingRules)) {
+        const sourceSetRejection = groundSourceSetLiftShape(call, resolvedActionScope?.start, prompt, context);
+        if (sourceSetRejection !== null) {
+            return rejection(index, call.name, sourceSetRejection);
+        }
+        const argument = groundingRules.targetRules[0]!.argument;
+        groundedArguments[argument] = orderByRequestMention(groundedArguments[argument], prompt, context);
     }
 
     return { ...call, arguments: groundedArguments };
@@ -7726,54 +7812,6 @@ function bridgeUnrefinedLlmToolCalls(
             return providerRoute ? [providerRoute] : [];
         });
     }
-    // The scope resolves from project shape alone, so it is not admission
-    // authority (#4697): it is read only once the provider has typed the
-    // `automateTrackGainRange` selection, and a selection the project shape
-    // cannot admit still fails closed below.
-    const providerVibeMixCalls = calls.filter((call) => call.name === 'automateTrackGainRange');
-    if (workflowCapabilityId === 'whole-project-vibe-mix' && providerVibeMixCalls.length !== 1) {
-        return {
-            actions: [],
-            rejections: [rejection(0, '<batch>', 'The selected workflow requires its exact bounded gain plan')],
-        };
-    }
-    const wholeProjectVibeMixScope = providerVibeMixCalls.length > 0 ? getWholeProjectVibeMixScope(context) : null;
-    if (wholeProjectVibeMixScope || providerVibeMixCalls.length > 0) {
-        const providerCall = providerVibeMixCalls[0];
-        const assertedTrackIds = providerCall?.arguments.trackIds;
-        if (!wholeProjectVibeMixScope || !providerCall) {
-            return {
-                actions: [],
-                rejections: [
-                    rejection(0, '<batch>', 'Provider plan does not match the bounded whole-project vibe-mix scope'),
-                ],
-            };
-        }
-        const matchesScope =
-            calls.length === 1 &&
-            providerVibeMixCalls.length === 1 &&
-            hasExactTargetIdSet(assertedTrackIds, wholeProjectVibeMixScope.targetIds) &&
-            providerCall.arguments.sectionName === wholeProjectVibeMixScope.section.name &&
-            providerCall.arguments.gainDb === wholeProjectVibeMixScope.plan.dynamicTrajectory.gainDb;
-        if (!matchesScope) {
-            return {
-                actions: [],
-                rejections: [
-                    rejection(0, '<batch>', 'Provider plan does not match the bounded whole-project vibe-mix scope'),
-                ],
-            };
-        }
-        effectiveCalls = [
-            {
-                ...providerCall,
-                arguments: {
-                    trackIds: wholeProjectVibeMixScope.targetIds,
-                    sectionName: wholeProjectVibeMixScope.section.name,
-                    gainDb: wholeProjectVibeMixScope.plan.dynamicTrajectory.gainDb,
-                },
-            },
-        ];
-    }
     const mutedEmptyDeletionScope = getMutedEmptyTrackDeletionScope(prompt, context);
     if (mutedEmptyDeletionScope) {
         const providerTrackIds = calls.flatMap((call) =>
@@ -8113,8 +8151,7 @@ function bridgeUnrefinedLlmToolCalls(
             (bassProcessingCopyScope.status === 'request' && call.name === 'addAdjustmentRegion') ||
             (midiOverlapTransformScope.status === 'request' && call.name === 'removeShortMidiOverlaps') ||
             (syncopatedArpeggioScope.status === 'request' && call.name === 'arpeggiate') ||
-            (drumPreviewBranchesScope.status === 'request' && call.name === 'createDrumPreviewBranches') ||
-            (wholeProjectVibeMixScope && call.name === 'automateTrackGainRange')
+            (drumPreviewBranchesScope.status === 'request' && call.name === 'createDrumPreviewBranches')
         ) {
             grounded = call;
         } else {

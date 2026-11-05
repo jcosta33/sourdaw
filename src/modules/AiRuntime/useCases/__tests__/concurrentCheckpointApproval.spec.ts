@@ -1,6 +1,7 @@
 import { change, clone, getConflicts, getHeads, merge, toJS } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     createAutomergeStorage,
@@ -48,6 +49,8 @@ import {
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
 import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
 

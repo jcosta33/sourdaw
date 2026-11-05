@@ -4,6 +4,7 @@ import { REMOTE_TEXT_AGENT_DATA_CATEGORIES } from '../../models/AgentDataPolicy'
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
 import {
     MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION,
+    type ModelProviderEvent,
     type ModelProviderFinish,
     type ModelProviderPartialOutputDisposition,
     type ModelProviderResult,
@@ -578,5 +579,233 @@ describe('model provider protocol', () => {
                 })
             )
         ).not.toThrow();
+    });
+});
+
+describe('tool-call schema mismatch admission', () => {
+    afterEach(() => {
+        agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
+    });
+
+    const TEMPO_TOOLS = [
+        {
+            name: 'setTempo',
+            description: 'Set the project tempo.',
+            parameters: {
+                type: 'object',
+                properties: { tempo: { type: 'number' } },
+                required: ['tempo'],
+                additionalProperties: false,
+            },
+        },
+    ];
+
+    function toolCallEvent(
+        call: { id: string; name: string; arguments: Record<string, unknown> },
+        schemaMismatch?: 'fail-attempt' | 'admit-as-violation'
+    ): ModelProviderEvent {
+        if (schemaMismatch === undefined) {
+            return { type: 'tool-call', call };
+        }
+        return { type: 'tool-call', call, schemaMismatch };
+    }
+
+    // Red when admission drops, coerces or loses the location of a mismatch it was told to admit.
+    it.each([
+        {
+            label: 'a wrong-typed value',
+            arguments: { tempo: '120' },
+            violation: { kind: 'invalid-value', path: '/tempo' },
+        },
+        {
+            label: 'an undeclared key',
+            arguments: { tempo: 120, swing: 1 },
+            violation: { kind: 'undeclared-property', path: '/swing' },
+        },
+        { label: 'a missing key', arguments: {}, violation: { kind: 'missing-property', path: '/tempo' } },
+        {
+            label: 'an undeclared key outside a plain identifier shape',
+            arguments: { tempo: 120, 'not/a key': 1 },
+            violation: { kind: 'undeclared-property', path: '/*' },
+        },
+    ])('admits $label stated admit-as-violation with the bounded location it fails at', (row) => {
+        const { protocol, request } = readyRequest({ operation: 'tools', tools: TEMPO_TOOLS });
+        const session = protocol.start(request);
+        session.push(
+            eventEnvelope(
+                request,
+                0,
+                toolCallEvent({ id: 'call-1', name: 'setTempo', arguments: row.arguments }, 'admit-as-violation')
+            )
+        );
+
+        expect(session.finish(finishEnvelope(request, 1, { reason: 'stop' })).output.toolCalls).toEqual([
+            { id: 'call-1', name: 'setTempo', arguments: row.arguments, argumentSchemaViolation: row.violation },
+        ]);
+    });
+
+    // Red when a pusher can hand admission a violation of its own, or one is stamped on a valid call.
+    it('records only its own reading, so a valid call stated admit-as-violation carries none', () => {
+        const { protocol, request } = readyRequest({ operation: 'tools', tools: TEMPO_TOOLS });
+        const session = protocol.start(request);
+        const forged = {
+            id: 'call-1',
+            name: 'setTempo',
+            arguments: { tempo: 120 },
+            argumentSchemaViolation: { kind: 'invalid-value', path: '/tempo' },
+        };
+        session.push(eventEnvelope(request, 0, toolCallEvent(forged, 'admit-as-violation')));
+
+        expect(session.finish(finishEnvelope(request, 1, { reason: 'stop' })).output.toolCalls).toEqual([
+            { id: 'call-1', name: 'setTempo', arguments: { tempo: 120 } },
+        ]);
+    });
+
+    // Red when a mismatch on a call whose provider enforced its schema, or whose pusher stated nothing,
+    // is admitted rather than failing the attempt.
+    it.each([{ schemaMismatch: 'fail-attempt' as const }, { schemaMismatch: undefined }])(
+        'fails the attempt for a mismatch stated $schemaMismatch',
+        ({ schemaMismatch }) => {
+            const { protocol, request } = readyRequest({ operation: 'tools', tools: TEMPO_TOOLS });
+            const session = protocol.start(request);
+
+            expect(() =>
+                session.push(
+                    eventEnvelope(
+                        request,
+                        0,
+                        toolCallEvent({ id: 'call-1', name: 'setTempo', arguments: { tempo: '120' } }, schemaMismatch)
+                    )
+                )
+            ).toThrow('Provider stream tool arguments are incomplete or invalid.');
+        }
+    );
+
+    it('refuses a disposition outside the protocol vocabulary', () => {
+        const { protocol, request } = readyRequest({ operation: 'tools', tools: TEMPO_TOOLS });
+        const session = protocol.start(request);
+        const event = {
+            type: 'tool-call',
+            call: { id: 'call-1', name: 'setTempo', arguments: { tempo: '120' } },
+            schemaMismatch: 'ignore',
+        } as unknown as ModelProviderEvent;
+
+        expect(() => session.push(eventEnvelope(request, 0, event))).toThrow(
+            'Provider stream event has an invalid runtime shape.'
+        );
+    });
+
+    // Red when admitting a mismatch as data relaxes anything else admission refuses: every row carries a
+    // schema-invalid call stated admit-as-violation beside the one fault it must still throw for.
+    it.each([
+        {
+            label: 'an unadvertised tool',
+            push: (pushEvent: (sequence: number, event: ModelProviderEvent) => void) =>
+                pushEvent(0, toolCallEvent({ id: 'call-1', name: 'deleteTrack', arguments: {} }, 'admit-as-violation')),
+            message: 'Provider stream requested a tool that was not advertised.',
+        },
+        {
+            label: 'a blank call id',
+            push: (pushEvent: (sequence: number, event: ModelProviderEvent) => void) =>
+                pushEvent(
+                    0,
+                    toolCallEvent({ id: '  ', name: 'setTempo', arguments: { tempo: '1' } }, 'admit-as-violation')
+                ),
+            message: 'Provider stream tool arguments are incomplete or invalid.',
+        },
+        {
+            label: 'an oversized call id',
+            push: (pushEvent: (sequence: number, event: ModelProviderEvent) => void) =>
+                pushEvent(
+                    0,
+                    toolCallEvent(
+                        { id: 'c'.repeat(257), name: 'setTempo', arguments: { tempo: '1' } },
+                        'admit-as-violation'
+                    )
+                ),
+            message: 'Provider stream tool arguments are incomplete or invalid.',
+        },
+        {
+            label: 'a duplicate call id',
+            push: (pushEvent: (sequence: number, event: ModelProviderEvent) => void) => {
+                pushEvent(
+                    0,
+                    toolCallEvent({ id: 'call-1', name: 'setTempo', arguments: { tempo: '1' } }, 'admit-as-violation')
+                );
+                pushEvent(
+                    1,
+                    toolCallEvent({ id: 'call-1', name: 'setTempo', arguments: { tempo: '2' } }, 'admit-as-violation')
+                );
+            },
+            message: 'Provider stream tool arguments are incomplete or invalid.',
+        },
+        {
+            label: 'more calls than the configured ceiling',
+            maxProviderToolCalls: 1,
+            push: (pushEvent: (sequence: number, event: ModelProviderEvent) => void) => {
+                pushEvent(
+                    0,
+                    toolCallEvent({ id: 'call-1', name: 'setTempo', arguments: { tempo: '1' } }, 'admit-as-violation')
+                );
+                pushEvent(
+                    1,
+                    toolCallEvent({ id: 'call-2', name: 'setTempo', arguments: { tempo: '2' } }, 'admit-as-violation')
+                );
+            },
+            message: 'Provider stream tool arguments are incomplete or invalid.',
+        },
+        {
+            label: 'an oversized event',
+            push: (pushEvent: (sequence: number, event: ModelProviderEvent) => void) =>
+                pushEvent(
+                    0,
+                    toolCallEvent(
+                        { id: 'call-1', name: 'setTempo', arguments: { tempo: 'x'.repeat(70 * 1_024) } },
+                        'admit-as-violation'
+                    )
+                ),
+            message: 'Provider stream event payload exceeds its size limit.',
+        },
+        {
+            label: 'an out-of-order sequence',
+            push: (pushEvent: (sequence: number, event: ModelProviderEvent) => void) =>
+                pushEvent(
+                    1,
+                    toolCallEvent({ id: 'call-1', name: 'setTempo', arguments: { tempo: '1' } }, 'admit-as-violation')
+                ),
+            message: 'Provider stream sequence is not the next admitted event.',
+        },
+        {
+            label: 'structured output on a tools request',
+            push: (pushEvent: (sequence: number, event: ModelProviderEvent) => void) =>
+                pushEvent(0, { type: 'structured-output', value: { tempo: 120 } }),
+            message: 'Provider stream structured output is invalid.',
+        },
+    ])('still refuses $label', ({ push, message, ...row }) => {
+        // A session reads the ceiling when it starts, so the row configures it first.
+        if ('maxProviderToolCalls' in row) {
+            expect(configureAgentResourceLimits({ maxProviderToolCalls: row.maxProviderToolCalls })).toMatchObject({
+                status: 'configured',
+            });
+        }
+        const { protocol, request } = readyRequest({ operation: 'tools', tools: TEMPO_TOOLS });
+        const session = protocol.start(request);
+
+        expect(() => push((sequence, event) => session.push(eventEnvelope(request, sequence, event)))).toThrow(message);
+    });
+
+    it('still refuses a call stated admit-as-violation from another run identity', () => {
+        const { protocol, request } = readyRequest({ operation: 'tools', tools: TEMPO_TOOLS });
+        const session = protocol.start(request);
+
+        expect(() =>
+            session.push(
+                eventEnvelope(
+                    { ...request, runId: 'run-other' },
+                    0,
+                    toolCallEvent({ id: 'call-1', name: 'setTempo', arguments: { tempo: '1' } }, 'admit-as-violation')
+                )
+            )
+        ).toThrow('Provider stream run identity does not match the admitted request.');
     });
 });

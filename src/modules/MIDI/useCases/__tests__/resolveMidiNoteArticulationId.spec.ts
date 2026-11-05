@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { resolveMidiNoteArticulationId } from '../resolveMidiNoteArticulationId';
+
+registerDeviceEnginePorts();
 
 describe('resolveMidiNoteArticulationId', () => {
     it('maps canonical Levain articulations to immutable per-note engine ids', () => {

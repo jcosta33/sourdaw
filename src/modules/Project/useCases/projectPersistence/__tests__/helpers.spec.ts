@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
+import { registerProjectLifecycle } from '#/app/registerProjectLifecycle';
 import { Container } from '#/infra/di/Container';
 import { type TrackStoreState } from '#/modules/Arrangement/stores';
+import { automationStore } from '#/modules/Automation/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
+import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 import { defaultTransportState } from '#/modules/Transport/useCases';
 
 import { resetModuleStoresToDefault } from '../helpers/resetModuleStoresToDefault';
@@ -13,11 +16,6 @@ const mocks = vi.hoisted(() => ({
     resetArrangementStoresForProject: vi.fn(),
     trackStoreValue: { value: null as TrackStoreState | null },
     trackStoreSet: vi.fn(),
-    transportStoreSet: vi.fn(),
-    tempoMapStoreSet: vi.fn(),
-    timeSignatureMapStoreSet: vi.fn(),
-    automationStoreSet: vi.fn(),
-    midiStoreSet: vi.fn(),
     resetMidiStoreForProject: vi.fn(),
     setSidechainRoutes: vi.fn(),
     notifyUser: vi.fn(),
@@ -42,26 +40,6 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
             subscribe: actual.trackStore.subscribe.bind(actual.trackStore),
         },
     };
-});
-
-vi.mock('#/modules/Transport/stores', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Transport/stores')>();
-    return {
-        ...actual,
-        transportStore: { value: null, set: mocks.transportStoreSet },
-        tempoMapStore: { value: null, set: mocks.tempoMapStoreSet },
-        timeSignatureMapStore: { value: null, set: mocks.timeSignatureMapStoreSet },
-    };
-});
-
-vi.mock('#/modules/Automation/stores', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Automation/stores')>();
-    return { ...actual, automationStore: { value: null, set: mocks.automationStoreSet } };
-});
-
-vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/MIDI/stores')>();
-    return { ...actual, midiStore: { value: null, set: mocks.midiStoreSet } };
 });
 
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
@@ -90,6 +68,27 @@ describe('resetModuleStoresToDefault', () => {
         // preferences; pin them to their defaults so the seeded transport
         // expectation below is deterministic.
         preferencesStore.set(defaultPreferences);
+        registerProjectLifecycle();
+        transportStore.set({ ...defaultTransportState, tempo: 97, isLooping: true });
+        automationStore.set({
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 'track-1',
+                    parameterId: 'volume',
+                    parameterName: 'Volume',
+                    points: [],
+                    objects: [],
+                    visible: true,
+                    enabled: true,
+                    collapsed: false,
+                    minValue: 0,
+                    maxValue: 1,
+                },
+            ],
+        });
+        tempoMapStore.set({ changes: [{ id: 'tempo-1', beat: 4, tempo: 90, curve: 'instant' }] });
+        timeSignatureMapStore.set({ changes: [{ id: 'meter-1', beat: 4, numerator: 6, denominator: 8 }] });
         vi.clearAllMocks();
     });
 
@@ -100,17 +99,17 @@ describe('resetModuleStoresToDefault', () => {
         // With the Recording preferences at their shipped defaults (count-in
         // off, pre-roll off, 2 bars), the incoming transport carries those
         // seeds; they coincide with the model default for every field.
-        expect(mocks.transportStoreSet).toHaveBeenCalledWith({
+        expect(transportStore.value).toEqual({
             ...defaultTransportState,
             countInEnabled: false,
             countInBars: 1,
             preRollEnabled: false,
             preRollBars: 2,
         });
-        expect(mocks.automationStoreSet).toHaveBeenCalledWith({ lanes: [] });
+        expect(automationStore.value).toEqual({ lanes: [] });
         expect(mocks.resetMidiStoreForProject).toHaveBeenCalledWith({ generateProbabilitySeed: false });
-        expect(mocks.tempoMapStoreSet).toHaveBeenCalledWith({ changes: [] });
-        expect(mocks.timeSignatureMapStoreSet).toHaveBeenCalledWith({ changes: [] });
+        expect(tempoMapStore.value).toEqual({ changes: [] });
+        expect(timeSignatureMapStore.value).toEqual({ changes: [] });
         expect(mocks.setSidechainRoutes).toHaveBeenCalledWith([]);
     });
 });

@@ -8,6 +8,7 @@ export { addTrackWithDeferredAddedEvent } from './addTrackWithDeferredAddedEvent
 export { setArrangementEventBus } from './arrangementEventBus';
 export { createTrack } from './createTrack';
 export { normalizeTrack } from './normalizeTrack';
+export { nextDefaultTrackName } from './nextDefaultTrackName';
 export { removeTrack } from './removeTrack';
 export { renameTrack } from './renameTrack';
 export { reserveNextTrackColorForCommand } from './reserveNextTrackColorForCommand';
@@ -49,6 +50,7 @@ export { rearmInputMonitoring } from './rearmInputMonitoring';
 export { exportMidiClip } from './exportMidiClip';
 export { importMidiFile } from './importMidiFile';
 export { importAudioFile } from './importAudioFile';
+export { collaborationAssetTransfer } from './collaborationAssetTransfer';
 
 export { setTrackGain } from './setTrackGainPan/setTrackGain';
 export { clampTrackGain } from './setTrackGainPan/clampTrackGain';
@@ -63,6 +65,7 @@ export { getNextAppActionClipId } from './clip/getNextAppActionClipId';
 export { removeClip } from './clip/removeClip';
 export { duplicateClip } from './clip/duplicateClip';
 export { duplicateClipToNextBar } from './clip/duplicateClipToNextBar';
+export { prepareDuplicateClipTargetId } from './clip/prepareDuplicateClipTargetId';
 export { acceptGhostClip } from './clip/acceptGhostClip';
 export { dismissGhostClip } from './clip/dismissGhostClip';
 export { setClipAudioAssetStager } from './clip/setClipAudioAssetStager';
@@ -90,6 +93,7 @@ export { getGrooveOffsetAtBeat } from './groove/applyGrooveTemplate';
 export { deleteTimeRange } from './clipEditing/deleteTimeRange';
 export { glueClips } from './clipEditing/glueClips';
 export { getGlueEligibleClipPairs } from './clipEditing/getGlueEligibleClipPairs';
+export { getClipEndLimit } from './clipEditing/getClipEndLimit';
 export { slipClipContent } from './clipEditing/slipClipContent';
 
 export { setClipLoop } from './clipLoop/setClipLoop';
@@ -168,6 +172,7 @@ export { getLayerCount } from './adjustmentLayer/getLayerCount';
 // ── Device ────────────────────────────────────────────────────────────────────
 
 export { executeAddDeviceAction } from './device/executeAddDeviceAction';
+export { getAddedDeviceParameterValues } from './device/getAddedDeviceParameterValues';
 export { executeRemoveDeviceAction } from './device/executeRemoveDeviceAction';
 export { addMidiFx } from './device/addMidiFx';
 export { removeMidiFx } from './device/removeMidiFx';
@@ -175,9 +180,11 @@ export { bypassMidiFx } from './device/bypassMidiFx';
 export { updateMidiFxParam } from './device/updateMidiFxParam';
 export { bypassDevice } from './device/bypassDevice';
 export { compileReorderDevicesAction } from './device/compileReorderDevicesAction';
-export { setSend } from './device/sendManagement/setSend';
-export { removeSend } from './device/sendManagement/removeSend';
-export { toggleSendPreFader } from './device/sendManagement/toggleSendPreFader';
+export { compileSendLevelAction } from './device/sendManagement/compileSendLevelAction';
+export { compileSendPreFaderAction } from './device/sendManagement/compileSendPreFaderAction';
+export { listSendDestinations } from './device/sendManagement/listSendDestinations';
+export { commitSendEdit } from './device/sendManagement/commitSendEdit';
+export { commitSendLevel } from './device/sendManagement/commitSendLevel';
 export { setDeviceParameter } from './device/setDeviceParameter/setDeviceParameter';
 export { persistDevicePatch } from './device/setDeviceParameter/persistDevicePatch';
 
@@ -262,12 +269,20 @@ export { toggleVariationLanes } from './toggleTrackState/toggleVariationLanes';
 export { setSoloMode } from './soloMode/setSoloMode';
 export { syncSoloModePreference } from './soloMode/syncSoloModePreference';
 
+// ── Timeline Editing ──────────────────────────────────────────────────────────
+
+export { toggleRippleEditing } from './timelineEditing/toggleRippleEditing';
+export { setSnapValue } from './timelineEditing/setSnapValue';
+export { setAutomationSubLanes } from './timelineEditing/setAutomationSubLanes';
+
 // ── Track View / Zoom ─────────────────────────────────────────────────────────
 
 export { zoomTracksVertical } from './trackZoom';
-export { initTimelineScrollClamp } from './initTimelineScrollClamp';
+export { initTimelineViewReconciliation } from './initTimelineViewReconciliation';
 export { detectVariationLaneEnabling } from './detectVariationLaneEnabling';
 export { hasVariationLanes } from './hasVariationLanes';
+export { getAlternativeClips } from './getAlternativeClips';
+export { getHeldClips } from './getHeldClips';
 export { getTimelineSurfaceMinimumHeight } from './getTimelineSurfaceMinimumHeight';
 export { scrollTimelineViewportFromWheel } from './scrollTimelineViewportFromWheel';
 export { scrollTimelineViewportHorizontallyFromWheel } from './scrollTimelineViewportHorizontallyFromWheel';
@@ -303,6 +318,8 @@ export { getMarkerState } from './timelineQueries';
 export { detectAndApplySongStructure } from './detectAndApplySongStructure';
 export { detectSongStructure } from './detectSongStructure';
 export { getFactoryPresets } from './soundPresetLibrary';
+// Published because the composition root registers the factory presets device modules ship.
+export { deviceFactoryPresetSources } from './deviceFactoryPresetSources';
 export { stripSilence } from './stripSilence';
 export { getBuiltinPlugins } from './getBuiltinPlugins';
 export { getPlatformPlugins } from './getPlatformPlugins';

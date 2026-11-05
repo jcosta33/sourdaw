@@ -4,6 +4,7 @@ import {
     captureAgentProjectInspectionState,
     captureCommandBatchPreflightState,
 } from '#/app/captureCommandBatchPreflightState';
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     countPendingAutomergeStorageWrites,
@@ -36,7 +37,7 @@ import {
 import * as crdtDocumentUseCases from '#/modules/CrdtDocument/useCases';
 import {
     captureProjectRevision,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
+    projectRevisionMatchesLiveIgnoringSaveWrites,
     captureUnownedProjectMutations,
     createCrdtDoc,
     getCrdtDoc,
@@ -74,6 +75,8 @@ import { advertisedAnswerSchema } from './answerWireFixture';
 import { type ScriptedTurn } from './highLevelIntentWorkflowFixture';
 import { literalMetricIntakeTurn, readMetricPublication } from './metricGoalWorkflowFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+
+registerDeviceEnginePorts();
 
 const PROMPT = 'Create a Drum Bus and route Kick, Snare, and Hats into it, leaving Parallel Compression unchanged.';
 const MF01_PROMPT = 'Route every drum track except the parallel-compression return into the Drum Bus.';
@@ -1270,9 +1273,7 @@ describe('drum bus prompt workflow', () => {
         registerCrdtStorageRuntime();
         commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
         commandProjectRevisionPort.setProvider(captureProjectRevision);
-        commandProjectRevisionPort.setLiveMatchIgnoringCommandCheckpoint(
-            projectRevisionMatchesLiveIgnoringCommandCheckpoint
-        );
+        commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(projectRevisionMatchesLiveIgnoringSaveWrites);
         configureCommandBatchIdempotency({ canExecute: () => true });
         collaborationUseCases.configureCollaborationAssetOwner({
             captureOwnerId: () => 'project:drum-bus-workflow',

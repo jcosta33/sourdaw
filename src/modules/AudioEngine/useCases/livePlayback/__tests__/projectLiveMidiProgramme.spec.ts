@@ -19,6 +19,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -73,6 +74,8 @@ import {
 import { type OfflinePpqEndpointProjector } from '../../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { GENERATIVE_MIDI_EXCLUSION_REASON } from '../nativeMidiNoteSink';
 import { projectLiveMidiProgramme, type LiveMidiProgrammeInput } from '../projectLiveMidiProgramme';
+
+registerDeviceEnginePorts();
 
 const SAMPLE_RATE = 48_000;
 const FRAME = 1 / SAMPLE_RATE;
@@ -575,6 +578,93 @@ describe('projectLiveMidiProgramme', () => {
             { time: seconds(8), note: 60, velocity: 100, channel: 0, isNoteOn: true },
             { time: seconds(9), note: 60, velocity: 0, channel: 0, isNoteOn: false },
         ]);
+    });
+
+    // A loop [0, 4) anchored at 0 and played to 16, cut off its grid at 6:
+    // the split's right fragment (the source trimmed to 6, rows untouched) and
+    // a start trim to 6 (offset wrapped to 2, rows ridden by −4) must play
+    // every beat from 8 on as the uncut clip does. The rows: one held inside
+    // the loop, one crossing its seam, and a 50% chance note whose shared
+    // rolls under seed 6 sound occurrences 1 and 2 and drop occurrence 3.
+    it('plays a looping clip cut off its loop grid on the source passes', () => {
+        const rows = (shiftBeats: number) => [
+            note({ id: 'n-held', pitch: 60, startBeat: 1.5 + shiftBeats, duration: 1 }),
+            note({ id: 'n-seam', pitch: 64, startBeat: 3.5 + shiftBeats, duration: 1 }),
+            note({ id: 'n-chance', pitch: 67, startBeat: 1 + shiftBeats, duration: 0.25, probability: 50 }),
+        ];
+        const eventsFromBeatEight = (startBeat: number, midiOffsetBeats: number, shiftBeats: number) => {
+            const clip = midiClip({
+                id: 'clip-1',
+                trackId: 'midi-1',
+                startBeat,
+                endBeat: 16,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 0,
+                midiOffsetBeats,
+            });
+            const programme = projectProgramme({
+                stripTracks: [voicedTrack([clip])],
+                projectMidiEvents: createGrooveMidiEventProjector(),
+                probabilitySeed: 6,
+                notesByClipId: { 'clip-1': rows(shiftBeats) },
+                span: { startSeconds: 0, endSeconds: seconds(16) },
+            });
+            return (programme.targets[0]?.events ?? []).filter((event) => event.time >= seconds(8));
+        };
+
+        const uncut = eventsFromBeatEight(0, 0, 0);
+        const noteOnsOf = (events: typeof uncut) =>
+            events.filter((event) => event.isNoteOn).map((event) => [event.note, event.time]);
+        expect(noteOnsOf(uncut)).toEqual([
+            [64, seconds(8)],
+            [67, seconds(9)],
+            [60, seconds(9.5)],
+            [64, seconds(11.5)],
+            [64, seconds(12)],
+            [60, seconds(13.5)],
+            [64, seconds(15.5)],
+        ]);
+        expect(eventsFromBeatEight(6, 6, 0)).toEqual(uncut);
+        expect(eventsFromBeatEight(6, 2, -4)).toEqual(uncut);
+    });
+
+    // The source with head and anchor a loop later, at 4, rolls occurrences 1
+    // and 2 on its passes at 8 and 12. Its head drawn back a loop to 0 (rows a
+    // loop later) puts the head's pass one ahead of the anchor's occurrence 0,
+    // so the passes from 8 must still roll 1 and 2.
+    it('rolls a clip whose head lies a pass ahead of its anchor on the anchored source occurrences', () => {
+        const eventsFromBeatEight = (startBeat: number, shiftBeats: number) => {
+            const clip = midiClip({
+                id: 'clip-1',
+                trackId: 'midi-1',
+                startBeat,
+                endBeat: 20,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 4,
+                midiOffsetBeats: 0,
+            });
+            const programme = projectProgramme({
+                stripTracks: [voicedTrack([clip])],
+                projectMidiEvents: createGrooveMidiEventProjector(),
+                probabilitySeed: 6,
+                notesByClipId: {
+                    'clip-1': [
+                        note({ id: 'n-chance', pitch: 67, startBeat: 1 + shiftBeats, duration: 0.25, probability: 50 }),
+                    ],
+                },
+                span: { startSeconds: 0, endSeconds: seconds(16) },
+            });
+            return (programme.targets[0]?.events ?? []).filter((event) => event.time >= seconds(8));
+        };
+
+        const anchored = eventsFromBeatEight(4, 0);
+        expect(anchored.filter((event) => event.isNoteOn).map((event) => event.time)).toEqual([
+            seconds(9),
+            seconds(13),
+        ]);
+        expect(eventsFromBeatEight(0, 4)).toEqual(anchored);
     });
 
     it('strikes a Levain note on the articulation it carries, and releases it carrying none', () => {

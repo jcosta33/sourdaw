@@ -6,7 +6,8 @@ import {
     getPianoRollExtentBeats,
     GRID_BEATS,
     TOTAL_ROWS,
-    BASE_PITCH,
+    HIGHEST_PITCH,
+    LOWEST_PITCH,
     ROW_HEIGHT,
     RULER_HEIGHT,
     getPianoRollContentHeight,
@@ -28,11 +29,16 @@ const extentOf = (clipLengthBeats: number, notes: readonly MidiNote[]): number =
     getPianoRollExtentBeats([{ clipLengthBeats, notes }]);
 
 describe('getVisiblePitches — unfolded (all pitches)', () => {
-    it('returns all 60 pitches descending from 83 to 24 when unfolded', () => {
+    it('returns all 128 pitches descending from 127 to 0 when unfolded', () => {
         const pitches = getVisiblePitches('chromatic', 0, false);
-        expect(pitches).toHaveLength(TOTAL_ROWS);
-        expect(pitches[0]).toBe(BASE_PITCH + TOTAL_ROWS - 1); // 83
-        expect(pitches[pitches.length - 1]).toBe(BASE_PITCH); // 24
+        expect(TOTAL_ROWS).toBe(128);
+        expect(pitches).toHaveLength(128);
+        expect(pitches[0]).toBe(HIGHEST_PITCH); // 127
+        expect(pitches[pitches.length - 1]).toBe(LOWEST_PITCH); // 0
+    });
+
+    it.each([0, 21, 84, 127])('has a row for pitch %i', (pitch) => {
+        expect(getVisiblePitches('chromatic', 0, false)).toContain(pitch);
     });
 
     it('returns all pitches even with a non-chromatic scale when unfolded', () => {
@@ -50,8 +56,9 @@ describe('getVisiblePitches — folded (scale-filtered)', () => {
     it('filters to only in-scale pitches when folded (C major)', () => {
         const pitches = getVisiblePitches('major', 0, true);
         // C major intervals: [0,2,4,5,7,9,11]. 7 out of 12 pitch classes per octave.
-        // Over 60 rows (5 octaves): 5 * 7 = 35 pitches.
-        expect(pitches).toHaveLength(35);
+        // Over 128 rows: 10 full octaves (0..119) * 7 = 70, plus pitches 120..127
+        // (pitch classes 0..7) of which 0, 2, 4, 5, 7 are in scale = 5. Total 75.
+        expect(pitches).toHaveLength(75);
     });
 
     it('all folded pitches are in the C major scale', () => {
@@ -63,10 +70,10 @@ describe('getVisiblePitches — folded (scale-filtered)', () => {
         }
     });
 
-    it('starts from the highest pitch (83) descending', () => {
+    it('starts from the highest pitch (127) descending', () => {
         const pitches = getVisiblePitches('major', 0, true);
-        // 83 % 12 = 11 → B, which is in C major (interval 11). So 83 is first.
-        expect(pitches[0]).toBe(83);
+        // 127 % 12 = 7 → G, which is in C major (interval 7). So 127 is first.
+        expect(pitches[0]).toBe(127);
     });
 
     it('respects scaleRoot offset (D major: root=2)', () => {
@@ -192,5 +199,11 @@ describe('piano roll vertical geometry law', () => {
     it('returns null over the ruler and past the last row', () => {
         expect(getPianoRollRowAtY(RULER_HEIGHT - 1, TOTAL_ROWS)).toBeNull();
         expect(getPianoRollRowAtY(getPianoRollContentHeight(TOTAL_ROWS), TOTAL_ROWS)).toBeNull();
+    });
+});
+
+describe('getVisiblePitches — Object.prototype scale names', () => {
+    it.each(['__proto__', 'constructor', 'toString'])('%s folds as chromatic instead of throwing', (scaleType) => {
+        expect(getVisiblePitches(scaleType, 0, true)).toEqual(getVisiblePitches('chromatic', 0, true));
     });
 });

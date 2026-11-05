@@ -14,6 +14,7 @@ import { enable_direct_e2e_viewport, launch_new_project } from './e2eUtils';
 const ROOT = realpathSync(fileURLToPath(new URL('../../', import.meta.url)));
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 const MIDI_NAME = 'Undo acceptance MIDI';
+const AUDIO_NAME = 'Audio 1';
 const SAMPLE_RATE = 44_100;
 const STEP_TIMEOUT = 30_000;
 
@@ -529,8 +530,8 @@ test('persisted clip edits replay exact owners and source material through real 
     await expect.poll(() => capabilities.length, { timeout: 45_000 }).toBeGreaterThan(0);
     await launch_new_project(page);
     await palette(page, 'Add Audio Track');
-    await expect(trackRow(page, 'Audio')).toBeVisible();
-    await importIntoTrack(page, 'Audio', 'Audio');
+    await expect(trackRow(page, AUDIO_NAME)).toBeVisible();
+    await importIntoTrack(page, AUDIO_NAME, 'Audio');
     await expect
         .poll(
             async () =>
@@ -539,9 +540,9 @@ test('persisted clip edits replay exact owners and source material through real 
                     .filter((clip) => clip.type === 'audio').length
         )
         .toBe(1);
-    await importIntoTrack(page, 'Audio', 'MIDI');
+    await importIntoTrack(page, AUDIO_NAME, 'MIDI');
     await expect(trackRow(page, MIDI_NAME)).toBeVisible();
-    await addComp(page, 'Audio');
+    await addComp(page, AUDIO_NAME);
     await addComp(page, MIDI_NAME);
     await addAutomation(page);
     const seed = await readSnapshot(page);
@@ -698,7 +699,7 @@ test('persisted clip edits replay exact owners and source material through real 
             page,
             info,
             'grouped-ripple',
-            'Audio',
+            AUDIO_NAME,
             ['removeClip', 'splitClip'],
             capabilities,
             async (before) => {

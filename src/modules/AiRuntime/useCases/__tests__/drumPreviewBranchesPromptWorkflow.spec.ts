@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import {
     installTransactionalIndexedDb,
@@ -64,6 +66,8 @@ import { readCreativeInterpretationCatalog } from './highLevelIntentWorkflowFixt
 import { landProjectEdit } from './landProjectEdit';
 import { nonAcousticMetricIntakeTurn } from './metricGoalWorkflowFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+
+registerDeviceEnginePorts();
 
 function drumIntake(userMessage: string, providerView: string | readonly ToolSchema[]) {
     const catalog = readCreativeInterpretationCatalog(userMessage, providerView);
@@ -600,6 +604,7 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         clearHandlerRegistry();
         registerHandlerMap(getDrumPreviewBranchHandlers({ canMutateBranchMetadata }));
         clearUndoHistory();

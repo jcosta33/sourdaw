@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { createTrack } from '#/modules/Arrangement/useCases';
 
 import { type ProjectContext } from '../../../models/ProjectContext';
@@ -10,6 +11,8 @@ import { bridgeBackingVocalPlatePlan } from '../bridgeBackingVocalPlatePlan';
 import { freezeWorkflowNativeLiteralUses } from '../freezeWorkflowNativeLiteralUses';
 import { getBackingVocalPlatePromptScope } from '../getBackingVocalPlatePromptScope';
 import { materializeBatchLocalActionIdentities } from '../materializeBatchLocalActionIdentities';
+
+registerDeviceEnginePorts();
 
 afterEach(resetMetricGoalProject);
 

@@ -1,6 +1,10 @@
 import { projectMidiClipWindow, type MidiPitchBendWindowRow } from '../../services/projectMidiClipWindow';
 
-import { listClipControllerPasses, type ControllerProjectionClip } from './listClipControllerPasses';
+import {
+    listClipControllerPasses,
+    type ClipControllerPass,
+    type ControllerProjectionClip,
+} from './listClipControllerPasses';
 
 type ProjectClipPitchBendEventsInput = {
     pitchBends: readonly MidiPitchBendWindowRow[];
@@ -23,7 +27,8 @@ export type ProjectedClipPitchBend = MidiPitchBendWindowRow & {
     /**
      * Where the pass that plays the move puts the row's own content beat on the timeline: `beat` for a row the
      * pass reaches, and earlier for a carry, which sits on the pass head though the row was recorded before it
-     * (before the clip start, for a row of a trimmed-off head).
+     * (before the clip start, for a row of a trimmed-off head, and one loop back, in the pass before, for a row
+     * a head cut mid-loop carries from that pass).
      */
     recordedBeat: number;
 };
@@ -69,16 +74,35 @@ export function projectClipPitchBendEvents({
             pitchBends: recordedPitchBends,
             window,
         });
-        for (const bend of projected.pitchBends) {
-            if (bend.beat >= fromBeat && bend.beat < toBeat) {
-                events.push({
-                    ...bend,
-                    contentBeat: bend.beat - window.beatOffset,
-                    recordedBeat: bend.recordedContentBeat + window.beatOffset,
-                });
-            }
+        const owned = (bend: RecordedPitchBend) => bend.beat >= fromBeat && bend.beat < toBeat;
+        // The pass before played its bends first, one loop earlier on the timeline than this window places its own.
+        for (const bend of projected.priorPassPitchBends.filter(owned)) {
+            events.push(placeBend(bend, window, priorPassBeatOffset(window)));
+        }
+        for (const bend of projected.pitchBends.filter(owned)) {
+            events.push(placeBend(bend, window, window.beatOffset));
         }
     }
 
     return events.sort((left, right) => left.beat - right.beat);
+}
+
+/** A bend the window plays, with the timeline offset of the pass that recorded it saying where that was. */
+function placeBend(
+    bend: RecordedPitchBend,
+    window: ClipControllerPass,
+    recordedBeatOffset: number
+): ProjectedClipPitchBend {
+    return {
+        ...bend,
+        contentBeat: bend.beat - window.beatOffset,
+        recordedBeat: bend.recordedContentBeat + recordedBeatOffset,
+    };
+}
+
+function priorPassBeatOffset(window: ClipControllerPass): number {
+    if (window.priorPass === undefined) {
+        throw new Error('A bend carried from the pass before has no pass before its window');
+    }
+    return window.priorPass.beatOffset;
 }

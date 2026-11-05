@@ -3,6 +3,8 @@ import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
 import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
 import {
@@ -53,6 +55,8 @@ import { resetCrdtProjectAuthority } from '../../resetCrdtProjectAuthority';
 import { whenBranchStateSettled } from '../../whenBranchStateSettled';
 import { forkProjectBranch } from '../forkProjectBranch';
 import { switchBranch } from '../switchBranch';
+
+registerDeviceEnginePorts();
 
 const TRACK_ID = 'recording-track';
 const SESSION_KEY = 'sourdaw-undo-session';
@@ -343,6 +347,7 @@ describe('recording terminals through actual project branch transitions', () => 
         localStorage.removeItem('sourdaw-branches');
         resetCrdtProjectAuthority('recording branch ownership');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         initBranchState();
         await whenBranchStateSettled();
         clearHandlerRegistry();

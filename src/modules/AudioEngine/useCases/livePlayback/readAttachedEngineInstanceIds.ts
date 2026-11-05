@@ -16,10 +16,10 @@
  * session.
  */
 
-import { readAttachedCrumbsInstanceIds } from '#/modules/Crumbs/stores';
-
+import { engineAttachmentTracking } from './engineAttachmentTracking';
 import { readAttachedExternalInstanceIds } from './readAttachedExternalInstanceIds';
 
 export function readAttachedEngineInstanceIds(): ReadonlySet<string> {
-    return new Set([...readAttachedExternalInstanceIds(), ...readAttachedCrumbsInstanceIds()]);
+    const { readAttachedInstanceIds } = engineAttachmentTracking.read('readAttachedEngineInstanceIds');
+    return new Set([...readAttachedExternalInstanceIds(), ...readAttachedInstanceIds()]);
 }

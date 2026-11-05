@@ -31,8 +31,7 @@ import {
     transposeForChordTrack,
 } from '#/modules/MIDI/useCases';
 import { scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
-import { toasterStore } from '#/modules/Toaster/stores';
-import { isBeatInClipLoopWindow } from '#/utils/clipLoopOrigin';
+import { isBeatInClipLoopWindow, resolveClipLoopPassGrid } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import {
     isBypassedNoteReceiver,
@@ -67,6 +66,7 @@ import { detachSoundingNoteExpression } from './detachSoundingNoteExpression';
 import { getScheduledMidiNoteIndex, type ScheduledMidiNote } from './getScheduledMidiNoteIndex';
 import { holdNoteExpression } from './holdNoteExpression';
 import { keepHeldNoteExpressionOnReceiver } from './keepHeldNoteExpressionOnReceiver';
+import { kitSwing } from './kitSwing';
 import { listMutedMidiClips } from './listMutedMidiClips';
 import { prepareYeastTrackNotes, type PreparedYeastTrackNotes } from './prepareYeastTrackNotes';
 import { releaseUnrestoredStoredControllers } from './releaseUnrestoredStoredControllers';
@@ -527,9 +527,12 @@ export async function scheduleMidiNotes(
     const changes = tempoMapStore.value?.changes ?? [];
     const automationLanes = automationStore.value?.lanes ?? [];
     // #4924 — the earliest start an admitted Yeast segment may still schedule
-    // (the gate below). A wrap re-anchors a duration tail to the iteration head
-    // at its note's own loop phase — arbitrarily close behind the owning window
-    // — so staleness is a clock question, not a window-grace question:
+    // (the gate below). After the rack a segment can land behind the window
+    // that owns its note: a sequencer push across the pass end re-anchors it
+    // onto the pass head, and a rack may re-time it, arbitrarily close behind
+    // that window — so staleness is a clock question, not a window-grace
+    // question (a note's own tail past the pass end is no such segment: the
+    // rack is handed it as its own note on the pass head, owned there):
     // `accumulatedPosition` is the beat `getCurrentTime()` stands for this tick
     // (the same position the note time formula measures against), and a start
     // behind it computes a time in the past that Web Audio clamps to an
@@ -868,6 +871,16 @@ export async function scheduleMidiNotes(
                 loopEnabled: clip.loopEnabled ?? false,
             });
             const loopLen = loopProjection.loopLengthBeats;
+            // A frozen take repeats on its own grid; every other looping clip
+            // passes on the seams its loop anchor laid down.
+            const loopPassGrid = resolveClipLoopPassGrid({
+                startBeat: clip.startBeat,
+                endBeat: clip.endBeat,
+                loopOriginBeat: clip.loopOriginBeat,
+                loopEnabled: !frozenSource && (clip.loopEnabled ?? false),
+                loopLengthBeats: loopLen,
+                iterationCount: loopProjection.iterationCount,
+            });
             const frozenRepeats = frozenSource
                 ? frozenMidiTakeRepeats(
                       frozenSource,
@@ -880,19 +893,20 @@ export async function scheduleMidiNotes(
             const scheduledIterationRange = frozenSource
                 ? { startIndex: firstFrozenRepeatIndex, endIndex: firstFrozenRepeatIndex + frozenRepeats.length }
                 : getScheduledIterationRange({
-                      clipStartBeat: clip.startBeat,
+                      clipStartBeat: loopPassGrid.firstPassStartBeat,
                       fromBeat,
-                      iterationCount: loopProjection.iterationCount,
+                      iterationCount: loopPassGrid.passCount,
                       loopEnabled: clip.loopEnabled ?? false,
                       loopLengthBeats: loopLen,
                       toBeat,
                   });
-            const sourceOccurrenceOffset = getSourceOccurrenceOffset({
-                sourceStartBeat: clip.sourceStartBeat,
-                segmentStartBeat: clip.startBeat,
-                loopLength: loopLen,
-                loopEnabled: clip.loopEnabled ?? false,
-            });
+            const sourceOccurrenceOffset =
+                getSourceOccurrenceOffset({
+                    sourceStartBeat: clip.sourceStartBeat,
+                    segmentStartBeat: clip.startBeat,
+                    loopLength: loopLen,
+                    loopEnabled: clip.loopEnabled ?? false,
+                }) + loopPassGrid.passesAheadOfAnchor;
             const strip = ensureTrackStrip(track.id);
             const ctx = getAudioContext();
             const sr = ctx.sampleRate;
@@ -920,7 +934,7 @@ export async function scheduleMidiNotes(
                               evaluateAutomationValue: getAutomationValueAtBeat,
                               isAutomationRecording: isRecordingAutomation,
                               getCurrentSwingValue: (deviceId) =>
-                                  toasterStore.value?.[deviceId]?.kit.swing ??
+                                  kitSwing.read('scheduleMidiNotes').currentSwing(deviceId) ??
                                   toasterTarget.device.parameterValues.swing ??
                                   0,
                           }),
@@ -1014,7 +1028,9 @@ export async function scheduleMidiNotes(
                 if (frozenSource && !frozenRepeat) {
                     throw new Error('Invalid frozen MIDI take repeat');
                 }
-                const iterationStart = frozenRepeat ? frozenRepeat.startBeat : clip.startBeat + iter * loopLen;
+                const iterationStart = frozenRepeat
+                    ? frozenRepeat.startBeat
+                    : loopPassGrid.firstPassStartBeat + iter * loopLen;
                 const yeastRouteId = `live-yeast:${track.id}:${clip.id}:${absoluteOccurrenceIndex}`;
                 let iterNotes: readonly (LiveYeastNote &
                     Pick<ScheduledMidiNote, 'expression'> & { recordedOwnBendBeat?: number })[];
@@ -1151,9 +1167,9 @@ export async function scheduleMidiNotes(
                         // #4910 admitted the note on its owned coordinate, so its
                         // segments schedule where the projection lands them — a
                         // groove displacement past `toBeat` included. What they may
-                        // never do is start before the audio clock: the wrap lands
-                        // a tail behind the owning window at its note's loop phase
-                        // — arbitrarily small — so `admittedSegmentFloorBeat` gates
+                        // never do is start before the audio clock: a re-anchor
+                        // lands a segment behind the owning window by an amount
+                        // arbitrarily small, so `admittedSegmentFloorBeat` gates
                         // on the clock position instead of a window grace, and the
                         // drop is strict beyond its rounding tolerance: a landing
                         // on the clock computes `getCurrentTime()`, the onset's own

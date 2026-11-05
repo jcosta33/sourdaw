@@ -11,7 +11,6 @@ import {
 } from '#/modules/Arrangement/stores';
 import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
 import { automationStore, modulationStore } from '#/modules/Automation/stores';
-import { midiLearnStore } from '#/modules/ControlSurface/stores';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { cvGateStore } from '#/modules/CvGate/stores';
@@ -24,7 +23,6 @@ import {
 } from '#/modules/MIDI/stores';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
-import { readYeastRack } from '#/modules/Yeast/stores';
 
 import {
     CURRENT_PROJECT_VERSION,
@@ -36,6 +34,8 @@ import { arrangementStore } from '../../../stores/arrangementStore';
 import { projectStore } from '../../../stores/projectStore';
 import { syncCurrentArrangementToStore } from '../../arrangement/syncCurrentArrangementToStore';
 
+import { midiLearnProjection } from './midiLearnProjection';
+import { rackProcessorReader } from './rackProcessorReader';
 import { serializeArrangementTracks } from './serializeArrangementTracks';
 import { serializeProjectGrooves } from './serializeProjectGrooves';
 import { serializeProjectMidi } from './serializeProjectMidi';
@@ -233,7 +233,7 @@ export async function buildProjectData({
     const racks: NonNullable<ProjectData['yeast']> = { racks: {} };
     for (const deviceId of yeastDeviceIds) {
         racks.racks[deviceId] = {
-            processors: structuredClone(readYeastRack(deviceId).processors),
+            processors: structuredClone(rackProcessorReader.read('buildProjectData').readProcessors(deviceId)),
         };
     }
     let yeast: ProjectData['yeast'];
@@ -250,7 +250,7 @@ export async function buildProjectData({
     // The CRDT slot's durable projection verbatim: `toCrdt` keeps exactly
     // these two fields, so the named-project JSON carries the same truth the
     // document does and the three JSON-rebuild routes lose nothing (#4600).
-    const liveMidiLearn = midiLearnStore.value;
+    const liveMidiLearn = midiLearnProjection.read('buildProjectData').readMidiLearn();
     const midiLearn: ProjectData['midiLearn'] | undefined = liveMidiLearn
         ? {
               mappingsSchemaVersion: liveMidiLearn.mappingsSchemaVersion,

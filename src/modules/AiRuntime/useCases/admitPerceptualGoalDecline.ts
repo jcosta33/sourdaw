@@ -4,7 +4,6 @@ import { type CommandBatchDecline } from '../models/CommandBatchDecline';
 import { type ProjectContext } from '../models/ProjectContext';
 import { maskQuotedTextContents, scanPromptQuotedText } from '../transformers/promptParser/promptQuotedText';
 
-import { findAgentReferenceNameSpans } from './agentReference/findAgentReferenceNameSpans';
 import { findCoordinatedTrackLists } from './agentReference/findCoordinatedTrackLists';
 import { escapeRegExp } from './agentReference/groundingStrategies/escapeRegExp';
 import { getPromptClauses } from './agentReference/groundingStrategies/getPromptClauses';
@@ -19,6 +18,7 @@ import { resolveAgentReference } from './agentReference/resolveAgentReference';
 import { resolveWholeMember } from './agentReference/resolveWholeMember';
 import { resolveWorkflowTrackIds } from './agentReference/resolveWorkflowTrackIds';
 import { discoverMixRecipes } from './discoverMixRecipes';
+import { maskTrackReferences } from './maskTrackReferences';
 
 type MixRecipeCatalog = ReturnType<typeof getMixRecipeCatalog>;
 type RecipeRole = MixRecipeCatalog['roles'][number];
@@ -44,16 +44,7 @@ const ADMITTED: PerceptualGoalDeclineAdmission = { status: 'admitted' };
 
 /** Every track name and literal id is blanked, so a reference to "Bright Keys" states no goal. */
 function maskTrackNames(prompt: string, context: ProjectContext): string {
-    const names = context.tracks.flatMap((track) => [track.name, track.id]);
-    const original = maskQuotedTextContents(prompt);
-    const spans = names.flatMap((name) => findAgentReferenceNameSpans(original, name, 'exact', names));
-    const masked = original.split('');
-    for (const span of spans) {
-        for (let index = span.start; index < span.end; index += 1) {
-            masked[index] = ' ';
-        }
-    }
-    return masked.join('');
+    return maskTrackReferences(prompt, context, ' ');
 }
 
 /**

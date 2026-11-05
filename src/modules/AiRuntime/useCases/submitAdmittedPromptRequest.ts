@@ -395,6 +395,7 @@ export async function submitAdmittedPromptRequest(
         const compiled = compileAgentActionExecution({
             actions: planned.result.actions,
             metricGoalState: planned.result.metricGoalState,
+            recordedConstraints: planned.result.protectionFacts?.perceptualConstraints,
             actionCommandGraph: planned.result.actionCommandGraph,
             actionLabels,
             context: planned.context,

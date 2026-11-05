@@ -1,4 +1,5 @@
 import { type AgentDataCategory, type AgentDataRetention, type RemoteTransmissionDisclosure } from './AgentDataPolicy';
+import { type ToolArgumentSchemaViolation } from './ToolCallResult';
 
 export const MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION = 2 as const;
 
@@ -110,10 +111,23 @@ export type ModelProviderToolCall = {
     arguments: Record<string, unknown>;
 };
 
+/**
+ * What admission does with a tool call whose arguments miss the advertised schema. A provider that
+ * enforced the schema cannot send one, so the mismatch is a broken stream and fails the attempt;
+ * that is also the disposition when the pusher states none. `admit-as-violation` is stated only for
+ * a call whose schema the provider did not enforce, to a caller that answers the mismatch itself.
+ */
+export type ModelProviderToolCallSchemaMismatch = 'fail-attempt' | 'admit-as-violation';
+
+/** A tool call as admission kept it: the violation is admission's own reading, never the pusher's. */
+export type AdmittedModelProviderToolCall = ModelProviderToolCall & {
+    argumentSchemaViolation?: ToolArgumentSchemaViolation;
+};
+
 export type ModelProviderEvent =
     | { type: 'text'; mode: 'delta' | 'cumulative-snapshot'; text: string }
     | { type: 'reasoning'; mode: 'delta' | 'cumulative-snapshot'; text: string }
-    | { type: 'tool-call'; call: ModelProviderToolCall }
+    | { type: 'tool-call'; call: ModelProviderToolCall; schemaMismatch?: ModelProviderToolCallSchemaMismatch }
     | { type: 'structured-output'; value: unknown }
     | {
           type: 'usage';
@@ -155,7 +169,7 @@ export type ModelProviderResult = {
     output: {
         text: string;
         reasoning: string;
-        toolCalls: ModelProviderToolCall[];
+        toolCalls: AdmittedModelProviderToolCall[];
         structuredOutput: unknown;
     };
     usage: ModelProviderUsage;

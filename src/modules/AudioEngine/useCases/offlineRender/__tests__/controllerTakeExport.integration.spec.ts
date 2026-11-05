@@ -15,6 +15,7 @@ const liveMidi = vi.hoisted(() => {
     return { input };
 });
 
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import { createMockAudioContext, createMockAudioNode } from '#/helpers/__tests__/audioContext.mock';
 import {
     configureAutomergeStoragePort,
@@ -73,6 +74,8 @@ import { type DeviceNodeEntry } from '../../buildDeviceChain';
 import { schedulePendingSuspends } from '../schedulePendingSuspends';
 import { scheduleTrackClips } from '../scheduleTrackClips';
 import { type PendingWorkletEvent } from '../types';
+
+registerSupportingServicePorts();
 
 const TRACK_ID = 'track-midi';
 const DEVICE_ID = 'gb-1';

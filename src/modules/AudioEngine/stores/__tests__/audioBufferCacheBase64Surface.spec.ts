@@ -89,6 +89,7 @@ function buildInvocations(): Record<string, () => unknown> {
             return publication;
         },
         set: () => audioBufferCache.set('pcm-2', makeAudioBuffer([PCM])),
+        holdForSession: () => audioBufferCache.holdForSession('pcm-3', makeAudioBuffer([PCM])),
         remove: () => audioBufferCache.remove('pcm-2'),
         has: () => audioBufferCache.has('pcm'),
         ensureDurable: async () => {
@@ -120,6 +121,7 @@ function buildInvocations(): Record<string, () => unknown> {
         restoreFromIdb: () => audioBufferCache.restoreFromIdb({ context: makeContext() }),
         prepareFromIdb: () => audioBufferCache.prepareFromIdb({ context: makeContext() }),
         rehydrateEvicted: () => audioBufferCache.rehydrateEvicted(['pcm']),
+        restoreUnpinned: () => audioBufferCache.restoreUnpinned(['pcm']),
         clear: () => audioBufferCache.clear(),
         cancelPendingImport: () => audioBufferCache.cancelPendingImport(),
         importBuffers: () => {

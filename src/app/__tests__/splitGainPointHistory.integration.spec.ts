@@ -9,9 +9,11 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import {
+    defaultTimelineEditingState,
     gainEnvelopeStore,
     sampleGainEnvelopeSeries,
     takeLaneStore,
+    timelineEditingStore,
     trackStore,
     warpStateStore,
     type Clip,
@@ -57,7 +59,6 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { productionBriefActionBatchAdmission } from '#/modules/Project/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
-import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import {
     type ConfirmPayload,
@@ -67,6 +68,7 @@ import {
 } from '#/utils/Notification/notificationEventBus';
 
 import { captureAgentProjectInspectionState } from '../captureCommandBatchPreflightState';
+import { registerProjectSlotProjections } from '../registerProjectSlotProjections';
 
 const SESSION_KEY = 'sourdaw-undo-session';
 const PROJECT_ID = 'split-gain-history-project';
@@ -253,6 +255,7 @@ describe('audio split gain identity with production repair admission and saved h
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         sessionStorage.removeItem(SESSION_KEY);
         setNotificationEventBus(createEventBus<NotificationEvents>());
         setActionHistoryMetadataPort({
@@ -269,7 +272,7 @@ describe('audio split gain identity with production repair admission and saved h
         automationStore.set({ lanes: [] });
         midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         actionHistoryStore.set({ entries: [] });
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         const audio: Clip = {
             id: LEFT,
             trackId: 'audio-track',

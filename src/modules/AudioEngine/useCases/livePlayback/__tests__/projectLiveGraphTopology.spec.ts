@@ -14,12 +14,15 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { type Device, type Track } from '#/modules/Arrangement/stores';
 import { createTrack as createTrackFromProjectDefaults } from '#/modules/Arrangement/useCases';
 
 import { type AudioGraphClipPlayback, type AudioGraphCommand } from '../../../models/AudioGraphBackend';
 import { type LiveGraphProgramme } from '../projectLiveGraphProgramme';
 import { projectLiveGraphTopology, type LiveGraphTopologyInput } from '../projectLiveGraphTopology';
+
+registerDeviceEnginePorts();
 
 /**
  * A programme naming `stripIds`, one unity-rate playback each. The producer

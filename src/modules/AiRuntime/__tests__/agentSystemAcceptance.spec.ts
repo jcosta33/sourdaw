@@ -6,6 +6,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { change, clone, Counter, toJS } from '@automerge/automerge';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
 import {
     configureAutomergeStoragePort,
@@ -102,6 +103,8 @@ import { sendChatMessage } from '../useCases/sendChatMessage';
 
 import { completeAcceptanceResults, createAcceptanceFixtureLifetime } from './acceptanceFixtureLifetime';
 
+registerDeviceEnginePorts();
+
 type PlannedChatRequest = Awaited<ReturnType<typeof planPromptActions>>['result'];
 
 const runtimeMocks = vi.hoisted(() => ({
@@ -190,7 +193,7 @@ const BOUNDARY_OUTCOME_CLASSES: readonly AgentAcceptanceOutcomeClass[] = [
     'deny-policy',
 ];
 
-/** A whole corpus runs in one test, its refinement cases through the chat route twice each. */
+/** Bounds one test that drives a corpus case through the chat route, a refinement case twice. */
 const CORPUS_RUN_TIMEOUT_MS = 60_000;
 
 /** How many cases a sealed scored prompt class must carry before its floors mean anything. */
@@ -2813,7 +2816,7 @@ describe('agent acceptance corpora', () => {
         });
     });
 
-    describe('refinement write accounting', () => {
+    describe('refinement write accounting', { timeout: CORPUS_RUN_TIMEOUT_MS }, () => {
         const relativeCase = corpusCase('development', 'AC004-DEV-RELATIVE-1');
         const undoCase = corpusCase('development', 'AC004-DEV-UNDO-1');
         const pendingCase = corpusCase('development', 'AC004-DEV-SCALE-1');

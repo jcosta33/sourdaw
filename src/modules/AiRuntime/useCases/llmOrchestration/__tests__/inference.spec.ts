@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { HostedAiHttpStatusError } from '../../../errors/HostedAiHttpStatusError';
 import { isModelProviderFailureError } from '../../../errors/ModelProviderFailureError';
 import { ToolPlanningRejectedError } from '../../../errors/ToolPlanningRejectedError';
@@ -16,6 +18,7 @@ import {
     AUTO_TOOL_CHOICE,
     type HostedToolChoiceDirective,
 } from '../../../repositories/cloudLlm/cloudInference/hostedToolPlan';
+import { projectOpenAiStrictToolSchema } from '../../../repositories/cloudLlm/cloudInference/projectOpenAiStrictToolSchema';
 import { type OpenAiCompatibleCloudRuntime } from '../../../repositories/cloudLlm/cloudSession';
 import { getWebLlmContextWindowSize } from '../../../repositories/webLlm/getWebLlmContextWindowSize';
 import { agentReferenceStore } from '../../../stores/agentReferenceStore';
@@ -27,6 +30,7 @@ import {
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
     ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
+    getAgentToolCatalogSchemas,
     PROJECT_DISCOVERY_TOOL_NAME,
     RECIPE_DISCOVERY_TOOL_NAME,
     RECIPE_EXPANSION_TOOL_NAME,
@@ -44,6 +48,8 @@ import { prepareAnswerInterpretationCatalog } from '../../prepareAnswerInterpret
 import { prepareCreativeInterpretationCatalog } from '../../prepareCreativeInterpretationCatalog';
 import { recordAgentProviderUsage } from '../../recordAgentProviderUsage';
 import { generateToolPlanningOutcome, WEBLLM_TOOL_BUDGET, type ProviderAttemptAdmission } from '../inference';
+
+registerDeviceEnginePorts();
 
 const mocks = vi.hoisted(() => ({
     backendChain: { value: [] as ('cloud' | 'webllm')[] },
@@ -238,6 +244,194 @@ describe('generateToolPlanningOutcome', () => {
             state: 'ready',
             backend: 'cloud',
             modelId: 'hosted-model',
+        });
+    });
+
+    describe('project.query filters on a non-strict hosted provider', () => {
+        function projectQuerySchemas(): ToolSchema[] {
+            return getAgentToolCatalogSchemas().filter((schema) => schema.function.name === 'project.query');
+        }
+
+        function replyWithQueryArguments(
+            queryArguments: Record<string, unknown>,
+            strictness: { strictToolSchemas: boolean; nonStrictToolNames?: string[] } = { strictToolSchemas: false }
+        ): void {
+            mocks.backendChain.value = ['cloud'];
+            mocks.generateCloudToolCalls.mockResolvedValue({
+                providerRequestId: null,
+                calls: [{ id: 'query-call', name: 'project.query', arguments: queryArguments }],
+                ...strictness,
+                usage: null,
+            });
+        }
+
+        /** The loop's own turn, which says it answers a schema-invalid call with a receipt. */
+        function planLoopTurn() {
+            return generateToolPlanningOutcome(
+                'system',
+                'find the lead vocal',
+                projectQuerySchemas(),
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                {
+                    firstUserMessage: 'find the lead vocal',
+                    history: [],
+                    budgetNote: '',
+                    answersSchemaInvalidCalls: true,
+                }
+            );
+        }
+
+        it('admits a filter the owner publishes', async () => {
+            replyWithQueryArguments({ type: 'object', filters: { exactName: 'Lead Vocal' } });
+
+            await expect(
+                generateToolPlanningOutcome('system', 'find the lead vocal', projectQuerySchemas())
+            ).resolves.toMatchObject({
+                status: 'complete',
+                toolCalls: [
+                    { name: 'project.query', arguments: { type: 'object', filters: { exactName: 'Lead Vocal' } } },
+                ],
+            });
+        });
+
+        // Red when admission still fails the attempt for a call the provider never held to its schema,
+        // or admits it without saying where it misses, which the loop's receipt names to the model.
+        it.each([
+            {
+                label: 'an unknown filter key',
+                filters: { unknownFilter: 'x' },
+                violation: { kind: 'undeclared-property', path: '/filters/unknownFilter' },
+            },
+            {
+                label: 'a wrong-typed filter value',
+                filters: { startBeat: '4' },
+                violation: { kind: 'invalid-value', path: '/filters/startBeat' },
+            },
+        ])('admits $label as a recoverable schema violation the loop answers', async ({ filters, violation }) => {
+            replyWithQueryArguments({ type: 'object', filters });
+
+            await expect(planLoopTurn()).resolves.toMatchObject({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'query-call',
+                        name: 'project.query',
+                        arguments: { type: 'object', filters },
+                        argumentSchemaViolation: violation,
+                    },
+                ],
+                proposal: null,
+            });
+        });
+
+        // Red when Anthropic's per-tool strictness is read as the request's: a tool its strict budget
+        // sent loose is no more enforced than one on a non-strict request.
+        it('admits the violation from a tool a strict request sent without strict enforcement', async () => {
+            replyWithQueryArguments(
+                { type: 'object', filters: { startBeat: '4' } },
+                { strictToolSchemas: true, nonStrictToolNames: ['project.query'] }
+            );
+
+            await expect(planLoopTurn()).resolves.toMatchObject({
+                status: 'complete',
+                toolCalls: [{ argumentSchemaViolation: { kind: 'invalid-value', path: '/filters/startBeat' } }],
+            });
+        });
+
+        // Red when the violation is admitted where the provider enforced the schema, which only a broken
+        // stream can violate, or for a caller that has no receipt to answer it with.
+        it.each([
+            { label: 'a strict-schema request', strictness: { strictToolSchemas: true }, answers: true },
+            {
+                label: 'a strict request that names other tools loose',
+                strictness: { strictToolSchemas: true, nonStrictToolNames: ['answer.respond'] },
+                answers: true,
+            },
+            { label: 'a caller that does not answer it', strictness: { strictToolSchemas: false }, answers: false },
+        ])('still fails the attempt on $label', async ({ strictness, answers }) => {
+            replyWithQueryArguments({ type: 'object', filters: { startBeat: '4' } }, strictness);
+
+            if (answers) {
+                await expect(planLoopTurn()).rejects.toThrow('The model provider request failed.');
+                return;
+            }
+            await expect(
+                generateToolPlanningOutcome('system', 'find the lead vocal', projectQuerySchemas())
+            ).rejects.toThrow('The model provider request failed.');
+        });
+    });
+
+    describe('project.query on a strict hosted provider', () => {
+        function isRecord(value: unknown): value is Record<string, unknown> {
+            return typeof value === 'object' && value !== null && !Array.isArray(value);
+        }
+
+        function isNullable(node: Record<string, unknown>): boolean {
+            return Array.isArray(node.type) && node.type.includes('null');
+        }
+
+        /** The reply a strict model sends: every property the projection made nullable is null. */
+        function unsetOptionals(projected: Record<string, unknown>): Record<string, unknown> {
+            const properties = isRecord(projected.properties) ? projected.properties : {};
+            const reply: Record<string, unknown> = {};
+            for (const [key, property] of Object.entries(properties)) {
+                if (!isRecord(property)) {
+                    continue;
+                }
+                if (isNullable(property)) {
+                    reply[key] = null;
+                } else if (property.type === 'object') {
+                    reply[key] = unsetOptionals(property);
+                }
+            }
+            return reply;
+        }
+
+        it('reads the nulls a strict reply sends for unset optional arguments as absent', async () => {
+            const projectQuery = getAgentToolCatalogSchemas().find(
+                (schema) => schema.function.name === 'project.query'
+            );
+            if (projectQuery === undefined) {
+                throw new Error('project.query is not published');
+            }
+            const projected = projectOpenAiStrictToolSchema(projectQuery).function.parameters;
+            const projectedFilters = isRecord(projected.properties) ? projected.properties.filters : undefined;
+            if (!isRecord(projectedFilters)) {
+                throw new Error('project.query publishes no filters schema');
+            }
+            const strictReply = {
+                ...unsetOptionals(projected),
+                type: 'object',
+                filters: { ...unsetOptionals(projectedFilters), exactName: 'Lead Vocal' },
+            };
+            expect(strictReply).toMatchObject({
+                page: null,
+                sinceRevision: null,
+                filters: { muted: null, startBeat: null },
+            });
+            mocks.backendChain.value = ['cloud'];
+            mocks.generateCloudToolCalls.mockResolvedValue({
+                providerRequestId: null,
+                calls: [{ id: 'query-call', name: 'project.query', arguments: strictReply }],
+                strictToolSchemas: true,
+                usage: null,
+            });
+
+            const outcome = await generateToolPlanningOutcome('system', 'find the lead vocal', [projectQuery]);
+
+            expect(outcome.status).toBe('complete');
+            expect(outcome.status === 'complete' && outcome.toolCalls).toEqual([
+                {
+                    id: 'query-call',
+                    name: 'project.query',
+                    arguments: { type: 'object', filters: { exactName: 'Lead Vocal' } },
+                },
+            ]);
         });
     });
 

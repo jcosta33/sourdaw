@@ -37,6 +37,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     // `#/modules/AudioEngine/useCases`; nothing this suite exercises reads it,
     // so `false` is the value with no behaviour behind it.
     nativeLiveGraphSessionOffered: vi.fn(() => false),
+    // The same census: the runtime graph repair reads the attachment port,
+    // and this suite never runs a repair.
+    engineAttachmentTracking: { configure: vi.fn(), read: vi.fn() },
     openCachedAudioBufferHold: vi.fn(() => ({ retain: vi.fn(), release: vi.fn() })),
     soundsNativeNotes: vi.fn(() => false),
     addMidiFxToStrip: vi.fn(),
@@ -62,6 +65,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     garbageCollectFreezeAudioBuffers: vi.fn(),
     getAudioContext: vi.fn(() => ({})),
     getCachedAudioBuffer: vi.fn(),
+    restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
+    holdAudioBufferForSession: vi.fn(),
     getCompensationDelay: vi.fn(),
     getCurrentTime: vi.fn(),
     getDefaultBendRangeSemitones: vi.fn(),
@@ -167,6 +172,7 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         canApplyTempoAudioSources: actual.canApplyTempoAudioSources,
         prepareTempoAudioSources: actual.prepareTempoAudioSources,
         acceptsExternalPluginAutomationParameter: vi.fn(),
+        collaborationAssetTransfer: { read: () => ({ isSessionActive: () => false, current: () => null }) },
         removeClip: vi.fn(),
         setClipAudioAssetStager: vi.fn(),
         stageAudioBufferAsset: vi.fn(),

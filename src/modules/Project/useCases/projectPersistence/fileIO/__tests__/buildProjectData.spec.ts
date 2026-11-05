@@ -100,8 +100,19 @@ vi.mock('../../../../stores/arrangementStore', async (importOriginal) => {
     };
 });
 
+import { midiLearnStore } from '#/modules/ControlSurface/stores';
+import { readYeastRack } from '#/modules/Yeast/stores';
+
 import { sanitize_arrangement_store_state } from '../../../../stores/arrangementStore';
 import { buildProjectData } from '../buildProjectData';
+import { midiLearnProjection } from '../midiLearnProjection';
+import { rackProcessorReader } from '../rackProcessorReader';
+
+// The composition root's rack reader over the doubled Yeast barrel, and its
+// MIDI learn projection over the live store: the registrars themselves cannot
+// load while whole module barrels are mocked.
+rackProcessorReader.configure({ readProcessors: (deviceId) => readYeastRack(deviceId).processors });
+midiLearnProjection.configure({ readMidiLearn: () => midiLearnStore.value });
 
 // Minimal runtime track for the builder's walks (devices, clips,
 // alternatives, freezeState). The Arrangement stores module is mocked here,

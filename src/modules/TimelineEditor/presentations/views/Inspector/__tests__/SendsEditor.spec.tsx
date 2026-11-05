@@ -1,12 +1,16 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent, type RenderResult } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { trackStore } from '#/modules/Arrangement/stores';
+import { levelToSendPosition, sendPositionToLevel } from '#/utils/audioLevelLaw';
 
 import { SendsEditor } from '../SendsEditor';
 
 import type { Track } from '../../../../models/TrackViewTypes';
 
 // Mock external dependencies
-const mockSetSend = vi.fn();
+const mockPreviewSend = vi.fn();
+const mockExecuteAppAction = vi.fn().mockResolvedValue(undefined);
 
 const mockExecuteUserAppAction = vi.fn().mockResolvedValue(undefined);
 // The action-routed graph pulls more of the barrel in than the view itself
@@ -17,7 +21,7 @@ vi.mock('#/modules/Command/useCases', () => ({
 
     executeUserAppAction: (...args: unknown[]) => mockExecuteUserAppAction(...args),
     getExecutableAppActionEffect: vi.fn(() => null),
-    executeAppAction: vi.fn().mockResolvedValue(undefined),
+    executeAppAction: (...args: unknown[]) => mockExecuteAppAction(...args),
     executeAppActionBatch: vi.fn().mockResolvedValue([]),
     pushUndoEntry: vi.fn(),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
@@ -26,14 +30,17 @@ vi.mock('#/modules/Command/useCases', () => ({
     syncActionReplayMetadata: vi.fn(),
 }));
 
-vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
+// The gesture previews on the engine through Routing's setSend; project state
+// is written only by the dispatched action.
+vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Routing/useCases')>();
     return {
         ...actual,
-        toggleSendPreFader: vi.fn(),
-        setSend: (...args: unknown[]) => mockSetSend(...args),
+        setSend: (...args: unknown[]) => mockPreviewSend(...args),
+        removeSend: (...args: unknown[]) => mockEngineRemoveSend(...args),
     };
 });
+const mockEngineRemoveSend = vi.fn();
 
 const mockUseTracks = vi.fn((): { tracks: Track[] } => ({ tracks: [] }));
 vi.mock('../../../hooks/useTracks', () => ({
@@ -71,19 +78,51 @@ vi.mock('#/components/daw/DawMicroBadge', () => ({
 }));
 
 vi.mock('#/components/ui/slider', () => ({
-    Slider: ({ value, onValueChange }: { value: number[]; onValueChange: (values: number[]) => void }) => (
+    Slider: ({
+        value,
+        onValueChange,
+        onValueCommit,
+        onPointerDown,
+        onPointerCancel,
+        'aria-label': ariaLabel,
+    }: {
+        value: number[];
+        onValueChange: (values: number[]) => void;
+        onValueCommit: (values: number[]) => void;
+        onPointerDown?: () => void;
+        onPointerCancel?: () => void;
+        'aria-label'?: string;
+    }) => (
         <input
             type="range"
+            aria-label={ariaLabel}
             data-testid="slider"
             value={value[0]}
             onChange={(event) => onValueChange([Number(event.target.value)])}
+            onMouseUp={(event) => onValueCommit([Number(event.currentTarget.value)])}
+            // Radix commits a key step before it reports the change.
+            onKeyDown={(event) => {
+                const stepped = Number(event.currentTarget.value) + 1;
+                onValueCommit([stepped]);
+                onValueChange([stepped]);
+            }}
+            onPointerDown={onPointerDown}
+            onPointerCancel={onPointerCancel}
         />
     ),
 }));
 
 vi.mock('#/components/ui/button', () => ({
-    Button: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) => (
-        <button data-testid="button" onClick={onClick}>
+    Button: ({
+        children,
+        onClick,
+        'aria-label': ariaLabel,
+    }: {
+        children: React.ReactNode;
+        onClick?: () => void;
+        'aria-label'?: string;
+    }) => (
+        <button data-testid="button" onClick={onClick} aria-label={ariaLabel}>
             {children}
         </button>
     ),
@@ -198,6 +237,195 @@ describe('SendsEditor', () => {
         const trackWithPostSend = { ...mockTrack, sends: [{ busId: 'bus-1', level: 0.5, preFader: false }] };
         render(<SendsEditor track={trackWithPostSend} />);
         expect(screen.getByText('POST')).toBeInTheDocument();
+    });
+
+    describe('undoable send edits', () => {
+        const bus = (id: string, over: Partial<Track> = {}): Track => ({
+            ...mockTrack,
+            id,
+            name: id,
+            kind: 'bus',
+            ...over,
+        });
+        const sendTo = (busId: string, over: { level?: number; preFader?: boolean } = {}): Track['sends'][number] => ({
+            busId,
+            level: 0.5,
+            preFader: false,
+            ...over,
+        });
+        // A level commit reads the send the project holds, so the edited track
+        // is put in the project exactly as it is rendered.
+        const renderInProject = (track: Track): RenderResult => {
+            trackStore.set({ tracks: [track], selectedTrackId: null, ghostClips: [] });
+            return render(<SendsEditor track={track} />);
+        };
+
+        beforeEach(() => {
+            trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        });
+
+        it('previews a slider drag on the engine only and commits one setSend on release', async () => {
+            mockUseTracks.mockReturnValue({ tracks: [bus('bus-1')] });
+            renderInProject({ ...mockTrack, sends: [sendTo('bus-1')] });
+
+            const slider = screen.getByTestId('slider');
+            fireEvent.change(slider, { target: { value: '40' } });
+
+            expect(mockPreviewSend).toHaveBeenCalledOnce();
+            expect(mockExecuteAppAction).not.toHaveBeenCalled();
+
+            await act(async () => {
+                fireEvent.mouseUp(slider);
+            });
+
+            expect(mockExecuteAppAction).toHaveBeenCalledOnce();
+            expect(mockExecuteAppAction).toHaveBeenCalledWith({
+                type: 'setSend',
+                payload: {
+                    trackId: 'track-1',
+                    busId: 'bus-1',
+                    level: sendPositionToLevel(40),
+                    expectedLevel: 0.5,
+                    expectedPreFader: false,
+                },
+            });
+        });
+
+        it('commits addSend when the track has no send to that bus yet', async () => {
+            mockUseTracks.mockReturnValue({ tracks: [bus('bus-1')] });
+            render(<SendsEditor track={mockTrack} />);
+
+            const slider = screen.getByTestId('slider');
+            fireEvent.change(slider, { target: { value: '40' } });
+            await act(async () => {
+                fireEvent.mouseUp(slider);
+            });
+
+            expect(mockExecuteAppAction).toHaveBeenCalledOnce();
+            expect(mockExecuteAppAction).toHaveBeenCalledWith({
+                type: 'addSend',
+                payload: { trackId: 'track-1', busId: 'bus-1', level: sendPositionToLevel(40) },
+            });
+        });
+
+        it('removes the previewed send from the engine when the first send to a bus is refused', async () => {
+            mockUseTracks.mockReturnValue({ tracks: [bus('bus-1')] });
+            mockExecuteAppAction.mockRejectedValueOnce(new Error('conflict'));
+            render(<SendsEditor track={mockTrack} />);
+
+            const slider = screen.getByTestId('slider');
+            fireEvent.change(slider, { target: { value: '40' } });
+            await act(async () => {
+                fireEvent.mouseUp(slider);
+            });
+
+            expect(mockEngineRemoveSend).toHaveBeenCalledWith('track-1', 'bus-1');
+        });
+
+        it('settles a drag the pointer abandons as one commit at the level it was left', async () => {
+            mockUseTracks.mockReturnValue({ tracks: [bus('bus-1')] });
+            renderInProject({ ...mockTrack, sends: [sendTo('bus-1')] });
+
+            const slider = screen.getByTestId('slider');
+            fireEvent.pointerDown(slider);
+            fireEvent.change(slider, { target: { value: '40' } });
+            await act(async () => {
+                fireEvent.pointerCancel(slider);
+            });
+
+            expect(mockExecuteAppAction).toHaveBeenCalledOnce();
+            expect(mockExecuteAppAction).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    type: 'setSend',
+                    payload: expect.objectContaining({ level: sendPositionToLevel(40), expectedLevel: 0.5 }),
+                })
+            );
+        });
+
+        it('settles a drag on the track it began on and shows the next track its own level', async () => {
+            mockUseTracks.mockReturnValue({ tracks: [bus('bus-1')] });
+            const view = renderInProject({ ...mockTrack, sends: [sendTo('bus-1')] });
+
+            fireEvent.pointerDown(screen.getByTestId('slider'));
+            fireEvent.change(screen.getByTestId('slider'), { target: { value: '40' } });
+            await act(async () => {
+                view.rerender(
+                    <SendsEditor track={{ ...mockTrack, id: 'track-2', sends: [sendTo('bus-1', { level: 0.25 })] }} />
+                );
+            });
+
+            expect(mockExecuteAppAction).toHaveBeenCalledOnce();
+            expect(mockExecuteAppAction).toHaveBeenCalledWith(
+                expect.objectContaining({ payload: expect.objectContaining({ trackId: 'track-1' }) })
+            );
+            expect(screen.getByTestId('slider')).toHaveValue(String(Math.round(levelToSendPosition(0.25))));
+        });
+
+        it('commits a keyboard step as one setSend and leaves nothing to settle on unmount', async () => {
+            mockUseTracks.mockReturnValue({ tracks: [bus('bus-1')] });
+            const position = Math.round(levelToSendPosition(0.5));
+            const view = renderInProject({ ...mockTrack, sends: [sendTo('bus-1')] });
+
+            await act(async () => {
+                fireEvent.keyDown(screen.getByTestId('slider'), { key: 'ArrowRight' });
+            });
+            await act(async () => {
+                view.unmount();
+            });
+
+            expect(mockExecuteAppAction).toHaveBeenCalledOnce();
+            expect(mockExecuteAppAction).toHaveBeenCalledWith({
+                type: 'setSend',
+                payload: {
+                    trackId: 'track-1',
+                    busId: 'bus-1',
+                    level: sendPositionToLevel(position + 1),
+                    expectedLevel: 0.5,
+                    expectedPreFader: false,
+                },
+            });
+        });
+
+        it('commits the PRE/POST click as one setSend that flips only the tap point', () => {
+            mockUseTracks.mockReturnValue({ tracks: [bus('bus-1')] });
+            render(<SendsEditor track={{ ...mockTrack, sends: [sendTo('bus-1', { preFader: false })] }} />);
+
+            fireEvent.click(screen.getByRole('button', { name: 'Toggle send to bus-1 pre-fader' }));
+
+            expect(mockExecuteAppAction).toHaveBeenCalledOnce();
+            expect(mockExecuteAppAction).toHaveBeenCalledWith({
+                type: 'setSend',
+                payload: {
+                    trackId: 'track-1',
+                    busId: 'bus-1',
+                    level: 0.5,
+                    preFader: true,
+                    expectedLevel: 0.5,
+                    expectedPreFader: false,
+                },
+            });
+        });
+
+        it('does not offer the track itself or a bus that would close a routing loop', () => {
+            // bus-loop outputs into the edited track, so a send there is a cycle.
+            const edited = bus('bus-self', { sends: [] });
+            mockUseTracks.mockReturnValue({
+                tracks: [edited, bus('bus-ok'), bus('bus-loop', { outputId: 'bus-self' })],
+            });
+            render(<SendsEditor track={edited} />);
+
+            expect(screen.getByRole('slider', { name: 'Send to bus-ok' })).toBeInTheDocument();
+            expect(screen.queryByRole('slider', { name: 'Send to bus-self' })).not.toBeInTheDocument();
+            expect(screen.queryByRole('slider', { name: 'Send to bus-loop' })).not.toBeInTheDocument();
+        });
+
+        it('still lists a bus the track already sends to even when it would now close a loop', () => {
+            const edited = bus('bus-self', { sends: [sendTo('bus-loop')] });
+            mockUseTracks.mockReturnValue({ tracks: [edited, bus('bus-loop', { outputId: 'bus-self' })] });
+            render(<SendsEditor track={edited} />);
+
+            expect(screen.getByText('bus-loop')).toBeInTheDocument();
+        });
     });
 
     it('dispatches the createBus app action when create bus button is clicked', () => {

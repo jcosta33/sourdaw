@@ -1,7 +1,6 @@
 import { adjustmentLayerHandlers } from '../handlers/batchFeature/adjustmentLayerHandlers';
 import { handleDiscardCreatedCompGroup } from '../handlers/batchFeature/discardCreatedCompGroup';
 import { handleCreateCompGroup } from '../handlers/batchFeature/handleCreateCompGroup';
-import { handleSearchSamples } from '../handlers/batchFeature/handleSearchSamples';
 import { clipHandlers } from '../handlers/clip/clipHandlers';
 import { handleRestoreAudioClipSlip } from '../handlers/clip/handleRestoreAudioClipSlip';
 import { handleRestoreAudioClipStartTrim } from '../handlers/clip/handleRestoreAudioClipStartTrim';
@@ -246,7 +245,6 @@ export function getArrangementHandlers() {
         removeSend: handleRemoveSend,
         addSidechainRoute: handleAddSidechainRoute,
         removeSidechainRoute: handleRemoveSidechainRoute,
-        searchSamples: handleSearchSamples,
         createCompGroup: handleCreateCompGroup,
         ...adjustmentLayerHandlers,
         ...clipHandlers,

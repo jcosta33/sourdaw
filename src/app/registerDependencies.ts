@@ -1,4 +1,5 @@
 import { createEventBus } from '#/infra/events/createEventBus';
+import { type VoidPayload } from '#/infra/events/types';
 import { logger } from '#/infra/logger/appLogger';
 import {
     type TrackAddedPayload,
@@ -6,20 +7,21 @@ import {
     type TrackSelectionChangedPayload,
 } from '#/modules/Arrangement/events';
 import { type AudioDeviceLoadedPayload, type AudioDeviceRemovedPayload } from '#/modules/AudioEngine/events';
+import { type ToggleVoiceCommandPayload } from '#/modules/Command/events';
 import { type CrumbsModeChangedPayload } from '#/modules/Crumbs/events';
 import {
-    type ShowDevicePanelGenericPayload,
-    type VoidPayload,
-    type NotifyPayload,
-    type ConfirmPayload,
-    type PromptPayload,
-    type ZoomToSelectionPayload,
-    type ToggleVoiceCommandPayload,
-    type ImportMidiPayload,
     type MidiOutPayload,
     type MidiNoteOnPayload,
     type MidiNoteOffPayload,
     type MidiPedalCcPayload,
+} from '#/modules/MIDI/events';
+import {
+    type ShowDevicePanelGenericPayload,
+    type NotifyPayload,
+    type ConfirmPayload,
+    type PromptPayload,
+    type ZoomToSelectionPayload,
+    type ImportMidiPayload,
 } from '#/modules/WorkspaceShell/events';
 import { type YeastNotesOffPayload } from '#/modules/Yeast/events';
 

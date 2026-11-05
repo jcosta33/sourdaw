@@ -17,7 +17,7 @@ import {
 import { defaultTransportState, type TempoMapStoreState, transportStore } from '#/modules/Transport/stores';
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 import { MICRO_FADE_SECONDS } from '#/utils/clipFadeScheduleClamp';
-import { isBeatAdmittedByAnchoredClipLoopWindow } from '#/utils/clipLoopOrigin';
+import { isBeatInEnabledClipLoopWindow, resolveClipLoopPassGrid } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { resolveDrumKitBy, resolveDrumKitOutputGain } from '#/utils/deviceTypeMatching';
 import { PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
@@ -872,17 +872,28 @@ export async function scheduleTrackClips({
                 loopEnabled: clip.loopEnabled ?? false,
             });
             const loopLength = loopProjection.loopLengthBeats;
-            const sourceOccurrenceOffset = getSourceOccurrenceOffset({
-                sourceStartBeat: clip.sourceStartBeat,
-                segmentStartBeat: clip.startBeat,
-                loopLength,
-                loopEnabled: clip.loopEnabled ?? false,
+            // A frozen take repeats on its own grid; every other looping clip
+            // passes on the seams its loop anchor laid down.
+            const loopPassGrid = resolveClipLoopPassGrid({
+                startBeat: clip.startBeat,
+                endBeat: clip.endBeat,
+                loopOriginBeat: clip.loopOriginBeat,
+                loopEnabled: !frozenSource && (clip.loopEnabled ?? false),
+                loopLengthBeats: loopLength,
+                iterationCount: loopProjection.iterationCount,
             });
+            const sourceOccurrenceOffset =
+                getSourceOccurrenceOffset({
+                    sourceStartBeat: clip.sourceStartBeat,
+                    segmentStartBeat: clip.startBeat,
+                    loopLength,
+                    loopEnabled: clip.loopEnabled ?? false,
+                }) + loopPassGrid.passesAheadOfAnchor;
             const frozenRepeats = frozenSource
                 ? frozenMidiTakeRepeats(frozenSource, clip, clip.startBeat, clip.endBeat)
                 : [];
             const firstIteration = frozenRepeats[0]?.absoluteOccurrenceIndex ?? 0;
-            const iterationCount = frozenSource ? firstIteration + frozenRepeats.length : loopProjection.iterationCount;
+            const iterationCount = frozenSource ? firstIteration + frozenRepeats.length : loopPassGrid.passCount;
             const loopEnabled = clip.loopEnabled ?? false;
             const midiOffsetBeats = clip.midiOffsetBeats ?? 0;
             for (let iteration = firstIteration; iteration < iterationCount; iteration++) {
@@ -932,15 +943,14 @@ export async function scheduleTrackClips({
                     continue;
                 }
                 iterations.push({
-                    // #5198 — the anchored loop window owns membership on the
-                    // row's stored figure before the rack ever sees it: a row
-                    // past the trimmed region end must stay silent, and a
-                    // generator must never be fed it as pass input. Unanchored
-                    // clips admit without the window, byte-identically to the
-                    // pre-anchor construction.
+                    // #5198 — the loop window owns membership on the row's
+                    // stored figure before the rack ever sees it: a row past
+                    // the trimmed region end, or stored at or past an
+                    // anchorless loop's length, must stay silent, and a
+                    // generator must never be fed it as pass input.
                     sourceNotes: sourceNotes.filter(
                         (note) =>
-                            isBeatAdmittedByAnchoredClipLoopWindow({
+                            isBeatInEnabledClipLoopWindow({
                                 relativeBeat: note.startBeat - midiOffsetBeats,
                                 startBeat: clip.startBeat,
                                 loopOriginBeat: clip.loopOriginBeat,
@@ -958,7 +968,7 @@ export async function scheduleTrackClips({
                     clipId: clip.id,
                     clipStartBeat: clip.startBeat,
                     clipEndBeat: clip.endBeat,
-                    iterationStartBeat: clip.startBeat + iteration * loopLength,
+                    iterationStartBeat: loopPassGrid.firstPassStartBeat + iteration * loopLength,
                     loopLengthBeats: loopLength,
                     midiOffsetBeats,
                     loopEnabled,
@@ -1092,20 +1102,32 @@ export async function scheduleTrackClips({
                 }
             }
 
+            // A frozen take repeats on its own grid; every other looping clip
+            // passes on the seams its loop anchor laid down.
+            const loopPassGrid = resolveClipLoopPassGrid({
+                startBeat: clip.startBeat,
+                endBeat: clip.endBeat,
+                loopOriginBeat: clip.loopOriginBeat,
+                loopEnabled: !frozenSource && (clip.loopEnabled ?? false),
+                loopLengthBeats: loopLen,
+                iterationCount: maxIterations,
+            });
             const frozenRepeats = frozenSource
                 ? frozenMidiTakeRepeats(frozenSource, clip, clip.startBeat, clip.endBeat)
                 : [];
             const firstIteration = frozenRepeats[0]?.absoluteOccurrenceIndex ?? 0;
-            const lastIteration = frozenSource ? firstIteration + frozenRepeats.length : maxIterations;
+            const lastIteration = frozenSource ? firstIteration + frozenRepeats.length : loopPassGrid.passCount;
             for (let iter = firstIteration; iter < lastIteration; iter++) {
                 checkCallerAbort();
                 // A frozen take counts its occurrences on its own grid, as live does.
-                const absoluteOccurrenceIndex = sourceOccurrenceOffset + iter;
+                const absoluteOccurrenceIndex = sourceOccurrenceOffset + loopPassGrid.passesAheadOfAnchor + iter;
                 const frozenRepeat = frozenRepeats[iter - firstIteration];
                 if (frozenSource && !frozenRepeat) {
                     throw new Error('Invalid frozen MIDI take repeat');
                 }
-                const iterationStartBeat = frozenRepeat ? frozenRepeat.startBeat : clip.startBeat + iter * loopLen;
+                const iterationStartBeat = frozenRepeat
+                    ? frozenRepeat.startBeat
+                    : loopPassGrid.firstPassStartBeat + iter * loopLen;
                 const frozenWindow = frozenSource
                     ? projectFrozenMidiTakeWindow({
                           source: frozenSource,

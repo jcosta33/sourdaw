@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { type Store } from '#/infra/store/types';
 import { type commitRecording, type startRecording, type stopRecording } from '#/modules/Arrangement/useCases';
 import { type startAudioRecording } from '#/modules/AudioEngine/useCases';
@@ -84,6 +85,8 @@ import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
 import { schedulerSession } from '../schedulerSession';
 import { schedulerTimingDiagnostics } from '../schedulerTimingDiagnostics';
 import { startPlayheadScheduler } from '../startPlayheadScheduler';
+
+registerDeviceEnginePorts();
 
 type PunchTerminalResult =
     | { kind: 'completed'; buffer: { duration: number }; sampleZeroContextFrame: number; sampleRate: number }

@@ -22,6 +22,7 @@ const mocks = vi.hoisted(
         snapToGrid: ReturnType<typeof vi.fn>;
         snapToGridOrClips: ReturnType<typeof vi.fn>;
         snapToZeroCrossing: ReturnType<typeof vi.fn>;
+        getCachedAudioBuffer: ReturnType<typeof vi.fn>;
         setMarqueeSelection: ReturnType<typeof vi.fn>;
         toggleClipInSelection: ReturnType<typeof vi.fn>;
         selectClipWithFocus: ReturnType<typeof vi.fn>;
@@ -80,6 +81,7 @@ const mocks = vi.hoisted(
         snapToGrid: vi.fn((buffer) => buffer),
         snapToGridOrClips: vi.fn((beat) => beat),
         snapToZeroCrossing: vi.fn((_, beat) => beat),
+        getCachedAudioBuffer: vi.fn(() => null),
         setMarqueeSelection: vi.fn(),
         toggleClipInSelection: vi.fn(),
         selectClipWithFocus: vi.fn(),
@@ -138,6 +140,10 @@ vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     broadcastPresence: mocks.broadcastPresence,
 }));
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
+    ...(await importOriginal<any>()),
+    getCachedAudioBuffer: mocks.getCachedAudioBuffer,
+}));
 vi.mock('#/modules/Collaboration/stores', () => ({
     collaborationStore: {
         get value() {
@@ -167,6 +173,15 @@ vi.mock('../../../useCases/timelineInteractions/snapToGrid', () => ({ snapToGrid
 vi.mock('#/modules/WorkspaceShell/stores', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     workspaceStore: {
+        get value() {
+            return mocks.workspaceStoreValue.value;
+        },
+    },
+}));
+// One fixture carries both the active tool (workspace) and the ripple and
+// automation-visibility fields (timeline editing), so each case seeds both.
+vi.mock('../../../stores/timelineEditingStore', () => ({
+    timelineEditingStore: {
         get value() {
             return mocks.workspaceStoreValue.value;
         },
@@ -1477,6 +1492,128 @@ describe('useTimelineInteractions', () => {
             expect.objectContaining({ id: 'c1' }),
             expect.any(Number)
         );
+    });
+
+    it('stops a trim-end drag at the end of the clip source and commits that previewed end', () => {
+        const oldTransport = transportStore.value;
+        const oldMap = tempoMapStore.value;
+        transportStore.set({ ...defaultTransportState, tempo: 60 });
+        tempoMapStore.set({ changes: [] });
+        // A 6 s source entered at its start: at 60 BPM it runs out on beat 6.
+        mocks.getCachedAudioBuffer.mockImplementation(({ bufferId }: { bufferId: string }) =>
+            bufferId === 'buffer-1' ? { length: 6 * 48_000, sampleRate: 48_000 } : null
+        );
+        mocks.trackStoreValue.value = {
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        {
+                            id: 'c1',
+                            type: 'audio',
+                            audioBufferId: 'buffer-1',
+                            startBeat: 0,
+                            endBeat: 4,
+                            audioOffsetSeconds: 0,
+                        },
+                    ],
+                },
+            ],
+        };
+        mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+        mocks.hitTestClipEdge.mockReturnValue({ edge: 'right' });
+        mocks.beginClipDrag.mockReturnValue({
+            clipId: 'c1',
+            sourceTrackId: 't1',
+            startBeat: 0,
+            endBeat: 4,
+            offsetBeat: 0,
+            mode: 'stretch',
+        });
+        const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
+        try {
+            act(() => {
+                result.current.handleMouseDown({ button: 0, clientX: 400, clientY: 20 } as any);
+            });
+            // x=1000 at 100 px/beat asks for beat 10, past the source end.
+            act(() => {
+                result.current.handleMouseMove({ clientX: 1000, clientY: 20 } as any);
+            });
+
+            expect(clipDragPreviewRef.current?.positions.get('c1')?.endBeat).toBeCloseTo(6, 9);
+
+            act(() => {
+                result.current.handleMouseUp({ clientX: 1000, clientY: 20 } as any);
+            });
+
+            expect(mocks.executeUserAppAction).toHaveBeenCalledOnce();
+            expect(mocks.executeUserAppAction).toHaveBeenCalledWith({
+                type: 'trimClipEnd',
+                payload: { clipId: 'c1', newEndBeat: expect.closeTo(6, 9) },
+            });
+        } finally {
+            transportStore.set(oldTransport);
+            tempoMapStore.set(oldMap);
+            mocks.getCachedAudioBuffer.mockImplementation(() => null);
+        }
+    });
+
+    it('keeps a zero-crossing snap past the source end within the source', () => {
+        const oldTransport = transportStore.value;
+        const oldMap = tempoMapStore.value;
+        transportStore.set({ ...defaultTransportState, tempo: 60 });
+        tempoMapStore.set({ changes: [] });
+        // A 6 s source entered at its start: at 60 BPM it runs out on beat 6.
+        mocks.getCachedAudioBuffer.mockImplementation(({ bufferId }: { bufferId: string }) =>
+            bufferId === 'buffer-1' ? { length: 6 * 48_000, sampleRate: 48_000 } : null
+        );
+        mocks.preferencesStoreValue.value = { snapToZeroCrossing: true };
+        // The nearest crossing to beat 5.5 lies past the source end.
+        mocks.snapToZeroCrossing.mockReturnValue(6.5);
+        mocks.trackStoreValue.value = {
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        {
+                            id: 'c1',
+                            type: 'audio',
+                            audioBufferId: 'buffer-1',
+                            startBeat: 0,
+                            endBeat: 4,
+                            audioOffsetSeconds: 0,
+                        },
+                    ],
+                },
+            ],
+        };
+        mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+        mocks.hitTestClipEdge.mockReturnValue({ edge: 'right' });
+        mocks.beginClipDrag.mockReturnValue({
+            clipId: 'c1',
+            sourceTrackId: 't1',
+            startBeat: 0,
+            endBeat: 4,
+            offsetBeat: 0,
+            mode: 'stretch',
+        });
+        const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
+        try {
+            act(() => {
+                result.current.handleMouseDown({ button: 0, clientX: 400, clientY: 20 } as any);
+            });
+            // x=550 at 100 px/beat asks for beat 5.5, inside the source.
+            act(() => {
+                result.current.handleMouseMove({ clientX: 550, clientY: 20 } as any);
+            });
+
+            expect(clipDragPreviewRef.current?.positions.get('c1')?.endBeat).toBeCloseTo(6, 9);
+        } finally {
+            transportStore.set(oldTransport);
+            tempoMapStore.set(oldMap);
+            mocks.getCachedAudioBuffer.mockImplementation(() => null);
+            mocks.preferencesStoreValue.value = {};
+        }
     });
 
     it('skips selected ids that have no preview original during a multi-clip move', () => {

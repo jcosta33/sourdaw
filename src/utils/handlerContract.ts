@@ -1367,7 +1367,8 @@ export type AppAction =
           type: 'addTrack';
           payload: {
               id?: string;
-              name: string;
+              /** Omitted for the owner's next default name for the kind ("MIDI 3"), resolved once before the action is recorded. */
+              name?: string;
               kind: TrackKind;
               select?: boolean;
               /** Internal replay metadata; provider payloads cannot set this field. */
@@ -2017,6 +2018,8 @@ export type AppAction =
               levelDb?: number;
               /** Change relative to the send's live level, in decibels. */
               deltaDb?: number;
+              /** New tap point; omitted keeps the send's current one. */
+              preFader?: boolean;
               expectedLevel?: number;
               expectedPreFader?: boolean;
           };

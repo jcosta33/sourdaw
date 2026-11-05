@@ -17,6 +17,7 @@
 
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { type Device, type Track } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
 
@@ -32,6 +33,8 @@ import {
 import { getCompensationDelay } from '../../latencyCompensation/compensation/getCompensationDelay';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
 import { readLiveAutomationWrites } from '../readLiveAutomationWrites';
+
+registerDeviceEnginePorts();
 
 const SAMPLE_RATE = 48_000;
 const SECONDS_PER_BEAT = 0.5;

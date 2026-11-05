@@ -83,7 +83,11 @@ const EXPECTED_COMMANDS = [
         'addTrack',
         'Create a new track in the session.',
         {
-            name: { type: 'string', description: 'Display name (e.g. "Kick", "Vocals", "Synth Pad")' },
+            name: {
+                type: 'string',
+                description:
+                    'Display name (e.g. "Kick", "Vocals", "Synth Pad"). Omit it to name the track by its kind and the next free number.',
+            },
             kind: { type: 'string', enum: ['audio', 'midi', 'folder'], description: 'Track type' },
             binding: {
                 type: 'string',
@@ -91,7 +95,7 @@ const EXPECTED_COMMANDS = [
                 description: 'Optional plan-local name. Later calls may target this newly created track as $<binding>.',
             },
         },
-        ['name', 'kind'],
+        ['kind'],
         'bounded-reversible',
         false
     ),
@@ -1216,21 +1220,21 @@ const EXPECTED_COMMANDS = [
     ),
     expectedCommand(
         'automateTrackGainRange',
-        'Lift an app-grounded set of impact buses by a bounded relative dB amount inside one arrangement section.',
+        'Lift each named bus by a bounded relative dB amount as gain automation inside one named arrangement section.',
         {
             trackIds: {
                 type: 'array',
                 items: { type: 'string' },
                 minItems: 1,
                 uniqueItems: true,
-                description: 'Exact app-grounded impact-bus IDs',
+                description: 'The exact buses the request names',
             },
-            sectionName: { type: 'string', description: 'Existing target chorus name' },
+            sectionName: { type: 'string', description: 'Existing arrangement section name the request names' },
             gainDb: {
                 type: 'number',
                 exclusiveMinimum: 0,
                 maximum: 6,
-                description: 'Bounded decibel lift selected by the planning policy',
+                description: 'Positive number of decibels the request states to lift the gain inside the section',
             },
         },
         ['trackIds', 'sectionName', 'gainDb'],
@@ -2762,16 +2766,18 @@ const EXPECTED_GROUNDING = [
     },
     {
         actionType: 'automateTrackGainRange',
-        intentPhrases: ['make the second chorus hit harder', 'second chorus hit harder'],
+        intentPhrases: ['lift', 'gain lift'],
         targetRules: [
             {
                 argument: 'trackIds',
                 capability: 'routable-source',
                 cardinality: 'many',
-                promptRole: 'members',
             },
         ],
-        valueRules: [],
+        valueRules: [
+            { argument: 'sectionName', kind: 'section-reference' },
+            { argument: 'gainDb', kind: 'number-if-present', requiredInPrompt: true },
+        ],
     },
     {
         actionType: 'automateSendRanges',

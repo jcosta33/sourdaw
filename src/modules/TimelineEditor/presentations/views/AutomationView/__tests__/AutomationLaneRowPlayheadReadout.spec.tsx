@@ -17,19 +17,40 @@ import { playheadPositionRef } from '#/modules/Transport/stores';
 import { type AutomationLane } from '../../../../models/AutomationViewTypes';
 import { AutomationLaneRow } from '../AutomationLaneRow';
 
-const { mockWorkspaceStoreRef, mockWorkspaceState, mockTransportState } = vi.hoisted(() => ({
+const {
+    mockWorkspaceStoreRef,
+    mockTimelineEditingStoreRef,
+    mockWorkspaceState,
+    mockTimelineEditingState,
+    mockTransportState,
+} = vi.hoisted(() => ({
     mockWorkspaceStoreRef: {},
-    mockWorkspaceState: { activeTool: 'pointer', snapValue: 1 },
+    mockTimelineEditingStoreRef: {},
+    mockWorkspaceState: { activeTool: 'pointer' },
+    mockTimelineEditingState: { snapValue: 1 },
     mockTransportState: { playheadPosition: 0, isPlaying: false },
 }));
 
 vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn((store: unknown) => (store === mockWorkspaceStoreRef ? mockWorkspaceState : mockTransportState)),
+    useStore: vi.fn((store: unknown) => {
+        if (store === mockWorkspaceStoreRef) {
+            return mockWorkspaceState;
+        }
+        if (store === mockTimelineEditingStoreRef) {
+            return mockTimelineEditingState;
+        }
+        return mockTransportState;
+    }),
 }));
 
 vi.mock('#/modules/WorkspaceShell/stores', () => ({
     workspaceStore: mockWorkspaceStoreRef,
-    defaultWorkspaceState: { activeTool: 'pointer', snapValue: 1 },
+    defaultWorkspaceState: { activeTool: 'pointer' },
+}));
+
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
+    timelineEditingStore: mockTimelineEditingStoreRef,
 }));
 
 vi.mock('../../../helpers/automationViewHelpers', () => ({

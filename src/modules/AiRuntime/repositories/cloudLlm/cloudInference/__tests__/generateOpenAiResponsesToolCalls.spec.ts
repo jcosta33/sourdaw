@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { isHostedAiHttpStatusError } from '../../../../errors/HostedAiHttpStatusError';
 import { type ToolSchema } from '../../../../models/ToolDefinitions';
 import { getPlanningProviderToolSchemas } from '../../../../useCases/getPlanningProviderToolSchemas';
@@ -8,6 +10,8 @@ import { compileProviderAdapterInstallation, OPENAI_RESPONSES_ADAPTER_ID } from 
 import { type OpenAiCloudRuntime } from '../../cloudSession';
 import { generateOpenAiResponsesToolCalls } from '../generateOpenAiResponsesToolCalls';
 import { AUTO_TOOL_CHOICE, type HostedToolChoiceDirective } from '../hostedToolPlan';
+
+registerDeviceEnginePorts();
 
 const mocks = vi.hoisted(() => ({ requestHostedOpenAiProvider: vi.fn() }));
 

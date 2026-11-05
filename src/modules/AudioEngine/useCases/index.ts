@@ -42,6 +42,7 @@ export { garbageCollectCachedAudioBuffersBySize } from './garbageCollectCachedAu
 export { garbageCollectFreezeAudioBuffers } from './garbageCollectFreezeAudioBuffers';
 export { getCachedAudioBuffer } from './getCachedAudioBuffer';
 export { getCachedAudioBufferWaveformPeaks } from './getCachedAudioBufferWaveformPeaks';
+export { holdAudioBufferForSession } from './holdAudioBufferForSession';
 export { importCachedAudioBuffers } from './importCachedAudioBuffers';
 export { prepareCachedAudioBuffersFromIdb } from './prepareCachedAudioBuffersFromIdb';
 export { cachePreviewAudioBuffer } from './cachePreviewAudioBuffer';
@@ -55,6 +56,7 @@ export { releasePreparedAudioBuffer } from './releasePreparedAudioBuffer';
 export { releasePreviewAudioBuffer } from './releasePreviewAudioBuffer';
 export { reopenPreparedAudioBuffer } from './reopenPreparedAudioBuffer';
 export { restoreCachedAudioBuffersFromIdb } from './restoreCachedAudioBuffersFromIdb';
+export { restoreUnpinnedAudioBuffersFromIdb } from './restoreUnpinnedAudioBuffersFromIdb';
 
 export { scheduleFaustNote } from './faustScheduler/scheduleFaustNote';
 export { startFaustNote } from './faustScheduler/startFaustNote';
@@ -139,6 +141,13 @@ export { initializeAudioEngine } from './initializeAudioEngine';
 
 export { claimNativeSessionRearm } from './livePlayback/claimNativeSessionRearm';
 export { nativeSessionRearmClaimHolds } from './livePlayback/nativeSessionRearmClaimHolds';
+// Published because the composition root registers the body vocabularies device modules own.
+export { nativeBodyVocabularyRegistry } from './livePlayback/nativeBodyVocabularyRegistry';
+// Published because the composition root registers the device modules' engine
+// attachment record and neural model library, and Transport's graph repair
+// retracts the attachments.
+export { engineAttachmentTracking } from './livePlayback/engineAttachmentTracking';
+export { neuralModelContent } from './livePlayback/neuralModelContent';
 export { hasLiveNativeGraphSession } from './livePlayback/hasLiveNativeGraphSession';
 // Published because the project-leaving use cases own the commit point the pedal latch is scoped to.
 export { forgetProjectLatchedPedals } from './livePlayback/forgetProjectLatchedPedals';

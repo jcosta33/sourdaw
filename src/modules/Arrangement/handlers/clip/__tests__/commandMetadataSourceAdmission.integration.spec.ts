@@ -1,6 +1,7 @@
 import { getHeads } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
 import {
@@ -59,7 +60,6 @@ import {
     prepareTimelineMapStateRestore,
     prepareTimelineMapTimeOperation,
 } from '#/modules/Transport/useCases';
-import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import {
     type ConfirmPayload,
@@ -72,6 +72,7 @@ import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTake, createTakeLane } from '../../../models/TakeLane';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
+import { defaultTimelineEditingState, timelineEditingStore } from '../../../stores/timelineEditingStore';
 import { trackStore } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 import { setTimeOperationDependencies } from '../../../useCases/timeOperations/timeOperationDependencies';
@@ -135,6 +136,7 @@ describe('completed command metadata and audio source admission', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         setNotificationEventBus(createEventBus<NotificationEvents>());
         clearHandlerRegistry();
         clearUndoHistory();
@@ -169,7 +171,7 @@ describe('completed command metadata and audio source admission', () => {
                 },
             ],
         });
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: true });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: true });
         flushAutomergeStorageWrites();
         stopProjectionBridge = setupProjectionBridge();
         projectCrdtToStores({ resetProjections: true });
@@ -239,7 +241,7 @@ describe('completed command metadata and audio source admission', () => {
 
     it.each([false, true])('freezes an implicit removal with real metadata and ripple=%s', async (ripple) => {
         const { firstId, secondId } = await deleteMiddle();
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: ripple });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: ripple });
         const before = sourceOwners();
         await executeAppAction({ type: 'removeClip', payload: { clipId: firstId } });
         const entry = undoHistoryStore.value?.past.at(-1);
@@ -250,14 +252,14 @@ describe('completed command metadata and audio source admission', () => {
         ]);
         expect((await undo()).headConsumed).toBe(true);
         expect(sourceOwners()).toEqual(before);
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: !ripple });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: !ripple });
         await redo();
         expect(sourceOwners()).toEqual(forward);
     });
 
     it.each([false, true])('freezes an atomic grouped removal with real metadata and ripple=%s', async (ripple) => {
         const { firstId, secondId } = await deleteMiddle();
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: ripple });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: ripple });
         const before = sourceOwners();
         expect(
             await executeAppActionBatch([{ type: 'removeClip', payload: { clipId: firstId } }], {
@@ -275,7 +277,7 @@ describe('completed command metadata and audio source admission', () => {
         ]);
         expect((await undo()).headConsumed).toBe(true);
         expect(sourceOwners()).toEqual(before);
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: !ripple });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: !ripple });
         await redo();
         expect(sourceOwners()).toEqual(forward);
     });

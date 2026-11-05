@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -22,7 +22,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 
-import { bacteriaStore, getBacteriaState, setBacteriaUiLevel } from '../../../stores/bacteriaStore';
+import { bacteriaStore, getBacteriaState } from '../../../stores/bacteriaStore';
 import { BacteriaPanel } from '../BacteriaPanel';
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
@@ -113,6 +113,15 @@ function expectLegacyValues(values: Record<string, number>): void {
     });
 }
 
+async function openShape(): Promise<void> {
+    expect(await screen.findByRole('button', { name: 'Play' })).toHaveAttribute('aria-pressed', 'true');
+    const shape = screen.getByRole('button', { name: 'Shape' });
+    expect(shape).toBeVisible();
+    fireEvent.click(shape);
+    expect(await screen.findByRole('slider', { name: 'Drive' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'breakdown' })).toHaveAttribute('aria-pressed', 'true');
+}
+
 describe('Bacteria Breakdown Depth retirement', () => {
     beforeEach(() => {
         configureAutomergeStoragePort(null);
@@ -141,20 +150,13 @@ describe('Bacteria Breakdown Depth retirement', () => {
         vi.restoreAllMocks();
     });
 
-    it('renders no slider for the retired breakdown depth while retaining its saved identity and values through a typed Drive edit', async () => {
+    it('hides inert Depth for a hydrated breakdown band while retaining its saved identity and values through a typed Drive edit', async () => {
         render(<BacteriaPanel deviceId={DEVICE_ID} />);
-        setBacteriaUiLevel(DEVICE_ID, 2);
+        await openShape();
 
-        const drive = await screen.findByRole('slider', { name: 'Drive' });
-        expect(drive).toBeVisible();
-        expect(screen.getByRole('slider', { name: 'Asym' })).toBeVisible();
+        expect(await screen.findByRole('slider', { name: 'Drive' })).toBeVisible();
         expect(screen.getByRole('button', { name: 'breakdown' })).toHaveAttribute('aria-pressed', 'true');
-
-        // The retired control wrote `breakdownDepth` and rendered beside Drive
-        // and Asym. Its knob label was "Depth" while the descriptor labels the
-        // parameter "Breakdown", so bind both names: a probe for either literal
-        // alone passes when the control returns under the other.
-        expect(screen.queryByRole('slider', { name: /breakdown|depth/i })).not.toBeInTheDocument();
+        expect(screen.queryByRole('slider', { name: 'Depth' })).not.toBeInTheDocument();
 
         expect(getBacteriaState(DEVICE_ID).patch.bands[0]).toMatchObject({
             distortionMode: 'breakdown',
@@ -166,18 +168,43 @@ describe('Bacteria Breakdown Depth retirement', () => {
         });
         expectLegacyValues(rawParameterValues());
 
-        await executeAppAction({
-            type: 'setDeviceParameter',
-            payload: { deviceId: DEVICE_ID, paramId: 'band0_drive', value: 63 },
+        await act(async () => {
+            await executeAppAction({
+                type: 'setDeviceParameter',
+                payload: { deviceId: DEVICE_ID, paramId: 'band0_drive', value: 63 },
+            });
         });
         await waitFor(() => expect(getBacteriaState(DEVICE_ID).patch.bands[0]?.drive).toBe(63));
         expect(rawParameterValues()).toMatchObject({ ...LEGACY_VALUES, band0_drive: 63 });
         expectLegacyValues(rawParameterValues());
     });
 
+    it('keeps distortion switching and other mode controls working', async () => {
+        render(<BacteriaPanel deviceId={DEVICE_ID} />);
+        await openShape();
+
+        const breakdown = await screen.findByRole('button', { name: 'breakdown' });
+        const enabled = screen.getByRole('button', { name: 'Enabled' });
+        const initialEnabled = getBacteriaState(DEVICE_ID).patch.bands[0]!.distortionEnabled;
+        fireEvent.click(enabled);
+        await waitFor(() =>
+            expect(getBacteriaState(DEVICE_ID).patch.bands[0]?.distortionEnabled).toBe(!initialEnabled)
+        );
+        fireEvent.click(enabled);
+        await waitFor(() => expect(getBacteriaState(DEVICE_ID).patch.bands[0]?.distortionEnabled).toBe(initialEnabled));
+
+        fireEvent.click(screen.getByRole('button', { name: 'bitcrush' }));
+        expect(await screen.findByRole('slider', { name: 'Bits' })).toBeVisible();
+        expect(screen.getByRole('slider', { name: 'Rate div' })).toBeVisible();
+        fireEvent.click(breakdown);
+        await waitFor(() => expect(breakdown).toHaveAttribute('aria-pressed', 'true'));
+        expect(screen.queryByRole('slider', { name: 'Depth' })).not.toBeInTheDocument();
+        await waitFor(() => expectLegacyValues(rawParameterValues()));
+    });
+
     it('keeps the selected band Drive control writable', async () => {
         render(<BacteriaPanel deviceId={DEVICE_ID} />);
-        setBacteriaUiLevel(DEVICE_ID, 2);
+        await openShape();
 
         const drive = await screen.findByRole('slider', { name: 'Drive' });
         expect(drive).toHaveAttribute('aria-valuenow', '28');

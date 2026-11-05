@@ -7,9 +7,9 @@ import {
     getCurrentTime,
 } from '#/modules/AudioEngine/useCases';
 
+import { type SourceWithFade } from '../../models/SourceWithFade';
 import { secondsBetweenBeats } from '../../models/TempoMap';
 import { tempoMapStore } from '../../stores/tempoMapStore';
-import { type SourceWithFade } from '../playheadScheduler/schedulerSession';
 
 export function scheduleFrozenTrack(
     track: {

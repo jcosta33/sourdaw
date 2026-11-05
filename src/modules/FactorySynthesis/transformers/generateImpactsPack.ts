@@ -81,19 +81,24 @@ function renderGlitchStutter(): [Float32Array, Float32Array] {
     const dur = 2;
     const out = createStereo(dur);
 
-    let cursor = 0;
+    // Seeded, so every launch's re-render reproduces the stored sample.
     let seed = 99;
+    const nextRandom = (): number => {
+        seed = (seed * 1664525 + 1013904223) >>> 0;
+        return seed / 2 ** 32;
+    };
+
+    let cursor = 0;
     while (cursor < dur) {
-        const slice = 0.03 + Math.random() * 0.1;
-        const freq = 200 + Math.random() * 3000;
+        const slice = 0.03 + nextRandom() * 0.1;
+        const freq = 200 + nextRandom() * 3000;
         const slicePiece = renderTriangle(slice, freq);
         const sEnv = renderEnvelope(slice, { attack: 0.002, release: slice - 0.002, curve: 'exp' });
         applyEnvelope(slicePiece, sEnv);
         const offset = Math.floor(cursor * SAMPLE_RATE);
-        const pan = Math.random() * 2 - 1;
+        const pan = nextRandom() * 2 - 1;
         mixMonoIntoStereo(out, slicePiece, 0.7, pan, offset);
         cursor += slice;
-        seed = (seed * 31 + 1) >>> 0;
     }
     normalizeStereo(out, 0.88);
     return out;

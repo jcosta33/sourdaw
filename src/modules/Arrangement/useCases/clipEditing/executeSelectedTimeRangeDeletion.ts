@@ -1,6 +1,11 @@
 import { batchStoreUpdates } from '#/infra/store/createStore';
 import { getAudioSourcePositionSeconds, resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
-import { restampLoopOriginEntry, shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
+import {
+    continuesLoopingMidiPhase,
+    loopingMidiLengthEntry,
+    midiFragmentWindowEntry,
+    shiftLoopOriginEntry,
+} from '#/utils/clipLoopOrigin';
 import { hasExactAudioSourceFields } from '#/utils/hasExactAudioSourceFields';
 
 import { type Clip, type Track } from '../../models/Track';
@@ -130,6 +135,7 @@ type PlannedLocalState = {
             newClipId: string;
             splitBeat: number;
             discardBeforeBeat?: number;
+            copiesLoopMaterial?: true;
         }[];
         removeClipIds: readonly string[];
     };
@@ -394,18 +400,41 @@ function contentBeatsConsumed(clip: Clip, timelineBeats: number): number {
     return timelineBeats * consumedStretchFactor(clip);
 }
 
-function selectedRangeRightLoopOriginEntry(clip: Clip, endBeat: number, mode: 'split' | 'trim') {
+/** The audio anchor law for a cut at `endBeat` (MIDI clips take the MIDI laws below). */
+function selectedRangeRightLoopOriginEntry(clip: Clip, endBeat: number) {
     if (clip.type === 'audio' && clip.audioOffsetSeconds !== undefined) {
         return {};
     }
     const timelineDelta = endBeat - clip.startBeat;
-    if (clip.type === 'midi') {
-        if (mode === 'split') {
-            return restampLoopOriginEntry(clip, endBeat);
-        }
-        return shiftLoopOriginEntry(clip, timelineDelta);
-    }
     return shiftLoopOriginEntry(clip, timelineDelta - contentBeatsConsumed(clip, timelineDelta));
+}
+
+/** The spanning fragment's content fields: the MIDI fragment law, or the audio anchor law above. */
+function selectedRangeRightContentEntry(clip: Clip, endBeat: number) {
+    if (clip.type === 'midi') {
+        return midiFragmentWindowEntry(clip, endBeat, endBeat);
+    }
+    return { midiOffsetBeats: 0, ...selectedRangeRightLoopOriginEntry(clip, endBeat) };
+}
+
+/**
+ * The content fields of a clip whose head the range removes: a start trim to
+ * `endBeat` in place, so everything after the range plays where it did. A MIDI
+ * clip keeps its notes and advances its content offset by the trimmed span. A
+ * looping one also keeps the source's loop length and anchor
+ * (`midiFragmentWindowEntry` with the fragment's head on the cut), so its
+ * passes stay on the source's grid. One that does not loop keeps its anchor
+ * untouched, as `trimClipStart` does; that fragment law re-bases notes, which
+ * a trim does not. An audio clip takes the audio anchor law.
+ */
+function selectedRangeHeadTrimContentEntry(clip: Clip, endBeat: number) {
+    if (continuesLoopingMidiPhase(clip)) {
+        return midiFragmentWindowEntry(clip, endBeat, endBeat);
+    }
+    if (clip.type === 'midi') {
+        return { midiOffsetBeats: (clip.midiOffsetBeats ?? 0) + (endBeat - clip.startBeat) };
+    }
+    return selectedRangeRightLoopOriginEntry(clip, endBeat);
 }
 
 function sourceContentBeatAt(clip: Clip, beat: number): number {
@@ -652,6 +681,7 @@ function planTrack(
         newClipId: string;
         splitBeat: number;
         discardBeforeBeat?: number;
+        copiesLoopMaterial?: true;
     }>,
     removeClipIds: string[],
     spanningClips: SpanningClipRecord[]
@@ -682,14 +712,15 @@ function planTrack(
                 ...clip,
                 endBeat: operation.startBeat,
                 name: `${clip.name} (L)`,
+                ...loopingMidiLengthEntry(clip),
                 ...leftSource,
             };
-            // The fragment anchor follows the basis it creates (#4988). The
-            // MIDI fragment re-bases its notes by −splitBeat under
-            // midiOffsetBeats 0 — a fresh coordinate basis the source anchor
-            // has no meaning in, whose carried advance would open the window
-            // behind the head and silence the survivors — so it re-stamps to
-            // its own start, key absent for an unanchored source. The audio
+            // The fragment anchor follows the basis it creates (#4988). A
+            // MIDI fragment takes the MIDI fragment law
+            // (`midiFragmentWindowEntry`): one that does not loop re-bases
+            // its notes and re-stamps its anchor, and a looping one keeps
+            // the whole loop in the source's basis with the anchor carried,
+            // so its passes are the source's. The audio
             // fragment keeps source-coordinate offsets, advanced by the
             // stretched media delta the cut consumed (`contentBeatsConsumed`),
             // so its anchor shifts by `timelineDelta - contentDelta` — zero at
@@ -704,7 +735,6 @@ function planTrack(
             // live state, so writing the shifted key is safe.
             const timelineDelta = operation.endBeat - clip.startBeat;
             const contentDelta = contentBeatsConsumed(clip, timelineDelta);
-            const rightLoopOriginEntry = selectedRangeRightLoopOriginEntry(clip, operation.endBeat, 'split');
             const rightClip: Clip = {
                 ...clip,
                 id: identity.targetClipId,
@@ -714,12 +744,18 @@ function planTrack(
                 // span is timeline beats times the ratio, the same conversion
                 // the ordinary split and the warp cut below use.
                 audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + contentDelta,
-                midiOffsetBeats: 0,
-                ...rightLoopOriginEntry,
+                ...selectedRangeRightContentEntry(clip, operation.endBeat),
                 ...rightSource,
             };
             finalClips.push(leftClip, rightClip);
-            if (clip.type === 'midi') {
+            if (continuesLoopingMidiPhase(clip)) {
+                splits.push({
+                    sourceClipId: clip.id,
+                    newClipId: identity.targetClipId,
+                    splitBeat: operation.endBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0),
+                    copiesLoopMaterial: true,
+                });
+            } else if (clip.type === 'midi') {
                 splits.push({
                     sourceClipId: clip.id,
                     newClipId: identity.targetClipId,
@@ -747,7 +783,7 @@ function planTrack(
             if (!source) {
                 return null;
             }
-            finalClips.push({ ...clip, endBeat: operation.startBeat, ...source });
+            finalClips.push({ ...clip, endBeat: operation.startBeat, ...loopingMidiLengthEntry(clip), ...source });
             changed = true;
             continue;
         }
@@ -756,11 +792,13 @@ function planTrack(
             if (!source) {
                 return null;
             }
-            // The anchor treatment follows the basis the trim creates
-            // (#4988). The MIDI side keeps its notes and content offset —
-            // a whole-clip relocation by (endBeat − startBeat) — so the
-            // anchor rides that delta. The audio side's offset advances by
-            // the stretched media delta the excised span consumed
+            // Without ripple, removing the head is a start trim in place:
+            // content after the range never moves (#4988). The MIDI side
+            // advances its content offset by the trimmed span and keeps its
+            // notes; a looping clip also keeps the source's loop length and
+            // anchor, so its passes, seam tails and probability rolls after
+            // the range are the uncut clip's. The audio side's offset advances
+            // by the stretched media delta the excised span consumed
             // (`contentBeatsConsumed`), so its anchor shifts by
             // `timelineDelta - contentDelta` — zero at stretch 1, the same
             // law `prepareClipSplit`'s `fragmentLoopOriginEntry` applies to
@@ -771,10 +809,9 @@ function planTrack(
             // unshifted, a stretched trim displaces the region by
             // `timelineDelta * (stretch - 1)` source beats; shifting by the
             // raw span alone slid it under the unstretched regression
-            // (#5198). Unanchored clips keep the key absent.
+            // (#5198). Unanchored audio clips keep the key absent.
             const timelineDelta = operation.endBeat - clip.startBeat;
             const contentDelta = contentBeatsConsumed(clip, timelineDelta);
-            const trimLoopOriginEntry = selectedRangeRightLoopOriginEntry(clip, operation.endBeat, 'trim');
             finalClips.push({
                 ...clip,
                 startBeat: operation.endBeat,
@@ -782,7 +819,7 @@ function planTrack(
                 // head inside the deleted range is content the clip no longer
                 // plays.
                 audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + contentDelta,
-                ...trimLoopOriginEntry,
+                ...selectedRangeHeadTrimContentEntry(clip, operation.endBeat),
                 ...source,
             });
             changed = true;
@@ -822,6 +859,7 @@ function prepareLocalState(
         newClipId: string;
         splitBeat: number;
         discardBeforeBeat?: number;
+        copiesLoopMaterial?: true;
     }> = [];
     const removeClipIds: string[] = [];
     const spanningClips: SpanningClipRecord[] = [];

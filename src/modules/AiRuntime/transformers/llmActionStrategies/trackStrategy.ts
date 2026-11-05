@@ -73,9 +73,17 @@ const trackStrategyDefinitions = [
         name: 'addTrack',
         transform: ({ call, index }) => {
             const args = call.arguments;
+            const invalid = 'Expected an optional safe name and one of audio, midi, or folder';
+            if (!isExecutableTrackKind(args.kind)) {
+                return rejection(index, call.name, invalid);
+            }
+            // A nameless track takes the owner's next default name for its kind.
+            if (hasExactKeys(args, ['kind'])) {
+                return { type: 'addTrack', payload: { kind: args.kind, select: false } };
+            }
             const name = normalizeSafeProjectName(args.name);
-            if (!hasExactKeys(args, ['name', 'kind']) || !name || !isExecutableTrackKind(args.kind)) {
-                return rejection(index, call.name, 'Expected a safe name and one of audio, midi, or folder');
+            if (!hasExactKeys(args, ['name', 'kind']) || !name) {
+                return rejection(index, call.name, invalid);
             }
             return {
                 type: 'addTrack',

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
@@ -31,6 +32,8 @@ import { parsePromptToActions } from '../parsePromptToActions';
 import { readChatThreadContext } from '../readChatThreadContext';
 
 import { createFullThreadContext, threadRequest } from './threadContextFixture';
+
+registerDeviceEnginePorts();
 
 /**
  * AC-001 (#4380): a request planned while the chat thread holds a pending proposal or a recent

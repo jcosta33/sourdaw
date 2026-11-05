@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { createMockAudioContext } from '#/helpers/__tests__/audioContext.mock';
 import {
     configureAutomergeStoragePort,
@@ -44,6 +45,8 @@ import { seekPlayhead, stopPlayback } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { DeviceParameterControl } from '../DeviceParameterControl';
+
+registerDeviceEnginePorts();
 
 // Command, Arrangement, Automerge and history stay real. This is the engine's
 // shared Web Audio/native parameter boundary; the actual RotaryKnob and Radix Slider stay real.

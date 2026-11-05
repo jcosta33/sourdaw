@@ -2059,7 +2059,7 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         // compared = descriptor parameters on a bespoke-panel device that the
         // scanner bound to exactly one knob with two numeric bounds. Two fewer
         // since #2076: the XY morph position is UI-resolved and no longer a
-        // descriptor parameter with a knob.
+        // descriptor parameter with a knob. Retiring inert breakdown depth removes one more.
         expect(CENSUS.compared.length).toBe(190);
         expect(CENSUS.agree.length).toBe(189);
         expect(CENSUS.disagree.length).toBe(1);
@@ -2133,8 +2133,7 @@ describe('declared parameter range agrees with the knob that drives it', () => {
             fermenter: 57,
             gluten: 24,
             // Two fewer since #2076: the XY morph position is UI-resolved and
-            // no longer a descriptor parameter with a knob. One fewer since the
-            // inert breakdown-depth control was retired.
+            // no longer a descriptor parameter with a knob.
             bacteria: 39,
             grinder: 25,
             crust: 6,

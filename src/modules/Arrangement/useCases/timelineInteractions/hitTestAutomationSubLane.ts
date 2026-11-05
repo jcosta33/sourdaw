@@ -1,7 +1,7 @@
 import { automationStore } from '#/modules/Automation/stores';
-import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
 import { getRenderedTrackExtent } from '../../models/TimelineTrackExtent';
+import { timelineEditingStore } from '../../stores/timelineEditingStore';
 import { timelineViewStore } from '../../stores/timelineViewStore';
 import { trackStore } from '../../stores/trackStore';
 import { buildTimelineRenderModel } from '../buildTimelineRenderModel';
@@ -20,14 +20,14 @@ export type AutomationSubLaneHit = {
 export function hitTestAutomationSubLane(canvasX: number, canvasY: number): AutomationSubLaneHit | null {
     const viewState = timelineViewStore.value;
     const trackState = trackStore.value;
-    const workspace = workspaceStore.value;
-    if (!viewState || !trackState || !workspace || workspace.automationVisibility === 'hidden') {
+    const editing = timelineEditingStore.value;
+    if (!viewState || !trackState || !editing || editing.automationVisibility === 'hidden') {
         return null;
     }
 
     const contentY = Math.max(0, canvasY + (viewState.scrollY ?? 0));
 
-    const subLaneMap = workspace.automationSubLanes;
+    const subLaneMap = editing.automationSubLanes;
     const model = buildTimelineRenderModel();
     if (!model) {
         return null;

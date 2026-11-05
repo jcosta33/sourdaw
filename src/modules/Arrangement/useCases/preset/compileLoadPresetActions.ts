@@ -7,6 +7,7 @@ import { getTrackStoreState } from '../getTrackStoreState';
 import { runtimeGraphTopology } from '../runtimeGraphTopology';
 
 import { findPresetById } from './findPresetById';
+import { hasAutomaticTrackName } from './hasAutomaticTrackName';
 import { materializePresetDevices } from './materializePresetDevices';
 
 type LoadPresetAction = Extract<AppAction, { type: 'loadPreset' }>;
@@ -86,17 +87,27 @@ export function compileLoadPresetActions(input: {
         if (!target) {
             return null;
         }
+        const loadAction = createLoadPresetAction({
+            presetId: preset.id,
+            trackId: target.track.id,
+            expectedBefore: runtimeGraphTopology.createNode(target.track),
+            expectedFrozen: target.track.frozen,
+            expectedProjectRevision: target.expectedProjectRevision,
+            devices,
+        });
+        // Composed here, not in the handler, so the load and the rename share
+        // one undo step. `expectedName` makes the rename refuse a name a
+        // collaborator changed after this compile.
+        const followsPreset = hasAutomaticTrackName(target.track) && target.track.name !== preset.name;
+        const actions: AppAction[] = [loadAction];
+        if (followsPreset) {
+            actions.push({
+                type: 'renameTrack',
+                payload: { trackId: target.track.id, name: preset.name, expectedName: target.track.name },
+            });
+        }
         return {
-            actions: [
-                createLoadPresetAction({
-                    presetId: preset.id,
-                    trackId: target.track.id,
-                    expectedBefore: runtimeGraphTopology.createNode(target.track),
-                    expectedFrozen: target.track.frozen,
-                    expectedProjectRevision: target.expectedProjectRevision,
-                    devices,
-                }),
-            ],
+            actions,
             deviceIds: devices.map((device) => device.id),
             groupLabel: `Load preset "${preset.name}"`,
             trackId: target.track.id,

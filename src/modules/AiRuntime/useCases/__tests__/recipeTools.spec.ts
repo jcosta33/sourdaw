@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
@@ -10,6 +11,7 @@ import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { tryCompoundFastPath, tryParameterizedPath, tryPresetMatch } from '../../transformers/promptParser/parsing';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
+import { discoverMixRecipes } from '../discoverMixRecipes';
 import { executeRecipeExpansion } from '../executeRecipeExpansion';
 import { executeTransformCompile } from '../executeTransformCompile';
 import { getProjectContext } from '../getProjectContext';
@@ -22,6 +24,8 @@ import { advertisedAnswerCandidateId } from './answerWireFixture';
 import { readCreativeInterpretationCatalog, selectCreativeInterpretationCall } from './highLevelIntentWorkflowFixture';
 import { readMetricPublication } from './metricGoalWorkflowFixture';
 import { createTrack } from './trackFixture';
+
+registerDeviceEnginePorts();
 
 vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),
@@ -355,37 +359,74 @@ describe('recipe.discover', () => {
                 role: { recipeRole: expectedRecipeRole, source: 'target', canonicalRole },
             });
 
+            const data = receipt.data as { total: number; candidates: { roles: string[] }[] };
             if (expectedRecipeRole === null) {
-                // Matches the shape asserted by the FX Return case above: no recipe role
-                // means zero candidates and a warning naming the missing recipe role.
-                expect(receipt.data).toMatchObject({ total: 0, candidates: [] });
+                // Matches the FX Return case below: an audio track with no recipe role is offered
+                // only the recipes that name no role, beside a warning naming the missing role.
+                expect(data.total).toBeGreaterThan(0);
+                expect(data.candidates.every((candidate) => candidate.roles.length === 0)).toBe(true);
                 expect(receipt.warnings.some((warning) => warning.toLowerCase().includes('recipe role'))).toBe(true);
                 return;
             }
 
-            const data = receipt.data as { total: number; candidates: { roles: string[] }[] };
+            // A recipe naming no role serves any source, never a bus or the master.
+            const servedWithoutRole = expectedRecipeRole !== 'bus' && expectedRecipeRole !== 'master';
             expect(data.total).toBeGreaterThan(0);
             for (const candidate of data.candidates) {
-                expect(candidate.roles).toContain(expectedRecipeRole);
+                expect(
+                    candidate.roles.includes(expectedRecipeRole) || (servedWithoutRole && candidate.roles.length === 0)
+                ).toBe(true);
             }
         }
     );
 
-    it('returns zero candidates and a no-recipe-role warning for an FX Return with no role argument', async () => {
+    // The FX Return here is an audio track whose canonical role (fx) gives no recipe role.
+    it('offers an FX Return with no role argument only the recipes that name no role, with a no-recipe-role warning', async () => {
         trackStore.set({
             tracks: [createTrack({ id: 'fx-1', name: 'FX Return' })],
             selectedTrackId: null,
             ghostClips: [],
         });
 
-        const receipt = await runRecipeDiscovery('loop-fx-return', { descriptors: ['warmer'], targetId: 'fx-1' });
+        const receipt = await runRecipeDiscovery('loop-fx-return', {
+            descriptors: ['warmer'],
+            targetId: 'fx-1',
+            limit: 8,
+        });
 
+        const data = receipt.data as { total: number; candidates: { id: string; roles: string[] }[] };
+        const roleLessWarm = new Set(
+            getMixRecipeCatalog()
+                .recipes.filter((recipe) => recipe.descriptor === 'warm' && recipe.roles.length === 0)
+                .map((recipe) => recipe.id)
+        );
         expect(receipt.status).toBe('success');
-        expect(receipt.data).toMatchObject({ total: 0, candidates: [] });
+        expect(data.total).toBeGreaterThan(0);
+        expect(data.candidates.length).toBeGreaterThan(0);
+        expect(data.candidates.every((candidate) => roleLessWarm.has(candidate.id))).toBe(true);
         expect(receipt.warnings.some((warning) => warning.toLowerCase().includes('recipe role'))).toBe(true);
     });
 
-    it('lets a role argument override an FX Return target and filters candidates to that role', async () => {
+    it('offers a bus no recipe that names no role, even when a source role is argued', async () => {
+        trackStore.set({
+            tracks: [createTrack({ id: 'bus-1', name: 'FX Return', kind: 'bus' })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+
+        const receipt = await runRecipeDiscovery('loop-bus-role-less', {
+            descriptors: ['warmer'],
+            targetId: 'bus-1',
+            role: 'vocal',
+            limit: 8,
+        });
+
+        const data = receipt.data as { candidates: { roles: string[] }[] };
+        expect(data.candidates.length).toBeGreaterThan(0);
+        expect(data.candidates.filter((candidate) => candidate.roles.length === 0)).toEqual([]);
+    });
+
+    it('lets a role argument override an FX Return target and filters candidates to recipes serving that role', async () => {
         trackStore.set({
             tracks: [createTrack({ id: 'fx-1', name: 'FX Return' })],
             selectedTrackId: null,
@@ -402,8 +443,27 @@ describe('recipe.discover', () => {
         const data = receipt.data as { candidates: { roles: string[] }[] };
         expect(data.candidates.length).toBeGreaterThan(0);
         for (const candidate of data.candidates) {
-            expect(candidate.roles).toContain('vocal');
+            expect(candidate.roles.length === 0 || candidate.roles.includes('vocal')).toBe(true);
         }
+
+        // Red when a recipe naming another role, and not vocal, passes the vocal filter.
+        const otherRoleWarm = getMixRecipeCatalog()
+            .recipes.filter(
+                (recipe) => recipe.descriptor === 'warm' && recipe.roles.length > 0 && !recipe.roles.includes('vocal')
+            )
+            .map((recipe) => recipe.id);
+        const everyMatch = discoverMixRecipes({
+            descriptors: ['warmer'],
+            targetId: 'fx-1',
+            role: 'vocal',
+            limit: getMixRecipeCatalog().recipes.length,
+        });
+        if (everyMatch.status !== 'ok') {
+            throw new Error('discovery refused the FX Return target');
+        }
+        const listed = everyMatch.data.candidates.map((candidate) => candidate.id);
+        expect(otherRoleWarm.length).toBeGreaterThan(0);
+        expect(listed.filter((id) => otherRoleWarm.includes(id))).toEqual([]);
     });
 
     it('excludes a bus recipe whose edit step needs a compressor the bus does not have', async () => {
@@ -693,17 +753,93 @@ describe('recipe.expand', () => {
         projectStore.set(structuredClone(defaultProjectStoreState));
     });
 
+    // The last column is the writes each expansion keeps. A placed Compressor starts at threshold -20,
+    // ratio 4, attack 10, release 100, knee 6 and makeup 0, and a placed Noise Gate at threshold -40,
+    // attack 0.001, hold 0.01 and release 0.1 (their declared defaults), so a midpoint equal to one of
+    // those is not rewritten.
     it.each([
-        ['vocal', 'vocal-controlled', 'builtin-compressor', [-20, 4, 8.5, 90]],
-        ['drums', 'drums-controlled-gate', 'faust-noise-gate', [-42.5, 0.0051, 0.06, 0.15]],
-        ['bass', 'bass-controlled', 'builtin-compressor', [-20, 5, 14, 120]],
-        ['guitar', 'guitar-controlled', 'builtin-compressor', [-18, 4, 10, 90]],
-        ['keys', 'keys-controlled', 'builtin-compressor', [-18, 4, 10, 90]],
-        ['bus', 'bus-controlled', 'builtin-compressor', [-14, 2.5, 25, 200, 8]],
-        ['master', 'master-controlled', 'builtin-compressor', [-10, 2.5, 27.5, 200, 8]],
+        [
+            'vocal',
+            'vocal-controlled',
+            'builtin-compressor',
+            [-20, 4, 8.5, 90],
+            [
+                ['comp-attack', 8.5],
+                ['comp-release', 90],
+            ],
+        ],
+        [
+            'drums',
+            'drums-controlled-gate',
+            'faust-noise-gate',
+            [-42.5, 0.0051, 0.06, 0.15],
+            [
+                ['threshold', -42.5],
+                ['attack', 0.0051],
+                ['hold', 0.06],
+                ['release', 0.15],
+            ],
+        ],
+        [
+            'bass',
+            'bass-controlled',
+            'builtin-compressor',
+            [-20, 5, 14, 120],
+            [
+                ['comp-ratio', 5],
+                ['comp-attack', 14],
+                ['comp-release', 120],
+            ],
+        ],
+        [
+            'guitar',
+            'guitar-controlled',
+            'builtin-compressor',
+            [-18, 4, 10, 90],
+            [
+                ['comp-threshold', -18],
+                ['comp-release', 90],
+            ],
+        ],
+        [
+            'keys',
+            'keys-controlled',
+            'builtin-compressor',
+            [-18, 4, 10, 90],
+            [
+                ['comp-threshold', -18],
+                ['comp-release', 90],
+            ],
+        ],
+        [
+            'bus',
+            'bus-controlled',
+            'builtin-compressor',
+            [-14, 2.5, 25, 200, 8],
+            [
+                ['comp-threshold', -14],
+                ['comp-ratio', 2.5],
+                ['comp-attack', 25],
+                ['comp-release', 200],
+                ['comp-knee', 8],
+            ],
+        ],
+        [
+            'master',
+            'master-controlled',
+            'builtin-compressor',
+            [-10, 2.5, 27.5, 200, 8],
+            [
+                ['comp-threshold', -10],
+                ['comp-ratio', 2.5],
+                ['comp-attack', 27.5],
+                ['comp-release', 200],
+                ['comp-knee', 8],
+            ],
+        ],
     ] as const)(
         'expands %s controlled into ordinary commands with exact midpoints and revision provenance',
-        async (role, recipeId, deviceType, midpoints) => {
+        async (role, recipeId, deviceType, midpoints, writes) => {
             setTracks([
                 createTrack({ id: 'controlled-target', name: 'Controlled Target' }),
                 createTrack({ id: 'unrelated-target', name: 'Unrelated Target' }),
@@ -722,10 +858,13 @@ describe('recipe.expand', () => {
                 name: 'addDevice',
                 arguments: { trackId: 'controlled-target', deviceType, binding: 'recipe-1-0' },
             });
+            expect(data.commands).toHaveLength(1 + writes.length);
             expect(data.commands.slice(1).map((command) => command.name)).toEqual(
-                midpoints.map(() => 'setDeviceParameter')
+                writes.map(() => 'setDeviceParameter')
             );
-            expect(data.commands.slice(1).map((command) => command.arguments.value)).toEqual(midpoints);
+            expect(
+                data.commands.slice(1).map((command) => [command.arguments.paramId, command.arguments.value])
+            ).toEqual(writes);
             expect(data.values.map((entry) => entry.value)).toEqual(midpoints);
             expect(data.values.every((entry) => entry.source === 'midpoint')).toBe(true);
             expect(data.values.every((entry) => entry.value >= entry.minimum && entry.value <= entry.maximum)).toBe(
@@ -740,7 +879,11 @@ describe('recipe.expand', () => {
             });
             const suppliedData = readExpansion(supplied);
             expect(suppliedData.values[0]).toMatchObject({ value: data.values[0]!.minimum, source: 'supplied' });
-            expect(suppliedData.commands[1]?.arguments.value).toBe(data.values[0]!.minimum);
+            const suppliedWrite = suppliedData.commands.find(
+                (command) => command.arguments.paramId === data.values[0]!.paramId
+            );
+            // No first-window minimum equals the placed device's default, so the supplied value is written.
+            expect(suppliedWrite?.arguments.value).toBe(data.values[0]!.minimum);
 
             const refused = await runRecipeExpansion(`loop-controlled-refusal-${role}`, {
                 recipeId,

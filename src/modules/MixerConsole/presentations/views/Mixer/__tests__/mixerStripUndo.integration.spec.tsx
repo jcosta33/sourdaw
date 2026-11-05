@@ -125,7 +125,6 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         selectTrack: actual.selectTrack,
         setArrangementEventBus: actual.setArrangementEventBus,
         setMarqueeSelection: actual.setMarqueeSelection,
-        setSend: actual.setSend,
         setTrackGain: actual.setTrackGain,
         setTrackOutput: actual.setTrackOutput,
         setTrackPan: actual.setTrackPan,
@@ -134,7 +133,6 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         startRecording: vi.fn(),
         stopRecording: vi.fn(),
         toggleInputMonitoring: actual.toggleInputMonitoring,
-        toggleSendPreFader: actual.toggleSendPreFader,
         toggleVcaMembership: actual.toggleVcaMembership,
         updateClip: vi.fn(),
     };
@@ -281,6 +279,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     // The same census: the project session quiescer imports the disarm, and
     // this suite never reaches a session teardown.
     disarmRetrospectiveCapture: vi.fn(),
+    // The same census: the runtime graph repair reads the attachment port,
+    // and this suite never runs a repair.
+    engineAttachmentTracking: { configure: vi.fn(), read: vi.fn() },
     openCachedAudioBufferHold: vi.fn(() => ({ retain: vi.fn(), release: vi.fn() })),
     soundsNativeNotes: vi.fn(() => false),
     updateDeviceParam: vi.fn(),
@@ -338,6 +339,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     garbageCollectCachedAudioBuffersBySize: vi.fn(),
     garbageCollectFreezeAudioBuffers: vi.fn(),
     getCachedAudioBuffer: vi.fn(),
+    restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
+    holdAudioBufferForSession: vi.fn(),
     getCompensationDelay: vi.fn(),
     getCurrentTime: vi.fn(),
     getDefaultBendRangeSemitones: vi.fn(),

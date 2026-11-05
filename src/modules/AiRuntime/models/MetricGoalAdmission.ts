@@ -1,5 +1,6 @@
 import { type CreativeRequestAuthority, type CreativeSelectionSnapshot } from './CreativeInterpretation';
 import { type MeasuredPreview } from './MeasuredPreview';
+import { type PerceptualConstraintId } from './PerceptualConstraint';
 
 /** Private persistence ceiling, independent of provider and measurement budgets. */
 export const MAX_METRIC_GOAL_STATE_BYTES = 65_536;
@@ -15,6 +16,8 @@ export type MetricGoalSource =
       }
     | { readonly kind: 'request-number'; readonly candidateId: string; readonly token: string }
     | { readonly kind: 'policy'; readonly policyId: 'integrated-loudness-match-v1' | 'spectral-centroid-comparison-v1' }
+    /** A perceptual constraint the request states, held to its versioned invariant; `clause` is its own words. */
+    | { readonly kind: 'constraint'; readonly constraintId: PerceptualConstraintId; readonly clause: string }
     | { readonly kind: 'unsupported' };
 
 export type MetricGoal<MetricId extends string> = {
@@ -45,9 +48,15 @@ export type MetricRequestAuthority<MetricId extends string> = {
     /**
      * Who admitted the request's meaning: the complete literal parser, the configured joint intake, an
      * admitted workflow, or the user taking up a suggestion an answer offered, which names one recipe on
-     * one track and states no objective of its own.
+     * one track and states no objective of its own, or the application's reader of the request's
+     * perceptual constraints, which only restricts the batch and grants nothing.
      */
-    readonly origin: 'complete-literal-parser' | 'configured-joint-intake' | 'admitted-workflow' | 'answer-suggestion';
+    readonly origin:
+        | 'complete-literal-parser'
+        | 'configured-joint-intake'
+        | 'admitted-workflow'
+        | 'answer-suggestion'
+        | 'perceptual-constraint-reader';
     readonly callId: string | null;
     readonly turn: number | null;
     readonly catalogId: string;

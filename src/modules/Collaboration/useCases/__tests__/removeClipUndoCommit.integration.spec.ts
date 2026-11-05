@@ -2,6 +2,7 @@ import { change, clone, load, save, type Doc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { captureAgentProjectInspectionState } from '#/app/captureCommandBatchPreflightState';
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -93,6 +94,7 @@ describe('committed clip restoration through Command and real peer sync', () => 
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         stopProjection = setupProjectionBridge();
         projectCrdtToStores();
         clearHandlerRegistry();

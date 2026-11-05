@@ -548,9 +548,9 @@ No job outside `health-gates.yml` may be named `Gate`.
 checkout may narrow feature-presentation changes through the resolved file dependency graph and
 explicit suite owners in `scripts/e2eSuiteOwners.json`; unowned suites remain selected. Otherwise, product edits that lie only inside function bodies run just the specs the fresh nightly coverage map saw execute those files, failing closed to the full suite. Unknown,
 shared, deleted, renamed, and unsupported graph inputs select the complete browser suite. Direct
-browser spec changes select those specs. Documentation and explicitly known review tooling avoid
+browser spec changes select those specs, and a changed test-side module selects the specs that import it. Documentation and explicitly known review tooling avoid
 browser runs. Other `scripts/**`, `.agents/**`, `release/*.json`, non-product Markdown, Rust sources and Cargo
-manifests, `evidence/**`, and `nightly.yml` select no
+manifests, `evidence/**`, root lint, format and boundary configs, and `nightly.yml` select no
 browser suite but keep broad non-browser validation: scripts and Rust reach the browser only through outputs
 under `src/` or `public/`, which select it themselves, and nightly runs the full train. Smoke runs separately for every browser plan; Browser AI hardware admission follows
 selected browser-AI suites. Required selected jobs must succeed, and scope resolution or missing

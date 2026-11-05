@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { createCreativeInterpretationToolSchema } from '../../../models/CreativeInterpretation';
 import {
     LOCAL_PLANNING_REPLY_RESERVE_TOKENS,
@@ -19,6 +21,8 @@ import { prepareAnswerInterpretationCatalog } from '../../prepareAnswerInterpret
 import { prepareCreativeInterpretationCatalog } from '../../prepareCreativeInterpretationCatalog';
 import { projectPlanningProviderToolSchemas } from '../../projectPlanningProviderToolSchemas';
 import { generateToolPlanningOutcome, WEBLLM_TOOL_BUDGET } from '../inference';
+
+registerDeviceEnginePorts();
 
 const mocks = vi.hoisted(() => ({ completion: vi.fn(), toolCalls: vi.fn() }));
 vi.mock('../backendResolution/getBackendChain', () => ({ getBackendChain: () => ['webllm'] }));

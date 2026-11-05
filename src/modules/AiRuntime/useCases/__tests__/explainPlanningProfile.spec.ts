@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { type PlannedIntentResult } from '../../models/IntentResult';
 import { guardReadonlyPlanningResult, READONLY_ANSWER_TOOL_NAMES } from '../../models/PlanningProfile';
 import { type ToolCallResult } from '../../models/ToolCallResult';
@@ -18,6 +20,8 @@ import { getPlanningProviderSchemaContract } from '../planningProviderSchema';
 import { planPromptActions } from '../planPromptActions';
 
 import { answerIntakeFromTools, structuralAnswerArguments } from './answerWireFixture';
+
+registerDeviceEnginePorts();
 
 vi.mock('../llmOrchestration/inference', async (original) => ({
     ...(await original<typeof import('../llmOrchestration/inference')>()),

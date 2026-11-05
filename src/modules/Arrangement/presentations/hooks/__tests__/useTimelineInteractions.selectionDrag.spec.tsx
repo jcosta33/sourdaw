@@ -83,7 +83,9 @@ const mocks = vi.hoisted(() => {
             throw new Error('Unexpected project service call in selection drag spec');
         }),
         projectMidiNotesByClipIdThroughRestores: vi.fn(),
-        serializeMidiStateForClips: vi.fn(),
+        // The duplicate's undo guard compares this against what the copy was
+        // created with, so it serializes unchanged MIDI the same way each call.
+        serializeMidiStateForClips: vi.fn(() => '{}'),
         getAutomationLanes: vi.fn(() => []),
         getAutomationLaneCeiling: vi.fn(),
         notifyUser: vi.fn(),
@@ -106,6 +108,15 @@ vi.mock('#/modules/Collaboration/stores', () => ({
 vi.mock('#/modules/WorkspaceShell/stores', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     workspaceStore: {
+        get value() {
+            return mocks.workspaceStoreValue.value;
+        },
+    },
+}));
+// One fixture carries both the active tool (workspace) and the ripple and
+// automation-visibility fields (timeline editing), so each case seeds both.
+vi.mock('../../../stores/timelineEditingStore', () => ({
+    timelineEditingStore: {
         get value() {
             return mocks.workspaceStoreValue.value;
         },

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -44,6 +45,8 @@ import {
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
 import { advertisedAnswerCandidateId, advertisedAnswerIntake } from './answerWireFixture';
+
+registerDeviceEnginePorts();
 
 const provider = vi.fn<(params: Record<string, unknown>) => Promise<unknown>>();
 const VOCAL_ID = 'track-lead-vocal';
@@ -299,6 +302,28 @@ describe('AC-003 a question about what to change answers with a recipe-backed su
 
         expect(answer.error).toBeUndefined();
         expect(answer.content.startsWith(`The catalog recipe “${RECIPE_TITLE}”`)).toBe(true);
+        expect(answer.answerSuggestion).toBeUndefined();
+        expect(answer.content).not.toContain('Propose this');
+        expect(await proposeAnswerSuggestion(answer.id)).toBe('unavailable');
+        expect(confirmations()).toEqual([]);
+    });
+
+    // Red when a recipe naming no role is offered as a change, though the offer must state the role it serves.
+    it('offers no suggestion for a recipe that names no role, on the track it was asked about', async () => {
+        const roleLess = 'preset:fx-eq-high-cut:warm';
+        const discovery: ToolCallResult = {
+            id: 'recipe',
+            name: 'recipe.discover',
+            arguments: { descriptors: ['warm'], targetId: VOCAL_ID, limit: 8 },
+        };
+
+        const answer = await askForWarmth([
+            [discovery],
+            [respond([{ kind: 'recipe', callId: 'recipe', recipeId: roleLess }])],
+        ]);
+
+        expect(answer.error).toBeUndefined();
+        expect(answer.content).toContain('Factory preset');
         expect(answer.answerSuggestion).toBeUndefined();
         expect(answer.content).not.toContain('Propose this');
         expect(await proposeAnswerSuggestion(answer.id)).toBe('unavailable');
