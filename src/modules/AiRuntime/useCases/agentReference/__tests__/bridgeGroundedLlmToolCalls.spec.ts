@@ -279,11 +279,23 @@ describe('compiler graph alignment', () => {
 
 describe('automateTrackGainRange grounding', () => {
     const NAMED_LIFT = { trackIds: ['bus-drums', 'bus-bass'], sectionName: 'Chorus Two', gainDb: 1.5 };
+    const DRUM_BUS_LIFT = { ...NAMED_LIFT, trackIds: ['bus-drums'] };
+    const CHORUS_SECTIONS = [
+        { id: 'section-chorus-one', name: 'Chorus One', startBeat: 32, endBeat: 48 },
+        { id: 'section-chorus-two', name: 'Chorus Two', startBeat: 56, endBeat: 72 },
+    ];
+    // "Chorus" is only part of the "Chorus Two" a request names, never that section.
+    const VERSE_AND_CHORUS_SECTIONS = [
+        { id: 'section-verse', name: 'Verse', startBeat: 0, endBeat: 32 },
+        { id: 'section-chorus', name: 'Chorus', startBeat: 32, endBeat: 48 },
+    ];
+    const SHAPE_REASON = 'Gain lift request must state only its buses, one dB figure and one whole existing section';
 
     function groundBusGainRange(
         prompt: string,
         arguments_: Record<string, unknown> = NAMED_LIFT,
-        otherTracks: readonly ProjectContext['tracks'][number][] = []
+        otherTracks: readonly ProjectContext['tracks'][number][] = [],
+        sections: readonly { id: string; name: string; startBeat: number; endBeat: number }[] = CHORUS_SECTIONS
     ) {
         const drumBus = createTrack({ id: 'bus-drums', name: 'Drum Bus', kind: 'bus' });
         const bassBus = createTrack({ id: 'bus-bass', name: 'Bass Bus', kind: 'bus' });
@@ -291,10 +303,7 @@ describe('automateTrackGainRange grounding', () => {
         const busContext: ProjectContext = {
             ...projectContext,
             automationLanes: [],
-            sections: [
-                { id: 'section-chorus-one', name: 'Chorus One', startBeat: 32, endBeat: 48 },
-                { id: 'section-chorus-two', name: 'Chorus Two', startBeat: 56, endBeat: 72 },
-            ],
+            sections: [...sections],
             tracks: [drumBus, bassBus, leadVocal, ...otherTracks, master],
         };
         return bridge(
@@ -302,25 +311,18 @@ describe('automateTrackGainRange grounding', () => {
             prompt,
             busContext,
             [],
-            [{ sectionId: 'section-chorus-two', name: 'Chorus Two', startBeat: 56, endBeat: 72 }]
+            sections.map(({ id, name, startBeat, endBeat }) => ({ sectionId: id, name, startBeat, endBeat }))
         );
     }
 
     it.each([
-        'Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two',
-        'Lift Drum Bus and Bass Bus in Chorus Two by 1.5 dB',
-    ])('grounds the bus set "%s" names through its ordinary target rule', (prompt) => {
-        expect(groundBusGainRange(prompt)).toEqual({
-            actions: [{ type: 'automateTrackGainRange', payload: NAMED_LIFT }],
-            rejections: [],
-        });
-    });
-
-    it('grounds a single named bus', () => {
-        const singleLift = { ...NAMED_LIFT, trackIds: ['bus-drums'] };
-
-        expect(groundBusGainRange('Lift Drum Bus by 1.5 dB in Chorus Two', singleLift)).toEqual({
-            actions: [{ type: 'automateTrackGainRange', payload: singleLift }],
+        { prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two', arguments_: NAMED_LIFT },
+        { prompt: 'Lift Drum Bus and Bass Bus in Chorus Two by 1.5 dB', arguments_: NAMED_LIFT },
+        { prompt: 'Lift Drum Bus by 1.5 dB in Chorus Two', arguments_: DRUM_BUS_LIFT },
+        { prompt: 'Lift Drum Bus in Chorus Two by 1.5 dB', arguments_: DRUM_BUS_LIFT },
+    ])('grounds "$prompt" through its ordinary target rule', ({ prompt, arguments_ }) => {
+        expect(groundBusGainRange(prompt, arguments_)).toEqual({
+            actions: [{ type: 'automateTrackGainRange', payload: arguments_ }],
             rejections: [],
         });
     });
@@ -347,6 +349,57 @@ describe('automateTrackGainRange grounding', () => {
         });
     });
 
+    // The shared section reading takes any section whose name the text contains, so the lift's own
+    // shape is what holds the section to the one the request names in whole.
+    it.each([
+        { prompt: 'Lift Drum Bus by 1.5 dB in Chorus Two', arguments_: { ...DRUM_BUS_LIFT, sectionName: 'Chorus' } },
+        { prompt: 'Lift Drum Bus in Chorus Two by 1.5 dB', arguments_: { ...DRUM_BUS_LIFT, sectionName: 'Chorus' } },
+        {
+            prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two',
+            arguments_: { ...NAMED_LIFT, sectionName: 'Chorus' },
+        },
+        {
+            prompt: 'Lift Drum Bus and Bass Bus in Chorus Two by 1.5 dB',
+            arguments_: { ...NAMED_LIFT, sectionName: 'Chorus' },
+        },
+    ])('refuses "$prompt" as the shorter section it only contains', ({ prompt, arguments_ }) => {
+        expect(groundBusGainRange(prompt, arguments_, [], VERSE_AND_CHORUS_SECTIONS)).toEqual({
+            actions: [],
+            rejections: [{ index: 0, name: 'automateTrackGainRange', reason: SHAPE_REASON }],
+        });
+    });
+
+    // One call lifts every member over the whole section, so a qualifier narrowing either is refused
+    // for a single bus and for a list alike.
+    it.each([
+        {
+            prompt: 'Lift Drum Bus by 1.5 dB in Chorus Two, but not in the first half',
+            arguments_: DRUM_BUS_LIFT,
+            reason: SHAPE_REASON,
+        },
+        {
+            prompt: 'Lift Drum Bus by 1.5 dB in Chorus Two except the last bar',
+            arguments_: DRUM_BUS_LIFT,
+            reason: SHAPE_REASON,
+        },
+        {
+            // The list reading already refuses a clause naming no other track beside the list.
+            prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two, but not in the first half',
+            arguments_: NAMED_LIFT,
+            reason: 'Provider action is not grounded in the user request',
+        },
+        {
+            prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two except the last bar',
+            arguments_: NAMED_LIFT,
+            reason: SHAPE_REASON,
+        },
+    ])('refuses the qualified lift "$prompt"', ({ prompt, arguments_, reason }) => {
+        expect(groundBusGainRange(prompt, arguments_)).toEqual({
+            actions: [],
+            rejections: [{ index: 0, name: 'automateTrackGainRange', reason }],
+        });
+    });
+
     // No project shape stands in for the request any more (#4372): only the literal lift grounds.
     it.each([
         {
@@ -365,13 +418,13 @@ describe('automateTrackGainRange grounding', () => {
             case: 'a section the project does not hold',
             prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in the Bridge',
             arguments_: { ...NAMED_LIFT, sectionName: 'Bridge' },
-            reason: 'Provider action is not grounded in the user request',
+            reason: 'Provider value sectionName does not match the user request',
         },
         {
             case: 'no figure',
             prompt: 'Lift Drum Bus and Bass Bus in Chorus Two',
             arguments_: NAMED_LIFT,
-            reason: 'Provider action is not grounded in the user request',
+            reason: 'Provider value gainDb does not match the user request',
         },
         {
             case: 'a figure the request does not state',

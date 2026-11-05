@@ -150,6 +150,7 @@ import { groundPostTargetEvidenceAdmission } from './groundingStrategies/postTar
 import { groundPostTargetScopeAdmission } from './groundingStrategies/postTargetScopeAdmissionStrategy';
 import { groundPreScopeAdmission } from './groundingStrategies/preScopeAdmissionStrategy';
 import { type ActionPromptScope, type PromptClause } from './groundingStrategies/promptScope';
+import { readSourceSetLiftShape } from './groundingStrategies/readSourceSetLiftShape';
 import { resolveClauseActionIntent } from './groundingStrategies/resolveClauseActionIntent';
 import { type PromptClauseSpan, splitAttachedSourceClauses } from './groundingStrategies/splitAttachedSourceClauses';
 import { stripPoliteGlueCommandCarrier } from './groundingStrategies/stripPoliteGlueCommandCarrier';
@@ -1305,22 +1306,44 @@ type CoordinatedLevelList = {
 };
 
 /**
+ * Whether the action's only target is a set of routable sources with no prompt role: one call takes
+ * every source the request names, so its request is held to one exact shape (`readSourceSetLiftShape`).
+ */
+function hasOnlySourceSetTarget(groundingRules: GroundingRules): boolean {
+    const [targetRule, ...otherRules] = groundingRules.targetRules;
+    return (
+        targetRule !== undefined &&
+        otherRules.length === 0 &&
+        targetRule.promptRole === undefined &&
+        targetRule.capability === 'routable-source' &&
+        targetRule.cardinality === 'many'
+    );
+}
+
+/**
  * The one target a level action's coordinated list may fill, when the action has one: a single track
- * of an action stating a decibel level form, which takes one call per member, or a set of routable
- * sources, which takes every member in one call and whose list must state its own decibel figure.
+ * of an action stating a decibel level form, which takes one call per member, or a source set, which
+ * takes every member in one call.
  */
 function getCoordinatedListTargetRule(
     groundingRules: GroundingRules,
     decibelLevelForms: readonly string[]
 ): GroundingRules['targetRules'][number] | undefined {
     const [targetRule, ...otherRules] = groundingRules.targetRules;
-    if (targetRule === undefined || otherRules.length > 0 || targetRule.promptRole !== undefined) {
+    if (hasOnlySourceSetTarget(groundingRules)) {
+        return targetRule;
+    }
+    if (
+        decibelLevelForms.length === 0 ||
+        targetRule === undefined ||
+        otherRules.length > 0 ||
+        targetRule.capability !== 'track' ||
+        targetRule.promptRole !== undefined ||
+        targetRule.cardinality === 'many'
+    ) {
         return undefined;
     }
-    const isSingleTrack =
-        decibelLevelForms.length > 0 && targetRule.capability === 'track' && targetRule.cardinality !== 'many';
-    const isSourceSet = targetRule.capability === 'routable-source' && targetRule.cardinality === 'many';
-    return isSingleTrack || isSourceSet ? targetRule : undefined;
+    return targetRule;
 }
 
 /** The head may contain only the action carrier before the first whole target. */
@@ -1397,28 +1420,6 @@ function getCoordinatedSetScope(
 }
 
 /**
- * Whether a set list's own text states exactly one decibel figure and ends on it, or on it and then
- * the one existing section it applies in ("by 1.5 dB in Chorus Two"). Any other word after the
- * figure may single a member out, which one call carrying every member cannot honour.
- */
-function endsOnItsOneFigureAndSection(maskedList: string, context: ProjectContext): boolean {
-    const numbers = findPromptNumbers(maskedList);
-    if (numbers.length !== 1) {
-        return false;
-    }
-    const afterFigure = maskedList.slice(numbers[0]!.end);
-    if (LIST_FIGURE_ENDING_PATTERN.test(afterFigure)) {
-        return true;
-    }
-    return (context.sections ?? []).some((section) =>
-        new RegExp(
-            String.raw`^\s*d\s?b\s+(?:in|during)\s+(?:the\s+)?${escapeRegExp(section.name)}[\p{P}\s]*$`,
-            'iu'
-        ).test(afterFigure)
-    );
-}
-
-/**
  * Coordinated track lists that state this action's level change: read with the list as one member,
  * the clauses must name the action exactly as a single-target clause does, so a list adds no grammar
  * a single track lacks.
@@ -1431,8 +1432,8 @@ function endsOnItsOneFigureAndSection(maskedList: string, context: ProjectContex
  * enumerate, so either grounds nothing for any member. So does an unresolved member, or any other
  * clause naming a member, whatever that clause asks of it.
  *
- * A set target takes the whole list in one call, so its list grounds one slot, and may close on the
- * one section the change applies in after its figure.
+ * A set target takes the whole list in one call, so its list grounds one slot; what the request may
+ * say after the list is read for every source-set call alike, list or single target, in grounding.
  */
 function getCoordinatedLevelLists(input: {
     actionName: string;
@@ -1473,10 +1474,7 @@ function getCoordinatedLevelLists(input: {
             return [{ ...range, scope: null }];
         }
         if (targetRule.cardinality === 'many') {
-            const scope = endsOnItsOneFigureAndSection(clause.masked, input.context)
-                ? getCoordinatedSetScope(list, clause, intent.phrase)
-                : null;
-            return [{ ...range, scope }];
+            return [{ ...range, scope: getCoordinatedSetScope(list, clause, intent.phrase) }];
         }
         const scope = endsOnItsOneFigure(clause.masked)
             ? getCoordinatedListScope(list, list.memberIds, clause, intent.phrase)
@@ -4118,6 +4116,35 @@ function isNameEvidence(evidence: AgentReferenceEvidence): boolean {
     return evidence === 'exact-name' || evidence === 'fuzzy-name';
 }
 
+/**
+ * The refusal for a source-set call whose request is not exactly its targets, one figure and one
+ * whole section, or whose section is not the one the request names; null when both hold. The text
+ * runs from the call's own clause to the end of the request, so a later clause qualifying the lift
+ * is read too.
+ */
+function groundSourceSetLiftShape(
+    call: ToolCallResult,
+    scopeStart: number | undefined,
+    prompt: string,
+    context: ProjectContext
+): string | null {
+    const shape =
+        scopeStart === undefined
+            ? null
+            : readSourceSetLiftShape(maskProjectReferences(prompt, context).slice(scopeStart), context.sections ?? []);
+    if (shape === null) {
+        return 'Gain lift request must state only its buses, one dB figure and one whole existing section';
+    }
+    const assertedSection = call.arguments.sectionName;
+    if (
+        typeof assertedSection !== 'string' ||
+        normalizePromptText(assertedSection) !== normalizePromptText(shape.sectionName)
+    ) {
+        return getValueMismatchReason('sectionName');
+    }
+    return null;
+}
+
 function resolveAgentReferenceArray({
     assertedIds,
     capability,
@@ -5186,6 +5213,12 @@ function groundToolCall({
           );
     if (valueRejection) {
         return rejection(index, call.name, valueRejection);
+    }
+    if (hasOnlySourceSetTarget(groundingRules)) {
+        const sourceSetRejection = groundSourceSetLiftShape(call, resolvedActionScope?.start, prompt, context);
+        if (sourceSetRejection !== null) {
+            return rejection(index, call.name, sourceSetRejection);
+        }
     }
 
     return { ...call, arguments: groundedArguments };
