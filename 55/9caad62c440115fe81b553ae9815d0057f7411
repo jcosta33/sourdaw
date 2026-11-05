@@ -1,0 +1,29 @@
+src/modules/AiRuntime/presentations/components/GenerativeParamGrids.tsx
+  s_3bb122e91d89a5::t_1b30d4bdf6a3b2 136-137
+  s_3bb122e91d89a5::t_cf8bfc5db8ab92 145
+  s_3bb122e91d89a5::t_56a4fa326bc52c 115
+  s_3bb122e91d89a5::t_10c5f24a928729 127
+  s_3bb122e91d89a5::t_5be8776af7f90e 30-54,56-88,90-97,102
+  s_3bb122e91d89a5::t_6f6c60da7ddf8c 167-171,177-181,187-191
+  s_3bb122e91d89a5::t_bdb2e10394056e 55,89
+src/modules/AiRuntime/presentations/components/__tests__/GenerativeParamGrids.spec.tsx
+  s_3bb122e91d89a5::t_7e20520fe37398 19,40-49,51-56,58-60
+  s_3bb122e91d89a5::t_789132fb0ccdab 1-5,8-18,20-31,50,57,61
+  s_3bb122e91d89a5::t_e09d8895cf5134 62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "559caad62c440115fe81b553ae9815d0057f7411",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
