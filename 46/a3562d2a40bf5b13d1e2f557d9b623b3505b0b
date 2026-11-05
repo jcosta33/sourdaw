@@ -1,0 +1,29 @@
+src/modules/CommandInterface/useCases/findShortcutConflicts.ts
+  s_0314bb17e5dee3::t_fd4b1ede7169f8 5-8,16
+src/modules/CommandInterface/AGENTS.md
+  s_0314bb17e5dee3::t_e2fa1fec7a9519 12,20-21
+src/modules/CommandInterface/useCases/__tests__/findShortcutConflicts.spec.ts
+  s_0314bb17e5dee3::t_caac34d7b231bc 37-44,58
+src/modules/CommandInterface/useCases/__tests__/setShortcutMapping.spec.ts
+  s_0314bb17e5dee3::t_35f2e9e9f1e5f3 98,104-113
+src/modules/CommandInterface/useCases/setShortcutMapping.ts
+  s_0314bb17e5dee3::t_831ebc865836c3 8-12
+src/modules/Preferences/presentations/views/__tests__/ShortcutsSection.spec.tsx
+  s_0314bb17e5dee3::t_7e22e0612b42f8 32-33,131-151
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "46a3562d2a40bf5b13d1e2f557d9b623b3505b0b",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
