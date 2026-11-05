@@ -10,12 +10,14 @@ const stylesheet = readFileSync(join(process.cwd(), 'src/styles/main.css'), 'utf
 
 describe('Tailwind class-name sources', () => {
     it('scans src through an explicit base instead of automatic detection', () => {
-        const imports = [...stylesheet.matchAll(/^@import\s+'tailwindcss'(.*);$/gm)].map((match) => match[1]?.trim());
+        const imports = Array.from(stylesheet.matchAll(/^@import\s+'tailwindcss'(.*);$/gm), (match) =>
+            match[1]?.trim()
+        );
         expect(imports).toEqual(["source('../')"]);
     });
 
     it('adds only the HTML entry as an extra source', () => {
-        const sources = [...stylesheet.matchAll(/^@source\s+(.+);$/gm)].map((match) => match[1]?.trim());
+        const sources = Array.from(stylesheet.matchAll(/^@source\s+(.+);$/gm), (match) => match[1]?.trim());
         expect(sources).toEqual(["'../../index.html'"]);
     });
 });
