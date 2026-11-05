@@ -126,15 +126,16 @@ export function listClipControllerPasses(
         // The closing line belongs to the pass's last segment: the wrapped
         // head window when the pass reaches it, the entry window otherwise.
         const hasWrappedSegment = regionEntryBeats > 0 && passSpanBeats > headSegmentEndBeats;
-        passes.push({
+        const entryWindow: ClipControllerPass = {
             beatOffset: iterationStartBeat - (regionStartBeat + regionEntryBeats),
             visibleStartBeat: regionStartBeat + regionEntryBeats,
             visibleEndBeat: regionStartBeat + regionEntryBeats + headSegmentEndBeats,
             closingLineBeat: isClosingPass && !hasWrappedSegment ? clip.endBeat : undefined,
-            ...(iteration === 0 && headFollowsAPass
-                ? { priorPassEndBeat: regionStartBeat + expansion.loopLengthBeats }
-                : {}),
-        });
+        };
+        if (iteration === 0 && headFollowsAPass) {
+            entryWindow.priorPassEndBeat = regionStartBeat + expansion.loopLengthBeats;
+        }
+        passes.push(entryWindow);
         if (hasWrappedSegment) {
             passes.push({
                 beatOffset: iterationStartBeat + headSegmentEndBeats - regionStartBeat,
