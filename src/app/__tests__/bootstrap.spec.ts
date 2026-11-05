@@ -532,6 +532,10 @@ vi.mock('#/modules/ControlRoom/useCases', () => ({
     getControlRoomHandlers: sentinelHandlers('ControlRoom'),
 }));
 
+vi.mock('#/modules/CvGate/useCases', () => ({
+    getCvGateHandlers: sentinelHandlers('CvGate'),
+}));
+
 vi.mock('#/modules/ControlSurface/useCases', () => ({
     getControlSurfaceHandlers: sentinelHandlers('ControlSurface'),
     setMidiLearnDependencies: setMidiLearnDependenciesMock,
@@ -945,6 +949,7 @@ describe('bootstrap', () => {
         'VersionControl',
         'DawProject',
         'FinalFeature',
+        'CvGate',
         'GrandBoule',
         'NodeView',
         'WebMidiInput',

@@ -22,7 +22,6 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { cvGateStore, defaultCvGateState, type CvOutputChannel } from '#/modules/CvGate/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import {
     type ConfirmPayload,
@@ -30,6 +29,8 @@ import {
     type PromptPayload,
     setNotificationEventBus,
 } from '#/utils/Notification/notificationEventBus';
+
+import { cvGateStore, defaultCvGateState, type CvOutputChannel } from '../../../stores/cvGate';
 
 // #4615 — Add CV Pitch/Gate Output recorded an inverse-less undo entry, so undo
 // skipped it and reverted the previous unrelated edit instead. Real production
