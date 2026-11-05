@@ -8091,6 +8091,17 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(refused.rejections[0]?.reason).toContain('protected');
     });
 
+    it('refuses renaming a protected clip whose name starts with an instruction verb', () => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-copy-beta', name: 'Gamma' } }],
+            "Don't touch Alpha and Copy Beta. Rename Copy Beta to Gamma.",
+            withNamedClip(withNamedClip(createClipContext(), 'clip-alpha', 'Alpha'), 'clip-copy-beta', 'Copy Beta')
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('protected');
+    });
+
     it('rejects renaming a quoted literal protected clip when another clip is selected', () => {
         const result = bridge(
             [{ name: 'renameClip', arguments: { clipId: 'clip-literal-selected', name: 'Bridge Solo' } }],

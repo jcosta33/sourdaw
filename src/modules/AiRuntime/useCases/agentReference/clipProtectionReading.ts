@@ -5,6 +5,7 @@ import { getSelectedClipReferenceIds } from '../../transformers/promptParser/sel
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { CONNECTIVE_WORDS, CONVENTIONAL_WORDS, protectionObjectForms } from './protectionObjectForms';
 import { protectionSlots, type Range, type Slot } from './readProtectionSlots';
+import { refinementRequestReading } from './refinementRequestReading';
 import { resolveAgentReference } from './resolveAgentReference';
 
 export type ExplicitlyProtectedClip = { id: string; name: string };
@@ -108,6 +109,15 @@ function readSlotReference(prompt: string, slot: Slot): string {
     return slot.lead === 'prohibition' ? reference.replace(trailingClauseSeparatorPattern, '') : reference;
 }
 
+/** Blank every project object's name so a verb inside a name never reads as the next instruction. */
+function blankObjectNames(maskedText: string, prompt: string, context: ProjectContext): string {
+    const references = refinementRequestReading.references(prompt, refinementRequestReading.candidates(context));
+    return references.reduce(
+        (blanked, { start, end }) => `${blanked.slice(0, start)}${'□'.repeat(end - start)}${blanked.slice(end)}`,
+        maskedText
+    );
+}
+
 function getProtectedReferenceTexts(prompt: string, context: ProjectContext): ProtectedReferenceParse {
     const quoteScan = scanPromptQuotedText(prompt);
     const clips = context.tracks.flatMap((track) => track.clips);
@@ -141,7 +151,7 @@ function getProtectedReferenceTexts(prompt: string, context: ProjectContext): Pr
         addReference(prompt.slice(referenceStart, referenceStart + match[1].length), referenceStart);
     }
 
-    for (const slot of protectionSlots.read(quoteScan.maskedText)) {
+    for (const slot of protectionSlots.read(blankObjectNames(quoteScan.maskedText, prompt, context))) {
         const range = slot.completeRange;
         if (
             range === null ||

@@ -102,9 +102,9 @@ describe('getExplicitlyProtectedClips', () => {
     describe('a protection joined to the next instruction by a bare and', () => {
         const alpha = createClip('clip-alpha', 'Alpha');
         const beta = createClip('clip-beta', 'Beta');
-        const moveBeta = createClip('clip-move-beta', 'Move Beta');
+        const copyBeta = createClip('clip-copy-beta', 'Copy Beta');
         const alphaBeta = { ...context, tracks: [createTrack('track-pair', 'Pair', [alpha, beta])] };
-        const alphaMoveBeta = { ...context, tracks: [createTrack('track-move', 'Pair', [alpha, moveBeta])] };
+        const alphaCopyBeta = { ...context, tracks: [createTrack('track-copy', 'Pair', [alpha, copyBeta])] };
         const alphaOnly = [{ id: alpha.id, name: alpha.name }];
 
         it.each([
@@ -142,8 +142,19 @@ describe('getExplicitlyProtectedClips', () => {
         );
 
         it('does not cut a clip name that starts with an instruction verb', () => {
-            expect(getExplicitClipProtection('leave Alpha and Move Beta alone', alphaMoveBeta)).toEqual({
-                clips: [alpha, moveBeta].map(({ id, name }) => ({ id, name })),
+            expect(getExplicitClipProtection('leave Alpha and Copy Beta alone', alphaCopyBeta)).toEqual({
+                clips: [alpha, copyBeta].map(({ id, name }) => ({ id, name })),
+                complete: true,
+            });
+        });
+
+        it.each([
+            "Don't touch Alpha and Copy Beta",
+            'without touching Alpha and Copy Beta',
+            "Don't touch Alpha, Copy Beta",
+        ])('keeps a verb-named clip inside a prohibition list: %s', (prompt) => {
+            expect(getExplicitClipProtection(prompt, alphaCopyBeta)).toEqual({
+                clips: [alpha, copyBeta].map(({ id, name }) => ({ id, name })),
                 complete: true,
             });
         });
