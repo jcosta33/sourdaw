@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { getAgentMeasurementMetricIds } from '#/modules/AudioAnalysis/useCases';
 import { defaultPluginScanState, pluginScanStore } from '#/modules/PluginHost/stores';
@@ -19,11 +20,14 @@ import {
     RECIPE_DISCOVERY_TOOL_NAME,
     RECIPE_EXPANSION_TOOL_NAME,
 } from '../agentToolCatalog';
-import { APPLICATION_OWNED_TOOL_SCHEMAS, runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
+import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
+import { getApplicationOwnedToolSchemas } from '../getApplicationOwnedToolSchemas';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 
 import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 const { mockBridgeGroundedLlmToolCalls } = vi.hoisted(() => ({
     mockBridgeGroundedLlmToolCalls: vi.fn(),
@@ -415,7 +419,7 @@ describe('agent tool catalog', () => {
     });
 
     it('publishes the complete semantic-list grammar from the public versioned contract', () => {
-        const proposalSchema = APPLICATION_OWNED_TOOL_SCHEMAS.find(
+        const proposalSchema = getApplicationOwnedToolSchemas().find(
             (schema: ToolSchema) => schema.function.name === 'command.batch.propose'
         );
 
@@ -450,7 +454,7 @@ describe('agent tool catalog', () => {
     });
 
     it('keeps provider planning on a compact catalog, discovers command schemas dynamically, and returns only a proposal', async () => {
-        expect(APPLICATION_OWNED_TOOL_SCHEMAS.map((schema: ToolSchema) => schema.function.name)).toEqual([
+        expect(getApplicationOwnedToolSchemas().map((schema: ToolSchema) => schema.function.name)).toEqual([
             'project.query',
             'project.discover',
             'project.resolve',

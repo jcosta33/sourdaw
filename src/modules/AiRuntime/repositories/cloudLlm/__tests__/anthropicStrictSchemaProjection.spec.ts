@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { type ToolSchema } from '../../../models/Tools/Types';
 import { getPlanningProviderToolSchemas } from '../../../useCases/getPlanningProviderToolSchemas';
 import { projectAnthropicStrictToolSchema } from '../cloudInference/projectAnthropicStrictToolSchema';
 import { isToolSchemaProjectionError } from '../cloudInference/ToolSchemaProjectionError';
+
+registerDeviceEnginePorts();
 
 const BOUND_KEYWORDS = [
     'minimum',

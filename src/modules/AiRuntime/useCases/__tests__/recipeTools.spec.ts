@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
@@ -23,6 +24,8 @@ import { advertisedAnswerCandidateId } from './answerWireFixture';
 import { readCreativeInterpretationCatalog, selectCreativeInterpretationCall } from './highLevelIntentWorkflowFixture';
 import { readMetricPublication } from './metricGoalWorkflowFixture';
 import { createTrack } from './trackFixture';
+
+registerDeviceEnginePorts();
 
 vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),

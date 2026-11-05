@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { getCanonicalTrackRole } from '#/modules/Project/useCases';
@@ -43,6 +44,8 @@ import { projectWorkflowMetricToolSchemas } from '../projectWorkflowMetricToolSc
 import { readCreativeInterpretationCatalog, selectCreativeInterpretationCall } from './highLevelIntentWorkflowFixture';
 import { readMetricPublication } from './metricGoalWorkflowFixture';
 import { createPlanningProject } from './planningProjectFixture';
+
+registerDeviceEnginePorts();
 
 vi.mock('../llmOrchestration/inference', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../llmOrchestration/inference')>()),

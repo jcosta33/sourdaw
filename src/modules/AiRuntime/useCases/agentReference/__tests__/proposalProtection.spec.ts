@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { evaluateAutomationLaneAtBeat } from '#/utils/evaluateAutomationLaneAtBeat';
 
 import { type ProjectContext } from '../../../models/ProjectContext';
@@ -12,6 +13,8 @@ import { proposalCommandShape } from '../proposalCommandShape';
 import { proposalProtection } from '../proposalProtection';
 import { readExplicitProtections } from '../readExplicitProtections';
 import { readStoredCardRemoval } from '../readStoredCardRemoval';
+
+registerDeviceEnginePorts();
 
 type Track = ProjectContext['tracks'][number];
 type Lane = NonNullable<ProjectContext['automationLanes']>[number];

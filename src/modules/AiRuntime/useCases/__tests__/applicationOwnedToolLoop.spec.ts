@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     deleteUserPreset,
     getAgentBuiltinDeviceFactoryManifest,
@@ -15,11 +16,14 @@ import { PROPOSAL_REFINES_MAX_LENGTH } from '../../models/ThreadContext';
 import { type ToolArgumentSchemaViolation } from '../../models/ToolCallResult';
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { tryCompoundFastPath, tryParameterizedPath, tryPresetMatch } from '../../transformers/promptParser/parsing';
-import { APPLICATION_OWNED_TOOL_SCHEMAS, runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
+import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
+import { getApplicationOwnedToolSchemas } from '../getApplicationOwnedToolSchemas';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 
 import { readCreativeInterpretationCatalog } from './highLevelIntentWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 const { mockBridgeGroundedLlmToolCalls, mockLogger } = vi.hoisted(() => ({
     mockBridgeGroundedLlmToolCalls: vi.fn(),
@@ -525,7 +529,7 @@ describe('application-owned tool loop', () => {
     );
 
     it('publishes the compact catalog and rejects unavailable tools before local execution', async () => {
-        const schemas = APPLICATION_OWNED_TOOL_SCHEMAS;
+        const schemas = getApplicationOwnedToolSchemas();
         expect(schemas.map((schema) => schema.function.name)).toEqual(
             expect.arrayContaining(['project.query', 'agent.catalog.discover', 'command.batch.propose'])
         );
@@ -2323,8 +2327,8 @@ describe('project discovery tool', () => {
 
     it('offers the semantic query types alone and answers discovery through its own tool', () => {
         const contracts = getProjectProtocolContracts();
-        const querySchema = APPLICATION_OWNED_TOOL_SCHEMAS.find((schema) => schema.function.name === 'project.query');
-        const discoverySchema = APPLICATION_OWNED_TOOL_SCHEMAS.find(
+        const querySchema = getApplicationOwnedToolSchemas().find((schema) => schema.function.name === 'project.query');
+        const discoverySchema = getApplicationOwnedToolSchemas().find(
             (schema) => schema.function.name === 'project.discover'
         );
 

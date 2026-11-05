@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getAgentMeasurementMetricIds } from '#/modules/AudioAnalysis/useCases';
 
 import { ANSWER_RESPOND_MAX_STATEMENTS } from '../../models/AnswerRespond';
@@ -8,6 +9,8 @@ import { getPlanningProviderSchemaContract } from '../../useCases/planningProvid
 import { projectPlanningProviderToolSchemas } from '../../useCases/projectPlanningProviderToolSchemas';
 import { matchesJsonSchema } from '../../validators/matchesJsonSchema';
 import { parseAnswerRespond } from '../parseAnswerRespond';
+
+registerDeviceEnginePorts();
 
 const reference = { callId: 'measure', targetId: 'master', metricId: 'integratedLoudness' };
 const schema = getPlanningProviderToolSchemas().find((tool) => tool.function.name === 'answer.respond')!.function

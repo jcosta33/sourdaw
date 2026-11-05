@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { logger } from '#/infra/logger/appLogger';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
@@ -31,6 +32,8 @@ import { materializeActionStateGuards } from '../materializeActionStateGuards';
 import { getPlanningProviderSchemaContract } from '../planningProviderSchema';
 import { type planPromptActions } from '../planPromptActions';
 import { sendChatMessage } from '../sendChatMessage';
+
+registerDeviceEnginePorts();
 
 type PlanPromptActionsInput = Parameters<typeof planPromptActions>[0];
 type PreparedStemReadiness = 'ready' | 'missing' | 'cleanup-pending';

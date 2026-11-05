@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
 import { renderAgentMeasurementScope } from '#/modules/AudioRendering/useCases';
 import { projectStore, defaultProjectStoreState } from '#/modules/Project/stores';
@@ -17,6 +18,8 @@ import { getProjectContext } from '../getProjectContext';
 import { prepareAnswerInterpretationCatalog } from '../prepareAnswerInterpretationCatalog';
 
 import { createPlanningProject } from './planningProjectFixture';
+
+registerDeviceEnginePorts();
 
 vi.mock('#/modules/AudioRendering/useCases', async (original) => ({
     ...(await original<typeof import('#/modules/AudioRendering/useCases')>()),

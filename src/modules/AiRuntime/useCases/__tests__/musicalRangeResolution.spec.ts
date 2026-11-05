@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { resolveMusicalRange } from '#/modules/Arrangement/useCases';
 import { timeSignatureMapStore } from '#/modules/Transport/stores';
 import { getBarStartBeat } from '#/modules/Transport/useCases';
@@ -19,6 +20,8 @@ import {
     searchCalls,
 } from './highLevelIntentWorkflowFixture';
 import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 const runtimeMocks = vi.hoisted(() => ({ generateWebLlmCompletion: vi.fn() }));
 

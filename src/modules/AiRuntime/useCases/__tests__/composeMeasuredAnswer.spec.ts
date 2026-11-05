@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
@@ -11,6 +12,8 @@ import { type AnswerRequestAuthority, type AnswerStatement } from '../answerCont
 import { type AdmittedAnswerIntake, type AdmittedAnswerRead, composeMeasuredAnswer } from '../composeMeasuredAnswer';
 import { discoverMixRecipes } from '../discoverMixRecipes';
 import { getProjectContext } from '../getProjectContext';
+
+registerDeviceEnginePorts();
 
 const VOCAL_ID = 'track-lead-vocal';
 const BUS_ID = 'track-vocal-bus';

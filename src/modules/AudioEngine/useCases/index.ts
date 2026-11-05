@@ -139,6 +139,8 @@ export { initializeAudioEngine } from './initializeAudioEngine';
 
 export { claimNativeSessionRearm } from './livePlayback/claimNativeSessionRearm';
 export { nativeSessionRearmClaimHolds } from './livePlayback/nativeSessionRearmClaimHolds';
+// Published because the composition root registers the body vocabularies device modules own.
+export { nativeBodyVocabularyRegistry } from './livePlayback/nativeBodyVocabularyRegistry';
 export { hasLiveNativeGraphSession } from './livePlayback/hasLiveNativeGraphSession';
 // Published because the project-leaving use cases own the commit point the pedal latch is scoped to.
 export { forgetProjectLatchedPedals } from './livePlayback/forgetProjectLatchedPedals';

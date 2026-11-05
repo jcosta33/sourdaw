@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getExecutableAppActionToolSchemas, getExecutableCommandRegistrations } from '#/modules/Command/useCases';
 
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES } from '../../models/WorkflowCapability';
 import { getAgentToolCatalogEntries } from '../getAgentToolCatalogEntries';
 import { getPlanningProviderToolSchemas } from '../getPlanningProviderToolSchemas';
+
+registerDeviceEnginePorts();
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();

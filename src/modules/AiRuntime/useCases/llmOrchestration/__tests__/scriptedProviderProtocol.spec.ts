@@ -1,8 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { generateAnthropicToolCalls } from '../../../repositories/cloudLlm/cloudInference/generateAnthropicToolCalls';
 import { generateOpenAiCompatibleToolCalls } from '../../../repositories/cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls';
-import { APPLICATION_OWNED_TOOL_SCHEMAS, runApplicationOwnedToolLoop } from '../../applicationOwnedToolLoop';
+import { runApplicationOwnedToolLoop } from '../../applicationOwnedToolLoop';
+import { getApplicationOwnedToolSchemas } from '../../getApplicationOwnedToolSchemas';
+
+registerDeviceEnginePorts();
 
 type MockTransportInput = {
     body: string;
@@ -153,7 +158,7 @@ async function runScriptedLoop(input: { transport: 'anthropic' | 'openai-compati
             const common = {
                 systemPrompt: 'Plan only through application-owned tools.',
                 userMessage: 'Mute the named track.',
-                toolSchemas: APPLICATION_OWNED_TOOL_SCHEMAS,
+                toolSchemas: getApplicationOwnedToolSchemas(),
                 maxOutputTokens: 128,
                 directive,
                 history,

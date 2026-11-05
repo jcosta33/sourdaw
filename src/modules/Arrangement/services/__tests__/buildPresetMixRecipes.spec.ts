@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getPluginById } from '#/modules/Arrangement/models/DeviceParameter';
 import { getPresetContractVersion } from '#/modules/Arrangement/models/GetPresetContractVersion';
 import { MIX_RECIPE_ROLES } from '#/modules/Arrangement/models/MixRecipe';
@@ -7,6 +8,8 @@ import { type SoundPreset } from '#/modules/Arrangement/models/SoundPreset';
 import { buildMixRecipeCatalog } from '#/modules/Arrangement/repositories/mixRecipes/mixRecipeCatalog';
 import { buildPresetMixRecipes } from '#/modules/Arrangement/services/buildPresetMixRecipes';
 import { getFactoryPresets, getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
+
+registerDeviceEnginePorts();
 
 function chainPreset(overrides: Partial<SoundPreset> = {}): SoundPreset {
     return {

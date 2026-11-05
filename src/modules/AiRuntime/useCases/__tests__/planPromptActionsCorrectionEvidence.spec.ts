@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import {
     createCrdtDoc,
@@ -17,6 +18,8 @@ import { planPromptActions } from '../planPromptActions';
 
 import { readCreativeInterpretationCatalog, selectCreativeInterpretationCall } from './highLevelIntentWorkflowFixture';
 import { literalMetricIntakeTurn, readMetricPublication } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 vi.mock('../llmOrchestration/inference', async (importOriginal) => {
     const original = await importOriginal<typeof import('../llmOrchestration/inference')>();

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     type Track,
     type TrackStoreState,
@@ -42,6 +43,8 @@ import { renderOfflineInput } from '../offlineRender/renderOfflineInput';
 import { type OfflineRenderContext } from '../offlineRender/resolveRenderContext';
 import { type OfflineTrackStrip } from '../offlineRender/types';
 import { renderOffline } from '../renderOffline';
+
+registerDeviceEnginePorts();
 
 // Local, field-identical replica of Arrangement's TrackDummy fixture — foreign
 // test fixtures have no compliant cross-module path (models are not re-exported).

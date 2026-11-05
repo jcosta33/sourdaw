@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { commandTrackDefaultsPort, parseVersionedCommandEnvelope } from '#/modules/Command/useCases';
@@ -8,6 +9,8 @@ import { type ProjectContext } from '../../models/ProjectContext';
 import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
+
+registerDeviceEnginePorts();
 
 vi.mock('../llmOrchestration/inference', async (importOriginal) => {
     const original = await importOriginal<typeof import('../llmOrchestration/inference')>();

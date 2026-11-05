@@ -4,6 +4,11 @@ import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
 import { App } from '../App';
+import { registerDeviceEnginePorts } from '../registerDeviceEnginePorts';
+
+vi.mock('../registerDeviceEnginePorts', () => ({
+    registerDeviceEnginePorts: vi.fn<() => void>(),
+}));
 
 // Mock providers and components
 vi.mock('@tanstack/react-query', () => ({
@@ -36,6 +41,12 @@ vi.mock('../router', () => ({
 }));
 
 describe('App', () => {
+    it('registers the device engine ports when the module loads, before any render', () => {
+        // `main.tsx` may render App before bootstrap has run, and the preset
+        // browser reads the preset port while it renders.
+        expect(registerDeviceEnginePorts).toHaveBeenCalledExactlyOnceWith();
+    });
+
     it('should render all providers and router', () => {
         render(<App />);
         expect(screen.getByTestId('error-boundary')).toBeInTheDocument();

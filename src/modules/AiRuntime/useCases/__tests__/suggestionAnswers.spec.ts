@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -44,6 +45,8 @@ import {
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
 import { advertisedAnswerCandidateId, advertisedAnswerIntake } from './answerWireFixture';
+
+registerDeviceEnginePorts();
 
 const provider = vi.fn<(params: Record<string, unknown>) => Promise<unknown>>();
 const VOCAL_ID = 'track-lead-vocal';

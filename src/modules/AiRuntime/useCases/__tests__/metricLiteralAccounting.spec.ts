@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
@@ -19,6 +20,8 @@ import {
     configureMetricGoalProject,
     resetMetricGoalProject,
 } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 function hasMetricAuthority(result: ReturnType<typeof admitPlanningInterpretation>): result is ReturnType<
     typeof admitPlanningInterpretation

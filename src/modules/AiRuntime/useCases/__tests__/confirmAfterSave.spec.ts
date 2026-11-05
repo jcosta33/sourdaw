@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -57,6 +58,8 @@ import {
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
 import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 const CONFIRMATION_ID = 'confirmation-after-save';
 const DEFAULT_TRACK_COLOR = '#ffffff';

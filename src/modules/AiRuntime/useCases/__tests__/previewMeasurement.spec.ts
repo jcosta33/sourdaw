@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -71,6 +72,8 @@ import {
 import { advertisedAnswerCandidateId, advertisedAnswerSchema } from './answerWireFixture';
 import { readCreativeInterpretationCatalog } from './highLevelIntentWorkflowFixture';
 import { readMetricPublication } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 // Only the engine's render boundary is replaced: compilation, grounding, the isolated preview,
 // target resolution and the measurement figures are the real ones.
