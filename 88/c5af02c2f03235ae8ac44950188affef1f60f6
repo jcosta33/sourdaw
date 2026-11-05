@@ -1,0 +1,23 @@
+src/modules/AiRuntime/validators/matchesJsonSchema.ts
+  s_55244eb93b97d1::t_a3e3d0d37ac0e0 215-216
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_55244eb93b97d1::t_4b312023a1a6df 355-358,360
+src/modules/AiRuntime/useCases/__tests__/modelProviderProtocol.spec.ts
+  s_55244eb93b97d1::t_84c7fca2f7c5f1 607-610
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "88c5af02c2f03235ae8ac44950188affef1f60f6",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
