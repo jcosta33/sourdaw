@@ -43,6 +43,7 @@ export { acceptCreativeIntent } from './acceptCreativeIntent';
 export { querySemanticProject } from './semanticProjectQueries';
 export { queryAgentDiscovery } from './queryAgentDiscovery';
 export { parseSemanticProjectQueryInput } from './parseSemanticProjectQueryInput';
+export { getSemanticProjectQueryFiltersSchema } from './getSemanticProjectQueryFiltersSchema';
 export { parseAgentDiscoveryInput } from './parseAgentDiscoveryInput';
 export { agentCapabilityDiscoveryPort } from './agentCapabilityDiscoveryPort';
 export { projectOriginalMediaPort } from './projectPersistence/projectOriginalMediaPort';
