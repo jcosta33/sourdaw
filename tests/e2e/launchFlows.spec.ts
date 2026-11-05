@@ -26,6 +26,37 @@ test.describe('Launch Screen & Project Entry', () => {
             await expect(page.getByRole('button', { name: 'EDM' })).toBeHidden();
         });
 
+        test('Template view keeps its place and card size under every category filter', async ({ page }) => {
+            await page.getByLabel('Sourdaw — start a project').waitFor({ state: 'visible' });
+            await page.locator('#launch-from-template').click();
+
+            const back_button = page.getByRole('button', { name: 'Back to home' });
+            const chip_group = page.getByRole('radiogroup', { name: 'Template category' });
+            const card = page.getByRole('button', { name: 'Cinematic' });
+            await expect(back_button).toBeVisible();
+            await expect(card).toBeVisible();
+
+            const back_box = await back_button.boundingBox();
+            const chips_box = await chip_group.boundingBox();
+            const all_card_box = await card.boundingBox();
+            expect(back_box).not.toBeNull();
+            expect(chips_box).not.toBeNull();
+            expect(all_card_box).not.toBeNull();
+
+            for (const name of ['Music', 'Demos', 'Podcast', 'Film']) {
+                await page.getByRole('radio', { name, exact: true }).click();
+                await expect(page.getByRole('radio', { name, exact: true })).toBeChecked();
+                const back_now = await back_button.boundingBox();
+                const chips_now = await chip_group.boundingBox();
+                expect(Math.abs((back_now?.y ?? -1000) - (back_box?.y ?? 0))).toBeLessThanOrEqual(1);
+                expect(Math.abs((chips_now?.y ?? -1000) - (chips_box?.y ?? 0))).toBeLessThanOrEqual(1);
+            }
+
+            await expect(card).toBeVisible();
+            const film_card_box = await card.boundingBox();
+            expect(Math.abs((film_card_box?.height ?? -1000) - (all_card_box?.height ?? 0))).toBeLessThanOrEqual(1);
+        });
+
         test('Can load a template from the grid and enter the workspace', async ({ page }) => {
             test.setTimeout(60000);
             const launch_screen = page.getByLabel('Sourdaw — start a project');
