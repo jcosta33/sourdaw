@@ -110,7 +110,6 @@ import {
     type SyncopatedArpeggioRequestScope,
 } from './getSyncopatedArpeggioPromptScope';
 import { getUnresolvedClipProtectionMembers } from './getUnresolvedClipProtectionMembers';
-import { getWholeProjectVibeMixScope } from './getWholeProjectVibeMixScope';
 import {
     bindDecibelFiguresToReferences,
     type PromptReferenceSpan,
@@ -289,14 +288,6 @@ type ResolveBatchLocalCreationReferenceResult =
     | { status: 'none' }
     | { status: 'resolved'; binding: BatchLocalCreationBinding }
     | { status: 'rejected'; reason: string };
-
-function hasExactTargetIdSet(assertedIds: unknown, expectedIds: readonly string[]): boolean {
-    if (!Array.isArray(assertedIds)) {
-        return false;
-    }
-    const assertedIdSet = new Set(assertedIds);
-    return assertedIdSet.size === expectedIds.length && expectedIds.every((targetId) => assertedIdSet.has(targetId));
-}
 
 function canonicalJson(value: unknown): string {
     if (Array.isArray(value)) {
@@ -1313,23 +1304,23 @@ type CoordinatedLevelList = {
     scope: PromptClauseScope | null;
 };
 
-/** The one track target a level action's coordinated list may fill, when the action has one. */
+/**
+ * The one target a level action's coordinated list may fill, when the action has one: a single track
+ * of an action stating a decibel level form, which takes one call per member, or a set of routable
+ * sources, which takes every member in one call and whose list must state its own decibel figure.
+ */
 function getCoordinatedListTargetRule(
     groundingRules: GroundingRules,
     decibelLevelForms: readonly string[]
 ): GroundingRules['targetRules'][number] | undefined {
     const [targetRule, ...otherRules] = groundingRules.targetRules;
-    if (
-        decibelLevelForms.length === 0 ||
-        targetRule === undefined ||
-        otherRules.length > 0 ||
-        targetRule.capability !== 'track' ||
-        targetRule.promptRole !== undefined ||
-        targetRule.cardinality === 'many'
-    ) {
+    if (targetRule === undefined || otherRules.length > 0 || targetRule.promptRole !== undefined) {
         return undefined;
     }
-    return targetRule;
+    const isSingleTrack =
+        decibelLevelForms.length > 0 && targetRule.capability === 'track' && targetRule.cardinality !== 'many';
+    const isSourceSet = targetRule.capability === 'routable-source' && targetRule.cardinality === 'many';
+    return isSingleTrack || isSourceSet ? targetRule : undefined;
 }
 
 /** The head may contain only the action carrier before the first whole target. */
@@ -1388,6 +1379,46 @@ function endsOnItsOneFigure(maskedList: string): boolean {
 }
 
 /**
+ * The scope a coordinated list grounds for a set target: one slot, since one call takes every
+ * member, and the whole list as its text, where the set reading finds each member by name.
+ */
+function getCoordinatedSetScope(
+    list: CoordinatedTrackList,
+    clause: PromptClause,
+    intentPhrase: string
+): PromptClauseScope {
+    return {
+        ...clause,
+        start: list.start,
+        end: list.end,
+        directional: false,
+        matchedIntentPhrase: intentPhrase,
+    };
+}
+
+/**
+ * Whether a set list's own text states exactly one decibel figure and ends on it, or on it and then
+ * the one existing section it applies in ("by 1.5 dB in Chorus Two"). Any other word after the
+ * figure may single a member out, which one call carrying every member cannot honour.
+ */
+function endsOnItsOneFigureAndSection(maskedList: string, context: ProjectContext): boolean {
+    const numbers = findPromptNumbers(maskedList);
+    if (numbers.length !== 1) {
+        return false;
+    }
+    const afterFigure = maskedList.slice(numbers[0]!.end);
+    if (LIST_FIGURE_ENDING_PATTERN.test(afterFigure)) {
+        return true;
+    }
+    return (context.sections ?? []).some((section) =>
+        new RegExp(
+            String.raw`^\s*d\s?b\s+(?:in|during)\s+(?:the\s+)?${escapeRegExp(section.name)}[\p{P}\s]*$`,
+            'iu'
+        ).test(afterFigure)
+    );
+}
+
+/**
  * Coordinated track lists that state this action's level change: read with the list as one member,
  * the clauses must name the action exactly as a single-target clause does, so a list adds no grammar
  * a single track lacks.
@@ -1399,6 +1430,9 @@ function endsOnItsOneFigure(maskedList: string): boolean {
  * respectively", "then up 1 dB") can single out a member without naming it, which no word list can
  * enumerate, so either grounds nothing for any member. So does an unresolved member, or any other
  * clause naming a member, whatever that clause asks of it.
+ *
+ * A set target takes the whole list in one call, so its list grounds one slot, and may close on the
+ * one section the change applies in after its figure.
  */
 function getCoordinatedLevelLists(input: {
     actionName: string;
@@ -1434,14 +1468,20 @@ function getCoordinatedLevelLists(input: {
         ) {
             return [];
         }
-        const scope =
-            list.memberIds === null ||
-            list.memberNamedOutsideList ||
-            !list.everyOtherClauseNamesAnotherTrack ||
-            !endsOnItsOneFigure(clause.masked)
-                ? null
-                : getCoordinatedListScope(list, list.memberIds, clause, intent.phrase);
-        return [{ firstClauseIndex: list.firstClauseIndex, lastClauseIndex: list.lastClauseIndex, scope }];
+        const range = { firstClauseIndex: list.firstClauseIndex, lastClauseIndex: list.lastClauseIndex };
+        if (list.memberIds === null || list.memberNamedOutsideList || !list.everyOtherClauseNamesAnotherTrack) {
+            return [{ ...range, scope: null }];
+        }
+        if (targetRule.cardinality === 'many') {
+            const scope = endsOnItsOneFigureAndSection(clause.masked, input.context)
+                ? getCoordinatedSetScope(list, clause, intent.phrase)
+                : null;
+            return [{ ...range, scope }];
+        }
+        const scope = endsOnItsOneFigure(clause.masked)
+            ? getCoordinatedListScope(list, list.memberIds, clause, intent.phrase)
+            : null;
+        return [{ ...range, scope }];
     });
 }
 
@@ -4731,8 +4771,6 @@ function groundToolCall({
             : null;
     const sidechainRoutingScope =
         call.name === 'addSidechainRoute' ? getSidechainRoutingPromptScope(prompt, context) : null;
-    const wholeProjectVibeMixScope =
-        call.name === 'automateTrackGainRange' ? getWholeProjectVibeMixScope(context) : null;
     for (const targetRule of groundingRules.targetRules) {
         const assertedValue = groundedArguments[targetRule.argument];
         if (
@@ -4794,14 +4832,6 @@ function groundToolCall({
                     route.targetTrackId === groundedArguments.targetTrackId &&
                     route.targetDeviceId === groundedArguments.targetDeviceId
             )
-        ) {
-            continue;
-        }
-        if (
-            wholeProjectVibeMixScope &&
-            call.name === 'automateTrackGainRange' &&
-            targetRule.argument === 'trackIds' &&
-            hasExactTargetIdSet(assertedValue, wholeProjectVibeMixScope.targetIds)
         ) {
             continue;
         }
@@ -7726,54 +7756,6 @@ function bridgeUnrefinedLlmToolCalls(
             return providerRoute ? [providerRoute] : [];
         });
     }
-    // The scope resolves from project shape alone, so it is not admission
-    // authority (#4697): it is read only once the provider has typed the
-    // `automateTrackGainRange` selection, and a selection the project shape
-    // cannot admit still fails closed below.
-    const providerVibeMixCalls = calls.filter((call) => call.name === 'automateTrackGainRange');
-    if (workflowCapabilityId === 'whole-project-vibe-mix' && providerVibeMixCalls.length !== 1) {
-        return {
-            actions: [],
-            rejections: [rejection(0, '<batch>', 'The selected workflow requires its exact bounded gain plan')],
-        };
-    }
-    const wholeProjectVibeMixScope = providerVibeMixCalls.length > 0 ? getWholeProjectVibeMixScope(context) : null;
-    if (wholeProjectVibeMixScope || providerVibeMixCalls.length > 0) {
-        const providerCall = providerVibeMixCalls[0];
-        const assertedTrackIds = providerCall?.arguments.trackIds;
-        if (!wholeProjectVibeMixScope || !providerCall) {
-            return {
-                actions: [],
-                rejections: [
-                    rejection(0, '<batch>', 'Provider plan does not match the bounded whole-project vibe-mix scope'),
-                ],
-            };
-        }
-        const matchesScope =
-            calls.length === 1 &&
-            providerVibeMixCalls.length === 1 &&
-            hasExactTargetIdSet(assertedTrackIds, wholeProjectVibeMixScope.targetIds) &&
-            providerCall.arguments.sectionName === wholeProjectVibeMixScope.section.name &&
-            providerCall.arguments.gainDb === wholeProjectVibeMixScope.plan.dynamicTrajectory.gainDb;
-        if (!matchesScope) {
-            return {
-                actions: [],
-                rejections: [
-                    rejection(0, '<batch>', 'Provider plan does not match the bounded whole-project vibe-mix scope'),
-                ],
-            };
-        }
-        effectiveCalls = [
-            {
-                ...providerCall,
-                arguments: {
-                    trackIds: wholeProjectVibeMixScope.targetIds,
-                    sectionName: wholeProjectVibeMixScope.section.name,
-                    gainDb: wholeProjectVibeMixScope.plan.dynamicTrajectory.gainDb,
-                },
-            },
-        ];
-    }
     const mutedEmptyDeletionScope = getMutedEmptyTrackDeletionScope(prompt, context);
     if (mutedEmptyDeletionScope) {
         const providerTrackIds = calls.flatMap((call) =>
@@ -8113,8 +8095,7 @@ function bridgeUnrefinedLlmToolCalls(
             (bassProcessingCopyScope.status === 'request' && call.name === 'addAdjustmentRegion') ||
             (midiOverlapTransformScope.status === 'request' && call.name === 'removeShortMidiOverlaps') ||
             (syncopatedArpeggioScope.status === 'request' && call.name === 'arpeggiate') ||
-            (drumPreviewBranchesScope.status === 'request' && call.name === 'createDrumPreviewBranches') ||
-            (wholeProjectVibeMixScope && call.name === 'automateTrackGainRange')
+            (drumPreviewBranchesScope.status === 'request' && call.name === 'createDrumPreviewBranches')
         ) {
             grounded = call;
         } else {

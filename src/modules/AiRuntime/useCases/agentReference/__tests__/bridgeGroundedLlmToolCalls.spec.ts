@@ -277,12 +277,14 @@ describe('compiler graph alignment', () => {
     });
 });
 
-describe('automateTrackGainRange capability grounding', () => {
-    function groundExactVibeMix(trackIds: string[]) {
+describe('automateTrackGainRange grounding', () => {
+    const NAMED_LIFT = { trackIds: ['bus-drums', 'bus-bass'], sectionName: 'Chorus Two', gainDb: 1.5 };
+
+    function groundBusGainRange(prompt: string, arguments_: Record<string, unknown> = NAMED_LIFT) {
         const drumBus = createTrack({ id: 'bus-drums', name: 'Drum Bus', kind: 'bus' });
         const bassBus = createTrack({ id: 'bus-bass', name: 'Bass Bus', kind: 'bus' });
         const leadVocal = createTrack({ id: 'track-lead-vocal', name: 'Lead Vocal' });
-        const exactContext: ProjectContext = {
+        const busContext: ProjectContext = {
             ...projectContext,
             automationLanes: [],
             sections: [
@@ -292,58 +294,72 @@ describe('automateTrackGainRange capability grounding', () => {
             tracks: [drumBus, bassBus, leadVocal, master],
         };
         return bridge(
-            [
-                {
-                    name: 'automateTrackGainRange',
-                    arguments: {
-                        trackIds,
-                        sectionName: 'Chorus Two',
-                        gainDb: 1.5,
-                    },
-                },
-            ],
-            // A paraphrase, not the demo sentence: grounding authority is the
-            // typed call plus app-derived scope, never the wording (#2002).
-            'Lift the rhythm section in the second chorus a touch — vocals, tempo map, and the master chain must stay untouched.',
-            exactContext,
+            [{ name: 'automateTrackGainRange', arguments: arguments_ }],
+            prompt,
+            busContext,
             [],
             [{ sectionId: 'section-chorus-two', name: 'Chorus Two', startBeat: 56, endBeat: 72 }]
         );
     }
 
-    it('grounds the exact app-owned EX-02 bus set through the direct provider path without compiler evidence', () => {
-        const result = groundExactVibeMix(['bus-drums', 'bus-bass']);
-
-        expect(result).toEqual({
-            actions: [
-                {
-                    type: 'automateTrackGainRange',
-                    payload: {
-                        trackIds: ['bus-drums', 'bus-bass'],
-                        sectionName: 'Chorus Two',
-                        gainDb: 1.5,
-                    },
-                },
-            ],
+    it.each([
+        'Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two',
+        'Lift Drum Bus and Bass Bus in Chorus Two by 1.5 dB',
+    ])('grounds the bus set "%s" names through its ordinary target rule', (prompt) => {
+        expect(groundBusGainRange(prompt)).toEqual({
+            actions: [{ type: 'automateTrackGainRange', payload: NAMED_LIFT }],
             rejections: [],
         });
     });
 
-    it('grounds the same exact app-owned EX-02 bus set when the provider reverses its order', () => {
-        const result = groundExactVibeMix(['bus-bass', 'bus-drums']);
-
-        expect(result).toEqual({
-            actions: [
-                {
-                    type: 'automateTrackGainRange',
-                    payload: {
-                        trackIds: ['bus-drums', 'bus-bass'],
-                        sectionName: 'Chorus Two',
-                        gainDb: 1.5,
-                    },
-                },
-            ],
-            rejections: [],
+    // No project shape stands in for the request any more (#4372): only the literal lift grounds.
+    it.each([
+        {
+            case: 'the retired vibe phrase naming both buses',
+            prompt: 'Make the Drum Bus and Bass Bus hit harder in Chorus Two',
+            arguments_: NAMED_LIFT,
+            reason: 'Provider action is not grounded in the user request',
+        },
+        {
+            case: 'a paraphrase naming no bus',
+            prompt: 'Lift the rhythm section in the second chorus a touch — vocals, tempo map, and the master chain must stay untouched.',
+            arguments_: NAMED_LIFT,
+            reason: 'Target trackIds is not grounded in the user request',
+        },
+        {
+            case: 'a section the project does not hold',
+            prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in the Bridge',
+            arguments_: { ...NAMED_LIFT, sectionName: 'Bridge' },
+            reason: 'Provider action is not grounded in the user request',
+        },
+        {
+            case: 'no figure',
+            prompt: 'Lift Drum Bus and Bass Bus in Chorus Two',
+            arguments_: NAMED_LIFT,
+            reason: 'Provider action is not grounded in the user request',
+        },
+        {
+            case: 'a figure the request does not state',
+            prompt: 'Lift Drum Bus and Bass Bus by 2 dB in Chorus Two',
+            arguments_: NAMED_LIFT,
+            reason: 'Provider value gainDb does not match the user request',
+        },
+        {
+            case: 'a later clause singling a member out',
+            prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two, but not the Bass Bus',
+            arguments_: NAMED_LIFT,
+            reason: 'Provider action is not grounded in the user request',
+        },
+        {
+            case: 'a bus the request does not name',
+            prompt: 'Lift Drum Bus by 1.5 dB in Chorus Two',
+            arguments_: NAMED_LIFT,
+            reason: 'Provider target trackIds does not match the exactly grounded project references',
+        },
+    ])('refuses $case', ({ prompt, arguments_, reason }) => {
+        expect(groundBusGainRange(prompt, arguments_)).toEqual({
+            actions: [],
+            rejections: [{ index: 0, name: 'automateTrackGainRange', reason }],
         });
     });
 });

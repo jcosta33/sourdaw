@@ -68,9 +68,8 @@ function materializeLift(gain: number, gainDb: number) {
  * lift reaches `handleAutomateTrackGainRange`.
  *
  * The handler admits a lift up to `FADER_MAX_GAIN`, but every route to it runs
- * through a headroom check first — the bridge for a provider call, this
- * materializer for an action, and the vibe-mix scope for the capability. While
- * these read unity, the handler's widened check was unreachable: a bus at the
+ * through a headroom check first — the bridge for a provider call and this
+ * materializer for an action. While these read unity, the handler's widened check was unreachable: a bus at the
  * 0.8 default asked for a +3 dB section lift was refused here, and the user was
  * told the bus had no headroom for a move they could make by hand on the fader.
  */

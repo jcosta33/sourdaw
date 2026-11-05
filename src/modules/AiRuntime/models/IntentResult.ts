@@ -9,7 +9,6 @@ import { type PlanningRejectionEvidence } from './PlanningRejectionEvidence';
 import { type ProposalGroundingBasis, type ProposalProtectionFacts } from './ProposalGroundingBasis';
 import { type AdoptedRecipe } from './RetainedCompilation';
 import { type SemanticCommandListMatchSelectorRecord } from './SemanticCommandList';
-import { type WholeProjectVibeMixPlan } from './WholeProjectVibeMixPlan';
 import { type WorkflowCapabilityId } from './WorkflowCapability';
 
 export type IntentResult = {
@@ -28,8 +27,6 @@ export type IntentResult = {
     executionMode?: 'atomic';
     /** Application-validated dependency and batch-local producer metadata aligned to actions. */
     actionCommandGraph?: ActionCommandGraph;
-    /** Structured, inert explanation for a bounded whole-project proposal. */
-    wholeProjectVibeMixPlan?: WholeProjectVibeMixPlan;
     preparationRequest?: 'stem-import';
     workflowCapabilityId?: WorkflowCapabilityId;
     /** Correlated, bounded receipts produced by application-owned read tools during provider planning. */

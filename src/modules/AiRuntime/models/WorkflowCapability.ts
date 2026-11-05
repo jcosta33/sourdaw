@@ -1,6 +1,6 @@
 import { type ToolSchema } from './ToolDefinitions';
 
-export const WORKFLOW_METRIC_CAPABILITY_IDS = ['sidechain-routing', 'whole-project-vibe-mix'] as const;
+export const WORKFLOW_METRIC_CAPABILITY_IDS = ['sidechain-routing'] as const;
 
 export const WORKFLOW_CAPABILITY_IDS = [
     ...WORKFLOW_METRIC_CAPABILITY_IDS,
@@ -58,8 +58,6 @@ export const WORKFLOW_ACTION_TOOL_NAMES: ReadonlySet<string> = new Set([
 
 const workflowCapabilityDescriptions: Readonly<Record<WorkflowCapabilityId, string>> = {
     'sidechain-routing': 'Connect the exact application-published Kick to eligible Bass compressor sidechain inputs.',
-    'whole-project-vibe-mix':
-        'Preview the existing bounded section gain trajectory while preserving its protected objects.',
     'drum-routing': 'Route the complete semantic drum set to its existing drum bus while preserving its return.',
     'drum-render-comparison':
         'Build the bounded drum and parallel-compression routing graph, preserve the room route, apply the fixed gain change, and render the comparison sections.',
