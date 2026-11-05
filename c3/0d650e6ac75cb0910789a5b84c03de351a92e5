@@ -1,0 +1,27 @@
+src/modules/AiRuntime/useCases/prepareMetricGoalPreview.ts
+  s_55244eb93b97d1::t_729b4d56e0a9bd 263-265
+  s_55244eb93b97d1::t_eb09fa8fca9e58 167-216
+  s_55244eb93b97d1::t_12e5ea0ae7d498 249
+  s_55244eb93b97d1::t_3bcf379ca1de34 238,240
+  s_55244eb93b97d1::t_8c01cc452916ac 27
+src/modules/AiRuntime/useCases/readGoalPrefix.ts
+  s_55244eb93b97d1::t_2c414d9878d09e 1-18
+src/modules/AiRuntime/useCases/evaluateMetricGoalAdmission.ts
+  s_55244eb93b97d1::t_183e62a737a14b 16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c30d650e6ac75cb0910789a5b84c03de351a92e5",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
