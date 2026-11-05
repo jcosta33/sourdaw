@@ -1,0 +1,34 @@
+src/modules/Arrangement/useCases/clipEditing/__tests__/executeSelectedTimeRangeDeletion.spec.ts
+  s_ba80576e6f5cb5::t_e5d6b0084403fc 4,7
+  s_ba80576e6f5cb5::t_bb0f823707ff49 805-863
+  s_ba80576e6f5cb5::t_d4e64b25ce8539 318-341
+src/modules/Arrangement/useCases/clipEditing/__tests__/selectedTimeRangeHeadExciseWithUndo.integration.spec.ts
+  s_ba80576e6f5cb5::t_ccbc9e2f440a64 1-232,249
+  s_ba80576e6f5cb5::t_2be5a4d4ef1d0a 233-235,246-248
+  s_ba80576e6f5cb5::t_b9ec48b38d6415 250-252
+  s_ba80576e6f5cb5::t_3b834448f9f41d 236-245,253-268
+src/modules/Arrangement/useCases/clipEditing/__tests__/selectedTimeRangeDeletionLoopOrigin.spec.ts
+  s_ba80576e6f5cb5::t_cce70ff9b21149 14
+  s_ba80576e6f5cb5::t_0c10a05fea18a7 295-302,308-313,320,322-368
+  s_ba80576e6f5cb5::t_9444f9f152c029 26-29,406-409
+src/modules/Arrangement/useCases/clipEditing/__tests__/deleteTimeRange.spec.ts
+  s_ba80576e6f5cb5::t_0008184e99ca35 253-255
+src/modules/Arrangement/useCases/clipEditing/executeSelectedTimeRangeDeletion.ts
+  s_ba80576e6f5cb5::t_5888b29d931c20 403,420-439,795-801,812,822
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2121458beee3ab27d9ff951aced2004ded6470c2",
+  "prompts": {},
+  "sessions": {
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
