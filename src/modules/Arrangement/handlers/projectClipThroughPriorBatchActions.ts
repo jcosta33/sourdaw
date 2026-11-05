@@ -47,6 +47,8 @@ export type ProjectedClipState = {
 
 type LocatableClip = NonNullable<ProjectedClipState['locatedClip']>;
 
+type RestoreClipPayload = Extract<AppAction, { type: 'restoreClip' }>['payload'];
+
 /**
  * The removal snapshots carry whole runtime objects under deliberately narrow
  * contract names — `trackSnapshot` declares only `id`,
@@ -81,10 +83,7 @@ function readSnapshotClip(trackSnapshot: TrackSnapshot, clipId: string): Clip | 
     return null;
 }
 
-function readSnapshotClipLanes(
-    snapshots: RestoreTrackPayloadSnapshot['automationLaneSnapshots'],
-    clipId: string
-): ClipScopedAutomationLane[] {
+function readSnapshotClipLanes(snapshots: readonly object[], clipId: string): ClipScopedAutomationLane[] {
     const lanes: ClipScopedAutomationLane[] = [];
     for (const snapshot of snapshots) {
         const runtimeLane: unknown = snapshot;
@@ -124,16 +123,35 @@ function applyRestoreTrackSibling(
     };
 }
 
+/**
+ * A ripple-planned restore puts back the satellites and clip-scoped lanes the
+ * removal retired (`undoRippleDelete`: `writeClipSatelliteEntry` per entry,
+ * `restoreAutomationLanes` with the live lane winning an id collision); a
+ * restore without a plan writes neither, so the prior projection stands.
+ */
 function applyRestoreClipSibling(
     state: ProjectedClipState,
-    payload: { trackId: string; clipSnapshot: unknown }
+    payload: RestoreClipPayload,
+    clipId: string
 ): ProjectedClipState {
     const runtimeClip: unknown = payload.clipSnapshot;
-    return {
+    const restored: ProjectedClipState = {
+        ...state,
         locatedClip: { owningTrackId: payload.trackId, clip: runtimeClip as Clip },
-        clipScopedLanes: state.clipScopedLanes,
-        restoredSatelliteEntry: state.restoredSatelliteEntry,
         touchedByPriorSibling: true,
+    };
+    const plan = payload.ripplePlan;
+    if (!plan) {
+        return restored;
+    }
+    return {
+        ...restored,
+        clipScopedLanes: lanesAfterLaneRestore(
+            state.clipScopedLanes,
+            readSnapshotClipLanes(plan.clipAutomationLanes, clipId)
+        ),
+        restoredSatelliteEntry:
+            plan.clipSatellites.find((entry) => entry.clipId === clipId) ?? state.restoredSatelliteEntry,
     };
 }
 
@@ -154,7 +172,7 @@ function applyPriorSiblingToClip(state: ProjectedClipState, action: AppAction, c
         return applyRestoreTrackSibling(state, action.payload, clipId);
     }
     if (action.type === 'restoreClip' && action.payload.clipId === clipId) {
-        return applyRestoreClipSibling(state, action.payload);
+        return applyRestoreClipSibling(state, action.payload, clipId);
     }
     if ((action.type === 'removeClip' || action.type === 'discardDuplicatedClip') && action.payload.clipId === clipId) {
         return applyClipRemovalSibling();

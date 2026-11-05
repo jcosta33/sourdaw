@@ -83,7 +83,9 @@ const mocks = vi.hoisted(() => {
             throw new Error('Unexpected project service call in selection drag spec');
         }),
         projectMidiNotesByClipIdThroughRestores: vi.fn(),
-        serializeMidiStateForClips: vi.fn(),
+        // The duplicate's undo guard compares this against what the copy was
+        // created with, so it serializes unchanged MIDI the same way each call.
+        serializeMidiStateForClips: vi.fn(() => '{}'),
         getAutomationLanes: vi.fn(() => []),
         getAutomationLaneCeiling: vi.fn(),
         notifyUser: vi.fn(),

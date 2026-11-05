@@ -18,7 +18,11 @@ vi.mock('#/modules/MIDI/useCases', () => ({ serializeMidiStateForClips: mocks.se
 
 import { handleAddClip } from '../clip/handleAddClip';
 import { handleAddTrack } from '../track/handleAddTrack';
-import { isAddClipSessionEntry, isAddTrackSessionEntry } from '../validateCreationSessionEntries';
+import {
+    isAddClipSessionEntry,
+    isAddTrackSessionEntry,
+    isDuplicateClipAtSessionEntry,
+} from '../validateCreationSessionEntries';
 
 type PayloadMutation = (payload: Record<string, unknown>) => void;
 
@@ -209,5 +213,38 @@ describe('isAddClipSessionEntry', () => {
         ],
     ])('rejects %s', async (_description, mutate) => {
         expect(isAddClipSessionEntry(withClipGuard(await buildAddClipEntry(), mutate))).toBe(false);
+    });
+});
+
+describe('isDuplicateClipAtSessionEntry', () => {
+    const duplicateEntry = (inversePayload: Record<string, unknown>): HandlerSessionActionEntry => ({
+        action: {
+            type: 'duplicateClipAt',
+            payload: { clipId: 'clip-1', targetClipId: 'copy', destinationTrackId: 'track-1', startBeat: 8 },
+        },
+        inverseAction: { type: 'discardDuplicatedClip', payload: { clipId: 'copy', ...inversePayload } },
+    });
+
+    it('accepts an entry whose inverse pins the copy with a guard', () => {
+        expect(
+            isDuplicateClipAtSessionEntry(
+                duplicateEntry({
+                    generatedMidiStateGuard: {
+                        entityJson: '{"id":"copy"}',
+                        midiByClipIdJson: '{}',
+                        clipSatellitesJson: '[]',
+                        clipAutomationLanesJson: '[]',
+                    },
+                })
+            )
+        ).toBe(true);
+    });
+
+    it('still accepts an entry saved before the inverse carried a guard', () => {
+        expect(isDuplicateClipAtSessionEntry(duplicateEntry({}))).toBe(true);
+    });
+
+    it('rejects an inverse naming a clip other than the copy', () => {
+        expect(isDuplicateClipAtSessionEntry(duplicateEntry({ clipId: 'other' }))).toBe(false);
     });
 });
