@@ -218,6 +218,40 @@ describe('Slider', () => {
             expect(second).toEqual([]);
         });
 
+        it('settles an abandoned drag through the commit of the render that reported its last change', () => {
+            const first: number[][] = [];
+            const second: number[][] = [];
+            const renderTarget = (commits: number[][]) => (
+                <Slider value={[20]} onValueChange={vi.fn()} onValueCommit={(next) => commits.push(next)} />
+            );
+            const view = render(renderTarget(first));
+            const root = screen.getByRole('slider').closest('[data-slot="slider"]');
+            if (!(root instanceof HTMLElement)) {
+                throw new Error('Missing Slider root');
+            }
+            Object.defineProperties(root, {
+                setPointerCapture: { configurable: true, value: vi.fn() },
+                hasPointerCapture: { configurable: true, value: () => true },
+            });
+            vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
+                x: 0,
+                y: 0,
+                top: 0,
+                bottom: 20,
+                left: 0,
+                right: 100,
+                width: 100,
+                height: 20,
+                toJSON: () => ({}),
+            });
+            fireEvent.pointerDown(root, { pointerId: 1, button: 0, clientX: 40, clientY: 10 });
+            view.rerender(renderTarget(second));
+            fireEvent.pointerMove(root, { pointerId: 1, clientX: 65, clientY: 10 });
+            fireEvent.blur(window);
+            expect(second).toEqual([[65]]);
+            expect(first).toEqual([]);
+        });
+
         it('commits a normal pointer release once and adds nothing for the capture loss after it', () => {
             const harness = renderLevelSlider();
             drag(harness);
