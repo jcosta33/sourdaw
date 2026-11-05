@@ -1,0 +1,32 @@
+src/modules/AiRuntime/useCases/__tests__/answerAfterSave.spec.ts
+  s_55244eb93b97d1::t_9a2670f72660b6 3,29
+  s_55244eb93b97d1::t_4f9e68ebf217cb 30
+src/modules/Arrangement/useCases/freezeBounce/__tests__/freezeTrackAfterSave.spec.ts
+  s_55244eb93b97d1::t_9a2670f72660b6 3,29
+  s_55244eb93b97d1::t_5da5b6c9da7425 30
+src/modules/AiRuntime/useCases/__tests__/planWithMeasurements.spec.ts
+  s_55244eb93b97d1::t_9a2670f72660b6 4,56
+src/modules/AiRuntime/useCases/__tests__/previewMeasurement.spec.ts
+  s_55244eb93b97d1::t_9a2670f72660b6 4,79
+src/modules/AiRuntime/useCases/__tests__/perceptualConstraints.spec.ts
+  s_55244eb93b97d1::t_9a2670f72660b6 4,32
+src/modules/AiRuntime/useCases/__tests__/planPromptActionsAfterSave.spec.ts
+  s_55244eb93b97d1::t_9a2670f72660b6 3,25
+  s_55244eb93b97d1::t_90a06fc60f97c6 26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4f47762de3f8b9d26973903dda422ac4355837da",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
