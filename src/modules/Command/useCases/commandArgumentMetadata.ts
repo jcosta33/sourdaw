@@ -132,13 +132,20 @@ export function compileCommandArgumentMetadata(
     }
     // Source preservation is derived support. Its owner still validates every
     // value; these captures do not expand the musician's requested scope.
+    const describesObjects = (path: string) =>
+        !isDerivedSourceSupportPath(operation, path) && !isRecordedIntentPath(operation, path);
     return {
-        objectReferences: metadata.objectReferences.filter(
-            (reference) => !isDerivedSourceSupportPath(operation, reference.argument)
-        ),
-        parameterUnits: metadata.parameterUnits.filter(
-            (parameter) => !isDerivedSourceSupportPath(operation, parameter.argument)
-        ),
-        time: metadata.time.filter((time) => !isDerivedSourceSupportPath(operation, time.argument)),
+        objectReferences: metadata.objectReferences.filter((reference) => describesObjects(reference.argument)),
+        parameterUnits: metadata.parameterUnits.filter((parameter) => describesObjects(parameter.argument)),
+        time: metadata.time.filter((time) => describesObjects(time.argument)),
     };
+}
+
+/**
+ * A production brief records intent about tracks, sections and ranges; writing it edits none of
+ * them, so the ids, figures and beats it holds are data rather than the objects, units or times the
+ * command acts on. Its entries' own ids are minted with the brief and name no project object.
+ */
+function isRecordedIntentPath(operation: string | undefined, path: string): boolean {
+    return operation === 'setProductionBrief' && (path === 'brief' || path.startsWith('brief.'));
 }

@@ -49,6 +49,7 @@ import {
     prepareMidiGlobalTimeTransaction,
     prepareMidiTimeStateRestore,
 } from '#/modules/MIDI/useCases';
+import { getProjectHandlers } from '#/modules/Project/useCases';
 import { readSecondsAtBeat, readTempoAtBeat, tempoMapStore } from '#/modules/Transport/stores';
 import {
     getTransportHandlers,
@@ -70,6 +71,7 @@ function hydrateProductionContracts(): void {
         getAutomationHandlers(),
         getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
         getMidiNoteTransformHandlers(),
+        getProjectHandlers(),
         getTransportHandlers(),
         getYeastHandlers(),
     ]);

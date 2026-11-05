@@ -66,6 +66,7 @@ import {
     ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
     ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
+    BRIEF_COMPILE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
 } from '../agentToolCatalog';
 import { createModelProviderStreamWriter } from '../createModelProviderStreamWriter';
@@ -574,12 +575,14 @@ export const generateToolPlanningOutcome = inject({ logger })(({ logger }) => {
                     const applicationTools = toolSchemas.filter((tool) =>
                         WEBLLM_APPLICATION_TOOL_NAMES.has(tool.function.name)
                     );
-                    // The reference comparison is not mandatory and is never offered locally.
+                    // The reference comparison and the brief compiler are not mandatory and are never
+                    // offered locally.
                     const actionTools = toolSchemas.filter(
                         (tool) =>
                             tool.function.name !== WORKFLOW_CAPABILITY_TOOL_NAME &&
                             !WEBLLM_APPLICATION_TOOL_NAMES.has(tool.function.name) &&
                             tool.function.name !== ANALYSIS_COMPARE_REFERENCE_TOOL_NAME &&
+                            tool.function.name !== BRIEF_COMPILE_TOOL_NAME &&
                             tool.function.name !== ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME
                     );
                     const selectedActionTools = selectExecutableAppActionToolSchemasForPrompt({

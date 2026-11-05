@@ -1,5 +1,6 @@
 import { getPluginById } from '#/modules/Arrangement/useCases';
 import { getAppActionExecutionPolicy } from '#/modules/Command/useCases';
+import { describeProductionBriefChange } from '#/modules/Project/useCases';
 import {
     formatGainDb,
     resolveLevelFields,
@@ -134,7 +135,36 @@ function describeDeviceParameterAction(
     return `Set "${owner.name}" (${owner.id}) device "${deviceName}" (${device.id}, ${device.type}) parameter "${parameter.name}" (${parameter.id}) from ${formatParameterValue(previousValue, parameter.unit)} to ${formatParameterValue(action.payload.value, parameter.unit)}`;
 }
 
+/**
+ * A brief write, read against the brief the request was planned on, so the card lists each entry it
+ * adds or removes rather than one opaque "set the brief".
+ */
+function describeProductionBriefAction(
+    action: Extract<AppAction, { type: 'setProductionBrief' }>,
+    context: ProjectContext
+): string {
+    const lines =
+        context.productionBrief === undefined
+            ? null
+            : describeProductionBriefChange({
+                  before: context.productionBrief,
+                  after: action.payload.brief,
+                  trackNames: Object.fromEntries(context.tracks.map((track) => [track.id, track.name])),
+                  sectionNames: Object.fromEntries(
+                      (context.sections ?? []).map((section) => [section.id, section.name])
+                  ),
+              });
+    if (lines === null) {
+        return `Update the production brief from revision ${String(action.payload.expectedRevision)}`;
+    }
+    const changes = lines.length > 0 ? lines.join('; ') : 'no entry changes';
+    return `Update the production brief from revision ${String(action.payload.expectedRevision)}: ${changes}`;
+}
+
 function describeExactAction(action: AppAction, actions: readonly AppAction[], context: ProjectContext): string {
+    if (action.type === 'setProductionBrief') {
+        return describeProductionBriefAction(action, context);
+    }
     if (action.type === 'importStemSet') {
         const stems = action.payload.stems
             .map((stem) => {

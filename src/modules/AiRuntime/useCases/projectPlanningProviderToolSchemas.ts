@@ -1,6 +1,7 @@
 import { isExecutableAppActionType } from '#/modules/Command/useCases';
 
 import {
+    BRIEF_COMPILE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     RECIPE_EXPANSION_TOOL_NAME,
     TRANSFORM_COMPILE_TOOL_NAME,
@@ -20,6 +21,7 @@ export const WHOLE_REQUEST_PREPARATION_TOOL_NAMES: ReadonlySet<string> = new Set
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     TRANSFORM_COMPILE_TOOL_NAME,
     RECIPE_EXPANSION_TOOL_NAME,
+    BRIEF_COMPILE_TOOL_NAME,
 ]);
 
 /** Active permission and terminal grammar, consumed by every actual request. */

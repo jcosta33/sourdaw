@@ -349,6 +349,7 @@ export function prepareCreativeInterpretationCatalog(input: {
     prompt: string;
     context: ProjectContext;
     projectRevision: string;
+    offersBrief?: boolean;
 }): CreativeInterpretationCatalog {
     const { context, projectRevision } = input;
     const trimmedPrompt = input.prompt.trim();
@@ -402,6 +403,10 @@ export function prepareCreativeInterpretationCatalog(input: {
     // `edit` needs a target to be admissible at all, so a catalog without one does not publish it:
     // a mode no admission could ever accept would only invite a rejected turn.
     const modes: CreativeRequestMode[] = targets.length > 0 ? ['edit', 'create', 'read-only'] : ['create', 'read-only'];
+    // `brief` is published only where `brief.compile` is, so no profile offers a mode it cannot complete.
+    if (input.offersBrief === true) {
+        modes.push('brief');
+    }
 
     return {
         schemaVersion: 1,

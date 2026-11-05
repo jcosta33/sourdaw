@@ -3,7 +3,12 @@ import { type ToolSchema } from './ToolDefinitions';
 
 export const CREATIVE_INTERPRETATION_TOOL_NAME = 'selectCreativeInterpretation';
 
-export type CreativeRequestMode = 'edit' | 'create' | 'read-only' | 'unresolved';
+/**
+ * `brief` asks to write the project's production brief rather than to change its sound: it selects no
+ * target, dimension or slot, grants no write authority over the project, and only `brief.compile`
+ * completes it.
+ */
+export type CreativeRequestMode = 'edit' | 'create' | 'read-only' | 'brief' | 'unresolved';
 
 export type CreativeTargetProvenance = 'explicit-reference' | 'contextual-selection' | 'new-object-slot';
 

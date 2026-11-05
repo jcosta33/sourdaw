@@ -150,12 +150,20 @@ export type ExecutableAppActionDirectionalIntent = {
 
 export type ExecutableAppActionDiscoverability = 'hidden' | 'visible';
 
+export type ExecutableAppActionSessionReplay = 'forward' | 'none';
+
 type ExecutableAppActionDescriptor = {
     actionType: AppActionType;
     operationVersion?: number;
     risk: ExecutableAppActionRisk;
     description: string;
     discoverability?: ExecutableAppActionDiscoverability;
+    /**
+     * `none` keeps the command out of the forward contracts a reload replays undo entries through,
+     * so registering it leaves its undo history across a reload exactly as it was before it was
+     * executable. Absent means `forward`.
+     */
+    sessionReplay?: ExecutableAppActionSessionReplay;
     intentPhrases: readonly string[];
     /**
      * Phrases that name this action only in a clause stating a decibel figure in a form one of its
@@ -1611,6 +1619,25 @@ export const executableAppActionDescriptors = [
                 denominator: { type: 'integer', enum: [2, 4, 8, 16], description: 'Beat unit' },
             },
             required: ['numerator', 'denominator'],
+        },
+    },
+    {
+        actionType: 'setProductionBrief',
+        risk: 'authority-sensitive',
+        description:
+            "Replace the project's production brief with the next revision the application composed from a request.",
+        // Only `brief.compile` reaches it: the application composes the whole brief, so no provider
+        // ever names this command or its arguments.
+        discoverability: 'hidden',
+        sessionReplay: 'none',
+        intentPhrases: [],
+        targetRules: [],
+        parameters: {
+            properties: {
+                expectedRevision: { type: 'integer', minimum: 0 },
+                brief: { type: 'object' },
+            },
+            required: ['expectedRevision', 'brief'],
         },
     },
     {
@@ -3213,6 +3240,7 @@ export const executableAppActionMutationIdentityRulesByType = {
     reorderTrack: TRACK_MUTATION_IDENTITY,
     setTempo: SINGLETON_MUTATION_IDENTITY,
     setTimeSignature: SINGLETON_MUTATION_IDENTITY,
+    setProductionBrief: SINGLETON_MUTATION_IDENTITY,
     setPlayback: SINGLETON_MUTATION_IDENTITY,
     stopPlayback: SINGLETON_MUTATION_IDENTITY,
     seekPlayhead: SINGLETON_MUTATION_IDENTITY,
@@ -3330,6 +3358,7 @@ export const executableAppActionMutationIdempotenceByType = {
     reorderTrack: false,
     setTempo: true,
     setTimeSignature: true,
+    setProductionBrief: false,
     setPlayback: true,
     stopPlayback: false,
     seekPlayhead: false,

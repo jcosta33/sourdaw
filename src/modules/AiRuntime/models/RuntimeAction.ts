@@ -24,6 +24,7 @@ export const RUNTIME_ACTION_TYPES = [
     'setTrackColor',
     'setTempo',
     'setTimeSignature',
+    'setProductionBrief',
     'setPlayback',
     'togglePlayback',
     'stopPlayback',

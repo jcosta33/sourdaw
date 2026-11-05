@@ -69,6 +69,10 @@ function withReplayRevision(brief: ProductionBrief, revision: number): Productio
 }
 
 export const handleSetProductionBrief = createHandler<'setProductionBrief'>({
+    // Every write, and so every inverse, names the revision it replaces and `execute` refuses any
+    // other, so reapplying it in a confirmed batch after the project moved can never overwrite a
+    // brief someone else wrote meanwhile: it lands on the revision it was composed against or not at all.
+    canReapplyAfterDivergence: (action) => Number.isInteger(action.payload.expectedRevision),
     execute: (action) => {
         const project = projectStore.value;
         const next = action.payload.brief;

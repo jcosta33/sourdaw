@@ -23,6 +23,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { getProjectHandlers } from '#/modules/Project/useCases';
 import {
     defaultTransportState,
     readSecondsAtBeat,
@@ -115,6 +116,7 @@ describe('visible tempo-map command entry', () => {
             getAutomationHandlers(),
             getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
             getMidiNoteTransformHandlers(),
+            getProjectHandlers(),
             getTransportHandlers(),
             getYeastHandlers(),
         ]);
