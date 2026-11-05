@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 
+import { currentKeyboardLayoutMap, loadKeyboardLayoutMap } from '#/infra/keyboardLayout/keyboardLayoutMap';
 import { getHandlerMap } from '#/modules/Command/stores';
 import { projectLoadFailureStore, projectStore } from '#/modules/Project/stores';
 
@@ -10,6 +11,7 @@ import {
     type KeyTarget,
 } from '../../useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown';
 import { handleKeyup } from '../../useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeyup';
+import { resolveShortcutKey } from '../../useCases/resolveShortcutKey';
 
 function resolveKeyTarget(isTextEntry: boolean, target: EventTarget | null): KeyTarget {
     if (isTextEntry) {
@@ -153,7 +155,7 @@ export const useGlobalKeyboardShortcuts = (): void => {
             const keyTarget = resolveKeyTarget(isTextEntry, target);
 
             const shouldPreventDefault = handleKeydown({
-                key: event.key,
+                key: resolveShortcutKey(event, currentKeyboardLayoutMap()),
                 mod: event.metaKey || event.ctrlKey,
                 shift: event.shiftKey,
                 alt: event.altKey,
@@ -170,6 +172,7 @@ export const useGlobalKeyboardShortcuts = (): void => {
             handleKeyup(event.key);
         };
 
+        void loadKeyboardLayoutMap();
         window.addEventListener('keydown', handler);
         window.addEventListener('keyup', keyupHandler);
 
