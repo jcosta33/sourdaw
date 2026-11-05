@@ -98,8 +98,9 @@ function describeSource(preset: SoundPreset, descriptor: MixRecipeDescriptor): s
  * Each device becomes an `insert` step in chain order and each stored parameter becomes a window
  * whose minimum equals its maximum, so expanding the recipe writes the stored values and nothing
  * the preset did not author. A preset is published only when every device is an effect, every stored
- * value is one its parameter declares, its tags name at least one produced descriptor, and its
- * category or tags name at least one role; otherwise nothing is guessed and it is not published. A
+ * value is one its parameter declares, and its tags name at least one produced descriptor; otherwise
+ * nothing is guessed and it is not published. Its roles are those its category or tags name, and a
+ * preset naming none is a generic processor published with no role, which serves any source. A
  * preset naming several descriptors yields one recipe for each. Prerequisites, contraindications and
  * metrics stay empty, because the catalog defines them per recipe and not per descriptor.
  */
@@ -108,7 +109,7 @@ export function buildPresetMixRecipes(presets: readonly SoundPreset[]): MixRecip
         const tags = new Set(preset.tags.map(normalizeTag));
         const descriptors = resolveDescriptors(tags);
         const roles = resolveRoles(preset.category, tags);
-        if (descriptors.length === 0 || roles.length === 0) {
+        if (descriptors.length === 0) {
             return [];
         }
         const steps = toInsertSteps(preset);

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { undoToIndex } from '../undoToIndex';
+import { moveHistoryToStep } from '../moveHistoryToStep';
 
 import type { ActionUndoEntry } from '../../models/UndoEntry';
 import type { UndoStoreState } from '../../stores/undoStore';
@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => {
     };
     return {
         undoStoreValue,
-        redo: vi.fn<() => Promise<void>>(),
+        redo: vi.fn<(options?: { stepOverConflicts?: boolean }) => Promise<void>>(),
         undo: vi.fn<() => Promise<UndoResult>>(),
         undoTreeMoveTo: vi.fn<(currentEntryId: string | null) => void>(),
     };
@@ -89,7 +89,7 @@ function mockRedoConsumingHead(): void {
     });
 }
 
-describe('undoToIndex', () => {
+describe('moveHistoryToStep', () => {
     beforeEach(() => {
         mocks.redo.mockReset();
         mocks.undo.mockReset();
@@ -102,19 +102,19 @@ describe('undoToIndex', () => {
     it('should return without stepping when the undo store is unavailable', async () => {
         mocks.undoStoreValue.value = null;
 
-        await undoToIndex(0);
+        await moveHistoryToStep('one');
 
         expect(mocks.undo).not.toHaveBeenCalled();
         expect(mocks.redo).not.toHaveBeenCalled();
     });
 
-    it('should return without stepping when target index matches the current past head', async () => {
+    it('should return without stepping when the target is already the newest applied entry', async () => {
         mocks.undoStoreValue.value = {
             past: [actionEntry('one'), actionEntry('two')],
             future: [actionEntry('three')],
         };
 
-        await undoToIndex(1);
+        await moveHistoryToStep('two');
 
         expect(mocks.undo).not.toHaveBeenCalled();
         expect(mocks.redo).not.toHaveBeenCalled();
@@ -127,7 +127,7 @@ describe('undoToIndex', () => {
             future: [],
         };
 
-        await undoToIndex(0);
+        await moveHistoryToStep('one');
 
         expect(mocks.undo).toHaveBeenCalledTimes(2);
         expect(mocks.redo).not.toHaveBeenCalled();
@@ -141,22 +141,24 @@ describe('undoToIndex', () => {
             future: [actionEntry('two'), actionEntry('three')],
         };
 
-        await undoToIndex(2);
+        await moveHistoryToStep('three');
 
         expect(mocks.redo).toHaveBeenCalledTimes(2);
+        expect(mocks.redo).toHaveBeenNthCalledWith(1, { stepOverConflicts: false });
+        expect(mocks.redo).toHaveBeenNthCalledWith(2, { stepOverConflicts: false });
         expect(mocks.undo).not.toHaveBeenCalled();
         expect(mocks.undoStoreValue.value.past.map((entry) => entry.id)).toEqual(['one', 'two', 'three']);
     });
 
     it('should stop the forward sweep when redo makes no progress', async () => {
         // A redo() that neither applies nor drops anything (store untouched) must
-        // not be retried for the full fixed step count.
+        // not be retried until the target is reached.
         mocks.undoStoreValue.value = {
             past: [actionEntry('one')],
             future: [actionEntry('two'), actionEntry('three')],
         };
 
-        await undoToIndex(2);
+        await moveHistoryToStep('three');
 
         expect(mocks.redo).toHaveBeenCalledTimes(1);
         expect(mocks.undo).not.toHaveBeenCalled();
@@ -164,15 +166,15 @@ describe('undoToIndex', () => {
 
     it('should drop an inert entry above the target without undoing the target row', async () => {
         // Review scenario: past=[A(undoable), B(inert), C(undoable)], user clicks
-        // row A (targetIndex 0). A fixed call count — or a loop that lets undo()
-        // sweep the inert B — undoes A, the entry the user chose to keep.
+        // row A. A loop that lets undo() sweep the inert B undoes A, the entry
+        // the user chose to keep.
         mockUndoConsumingHead();
         mocks.undoStoreValue.value = {
             past: [actionEntry('A'), inertEntry('B'), actionEntry('C')],
             future: [],
         };
 
-        await undoToIndex(0);
+        await moveHistoryToStep('A');
 
         expect(mocks.undo).toHaveBeenCalledTimes(1);
         expect(mocks.undoStoreValue.value.past.map((entry) => entry.id)).toEqual(['A']);
@@ -188,7 +190,7 @@ describe('undoToIndex', () => {
             future: [],
         };
 
-        await undoToIndex(0);
+        await moveHistoryToStep('A');
 
         expect(mocks.undo).toHaveBeenCalledTimes(1);
         expect(mocks.undoStoreValue.value.past.map((entry) => entry.id)).toEqual(['A']);
@@ -205,9 +207,86 @@ describe('undoToIndex', () => {
             future: [],
         };
 
-        await undoToIndex(0);
+        await moveHistoryToStep('one');
 
         expect(mocks.undo).toHaveBeenCalledTimes(1);
         expect(mocks.undoStoreValue.value.past).toHaveLength(2);
+    });
+
+    it('should return without stepping when the target is in neither stack', async () => {
+        mocks.undoStoreValue.value = {
+            past: [actionEntry('one'), actionEntry('two')],
+            future: [actionEntry('three')],
+        };
+
+        await moveHistoryToStep('gone');
+
+        expect(mocks.undo).not.toHaveBeenCalled();
+        expect(mocks.redo).not.toHaveBeenCalled();
+    });
+
+    it('should stop the forward sweep once redo consumes several entries and applies the target', async () => {
+        // redo() consumes a variable number of entries (a group, or not-applied
+        // entries it drops), so the sweep re-reads the store instead of counting.
+        mocks.redo.mockImplementationOnce(() => {
+            mocks.undoStoreValue.value = {
+                past: [actionEntry('one'), actionEntry('three')],
+                future: [actionEntry('four')],
+            };
+            return Promise.resolve();
+        });
+        mocks.undoStoreValue.value = {
+            past: [actionEntry('one')],
+            future: [actionEntry('two'), actionEntry('three'), actionEntry('four')],
+        };
+
+        await moveHistoryToStep('three');
+
+        expect(mocks.redo).toHaveBeenCalledTimes(1);
+        expect(mocks.undoStoreValue.value.future.map((entry) => entry.id)).toEqual(['four']);
+    });
+
+    it('should stop the backward sweep once the target itself has been undone', async () => {
+        // One undo() can consume more than the head — a group, or an entry the
+        // sweep never saw. Once the target is gone from `past` it can no longer
+        // become the newest applied entry, so the sweep must stop rather than
+        // keep undoing the history beneath it.
+        mockUndoConsumingHead();
+        mocks.undo.mockImplementationOnce(() => {
+            mocks.undoStoreValue.value = {
+                past: [actionEntry('one')],
+                future: [actionEntry('two'), actionEntry('three')],
+            };
+            return Promise.resolve({ headConsumed: true });
+        });
+        mocks.undoStoreValue.value = {
+            past: [actionEntry('one'), actionEntry('two'), actionEntry('three')],
+            future: [],
+        };
+
+        await moveHistoryToStep('two');
+
+        expect(mocks.undo).toHaveBeenCalledTimes(1);
+        expect(mocks.undoStoreValue.value.past.map((entry) => entry.id)).toEqual(['one']);
+    });
+
+    it('should stop the forward sweep when redo applies nothing even if it purged entries', async () => {
+        // A conflicted head unit, refused without step-over, leaves `past` as it
+        // was; redo may still have dropped not-applied entries ahead of it.
+        mocks.redo.mockImplementation(() => {
+            mocks.undoStoreValue.value = {
+                past: [actionEntry('one')],
+                future: [actionEntry('three')],
+            };
+            return Promise.resolve();
+        });
+        mocks.undoStoreValue.value = {
+            past: [actionEntry('one')],
+            future: [actionEntry('two'), actionEntry('three')],
+        };
+
+        await moveHistoryToStep('three');
+
+        expect(mocks.redo).toHaveBeenCalledTimes(1);
     });
 });

@@ -1013,7 +1013,12 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/stores/trackStore.ts': 2,
         // Snapshot capture reads serializable device topology for a later command.
         'src/modules/Arrangement/useCases/captureTrackClipStates.ts': 1,
-        'src/modules/Arrangement/useCases/device/addDevice.ts': 2,
+        // Count provenance: was 2, measured 1 — the second hit was the
+        // `parameterValues: Record<string, number>` annotation on a local the
+        // added-device composition built. That composition moved to the pure
+        // `composeAddedDeviceParameterValues`, which writes nothing, so the
+        // remaining hit is the device chain this file writes to the project.
+        'src/modules/Arrangement/useCases/device/addDevice.ts': 1,
         'src/modules/Arrangement/useCases/device/addExternalDevice.ts': 2,
         'src/modules/Arrangement/useCases/device/addMidiFx.ts': 1,
         'src/modules/Arrangement/useCases/device/bypassDevice.ts': 1,

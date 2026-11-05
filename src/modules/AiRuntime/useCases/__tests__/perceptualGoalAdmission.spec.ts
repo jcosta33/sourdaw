@@ -417,6 +417,17 @@ describe('perceptual goal admission', () => {
         },
         { label: 'project scope', prompt: 'make the mix warmer', read: context },
         {
+            // An audio track with no recipe role is still served by the recipes that name no role.
+            label: 'track with an unknown role',
+            prompt: 'make Vocals warmer',
+            read: {
+                ...context,
+                tracks: [
+                    { ...vocals, canonicalRole: { role: 'unknown', source: 'name-tags', evidence: 'name-tokens' } },
+                ],
+            },
+        },
+        {
             label: 'quoted selection-like name',
             prompt: 'make "selected track" warmer',
             read: { ...context, tracks: [{ ...vocals, name: 'selected track' }], selectedTrackId: 'absent' },
@@ -551,16 +562,6 @@ describe('perceptual goal admission', () => {
             label: 'frozen track',
             prompt: 'make Vocals warmer',
             read: { ...context, tracks: [{ ...vocals, frozen: true }] },
-        },
-        {
-            label: 'unknown track role',
-            prompt: 'make Vocals warmer',
-            read: {
-                ...context,
-                tracks: [
-                    { ...vocals, canonicalRole: { role: 'unknown', source: 'name-tags', evidence: 'name-tokens' } },
-                ],
-            },
         },
         {
             label: 'quoted absent reference beside a supported role',
