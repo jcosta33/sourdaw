@@ -6,6 +6,7 @@ const runtime = vi.hoisted(() => ({
     clearRuntimeCachedAudioBuffers:
         vi.fn<typeof import('#/modules/AudioEngine/useCases').clearRuntimeCachedAudioBuffers>(),
     disarmRetrospectiveCapture: vi.fn(),
+    retractEveryEngineAttachment: vi.fn(),
     unloadPlugin: vi.fn(),
     repairRuntimeGraphFromProject: vi.fn(),
     beginProjectSessionPluginRetirement: vi.fn(),
@@ -22,6 +23,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     resetAudioGraph: runtime.resetAudioGraph,
     clearRuntimeCachedAudioBuffers: runtime.clearRuntimeCachedAudioBuffers,
     disarmRetrospectiveCapture: runtime.disarmRetrospectiveCapture,
+    engineAttachmentTracking: { read: () => ({ retractEveryAttachment: runtime.retractEveryEngineAttachment }) },
 }));
 vi.mock('#/modules/PluginHost/useCases', () => ({
     beginProjectSessionPluginRetirement: runtime.beginProjectSessionPluginRetirement,
