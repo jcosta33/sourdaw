@@ -45,7 +45,7 @@ function stubTogglePlaybackHandler(): ActionHandler {
     };
 }
 
-describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', () => {
+describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#21)', () => {
     let cleanupNodes: HTMLElement[] = [];
 
     beforeEach(() => {
@@ -143,18 +143,60 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
         expect(mocks.handleKeydown).toHaveBeenCalledTimes(1);
     });
 
-    it('gates the global shortcut (isInput=true) when Delete fires inside a [data-canvas-editor]', () => {
+    it('routes undo to the global layer while a [data-canvas-editor] has focus', () => {
         openSessionWithCommandHandlers();
         render(<Host />);
         const editor = mount(document.createElement('div'));
         editor.setAttribute('data-canvas-editor', '');
         const canvas = editor.appendChild(document.createElement('canvas'));
 
-        canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+        dispatchKey(canvas, { key: 'z', metaKey: true });
 
-        // The canvas editor owns Delete, so the contract must treat focus here
-        // like a text input and suppress the arrangement clip-delete shortcut.
-        expect(lastIsInput()).toBe(true);
+        expect(mocks.handleKeydown).toHaveBeenCalledTimes(1);
+        expect(mocks.handleKeydown.mock.calls[0]![0]).toMatchObject({ key: 'z', mod: true });
+        expect(lastIsInput()).toBe(false);
+    });
+
+    it('routes Space to the global layer while a [data-canvas-editor] has focus', () => {
+        openSessionWithCommandHandlers();
+        render(<Host />);
+        const editor = mount(document.createElement('div'));
+        editor.setAttribute('data-canvas-editor', '');
+        const canvas = editor.appendChild(document.createElement('canvas'));
+
+        dispatchKey(canvas, { key: ' ' });
+
+        expect(mocks.handleKeydown).toHaveBeenCalledTimes(1);
+        expect(lastIsInput()).toBe(false);
+    });
+
+    it('skips a key the focused canvas editor claimed with preventDefault in its React handler', () => {
+        openSessionWithCommandHandlers();
+        const claimedKeys = ['Delete'];
+        render(
+            <>
+                <Host />
+                <div data-canvas-editor="">
+                    <canvas
+                        data-testid="claiming-canvas"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                            if (claimedKeys.includes(event.key)) {
+                                event.preventDefault();
+                            }
+                        }}
+                    />
+                </div>
+            </>
+        );
+        const canvas = document.querySelector<HTMLElement>('[data-testid="claiming-canvas"]')!;
+
+        const claimed = dispatchKey(canvas, { key: 'Delete' });
+        expect(claimed.defaultPrevented).toBe(true);
+        expect(mocks.handleKeydown).not.toHaveBeenCalled();
+
+        dispatchKey(canvas, { key: 'z', metaKey: true });
+        expect(mocks.handleKeydown).toHaveBeenCalledTimes(1);
     });
 
     it('does NOT gate the global shortcut when Delete fires on an unmarked timeline surface', () => {
