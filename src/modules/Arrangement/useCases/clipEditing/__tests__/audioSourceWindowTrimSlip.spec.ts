@@ -52,6 +52,19 @@ function playedEntrySeconds(clip: Clip, tempo = TEMPO): number {
     return resolveAudioSourceOffsetSeconds(clip, tempo);
 }
 
+/** The tempo edit's promotion write `applyTempoAudioSources` performs before the new map lands. */
+function promoteSourceClock(): void {
+    const promotion = prepareTempoAudioSources({ timeline: liveTempoTimeline });
+    if (!promotion) {
+        throw new Error('Expected the tempo edit to capture a source promotion');
+    }
+    const projected = projectTempoAudioSources(trackStore.value!.tracks, [], promotion, 'promote');
+    if (!projected) {
+        throw new Error('Expected the promotion to reach the clip');
+    }
+    trackStore.set({ ...trackStore.value!, tracks: projected.tracks });
+}
+
 describe('canonical audio source window follows start trims and content slips', () => {
     beforeEach(() => {
         tempoMapStore.set({ changes: [] });
@@ -73,7 +86,10 @@ describe('canonical audio source window follows start trims and content slips', 
         // The split captured the canonical window on both fragments: the left
         // head enters the media at 0 s, the right head at 2 s (beat 4 at 120 BPM).
         expect(storedClip().audioOffsetSeconds).toBe(0);
-        expect(playedEntrySeconds(storedClip(rightClipId!))).toBeCloseTo(2, 12);
+        const rightFragment = storedClip(rightClipId!);
+        expect(Object.hasOwn(rightFragment, 'audioOffsetSeconds')).toBe(true);
+        expect(rightFragment.audioOffsetSeconds).toBe(2);
+        expect(playedEntrySeconds(rightFragment)).toBeCloseTo(2, 12);
 
         expect(trimClipStart('c', 2)).toBe(true);
 
@@ -124,14 +140,9 @@ describe('canonical audio source window follows start trims and content slips', 
 
     it('moves a tempo-promoted entry with a start trim under the edited clock', () => {
         seedClip();
-        // The tempo edit's promotion write (`applyTempoAudioSources` projects
-        // this same `projectTempoAudioSources` plan) freezes the beat offset as
-        // canonical seconds before the new tempo map lands.
-        const promotion = prepareTempoAudioSources({ timeline: liveTempoTimeline });
-        expect(promotion).not.toBeNull();
-        const projected = projectTempoAudioSources(trackStore.value!.tracks, [], promotion!, 'promote');
-        expect(projected).not.toBeNull();
-        trackStore.set({ ...trackStore.value!, tracks: projected!.tracks });
+        // The tempo edit freezes the beat offset as canonical seconds before
+        // the new tempo map lands.
+        promoteSourceClock();
         expect(storedClip().audioOffsetSeconds).toBe(0);
         expect(storedClip().audioUnwrappedOffsetSeconds).toBe(0);
 
@@ -150,11 +161,7 @@ describe('canonical audio source window follows start trims and content slips', 
 
     it('moves a tempo-promoted entry with a content slip under the edited clock', () => {
         seedClip();
-        const promotion = prepareTempoAudioSources({ timeline: liveTempoTimeline });
-        expect(promotion).not.toBeNull();
-        const projected = projectTempoAudioSources(trackStore.value!.tracks, [], promotion!, 'promote');
-        expect(projected).not.toBeNull();
-        trackStore.set({ ...trackStore.value!, tracks: projected!.tracks });
+        promoteSourceClock();
         expect(storedClip().audioOffsetSeconds).toBe(0);
 
         transportStore.set({ ...transportStore.value!, tempo: 60 });
@@ -166,5 +173,56 @@ describe('canonical audio source window follows start trims and content slips', 
         // converts to two source seconds.
         expect(playedEntrySeconds(slipped, 60)).toBeCloseTo(2, 12);
         expect(slipped.audioUnwrappedOffsetSeconds).toBeCloseTo(2, 12);
+    });
+
+    it('advances the canonical entry where the edited clock makes the beats fallback diverge', () => {
+        // 2 beats at the promotion clock (120 BPM) freeze as canonical second 1.
+        seedClip({ audioOffsetBeats: 2 });
+        promoteSourceClock();
+        expect(storedClip().audioOffsetSeconds).toBe(1);
+        expect(storedClip().audioOffsetBeats).toBe(2);
+
+        transportStore.set({ ...transportStore.value!, tempo: 60 });
+        expect(trimClipStart('c', 2)).toBe(true);
+
+        const trimmed = storedClip();
+        // Two beats at the edited 60 BPM clock move the canonical entry to
+        // 1 + 2 = 3 s while the beat offset alone advances 2 -> 4. Reading
+        // beats through the fallback would give 4 s; only the canonical
+        // advance names the playable edge.
+        expect(trimmed.audioOffsetBeats).toBe(4);
+        expect(Object.hasOwn(trimmed, 'audioOffsetSeconds')).toBe(true);
+        expect(trimmed.audioOffsetSeconds).toBe(3);
+        expect(playedEntrySeconds(trimmed, 60)).toBe(3);
+    });
+
+    it('advances the loop pass fields with a canonical content slip', () => {
+        seedClip({
+            startBeat: 2,
+            endBeat: 10,
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 0,
+            audioOffsetBeats: 1,
+        });
+        promoteSourceClock();
+        const promoted = storedClip();
+        // The promoted window: head 0.5 s, reset -0.5 s (one loop earlier at
+        // the phase-driven reset), pass head 0.5 s, origin beat 2.
+        expect(promoted.audioOffsetSeconds).toBeCloseTo(0.5, 12);
+        expect(promoted.audioLoopStartSeconds).toBeCloseTo(-0.5, 12);
+        expect(promoted.audioLoopPassEntrySeconds).toBeCloseTo(0.5, 12);
+        expect(promoted.audioLoopPassOriginBeat).toBe(2);
+
+        expect(slipClipContent('c', 'audio', 2)).toBe(true);
+
+        // The slip names media second 1, so the head and both loop seams
+        // translate by the 0.5 s to the new edge, while the pass origin beat
+        // stays the anchor it was.
+        const slipped = storedClip();
+        expect(playedEntrySeconds(slipped)).toBeCloseTo(1, 12);
+        expect(slipped.audioLoopStartSeconds).toBeCloseTo(0, 12);
+        expect(slipped.audioLoopPassEntrySeconds).toBeCloseTo(1, 12);
+        expect(slipped.audioLoopPassOriginBeat).toBe(2);
     });
 });
