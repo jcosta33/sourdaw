@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
-import { type SampleRecord } from '../../../models/LibraryTypes';
+import { type SampleRecord, makeMusicalKey } from '../../../models/LibraryTypes';
 import { SampleRow } from '../SampleRow';
 
 function createSample(overrides: Partial<SampleRecord> = {}): SampleRecord {
@@ -195,5 +195,26 @@ describe('SampleRow — overlay and decode-warning contracts', () => {
         const badge = screen.getByTitle('AIFF may not preview in your browser');
         const classes = badge.className.split(/\s+/);
         expect(classes.filter((c) => c === 'hidden' || c.startsWith('@['))).toEqual([]);
+    });
+});
+
+describe('SampleRow — key column fits the default sidebar', () => {
+    // Default sidebar (224px) minus aside border and paddings leaves a 199px
+    // listbox with overlay scrollbars; the key must show there. Raising the
+    // threshold above that width fails this case.
+    const DEFAULT_LISTBOX_WIDTH_PX = 199;
+
+    it('shows the key at or below the default listbox width', () => {
+        render(
+            <SampleRow
+                sample={createSample({ analysis: { key: makeMusicalKey('A', 'minor') } })}
+                isPlaying={false}
+                {...baseProps}
+            />
+        );
+        const keyClasses = screen.getByText('Am').className.split(/\s+/);
+        const threshold = keyClasses.map((c) => /^@\[([\d.]+)rem\]:/.exec(c)?.[1]).find((v) => v !== undefined);
+        expect(threshold).toBeDefined();
+        expect(Number(threshold) * 16).toBeLessThanOrEqual(DEFAULT_LISTBOX_WIDTH_PX);
     });
 });

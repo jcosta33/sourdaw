@@ -139,7 +139,7 @@ export const SampleRow = ({
                 </span>
             ) : null}
             {sample.analysis?.key ? (
-                <span className="hidden @[12.5rem]:block text-[8px] text-accent-gold/60 font-mono shrink-0 w-[24px] text-center">
+                <span className="hidden @[12.25rem]:block text-[8px] text-accent-gold/60 font-mono shrink-0 w-[24px] text-center">
                     {sample.analysis.key}
                 </span>
             ) : null}
