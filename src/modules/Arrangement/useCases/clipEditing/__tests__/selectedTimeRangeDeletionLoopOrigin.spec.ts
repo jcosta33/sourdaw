@@ -11,7 +11,7 @@ import {
     setNotesForClip,
 } from '#/modules/MIDI/useCases';
 import { prepareTimelineMapTimeOperation, prepareTimelineMapStateRestore } from '#/modules/Transport/useCases';
-import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
+import { resolveClipLoopOriginAdvance, resolveLoopAnchoredStartBeat } from '#/utils/clipLoopOrigin';
 
 import { loopPhaseControllers, loopPhaseNotes, scoreMidiClips } from '../../../__tests__/midiClipScore';
 import { setTimeOperationDependencies } from '../../timeOperations/timeOperationDependencies';
@@ -23,10 +23,10 @@ import { executeSelectedTimeRangeDeletion } from '../executeSelectedTimeRangeDel
  * source's loop, its content offset advances to the range end and it carries
  * the source's anchor, so it plays exactly what the source played from the
  * range end on. A MIDI clip that does not loop still re-bases its fragment's
- * notes under `midiOffsetBeats` 0. The right-edge trim keeps the clip's id,
- * notes, and content offset — a whole-clip relocation — so the anchor rides
- * the placement delta. Carried through, the stale anchor silenced every
- * surviving note of an excised head (the #5198 review draw).
+ * notes under `midiOffsetBeats` 0. An excised head is a start trim in place:
+ * the clip keeps its id and notes, its content offset advances by the trimmed
+ * span, and a looping clip keeps the source's loop length and anchor, so what
+ * follows the range plays exactly where, and as, the uncut clip played it.
  *
  * The audio twins follow the same per-basis law on the other side: an audio
  * fragment's `audioOffsetBeats` stays in source coordinates, advanced by the
@@ -292,33 +292,80 @@ describe('selected-range excise keeps looped survivors sounding (#5198)', () => 
         expect(midiStore.value?.notesByClipId[fragment.id]?.map((note) => note.startBeat)).toEqual([0.5]);
     });
 
-    it('the right-edge trim rides the anchor with its relocation and keeps sounding its surviving notes', () => {
-        // Excise [0,2) over the looped clip [0,16): the trim keeps the clip's
-        // id, notes, and content offset and moves the head to 2 — a whole-clip
-        // relocation by 2, so the anchor rides to 2 and the advance stays 0.
-        // n-a/n-b (m 2.5, 3.5) sound before and survive; n-c (m 4.5) sits past
-        // the window and stays silent.
+    it('the head excise trims the clip in place: its surviving notes sound where the uncut clip played them', () => {
+        // Excise [0,2) over the looped clip [0,16): the clip keeps its id and
+        // notes, its head moves to 2 and its content offset advances by the
+        // same 2, so content after the range stays where it was. n-a/n-b
+        // (m 2.5, 3.5) strike on every pass of the uncut clip after beat 2;
+        // n-c (m 4.5) sits past the loop region and stays silent. Relocating
+        // the clip instead (offset kept, anchor carried to 2) played every
+        // survivor two beats late.
         seedLoopedClip([
             { id: 'n-a', startBeat: 2.5 },
             { id: 'n-b', startBeat: 3.5 },
             { id: 'n-c', startBeat: 4.5 },
         ]);
+        const uncut = structuredClone(allClips()[0]);
+        if (!uncut) {
+            throw new Error('Expected the seeded clip');
+        }
+        const uncutAfterRange = projectSoundingStartBeats(uncut).filter((beat) => beat >= 2);
+        expect(uncutAfterRange).toEqual([2.5, 3.5, 6.5, 7.5, 10.5, 11.5, 14.5, 15.5]);
 
         const result = executeSelectedTimeRangeDeletion({ startBeat: 0, endBeat: 2, trackIds: ['t-keys'] });
         expect(result.status).toBe('applied');
 
         const trimmed = allClips().find((clip) => clip.id === 'c-loop');
         if (!trimmed) {
-            throw new Error('Expected the right-edge clip to keep its id');
+            throw new Error('Expected the head-excised clip to keep its id');
         }
-        expect(trimmed.startBeat).toBe(2);
-        expect(trimmed.loopOriginBeat).toBe(2);
+        expect(trimmed).toMatchObject({ startBeat: 2, midiOffsetBeats: 2, loopLength: 4, loopOriginBeat: 0 });
+        expect(projectSoundingStartBeats(trimmed)).toEqual(uncutAfterRange);
+    });
 
-        // The stale carry would derive advance 2, whose window [−2,2)
-        // silences every survivor — the #5198 draw.
-        const sounded = projectSoundingStartBeats(trimmed);
-        expect(sounded).toEqual([4.5, 5.5, 8.5, 9.5, 12.5, 13.5]);
-        expect(sounded).toEqual(projectSoundingStartBeats({ ...trimmed, loopOriginBeat: undefined }));
+    it.each([
+        { name: 'an off-grid head excise', clip: {}, range: { startBeat: 0, endBeat: 5 } },
+        {
+            name: 'a head excise through a start-trimmed clip anchored before its start',
+            clip: { startBeat: 3, endBeat: 19, midiOffsetBeats: 2, loopOriginBeat: 1 },
+            range: { startBeat: 1, endBeat: 10.5 },
+        },
+        {
+            name: 'a head excise through a clip the loop gesture never anchored',
+            clip: { loopOriginBeat: undefined },
+            range: { startBeat: 0, endBeat: 6 },
+        },
+        {
+            name: 'a head excise through a clip that loops its own length',
+            clip: { endBeat: 6, loopLength: undefined },
+            range: { startBeat: 0, endBeat: 1 },
+        },
+    ])('$name keeps every beat the looping MIDI clip still plays after the range', ({ clip, range }) => {
+        seedLoopPhrase(clip);
+        const source = structuredClone(allClips()[0]);
+        if (!source) {
+            throw new Error('Expected the seeded clip');
+        }
+        const expected = scoreMidiClips([source], range.endBeat, source.endBeat);
+        // The fixture is not vacuous: the surviving span strikes several notes.
+        expect(expected.filter((beat) => beat.struck.length > 0).length).toBeGreaterThan(2);
+
+        const result = executeSelectedTimeRangeDeletion({ ...range, trackIds: ['t-keys'] });
+        expect(result.status).toBe('applied');
+
+        const survivors = allClips();
+        expect(survivors.map((survivor) => [survivor.id, survivor.startBeat])).toEqual([['c-loop', range.endBeat]]);
+        expect(scoreMidiClips(survivors, range.endBeat, source.endBeat)).toEqual(expected);
+        expect(scoreMidiClips(survivors, 0, range.endBeat).flatMap((beat) => beat.struck)).toEqual([]);
+        // The probability roll counts passes from the loop anchor; the trimmed
+        // clip keeps the source's, so every pass rolls as the uncut clip's did.
+        const anchoredStartOf = (candidate: Clip) =>
+            resolveLoopAnchoredStartBeat({
+                startBeat: candidate.startBeat,
+                loopOriginBeat: candidate.loopOriginBeat,
+                loopEnabled: candidate.loopEnabled ?? false,
+            });
+        expect(anchoredStartOf(survivors[0]!)).toBe(anchoredStartOf(source));
     });
 
     it('the spanning audio fragment carries its anchor and keeps the source region', () => {
@@ -356,10 +403,10 @@ describe('selected-range excise keeps looped survivors sounding (#5198)', () => 
         // Audio clip [0,16) anchored at 0, region [0,4). Excise [0,5) keeps
         // the clip's id and advances its offset by the span to 5. The carried
         // anchor lets the advance grow by the same span: region 5 − 5 = 0 with
-        // the entry at phase 5 mod 4 = 1, the cut phase. The relocation shift
-        // the MIDI side takes here would pin the advance at 0 and slide the
-        // region to 5 — the fragment reading source beats 5-6 outside the
-        // region — the #5198 review draw.
+        // the entry at phase 5 mod 4 = 1, the cut phase. A relocation shift of
+        // the anchor would pin the advance at 0 and slide the region to 5 — the
+        // fragment reading source beats 5-6 outside the region — the #5198
+        // review draw.
         seedAudioLoopedClip();
 
         const result = executeSelectedTimeRangeDeletion({ startBeat: 0, endBeat: 5, trackIds: ['t-keys'] });

@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { midiStore } from '#/modules/MIDI/stores';
-import { prepareMidiGlobalTimeTransaction } from '#/modules/MIDI/useCases';
+import { prepareMidiGlobalTimeTransaction, projectMidiClipPlayback } from '#/modules/MIDI/useCases';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
+import { scoreMidiClips } from '../../../__tests__/midiClipScore';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTake, createTakeLane, type TakeLane } from '../../../models/TakeLane';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
@@ -312,6 +313,30 @@ describe('executeSelectedTimeRangeDeletion', () => {
         expect(result.status).toBe('rejected');
         expect(randomUuid).not.toHaveBeenCalled();
         expect(trackStore.value).toBe(originalState);
+    });
+
+    it('rejects a head trim whose MIDI content offset would overflow', () => {
+        const clip = createClip({
+            id: 'head',
+            trackId: 'target',
+            startBeat: 0,
+            endBeat: Number.MAX_VALUE,
+            type: 'midi',
+        });
+        clip.audioOffsetBeats = 0;
+        clip.midiOffsetBeats = Number.MAX_VALUE;
+        const originalState = setArrangement([createTrack('target', [clip], 'midi')]);
+        const originalMidiState = midiStore.value;
+
+        const result = executeSelectedTimeRangeDeletion({
+            startBeat: 0,
+            endBeat: Number.MAX_VALUE / 2,
+            trackIds: ['target'],
+        });
+
+        expect(result.status).toBe('rejected');
+        expect(trackStore.value).toBe(originalState);
+        expect(midiStore.value).toBe(originalMidiState);
     });
 
     it('passes a complete ordered ownership snapshot, including dormant owners, to MIDI', () => {
@@ -774,6 +799,65 @@ describe('executeSelectedTimeRangeDeletion', () => {
         ]);
 
         expect(result.undo()).toBe(true);
+        expect(midiStore.value).toBe(originalMidiState);
+    });
+
+    it('trims a MIDI clip whose head the range removes in place: what follows the range plays where it did', () => {
+        // Non-looping clip [4,12) at offset 0; delete [2,6) removes its head.
+        // n-kept (content 3) plays at 7 and must stay there; n-cut (content 1,
+        // at 5) and the pedal press at 5 lie inside the range. The press is
+        // still in force at 6, so the trimmed head opens from it, as the
+        // spanning excise's right part does; the release at 9 stays at 9.
+        const head = ClipDummy.create({
+            id: 'head',
+            trackId: 'target',
+            startBeat: 4,
+            endBeat: 12,
+            type: 'midi',
+            midiOffsetBeats: 0,
+        });
+        const originalState = setArrangement([createTrack('target', [head], 'midi')]);
+        midiStore.set({
+            notesByClipId: {
+                head: [
+                    { id: 'n-cut', pitch: 60, startBeat: 1, duration: 0.5, velocity: 90 },
+                    { id: 'n-kept', pitch: 64, startBeat: 3, duration: 1, velocity: 90 },
+                ],
+            },
+            ccByClipId: {
+                head: [
+                    { id: 'down', controller: 64, value: 127, beat: 1, channel: 0 },
+                    { id: 'up', controller: 64, value: 0, beat: 5, channel: 0 },
+                ],
+            },
+            pitchBendByClipId: {},
+        });
+        const originalMidiState = midiStore.value;
+        const uncutAfterRange = scoreMidiClips([head], 6, 12);
+
+        const result = requireApplied(
+            executeSelectedTimeRangeDeletion({ startBeat: 2, endBeat: 6, trackIds: ['target'] })
+        );
+
+        const trimmed = trackStore.value?.tracks[0]?.clips;
+        expect(trimmed?.map((clip) => [clip.id, clip.startBeat, clip.endBeat, clip.midiOffsetBeats])).toEqual([
+            ['head', 6, 12, 2],
+        ]);
+        expect(midiStore.value).toBe(originalMidiState);
+        const played = projectMidiClipPlayback({
+            notes: midiStore.value?.notesByClipId.head ?? [],
+            controlChanges: midiStore.value?.ccByClipId.head ?? [],
+            clip: trimmed![0]!,
+        });
+        expect(played.notes.map((note) => [note.id, note.startBeat])).toEqual([['n-kept', 7]]);
+        expect(played.controlChanges.map((row) => [row.value, row.beat])).toEqual([
+            [127, 6],
+            [0, 9],
+        ]);
+        expect(scoreMidiClips(trimmed!, 6, 12)).toEqual(uncutAfterRange);
+
+        expect(result.undo()).toBe(true);
+        expect(trackStore.value).toBe(originalState);
         expect(midiStore.value).toBe(originalMidiState);
     });
 
