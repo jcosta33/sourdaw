@@ -1,4 +1,4 @@
-import { formatBarBeatSixteenth } from '../../models/musicalPositionFormat';
+import { formatBarBeatSixteenth } from '../../models/MusicalPositionFormat';
 
 import { type MeterInput } from './meterInput';
 

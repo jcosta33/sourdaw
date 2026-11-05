@@ -1,4 +1,4 @@
-import { formatBarBeatSixteenthLength } from '../../models/musicalPositionFormat';
+import { formatBarBeatSixteenthLength } from '../../models/MusicalPositionFormat';
 
 import { measureMusicalLength } from './measureMusicalLength';
 import { type MeterInput } from './meterInput';

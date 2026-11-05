@@ -4,7 +4,7 @@ import {
     formatBarBeatSixteenth,
     formatBarBeatSixteenthLength,
     measureBarBeatSixteenthLength,
-} from '../musicalPositionFormat';
+} from '../MusicalPositionFormat';
 import { type TimeSignatureChange } from '../TimeSignatureMap';
 
 const FOUR_FOUR = { defaultNumerator: 4, defaultDenominator: 4 };
