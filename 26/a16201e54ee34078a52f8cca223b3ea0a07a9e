@@ -1,0 +1,100 @@
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx
+  s_0314bb17e5dee3::t_d182c5c8c76ca2 12,194
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollToolbar.spec.tsx
+  s_0314bb17e5dee3::t_e67747d7ffc960 190-203
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipInspector.spec.tsx
+  s_0314bb17e5dee3::t_f92e53fe02f817 273-279,281-285
+  s_fec7059b7a251c::t_3908863a34f98e 286-300
+  s_fec7059b7a251c::t_de4e28a809af3b 4
+  s_fec7059b7a251c::t_7096db9e529bea 1
+  s_fec7059b7a251c::t_46ef92e0714adc 280
+src/modules/Transport/useCases/index.ts
+  s_0314bb17e5dee3::t_358c0763a8e27c 82-83
+  s_fec7059b7a251c::t_3908863a34f98e 84
+  s_fec7059b7a251c::t_40abcb59efb536 85
+src/modules/Transport/useCases/transportQueries/__tests__/formatMusicalPosition.spec.ts
+  s_0314bb17e5dee3::t_85f192a1868ac6 2,3-4,6,8,15-16,19,22-23,26,34-35
+  s_fec7059b7a251c::t_40abcb59efb536 1,5,7,9-10,17-18,20-21,24-25,27-33
+  s_fec7059b7a251c::t_1c1fb120eddb72 12-14
+  s_fec7059b7a251c::t_cff940c860826a 11
+src/modules/Transport/useCases/transportQueries/formatMusicalLength.ts
+  s_0314bb17e5dee3::t_433129b4d1257e 2,5-6,9
+  s_fec7059b7a251c::t_19d876ab5f9423 4
+  s_fec7059b7a251c::t_40abcb59efb536 3,7-8
+  s_730795a6b8b392::t_878a20876f32d9 1
+src/modules/Transport/useCases/transportQueries/formatMusicalPosition.ts
+  s_0314bb17e5dee3::t_eaa10791461a88 2,4,7-8
+  s_fec7059b7a251c::t_40abcb59efb536 3,5-6
+  s_730795a6b8b392::t_bfc7a9c722d84b 1
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useSelectionLabel.spec.ts
+  s_0314bb17e5dee3::t_6fde77c5e7e291 21-23,27,29,31-33,54-55,155,163,167,169,174,186,198,207,212,238
+  s_fec7059b7a251c::t_30ee59dea3ace6 15-19,24-26,110-111,187,199
+  s_fec7059b7a251c::t_0ab15203514436 211
+  s_fec7059b7a251c::t_3b331811bb2d56 14,28,30,115,166,210,214,219-237
+src/utils/Music/MusicalScale.ts
+  s_55244eb93b97d1::t_c69798d79b1772 20-41
+src/utils/Music/__tests__/MusicalScale.spec.ts
+  s_0314bb17e5dee3::t_cd5bd23078a73c 3-27
+src/modules/TimelineEditor/presentations/views/Inspector/ClipInspector.tsx
+  s_0314bb17e5dee3::t_601da04f49adeb 16
+  s_fec7059b7a251c::t_40abcb59efb536 15,46-47,56-62,206,211,216
+  s_fec7059b7a251c::t_19d876ab5f9423 12
+src/modules/WorkspaceShell/presentations/hooks/useSelectionLabel.ts
+  s_0314bb17e5dee3::t_9d41f5cf204116 11,16,43,52
+  s_fec7059b7a251c::t_40abcb59efb536 4,31-33,35-40
+  s_fec7059b7a251c::t_3908863a34f98e 5,34,41-42,44
+src/modules/Transport/useCases/transportQueries/measureMusicalLength.ts
+  s_fec7059b7a251c::t_40abcb59efb536 2-10
+  s_730795a6b8b392::t_bd3b34f68811fd 1
+src/modules/Transport/models/__tests__/MusicalPositionFormat.spec.ts
+  s_fec7059b7a251c::t_40abcb59efb536 3-6,103-113
+  s_730795a6b8b392::t_891f7497039f56 7
+  s_fec7059b7a251c::t_3beb75f82f8954 23-24,28-36,59-65,67,70-71,75-76,79-97,101-102
+src/modules/Transport/useCases/transportQueries/formatMusicalLengthParts.ts
+  s_fec7059b7a251c::t_3908863a34f98e 2-6
+  s_730795a6b8b392::t_b0088616af4d46 1
+src/modules/Transport/useCases/transportQueries/meterInput.ts
+  s_fec7059b7a251c::t_40abcb59efb536 1-8
+src/modules/Transport/models/MusicalPositionFormat.ts
+  s_fec7059b7a251c::t_f61d5738fe8c92 1-2,12-25,29-31,38-44,54-58,66-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "26a16201e54ee34078a52f8cca223b3ea0a07a9e",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_730795a6b8b392": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_730795a6b8b392",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
