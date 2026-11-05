@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { SignalFlowSection } from '../Inspector/SignalFlowSection';
 import { TrackLevelSection } from '../Inspector/TrackLevelSection';
 import { InspectorPanel } from '../InspectorPanel';
 
@@ -41,8 +42,22 @@ vi.mock('../Inspector/ClipInspector', () => ({ ClipInspector: () => null }));
 vi.mock('../Inspector/DeviceInspector', () => ({ DeviceInspector: () => null }));
 // The real TrackInspector mounts a dozen store-backed sections; the level
 // section carries the in-flight gesture this spec is about.
+vi.mock('#/modules/Routing/presentations/views', () => ({ RoutingGraph: () => <div data-testid="routing-graph" /> }));
 vi.mock('../Inspector/TrackInspector', () => ({
-    TrackInspector: ({ track }: { track: Track }) => <TrackLevelSection track={track} />,
+    TrackInspector: ({
+        track,
+        signalFlowExpanded,
+        onSignalFlowExpandedChange,
+    }: {
+        track: Track;
+        signalFlowExpanded: boolean;
+        onSignalFlowExpandedChange: (expanded: boolean) => void;
+    }) => (
+        <>
+            <TrackLevelSection track={track} />
+            <SignalFlowSection expanded={signalFlowExpanded} onExpandedChange={onSignalFlowExpandedChange} />
+        </>
+    ),
 }));
 
 const makeTrack = (id: string, name: string, gain: number): Track => ({
@@ -82,9 +97,10 @@ const makeTrack = (id: string, name: string, gain: number): Track => ({
 
 const trackA = makeTrack('track-a', 'Track A', 0.2);
 const trackB = makeTrack('track-b', 'Track B', 0.8);
+const master: Track = { ...makeTrack('master', 'Master', 1), kind: 'master' };
 
 const selectTrack = (selected: Track): void => {
-    mockUseTracks.mockReturnValue({ tracks: [trackA, trackB], selectedTrackId: selected.id });
+    mockUseTracks.mockReturnValue({ tracks: [trackA, trackB, master], selectedTrackId: selected.id });
 };
 
 const readSliderRoot = (name: string): HTMLElement => {
@@ -143,5 +159,21 @@ describe('InspectorPanel track switch', () => {
         });
         expect(mockExecuteAppAction).not.toHaveBeenCalled();
         expect(screen.getByRole('slider', { name: 'Track B gain' })).toHaveAttribute('aria-valuenow', '80');
+    });
+
+    it('keeps the Signal Flow disclosure open when the selection moves between tracks and to master', () => {
+        selectTrack(trackA);
+        const view = render(<InspectorPanel />);
+        fireEvent.click(screen.getByRole('button', { name: /Signal Flow/ }));
+        expect(screen.getByRole('button', { name: /Signal Flow/ })).toHaveAttribute('aria-expanded', 'true');
+
+        selectTrack(trackB);
+        view.rerender(<InspectorPanel />);
+        expect(screen.getByRole('button', { name: /Signal Flow/ })).toHaveAttribute('aria-expanded', 'true');
+        expect(screen.getByTestId('routing-graph')).toBeInTheDocument();
+
+        selectTrack(master);
+        view.rerender(<InspectorPanel />);
+        expect(screen.getByRole('button', { name: /Signal Flow/ })).toHaveAttribute('aria-expanded', 'true');
     });
 });
