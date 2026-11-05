@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/agentCatalogAudition/readCatalogCandidateBuffer.ts
+  s_fec7059b7a251c::t_ef699714223987 1-19
+src/modules/AiRuntime/useCases/agentCatalogAudition/auditionAgentCatalogCandidate.ts
+  s_fec7059b7a251c::t_c8837657b677e4 5
+src/modules/AiRuntime/useCases/agentCatalogAudition/applyAgentAuditionCandidate.ts
+  s_fec7059b7a251c::t_8528a9d2d5f142 11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cd89f8b6396e24b275ef5586df9a2052c95e4864",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
