@@ -37,6 +37,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     // `#/modules/AudioEngine/useCases`; nothing this suite exercises reads it,
     // so `false` is the value with no behaviour behind it.
     nativeLiveGraphSessionOffered: vi.fn(() => false),
+    // The same census: the runtime graph repair reads the attachment port,
+    // and this suite never runs a repair.
+    engineAttachmentTracking: { configure: vi.fn(), read: vi.fn() },
     openCachedAudioBufferHold: vi.fn(() => ({ retain: vi.fn(), release: vi.fn() })),
     soundsNativeNotes: vi.fn(() => false),
     addMidiFxToStrip: vi.fn(),

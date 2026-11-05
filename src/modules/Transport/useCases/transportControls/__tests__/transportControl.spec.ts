@@ -1,8 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { seekPlayhead } from '../seekPlayhead';
 import { stopPlayback } from '../stopPlayback';
 import { togglePlayback } from '../togglePlayback';
+
+registerDeviceEnginePorts();
 
 const mocks = vi.hoisted(() => ({
     getTransportState: vi.fn(),

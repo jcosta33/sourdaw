@@ -8,6 +8,11 @@ export { reconcileVcaGroupRuntimeGain } from './scheduling/applyAutomation/recon
 export { reconcileVcaRuntimeGain } from './scheduling/applyAutomation/reconcileVcaRuntimeGain';
 // Published because the composition root registers the runtime writes device modules own.
 export { deviceRuntimeParameterWriters } from './scheduling/applyAutomation/deviceRuntimeParameterWriters';
+// Published because the composition root registers the MIDI effect rack, kit
+// swing and note panic participants device modules own.
+export { liveMidiProcessor } from './scheduling/liveMidiProcessor';
+export { kitSwing } from './scheduling/kitSwing';
+export { notePanicParticipants } from './transportControls/notePanicParticipants';
 export { resolvePlaybackNoteReceiver } from './scheduling/resolvePlaybackNoteReceiver';
 export { selectMidiNotesForLoopWindow } from './scheduling/selectMidiNotesForLoopWindow';
 export { setStopPlaybackCallback } from './playheadScheduler/setStopPlaybackCallback';

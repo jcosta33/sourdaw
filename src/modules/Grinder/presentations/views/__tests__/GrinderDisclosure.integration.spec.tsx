@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -19,6 +20,8 @@ import { DEFAULT_PATCH } from '../../../models/GrinderPatch';
 import { grinderNeuralLibraryStore } from '../../../stores/grinderNeuralLibraryStore';
 import { grinderStore } from '../../../stores/grinderStore';
 import { GrinderPanel } from '../GrinderPanel';
+
+registerDeviceEnginePorts();
 
 vi.mock('../../../useCases/restoreGrinderNeuralLibrary', () => ({
     restoreGrinderNeuralLibrary: vi.fn(async () => undefined),

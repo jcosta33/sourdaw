@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { defaultTransportState } from '../../../models/TransportState';
 import { prepareInitialBrowserPlayback } from '../../playheadScheduler/prepareInitialBrowserPlayback';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
@@ -7,6 +9,8 @@ import { pausePlayback } from '../pausePlayback';
 import { startPlayback } from '../startPlayback';
 
 import type { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
+
+registerDeviceEnginePorts();
 
 const mocks = vi.hoisted(() => ({
     getTransportState: vi.fn<() => Record<string, unknown>>(),

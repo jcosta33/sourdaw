@@ -3,6 +3,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
 import { logger } from '#/infra/logger/appLogger';
@@ -55,6 +56,8 @@ import { recordingLifecycle } from '../../transportControls/recordingLifecycle';
 import { startPlayback } from '../../transportControls/startPlayback';
 import { stopPlayback } from '../../transportControls/stopPlayback';
 import { toggleRecording } from '../../transportControls/toggleRecording';
+
+registerDeviceEnginePorts();
 
 const TRACK_ID = 'track-recording';
 const INPUT_START_FAILURE = 'Punch-in recording failed to start — the take was discarded.';

@@ -1,5 +1,4 @@
-import { setActiveYeastDevice } from '#/modules/Yeast/stores';
-import { addYeastProcessor, setYeastProcessorParam } from '#/modules/Yeast/useCases';
+import { templateArpeggiatorAuthoring } from './templateArpeggiatorAuthoring';
 
 import type { Track } from '#/modules/Arrangement/stores';
 
@@ -33,16 +32,17 @@ export async function configureYeastArpeggiator(input: ConfigureYeastArpeggiator
         throw new Error(`Track "${input.track.name}" carries no Yeast device to configure as an arpeggiator.`);
     }
 
-    setActiveYeastDevice(device.id);
+    const rack = templateArpeggiatorAuthoring.read('configureYeastArpeggiator');
+    rack.focusRack(device.id);
     try {
-        addYeastProcessor('arpeggiator', input.processorId, 'Arpeggiator');
+        rack.addProcessor('arpeggiator', input.processorId, 'Arpeggiator');
         // Processor param names are the Arpeggiator processor's own
         // `setParam` arms, not device-parameter ids.
-        await setYeastProcessorParam(input.processorId, 'mode', input.mode);
-        await setYeastProcessorParam(input.processorId, 'rate_denom', input.rateDenominator);
-        await setYeastProcessorParam(input.processorId, 'gate', input.gate);
-        await setYeastProcessorParam(input.processorId, 'swing', input.swing);
+        await rack.setProcessorParam(input.processorId, 'mode', input.mode);
+        await rack.setProcessorParam(input.processorId, 'rate_denom', input.rateDenominator);
+        await rack.setProcessorParam(input.processorId, 'gate', input.gate);
+        await rack.setProcessorParam(input.processorId, 'swing', input.swing);
     } finally {
-        setActiveYeastDevice(null);
+        rack.focusRack(null);
     }
 }

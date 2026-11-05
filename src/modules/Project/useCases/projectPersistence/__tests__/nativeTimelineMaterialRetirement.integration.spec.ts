@@ -15,6 +15,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     clearRuntimeCachedAudioBuffers: boundary.clear,
     disarmRetrospectiveCapture: vi.fn(),
     resetAudioGraph: boundary.reset,
+    engineAttachmentTracking: { read: () => ({ retractEveryAttachment: vi.fn() }) },
 }));
 vi.mock('#/modules/Transport/useCases', () => ({
     preferencesSeededTransportState: vi.fn(),
@@ -24,7 +25,6 @@ vi.mock('#/modules/Transport/useCases', () => ({
 vi.mock('#/modules/PluginHost/useCases', () => ({
     beginProjectSessionPluginRetirement: async () => ({ retire: boundary.retirePlugins, reopen: boundary.reopen }),
 }));
-vi.mock('#/modules/Crumbs/useCases', () => ({ retractEveryCrumbsEngineAttachment: vi.fn() }));
 
 function deferred() {
     let resolve!: () => void;

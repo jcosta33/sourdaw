@@ -74,6 +74,18 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
     isFaustInstrumentModule: (moduleId: string) => faust_instrument_types.value.has(moduleId),
 }));
 
+// The composition root's registrar loads every device barrel, and those read
+// the AudioEngine barrel this spec mocks whole, so the one port the note-on
+// route reads is filled here with the calibration the root composes: the
+// played Grand Boule's own store.
+const { applyVelocityCurve, createGrandBouleStore } = await import('#/modules/GrandBoule/stores');
+const { velocityCalibration } = await import('../velocityCalibration');
+velocityCalibration.configure({
+    calibratedVelocity: (deviceId, velocity) => {
+        const calibration = createGrandBouleStore(deviceId).value?.midiCalibration;
+        return calibration ? applyVelocityCurve(velocity, calibration) : null;
+    },
+});
 const { getSynthParamsFromDevices, scheduleNote } = await import('#/modules/Synth/useCases');
 const { handleWebMidiNoteOn } = await import('../handleWebMidiNoteOn');
 const { handleWebMidiNoteOff } = await import('../handleWebMidiNoteOff');

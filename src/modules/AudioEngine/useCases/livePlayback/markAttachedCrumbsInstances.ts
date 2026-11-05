@@ -20,12 +20,17 @@
  * hosting no engine reports.
  */
 
-import { markCrumbsEngineAttached } from '#/modules/Crumbs/useCases';
-
 import { type AudioGraphApplyResult } from '../../models/AudioGraphBackend';
 
+import { engineAttachmentTracking } from './engineAttachmentTracking';
+
 export function markAttachedCrumbsInstances(result: AudioGraphApplyResult): void {
-    for (const attached of result.attachedCrumbs ?? []) {
-        markCrumbsEngineAttached({ instanceId: attached.instanceId });
+    const attachedCrumbs = result.attachedCrumbs ?? [];
+    if (attachedCrumbs.length === 0) {
+        return;
+    }
+    const { markAttached } = engineAttachmentTracking.read('markAttachedCrumbsInstances');
+    for (const attached of attachedCrumbs) {
+        markAttached(attached.instanceId);
     }
 }
