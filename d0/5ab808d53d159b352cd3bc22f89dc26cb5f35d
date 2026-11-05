@@ -1,0 +1,31 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleTrimClipEndSourceBoundUndo.spec.ts
+  s_fec7059b7a251c::t_27716672ef01e6 145-158
+src/modules/Arrangement/useCases/clipEditing/__tests__/audioClipSourceEndBeat.spec.ts
+  s_fec7059b7a251c::t_6bfa2ac636a626 1-51
+src/modules/Arrangement/handlers/clip/handleTrimClipEnd.ts
+  s_0314bb17e5dee3::t_65dbf2622e5b41 2-7,40-42,44,47-53,68,79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d05ab808d53d159b352cd3bc22f89dc26cb5f35d",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
