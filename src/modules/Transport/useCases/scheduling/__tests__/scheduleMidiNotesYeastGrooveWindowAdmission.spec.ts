@@ -455,15 +455,13 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
         // the pass head, which the windows playing this pass have long
         // passed, and the bounce, which hears the same rack output, must not
         // sound what playback cannot. So the added length ends at the pass end.
-        vi.mocked(processYeastMidi).mockImplementation((input) =>
-            Promise.resolve(
-                input.events.map((event) =>
-                    event.durationSamples === undefined
-                        ? event
-                        : { ...event, durationSamples: event.durationSamples * 4 }
-                )
-            )
-        );
+        function lengthenFourfold<Event extends { durationSamples?: number }>(event: Event): Event {
+            if (event.durationSamples === undefined) {
+                return event;
+            }
+            return { ...event, durationSamples: event.durationSamples * 4 };
+        }
+        vi.mocked(processYeastMidi).mockImplementation((input) => Promise.resolve(input.events.map(lengthenFourfold)));
         expect(
             await sweepScheduledVoices({
                 clip: { endBeat: 8, loopEnabled: true, loopLength: 4 },
