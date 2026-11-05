@@ -1,9 +1,10 @@
-import { type ReactElement, useRef } from 'react';
+import { type ReactElement, useEffect, useRef } from 'react';
 
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '#/components/ui/dialog';
 import { Input } from '#/components/ui/input';
+import { type PromptPayload } from '#/utils/Notification/notificationEventBus';
 import { cn } from '#/utils/Styles/cn';
 
 import { DIALOG_SERVICE_LAYER } from './dialogServiceLayer';
@@ -20,6 +21,26 @@ import { usePromptDialog } from './usePromptDialog';
 export const PromptDialog = (): ReactElement => {
     const { pending, value, setValue, submit, cancel } = usePromptDialog();
     const inputRef = useRef<HTMLInputElement>(null);
+    // The prompt whose field last took focus. A prompt replacing an open one keeps the content
+    // mounted, so Radix's open autofocus does not run again and the replacement is focused here,
+    // where the content's focus trap is already live and records the field.
+    const focusedPromptRef = useRef<PromptPayload | null>(null);
+
+    const focusField = (prompt: PromptPayload): void => {
+        focusedPromptRef.current = prompt;
+        inputRef.current?.focus();
+        inputRef.current?.select();
+    };
+
+    useEffect(() => {
+        if (pending === null) {
+            focusedPromptRef.current = null;
+            return;
+        }
+        if (focusedPromptRef.current !== null && focusedPromptRef.current !== pending) {
+            focusField(pending);
+        }
+    }, [pending]);
 
     return (
         <Dialog
@@ -38,8 +59,7 @@ export const PromptDialog = (): ReactElement => {
                     aria-label={pending.title ?? pending.message}
                     onOpenAutoFocus={(event) => {
                         event.preventDefault();
-                        inputRef.current?.focus();
-                        inputRef.current?.select();
+                        focusField(pending);
                     }}
                     onKeyDown={(event) => {
                         if (event.key === 'Enter') {
