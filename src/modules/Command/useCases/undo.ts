@@ -2,6 +2,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { AppActionCommittedError, AppActionConflictError } from '../errors/AppActionExecutionError';
 import { isActionEntry, type UndoEntry } from '../models/UndoEntry';
+import { isInertUndoUnit, newestUndoUnit, undoEntryLabel } from '../models/UndoUnit';
 import { undoStore } from '../stores/undoStore';
 
 import { executeActionGroupUndo, type UndoOutcome } from './executeActionGroupUndo';
@@ -30,10 +31,6 @@ export type UndoResult = {
 /** The undo entry now at the top of `past`, or `null` when `past` is empty. */
 function currentEntryId(past: readonly UndoEntry[]): string | null {
     return past.length > 0 ? past[past.length - 1]!.id : null;
-}
-
-function undoEntryLabel(entry: UndoEntry): string {
-    return entry.groupLabel || entry.label || (isActionEntry(entry) ? entry.action.type : 'action');
 }
 
 function notifyUndoConflict(label: string): void {
@@ -126,19 +123,11 @@ type UndoCandidate = {
 };
 
 function takeCandidate(past: readonly UndoEntry[]): UndoCandidate | null {
-    if (past.length === 0) {
+    const unit = newestUndoUnit(past);
+    if (!unit) {
         return null;
     }
-    const head = past[past.length - 1]!;
-    if (!head.groupId) {
-        return { head, entries: [head], below: past.slice(0, -1) };
-    }
-
-    let index = past.length - 1;
-    while (index >= 0 && past[index]!.groupId === head.groupId) {
-        index--;
-    }
-    return { head, entries: past.slice(index + 1), below: past.slice(0, index + 1) };
+    return { head: past[unit.last]!, entries: past.slice(unit.first), below: past.slice(0, unit.first) };
 }
 
 /** One member of a step target: an action entry whose inverse resolves to a
@@ -176,16 +165,6 @@ function canStepOverConflictOnto(candidate: UndoCandidate): boolean {
  */
 function isAtomicActionGroup(entries: readonly UndoEntry[]): boolean {
     return entries.every((entry) => isActionEntry(entry) && entry.inverseAction !== null);
-}
-
-/**
- * Whether the scan would drop this unit without running anything: every member
- * is an action entry without an `inverseAction`. A mixed unit still has a
- * member that writes (or a callback that runs), so only a fully inert unit can
- * be purged ahead of a blocked undo.
- */
-function isInertUnit(candidate: UndoCandidate): boolean {
-    return candidate.entries.every((entry) => isActionEntry(entry) && entry.inverseAction === null);
 }
 
 type CandidateOutcome =
@@ -375,7 +354,7 @@ async function undoImpl(stepOverConflicts: boolean): Promise<UndoResult> {
     // the real head's label from the notification that reports it.
     while (past.length > 0) {
         const inertHead = takeCandidate(past);
-        if (!inertHead || !isInertUnit(inertHead)) {
+        if (!inertHead || !isInertUndoUnit(inertHead.entries)) {
             break;
         }
         past = inertHead.below;
@@ -409,8 +388,8 @@ async function undoImpl(stepOverConflicts: boolean): Promise<UndoResult> {
     // edit that caused the conflict; the wedge above those runs is deliberate —
     // #2881's own limit, and between a blocked history and a clobbered edit,
     // blocked is recoverable. Anchor-targeted history sweeps
-    // (`undoToIndex`, via `stepOverConflicts: false`) never step: their target
-    // row names the entry the user clicked to KEEP, so a step there would undo
+    // (`moveHistoryToStep`, via `stepOverConflicts: false`) never step: their
+    // target names the entry the user clicked to KEEP, so a step there would undo
     // the row the sweep was pointed at. #2878 mirrors this for redo; see #3641
     // for the callback arc.
     for (;;) {
