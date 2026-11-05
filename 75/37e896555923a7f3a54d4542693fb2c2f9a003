@@ -1,0 +1,27 @@
+src/components/ui/__tests__/slider.spec.tsx
+  s_fec7059b7a251c::t_8d1a1a17926aa6 284-289
+  s_fec7059b7a251c::t_93dfea0fb50efc 87-103
+  s_fec7059b7a251c::t_473d1c1bf94e1b 282-283,290-321
+src/components/ui/slider-gesture.ts
+  s_fec7059b7a251c::t_9d3732edd51825 40-41
+  s_fec7059b7a251c::t_99a677dd6483c6 104
+  s_fec7059b7a251c::t_54cdc9c6198707 159
+  s_fec7059b7a251c::t_b3ed89d60f4c9a 124,126,132-134
+  s_fec7059b7a251c::t_e67d9a684aebe6 176
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7537e896555923a7f3a54d4542693fb2c2f9a003",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
