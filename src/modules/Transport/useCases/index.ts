@@ -79,3 +79,5 @@ export { getTimeSignatureAtBeat } from './transportQueries/getTimeSignatureAtBea
 export { getBarStartBeat } from './transportQueries/getBarStartBeat';
 export { getTimelineRulerGrid } from './transportQueries/getTimelineRulerGrid';
 export { updateTransportState } from './transportQueries/updateTransportState';
+export { formatMusicalPosition } from './transportQueries/formatMusicalPosition';
+export { formatMusicalLength } from './transportQueries/formatMusicalLength';

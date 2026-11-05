@@ -17,6 +17,28 @@ export const SCALE_PATTERNS: Record<string, number[]> = {
 
 export const SCALE_NAMES = Object.keys(SCALE_PATTERNS);
 
+/** Display names for the `SCALE_PATTERNS` identifiers; option values stay the identifiers. */
+export const SCALE_LABELS: Record<string, string> = {
+    major: 'Major',
+    minor: 'Minor',
+    harmonicMinor: 'Harmonic Minor',
+    melodicMinor: 'Melodic Minor',
+    dorian: 'Dorian',
+    phrygian: 'Phrygian',
+    lydian: 'Lydian',
+    mixolydian: 'Mixolydian',
+    pentatonicMajor: 'Pentatonic Major',
+    pentatonicMinor: 'Pentatonic Minor',
+    blues: 'Blues',
+    wholeTone: 'Whole Tone',
+    diminished: 'Diminished',
+    chromatic: 'Chromatic',
+};
+
+export function getScaleLabel(scaleName: string): string {
+    return SCALE_LABELS[scaleName] ?? scaleName;
+}
+
 export const KEY_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 export function quantizeCentsToScale(cents: number, root: number, scaleName: string): number {

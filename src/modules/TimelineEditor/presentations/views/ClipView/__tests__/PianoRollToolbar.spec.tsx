@@ -189,6 +189,20 @@ describe('PianoRollToolbar', () => {
         expect(screen.getByLabelText('Scale type')).toBeInTheDocument();
     });
 
+    it('shows scale names as words while keeping the identifiers as option values', () => {
+        render(<PianoRollToolbar {...defaultProps} />);
+        const select = screen.getByLabelText('Scale type');
+        const options = Array.from(select.querySelectorAll('option')).map((option) => [
+            option.value,
+            option.textContent,
+        ]);
+        expect(options).toEqual([
+            ['chromatic', 'Chromatic'],
+            ['major', 'Major'],
+            ['minor', 'Minor'],
+        ]);
+    });
+
     it('should call onScaleRootChange when scale root is changed', () => {
         render(<PianoRollToolbar {...defaultProps} />);
         fireEvent.change(screen.getByLabelText('Scale root note'), { target: { value: '4' } });

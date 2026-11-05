@@ -11,6 +11,7 @@ import { Separator } from '#/components/ui/separator';
 import { Slider } from '#/components/ui/slider';
 import { setClipFade, setClipColor, renameClip, setClipFollowAction } from '#/modules/Arrangement/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
+import { formatMusicalLength, formatMusicalPosition } from '#/modules/Transport/useCases';
 import { dbToGain, formatGainDb, gainToDb, SEND_MIN_DB } from '#/utils/audioLevelLaw';
 import { CLIP_COLOR_PRESETS } from '#/utils/UI/colorPresets';
 
@@ -48,8 +49,6 @@ type ClipInspectorProps = {
 
 export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): ReactElement => {
     const duration = clip.endBeat - clip.startBeat;
-    const startBar = Math.floor(clip.startBeat / 4) + 1;
-    const endBar = Math.floor(clip.endBeat / 4) + 1;
     const [editingName, setEditingName] = useState(false);
     const [nameValue, setNameValue] = useState(clip.name);
 
@@ -193,17 +192,17 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                 <InsetPanel className="space-y-1.5">
                     <DawReadoutRow
                         label="Start"
-                        value={`Bar ${startBar} (beat ${clip.startBeat})`}
+                        value={formatMusicalPosition(clip.startBeat)}
                         valueClassName="text-foreground"
                     />
                     <DawReadoutRow
                         label="End"
-                        value={`Bar ${endBar} (beat ${clip.endBeat})`}
+                        value={formatMusicalPosition(clip.endBeat)}
                         valueClassName="text-foreground"
                     />
                     <DawReadoutRow
                         label="Length"
-                        value={`${duration} beats (${(duration / 4).toFixed(1)} bars)`}
+                        value={formatMusicalLength(clip.startBeat, duration)}
                         valueClassName="text-foreground"
                     />
                 </InsetPanel>
