@@ -1,4 +1,8 @@
-import { isBeatInEnabledClipLoopWindow, resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
+import {
+    CLIP_LOOP_WINDOW_BEAT_TOLERANCE,
+    isBeatInEnabledClipLoopWindow,
+    resolveClipLoopOriginAdvance,
+} from '#/utils/clipLoopOrigin';
 
 import { MAX_GROOVE_STAGE_DISPLACEMENT_BEATS } from '../../services/midiSchedulerWindowGeometry';
 
@@ -37,6 +41,11 @@ type AddYeastLoopPhaseCandidatesInput = YeastLoopPhaseIndexInput & {
 // MIDI writes replace note arrays rather than mutating them, so array identity
 // invalidates this cache whenever project truth changes.
 const yeastLoopPhaseIndexes = new WeakMap<readonly ScheduledMidiNote[], YeastLoopPhaseIndex>();
+
+// A full groove stage lands an event exactly one stage from its entry, where
+// the groove arithmetic and the window bounds round independently. Admitting
+// more is safe: candidates are a set, and each window posts only what it owns.
+const PHASE_QUERY_SLACK_BEATS = MAX_GROOVE_STAGE_DISPLACEMENT_BEATS + CLIP_LOOP_WINDOW_BEAT_TOLERANCE;
 
 function positiveModulo(value: number, divisor: number): number {
     return ((value % divisor) + divisor) % divisor;
@@ -94,8 +103,10 @@ function lowerBoundEnd(entries: readonly YeastLoopPhaseEntry[], endPhaseBeat: nu
  *   including a tail's release the two grooves pull up to two stages early.
  *
  * Every entry is a fixed offset into a pass, so the release query stays
- * unnormalized. An estimate a groove stage can move is found because both
- * queries carry that stage's slack.
+ * unnormalized. Coverage rule: every start or release a groove can leave lies
+ * within one stage of an entry, and both queries carry one stage of slack plus
+ * a same-beat tolerance (`PHASE_QUERY_SLACK_BEATS`), so an entry exactly one
+ * stage away, where full groove displacements land, is never lost to rounding.
  */
 function getYeastLoopPhaseIndex({
     notes,
@@ -176,18 +187,15 @@ function getYeastLoopPhaseIndex({
             // it), but places a tail it pulls back across the head before the
             // rack, onto the pass end, and the rest is struck on the head
             // again: released up to a stage earlier still. So the release
-            // runs from two stages before the uncut one to a stage after it.
-            // The entry at the uncut release reaches the upper two stages; a
-            // second one a stage and a half before it reaches the lowest
-            // stage with half a stage to spare, because two full pulls land
-            // exactly on that floor and a floor on the query's edge is lost to
-            // rounding in the window bounds. A tail no longer than a stage
-            // needs none: a release the pull leaves on the head is within a
-            // stage of the uncut one, and a pull that leaves nothing on the
-            // head ends the placed piece within a stage of the pass end.
+            // runs from two stages before the uncut one to a stage after it:
+            // the entry at the uncut release reaches the upper two stages and
+            // a second one a stage before it the lowest. A tail no longer than
+            // a stage needs none: a release the pull leaves on the head is
+            // within a stage of the uncut one, and a pull that leaves nothing
+            // on the head ends the placed piece within a stage of the pass end.
             if (headTailReleaseBeat > MAX_GROOVE_STAGE_DISPLACEMENT_BEATS) {
                 sortedEnds.push({
-                    endPhaseBeat: headTailReleaseBeat - 1.5 * MAX_GROOVE_STAGE_DISPLACEMENT_BEATS,
+                    endPhaseBeat: headTailReleaseBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS,
                     note,
                     phaseBeat: 0,
                 });
@@ -255,8 +263,8 @@ export function addYeastLoopPhaseCandidates({
 }: AddYeastLoopPhaseCandidatesInput): void {
     const { loopLengthBeats } = indexInput;
     const loopIndex = getYeastLoopPhaseIndex(indexInput);
-    const phaseStartBeat = fromBeat - iterationStartBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
-    const phaseEndBeat = toBeat - iterationStartBeat + MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
+    const phaseStartBeat = fromBeat - iterationStartBeat - PHASE_QUERY_SLACK_BEATS;
+    const phaseEndBeat = toBeat - iterationStartBeat + PHASE_QUERY_SLACK_BEATS;
     const phaseWidthBeats = phaseEndBeat - phaseStartBeat;
     if (phaseWidthBeats >= loopLengthBeats) {
         for (const { note } of loopIndex.sortedEntries) {

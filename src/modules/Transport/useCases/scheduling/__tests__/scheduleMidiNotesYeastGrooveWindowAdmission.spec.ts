@@ -1099,7 +1099,15 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
                     { consumerType: 'sequencer', consumerId: 'project', templateId: 'sequencer-pull', amount: 1 },
                 ],
             };
-            const LONG_PULL_PARTITIONS = [...PARTITIONS, { partition: 'tenth-beat windows', widths: [0.1] }];
+            // Two full pulls release the tail a whole two stages early: at 1.6
+            // for the row below and at 1.4 for the crossing row, each exactly
+            // one stage from the entry that must reach it, so windows that
+            // close on those releases pin that edge for both classes.
+            const LONG_PULL_PARTITIONS = [
+                ...PARTITIONS,
+                { partition: 'tenth-beat windows', widths: [0.1] },
+                { partition: 'windows closing on the two-pull releases', widths: [1.4, 0.2, 2.4] },
+            ];
 
             it('renders the pulled segment, the pulled tail and its head strike on every pass in the bounce', () => {
                 expect(offlineVoices(clip, rows, twoStageState)).toEqual(
