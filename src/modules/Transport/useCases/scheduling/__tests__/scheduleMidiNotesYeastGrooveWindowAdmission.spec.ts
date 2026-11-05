@@ -822,7 +822,14 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
 
         type Row = { id: string; startBeat: number; duration: number };
         /** The looped clip both routes play: its end and loop, and its anchor when it carries one. */
-        type LoopedClip = { endBeat: number; loopEnabled: boolean; loopLength: number; loopOriginBeat?: number };
+        type LoopedClip = {
+            endBeat: number;
+            loopEnabled: boolean;
+            loopLength: number;
+            loopOriginBeat?: number;
+            /** A frozen take the clip plays instead of its note list; the bounce is handed the same rows. */
+            midiTakeSource?: Record<string, unknown>;
+        };
         type Voice = { beat: number; durationBeats: number };
 
         function windowEdges(widths: readonly number[], lastEdge = CLIP_END_BEAT): number[] {
@@ -1288,6 +1295,140 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
                     offlineVoices(clip, [row], defaultGrooveTemplateState, offlineRackInput);
                     expect(rackNoteOffs(liveRackInput(), row.id)).toEqual(rackNoteOffs(offlineRackInput, row.id));
                 });
+            });
+        });
+
+        describe('the clip end cuts every note before the rack, on both routes', () => {
+            // The synth route plays a note only from inside its clip and ends
+            // it at the clip end (`getGrooveProjection`), as a DAW cuts a note
+            // at its region end; the rack is handed the same cut live and in
+            // the bounce. Each case pins the expected beats outright, so the
+            // two routes cannot agree on a wrong answer.
+            const CUT_PARTITIONS = [
+                { partition: 'the production grain', widths: [WINDOW_BEATS] },
+                { partition: 'whole-beat windows', widths: [1] },
+                { partition: 'windows one of which straddles the clip end', widths: [1.3] },
+            ];
+            type RackNoteOn = { instance: string; beat: number };
+
+            /** The note-ons a rack was handed for the row, by the instance suffix after the row id and the beat. */
+            function rackNoteOns(events: readonly RackInputEvent[], rowId: string): RackNoteOn[] {
+                const rowNoteOns = events.filter(
+                    (event) => event.kind.type === 'noteOn' && (event.noteInstanceId ?? '').includes(rowId)
+                );
+                return rowNoteOns
+                    .map((event) => {
+                        const instanceId = event.noteInstanceId ?? '';
+                        return {
+                            instance: instanceId.slice(instanceId.indexOf(rowId)),
+                            beat: Math.round((event.timePpq ?? Number.NaN) * 1e6) / 1e6,
+                        };
+                    })
+                    .sort((left, right) => left.beat - right.beat || left.instance.localeCompare(right.instance));
+            }
+
+            const CUT_CASES = [
+                {
+                    clipKind: 'a plain clip whose last note runs past the clip end',
+                    clip: { endBeat: CLIP_END_BEAT, loopEnabled: false, loopLength: CLIP_END_BEAT },
+                    row: { id: 'overrun', startBeat: 11, duration: 3 },
+                    noteOnBeats: [11],
+                    noteOffBeats: [12],
+                    voices: [{ beat: 11, durationBeats: 1 }],
+                },
+                {
+                    clipKind: 'a looping clip that ends inside its last pass, under a note of that pass',
+                    clip: { endBeat: 10, loopEnabled: true, loopLength: LOOP_BEATS },
+                    row: { id: 'cut-pass', startBeat: 1, duration: 3 },
+                    noteOnBeats: [1, 5, 9],
+                    noteOffBeats: [4, 8, 10],
+                    voices: [
+                        { beat: 1, durationBeats: 3 },
+                        { beat: 5, durationBeats: 3 },
+                        { beat: 9, durationBeats: 1 },
+                    ],
+                },
+                {
+                    clipKind: 'a plain clip whose tail trim left a row past its end',
+                    clip: { endBeat: LOOP_BEATS, loopEnabled: false, loopLength: LOOP_BEATS },
+                    row: { id: 'trimmed-away', startBeat: 4.5, duration: 0.5 },
+                    noteOnBeats: [],
+                    noteOffBeats: [],
+                    voices: [],
+                },
+            ];
+
+            describe.each(CUT_CASES)('for $clipKind', ({ clip, row, noteOnBeats, noteOffBeats, voices }) => {
+                const expectedOns = noteOnBeats.map((beat) => ({ instance: row.id, beat }));
+                const expectedOffs = noteOffBeats.map((beat) => ({ instance: row.id, beat }));
+
+                it('hands the bounce the rows cut at the clip end', () => {
+                    const offlineRackInput: RackInputEvent[] = [];
+                    expect(offlineVoices(clip, [row], defaultGrooveTemplateState, offlineRackInput)).toEqual(voices);
+                    expect(rackNoteOns(offlineRackInput, row.id)).toEqual(expectedOns);
+                    expect(rackNoteOffs(offlineRackInput, row.id)).toEqual(expectedOffs);
+                });
+
+                it.each(CUT_PARTITIONS)(
+                    'hands the live rack the same cut rows under $partition',
+                    async ({ widths }) => {
+                        const live = await liveVoices(
+                            clip,
+                            [row],
+                            defaultGrooveTemplateState,
+                            windowEdges(widths, clip.endBeat + row.duration + 1)
+                        );
+                        expect(live.voices).toEqual(voices);
+                        expect(rackNoteOns(liveRackInput(), row.id)).toEqual(expectedOns);
+                        expect(rackNoteOffs(liveRackInput(), row.id)).toEqual(expectedOffs);
+                    }
+                );
+            });
+
+            describe('a frozen take whose last note ends on the clip end', () => {
+                // The frozen route reads the take's own rows, not the clip's
+                // note list; its clip end owns the release as the clip's does.
+                const row = { id: 'frozen-last', startBeat: 11, duration: 1 };
+                const frozenClip = {
+                    endBeat: CLIP_END_BEAT,
+                    loopEnabled: false,
+                    loopLength: CLIP_END_BEAT,
+                    sourceStartBeat: 0,
+                    midiTakeId: 'frozen-take',
+                    midiTakeSource: {
+                        sourceClipId: 'clip-1',
+                        sourceEntryBeat: 0,
+                        sourceEndBeat: CLIP_END_BEAT,
+                        phaseHeadBeat: 0,
+                        passLengthBeats: CLIP_END_BEAT,
+                        rows: {
+                            notes: { present: true, value: [{ ...row, pitch: 60, velocity: 100 }] },
+                            controlChanges: { present: false, value: [] },
+                            pitchBends: { present: false, value: [] },
+                        },
+                    },
+                };
+                const plainClip = { endBeat: CLIP_END_BEAT, loopEnabled: false, loopLength: CLIP_END_BEAT };
+
+                it.each(CUT_PARTITIONS)(
+                    'hands the live rack the release the bounce does under $partition',
+                    async ({ widths }) => {
+                        const live = await liveVoices(
+                            frozenClip,
+                            [],
+                            defaultGrooveTemplateState,
+                            windowEdges(widths, CLIP_END_BEAT + 1)
+                        );
+                        const offlineRackInput: RackInputEvent[] = [];
+                        const bounced = offlineVoices(plainClip, [row], defaultGrooveTemplateState, offlineRackInput);
+                        expect(live.voices).toEqual([{ beat: 11, durationBeats: 1 }]);
+                        expect(live.voices).toEqual(bounced);
+                        expect(rackNoteOffs(liveRackInput(), row.id)).toEqual([
+                            { instance: row.id, beat: CLIP_END_BEAT },
+                        ]);
+                        expect(rackNoteOffs(liveRackInput(), row.id)).toEqual(rackNoteOffs(offlineRackInput, row.id));
+                    }
+                );
             });
         });
     });

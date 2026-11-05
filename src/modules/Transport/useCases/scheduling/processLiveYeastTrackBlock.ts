@@ -14,6 +14,7 @@ import {
     loopPassNoteOverflowBeats,
     loopPassProducedNoteStartBeat,
     loopPassSourceInstanceId,
+    passSegmentSoundingEndBeat,
 } from '#/utils/loopPassNoteSegments';
 
 import {
@@ -142,6 +143,12 @@ type LiveSegmentEventContext = {
 function cutLiveSegmentAtClipHead(segment: LivePassSegment, clipHeadBeat: number | undefined): LivePassSegment {
     const cutBeats = clipHeadBeat === undefined ? 0 : Math.max(0, clipHeadBeat - segment.startBeat);
     return { ...segment, startBeat: segment.startBeat + cutBeats, headCutBeats: segment.headCutBeats + cutBeats };
+}
+
+/** The segment cut at its pass's sounding end, or none when nothing of it sounds (`passSegmentSoundingEndBeat`). */
+function cutLiveSegmentAtSoundingEnd(segment: LivePassSegment, soundingEndBeat: number): LivePassSegment[] {
+    const endBeat = passSegmentSoundingEndBeat(segment.startBeat, segment.endBeat, soundingEndBeat);
+    return endBeat === undefined ? [] : [{ ...segment, endBeat }];
 }
 
 /**
@@ -368,7 +375,8 @@ export async function processLiveYeastTrackBlock({
                 // afterwards dropped every note whose offset was wider than one
                 // scheduler window. A non-looped clip clamps a displaced start
                 // to the iteration start — the boundary clamp
-                // `projectClipMidiEvents` applies — and keeps its original end.
+                // `projectClipMidiEvents` applies — and keeps its original end,
+                // up to where the pass stops sounding (cut below).
                 //
                 // A looped pass plays the note as every route segments it
                 // (`loopPassNoteSegments`): a start before the head re-anchors
@@ -436,11 +444,16 @@ export async function processLiveYeastTrackBlock({
                     );
                 }
                 const passGeometry = { noteId: sourceNote.id, passStartBeat, loopLengthBeats, clipHeadBeat };
+                // The pass stops sounding at its end, or at the clip end when
+                // that comes first: what starts there or later is never
+                // struck, and what rings past it is released there, as the
+                // synth route and the bounce cut it.
+                const soundingEndBeat = iteration.iterationEndBeat;
                 const rackSegments = passSegments
                     .flatMap((passSegment) =>
                         loops ? placeProjectGrooveDisplacement(passSegment, passGeometry) : [passSegment]
                     )
-                    .filter((rackSegment) => rackSegment.endBeat > rackSegment.startBeat);
+                    .flatMap((rackSegment) => cutLiveSegmentAtSoundingEnd(rackSegment, soundingEndBeat));
                 const eventContext = {
                     block,
                     changes,
@@ -449,7 +462,9 @@ export async function processLiveYeastTrackBlock({
                     routeId: iteration.routeId,
                     channel: sourceNote.channel ?? 0,
                     pitch: groovedNote.pitch,
-                    durationPpq: loops ? undefined : Math.max(0, groovedNote.duration),
+                    durationPpq: loops
+                        ? undefined
+                        : Math.max(0, Math.min(groovedNote.duration, soundingEndBeat - audibleStartBeat)),
                     clipEndBeat: iteration.clipEndBeat,
                 };
                 for (const rackSegment of rackSegments) {
