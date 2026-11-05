@@ -1,0 +1,96 @@
+src/modules/AudioRendering/presentations/views/__tests__/exportStreamingMemory.spec.tsx
+  s_fec7059b7a251c::t_21230bb63da4b5 625
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_fec7059b7a251c::t_08a26e825fa0be 341
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_fec7059b7a251c::t_5da459431ffc36 113
+src/modules/Gluten/useCases/glutenParamBridge/__tests__/glutenParameterUndo.integration.spec.ts
+  s_fec7059b7a251c::t_bc87816e062a1d 72
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_fec7059b7a251c::t_bbec1ad81066d7 100
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  s_fec7059b7a251c::t_be314cdedd9a46 188
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  s_fec7059b7a251c::t_1af0131b448bf1 69
+src/modules/Arrangement/handlers/track/__tests__/duplicateTrack.integration.spec.ts
+  s_fec7059b7a251c::t_fb2f1c6d9db1d2 40
+src/modules/SampleLibrary/presentations/views/__tests__/LibraryBrowser.spec.tsx
+  s_fec7059b7a251c::t_f4854bd94512fc 52
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_fec7059b7a251c::t_ae26c0993070b5 80
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_fec7059b7a251c::t_defb36c0117dd2 161
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/finalizeTemplate.spec.ts
+  s_fec7059b7a251c::t_a5e2fdbdad6bf9 60
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_fec7059b7a251c::t_dd157257f1761c 89
+src/modules/Crumbs/useCases/__tests__/crumbsParameterPersistence.integration.spec.ts
+  s_fec7059b7a251c::t_716bf27a59736b 80
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.roundTrip.spec.ts
+  s_fec7059b7a251c::t_41bd427c43c4f6 84
+src/modules/Bacteria/useCases/bacteriaParamBridge/__tests__/chooseBacteriaBodyUndo.integration.spec.ts
+  s_fec7059b7a251c::t_260f26acea5fde 78
+src/modules/Proof/presentations/views/__tests__/ProofPanel.spec.tsx
+  s_fec7059b7a251c::t_5ae27988987dbf 68
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_fec7059b7a251c::t_06b73d365db2ed 143
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  s_fec7059b7a251c::t_4bb75136a5f434 180
+src/modules/Arrangement/handlers/track/__tests__/trackStateUndo.integration.spec.ts
+  s_fec7059b7a251c::t_1f6b74e818aa47 66
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  s_fec7059b7a251c::t_11fcb7cde5306a 59
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  s_fec7059b7a251c::t_0d7e3455444f02 191
+src/modules/SampleLibrary/useCases/__tests__/ensureFactorySampleBuffer.spec.ts
+  s_fec7059b7a251c::t_36c7f3892d0647 3-6,12,19,27-30,32-35,37-38,41,64,107-110,118,139,148,152,161-163,166,169,178,182-186,188,190,193-195,198-199,201-203,205-206,220-231
+  s_0314bb17e5dee3::t_f466f83cb39d14 232-233
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_fec7059b7a251c::t_71c98614bae682 65
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_fec7059b7a251c::t_d3774172ed06de 353
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberPresetUndo.integration.spec.tsx
+  s_fec7059b7a251c::t_255b04c681a822 73
+src/modules/SampleLibrary/AGENTS.md
+  s_fec7059b7a251c::t_caa024e96f1c54 23
+src/modules/SampleLibrary/useCases/__tests__/seedFactoryLibrary.spec.ts
+  s_fec7059b7a251c::t_92bbc0239caf33 38-39,104-107,124,160,264-281,357,377,388,400,407-452,454
+src/modules/SampleLibrary/useCases/ensureFactorySampleBuffer.ts
+  s_fec7059b7a251c::t_d7800fea5edfe9 6,13,30-31,33-35,37-38,40-44,50-56,58,67,82-84,99-106
+src/modules/SampleLibrary/useCases/seedFactoryLibrary.ts
+  s_fec7059b7a251c::t_55d9668645f41d 55-59
+src/modules/SampleLibrary/useCases/connectFolder/__tests__/rescanRoot.spec.ts
+  s_fec7059b7a251c::t_a4052d0e575102 9,26-27,91,98
+src/modules/SampleLibrary/useCases/connectFolder/rescanRoot.ts
+  s_fec7059b7a251c::t_f79aff16fa8244 6,29-30,33
+src/modules/SampleLibrary/useCases/factoryLibrary/cacheFactoryBuffers.ts
+  s_fec7059b7a251c::t_654afb545aeebf 1-5,20-23,25-40,45-48,55
+src/modules/SampleLibrary/useCases/factoryLibrary/renderFactoryLibraryPack.ts
+  s_fec7059b7a251c::t_7fec8c3546eb29 24,46,49-54,56-58,60-61,63-64
+src/modules/SampleLibrary/useCases/factoryLibrary/rescanFactoryLibrary.ts
+  s_fec7059b7a251c::t_67c397cecc4868 1-11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "af07abf8e1a8cd3357ebbabadce8a8b3c5e40d41",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
