@@ -1,0 +1,19 @@
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastGrooveWindowAdmission.spec.ts
+  s_2f2416fddfd7db::t_1d2c74ccd63842 451-479
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cec80dbdbced8d24c1d706a274e2605e5e35d5f3",
+  "prompts": {},
+  "sessions": {
+    "s_2f2416fddfd7db": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_2f2416fddfd7db",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
