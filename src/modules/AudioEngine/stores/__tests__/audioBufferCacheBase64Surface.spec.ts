@@ -120,6 +120,7 @@ function buildInvocations(): Record<string, () => unknown> {
         restoreFromIdb: () => audioBufferCache.restoreFromIdb({ context: makeContext() }),
         prepareFromIdb: () => audioBufferCache.prepareFromIdb({ context: makeContext() }),
         rehydrateEvicted: () => audioBufferCache.rehydrateEvicted(['pcm']),
+        restoreUnpinned: () => audioBufferCache.restoreUnpinned(['pcm']),
         clear: () => audioBufferCache.clear(),
         cancelPendingImport: () => audioBufferCache.cancelPendingImport(),
         importBuffers: () => {

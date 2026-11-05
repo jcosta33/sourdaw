@@ -1456,6 +1456,32 @@ type PrepareBuffersFromIdbInput = {
     shouldContinue?: () => boolean;
 };
 
+/**
+ * A buffer read back from storage is the stored record itself: its source is
+ * durable at the stored revision (or external when the record carries none),
+ * so nothing writes it back.
+ */
+function recordHydratedDurabilitySource(
+    id: string,
+    metadata: BufferMeta | undefined,
+    persistenceRevision: string | null
+): void {
+    durabilitySourceById.set(id, {
+        attempt: undefined,
+        data: undefined,
+        dataFactory: undefined,
+        freezeProjectId: metadata?.freezeProjectId,
+        identity:
+            typeof persistenceRevision === 'string'
+                ? { status: 'authenticated', revision: persistenceRevision }
+                : { status: 'unauthenticated' },
+        isAuthoritative: () => true,
+        persistence: undefined,
+        revision: ++nextDurabilitySourceRevision,
+        status: typeof persistenceRevision === 'string' ? 'durable' : 'external',
+    });
+}
+
 async function prepareBuffersFromIdb({
     context,
     ids,
@@ -1653,20 +1679,7 @@ async function prepareBuffersFromIdb({
                     continue;
                 }
                 audioCacheSet(id, buffer, metadata?.freezeProjectId, metadata !== undefined);
-                durabilitySourceById.set(id, {
-                    attempt: undefined,
-                    data: undefined,
-                    dataFactory: undefined,
-                    freezeProjectId: metadata?.freezeProjectId,
-                    identity:
-                        typeof persistenceRevision === 'string'
-                            ? { status: 'authenticated', revision: persistenceRevision }
-                            : { status: 'unauthenticated' },
-                    isAuthoritative: () => true,
-                    persistence: undefined,
-                    revision: ++nextDurabilitySourceRevision,
-                    status: typeof persistenceRevision === 'string' ? 'durable' : 'external',
-                });
+                recordHydratedDurabilitySource(id, metadata, persistenceRevision);
                 publishedCount++;
             }
             return publishedCount;
@@ -1736,6 +1749,99 @@ async function rehydrateEvictedDurableBuffers(ids: readonly string[]): Promise<v
         }
         audioCacheSet(record.id, record.buffer, record.freezeProjectId, record.metadataKnown);
     }
+}
+
+type UnpinnedStoredPcmRead =
+    | { status: 'absent'; id: string }
+    | { status: 'refused'; id: string }
+    | {
+          status: 'staged';
+          buffer: AudioBuffer;
+          id: string;
+          metadata: BufferMeta | undefined;
+          persistenceRevision: string | null;
+          source: CachedAudioDurabilitySource | undefined;
+      };
+
+type UnpinnedStoredPcmRestoration = {
+    /** Ids storage holds no record for and this session never stored. */
+    absent: string[];
+};
+
+async function readUnpinnedStoredPcm(tx: IDBTransaction, id: string): Promise<UnpinnedStoredPcmRead> {
+    const [data, meta] = await Promise.all([
+        awaitRequest(tx.objectStore(STORE_NAME).get(id) as IDBRequest<unknown>),
+        awaitRequest(tx.objectStore(META_STORE_NAME).get(id) as IDBRequest<BufferMeta | undefined>),
+    ]);
+    const source = durabilitySourceById.get(id);
+    if (data === undefined && meta === undefined) {
+        return { status: source === undefined ? 'absent' : 'refused', id };
+    }
+    if (
+        preparedAudioBufferLifecycle.shouldSuppressNonLeaseRead(id, readPreparedOwner(meta)) ||
+        !isValidSerializedBuffer(data)
+    ) {
+        return { status: 'refused', id };
+    }
+    const persistenceRevision = readPersistentPcmRevision(meta);
+    // A source this session knows must be the durable one this record holds;
+    // one pending, removed or rewritten keeps the record out.
+    if (
+        source !== undefined &&
+        (!isRehydratableFromStorage(id) ||
+            source.identity.status !== 'authenticated' ||
+            source.identity.revision !== persistenceRevision)
+    ) {
+        return { status: 'refused', id };
+    }
+    return { status: 'staged', buffer: createRuntimeBuffer(data), id, metadata: meta, persistenceRevision, source };
+}
+
+/**
+ * Puts stored PCM back into the runtime cache for buffers a caller is about to
+ * play, whether this session or an earlier one stored it. Unlike the project
+ * load it leaves the pinned set and project reservations alone, and unlike the
+ * undo rehydration it admits a record no source of this session knows. The
+ * record is not rewritten: the restored buffer's source is the record itself.
+ * A prepared-lease, invalid or superseded record stays out, and a failed read
+ * restores nothing and reports no id absent, so a caller never treats stored
+ * audio it could not read as missing.
+ */
+async function restoreUnpinnedStoredBuffers(ids: readonly string[]): Promise<UnpinnedStoredPcmRestoration> {
+    const candidateIds = [...new Set(ids)].filter((id) => !cache.has(id));
+    if (candidateIds.length === 0) {
+        return { absent: [] };
+    }
+    let reads: UnpinnedStoredPcmRead[];
+    try {
+        const db = await openDb();
+        const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readonly');
+        reads = await Promise.all(candidateIds.map((id) => readUnpinnedStoredPcm(tx, id)));
+    } catch (error) {
+        logger.warn('[audioBufferCache] Stored audio could not be restored for playback', {
+            ids: candidateIds,
+            error,
+        });
+        return { absent: [] };
+    }
+    const absent: string[] = [];
+    for (const read of reads) {
+        if (read.status === 'refused' || cache.has(read.id)) {
+            continue;
+        }
+        // A write or removal that landed while storage was read supersedes it.
+        const sourceAtRead = read.status === 'staged' ? read.source : undefined;
+        if (durabilitySourceById.get(read.id) !== sourceAtRead) {
+            continue;
+        }
+        if (read.status === 'absent') {
+            absent.push(read.id);
+            continue;
+        }
+        audioCacheSet(read.id, read.buffer, read.metadata?.freezeProjectId, read.metadata !== undefined);
+        recordHydratedDurabilitySource(read.id, read.metadata, read.persistenceRevision);
+    }
+    return { absent };
 }
 
 type GarbageCollectFreezeFilesInput = {
@@ -2400,6 +2506,8 @@ export const audioBufferCache = {
     },
 
     rehydrateEvicted: rehydrateEvictedDurableBuffers,
+
+    restoreUnpinned: restoreUnpinnedStoredBuffers,
 
     clear(): void {
         cancelAllImportCandidates();
