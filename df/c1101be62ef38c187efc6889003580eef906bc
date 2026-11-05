@@ -1,0 +1,36 @@
+src/modules/MIDI/useCases/midiClipData/__tests__/projectClipControllerEvents.spec.ts
+  s_ba80576e6f5cb5::t_d6c77e8c78e7ac 750
+  s_ba80576e6f5cb5::t_fccac741db1a1f 3
+  s_ba80576e6f5cb5::t_d67fdf9b7737d2 740
+  s_ba80576e6f5cb5::t_4da72089b6b6d5 864,869
+  s_ba80576e6f5cb5::t_cab7ccd7007749 713-739,741-749,751-797,804,806-863,865-868,870-886
+  s_ba80576e6f5cb5::t_a6d1a1e4611a2d 798-803,805
+  s_ba80576e6f5cb5::t_b2bfed13db3439 887-889
+  s_ba80576e6f5cb5::t_d5bd7a9d30e6f7 890-902
+src/modules/MIDI/useCases/midiClipData/__tests__/projectClipControllerRestore.spec.ts
+  s_ba80576e6f5cb5::t_e3d294f32d1a5b 237-257
+src/modules/MIDI/services/projectMidiClipWindow.ts
+  s_ba80576e6f5cb5::t_5aa64cd2460789 28-34,125-145,149-151,156,159,169-170,174-180,193-196,246-257
+src/modules/MIDI/useCases/midiClipData/listClipControllerPasses.ts
+  s_ba80576e6f5cb5::t_aa7f049c1b335c 27-31,113-117,134-136
+src/modules/MIDI/useCases/midiClipData/projectClipControllerEvents.ts
+  s_ba80576e6f5cb5::t_cafc96204c295d 52-58
+src/modules/Transport/AGENTS.md
+  s_ba80576e6f5cb5::t_374ec57f097ca9 25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dfc1101be62ef38c187efc6889003580eef906bc",
+  "prompts": {},
+  "sessions": {
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
