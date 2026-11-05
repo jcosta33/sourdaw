@@ -1,0 +1,28 @@
+src/infra/dialogService/__tests__/stackedDialogFocus.spec.tsx
+  s_fec7059b7a251c::t_e27de8d95e7697 18
+  s_fec7059b7a251c::t_ae60739e5e5360 15-17
+  s_fec7059b7a251c::t_15f3e61924ebf5 19-21
+  s_fec7059b7a251c::t_47887ae46a6e66 1-14,22-71
+src/infra/dialogService/ConfirmDialog.tsx
+  s_fec7059b7a251c::t_e012cfed7d3551 24,43
+src/infra/dialogService/PromptDialog.tsx
+  s_fec7059b7a251c::t_5d1f591927a383 24,44
+src/infra/dialogService/useFocusEachRequest.ts
+  s_fec7059b7a251c::t_25aafe76ccb3dd 1,4,14-16,23,35-40,42,52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fd11fc7380e9e590de366586a198a024829769ec",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
