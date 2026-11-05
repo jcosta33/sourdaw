@@ -142,6 +142,20 @@ describe('undoing a source-bounded audio clip end trim', () => {
         expect(endBeat()).toBe(4);
     });
 
+    it('keeps the plain trim inverse for a trim that follows another member of its batch', () => {
+        seed(4);
+        const stretch: AppAction = { type: 'setClipStretchRatio', payload: { clipId: 'clip-1', ratio: 2 } };
+        const trim = { type: 'trimClipEnd', payload: { clipId: 'clip-1', newEndBeat: 12 } } as const;
+
+        const description = handleTrimClipEnd.describe(trim, { actions: [stretch, trim], actionIndex: 1 });
+
+        expect(description.inverseAction).toEqual({
+            type: 'trimClipEnd',
+            payload: { clipId: 'clip-1', newEndBeat: 4 },
+        });
+        expect(description.redoAction).toBeUndefined();
+    });
+
     it('keeps the plain trim inverse and forward redo for a looping clip the bound never applies to', () => {
         seed(8, { loopEnabled: true });
 
