@@ -440,6 +440,8 @@ async function createSavedDirectoryProject() {
     registerProjectSlotProjections();
     const { registerProjectLifecycle } = await import('#/app/registerProjectLifecycle');
     registerProjectLifecycle();
+    const { registerDeviceEnginePorts } = await import('#/app/registerDeviceEnginePorts');
+    registerDeviceEnginePorts();
     collaboration.configureCollaborationAssetOwner({ captureOwnerId: project.getDurableProjectOwnerId });
     audio.configureDurableAudioBufferOwnership(project.collectDurableOwnedAudioBufferIds);
     const leave = vi.fn(() => Promise.resolve());
@@ -634,6 +636,8 @@ describe('project directory save and cold Recent open', () => {
         registerProjectSlotProjections();
         const { registerProjectLifecycle } = await import('#/app/registerProjectLifecycle');
         registerProjectLifecycle();
+        const { registerDeviceEnginePorts } = await import('#/app/registerDeviceEnginePorts');
+        registerDeviceEnginePorts();
         collaboration.configureCollaborationAssetOwner({ captureOwnerId: project.getDurableProjectOwnerId });
         audio.configureDurableAudioBufferOwnership(project.collectDurableOwnedAudioBufferIds);
         project.setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });

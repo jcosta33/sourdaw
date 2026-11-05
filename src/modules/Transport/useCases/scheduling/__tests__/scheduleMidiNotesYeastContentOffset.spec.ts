@@ -12,12 +12,28 @@ import {
 } from '#/modules/MIDI/stores';
 import { projectClipMidiEvents, projectCommittedGroove } from '#/modules/MIDI/useCases';
 import { scheduleNote } from '#/modules/Synth/useCases';
+import { toasterStore } from '#/modules/Toaster/stores';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
 import { defaultTransportState } from '../../../models/TransportState';
 import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
+import { kitSwing } from '../kitSwing';
+import { liveMidiProcessor } from '../liveMidiProcessor';
 import { scheduleMidiNotes } from '../scheduleMidiNotes';
+
+// The engine and Arrangement barrels are mocked whole here, so the composition
+// root's registrar cannot load; the device ports it registers are filled
+// directly, from the Yeast and Toaster barrels this spec doubles. Scheduling a
+// window never reads a rack, and the Yeast store cannot load over the mocked
+// track store, so a rack read fails the spec rather than answering.
+liveMidiProcessor.configure({
+    processBlock: processYeastMidi,
+    readRackProcessors: (rackId) => {
+        throw new Error(`scheduleMidiNotes read the rack of ${rackId}`);
+    },
+});
+kitSwing.configure({ currentSwing: (deviceId) => toasterStore.value?.[deviceId]?.kit.swing });
 
 /** Types withheld only inside tests that exercise the generic admission guard. */
 const injectedWithheldDeviceTypes = vi.hoisted(() => new Set<string>());
@@ -498,8 +514,7 @@ describe('scheduleMidiNotes — Yeast track with a committed clip groove displac
         // the beat it has left on the pass head, released one beat in. Every
         // release is owned by a window no note-on of its pass shares, so each
         // must reach the rack from the window holding it, or the note-on
-        // sounds and its note-off never arrives. The sweep stops at 8, before
-        // the second pass's own release.
+        // sounds and its note-off never arrives.
         await sweepScheduledVoices({
             clip: { endBeat: 8, loopEnabled: true, loopLength: 4 },
             note: { startBeat: 0.02, duration: 1.18 },
@@ -519,6 +534,8 @@ describe('scheduleMidiNotes — Yeast track with a committed clip groove displac
             { type: 'noteOn', beat: expect.closeTo(4, 6), instance: passHeadTail(1) },
             { type: 'noteOff', beat: expect.closeTo(5, 6), instance: passHeadTail(1) },
             { type: 'noteOn', beat: expect.closeTo(7.82, 6), instance: passNote(1) },
+            // The second pass ends on the clip end (8), so the window closing there owns its release, as the bounce posts it.
+            { type: 'noteOff', beat: expect.closeTo(8, 6), instance: passNote(1) },
         ]);
     });
 

@@ -5,7 +5,7 @@ import { getSelectedClipReferenceIds } from '../../transformers/promptParser/sel
 import { blankRanges } from './blankRanges';
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { CONNECTIVE_WORDS, CONVENTIONAL_WORDS, protectionObjectForms } from './protectionObjectForms';
-import { protectionSlots, type Range, type Slot } from './readProtectionSlots';
+import { PROTECTION_VERB, protectionSlots, type Range, type Slot } from './readProtectionSlots';
 import { refinementRequestReading } from './refinementRequestReading';
 import { resolveAgentReference } from './resolveAgentReference';
 
@@ -16,23 +16,22 @@ export type ExplicitClipProtection = {
 };
 type ProjectClip = ProjectContext['tracks'][number]['clips'][number];
 
-const protectionVerb = String.raw`(?:leave|leaving|keep|keeping|preserve|preserving)`;
 const protectionClauseBoundary = String.raw`(?:;|[.!?](?=\s|$))`;
 const protectionReferenceCharacter = String.raw`(?:(?!${protectionClauseBoundary})[\s\S])`;
 const protectionPattern = new RegExp(
-    String.raw`\b${protectionVerb}\s+(${protectionReferenceCharacter}+?)\s+unchanged\b`,
+    String.raw`\b${PROTECTION_VERB}\s+(${protectionReferenceCharacter}+?)\s+unchanged\b`,
     'giu'
 );
-const nextInstructionVerb = String.raw`(?:${protectionVerb}|set|change|adjust|add|create|make|mute|remove|delete|rename|insert|move|copy|duplicate|trim|split|glue|stretch|quantize|transpose|normalize|fade|route|solo|arm)`;
+const nextInstructionVerb = String.raw`(?:${PROTECTION_VERB}|set|change|adjust|add|create|make|mute|remove|delete|rename|insert|move|copy|duplicate|trim|split|glue|stretch|quantize|transpose|normalize|fade|route|solo|arm)`;
 const nextInstruction = String.raw`(?:(?:and|then)\s+)*${nextInstructionVerb}\b`;
 const exclusionPattern = new RegExp(
     String.raw`\b(?:excluding|except)\s+(${protectionReferenceCharacter}+?)(?=${protectionClauseBoundary}|,\s*(?=${nextInstruction})|\s+(?=(?:and|then)\s+${nextInstruction})|$)`,
     'giu'
 );
-const emptyProtectionPattern = new RegExp(String.raw`\b${protectionVerb}\s+unchanged\b`, 'iu');
-const protectionVerbPattern = new RegExp(String.raw`\b${protectionVerb}\b`, 'iu');
-const protectionClauseStartPattern = new RegExp(String.raw`^${protectionVerb}\b`, 'iu');
-const allProtectionVerbsPattern = new RegExp(String.raw`\b${protectionVerb}\b`, 'giu');
+const emptyProtectionPattern = new RegExp(String.raw`\b${PROTECTION_VERB}\s+unchanged\b`, 'iu');
+const protectionVerbPattern = new RegExp(String.raw`\b${PROTECTION_VERB}\b`, 'iu');
+const protectionClauseStartPattern = new RegExp(String.raw`^${PROTECTION_VERB}\b`, 'iu');
+const allProtectionVerbsPattern = new RegExp(String.raw`\b${PROTECTION_VERB}\b`, 'giu');
 const exclusionVerbPattern = /\b(?:excluding|except)\b/giu;
 const protectionClauseBoundaryPattern = new RegExp(protectionClauseBoundary, 'giu');
 // The courtesy words a request opens with ahead of its verb, any number in any order, joined by any run of
@@ -118,7 +117,7 @@ function readSlotReference(prompt: string, slot: Slot): string {
     return slot.lead === 'prohibition' ? reference.replace(trailingClauseSeparatorPattern, '') : reference;
 }
 
-type NameBlanking = { text: string; ambiguous: boolean };
+type NameBlanking = { text: string; names: Range[]; ambiguous: boolean };
 
 /**
  * Blank every project object's name so a verb inside a name never reads as the next instruction. A name wholly
@@ -126,17 +125,18 @@ type NameBlanking = { text: string; ambiguous: boolean };
  * or by straddling them, cannot be told from the opener, so the reading is ambiguous.
  */
 function blankObjectNames(maskedText: string, prompt: string, context: ProjectContext): NameBlanking {
-    const starts = protectionSlots.startRanges(maskedText);
+    const references = refinementRequestReading.references(prompt, refinementRequestReading.candidates(context));
+    const starts = protectionSlots.startRanges(maskedText, references);
     const insideStart = (reference: Range) =>
         starts.some((start) => reference.start >= start.start && reference.end <= start.end);
     const overlapsStart = (reference: Range) =>
         starts.some((start) => reference.start < start.end && reference.end > start.start);
-    const references = refinementRequestReading.references(prompt, refinementRequestReading.candidates(context));
     return {
         text: blankRanges(
             maskedText,
             references.filter((reference) => !overlapsStart(reference))
         ),
+        names: references,
         ambiguous: references.some((reference) => overlapsStart(reference) && !insideStart(reference)),
     };
 }
@@ -164,7 +164,7 @@ function getProtectedReferenceTexts(prompt: string, context: ProjectContext): Pr
         if (match.index === undefined || match[1] === undefined) {
             continue;
         }
-        if (/^(?:leave|leaving|keep|keeping|preserve|preserving)\b/iu.test(match[0])) {
+        if (protectionClauseStartPattern.test(match[0])) {
             completeVerbStarts.add(match.index);
         } else {
             completeExclusionStarts.add(match.index);
@@ -176,7 +176,7 @@ function getProtectedReferenceTexts(prompt: string, context: ProjectContext): Pr
 
     const blanking = blankObjectNames(quoteScan.maskedText, prompt, context);
     complete &&= !blanking.ambiguous;
-    for (const slot of protectionSlots.read(blanking.text)) {
+    for (const slot of protectionSlots.read(blanking.text, blanking.names)) {
         const range = slot.completeRange;
         if (
             range === null ||

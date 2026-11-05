@@ -186,6 +186,8 @@ describe('measured audition controller through the actual exclusive source execu
         wire.apply.mockReset();
         wire.resolve.mockReset();
         driven = await engineFixture();
+        const { registerDeviceEnginePorts } = await import('#/app/registerDeviceEnginePorts');
+        registerDeviceEnginePorts();
         ({ agentMeasurementArtifactStore } = await import('#/modules/AudioRendering/stores'));
         ({ measuredPreviewAuditionStore } = await import('../../stores/measuredPreviewAuditionStore'));
         ({ startMeasuredPreviewAudition } = await import('../startMeasuredPreviewAudition'));

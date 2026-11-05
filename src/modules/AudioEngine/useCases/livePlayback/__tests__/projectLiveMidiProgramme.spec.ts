@@ -19,6 +19,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -73,6 +74,8 @@ import {
 import { type OfflinePpqEndpointProjector } from '../../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
 import { GENERATIVE_MIDI_EXCLUSION_REASON } from '../nativeMidiNoteSink';
 import { projectLiveMidiProgramme, type LiveMidiProgrammeInput } from '../projectLiveMidiProgramme';
+
+registerDeviceEnginePorts();
 
 const SAMPLE_RATE = 48_000;
 const FRAME = 1 / SAMPLE_RATE;

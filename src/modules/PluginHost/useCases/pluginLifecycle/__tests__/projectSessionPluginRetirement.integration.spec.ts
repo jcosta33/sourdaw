@@ -44,6 +44,10 @@ const attemptLateActivation = async (
 describe('Project session PluginHost retirement boundary', () => {
     beforeAll(async () => {
         await import('#/modules/Project/useCases');
+        // Once, not per fresh graph: the session teardown reads the attachment
+        // port from the spread AudioEngine mock, which `vi.resetModules()` keeps.
+        const { registerDeviceEnginePorts } = await import('#/app/registerDeviceEnginePorts');
+        registerDeviceEnginePorts();
         // Warm-up only, and it transforms the whole application graph — three
         // contract barrels, two of them spread from the real module. That cost
         // grows with the app and had already reached the default ten-second

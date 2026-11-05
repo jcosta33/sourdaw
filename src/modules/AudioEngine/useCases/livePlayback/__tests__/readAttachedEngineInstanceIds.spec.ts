@@ -12,6 +12,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { crumbsEngineAttachmentStore } from '#/modules/Crumbs/stores';
 import { markCrumbsEngineAttached, retractEveryCrumbsEngineAttachment } from '#/modules/Crumbs/useCases';
 import {
@@ -21,6 +22,8 @@ import {
 } from '#/modules/PluginHost/stores';
 
 import { readAttachedEngineInstanceIds } from '../readAttachedEngineInstanceIds';
+
+registerDeviceEnginePorts();
 
 function snapshot(engineAttached: boolean): ExternalPluginParameterSnapshot {
     return { engineAttached, parameters: [] };

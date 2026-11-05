@@ -1,10 +1,20 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { projectCommittedGroove } from '#/modules/MIDI/useCases';
+import { readYeastRack } from '#/modules/Yeast/stores';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
 import { defaultTransportState } from '../../../models/TransportState';
+import { liveMidiProcessor } from '../liveMidiProcessor';
 import { processLiveYeastTrackBlock } from '../processLiveYeastTrackBlock';
+
+// The MIDI barrel is mocked whole here, so the composition root's registrar
+// cannot load; the processor it registers is filled directly, with the Yeast
+// processing this spec doubles.
+liveMidiProcessor.configure({
+    processBlock: processYeastMidi,
+    readRackProcessors: (rackId) => readYeastRack(rackId).processors,
+});
 
 vi.mock('#/modules/MIDI/useCases', () => ({
     projectCommittedGroove: vi.fn(({ events }: { events: readonly unknown[] }) => events),

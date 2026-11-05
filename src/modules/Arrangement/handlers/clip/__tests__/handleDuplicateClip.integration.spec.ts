@@ -7,6 +7,7 @@ import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    executeAppAction,
     executeAppActionBatch,
     redo,
     resetActionReplayAuthority,
@@ -20,7 +21,9 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { midiStore } from '#/modules/MIDI/stores';
 import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -37,6 +40,23 @@ const noActionHistoryMetadataPort = {
 // `undo()` reports a refused inverse through `notifyUser`; the desktop
 // notification bus does not exist in this environment.
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
+
+function clipScopedGainLane(id: string, clipId: string) {
+    return {
+        id,
+        trackId: 'track-1',
+        clipId,
+        parameterId: 'gain',
+        parameterName: 'Gain',
+        points: [{ id: `${id}-point`, beat: 0, value: 0.5, curve: 'linear' as const, tension: 0 }],
+        objects: [],
+        visible: true,
+        enabled: true,
+        collapsed: false,
+        minValue: 0,
+        maxValue: 1,
+    };
+}
 
 describe('handleDuplicateClip atomic integration', () => {
     beforeEach(() => {
@@ -63,6 +83,8 @@ describe('handleDuplicateClip atomic integration', () => {
         resetActionReplayAuthority();
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        automationStore.set({ lanes: [] });
         setAllEnvelopes({});
         warpStates.clear();
         configureAutomergeStoragePort(null);
@@ -327,6 +349,86 @@ describe('handleDuplicateClip atomic integration', () => {
         expect(getWarpState('clip-1')?.markers).toHaveLength(1);
         expect(automationStore.value!.lanes).toHaveLength(1);
         expect(automationStore.value!.lanes[0]!.id).toBe('lane-1');
+    });
+
+    it.each(['notes', 'clip-scoped automation'] as const)(
+        'undoes a MIDI duplicate carrying %s again after an undo and a redo',
+        async (carried) => {
+            const { audioBufferId: _audioBufferId, ...midiClip } = ClipDummy.create({
+                id: 'clip-1',
+                startBeat: 0,
+                endBeat: 4,
+                type: 'midi',
+            });
+            trackStore.set({
+                tracks: [TrackDummy.create({ id: 'track-1', kind: 'midi', clips: [midiClip] })],
+                selectedTrackId: 'track-1',
+                ghostClips: [],
+            });
+            midiStore.set({
+                probabilitySeed: 1,
+                notesByClipId: { 'clip-1': [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 90 }] },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            });
+            if (carried === 'clip-scoped automation') {
+                automationStore.set({ lanes: [clipScopedGainLane('lane-1', 'clip-1')] });
+            }
+            const clipIds = () => trackStore.value?.tracks[0]?.clips.map((clip) => clip.id);
+
+            await executeAppAction(
+                { type: 'duplicateClip', payload: { clipId: 'clip-1', targetClipId: 'copy' } },
+                { source: 'manual' }
+            );
+            expect(clipIds()).toEqual(['clip-1', 'copy']);
+            expect((await undo()).headConsumed).toBe(true);
+            await redo();
+            expect(clipIds()).toEqual(['clip-1', 'copy']);
+
+            // The redo copies notes and lanes under freshly minted ids, so the
+            // undo after it must judge the copy against what the redo made.
+            expect((await undo()).headConsumed).toBe(true);
+            expect(clipIds()).toEqual(['clip-1']);
+            expect(notifyUser).not.toHaveBeenCalled();
+        }
+    );
+
+    it('refuses the undo after a redo when a peer then edits the copy', async () => {
+        const { audioBufferId: _audioBufferId, ...midiClip } = ClipDummy.create({
+            id: 'clip-1',
+            startBeat: 0,
+            endBeat: 4,
+            type: 'midi',
+        });
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'track-1', kind: 'midi', clips: [midiClip] })],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+        midiStore.set({
+            probabilitySeed: 1,
+            notesByClipId: { 'clip-1': [{ id: 'note-1', pitch: 60, startBeat: 0, duration: 1, velocity: 90 }] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+
+        await executeAppAction(
+            { type: 'duplicateClip', payload: { clipId: 'clip-1', targetClipId: 'copy' } },
+            { source: 'manual' }
+        );
+        await undo();
+        await redo();
+        const current = midiStore.value!;
+        const [copyNote] = current.notesByClipId.copy!;
+        midiStore.set({
+            ...current,
+            notesByClipId: { ...current.notesByClipId, copy: [{ ...copyNote!, velocity: 42 }] },
+        });
+
+        expect((await undo()).headConsumed).toBe(false);
+        expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(['clip-1', 'copy']);
+        expect(midiStore.value?.notesByClipId.copy?.[0]?.velocity).toBe(42);
+        expect(notifyUser).toHaveBeenCalled();
     });
 
     it('still undoes the duplicate after a semantic no-op warp write on the copy', async () => {

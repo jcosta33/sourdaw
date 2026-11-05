@@ -98,6 +98,21 @@ export function loopPassNoteEndBeat(
 }
 
 /**
+ * Where a segment a pass hands on ends once the pass's sounding end cuts it: at its own end, or at
+ * `soundingEndBeat` (the pass end, or the clip end when it comes first), the cut the synth projection makes
+ * (`getGrooveProjection`) and a DAW makes at a region end. `undefined` when the cut leaves the segment no
+ * length, as it leaves one starting at or after the sounding end.
+ */
+export function passSegmentSoundingEndBeat(
+    startBeat: number,
+    endBeat: number,
+    soundingEndBeat: number
+): number | undefined {
+    const cutEndBeat = Math.min(endBeat, soundingEndBeat);
+    return cutEndBeat > startBeat ? cutEndBeat : undefined;
+}
+
+/**
  * How long the tail struck on the pass head lasts: the part of the note's
  * kept length past the pass end, or 0 when the note ends inside the pass (a
  * remainder within float noise of none is none).

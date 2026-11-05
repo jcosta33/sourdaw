@@ -279,6 +279,9 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     // The same census: the project session quiescer imports the disarm, and
     // this suite never reaches a session teardown.
     disarmRetrospectiveCapture: vi.fn(),
+    // The same census: the runtime graph repair reads the attachment port,
+    // and this suite never runs a repair.
+    engineAttachmentTracking: { configure: vi.fn(), read: vi.fn() },
     openCachedAudioBufferHold: vi.fn(() => ({ retain: vi.fn(), release: vi.fn() })),
     soundsNativeNotes: vi.fn(() => false),
     updateDeviceParam: vi.fn(),

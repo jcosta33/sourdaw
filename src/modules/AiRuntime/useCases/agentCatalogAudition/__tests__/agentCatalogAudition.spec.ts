@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     stageLocalAsset: vi.fn(),
     releaseStagedAsset: vi.fn(),
     promoteStagedAsset: vi.fn(),
+    stageClipAudioAsset: vi.fn(),
 }));
 
 // Every barrel the workflow reads is replaced by name rather than spread, so a
@@ -35,6 +36,7 @@ vi.mock('#/modules/AudioAnalysis/useCases', () => ({
     analyzeAgentAuditionBuffer: mocks.analyzeAgentAuditionBuffer,
 }));
 vi.mock('#/modules/Arrangement/stores', () => ({ trackStore: mocks.trackStore }));
+vi.mock('#/modules/Arrangement/useCases', () => ({ stageClipAudioAsset: mocks.stageClipAudioAsset }));
 vi.mock('#/modules/Collaboration/useCases', () => ({ getAssetTransfer: mocks.getAssetTransfer }));
 vi.mock('#/modules/Command/useCases', () => ({ executeAppActionBatch: mocks.executeAppActionBatch }));
 vi.mock('#/modules/Transport/stores', () => ({
@@ -94,13 +96,23 @@ function audioBuffer(amplitude: number, seconds = 1): AudioBuffer {
 const AUDITED_BUFFER = audioBuffer(0.25);
 const REPLACED_BUFFER = audioBuffer(0.5);
 const EMPTY_BUFFER = audioBuffer(0, 0);
+const FACTORY_BUFFER_ID = 'factory-kick-1';
+const FACTORY_BUFFER = audioBuffer(0.125);
 const CANDIDATE_FILE = new File([new Uint8Array([1, 2, 3])], 'brushed.wav');
 
 function resolvesCandidate(): void {
     mocks.resolveAgentCatalogCandidate.mockResolvedValue({
         status: 'resolved',
         candidate: CANDIDATE,
-        file: CANDIDATE_FILE,
+        source: { kind: 'file', file: CANDIDATE_FILE },
+    });
+}
+
+function resolvesFactoryCandidate(buffer: AudioBuffer = FACTORY_BUFFER): void {
+    mocks.resolveAgentCatalogCandidate.mockResolvedValue({
+        status: 'resolved',
+        candidate: { ...CANDIDATE, id: FACTORY_BUFFER_ID },
+        source: { kind: 'buffer', audioBufferId: FACTORY_BUFFER_ID, buffer },
     });
 }
 
@@ -124,6 +136,7 @@ function armWorkflowMocks(): void {
         releaseStagedAsset: mocks.releaseStagedAsset,
         promoteStagedAsset: mocks.promoteStagedAsset,
     });
+    mocks.stageClipAudioAsset.mockResolvedValue({ hash: STAGED_HASH, leaseId: STAGED_LEASE });
     mocks.executeAppActionBatch.mockResolvedValue({ status: 'committed', actions: [] });
 }
 
@@ -366,5 +379,104 @@ describe('agent audition placement', () => {
 
         expect(result).toEqual({ status: 'rejected', reason: 'file-unavailable' });
         expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+    });
+});
+
+describe('factory candidates', () => {
+    beforeEach(armWorkflowMocks);
+
+    async function auditionedFactory(): Promise<AuditionReceipt> {
+        resolvesFactoryCandidate();
+        const result = await auditionAgentCatalogCandidate({ candidateId: FACTORY_BUFFER_ID });
+        if (result.status !== 'auditioned') {
+            throw new Error(`Expected the factory audition to succeed, got ${result.reason}`);
+        }
+        return result.receipt;
+    }
+
+    it('auditions the resident buffer under its own content address, decoding nothing', async () => {
+        const receipt = await auditionedFactory();
+
+        expect(receipt.contentAddress).toBe(await getAudioBufferContentAddress(FACTORY_BUFFER));
+        expect(mocks.decodeAudioFileBuffer).not.toHaveBeenCalled();
+        expect(mocks.analyzeAgentAuditionBuffer).toHaveBeenCalledWith(
+            expect.objectContaining({ buffer: FACTORY_BUFFER })
+        );
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+    });
+
+    it('places the clip on the factory buffer id with the staged asset hash, caching no copy', async () => {
+        const receipt = await auditionedFactory();
+
+        const result = await applyAgentAuditionCandidate({ receipt, trackId: AUDIO_TRACK_ID, startBeat: START_BEAT });
+
+        expect(result).toMatchObject({ status: 'applied', audioBufferId: FACTORY_BUFFER_ID, assetFinalized: true });
+        expect(dispatchedAddClip().payload).toMatchObject({
+            audioBufferId: FACTORY_BUFFER_ID,
+            assetHash: STAGED_HASH,
+            endBeat: START_BEAT + (FACTORY_BUFFER.duration / SECONDS_PER_MINUTE) * TEMPO_BPM,
+        });
+        expect(mocks.stageClipAudioAsset).toHaveBeenCalledWith(FACTORY_BUFFER, CANDIDATE.displayName);
+        expect(mocks.stageLocalAsset).not.toHaveBeenCalled();
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.promoteStagedAsset).toHaveBeenCalledWith(STAGED_LEASE);
+    });
+
+    it('refuses a buffer that changed since the audition, and writes nothing', async () => {
+        const receipt = await auditionedFactory();
+        resolvesFactoryCandidate(REPLACED_BUFFER);
+
+        const result = await applyAgentAuditionCandidate({ receipt, trackId: AUDIO_TRACK_ID, startBeat: START_BEAT });
+
+        expect(result).toEqual({ status: 'rejected', reason: 'content-address-mismatch' });
+        expect(mocks.stageClipAudioAsset).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+    });
+
+    it('refuses with asset-staging-failed when staging throws, before any write', async () => {
+        const receipt = await auditionedFactory();
+        mocks.stageClipAudioAsset.mockRejectedValue(new Error('encode failed'));
+
+        const result = await applyAgentAuditionCandidate({ receipt, trackId: AUDIO_TRACK_ID, startBeat: START_BEAT });
+
+        expect(result).toEqual({ status: 'rejected', reason: 'asset-staging-failed' });
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+        expect(mocks.discardDecodedAudioFile).not.toHaveBeenCalled();
+    });
+
+    it('releases the lease and never discards the factory buffer when the project refuses the write', async () => {
+        const receipt = await auditionedFactory();
+        mocks.executeAppActionBatch.mockResolvedValue({
+            status: 'rejected',
+            reason: 'project repair required',
+            actions: [],
+        });
+
+        const result = await applyAgentAuditionCandidate({ receipt, trackId: AUDIO_TRACK_ID, startBeat: START_BEAT });
+
+        expect(result).toMatchObject({ status: 'rejected', reason: 'project-write-refused' });
+        expect(mocks.releaseStagedAsset).toHaveBeenCalledWith(STAGED_LEASE);
+        expect(mocks.discardDecodedAudioFile).not.toHaveBeenCalled();
+    });
+
+    it('releases the lease and never discards the factory buffer when the dispatch throws', async () => {
+        const receipt = await auditionedFactory();
+        mocks.executeAppActionBatch.mockRejectedValue(new Error('storage transaction aborted'));
+
+        const result = await applyAgentAuditionCandidate({ receipt, trackId: AUDIO_TRACK_ID, startBeat: START_BEAT });
+
+        expect(result).toMatchObject({ status: 'rejected', reason: 'project-write-refused' });
+        expect(mocks.releaseStagedAsset).toHaveBeenCalledWith(STAGED_LEASE);
+        expect(mocks.discardDecodedAudioFile).not.toHaveBeenCalled();
+    });
+
+    it('keeps the lease promoted and the factory buffer when the commit is ambiguous', async () => {
+        const receipt = await auditionedFactory();
+        mocks.executeAppActionBatch.mockResolvedValue({ status: 'ambiguous', actions: [], reason: 'may have landed' });
+
+        const result = await applyAgentAuditionCandidate({ receipt, trackId: AUDIO_TRACK_ID, startBeat: START_BEAT });
+
+        expect(result).toMatchObject({ status: 'ambiguous', audioBufferId: FACTORY_BUFFER_ID, assetFinalized: true });
+        expect(mocks.discardDecodedAudioFile).not.toHaveBeenCalled();
     });
 });

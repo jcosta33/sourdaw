@@ -1,14 +1,13 @@
-import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type GeneratedMidiStateGuard, type HandlerValidationContext } from '#/utils/handlerContract';
 
-import { serializeClipSatelliteEntries } from '../../stores/clipSatelliteState';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { duplicateClip } from '../../useCases/clip/duplicateClip';
 import { prepareDuplicateClipTargetId } from '../../useCases/clip/prepareDuplicateClipTargetId';
-import { serializeClipScopedAutomationLanes } from '../../useCases/clip/serializeClipScopedAutomationLanes';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
+
+import { stampCreatedClipStateGuard } from './stampCreatedClipStateGuard';
 
 type DuplicateClipAction = { payload: { clipId: string; targetClipId?: string } };
 
@@ -39,20 +38,6 @@ function getDuplicateClipState(action: DuplicateClipAction): DuplicateClipState 
     };
     duplicateClipStates.set(action, state);
     return state;
-}
-
-function findClipById(clipId: string) {
-    const trackState = getTrackStoreState();
-    if (!trackState) {
-        return undefined;
-    }
-    for (const track of trackState.tracks) {
-        const clip = track.clips.find((candidate) => candidate.id === clipId);
-        if (clip) {
-            return clip;
-        }
-    }
-    return undefined;
 }
 
 function isDuplicateClipNoop(action: DuplicateClipAction): boolean {
@@ -123,19 +108,7 @@ export const handleDuplicateClip = createHandler<'duplicateClip'>({
         if (!succeeded) {
             return toHandlerExecutionResult(false);
         }
-        const duplicatedClip = findClipById(state.targetClipId);
-        if (duplicatedClip) {
-            state.generatedMidiStateGuard.entityJson = JSON.stringify(duplicatedClip);
-            state.generatedMidiStateGuard.midiByClipIdJson = serializeMidiStateForClips([duplicatedClip.id]);
-            // The duplicate clones the source's gain envelope, warp state, and
-            // clip-scoped automation lanes, so the guard must expect exactly
-            // those — requiring absence would make the copy's own undo conflict
-            // on what the copy itself made.
-            state.generatedMidiStateGuard.clipSatellitesJson = serializeClipSatelliteEntries([duplicatedClip.id]);
-            state.generatedMidiStateGuard.clipAutomationLanesJson = serializeClipScopedAutomationLanes([
-                duplicatedClip.id,
-            ]);
-        }
+        stampCreatedClipStateGuard(state.generatedMidiStateGuard, state.targetClipId);
         return toHandlerExecutionResult(true);
     },
     describe: (alpha) => {

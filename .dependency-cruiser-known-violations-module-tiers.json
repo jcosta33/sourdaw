@@ -9,20 +9,14 @@
       "Command",
       "ControlSurface",
       "CrdtDocument",
-      "Crumbs",
       "ElasticAudio",
-      "GrandBoule",
-      "Grinder",
       "Knead",
-      "Levain",
       "MIDI",
       "Project",
       "Routing",
       "SampleLibrary",
-      "Toaster",
       "Transport",
-      "WorkspaceShell",
-      "Yeast"
+      "WorkspaceShell"
     ]
   },
   {
@@ -68,22 +62,12 @@
   {
     "type": "module-tier",
     "from": "AudioEngine",
-    "to": "Crumbs"
-  },
-  {
-    "type": "module-tier",
-    "from": "AudioEngine",
     "to": "CvGate"
   },
   {
     "type": "module-tier",
     "from": "AudioEngine",
     "to": "ElasticAudio"
-  },
-  {
-    "type": "module-tier",
-    "from": "AudioEngine",
-    "to": "Grinder"
   },
   {
     "type": "module-tier",
@@ -104,11 +88,6 @@
     "type": "module-tier",
     "from": "AudioEngine",
     "to": "Transport"
-  },
-  {
-    "type": "module-tier",
-    "from": "AudioEngine",
-    "to": "Yeast"
   },
   {
     "type": "module-tier",
@@ -168,16 +147,6 @@
   {
     "type": "module-tier",
     "from": "MIDI",
-    "to": "GrandBoule"
-  },
-  {
-    "type": "module-tier",
-    "from": "MIDI",
-    "to": "Levain"
-  },
-  {
-    "type": "module-tier",
-    "from": "MIDI",
     "to": "Synth"
   },
   {
@@ -187,18 +156,8 @@
   },
   {
     "type": "module-tier",
-    "from": "MIDI",
-    "to": "Yeast"
-  },
-  {
-    "type": "module-tier",
     "from": "Project",
     "to": "ControlSurface"
-  },
-  {
-    "type": "module-tier",
-    "from": "Project",
-    "to": "Crumbs"
   },
   {
     "type": "module-tier",
@@ -208,27 +167,12 @@
   {
     "type": "module-tier",
     "from": "Project",
-    "to": "Levain"
-  },
-  {
-    "type": "module-tier",
-    "from": "Project",
     "to": "SampleLibrary"
   },
   {
     "type": "module-tier",
     "from": "Project",
-    "to": "Toaster"
-  },
-  {
-    "type": "module-tier",
-    "from": "Project",
     "to": "WorkspaceShell"
-  },
-  {
-    "type": "module-tier",
-    "from": "Project",
-    "to": "Yeast"
   },
   {
     "type": "module-tier",
@@ -243,21 +187,6 @@
   {
     "type": "module-tier",
     "from": "Transport",
-    "to": "Crumbs"
-  },
-  {
-    "type": "module-tier",
-    "from": "Transport",
     "to": "Synth"
-  },
-  {
-    "type": "module-tier",
-    "from": "Transport",
-    "to": "Toaster"
-  },
-  {
-    "type": "module-tier",
-    "from": "Transport",
-    "to": "Yeast"
   }
 ]

@@ -225,6 +225,7 @@ describe('saved audio collection race', () => {
             { configureCollaborationAssetOwner },
             { readNamedProjectJson },
             { registerProjectLifecycle },
+            { registerDeviceEnginePorts },
         ] = await Promise.all([
             import('#/modules/AudioEngine/useCases'),
             import('#/modules/Arrangement/useCases'),
@@ -237,6 +238,7 @@ describe('saved audio collection race', () => {
             import('#/modules/Collaboration/useCases'),
             import('../../../../repositories/project/readNamedProjectJson'),
             import('#/app/registerProjectLifecycle'),
+            import('#/app/registerDeviceEnginePorts'),
         ]);
         reportStage('imports:done');
         const context = audio.audioEngine.context as AudioContext & {
@@ -256,6 +258,7 @@ describe('saved audio collection race', () => {
         project.setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
         crdt.resetCrdtProjectAuthority('Project A');
         registerProjectLifecycle();
+        registerDeviceEnginePorts();
         resetModuleStoresToDefault();
         projectStore.set({
             ...createFreshProjectMetadata({ name: 'Project A', loading: false, initialized: true }),

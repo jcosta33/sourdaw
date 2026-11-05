@@ -1,11 +1,11 @@
 import { createTrack, getTrackStoreState, setDeviceState, setTrackState } from '#/modules/Arrangement/useCases';
-import { createLevainTemplateDeviceState } from '#/modules/Levain/useCases';
 
 import { addDeviceChain } from '../templateHelpers/addDeviceChain';
 import { addSend } from '../templateHelpers/addSend';
 import { createInstrumentTrack } from '../templateHelpers/createInstrumentTrack';
 import { finalizeTemplate } from '../templateHelpers/finalizeTemplate';
 import { initProject } from '../templateHelpers/initProject';
+import { templateDeviceContent } from '../templateHelpers/templateDeviceContent';
 
 const sections = [
     { name: 'Violins I', instrumentId: 'violin-1', pan: -30, gain: 0.72, send: 0.38 },
@@ -51,12 +51,13 @@ export async function createStringOrchestraTemplate(): Promise<void> {
         selectedTrackId: selectTrackId,
     });
 
+    const content = templateDeviceContent.read('stringOrchestra');
     for (const { section, track } of sectionTracks) {
         const device = track.devices[0];
         if (device === undefined) {
             throw new Error(`The "${section.name}" section has no device to carry its Levain state.`);
         }
-        if (!setDeviceState({ deviceId: device.id, state: createLevainTemplateDeviceState(section.instrumentId) })) {
+        if (!setDeviceState({ deviceId: device.id, state: content.stringSectionState(section.instrumentId) })) {
             throw new Error(`The "${section.name}" section is missing from the committed track state.`);
         }
     }

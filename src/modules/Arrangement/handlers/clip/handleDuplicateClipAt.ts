@@ -1,5 +1,5 @@
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
+import { type AppAction, type GeneratedMidiStateGuard, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
 import { duplicateClipCore } from '../../useCases/clip/duplicateClipCore';
@@ -8,10 +8,14 @@ import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 import { isDuplicateClipAtSessionEntry } from '../validateCreationSessionEntries';
 
 import { createdClipMidiCapture } from './createdClipMidiCapture';
+import { stampCreatedClipStateGuard } from './stampCreatedClipStateGuard';
 
 type DuplicateClipAtAction = Extract<AppAction, { type: 'duplicateClipAt' }>;
 
-type DuplicateClipAtState = { targetClipId: string };
+type DuplicateClipAtState = {
+    targetClipId: string;
+    generatedMidiStateGuard: GeneratedMidiStateGuard;
+};
 
 const duplicateClipAtStates = new WeakMap<object, DuplicateClipAtState>();
 
@@ -29,7 +33,10 @@ function getDuplicateClipAtState(action: DuplicateClipAtAction): DuplicateClipAt
     if (existing) {
         return existing;
     }
-    const state = { targetClipId: ensureTargetClipId(action) };
+    const state = {
+        targetClipId: ensureTargetClipId(action),
+        generatedMidiStateGuard: { entityJson: '', midiByClipIdJson: '' },
+    };
     duplicateClipAtStates.set(action, state);
     return state;
 }
@@ -104,6 +111,7 @@ export const handleDuplicateClipAt = createHandler<'duplicateClipAt'>({
                 return toHandlerExecutionResult(false);
             }
             capture?.complete();
+            stampCreatedClipStateGuard(state.generatedMidiStateGuard, state.targetClipId);
             const discard = () => createdClipMidiCapture({ phase: 'discard', action });
             return { status: 'written', afterCommit: discard, afterAmbiguousCommit: discard };
         } catch (error) {
@@ -117,7 +125,7 @@ export const handleDuplicateClipAt = createHandler<'duplicateClipAt'>({
             label: 'Duplicate clip at destination',
             inverseAction: {
                 type: 'discardDuplicatedClip',
-                payload: { clipId: state.targetClipId },
+                payload: { clipId: state.targetClipId, generatedMidiStateGuard: state.generatedMidiStateGuard },
             },
         };
     },
