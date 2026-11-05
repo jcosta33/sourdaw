@@ -1,0 +1,31 @@
+src/modules/AiRuntime/useCases/__tests__/planPromptActionsAfterSave.spec.ts
+  s_55244eb93b97d1::t_6de300faa8eaff 83,88-89
+  s_55244eb93b97d1::t_5eb8f599b155c3 49
+  s_91f8b522168bd8::t_4552fa8bf4c8bb 16,18,21,26-28,62-79,81,150-151,180,182
+src/modules/AiRuntime/useCases/__tests__/answerAfterSave.spec.ts
+  s_91f8b522168bd8::t_57ca7a805168e4 23,30-33,52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2a69951081b4b019b24fbc16ff189316eb54d1f6",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_91f8b522168bd8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea993bb3-f8f9-4703-aa93-ef8a806d9107",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
