@@ -36,7 +36,7 @@ export const SCALE_LABELS: Record<string, string> = {
 };
 
 export function getScaleLabel(scaleName: string): string {
-    return SCALE_LABELS[scaleName] ?? scaleName;
+    return Object.hasOwn(SCALE_LABELS, scaleName) ? SCALE_LABELS[scaleName] : scaleName;
 }
 
 export const KEY_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];

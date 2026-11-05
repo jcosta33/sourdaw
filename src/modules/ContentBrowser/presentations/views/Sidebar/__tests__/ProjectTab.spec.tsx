@@ -53,6 +53,12 @@ describe('ProjectTab — project meta display', () => {
         expect(screen.queryByText('harmonicMinor')).not.toBeInTheDocument();
     });
 
+    it('shows a stored scale name outside the label table as itself', () => {
+        setProject({ name: 'X', createdAt: 0, keyRoot: 0, scaleName: '__proto__', tuning: { name: 'ET' } });
+        render(<ProjectTab />);
+        expect(screen.getByText('__proto__')).toBeInTheDocument();
+    });
+
     it('displays the key name from keyRoot (0 → C)', () => {
         setProject({ name: 'X', createdAt: 0, keyRoot: 0, scaleName: 'major', tuning: { name: 'ET' } });
         render(<ProjectTab />);
