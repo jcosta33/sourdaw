@@ -222,4 +222,21 @@ describe('CommandPalette', () => {
 
         expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'toggleMetronome' });
     });
+
+    it('pulls focus back to the input when something outside the open palette takes it', async () => {
+        render(
+            <>
+                <button type="button">Outside</button>
+                <CommandPalette />
+            </>
+        );
+        const input = screen.getByRole('combobox');
+        await waitFor(() => {
+            expect(input).toHaveFocus();
+        });
+
+        screen.getByRole('button', { name: 'Outside', hidden: true }).focus();
+
+        expect(document.activeElement).toBe(input);
+    });
 });

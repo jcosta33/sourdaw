@@ -114,7 +114,14 @@ export const CommandPalette = (): ReactElement | null => {
                 }
             }}
         >
-            <DialogContent className="max-w-md gap-0 overflow-hidden p-0" aria-describedby={undefined}>
+            <DialogContent
+                className="max-w-md gap-0 overflow-hidden p-0"
+                aria-describedby={undefined}
+                onOpenAutoFocus={(event) => {
+                    event.preventDefault();
+                    inputRef.current?.focus();
+                }}
+            >
                 <DialogTitle className="sr-only">Command Palette</DialogTitle>
                 <Row className="daw-header-band rounded-t-lg px-3">
                     <span className="text-sm text-muted-foreground mr-2">&gt;</span>
@@ -135,7 +142,6 @@ export const CommandPalette = (): ReactElement | null => {
                         placeholder="Type a command..."
                         className="h-12 border-0 bg-transparent shadow-none focus-visible:ring-0 text-base"
                         data-testid="command-palette-input"
-                        autoFocus
                     />
                 </Row>
 

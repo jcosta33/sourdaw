@@ -100,7 +100,7 @@ const focusFirstAccepting = (candidates: (HTMLElement | null)[]): boolean => {
  * Radix's modal dialog answers `onCloseAutoFocus` by cancelling FocusScope's own restore and focusing
  * `Dialog.Trigger` only. A dialog opened from a store flag, a shortcut or a menu item has no trigger, so
  * focus fell to <body>. Return to the element that was focused when `open` turned true (read while
- * rendering, because an `autoFocus` field inside the dialog takes focus during commit), else to the
+ * rendering, because the content moves focus inside as soon as it mounts), else to the
  * trigger of the menu it lived in, else to the workspace landmark: the first that accepts focus wins, and if
  * none does Radix's own restore is left alone.
  */

@@ -125,4 +125,20 @@ describe('PromptDialog', () => {
         expect(screen.queryByText('First prompt')).not.toBeInTheDocument();
         expect(screen.getByRole('textbox')).toHaveValue('Second value');
     });
+
+    it('pulls focus back to the field when something outside the open dialog takes it', async () => {
+        render(<button type="button">Outside</button>);
+        const fire = await renderAndGetHandler();
+        act(() => {
+            fire(makePayload({ initialValue: 'Old Track' }));
+        });
+        const field = screen.getByRole('textbox');
+        await waitFor(() => {
+            expect(field).toHaveFocus();
+        });
+
+        screen.getByRole('button', { name: 'Outside', hidden: true }).focus();
+
+        expect(document.activeElement).toBe(field);
+    });
 });
