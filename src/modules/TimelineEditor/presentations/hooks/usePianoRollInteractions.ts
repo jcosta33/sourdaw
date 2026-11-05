@@ -46,6 +46,7 @@ import {
 } from '#/modules/MIDI/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { getTransportState } from '#/modules/Transport/useCases';
+import { CLIP_LOOP_WINDOW_BEAT_TOLERANCE } from '#/utils/clipLoopOrigin';
 import { clampMidiData7 } from '#/utils/midiData';
 import { quantizeMidiNoteToScale } from '#/utils/Music/MusicalScale';
 import { valuesEqual } from '#/utils/structuralEquality';
@@ -104,6 +105,14 @@ const FALLBACK_NOTE_VELOCITY = 100;
  * Read at gesture time so a preference edit reaches the next created note
  * without re-mounting the editor.
  */
+// A frozen take redisplays a stamped row through the clip start, which misses
+// the stamped beat by float noise on non-dyadic grids.
+const isStampedCell = (
+    note: Pick<MidiNote, 'pitch' | 'startBeat'>,
+    stamped: { pitch: number; beat: number }
+): boolean =>
+    note.pitch === stamped.pitch && Math.abs(note.startBeat - stamped.beat) <= CLIP_LOOP_WINDOW_BEAT_TOLERANCE;
+
 const getDefaultNoteVelocity = (): number => preferencesStore.value?.defaultVelocity ?? FALLBACK_NOTE_VELOCITY;
 
 function resolveTrackIdForClip(clipId: string, defaultTrackId: string): string {
@@ -1504,7 +1513,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         if (hit) {
             const stamped = stampedByClickRef.current;
             stampedByClickRef.current = null;
-            if (stamped && hit.note.pitch === stamped.pitch && hit.note.startBeat === stamped.beat) {
+            if (stamped && isStampedCell(hit.note, stamped)) {
                 return;
             }
             if (editFrozen(hit.note.id, null)) {
