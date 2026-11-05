@@ -20,6 +20,17 @@ function createSample(overrides: Partial<SampleRecord> = {}): SampleRecord {
     };
 }
 
+// Ring classes the shared Button base always adds; they style the focus ring and reveal nothing.
+const buttonBaseFocusClasses = [
+    'focus-visible:ring-1',
+    'focus-visible:ring-border-focus/70',
+    'focus-visible:ring-offset-0',
+];
+
+function focusClassesOf(element: Element | null, ignored: readonly string[] = []): string[] {
+    return (element?.className.split(/\s+/) ?? []).filter((c) => c.includes('focus') && !ignored.includes(c));
+}
+
 const baseProps = {
     showBrowserDecodeWarnings: false,
     onPlay: vi.fn(),
@@ -220,14 +231,27 @@ describe('SampleRow — overlay and decode-warning contracts', () => {
             .sort();
         expect(marked).toEqual(['Add a to favorites', 'Add a to track', 'Find samples similar to a']);
 
-        const allClasses = [
-            ...(screen.getByText('1.2s').parentElement?.className.split(/\s+/) ?? []),
-            ...(screen
-                .getByRole('button', { name: 'Find samples similar to a' })
-                .parentElement?.className.split(/\s+/) ?? []),
-            ...screen.getByRole('button', { name: 'Add a to favorites' }).className.split(/\s+/),
-        ];
-        expect(allClasses.filter((c) => c.startsWith('group-has-[button:focus]'))).toEqual([]);
+        // The only focus-driven reveals are keyboard focus anywhere in the row and any focus on a marked
+        // action; a plain `:focus` on Play (or focus-within / has-[:focus]) must satisfy none of them.
+        expect(focusClassesOf(screen.getByText('1.2s').parentElement)).toEqual([
+            'group-has-[button:focus-visible]:invisible',
+            'group-has-[[data-sample-row-action]:focus]:invisible',
+        ]);
+        expect(focusClassesOf(screen.getByRole('button', { name: 'Find samples similar to a' }).parentElement)).toEqual(
+            [
+                'group-has-[button:focus-visible]:pointer-events-auto',
+                'group-has-[button:focus-visible]:opacity-100',
+                'group-has-[[data-sample-row-action]:focus]:pointer-events-auto',
+                'group-has-[[data-sample-row-action]:focus]:opacity-100',
+            ]
+        );
+        expect(
+            focusClassesOf(screen.getByRole('button', { name: 'Add a to favorites' }), buttonBaseFocusClasses)
+        ).toEqual([
+            'group-has-[button:focus-visible]:opacity-100',
+            'group-has-[[data-sample-row-action]:focus]:opacity-100',
+            'focus:opacity-100',
+        ]);
     });
 
     it('never hides the decode warning behind a container-width threshold', () => {
