@@ -1,0 +1,23 @@
+evidence/agent-campaign/manifest.json
+  s_aaa00b6f988ced::t_1397986c506dca 695
+src/modules/AiRuntime/useCases/__tests__/automateTrackGainRangeAdmission.spec.ts
+  s_aaa00b6f988ced::t_be46d3a3b9d969 156-181,183,194,197-206
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_aaa00b6f988ced::t_a3cd1abe3479d9 4148-4168,5243-5244
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5a7922d214c15c1377a1a3e1e31c78868f358e4b",
+  "prompts": {},
+  "sessions": {
+    "s_aaa00b6f988ced": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_aaa00b6f988ced",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
