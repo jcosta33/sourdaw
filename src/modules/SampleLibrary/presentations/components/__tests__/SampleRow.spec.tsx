@@ -142,3 +142,33 @@ describe('SampleRow — add-to-track conditional', () => {
         expect(screen.getByRole('button', { name: 'Add a to track' })).toBeTruthy();
     });
 });
+
+describe('SampleRow — hover actions stay keyboard reachable', () => {
+    it('keeps add-to-track, favorite and find-similar focusable and activatable without hover', () => {
+        const onAddToTrack = vi.fn();
+        const onToggleFavorite = vi.fn();
+        const onFindSimilar = vi.fn();
+        render(
+            <SampleRow
+                sample={createSample()}
+                isPlaying={false}
+                {...baseProps}
+                onAddToTrack={onAddToTrack}
+                onToggleFavorite={onToggleFavorite}
+                onFindSimilar={onFindSimilar}
+            />
+        );
+        const actions = [
+            ['Add a to track', onAddToTrack],
+            ['Add a to favorites', onToggleFavorite],
+            ['Find samples similar to a', onFindSimilar],
+        ] as const;
+        for (const [name, handler] of actions) {
+            const button = screen.getByRole('button', { name });
+            button.focus();
+            expect(document.activeElement).toBe(button);
+            fireEvent.click(button);
+            expect(handler).toHaveBeenCalledTimes(1);
+        }
+    });
+});
