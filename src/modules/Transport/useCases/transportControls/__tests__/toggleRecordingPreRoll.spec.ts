@@ -70,6 +70,7 @@ vi.mock('../../playheadScheduler/startPlayheadScheduler', () => ({
 vi.mock('../../playheadScheduler/prepareInitialBrowserPlayback', () => ({ prepareInitialBrowserPlayback: vi.fn() }));
 vi.mock('../stopPlayback', () => ({ stopPlayback: vi.fn(async () => undefined) }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    collaborationAssetTransfer: { read: () => ({ isSessionActive: () => false, current: () => null }) },
     prepareRecoveredRecording: vi.fn(),
     admitRecordingCaptureClock: vi.fn(),
     observeRecordingPassEntry: vi.fn(),

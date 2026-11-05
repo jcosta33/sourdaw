@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import {
     resetAutomergeStorageProjections,
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { midiLearnStore } from '#/modules/ControlSurface/stores';
 import {
     createCrdtDoc,
     getCrdtDoc,
@@ -17,6 +17,7 @@ import { createDefaultProductionBrief } from '../../../models/ProductionBrief';
 import { isCanonicalProjectId } from '../../../models/ProjectData';
 import { projectStore } from '../../../stores/projectStore';
 import { buildProjectData } from '../fileIO/buildProjectData';
+import { midiLearnProjection } from '../fileIO/midiLearnProjection';
 import { migrateActiveProjectIdentity } from '../migrateActiveProjectIdentity';
 
 const mocks = vi.hoisted(() => ({
@@ -70,7 +71,9 @@ function documentProjectId(): unknown {
     return (getCrdtDoc<Record<string, Record<string, unknown>>>('root')?.projectMeta ?? {}).projectId;
 }
 
-registerSupportingServicePorts();
+// The composition root's MIDI learn projection over the live store: the
+// registrar itself cannot load while whole module barrels are mocked.
+midiLearnProjection.configure({ readMidiLearn: () => midiLearnStore.value });
 
 describe('migrateActiveProjectIdentity against a live legacy Automerge document', () => {
     beforeEach(() => {

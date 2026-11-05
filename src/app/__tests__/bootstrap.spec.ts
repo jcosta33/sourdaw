@@ -696,8 +696,7 @@ vi.mock('#/modules/Routing/useCases', () => ({
     getNodeViewHandlers: sentinelHandlers('NodeView'),
 }));
 
-vi.mock('#/modules/SampleLibrary/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/SampleLibrary/useCases')>()),
+vi.mock('#/modules/SampleLibrary/useCases', () => ({
     getSampleLibraryHandlers: sentinelHandlers('SampleLibrary'),
 }));
 
