@@ -34,13 +34,18 @@ const mocks = vi.hoisted(() => ({
     getProjectContext: vi.fn(),
 }));
 
-vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
-    captureProjectRevision: vi.fn(() => JSON.stringify({ documentIdentityEpoch: 1, mutationEpoch: 1, documents: [] })),
-    settlePendingProjectWritesAndCaptureRevision: vi.fn(() =>
-        JSON.stringify({ documentIdentityEpoch: 1, mutationEpoch: 1, documents: [] })
-    ),
-}));
+// The project never moves here, so every revision reader agrees on one fixed revision: the
+// save-insensitive question compares against it too, rather than against the live document the
+// fixed revision does not describe.
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => {
+    const revision = JSON.stringify({ documentIdentityEpoch: 1, mutationEpoch: 1, documents: [] });
+    return {
+        ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
+        captureProjectRevision: vi.fn(() => revision),
+        settlePendingProjectWritesAndCaptureRevision: vi.fn(() => revision),
+        projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn((expected: string) => expected === revision),
+    };
+});
 
 vi.mock('../getProjectContext', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../getProjectContext')>()),
