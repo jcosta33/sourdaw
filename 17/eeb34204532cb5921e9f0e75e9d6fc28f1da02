@@ -1,0 +1,28 @@
+src/modules/AiRuntime/transformers/llmActionStrategies/automationRangeStrategy.ts
+  s_55244eb93b97d1::t_41ec2029905446 239,267
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_55244eb93b97d1::t_41ec2029905446 1219,1226
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_55244eb93b97d1::t_41ec2029905446 2427,2447
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/automationRangeStrategy.spec.ts
+  s_55244eb93b97d1::t_5258727e1d43b4 132
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_55244eb93b97d1::t_5258727e1d43b4 283-287,298,319-348
+  s_55244eb93b97d1::t_6f24b26f9d2862 349
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "17eeb34204532cb5921e9f0e75e9d6fc28f1da02",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
