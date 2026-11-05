@@ -197,14 +197,26 @@ describe('getExplicitlyProtectedClips', () => {
         });
     });
 
-    it('reads a carve-out word inside a clip name as incomplete, never as a protected clip', () => {
+    it('reads a clip name that only partly overlaps the opening words as incomplete', () => {
+        const track = createTrack('track-straddle', 'Pair', [
+            createClip('clip-alpha', 'Alpha'),
+            createClip('clip-beta', 'Beta'),
+            createClip('clip-touch-alpha', 'Touch Alpha'),
+        ]);
+
+        expect(
+            getExplicitClipProtection("Don't touch Alpha and rename Alpha to Gamma", { ...context, tracks: [track] })
+                .complete
+        ).toBe(false);
+    });
+
+    it('keeps the clip a prohibition names and refuses the list when its name holds a carve-out word', () => {
         const named = createClip('clip-named', 'except me');
         const track = createTrack('track-named', 'Pair', [named, createClip('clip-beta', 'Beta')]);
 
         expect(
             getExplicitClipProtection("Don't touch except me and rename Beta to Gamma", { ...context, tracks: [track] })
-                .complete
-        ).toBe(false);
+        ).toEqual({ clips: [{ id: named.id, name: named.name }], complete: false });
     });
 
     it('reads a prohibition list ending in a dangling and as incomplete', () => {
