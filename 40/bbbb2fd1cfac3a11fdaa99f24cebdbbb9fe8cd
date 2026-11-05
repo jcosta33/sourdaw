@@ -1,0 +1,137 @@
+src/modules/Arrangement/repositories/presets/expandedPresets.ts
+  s_55244eb93b97d1::t_684f45526f9512 215
+  s_55244eb93b97d1::t_66f22c59e1c6d9 273
+  s_55244eb93b97d1::t_ec0e57968cc797 309
+  s_55244eb93b97d1::t_2a2b6479de501c 175
+  s_55244eb93b97d1::t_a65909c78f8271 750
+  s_55244eb93b97d1::t_58d6a44ed36a5f 331
+src/modules/Arrangement/services/__tests__/buildPresetMixRecipes.spec.ts
+  s_55244eb93b97d1::t_c182746be0bbeb 87,95-99
+  s_ba80576e6f5cb5::t_58dc834cff215e 100-101
+src/modules/AiRuntime/useCases/countRecipeExpansionCommands.ts
+  s_55244eb93b97d1::t_7a990cff1b7982 1-4,7-17,20-24,27-30
+src/modules/AiRuntime/useCases/isWriteHeldByAddedDevice.ts
+  s_55244eb93b97d1::t_46430e5cee3a40 12
+  s_55244eb93b97d1::t_28c20524684ee5 1-11,13
+src/modules/AiRuntime/useCases/__tests__/presetRecipes.spec.ts
+  s_55244eb93b97d1::t_d2fc4ad58f9278 585-586,713,715-717,720-779,781-786,788-797,811,815
+  s_55244eb93b97d1::t_0fe4c4ff0ab6ab 5,9-10,16,19-20
+  s_55244eb93b97d1::t_2f5b22291ab346 804-805
+  s_55244eb93b97d1::t_80cc0d301d507f 309
+  s_55244eb93b97d1::t_9e054a0bc0ddb0 189-202,207,213,215-217,224-308,312-334
+  s_55244eb93b97d1::t_1b4097e6a886ee 425-509,511,516-563,566-584
+  s_55244eb93b97d1::t_6e51042db65251 311
+  s_55244eb93b97d1::t_b7747ceeee0964 310
+  s_55244eb93b97d1::t_decfbe52381eee 335,587-590,799-803,806-810,812-814,816-819
+  s_55244eb93b97d1::t_eae3b0f93603c8 512-515
+  s_55244eb93b97d1::t_dbf238c00c3825 510
+src/modules/Arrangement/useCases/device/addDevice.ts
+  s_55244eb93b97d1::t_876de7629fac4b 8
+  s_55244eb93b97d1::t_a3e9a75bae3de7 9-10
+  s_55244eb93b97d1::t_4a7bbb41e111bc 49-50
+src/modules/AiRuntime/useCases/discoverMixRecipes.ts
+  s_55244eb93b97d1::t_e13f4f8e1a41ef 14
+  s_55244eb93b97d1::t_7afab2104859fd 87-95,97
+  s_55244eb93b97d1::t_7486a7aacdde2b 179-181
+  s_55244eb93b97d1::t_8aa08ed1826fa2 244
+src/modules/Arrangement/useCases/device/getAddedDeviceParameterValues.ts
+  s_55244eb93b97d1::t_7aa5bee396a345 3-12
+  s_55244eb93b97d1::t_9899d25eef5dcb 1-2
+src/modules/AiRuntime/useCases/expandMixRecipe.ts
+  s_55244eb93b97d1::t_c11c266ee15d74 255-258
+  s_55244eb93b97d1::t_2904019c35c9b2 287-288
+  s_55244eb93b97d1::t_c9c45498b02162 16
+  s_55244eb93b97d1::t_17e174ebc0a9cc 1,7-8
+  s_55244eb93b97d1::t_b37e29a7c30757 105-112
+  s_55244eb93b97d1::t_51eca1c0d8f9ee 220-223
+  s_55244eb93b97d1::t_b9d48ee1dc0161 172
+  s_55244eb93b97d1::t_dd2ded2adff518 92-95
+src/modules/AiRuntime/useCases/servesAnySourceScope.ts
+  s_55244eb93b97d1::t_6721a262c932fa 1-17
+src/modules/AiRuntime/useCases/__tests__/suggestionAnswers.spec.ts
+  s_55244eb93b97d1::t_bdf79ad4036f69 308-329
+src/modules/Arrangement/useCases/index.ts
+  s_55244eb93b97d1::t_4bc02e1e73d142 171
+src/modules/AiRuntime/useCases/__tests__/presetRecipeApplication.spec.ts
+  s_55244eb93b97d1::t_7c46bed8413193 108
+  s_55244eb93b97d1::t_47caadb49aa46b 41-57
+  s_55244eb93b97d1::t_eb97d1a08f3ada 1-11,13-28,30-35,37-40,58-76,88,90-107,109,111-112,115-179
+  s_55244eb93b97d1::t_a6de2ed1cfde22 89
+  s_55244eb93b97d1::t_46d03b74eceb94 114
+  s_55244eb93b97d1::t_bd381aebc6561c 12
+  s_55244eb93b97d1::t_ca5df0a6bd43ca 180-181
+  s_55244eb93b97d1::t_c44ca007e3becb 110
+  s_55244eb93b97d1::t_89df02c10ac489 77-81
+  s_55244eb93b97d1::t_b81744bce911c5 29
+  s_55244eb93b97d1::t_176886cffcd307 36
+  s_55244eb93b97d1::t_eae3b0f93603c8 113
+  s_55244eb93b97d1::t_4529c43b42497f 82-87
+src/modules/Arrangement/services/buildPresetMixRecipes.ts
+  s_55244eb93b97d1::t_389d958c366be7 101-103
+  s_55244eb93b97d1::t_d14ae6ff84d0f1 112
+src/modules/AiRuntime/useCases/__tests__/perceptualGoalAdmission.spec.ts
+  s_55244eb93b97d1::t_a49255a909754d 420-429
+  s_55244eb93b97d1::t_e38d415c05dfd7 419
+src/modules/AiRuntime/useCases/chooseRecipeMidpoint.ts
+  s_55244eb93b97d1::t_b5609ea9bf08fa 1-20
+  s_55244eb93b97d1::t_60594707d157d8 21-22
+src/modules/AiRuntime/AGENTS.md
+  s_55244eb93b97d1::t_802495b9f17048 31
+src/modules/Arrangement/repositories/presets/faustEffectPresets.ts
+  s_55244eb93b97d1::t_90743c274e4b56 102
+  s_55244eb93b97d1::t_49b4b48fce6653 140
+src/modules/Arrangement/AGENTS.md
+  s_55244eb93b97d1::t_db577534fa4c48 28
+tests/e2e/controlledRecipesEffect.spec.ts
+  s_55244eb93b97d1::t_0371262341a956 54,61
+  s_55244eb93b97d1::t_0d24b7ed694af1 86-90
+src/modules/Arrangement/useCases/device/findAddedDevicePlugin.ts
+  s_55244eb93b97d1::t_246f88a7b959f2 1-9
+src/modules/Arrangement/useCases/device/composeAddedDeviceParameterValues.ts
+  s_55244eb93b97d1::t_be6cb062525f35 1-10,16
+  s_55244eb93b97d1::t_574a8125c54c47 11-15
+src/modules/Arrangement/useCases/device/__tests__/addDevice.spec.ts
+  s_55244eb93b97d1::t_f4f1a9df578a89 203
+  s_55244eb93b97d1::t_d02ffa1ed1a1d8 4
+  s_55244eb93b97d1::t_66743f0aec9a5f 196-202,204-213
+src/modules/AiRuntime/useCases/__tests__/recipeTools.spec.ts
+  s_55244eb93b97d1::t_b227e78f607877 369-370,373-375
+  s_55244eb93b97d1::t_b0ba9e722064e5 879-881
+  s_55244eb93b97d1::t_5077edd5ca83ff 426,443,445-463
+  s_55244eb93b97d1::t_1256cb2219c509 13
+  s_55244eb93b97d1::t_df034abce40d09 359,361-364
+  s_55244eb93b97d1::t_62c03553d06f63 380-381,388-392,399,407-423
+  s_55244eb93b97d1::t_6ce805ab1cc830 394-398,401-403
+  s_55244eb93b97d1::t_44fc8c898a65cf 862
+  s_55244eb93b97d1::t_8d23ac8ed6f63b 424-425,863
+release/open-source-inventory.json
+  s_55244eb93b97d1::t_e0cc8b90504040 1217
+  s_55244eb93b97d1::t_8003f677e9d0cc 1216
+  s_55244eb93b97d1::t_99eb2d840e0f06 1217
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_55244eb93b97d1::t_b6107fee01166e 1016-1021
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "40bbbb2fd1cfac3a11fdaa99f24cebdbbb9fe8cd",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
