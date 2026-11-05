@@ -23,6 +23,7 @@ type SliderGestureProps = Pick<
     | 'onLostPointerCapture'
     | 'onBlur'
     | 'onKeyDownCapture'
+    | 'onKeyUpCapture'
 >;
 
 type PendingGesture = {
@@ -37,7 +38,13 @@ type GestureState = {
     pointerId: number | null;
     /** The value last committed, so Radix reporting or committing it again adds nothing. */
     settled: string | null;
-    /** A step key is down: Radix commits its step before reporting it, so the commit reports it first. */
+    /**
+     * A step key is down: Radix commits its step before reporting it, so the commit reports it first.
+     * Radix commits only a step that moves the value, so a step at a bound leaves this set until
+     * the key goes up. The slider's own keydown runs before Radix's (Radix composes the caller's
+     * handler first) and no later handler of this keydown is ours, so key-up is the first point
+     * after Radix has handled it; focus leaving and a new pointer gesture clear it too.
+     */
     keyStep: boolean;
 };
 
@@ -52,6 +59,22 @@ const settleGesture = (state: GestureState): void => {
     state.pending = null;
     state.settled = String(pending.value);
     pending.commit(pending.value);
+};
+
+/** Only the pointer whose capture the slider holds ends the gesture by cancelling or losing capture. */
+const endPointer = (state: GestureState, pointerId: number): void => {
+    if (state.pointerId !== pointerId) {
+        return;
+    }
+    state.pointerId = null;
+    settleGesture(state);
+};
+
+const markKeyStep = (state: GestureState, key: string): void => {
+    if (STEP_KEYS.has(key)) {
+        state.settled = null;
+        state.keyStep = true;
+    }
 };
 
 /** Settles the gesture when the window loses focus, the tab hides, or the slider unmounts. */
@@ -100,6 +123,7 @@ export function useSliderGesture({
     onLostPointerCapture,
     onBlur,
     onKeyDownCapture,
+    onKeyUpCapture,
 }: SliderGestureProps) {
     const stateRef = useRef<GestureState>({ pending: null, pointerId: null, settled: null, keyStep: false });
     useSettleWhenPageOrSliderGoes(stateRef, onValueCommit !== undefined);
@@ -160,26 +184,10 @@ export function useSliderGesture({
         state.pointerId = event.pointerId;
     };
 
-    const handlePointerEnd = (event: PointerEvent<HTMLDivElement>): void => {
-        const state = stateRef.current;
-        if (state.pointerId !== event.pointerId) {
-            return;
-        }
-        state.pointerId = null;
-        settleGesture(state);
-    };
-
-    const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>): void => {
-        onKeyDownCapture?.(event);
-        if (STEP_KEYS.has(event.key)) {
-            stateRef.current.settled = null;
-            stateRef.current.keyStep = true;
-        }
-    };
-
     const handleBlur = (event: FocusEvent<HTMLDivElement>): void => {
         onBlur?.(event);
         if (!event.currentTarget.contains(event.relatedTarget)) {
+            stateRef.current.keyStep = false;
             settleGesture(stateRef.current);
         }
     };
@@ -192,14 +200,22 @@ export function useSliderGesture({
             onPointerDown: handlePointerDown,
             onPointerCancel: (event: PointerEvent<HTMLDivElement>): void => {
                 onPointerCancel?.(event);
-                handlePointerEnd(event);
+                endPointer(stateRef.current, event.pointerId);
             },
             onLostPointerCapture: (event: PointerEvent<HTMLDivElement>): void => {
                 onLostPointerCapture?.(event);
-                handlePointerEnd(event);
+                endPointer(stateRef.current, event.pointerId);
             },
             onBlur: handleBlur,
-            onKeyDownCapture: handleKeyDownCapture,
+            onKeyDownCapture: (event: KeyboardEvent<HTMLDivElement>): void => {
+                onKeyDownCapture?.(event);
+                markKeyStep(stateRef.current, event.key);
+            },
+            // Capture phase, so a descendant that stops the key's propagation cannot keep it set.
+            onKeyUpCapture: (event: KeyboardEvent<HTMLDivElement>): void => {
+                onKeyUpCapture?.(event);
+                stateRef.current.keyStep = false;
+            },
         },
     };
 }
