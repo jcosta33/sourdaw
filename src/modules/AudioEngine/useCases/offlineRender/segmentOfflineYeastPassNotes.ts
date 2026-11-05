@@ -1,11 +1,11 @@
 import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 import {
+    LOOP_PASS_GROOVE_INSTANCE_SUFFIX,
     LOOP_PASS_OVERFLOW_INSTANCE_SUFFIX,
-    LOOP_PASS_PUSH_INSTANCE_SUFFIX,
+    loopPassGrooveDisplacedNoteStartBeat,
     loopPassNoteEndBeat,
     loopPassNoteOverflowBeats,
     loopPassProducedNoteStartBeat,
-    loopPassPushedNoteStartBeat,
 } from '#/utils/loopPassNoteSegments';
 
 type OfflineYeastPassIteration = {
@@ -35,7 +35,7 @@ type OfflineYeastSequencerGroove = (event: {
 
 /**
  * One note the rack is handed for a pass: absolute beats, and how far into its source row it begins.
- * `sequencerGrooveApplied` marks the segment a project-groove push placed on the pass head before the rack.
+ * `sequencerGrooveApplied` marks a segment the project groove moved out of its pass, placed before the rack.
  */
 export type OfflineYeastPassNote = {
     id: string;
@@ -86,32 +86,52 @@ function cutAtClipHead(
 }
 
 /**
- * The in-pass segment as the rack is handed it: where the project groove,
- * which follows the rack, would push its start to or past the pass end, the
- * segment is placed on the pass head already grooved (`loopPassPushedNoteStartBeat`),
- * as the live window must hand it to reach that head; otherwise unchanged.
+ * A pass segment as the rack is handed it: where the project groove, which
+ * follows the rack, would move its start out of its pass, the segment is
+ * placed where the loop puts it, already grooved
+ * (`loopPassGrooveDisplacedNoteStartBeat`), with what then rings past the pass
+ * end handed on as its own note struck on the pass head, as the live window
+ * must hand both to reach the beats they land on; otherwise unchanged.
  */
-function placeProjectGroovePush(
+function placeProjectGrooveDisplacement(
     iteration: OfflineYeastPassIteration,
     note: OfflineYeastGroovedNote,
     segment: OfflineYeastPassNote,
     projectSequencerGroove: OfflineYeastSequencerGroove
 ): OfflineYeastPassNote[] {
     const { iterationStartBeat: passStartBeat, loopLengthBeats } = iteration;
-    const pushed = projectSequencerGroove({ id: note.id, startBeat: segment.startBeat, velocity: segment.velocity });
-    const pushedStartBeat = pushed && loopPassPushedNoteStartBeat(pushed.startBeat, passStartBeat, loopLengthBeats);
-    if (!pushed || pushedStartBeat === undefined) {
+    const grooved = projectSequencerGroove({ id: note.id, startBeat: segment.startBeat, velocity: segment.velocity });
+    const displacedStartBeat =
+        grooved && loopPassGrooveDisplacedNoteStartBeat(grooved.startBeat, passStartBeat, loopLengthBeats);
+    if (!grooved || displacedStartBeat === undefined) {
         return [segment];
     }
-    const pushedEndBeat = loopPassNoteEndBeat(pushedStartBeat, segment.duration, passStartBeat, loopLengthBeats);
-    return cutAtClipHead(
+    const { duration } = segment;
+    const displacedEndBeat = loopPassNoteEndBeat(displacedStartBeat, duration, passStartBeat, loopLengthBeats);
+    const overflowBeats = loopPassNoteOverflowBeats(displacedStartBeat, duration, passStartBeat, loopLengthBeats);
+    const groovedNote = { ...note, velocity: grooved.velocity };
+    const displacedId = `${segment.id}${LOOP_PASS_GROOVE_INSTANCE_SUFFIX}`;
+    const placed = cutAtClipHead(
         iteration,
-        { ...note, velocity: pushed.velocity },
-        `${note.id}${LOOP_PASS_PUSH_INSTANCE_SUFFIX}`,
-        pushedStartBeat,
-        pushedEndBeat,
+        groovedNote,
+        displacedId,
+        displacedStartBeat,
+        displacedEndBeat,
         segment.beatsIntoNote
-    ).map((pushedSegment) => ({ ...pushedSegment, sequencerGrooveApplied: true }));
+    );
+    if (overflowBeats > 0) {
+        placed.push(
+            ...cutAtClipHead(
+                iteration,
+                groovedNote,
+                `${displacedId}${LOOP_PASS_OVERFLOW_INSTANCE_SUFFIX}`,
+                passStartBeat,
+                passStartBeat + overflowBeats,
+                segment.beatsIntoNote + displacedEndBeat - displacedStartBeat
+            )
+        );
+    }
+    return placed.map((placedSegment) => ({ ...placedSegment, sequencerGrooveApplied: true }));
 }
 
 /**
@@ -123,8 +143,8 @@ function placeProjectGroovePush(
  * `loopPassNoteSegments` cuts it: ending at the pass end, with what would
  * ring past it handed on as its own note struck on the pass head, because a
  * live window cannot see a note-on later in its pass and the bounce must not
- * hear what playback cannot. For the same reason an in-pass segment the
- * project groove pushes past the pass end is handed on from the pass head.
+ * hear what playback cannot. For the same reason a segment the project groove
+ * moves out of its pass is handed on where the loop places it.
  */
 export function segmentOfflineYeastPassNotes(
     iteration: OfflineYeastPassIteration,
@@ -154,22 +174,21 @@ export function segmentOfflineYeastPassNotes(
             passStartBeat,
             loopLengthBeats
         );
-        const inPass = cutAtClipHead(iteration, note, note.id, passNoteStartBeat, passNoteEndBeat, 0).flatMap(
-            (segment) => placeProjectGroovePush(iteration, note, segment, projectSequencerGroove)
-        );
-        if (overflowBeats === 0) {
-            return inPass;
+        const segments = cutAtClipHead(iteration, note, note.id, passNoteStartBeat, passNoteEndBeat, 0);
+        if (overflowBeats > 0) {
+            segments.push(
+                ...cutAtClipHead(
+                    iteration,
+                    note,
+                    `${note.id}${LOOP_PASS_OVERFLOW_INSTANCE_SUFFIX}`,
+                    passStartBeat,
+                    passStartBeat + overflowBeats,
+                    passNoteEndBeat - passNoteStartBeat
+                )
+            );
         }
-        return [
-            ...inPass,
-            ...cutAtClipHead(
-                iteration,
-                note,
-                `${note.id}${LOOP_PASS_OVERFLOW_INSTANCE_SUFFIX}`,
-                passStartBeat,
-                passStartBeat + overflowBeats,
-                passNoteEndBeat - passNoteStartBeat
-            ),
-        ];
+        return segments.flatMap((segment) =>
+            placeProjectGrooveDisplacement(iteration, note, segment, projectSequencerGroove)
+        );
     });
 }

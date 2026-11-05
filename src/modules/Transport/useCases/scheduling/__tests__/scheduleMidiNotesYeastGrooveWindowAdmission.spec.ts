@@ -821,10 +821,12 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
             clip: Record<string, unknown>,
             rows: readonly Row[],
             grooveState: GrooveTemplateState,
-            edges: readonly number[]
+            edges: readonly number[],
+            route: 'yeast' | 'synth' = 'yeast'
         ): Promise<{ voices: Voice[]; postedBehindWindow: Voice[] }> {
             grooveTemplateStore.set(grooveState);
-            const track = midiTrack({ clips: [midiClip(clip)], devices: [{ id: 'yeast-rack', type: 'yeast' }] });
+            const devices = route === 'yeast' ? [{ id: 'yeast-rack', type: 'yeast' }] : [];
+            const track = midiTrack({ clips: [midiClip(clip)], devices });
             (trackStore as { value: unknown }).value = { tracks: [track] };
             (midiStore as { value: unknown }).value = {
                 notesByClipId: { 'clip-1': rows.map((row) => ({ ...row, pitch: 60, velocity: 100 })) },
@@ -879,7 +881,8 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
                     endSeconds: endPpq,
                     durationSeconds: endPpq - startPpq,
                 }),
-                processYeastMidi: (input) => input.events.map((event) => ({ ...event })),
+                processYeastMidi: (input) =>
+                    input.events.map((event) => ({ ...event, timePpq: event.timePpq ?? event.timeSamples / 24_000 })),
                 projectPitch: ({ pitch }) => pitch,
             });
             return inBeatOrder(
@@ -888,31 +891,31 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
         }
 
         describe('a row an anchorless loop stores past its loop length', () => {
-            // Loop 4 with no anchor: the row at relative beat 5 re-anchors to
-            // pass beat 1 before the rack on both routes, beside a row inside
-            // the loop as a control.
+            // Loop 4 with no anchor: content outside the loop region does not
+            // play while the loop is on, so the row at relative beat 5 is
+            // silent on every route — the synth route, the Yeast rack live and
+            // the bounce — while the row inside the loop sounds on all three.
             const clip = { endBeat: CLIP_END_BEAT, loopEnabled: true, loopLength: LOOP_BEATS };
             const rows = [
                 { id: 'past-loop-length', startBeat: 5, duration: 0.5 },
                 { id: 'inside', startBeat: 2, duration: 0.5 },
             ];
+            const IN_LOOP_VOICES = [2, 6, 10].map((beat) => ({ beat, durationBeats: 0.5 }));
 
-            it('renders on the pass beat it re-anchors to in the bounce', () => {
-                expect(offlineVoices(clip, rows, defaultGrooveTemplateState)).toEqual([
-                    { beat: 1, durationBeats: 0.5 },
-                    { beat: 2, durationBeats: 0.5 },
-                    { beat: 5, durationBeats: 0.5 },
-                    { beat: 6, durationBeats: 0.5 },
-                    { beat: 9, durationBeats: 0.5 },
-                    { beat: 10, durationBeats: 0.5 },
-                ]);
+            it('renders only the in-loop row in the bounce', () => {
+                expect(offlineVoices(clip, rows, defaultGrooveTemplateState)).toEqual(IN_LOOP_VOICES);
             });
 
-            it.each(PARTITIONS)('plays there live under $partition', async ({ widths }) => {
-                const live = await liveVoices(clip, rows, defaultGrooveTemplateState, windowEdges(widths));
-                expect(live.voices).toEqual(offlineVoices(clip, rows, defaultGrooveTemplateState));
-                expect(live.postedBehindWindow).toEqual([]);
-            });
+            it.each(PARTITIONS)(
+                'plays only the in-loop row live on the Yeast and synth routes under $partition',
+                async ({ widths }) => {
+                    const edges = windowEdges(widths);
+                    const yeast = await liveVoices(clip, rows, defaultGrooveTemplateState, edges);
+                    const synth = await liveVoices(clip, rows, defaultGrooveTemplateState, edges, 'synth');
+                    expect(yeast).toEqual({ voices: IN_LOOP_VOICES, postedBehindWindow: [] });
+                    expect(synth).toEqual({ voices: IN_LOOP_VOICES, postedBehindWindow: [] });
+                }
+            );
         });
 
         describe('a segment the sequencer groove pushes across the pass end', () => {
@@ -939,6 +942,32 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
                 const live = await liveVoices(clip, rows, pushState, windowEdges(widths));
                 expect(live.voices).toEqual(offlineVoices(clip, rows, pushState));
                 expect(live.postedBehindWindow).toEqual([]);
+            });
+        });
+
+        describe('a segment the sequencer groove pulls back across the pass head', () => {
+            // The note at 1/32 sits on slot 0; timingOffset −0.5 pulls it to
+            // −0.21875, before the pass head. The loop law re-anchors it to
+            // 3.78125, ends it on the pass end, and strikes the 0.28125 beats
+            // left on the head of the same pass at 0. Pulled after the rack,
+            // that head strike was posted by the window owning the note at
+            // 1/32, which opens after it: a note scheduled in the past.
+            const clip = { endBeat: CLIP_END_BEAT, loopEnabled: true, loopLength: LOOP_BEATS };
+            const rows = [{ id: 'pulled', startBeat: 1 / 32, duration: 0.5 }];
+            const pullState = sequencerGrooveState({ index: 0, timingOffset: -0.5 });
+
+            it('renders on the pass end and the head of every pass in the bounce', () => {
+                expect(offlineVoices(clip, rows, pullState)).toEqual(
+                    [0, 4, 8].flatMap((passStart) => [
+                        { beat: passStart, durationBeats: 0.28125 },
+                        { beat: passStart + 3.78125, durationBeats: 0.21875 },
+                    ])
+                );
+            });
+
+            it.each(PARTITIONS)('plays there live under $partition', async ({ widths }) => {
+                const live = await liveVoices(clip, rows, pullState, windowEdges(widths));
+                expect(live).toEqual({ voices: offlineVoices(clip, rows, pullState), postedBehindWindow: [] });
             });
         });
 

@@ -17,7 +17,7 @@ import {
 import { defaultTransportState, type TempoMapStoreState, transportStore } from '#/modules/Transport/stores';
 import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
 import { MICRO_FADE_SECONDS } from '#/utils/clipFadeScheduleClamp';
-import { isBeatAdmittedByAnchoredClipLoopWindow, resolveClipLoopPassGrid } from '#/utils/clipLoopOrigin';
+import { isBeatInEnabledClipLoopWindow, resolveClipLoopPassGrid } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { resolveDrumKitBy, resolveDrumKitOutputGain } from '#/utils/deviceTypeMatching';
 import { PITCH_BEND_MAX, PITCH_BEND_MIN } from '#/utils/midiData';
@@ -943,15 +943,14 @@ export async function scheduleTrackClips({
                     continue;
                 }
                 iterations.push({
-                    // #5198 — the anchored loop window owns membership on the
-                    // row's stored figure before the rack ever sees it: a row
-                    // past the trimmed region end must stay silent, and a
-                    // generator must never be fed it as pass input. Unanchored
-                    // clips admit without the window, byte-identically to the
-                    // pre-anchor construction.
+                    // #5198 — the loop window owns membership on the row's
+                    // stored figure before the rack ever sees it: a row past
+                    // the trimmed region end, or stored at or past an
+                    // anchorless loop's length, must stay silent, and a
+                    // generator must never be fed it as pass input.
                     sourceNotes: sourceNotes.filter(
                         (note) =>
-                            isBeatAdmittedByAnchoredClipLoopWindow({
+                            isBeatInEnabledClipLoopWindow({
                                 relativeBeat: note.startBeat - midiOffsetBeats,
                                 startBeat: clip.startBeat,
                                 loopOriginBeat: clip.loopOriginBeat,

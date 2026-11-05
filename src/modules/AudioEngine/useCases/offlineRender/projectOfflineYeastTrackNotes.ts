@@ -1,4 +1,4 @@
-import { isBeatAdmittedByAnchoredClipLoopWindow } from '#/utils/clipLoopOrigin';
+import { isBeatInEnabledClipLoopWindow } from '#/utils/clipLoopOrigin';
 
 import { type OfflineMidiEventProjector } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import { type OfflinePpqEndpointProjector } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
@@ -121,13 +121,12 @@ export function projectOfflineYeastTrackNotes({
     const sourceNotes = iterations.flatMap((iteration, index) => {
         const routeId = `offline-yeast:${trackId}:${index}`;
         iterationsByRoute.set(routeId, iteration);
-        // #5198 — the anchored loop window owns membership on the row's stored
-        // figure before the clip-groove phase offers it to the rack: a row
-        // past the trimmed region end never enters the pass. An unanchored
-        // clip admits without the window, byte-identically to the pre-anchor
-        // projector.
+        // #5198 — the loop window owns membership on the row's stored figure
+        // before the clip-groove phase offers it to the rack: a row past the
+        // trimmed region end, or stored at or past an anchorless loop's
+        // length, never enters the pass.
         const admittedNotes = iteration.sourceNotes.filter((note) =>
-            isBeatAdmittedByAnchoredClipLoopWindow({
+            isBeatInEnabledClipLoopWindow({
                 relativeBeat: note.startBeat - iteration.midiOffsetBeats,
                 startBeat: iteration.clipStartBeat,
                 loopOriginBeat: iteration.loopOriginBeat,

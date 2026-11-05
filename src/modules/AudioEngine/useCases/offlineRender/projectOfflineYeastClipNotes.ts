@@ -1,4 +1,4 @@
-import { isBeatAdmittedByAnchoredClipLoopWindow } from '#/utils/clipLoopOrigin';
+import { isBeatInEnabledClipLoopWindow } from '#/utils/clipLoopOrigin';
 
 import { type OfflineMidiEventProjector } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import { type OfflinePpqEndpointProjector } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
@@ -75,7 +75,7 @@ export function projectOfflineYeastClipNotes({
     const admittedNotes = notes.filter(
         (note) =>
             note.sourceRelativeBeat === undefined ||
-            isBeatAdmittedByAnchoredClipLoopWindow({
+            isBeatInEnabledClipLoopWindow({
                 relativeBeat: note.sourceRelativeBeat,
                 startBeat: clipStartBeat,
                 loopOriginBeat,
