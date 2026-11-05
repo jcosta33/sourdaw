@@ -54,6 +54,7 @@ import {
 } from '../models/RetainedCompilation';
 import { SEMANTIC_COMMAND_LIST_MAX_ITEMS } from '../models/SemanticCommandList';
 import { PROPOSAL_REFINES_MAX_LENGTH } from '../models/ThreadContext';
+import { type ToolArgumentSchemaViolation } from '../models/ToolCallResult';
 import { type ToolSchema } from '../models/ToolDefinitions';
 import {
     AUTO_TOOL_CHOICE,
@@ -1838,6 +1839,11 @@ function normalizeTerminalProposalCall(call: ToolCallResult): ToolCallResult {
 
 /** One accepted call of a turn, under the identity the loop resolved for it. */
 type IdentifiedToolCall = { call: ToolCallResult; callId: string };
+
+function isSchemaInvalid({ call }: IdentifiedToolCall): boolean {
+    return call.argumentSchemaViolation !== undefined;
+}
+
 /** What native history records for a turn whose executed calls are only part of its reply. */
 type NativeTurnRecord = { calls: readonly IdentifiedToolCall[]; receipts: readonly ApplicationToolReceipt[] };
 
@@ -1870,6 +1876,18 @@ function withStepRecord(
             receipts: orderReceiptsByCalls(record.calls, [...turnReceipts, ...record.receipts]),
         }
     );
+}
+
+const SCHEMA_VIOLATION_KIND_TEXT: Readonly<Record<ToolArgumentSchemaViolation['kind'], string>> = {
+    'missing-property': 'a required property is missing',
+    'undeclared-property': 'the property is not declared',
+    'invalid-value': 'the value does not match',
+};
+
+/** The parser path's own refusal, for a call provider admission found off its advertised schema. */
+function describeArgumentSchemaViolation(toolName: string, violation: ToolArgumentSchemaViolation): string {
+    const location = violation.path === '' ? 'the arguments root' : violation.path;
+    return `${toolName} arguments do not match the advertised tool schema at ${location}: ${SCHEMA_VIOLATION_KIND_TEXT[violation.kind]}.`;
 }
 
 function resolveCallId(call: ToolCallResult, loopId: string, turn: number, index: number): string | null {
@@ -2230,6 +2248,25 @@ export async function runApplicationOwnedToolLoop(
             limits.maxReceiptBytesPerCall
         );
 
+    // A call off its advertised schema gets the receipt a parser refusal gives, and never runs. A call
+    // beside one gets the same refusal for the turn it belongs to, since what a turn means is read
+    // from all of its calls together.
+    const schemaRefusalReceipt = (call: ToolCallResult, callId: string, turn: number): ApplicationToolReceipt =>
+        boundReceipt(
+            failureReceipt({
+                callId,
+                toolName: call.name,
+                turn,
+                code: 'invalid-tool-arguments',
+                safeMessage:
+                    call.argumentSchemaViolation === undefined
+                        ? `${call.name} did not run: another call of this turn does not match its advertised tool schema.`
+                        : describeArgumentSchemaViolation(call.name, call.argumentSchemaViolation),
+                retryable: true,
+            }),
+            limits.maxReceiptBytesPerCall
+        );
+
     // A valid decline sent on the measurement step, with no proposal held, needs no measurement: once
     // admitted it is answered as on any other turn, and every other call of the reply, a measure
     // included, is refused in native history only. A refused one is answered as the step answers any
@@ -2242,7 +2279,7 @@ export async function runApplicationOwnedToolLoop(
         const terminalCalls = identifiedCalls.filter(
             ({ call }) => call.name !== toolName && input.terminalToolNames.has(call.name)
         );
-        if (heldTerminal !== null || terminalCalls.length === 0) {
+        if (heldTerminal !== null || terminalCalls.length === 0 || terminalCalls.some(isSchemaInvalid)) {
             return null;
         }
         const validation = validateTerminalCalls(terminalCalls);
@@ -2288,7 +2325,7 @@ export async function runApplicationOwnedToolLoop(
         const terminalCalls = identifiedCalls.filter(
             ({ call }) => call.name !== toolName && input.terminalToolNames.has(call.name)
         );
-        if (heldTerminal !== null || terminalCalls.length === 0) {
+        if (heldTerminal !== null || terminalCalls.length === 0 || terminalCalls.some(isSchemaInvalid)) {
             return null;
         }
         const validation = validateTerminalCalls(terminalCalls);
@@ -2317,14 +2354,21 @@ export async function runApplicationOwnedToolLoop(
         turn: number,
         refusedDecline: { callId: string; reason: string } | null
     ): MeasurementStepReply => {
-        const measureCalls = identifiedCalls.filter(({ call }) => call.name === toolName);
+        // A measurement off its schema is no measurement: it never runs and witnesses nothing.
+        const measureCalls = identifiedCalls.filter(
+            (identified) => identified.call.name === toolName && !isSchemaInvalid(identified)
+        );
+        const measureCallIds = new Set(measureCalls.map(({ callId }) => callId));
         const kept = keepStepTerminal(toolName, opportunity, identifiedCalls, outcome, turn);
         const keptCallIds = new Set(kept?.calls.map(({ callId }) => callId));
         const record: NativeTurnRecord = {
             calls: identifiedCalls,
             receipts: identifiedCalls
-                .filter(({ call }) => call.name !== toolName)
+                .filter(({ callId }) => !measureCallIds.has(callId))
                 .map(({ call, callId }) => {
+                    if (call.argumentSchemaViolation !== undefined) {
+                        return schemaRefusalReceipt(call, callId, turn);
+                    }
                     if (keptCallIds.has(callId)) {
                         return deferredCompletionReceipt(call, callId, turn);
                     }
@@ -2536,6 +2580,31 @@ export async function runApplicationOwnedToolLoop(
                 receipts,
                 turns: turn,
             };
+        }
+
+        // A turn holding a call off its advertised schema runs nothing, whatever its tools: each call
+        // is answered in native history, the turn and its calls are spent as any turn is, and the
+        // provider corrects on the next turn. The final turn has none left, so the run ends there.
+        if (identifiedCalls.some(isSchemaInvalid)) {
+            if (isFinalTurn) {
+                return {
+                    status: 'rejected',
+                    reason: 'Provider tool arguments missed the advertised contract on the final application tool-loop turn.',
+                    receipts,
+                    turns: turn,
+                };
+            }
+            const refusals = identifiedCalls.map(({ call, callId }) => schemaRefusalReceipt(call, callId, turn));
+            const refusalOverBudget = admitTurnReceipts(refusals, turn, outcome, identifiedCalls);
+            if (refusalOverBudget !== null) {
+                return {
+                    status: 'rejected',
+                    reason: refusalOverBudget.reason,
+                    receipts: refusalOverBudget.receipts,
+                    turns: turn,
+                };
+            }
+            continue;
         }
 
         const entryCalls = identifiedCalls.filter(

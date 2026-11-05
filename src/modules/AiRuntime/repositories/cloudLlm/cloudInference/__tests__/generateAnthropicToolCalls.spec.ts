@@ -760,5 +760,34 @@ describe('generateAnthropicToolCalls', () => {
             expect(proposeTool?.strict).toBeUndefined();
             expect(declineTool?.strict).toBe(true);
         });
+
+        // Red when the plan reports a tool its budget sent loose as enforced, or names one by its wire
+        // form: admission reads this list to decide whether a call off its schema can be answered.
+        it('reports by canonical name exactly the tools the strict budget sent without strict', async () => {
+            returnPayload({ content: [], stop_reason: 'end_turn' });
+            const toolSchemas = getPlanningProviderToolSchemas();
+            const result = await generateAnthropicToolCalls({
+                runtime,
+                systemPrompt: 'system',
+                userMessage: 'turn the drums down 2 dB',
+                toolSchemas,
+                maxOutputTokens: 8192,
+                directive: AUTO_TOOL_CHOICE,
+                signal: new AbortController().signal,
+            });
+            const request = requestProvider.mock.calls[0]?.[0] as { body: string } | undefined;
+            if (!request) {
+                throw new Error('Expected a recorded provider request');
+            }
+            const body = JSON.parse(request.body) as { tools: WireTool[] };
+            const looseWireNames = body.tools
+                .filter((wireTool) => wireTool.strict !== true)
+                .map((wireTool) => wireTool.name);
+
+            expect(result.strictToolSchemas).toBe(true);
+            expect(result.nonStrictToolNames).toContain(COMMAND_BATCH_PROPOSAL_TOOL_NAME);
+            expect(result.nonStrictToolNames).not.toContain(COMMAND_BATCH_DECLINE_TOOL_NAME);
+            expect(result.nonStrictToolNames?.map((name) => encodeWireToolName(name))).toEqual(looseWireNames);
+        });
     });
 });

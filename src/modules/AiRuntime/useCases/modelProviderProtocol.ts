@@ -2,6 +2,7 @@ import { AGENT_DATA_CATEGORIES, classifyAgentDataPolicy, type AgentDataCategory 
 import {
     MODEL_PROVIDER_PROTOCOL_SCHEMA_VERSION,
     MODEL_PROVIDER_USAGE_COUNTER_NAMES,
+    type AdmittedModelProviderToolCall,
     type CompiledModelProviderRequest,
     type ModelProviderCapabilities,
     type ModelProviderEvent,
@@ -19,8 +20,14 @@ import {
     type ModelProviderUsage,
     type ModelProviderUsageCounterName,
 } from '../models/ModelProviderProtocol';
+import { type ToolArgumentSchemaViolation } from '../models/ToolCallResult';
 import { readAgentResourceLimits } from '../stores/agentResourceLimitsStore';
-import { isJsonValue, matchesJsonSchema } from '../validators/matchesJsonSchema';
+import {
+    findJsonSchemaViolation,
+    isJsonValue,
+    matchesJsonSchema,
+    type JsonSchemaViolation,
+} from '../validators/matchesJsonSchema';
 
 import { remoteTransmissionDisclosure } from './discloseRemoteTransmission';
 
@@ -30,6 +37,24 @@ const MAX_MODEL_PROVIDER_STREAM_BYTES = 1_024 * 1_024;
 const MAX_MODEL_PROVIDER_EVENTS = 4_096;
 const MAX_IGNORED_PROVIDER_EVENTS = 64;
 const MAX_PROVIDER_ID_LENGTH = 256;
+const MAX_VIOLATION_PATH_SEGMENTS = 10;
+const VIOLATION_PATH_SEGMENT_PATTERN = /^[A-Za-z0-9_$.-]{1,48}$/u;
+
+/**
+ * The violation as a bounded JSON Pointer. A segment is the provider's own key when it is undeclared,
+ * so only a plain identifier is kept and anything else is replaced by `*`; a pointer deeper than the
+ * bound is cut and ends in `*`.
+ */
+function boundedViolation(violation: JsonSchemaViolation): ToolArgumentSchemaViolation {
+    const segments = violation.path.slice(0, MAX_VIOLATION_PATH_SEGMENTS).map((segment) => {
+        const text = String(segment);
+        return VIOLATION_PATH_SEGMENT_PATTERN.test(text) ? text : '*';
+    });
+    if (violation.path.length > MAX_VIOLATION_PATH_SEGMENTS) {
+        segments.push('*');
+    }
+    return { kind: violation.kind, path: segments.map((segment) => `/${segment}`).join('') };
+}
 
 function hasAdmissibleRemoteDataCategories(categories: unknown): categories is AgentDataCategory[] {
     return (
@@ -92,6 +117,10 @@ const CAPABILITIES: Record<ModelProviderName, ModelProviderCapabilities> = {
         tools: true,
     },
 };
+
+/** An admitted event: a tool call carries admission's reading of its arguments, never the pusher's. */
+type AdmittedProviderEvent =
+    Exclude<ModelProviderEvent, { type: 'tool-call' }> | { type: 'tool-call'; call: AdmittedModelProviderToolCall };
 
 type CreateModelProviderProtocolInput = {
     provider: ModelProviderName;
@@ -170,6 +199,9 @@ function assertProviderEventShape(value: unknown): asserts value is ModelProvide
     }
     if (value.type === 'tool-call') {
         if (
+            (value.schemaMismatch !== undefined &&
+                value.schemaMismatch !== 'fail-attempt' &&
+                value.schemaMismatch !== 'admit-as-violation') ||
             !isRecord(value.call) ||
             typeof value.call.id !== 'string' ||
             typeof value.call.name !== 'string' ||
@@ -411,7 +443,36 @@ function createSession(input: {
         }
     }
 
-    function admitEvent(envelope: ModelProviderEventEnvelope): ModelProviderEvent {
+    /**
+     * Bounds and identifies a call before anything else, whatever its arguments. Only the schema check
+     * depends on the pusher's disposition: a mismatch fails the attempt unless the call was stated
+     * `admit-as-violation`, and then it is kept with admission's own reading of where it fails.
+     */
+    function admitToolCall(event: Extract<ModelProviderEvent, { type: 'tool-call' }>): AdmittedModelProviderToolCall {
+        const advertisedTool = input.request.tools?.find((tool) => tool.name === event.call.name);
+        if (advertisedTool === undefined) {
+            throw new TypeError('Provider stream requested a tool that was not advertised.');
+        }
+        if (
+            !isValidIdentityPart(event.call.id) ||
+            !isValidIdentityPart(event.call.name) ||
+            toolCallIds.has(event.call.id) ||
+            toolCalls.length >= maxProviderToolCalls
+        ) {
+            throw new TypeError('Provider stream tool arguments are incomplete or invalid.');
+        }
+        const call = { id: event.call.id, name: event.call.name, arguments: event.call.arguments };
+        const violation = findJsonSchemaViolation(event.call.arguments, advertisedTool.parameters);
+        if (violation === null) {
+            return call;
+        }
+        if (event.schemaMismatch !== 'admit-as-violation') {
+            throw new TypeError('Provider stream tool arguments are incomplete or invalid.');
+        }
+        return { ...call, argumentSchemaViolation: boundedViolation(violation) };
+    }
+
+    function admitEvent(envelope: ModelProviderEventEnvelope): AdmittedProviderEvent {
         assertActive();
         assertIdentity(envelope);
         const eventBytes = encodedJsonBytes(envelope.event);
@@ -435,21 +496,8 @@ function createSession(input: {
                 throw new TypeError('Provider stream accumulated reasoning exceeds its size limit.');
             }
         }
-        if (event.type === 'tool-call') {
-            const advertisedTool = input.request.tools?.find((tool) => tool.name === event.call.name);
-            if (advertisedTool === undefined) {
-                throw new TypeError('Provider stream requested a tool that was not advertised.');
-            }
-            if (
-                !isValidIdentityPart(event.call.id) ||
-                !isValidIdentityPart(event.call.name) ||
-                toolCallIds.has(event.call.id) ||
-                toolCalls.length >= maxProviderToolCalls ||
-                !matchesJsonSchema(event.call.arguments, advertisedTool.parameters)
-            ) {
-                throw new TypeError('Provider stream tool arguments are incomplete or invalid.');
-            }
-        }
+        const admitted: AdmittedProviderEvent =
+            event.type === 'tool-call' ? { type: 'tool-call', call: admitToolCall(event) } : event;
         if (event.type === 'structured-output') {
             if (
                 input.request.operation !== 'structured-output' ||
@@ -469,7 +517,7 @@ function createSession(input: {
         nextSequence += 1;
         eventCount += 1;
         streamBytes += eventBytes;
-        return event;
+        return admitted;
     }
 
     function applyUsage(
