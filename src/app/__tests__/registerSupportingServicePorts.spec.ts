@@ -17,6 +17,7 @@ async function loadFreshModules() {
         collaborationStores,
         controlSurface,
         controlSurfaceStores,
+        cvGateStores,
         midi,
         project,
         sampleLibrary,
@@ -28,6 +29,7 @@ async function loadFreshModules() {
         import('#/modules/Collaboration/stores'),
         import('#/modules/ControlSurface/useCases'),
         import('#/modules/ControlSurface/stores'),
+        import('#/modules/CvGate/stores'),
         import('#/modules/MIDI/useCases'),
         import('#/modules/Project/useCases'),
         import('#/modules/SampleLibrary/useCases'),
@@ -40,6 +42,7 @@ async function loadFreshModules() {
         collaborationStores,
         controlSurface,
         controlSurfaceStores,
+        cvGateStores,
         midi,
         project,
         sampleLibrary,
@@ -71,6 +74,7 @@ describe('registerSupportingServicePorts before registration', () => {
             ['transferCaller', () => arrangement.collaborationAssetTransfer.read('transferCaller')],
             ['learnCaller', () => midi.midiLearnRouting.read('learnCaller')],
             ['projectionCaller', () => project.midiLearnProjection.read('projectionCaller')],
+            ['cvGateCaller', () => project.cvGateProjection.read('cvGateCaller')],
             ['discoveryCaller', () => project.sampleDiscoverySource.read('discoveryCaller')],
         ];
 
@@ -136,6 +140,19 @@ describe('registerSupportingServicePorts after registration', () => {
         expect(projection.readMidiLearn()).toBeNull();
     });
 
+    it("saves CvGate's live CV/gate state", () => {
+        const { cvGateStores, project } = modules;
+        const projection = project.cvGateProjection.read('spec');
+        const initial = cvGateStores.cvGateStore.value;
+
+        expect(projection.readCvGate()).toBe(initial);
+        const withOutput = { ...cvGateStores.defaultCvGateState, clockDivision: 4 };
+        cvGateStores.cvGateStore.set(withOutput);
+        expect(projection.readCvGate()).toBe(withOutput);
+        cvGateStores.cvGateStore.set(null);
+        expect(projection.readCvGate()).toBeNull();
+    });
+
     it("discovers samples through SampleLibrary's own library state and catalog search", () => {
         const { project, sampleLibrary, sampleLibraryStores } = modules;
         const source = project.sampleDiscoverySource.read('spec');
@@ -149,6 +166,7 @@ describe('registerSupportingServicePorts after registration', () => {
         const transfer = arrangement.collaborationAssetTransfer.read('spec');
         const routing = midi.midiLearnRouting.read('spec');
         const projection = project.midiLearnProjection.read('spec');
+        const cvGate = project.cvGateProjection.read('spec');
         const source = project.sampleDiscoverySource.read('spec');
 
         expect(() => app.registerSupportingServicePorts()).not.toThrow();
@@ -156,6 +174,7 @@ describe('registerSupportingServicePorts after registration', () => {
         expect(arrangement.collaborationAssetTransfer.read('spec')).toBe(transfer);
         expect(midi.midiLearnRouting.read('spec')).toBe(routing);
         expect(project.midiLearnProjection.read('spec')).toBe(projection);
+        expect(project.cvGateProjection.read('spec')).toBe(cvGate);
         expect(project.sampleDiscoverySource.read('spec')).toBe(source);
     });
 
@@ -164,6 +183,7 @@ describe('registerSupportingServicePorts after registration', () => {
         const transfer = arrangement.collaborationAssetTransfer.read('spec');
         const routing = midi.midiLearnRouting.read('spec');
         const projection = project.midiLearnProjection.read('spec');
+        const cvGate = project.cvGateProjection.read('spec');
         const source = project.sampleDiscoverySource.read('spec');
 
         expect(() =>
@@ -175,6 +195,9 @@ describe('registerSupportingServicePorts after registration', () => {
         expect(() => project.midiLearnProjection.configure({ readMidiLearn: () => null })).toThrow(
             /midiLearnProjection\.configure: .*differs/
         );
+        expect(() => project.cvGateProjection.configure({ readCvGate: () => null })).toThrow(
+            /cvGateProjection\.configure: .*differs/
+        );
         expect(() => project.sampleDiscoverySource.configure({ ...source, readLibrary: () => null })).toThrow(
             /sampleDiscoverySource\.configure: .*differs/
         );
@@ -182,6 +205,7 @@ describe('registerSupportingServicePorts after registration', () => {
         expect(arrangement.collaborationAssetTransfer.read('spec')).toBe(transfer);
         expect(midi.midiLearnRouting.read('spec')).toBe(routing);
         expect(project.midiLearnProjection.read('spec')).toBe(projection);
+        expect(project.cvGateProjection.read('spec')).toBe(cvGate);
         expect(project.sampleDiscoverySource.read('spec')).toBe(source);
     });
 });

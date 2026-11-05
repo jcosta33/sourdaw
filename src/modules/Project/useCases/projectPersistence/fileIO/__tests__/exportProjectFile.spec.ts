@@ -9,6 +9,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { CURRENT_PROJECT_VERSION, type ProjectData } from '../../../../models/ProjectData';
 import { downloadProjectFile } from '../../../../repositories/project/downloadProjectFile';
 import { projectOriginalMediaPort } from '../../projectOriginalMediaPort';
+import { cvGateProjection } from '../cvGateProjection';
 import { exportProjectFile } from '../exportProjectFile';
 import { midiLearnProjection } from '../midiLearnProjection';
 
@@ -69,7 +70,6 @@ vi.mock('#/modules/Automation/stores', () => ({
     automationStore: { value: { lanes: [] } },
     modulationStore: { value: { modulators: [] } },
 }));
-vi.mock('#/modules/CvGate/stores', () => ({ cvGateStore: { value: undefined } }));
 vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
     midiStore: { value: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} } },
@@ -161,9 +161,11 @@ function seedMissingOriginalExport(): void {
     });
 }
 
-// The composition root's MIDI learn projection over the live store: the
-// registrar itself cannot load while whole module barrels are mocked.
+// The composition root's MIDI learn projection over the live store, and a
+// CV/gate projection holding no outputs: the registrar itself cannot load
+// while whole module barrels are mocked.
 midiLearnProjection.configure({ readMidiLearn: () => midiLearnStore.value });
+cvGateProjection.configure({ readCvGate: () => null });
 
 describe('exportProjectFile', () => {
     beforeEach(() => {

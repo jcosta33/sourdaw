@@ -47,6 +47,7 @@ export { parseAgentDiscoveryInput } from './parseAgentDiscoveryInput';
 export { agentCapabilityDiscoveryPort } from './agentCapabilityDiscoveryPort';
 export { projectOriginalMediaPort } from './projectPersistence/projectOriginalMediaPort';
 export { rackProcessorReader } from './projectPersistence/fileIO/rackProcessorReader';
+export { cvGateProjection } from './projectPersistence/fileIO/cvGateProjection';
 export { midiLearnProjection } from './projectPersistence/fileIO/midiLearnProjection';
 export { sampleDiscoverySource } from './agentDiscovery/sampleDiscoverySource';
 export { templateArpeggiatorAuthoring } from './projectTemplates/templateHelpers/templateArpeggiatorAuthoring';

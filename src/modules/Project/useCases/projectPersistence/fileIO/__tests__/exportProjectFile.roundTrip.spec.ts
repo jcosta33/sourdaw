@@ -14,6 +14,7 @@ import {
     projectCrdtToStores,
     removeCrdtDoc,
 } from '#/modules/CrdtDocument/useCases';
+import { cvGateStore } from '#/modules/CvGate/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -25,6 +26,7 @@ import { arrangementStore, defaultArrangementStoreState } from '../../../../stor
 import { defaultProjectStoreState, projectStore } from '../../../../stores/projectStore';
 import { saveProject } from '../../saveProject/saveProject';
 import { buildProjectData } from '../buildProjectData';
+import { cvGateProjection } from '../cvGateProjection';
 import { exportProjectFile } from '../exportProjectFile';
 import { hydrateProjectMidi } from '../hydrateProjectMidi';
 import { midiLearnProjection } from '../midiLearnProjection';
@@ -183,9 +185,11 @@ function replaceRootWithMalformedAdjustmentLayers(): void {
     });
 }
 
-// The composition root's MIDI learn projection over the live store: the
-// registrar itself cannot load while whole module barrels are mocked.
+// The composition root's MIDI learn and CV/gate projections over the live
+// stores: the registrar itself cannot load while whole module barrels are
+// mocked.
 midiLearnProjection.configure({ readMidiLearn: () => midiLearnStore.value });
+cvGateProjection.configure({ readCvGate: () => cvGateStore.value });
 
 describe('exportProjectFile round-trip shape', () => {
     beforeEach(() => {
