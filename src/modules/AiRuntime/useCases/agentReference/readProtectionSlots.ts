@@ -3,7 +3,8 @@ import { refinementProtectionForms } from './refinementProtectionForms';
 
 /** Where an explicit protection clause sits in a request: the references it protects and how it was closed. */
 
-const PROTECTION_VERB = String.raw`(?:leave|leaving|keep|keeping|preserve|preserving|retain|retaining)`;
+/** The one definition of a protection verb, shared with the clip reader so the two cannot drift apart. */
+export const PROTECTION_VERB = String.raw`(?:leave|leaving|keep|keeping|preserve|preserving|retain|retaining)`;
 const INSTRUCTION_VERBS = String.raw`(?:turn|set|make|raise|lower|boost|cut|reduce|increase|decrease|add|create|remove|delete|rename|insert|copy|duplicate|trim|split|quantize|transpose|normalize|bring|apply|load|import|export|bounce|render)`;
 
 const startPatterns: ReadonlyArray<{ kind: StartKind; pattern: RegExp }> = [
@@ -78,10 +79,20 @@ export type Range = { start: number; end: number };
 
 /**
  * A capitalized word inside a sentence belongs to a title-cased name ("Keep Them Separate"), not to a request,
- * unless a conjunction opens its clause ("but Keep the Drum Bus unchanged").
+ * unless a conjunction or a comma or dash opens its clause ("but Keep the Drum Bus unchanged", "Alright, Keep Alpha alone").
  */
 function opensTitleCasedPhrase(masked: string, index: number): boolean {
-    return /^\p{Lu}/u.test(masked.slice(index)) && !opensClause(masked, index) && !followsConjunction(masked, index);
+    return (
+        /^\p{Lu}/u.test(masked.slice(index)) &&
+        !opensClause(masked, index) &&
+        !followsConjunction(masked, index) &&
+        !followsPunctuationBoundary(masked, index)
+    );
+}
+
+/** Whether a comma or a dash ends the text right before the index. */
+function followsPunctuationBoundary(masked: string, index: number): boolean {
+    return /[,\-–—]$/u.test(masked.slice(0, index).trimEnd());
 }
 
 function followsConjunction(masked: string, index: number): boolean {
