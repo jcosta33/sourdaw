@@ -1,0 +1,21 @@
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.gestureCancel.spec.tsx
+  s_fec7059b7a251c::t_ef5ed7368cd009 155-157
+src/modules/Arrangement/useCases/clipEditing/__tests__/clipEditingOperations.spec.ts
+  s_fec7059b7a251c::t_19c0b560c9fa8a 12-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "46d75875082974d303677f95ee88a2ee51b10038",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
