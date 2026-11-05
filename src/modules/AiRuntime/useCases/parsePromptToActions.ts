@@ -1969,6 +1969,7 @@ const planPromptIntent = inject({ logger })(
                             revision: projectRevision ?? '',
                             runId: streamIdentity?.runId ?? 'prompt-preview',
                             creativeAuthority,
+                            recordedConstraints: refinedProtections?.perceptualConstraints,
                         });
                         if (prefix.status !== 'compiled') {
                             continue;

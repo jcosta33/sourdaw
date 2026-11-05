@@ -71,6 +71,7 @@ export { replaceTimeSignatureMap } from './timeSignatureChanges/replaceTimeSigna
 export { getTransportHandlers } from './getTransportHandlers';
 
 export { preferencesSeededTransportState } from './preferencesSeededTransportState';
+export { seedTransportForNewProject } from './seedTransportForNewProject';
 export { defaultTransportState } from './transportQueries/helpers';
 export { getTransportState } from './transportQueries/getTransportState';
 export { getTempoMapState } from './transportQueries/getTempoMapState';
@@ -79,3 +80,7 @@ export { getTimeSignatureAtBeat } from './transportQueries/getTimeSignatureAtBea
 export { getBarStartBeat } from './transportQueries/getBarStartBeat';
 export { getTimelineRulerGrid } from './transportQueries/getTimelineRulerGrid';
 export { updateTransportState } from './transportQueries/updateTransportState';
+export { formatMusicalPosition } from './transportQueries/formatMusicalPosition';
+export { formatMusicalLength } from './transportQueries/formatMusicalLength';
+export { formatMusicalLengthParts } from './transportQueries/formatMusicalLengthParts';
+export { measureMusicalLength } from './transportQueries/measureMusicalLength';

@@ -7,10 +7,11 @@ const PROJECT_BOUNDARY_CANCEL_REASON = 'The active project changed before the ru
 
 /**
  * Cancels every run still holding machine resources. The project boundary
- * (`resetModuleStoresToDefault`) calls this through its composition-root
- * registered seam (#4783): a project switch invalidates the revision every run
- * is bound to, and an executing run's render holds the process-wide render lock
- * until it ends, which would keep Export disabled in the incoming project.
+ * calls this as a participant of Project's lifecycle, registered by the
+ * composition root (`#/app/registerProjectLifecycle`, #4783): a project switch
+ * invalidates the revision every run is bound to, and an executing run's render
+ * holds the process-wide render lock until it ends, which would keep Export
+ * disabled in the incoming project.
  * `cancelAgentRun` never awaits — the abort controllers its work leases bound
  * fire before it returns — so the boundary's teardown stays synchronous and the
  * aborted renders unwind through the run's own cancellation machinery.

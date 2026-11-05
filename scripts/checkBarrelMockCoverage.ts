@@ -141,7 +141,6 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
         barrel: '#/modules/MIDI/stores',
         missingKeys: [
             'GROOVE_CONSUMER_TYPES',
-            'LEGACY_MIDI_PROBABILITY_SEED',
             'canonicalizeGrooveConsumerId',
             'chordTrackStore',
             'defaultChordTrackState',

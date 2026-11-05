@@ -7,6 +7,7 @@ import {
     isExecutableAppActionType,
 } from '#/modules/Command/useCases';
 import { createPunchRegionPatch } from '#/modules/Transport/useCases';
+import { roundToThousandths } from '#/utils/Math/roundToThousandths';
 
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { type ProjectContext } from '../models/ProjectContext';
@@ -136,12 +137,8 @@ function targetsStand(command: CommittedCommand, context: ProjectContext): boole
         );
 }
 
-function roundDecibels(value: number): number {
-    return Math.round(value * 1000) / 1000;
-}
-
 function formatDecibels(value: number): string {
-    return `${String(roundDecibels(value))} dB`;
+    return `${String(roundToThousandths(value))} dB`;
 }
 
 /**
@@ -168,7 +165,7 @@ function continuedValue(
             };
         }
         const value = request.comparative === 'more' ? committed.value + figure : committed.value - figure;
-        return { status: 'value', value: roundDecibels(value) };
+        return { status: 'value', value: roundToThousandths(value) };
     }
     const direction = Math.sign(committed.value);
     const size = Math.abs(committed.value);

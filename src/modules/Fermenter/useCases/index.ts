@@ -15,3 +15,4 @@ export { mapFermenterParamToDspParam } from './fermenterParamBridge/mapFermenter
 export { mapFermenterPatchToDspPatch } from './fermenterParamBridge/mapFermenterPatchToDspPatch';
 export { FERMENTER_PARAMS } from './fermenterQueries/FERMENTER_PARAMS';
 export { setFermenterMappedParam } from './setFermenterMappedParam';
+export { resetFermenterForProject } from './resetFermenterForProject';

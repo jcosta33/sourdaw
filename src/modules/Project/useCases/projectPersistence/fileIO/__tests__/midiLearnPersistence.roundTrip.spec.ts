@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectLifecycle } from '#/app/registerProjectLifecycle';
 import { midiLearnStore } from '#/modules/ControlSurface/stores';
 
 import { hydrateArrangementStoreFromProjectData } from '../../helpers/hydrateArrangementStoreFromProjectData';
@@ -53,6 +54,7 @@ async function reopenFromNamedProjectJson(): Promise<void> {
 
 describe('MIDI Learn mappings across a named-project reopen', () => {
     beforeEach(() => {
+        registerProjectLifecycle();
         midiLearnStore.set(EMPTY_MIDI_LEARN);
     });
 

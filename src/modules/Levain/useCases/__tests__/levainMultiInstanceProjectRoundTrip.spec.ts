@@ -32,6 +32,7 @@ vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
 import { initLevainDeviceStateProjectAccess } from '#/app/initLevainDeviceStateProjectAccess';
+import { registerProjectLifecycle } from '#/app/registerProjectLifecycle';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
@@ -91,6 +92,7 @@ describe('two Levain patches across a named-project reopen', () => {
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('Levain round-trip bootstrap');
         registerCrdtStorageRuntime();
+        registerProjectLifecycle();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         clearUndoHistory();

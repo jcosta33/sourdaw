@@ -427,6 +427,9 @@ function projectMetricGoals(metricEvaluation: MetricGoalEvaluation): AgentApprov
             if (criterion.source.kind === 'request-number') {
                 source = 'Requested target';
             }
+            if (criterion.source.kind === 'constraint') {
+                source = `Constraint “${criterion.source.clause}”`;
+            }
             const metric =
                 Object.entries(OBJECTIVE_METRIC_LABELS).find(([id]) => id === criterion.metricId)?.[1] ??
                 'unsupported metric';
@@ -447,6 +450,9 @@ function projectMetricGoals(metricEvaluation: MetricGoalEvaluation): AgentApprov
             let tolerance = '';
             if (criterion.relation === 'match-current') {
                 tolerance = ` within ${String(criterion.tolerance)} LU (application objective policy)`;
+            }
+            if (criterion.relation === 'hold' && criterion.tolerance > 0) {
+                tolerance = ` within ${String(criterion.tolerance)} ${unit}`;
             }
             return {
                 ...criterion,

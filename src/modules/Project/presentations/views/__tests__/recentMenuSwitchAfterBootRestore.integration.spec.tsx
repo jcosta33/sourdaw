@@ -307,6 +307,11 @@ async function bootRestoreBlankProjectB(): Promise<void> {
     expect(projectStore.value?.initialized).toBe(true);
 }
 
+// Radix opens a dropdown on pointer down, as a real press does.
+const openProjectMenu = (): void => {
+    fireEvent.pointerDown(screen.getByLabelText(/Project menu/i), { pointerId: 1, button: 0 });
+};
+
 describe('recent-menu switch after a fresh renderer restored the blank project (#2898)', () => {
     let idbControls: ReturnType<typeof installFakeIndexedDb> | undefined;
     let lockManager: { locks: Pick<LockManager, 'request'> };
@@ -356,7 +361,7 @@ describe('recent-menu switch after a fresh renderer restored the blank project (
         renameProject(RENAMED_BLANK_NAME);
 
         render(<RecentProjectsMenu />);
-        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        openProjectMenu();
         fireEvent.click(await screen.findByText(SAVED_PROJECT_NAME));
 
         await waitFor(
@@ -405,7 +410,7 @@ describe('recent-menu switch after a fresh renderer restored the blank project (
         mocks.importCachedAudioBuffers.mockResolvedValue(null);
 
         render(<RecentProjectsMenu />);
-        fireEvent.click(screen.getByLabelText(/Project menu/i));
+        openProjectMenu();
         fireEvent.click(await screen.findByText(SAVED_PROJECT_NAME));
 
         await waitFor(() => expect(mocks.importCachedAudioBuffers).toHaveBeenCalledTimes(1));

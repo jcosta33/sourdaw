@@ -629,7 +629,7 @@ export const EXPANDED_FX_PRESETS: SoundPreset[] = [
         description: 'Vinyl-style lo-fi with bitcrushing, filtering, and subtle noise texture.',
         trackKind: 'audio',
         devices: [
-            bitcrusher('Vinyl Crunch', { 'crush-bits': 12, 'crush-rate': 0.8, 'crush-mix': 0.25 }),
+            bitcrusher('Vinyl Crunch', { 'crush-bits': 12, 'crush-rate': 2, 'crush-mix': 0.25 }),
             eq('Vinyl EQ', { 'eq-low-gain': -2, 'eq-high-gain': -5, 'eq-high-freq': 8000 }),
         ],
         tags: ['lo-fi', 'vinyl', 'retro', 'chill', 'bitcrush'],
@@ -644,7 +644,7 @@ export const EXPANDED_FX_PRESETS: SoundPreset[] = [
         description: 'Old transistor radio simulation with bandpass filter and bitcrushing.',
         trackKind: 'audio',
         devices: [
-            bitcrusher('Radio Bits', { 'crush-bits': 10, 'crush-rate': 0.6, 'crush-mix': 0.3 }),
+            bitcrusher('Radio Bits', { 'crush-bits': 10, 'crush-rate': 4, 'crush-mix': 0.3 }),
             eq('Radio Band', {
                 'eq-low-gain': -10,
                 'eq-low-freq': 400,
@@ -824,7 +824,7 @@ export const EXPANDED_FX_PRESETS: SoundPreset[] = [
         trackKind: 'audio',
         devices: [
             distortion('Industrial', { 'dist-drive': 8, 'dist-tone': 2500, 'dist-mix': 0.6 }),
-            bitcrusher('Crush', { 'crush-bits': 6, 'crush-rate': 0.4, 'crush-mix': 0.5 }),
+            bitcrusher('Crush', { 'crush-bits': 6, 'crush-rate': 10, 'crush-mix': 0.5 }),
             filter('Resonant', { 'filter-cutoff': 2000, 'filter-resonance': 5, 'filter-type': 0 }),
         ],
         tags: ['industrial', 'harsh', 'noise', 'creative'],
@@ -1260,7 +1260,7 @@ export const EXPANDED_SYNTH_PRESETS: SoundPreset[] = [
                 filterType: 0,
                 gain: 0.25,
             }),
-            bitcrusher('Glitch Crush', { 'crush-bits': 8, 'crush-rate': 0.5, 'crush-mix': 0.4 }),
+            bitcrusher('Glitch Crush', { 'crush-bits': 8, 'crush-rate': 6, 'crush-mix': 0.4 }),
         ],
         tags: ['glitch', 'pluck', 'digital', 'electronic'],
         author: AUTHOR,
