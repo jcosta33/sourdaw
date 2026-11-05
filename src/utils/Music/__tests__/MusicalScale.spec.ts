@@ -72,6 +72,24 @@ describe('quantizeCentsToScale', () => {
 });
 
 describe('quantizeMidiNoteToScale', () => {
+    // C# major pentatonic = pitch classes 1,3,5,8,10. The nearest degree to 127 (pc 7) is 128, out of range;
+    // the nearest in-range degree below is 125 (pc 5).
+    it('stays in scale when the nearest degree is above the MIDI range', () => {
+        expect(quantizeMidiNoteToScale(127, 1, 'pentatonicMajor')).toBe(125);
+    });
+
+    // B major pentatonic = pitch classes 11,1,3,6,8. The nearest degree to 0 is -1, out of range;
+    // the lowest in-range degree is 1 (C#).
+    it('stays in scale when the nearest degree is below the MIDI range', () => {
+        expect(quantizeMidiNoteToScale(0, 11, 'pentatonicMajor')).toBe(1);
+    });
+
+    it('leaves an in-range snap at the edge unchanged', () => {
+        // C major: 127 (G) is in scale; 1 (C#) snaps down to 0 (C), still in range.
+        expect(quantizeMidiNoteToScale(127, 0, 'major')).toBe(127);
+        expect(quantizeMidiNoteToScale(1, 0, 'major')).toBe(0);
+    });
+
     it('should leave a note already on a scale degree unchanged', () => {
         expect(quantizeMidiNoteToScale(60, 0, 'major')).toBe(60);
     });

@@ -102,5 +102,24 @@ export function quantizeMidiNoteToScale(note: number, root: number, scaleName: s
         actualDiff = diff + 12;
     }
 
-    return Math.max(0, Math.min(127, note + actualDiff));
+    const snapped = note + actualDiff;
+    if (snapped >= MIN_MIDI_PITCH && snapped <= MAX_MIDI_PITCH) {
+        return snapped;
+    }
+    return nearestInScalePitchInRange(note, root, pattern, actualDiff > 0 ? -1 : 1);
+}
+
+const MIN_MIDI_PITCH = 0;
+const MAX_MIDI_PITCH = 127;
+
+/** Walks from `note` in `direction` to the first in-scale pitch; used when the nearest degree lies outside MIDI range. */
+function nearestInScalePitchInRange(note: number, root: number, pattern: readonly number[], direction: 1 | -1): number {
+    let pitch = note;
+    while (pitch >= MIN_MIDI_PITCH && pitch <= MAX_MIDI_PITCH) {
+        if (pattern.includes((((pitch - root) % 12) + 12) % 12)) {
+            return pitch;
+        }
+        pitch += direction;
+    }
+    return note;
 }

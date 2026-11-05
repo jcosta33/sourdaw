@@ -537,7 +537,7 @@ describe('selected piano roll Command callbacks', () => {
         }
         render(createElement(SelectedNoteEditor, { projection, viewId: view.id }));
         const canvas = screen.getByLabelText('selected-note-editor');
-        const y = 22 + (83 - expressive.pitch) * 16 + 8;
+        const y = 22 + (127 - expressive.pitch) * 16 + 8;
 
         fireEvent.mouseDown(canvas, { clientX: 76, clientY: y });
         fireEvent.mouseMove(canvas, { clientX: 56, clientY: y });
@@ -600,7 +600,7 @@ describe('selected piano roll Command callbacks', () => {
             takeLaneStore.value
         );
         render(createElement(SelectedNoteEditor, { projection, stepInput: true }));
-        const y = 22 + (83 - 70) * 16 + 8;
+        const y = 22 + (127 - 70) * 16 + 8;
         fireEvent.mouseDown(screen.getByLabelText('selected-note-editor'), { clientX: 120, clientY: y });
         await waitFor(() => expect(rows()?.map((takeRows) => takeRows?.length)).toEqual([4, 4]));
         const inserted = rows()?.[0]?.find((note) => note.pitch === 70);

@@ -10,6 +10,7 @@ import { activeRecordingRef } from '../../stores/activeRecordingRef';
 import { clipDragPreviewRef } from '../../stores/clipDragPreviewRef';
 import { inlineMidiNotePreviewRef } from '../../stores/inlineMidiNotePreviewRef';
 import { buildTimelineRenderModel } from '../buildTimelineRenderModel';
+import { hitTestClip } from '../timelineInteractions/hitTestClip/hitTestClip';
 
 import type { MidiStoreState } from '#/modules/MIDI/stores';
 import type { Preferences } from '#/modules/Preferences/stores';
@@ -1168,6 +1169,58 @@ describe('buildTimelineRenderModel — variation lanes', () => {
         const track = buildTimelineRenderModel().tracks[0]!;
         expect(track.variationLanes).toHaveLength(1);
         expect(track.variationLanes?.[0]!.clips[0]!.id).toBe('altclip');
+    });
+
+    describe('the active alternative holds the track clips, not its stored copy', () => {
+        // The stored copy of the active alternative is only refreshed on switch or
+        // create, so after a main-row edit it still holds the clips as they were.
+        const seedStaleActiveCopy = () =>
+            seedStores({
+                tracks: [
+                    {
+                        ...createTrack({ id: 't', name: 'T', kind: 'midi' }),
+                        clips: [clip({ id: 'live', startBeat: 8, endBeat: 12 })],
+                        color: '#000',
+                        showVariationLanes: true,
+                        activeAlternativeId: 'alt-active',
+                        alternatives: [
+                            {
+                                id: 'alt-active',
+                                name: 'Alternative 1',
+                                clips: [clip({ id: 'removed', startBeat: 0, endBeat: 4 })],
+                            },
+                            {
+                                id: 'alt-parked',
+                                name: 'Alternative 2',
+                                clips: [clip({ id: 'parked', startBeat: 16, endBeat: 20 })],
+                            },
+                        ],
+                    },
+                ],
+            });
+
+        it('keeps a clip removed from the main row out of the active lane and shows one added there', () => {
+            seedStaleActiveCopy();
+
+            const { variationLanes } = buildTimelineRenderModel().tracks[0]!;
+
+            expect(variationLanes?.map((lane) => [lane.id, lane.clips.map((item) => item.id)])).toEqual([
+                ['alt-active', ['live']],
+                ['alt-parked', ['parked']],
+            ]);
+        });
+
+        it('lets a click land on the live clip in the active lane and not where the removed clip was', () => {
+            seedStaleActiveCopy();
+            const { height } = buildTimelineRenderModel().tracks[0]!;
+            const activeLaneY = height + VARIATION_LANE_HEIGHT / 2;
+            const parkedLaneY = height + VARIATION_LANE_HEIGHT * 1.5;
+            const atBeat = (beat: number) => beat * 12;
+
+            expect(hitTestClip(atBeat(2), activeLaneY)).toBeNull();
+            expect(hitTestClip(atBeat(10), activeLaneY)).toEqual({ clipId: 'live', trackId: 't' });
+            expect(hitTestClip(atBeat(18), parkedLaneY)).toEqual({ clipId: 'parked', trackId: 't' });
+        });
     });
 
     it('omits variation lanes when showVariationLanes is false', () => {

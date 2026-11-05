@@ -2,6 +2,7 @@ import * as Automerge from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { captureAgentProjectInspectionState } from '#/app/captureCommandBatchPreflightState';
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
 import {
@@ -1090,6 +1091,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         sessionStorage.removeItem(UNDO_SESSION_KEY);
         clearHandlerRegistry();
         macroStore.set({ macros: [], recording: false, currentRecording: [] });

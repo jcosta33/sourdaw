@@ -36,7 +36,7 @@ import {
 import * as crdtDocumentUseCases from '#/modules/CrdtDocument/useCases';
 import {
     captureProjectRevision,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
+    projectRevisionMatchesLiveIgnoringSaveWrites,
     captureUnownedProjectMutations,
     createCrdtDoc,
     getCrdtDoc,
@@ -1270,9 +1270,7 @@ describe('drum bus prompt workflow', () => {
         registerCrdtStorageRuntime();
         commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
         commandProjectRevisionPort.setProvider(captureProjectRevision);
-        commandProjectRevisionPort.setLiveMatchIgnoringCommandCheckpoint(
-            projectRevisionMatchesLiveIgnoringCommandCheckpoint
-        );
+        commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(projectRevisionMatchesLiveIgnoringSaveWrites);
         configureCommandBatchIdempotency({ canExecute: () => true });
         collaborationUseCases.configureCollaborationAssetOwner({
             captureOwnerId: () => 'project:drum-bus-workflow',

@@ -436,6 +436,8 @@ async function createSavedDirectoryProject() {
     const { actionHistoryStore } = await import('#/modules/CrdtDocument/stores');
     stopHistoryMirror = actionHistoryStore.subscribe((state) => command.syncActionReplayMetadata(state?.entries ?? []));
     crdt.registerCrdtStorageRuntime();
+    const { registerProjectSlotProjections } = await import('#/app/registerProjectSlotProjections');
+    registerProjectSlotProjections();
     collaboration.configureCollaborationAssetOwner({ captureOwnerId: project.getDurableProjectOwnerId });
     audio.configureDurableAudioBufferOwnership(project.collectDurableOwnedAudioBufferIds);
     const leave = vi.fn(() => Promise.resolve());
@@ -626,6 +628,8 @@ describe('project directory save and cold Recent open', () => {
         arrangement.setArrangementEventBus({ emit: vi.fn(() => Promise.resolve()) });
         registerHandlerMap(arrangement.getArrangementHandlers());
         crdt.registerCrdtStorageRuntime();
+        const { registerProjectSlotProjections } = await import('#/app/registerProjectSlotProjections');
+        registerProjectSlotProjections();
         collaboration.configureCollaborationAssetOwner({ captureOwnerId: project.getDurableProjectOwnerId });
         audio.configureDurableAudioBufferOwnership(project.collectDurableOwnedAudioBufferIds);
         project.setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });

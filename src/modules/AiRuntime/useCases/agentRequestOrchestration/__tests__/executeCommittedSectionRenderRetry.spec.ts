@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
     canExecuteCommandBatchEffects: vi.fn(),
     captureRevision: vi.fn(),
     claimWorkLease: vi.fn(),
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(),
+    projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn(),
     chatState: { value: { isGenerating: false } },
     completeContinuation: vi.fn(),
     recordArtifact: vi.fn(),
@@ -54,7 +54,7 @@ vi.mock('#/modules/AudioRendering/useCases', () => ({
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureRevision,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint: mocks.projectRevisionMatchesLiveIgnoringCommandCheckpoint,
+    projectRevisionMatchesLiveIgnoringSaveWrites: mocks.projectRevisionMatchesLiveIgnoringSaveWrites,
 }));
 
 vi.mock('../../../stores/chatStore', () => ({
@@ -254,7 +254,7 @@ describe('executeCommittedSectionRenderRetry', () => {
         vi.clearAllMocks();
         mocks.chatState.value = { isGenerating: false };
         mocks.captureRevision.mockReturnValue('revision-source');
-        mocks.projectRevisionMatchesLiveIgnoringCommandCheckpoint.mockReturnValue(true);
+        mocks.projectRevisionMatchesLiveIgnoringSaveWrites.mockReturnValue(true);
         mocks.canExecuteCommandBatchEffects.mockReturnValue(true);
         mocks.claimWorkLease.mockReturnValue({ status: 'claimed', lease: RENDER_LEASE });
         mocks.settleWorkLease.mockReturnValue({ status: 'settled' });
@@ -289,7 +289,7 @@ describe('executeCommittedSectionRenderRetry', () => {
         mocks.chatState.value = { isGenerating: false };
         mocks.project.mockReturnValue(projection(true));
         mocks.captureRevision.mockReturnValue('revision-changed');
-        mocks.projectRevisionMatchesLiveIgnoringCommandCheckpoint.mockReturnValue(false);
+        mocks.projectRevisionMatchesLiveIgnoringSaveWrites.mockReturnValue(false);
         const staleRevisionReason =
             'Project changed after the committed render receipt; the missing original artifacts cannot be recreated safely.';
         await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({

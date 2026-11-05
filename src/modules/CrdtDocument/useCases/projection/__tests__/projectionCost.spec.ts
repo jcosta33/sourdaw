@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Clip, type Track } from '#/modules/Arrangement/stores';
 import { kneadStore, type KneadClipState } from '#/modules/Knead/stores';
@@ -8,8 +9,11 @@ import { transportStore } from '#/modules/Transport/stores';
 import { automergeRepository } from '../../../repositories/automergeRepository';
 import { actionHistoryStore } from '../../../stores/actionHistoryStore';
 import { registerCrdtStorageRuntime } from '../../registerCrdtStorageRuntime';
-import { projectSlotProjections } from '../projectSlotProjections';
+import { projectSlotProjectionRegistry } from '../projectSlotProjections';
 import { setupProjectionBridge } from '../setupProjectionBridge';
+
+registerProjectSlotProjections();
+const projectSlotProjections = projectSlotProjectionRegistry.read('projectionCost.spec');
 
 /**
  * Audit CC-1 — projection cost must be proportional to what changed.
