@@ -1,0 +1,21 @@
+scripts/__tests__/hostedAptInstall.spec.ts
+  s_fec7059b7a251c::t_fb50b940298517 265-271,273-279
+  s_fec7059b7a251c::t_4a3afbd92fd555 218-220,222-232
+  s_fec7059b7a251c::t_349479f1a85eb3 221
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "32ded21aa1c88a1ebe79d3ac1ebd393c3f708e9d",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
