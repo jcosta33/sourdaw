@@ -4682,8 +4682,11 @@ describe('health gates workflow contract', () => {
 
     // Without the pinned build the real-render specs cold-start the image's full
     // Chrome under shard load, which outran a 120s warm-up (run 42099824047).
-    it('installs the pinned Chromium into the required unit account between install and the shard', () => {
-        const unit = jobAt(validationWorkflow, 'unit');
+    it.each([
+        ['validation.yml', validationWorkflow],
+        ['nightly.yml', nightly],
+    ])('installs the pinned Chromium into the %s unit account between install and the shard', (_file, workflow) => {
+        const unit = jobAt(workflow, 'unit');
         const steps = arrayAt(unit, 'steps');
         const browsers = stepNamed(unit, 'Install Chromium');
         expect(stringAt(browsers, 'run')).toBe(
