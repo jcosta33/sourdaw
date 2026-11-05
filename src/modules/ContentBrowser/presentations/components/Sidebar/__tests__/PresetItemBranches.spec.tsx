@@ -140,3 +140,62 @@ describe('PresetItem — card click', () => {
         expect(onClick).toHaveBeenCalledTimes(1);
     });
 });
+
+/**
+ * The parts of a button's description, in order. A browser reads a referenced
+ * element's aria-label, which jsdom's accessible-description computation does
+ * not, so each referenced element's label or text is resolved here.
+ */
+function describedBy(button: HTMLElement): string[] {
+    return (button.getAttribute('aria-describedby') ?? '')
+        .split(' ')
+        .map((id) => document.getElementById(id))
+        .map((part) => part?.getAttribute('aria-label') ?? part?.textContent ?? '');
+}
+
+describe('PresetItem — keyboard reachability', () => {
+    it('exposes the card action as a focusable native button named for the preset', () => {
+        const { onClick } = renderItem();
+        const card = screen.getByRole('button', { name: 'Warm Pad' });
+        expect(describedBy(card)).toEqual(['synth', 'MIDI track', 'Fermenter → Gluten']);
+        expect(card.tagName).toBe('BUTTON');
+        expect(card).toHaveAttribute('type', 'button');
+        expect(card.tabIndex).toBeGreaterThanOrEqual(0);
+        card.focus();
+        expect(card).toHaveFocus();
+        // jsdom does not turn Enter or Space into a click; a native button does in the browser.
+        card.click();
+        expect(onClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('describes an audio preset without a category badge by its track kind and chain', () => {
+        renderItem({ preset: makePreset({ trackKind: 'audio' }), hideCategory: true });
+        expect(describedBy(screen.getByRole('button', { name: 'Warm Pad' }))).toEqual([
+            'Audio track',
+            'Fermenter → Gluten',
+        ]);
+    });
+
+    it('keeps preview, card and favorite as separate sibling buttons, none nested', () => {
+        renderItem();
+        const buttons = screen.getAllByRole('button');
+        expect(buttons.map((button) => button.getAttribute('aria-label') ?? button.textContent?.trim())).toEqual([
+            'Preview',
+            'Warm Pad',
+            'Add to favorites',
+        ]);
+        for (const button of buttons) {
+            expect(button.querySelector('button')).toBeNull();
+        }
+    });
+
+    it('does not load the preset when the favorite star is activated', () => {
+        const { onClick, onToggleFavorite } = renderItem();
+        const star = screen.getByRole('button', { name: /add to favorites/i });
+        star.focus();
+        expect(star).toHaveFocus();
+        star.click();
+        expect(onToggleFavorite).toHaveBeenCalledWith('p1');
+        expect(onClick).not.toHaveBeenCalled();
+    });
+});
