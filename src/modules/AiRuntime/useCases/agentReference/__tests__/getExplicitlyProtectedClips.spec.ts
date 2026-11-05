@@ -180,6 +180,51 @@ describe('getExplicitlyProtectedClips', () => {
             expect(getExplicitClipProtection(prompt, { ...context, tracks: [track(names)] }).complete).toBe(false);
         });
 
+        it.each([
+            'Thanks, Keep Alpha alone and rename Alpha to Gamma',
+            'Please - Keep Alpha alone and rename Alpha to Gamma',
+        ])('reads an unbound protection after punctuated courtesy as incomplete: %s', (prompt) => {
+            expect(getExplicitClipProtection(prompt, { ...context, tracks: [track(['Alpha', 'Beta'])] }).complete).toBe(
+                false
+            );
+        });
+
+        it.each([
+            'please',
+            'can you',
+            'could you',
+            'would you',
+            'just',
+            'now',
+            'ok',
+            'okay',
+            'actually',
+            'also',
+            'hi',
+            'hey',
+            'hello',
+            'thanks',
+            'thank you',
+            'kindly',
+            'sorry',
+        ])('reads the opener %s as opening its clause', (opener) => {
+            expect(
+                getExplicitClipProtection(`${opener} leave Intro alone and rename Intro to Bridge Solo`, {
+                    ...context,
+                    tracks: [track(['Intro', 'Alone'])],
+                }).complete
+            ).toBe(false);
+        });
+
+        it('keeps a verb after any other word as mid-clause', () => {
+            expect(
+                getExplicitClipProtection('Make Intro louder but keep it punchy', {
+                    ...context,
+                    tracks: [track(['Intro'])],
+                })
+            ).toEqual({ clips: [], complete: true });
+        });
+
         it('still protects the clip a courtesy-prefixed protection binds', () => {
             expect(
                 getExplicitClipProtection('Please leave Intro alone and rename Outro to Bridge', {

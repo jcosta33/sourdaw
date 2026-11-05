@@ -35,9 +35,14 @@ const protectionClauseStartPattern = new RegExp(String.raw`^${protectionVerb}\b`
 const allProtectionVerbsPattern = new RegExp(String.raw`\b${protectionVerb}\b`, 'giu');
 const exclusionVerbPattern = /\b(?:excluding|except)\b/giu;
 const protectionClauseBoundaryPattern = new RegExp(protectionClauseBoundary, 'giu');
-// The courtesy words a request opens with ahead of its verb, any number in any order and nothing else.
-const courtesyOpeningPattern =
-    /^(?:(?:please|can\s+you|could\s+you|would\s+you|just|now|ok|okay|actually|also)[\s,]*)*$/iu;
+// The courtesy words a request opens with ahead of its verb, any number in any order, joined by any run of
+// whitespace and punctuation, and nothing else.
+const courtesyWords = String.raw`(?:please|can\s+you|could\s+you|would\s+you|just|now|ok|okay|actually|also|hi|hey|hello|thanks|thank\s+you|kindly|sorry)`;
+const courtesySeparators = String.raw`[\s,.!…–—-]*`;
+const courtesyOpeningPattern = new RegExp(
+    String.raw`^${courtesySeparators}(?:${courtesyWords}(?![\p{L}\p{N}'])${courtesySeparators})*$`,
+    'iu'
+);
 const referenceSeparatorPattern = /,\s*(?:and\b\s*)?|\s+and\s+/giu;
 
 /** A list member's text and where it stands in the request. */
