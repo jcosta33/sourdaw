@@ -1,5 +1,5 @@
 import { expect, test } from './e2eTest';
-import { launch_new_project, setupWorkspace } from './e2eUtils';
+import { import_and_select_audio_clip, launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -48,33 +48,32 @@ test.describe('Clip inspector controls', () => {
         await create_and_select_clip(page);
     });
 
-    test('Clip inspector exposes trim, fade, and gain sliders with values', async ({ page }) => {
+    test('Clip inspector exposes trim and gain sliders with values', async ({ page }) => {
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
 
         const trim_start = inspector.getByRole('slider', { name: 'Trim clip start' });
         const trim_end = inspector.getByRole('slider', { name: 'Trim clip end' });
-        const fade_in = inspector.getByRole('slider', { name: 'Fade in duration' });
-        const fade_out = inspector.getByRole('slider', { name: 'Fade out duration' });
         const gain = inspector.getByRole('slider', { name: 'Clip gain' });
 
-        for (const slider of [trim_start, trim_end, fade_in, fade_out, gain]) {
+        for (const slider of [trim_start, trim_end, gain]) {
             await expect(slider).toBeVisible();
             const value = await slider.getAttribute('aria-valuenow');
             expect(value).not.toBeNull();
         }
     });
 
-    test('Gain envelope section renders with state text and supporting controls', async ({ page }) => {
+    test('A MIDI clip offers no fades or gain envelope, which MIDI playback never applies', async ({ page }) => {
         const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
 
-        // The envelope section shows its enabled/disabled state with a point count.
-        const state_text = inspector.getByText(/Enabled ·|Disabled ·/i);
-        await expect(state_text.first()).toBeVisible({ timeout: 8000 });
+        // MIDI-only anchors: the inspector is mounted for a MIDI clip before absence is asserted.
+        await expect(inspector.getByRole('slider', { name: 'Trim clip start' })).toBeVisible();
+        await expect(inspector.getByRole('slider', { name: 'Clip gain' })).toBeVisible();
+        await expect(inspector.getByText('midi', { exact: true })).toBeVisible();
 
-        // The supporting controls (always present regardless of enabled state) allow
-        // adding breakpoints and resetting the envelope.
-        await expect(page.getByRole('button', { name: 'Add breakpoint' })).toBeVisible();
-        await expect(page.getByRole('button', { name: 'Reset gain envelope' })).toBeVisible();
+        await expect(inspector.getByRole('slider', { name: 'Fade in duration' })).toHaveCount(0);
+        await expect(inspector.getByRole('slider', { name: 'Fade out duration' })).toHaveCount(0);
+        await expect(inspector.getByText(/Enabled ·|Disabled ·/i)).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Add breakpoint' })).toHaveCount(0);
     });
 
     test('Clip color picker exposes exactly the preset swatches', async ({ page }) => {
@@ -95,5 +94,37 @@ test.describe('Clip inspector controls', () => {
             'oklch(0.42 0.06 200)',
             'oklch(0.41 0.07 45)',
         ]);
+    });
+});
+
+test.describe('Clip inspector controls on an audio clip', () => {
+    test.beforeEach(async ({ page }) => {
+        test.setTimeout(120000);
+        await setupWorkspace(page);
+        await launch_new_project(page);
+        await import_and_select_audio_clip(page);
+    });
+
+    test('Clip inspector exposes fade sliders with values', async ({ page }) => {
+        const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
+
+        for (const name of ['Fade in duration', 'Fade out duration']) {
+            const slider = inspector.getByRole('slider', { name });
+            await expect(slider).toBeVisible();
+            expect(await slider.getAttribute('aria-valuenow')).not.toBeNull();
+        }
+    });
+
+    test('Gain envelope section renders with state text and supporting controls', async ({ page }) => {
+        const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
+
+        // The envelope section shows its enabled/disabled state with a point count.
+        const state_text = inspector.getByText(/Enabled ·|Disabled ·/i);
+        await expect(state_text.first()).toBeVisible({ timeout: 8000 });
+
+        // The supporting controls (always present regardless of enabled state) allow
+        // adding breakpoints and resetting the envelope.
+        await expect(page.getByRole('button', { name: 'Add breakpoint' })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Reset gain envelope' })).toBeVisible();
     });
 });

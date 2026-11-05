@@ -1,5 +1,5 @@
 import { expect, test } from './e2eTest';
-import { launch_new_project, setupWorkspace } from './e2eUtils';
+import { import_and_select_audio_clip, launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -45,17 +45,6 @@ test.describe('Clip inspector trim/fade/gain — keyboard response', () => {
         await create_and_select_clip(page);
     });
 
-    test('Fade in slider responds to keyboard', async ({ page }) => {
-        const fadeIn = page.getByRole('slider', { name: 'Fade in duration' });
-        await expect(fadeIn).toBeVisible({ timeout: 5000 });
-        await fadeIn.focus();
-        const before = Number(await fadeIn.getAttribute('aria-valuenow'));
-        await page.keyboard.press('ArrowUp');
-        await page.waitForTimeout(200);
-        const after = Number(await fadeIn.getAttribute('aria-valuenow'));
-        expect(after).toBeGreaterThan(before);
-    });
-
     test('Clip gain slider responds to keyboard', async ({ page }) => {
         const gain = page.getByRole('slider', { name: 'Clip gain' });
         await expect(gain).toBeVisible({ timeout: 5000 });
@@ -65,5 +54,25 @@ test.describe('Clip inspector trim/fade/gain — keyboard response', () => {
         await page.waitForTimeout(200);
         const after = Number(await gain.getAttribute('aria-valuenow'));
         expect(after).toBeGreaterThan(before);
+    });
+});
+
+// Fades apply to audio clips only (MIDI playback never reads them), so the fade slider runs on an imported clip.
+test.describe('Clip inspector fade — keyboard response on an audio clip', () => {
+    test.beforeEach(async ({ page }) => {
+        test.setTimeout(120000);
+        await setupWorkspace(page);
+        await launch_new_project(page);
+        await import_and_select_audio_clip(page);
+    });
+
+    test('Fade in slider responds to keyboard', async ({ page }) => {
+        const fadeIn = page.getByRole('slider', { name: 'Fade in duration' });
+        await expect(fadeIn).toBeVisible({ timeout: 5000 });
+        await fadeIn.focus();
+        const before = Number(await fadeIn.getAttribute('aria-valuenow'));
+        await page.keyboard.press('ArrowUp');
+        await expect(fadeIn).not.toHaveAttribute('aria-valuenow', String(before));
+        expect(Number(await fadeIn.getAttribute('aria-valuenow'))).toBeGreaterThan(before);
     });
 });
