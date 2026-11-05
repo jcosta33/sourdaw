@@ -1,0 +1,73 @@
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_ba80576e6f5cb5::t_6c3fea4d29c3fe 35,871-880,893,895,900-906,1028-1030
+src/utils/clipLoopOrigin.ts
+  s_ba80576e6f5cb5::t_5724b7e5a0534b 336,338-339,343,348-349,357,359-367,376,378-388,391-392
+  s_ba80576e6f5cb5::t_7368c9f761588d 333-335,337,340-342,344-347,350-356,358,368-375,377,389-390,393-395
+src/modules/MIDI/useCases/midiClipData/__tests__/projectClipControllerEvents.spec.ts
+  s_ba80576e6f5cb5::t_bdb7f0911bfb20 3-4
+  s_ba80576e6f5cb5::t_4c944210269433 634-644,651
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_ba80576e6f5cb5::t_33c1786eb15841 875-883,885-891,896,972,1106-1115,1120,1124,1129-1131
+  s_ba80576e6f5cb5::t_1b1599f489fa34 20
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastGrooveWindowAdmission.spec.ts
+  s_ba80576e6f5cb5::t_8ec32542cdc749 706-707,717
+src/modules/Arrangement/useCases/clipEditing/__tests__/placementLoopOrigin.spec.ts
+  s_ba80576e6f5cb5::t_0ac4f614838fb4 7,58,63-71,419,434-437,445-446,448
+src/modules/Transport/useCases/scheduling/prepareYeastTrackNotes.ts
+  s_ba80576e6f5cb5::t_e96c946f1a715d 135-136,141,223-224,226
+  s_ba80576e6f5cb5::t_388767bc9df979 134,147,165,169,225,229,233
+  s_ba80576e6f5cb5::t_20986e3cb12cf5 8,20,427-428,438
+src/modules/AudioEngine/useCases/livePlayback/projectLiveMidiProgramme.ts
+  s_ba80576e6f5cb5::t_8ae202ad81c777 60
+  s_ba80576e6f5cb5::t_3417ff410b4504 385-388,390-391,393-399,402,418
+src/modules/Transport/useCases/scheduling/resolveRawClipYeastPasses.ts
+  s_ba80576e6f5cb5::t_6612dff22d71f2 1-151
+src/modules/MIDI/useCases/midiClipData/projectMidiClipPlayback.ts
+  s_ba80576e6f5cb5::t_2a80d7ea8ea3b3 1,57-65,67,74
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectOfflineYeastTrackNotes.spec.ts
+  s_ba80576e6f5cb5::t_58330172c5add6 308,319,362,382,404,434-435
+  s_ba80576e6f5cb5::t_5e1f81d13ede50 303-306,350,424-428
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipLoopOrigin.spec.ts
+  s_ba80576e6f5cb5::t_8217ef60bc1fab 273-276,278,280,282,284,286
+src/modules/Transport/useCases/scheduling/__tests__/trimClipStartLoopedNoteStream.spec.ts
+  s_ba80576e6f5cb5::t_5519df36e5279d 7
+  s_ba80576e6f5cb5::t_f70a24d57d6c98 132,136-148,151,171,175
+src/modules/AudioEngine/useCases/offlineRender/projectOfflineYeastTrackNotes.ts
+  s_ba80576e6f5cb5::t_e96c946f1a715d 1,128-129,132
+  s_ba80576e6f5cb5::t_2a4fc055619048 80-83
+  s_ba80576e6f5cb5::t_c46cbbad36e131 75-79,84-85,88,130-131,133-136,149
+src/modules/MIDI/useCases/grooveTemplates/__tests__/projectClipMidiEventsLoopOrigin.spec.ts
+  s_ba80576e6f5cb5::t_733924497281c3 62-64,67,85,94-123,125-127
+src/modules/Transport/useCases/scheduling/selectMidiNotesForLoopWindow.ts
+  s_ba80576e6f5cb5::t_6c3fea4d29c3fe 79
+  s_ba80576e6f5cb5::t_e96c946f1a715d 3,80-81,91
+src/modules/MIDI/useCases/grooveTemplates/getGrooveProjection.ts
+  s_ba80576e6f5cb5::t_a3e7fffe52ce3a 29-30,91,94,123-124
+  s_ba80576e6f5cb5::t_e96c946f1a715d 1,31-32,92-93,95,125
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_ba80576e6f5cb5::t_2a4fc055619048 6562-6563
+  s_ba80576e6f5cb5::t_2a8e77c22e49b6 29,82,6478
+  s_ba80576e6f5cb5::t_f9705d4c0fef64 6467,6480,6484,6489,6532-6553,6579,6586,6591,6595,6600-6601,6605,6607-6609,6611-6613,6615
+  s_ba80576e6f5cb5::t_44ad85e97b1b3d 6602-6604,6606,6610,6614
+  s_ba80576e6f5cb5::t_ae0ec00da4e12d 6433-6466,6468-6477,6479,6481-6483,6485-6488,6490-6531,6554-6561,6564-6578,6580-6585,6587-6590,6592-6594,6596-6599,6616
+src/modules/Transport/useCases/scheduling/processLiveYeastTrackBlock.ts
+  s_ba80576e6f5cb5::t_3f08b23520cc49 193-194,196-200,217-218,224-225
+  s_ba80576e6f5cb5::t_e96c946f1a715d 4,190-192,195,201,219-223
+  s_ba80576e6f5cb5::t_cf369ff8564791 226
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ccce195256df85134ded67737aabbfed34e5f49a",
+  "prompts": {},
+  "sessions": {
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
