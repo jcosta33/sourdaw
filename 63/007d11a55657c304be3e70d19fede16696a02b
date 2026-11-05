@@ -1,0 +1,28 @@
+scripts/e2eCoverageSelection.ts
+  s_3bb122e91d89a5::t_f389619e11fd72 378
+  s_3bb122e91d89a5::t_766fcc26e30645 375-377
+  s_3bb122e91d89a5::t_c51f3d45a28695 379-381
+  s_3bb122e91d89a5::t_3246f15de1e35a 40-44,305-306,335-338,341,345,347-349,364-374,382-411,450,489-505,511
+  s_3bb122e91d89a5::t_5c8d3947e12d54 350-353
+docs/affected-e2e.md
+  s_3bb122e91d89a5::t_45620570214d20 122-127
+scripts/__tests__/e2eCoverageSelection.spec.ts
+  s_3bb122e91d89a5::t_3747320a8392b5 79-86,99,235-259,267-296,449-462,469
+  s_3bb122e91d89a5::t_b3390055fc4402 260-266
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "63007d11a55657c304be3e70d19fede16696a02b",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
