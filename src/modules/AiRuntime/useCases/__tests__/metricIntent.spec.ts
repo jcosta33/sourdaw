@@ -970,7 +970,6 @@ describe('finite workflow metric intake', () => {
         const catalog = prepareMetricIntentCatalog({ prompt, answer });
         const scopes = prepareWorkflowMetricScopes({
             sidechain: getSidechainRoutingPromptScope(prompt, context, revision),
-            wholeProject: null,
         });
         const schema = projectWorkflowMetricToolSchemas({
             schemas: [createWorkflowCapabilityToolSchema(WORKFLOW_CAPABILITY_IDS)],
