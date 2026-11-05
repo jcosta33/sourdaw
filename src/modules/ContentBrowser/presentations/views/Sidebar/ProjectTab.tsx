@@ -7,6 +7,7 @@ import { Button } from '#/components/ui/button';
 import { useStore } from '#/infra/store/useStore';
 import { projectStore } from '#/modules/Project/stores';
 import { importSclFile } from '#/modules/Project/useCases';
+import { getScaleLabel } from '#/utils/Music/MusicalScale';
 
 import { ChoiceCard } from '../../components/ChoiceCard';
 import { SectionHeader } from '../../components/ProjectSectionHeader';
@@ -66,7 +67,7 @@ export const ProjectTab = (): ReactElement => {
                         <h4 className="mb-1 text-[9px] font-semibold uppercase text-muted-foreground">Active Scale</h4>
                         <Row align="baseline" gap={1.5}>
                             <span className="text-sm font-bold">{keyNames[project.keyRoot % 12]}</span>
-                            <span className="text-xs text-muted-foreground">{project.scaleName}</span>
+                            <span className="text-xs text-muted-foreground">{getScaleLabel(project.scaleName)}</span>
                         </Row>
                     </div>
                 </Stack>

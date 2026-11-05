@@ -46,10 +46,11 @@ describe('ProjectTab — project meta display', () => {
         expect(screen.getByText('Equal Temperament')).toBeInTheDocument();
     });
 
-    it('displays the scale name', () => {
-        setProject({ name: 'X', createdAt: 0, keyRoot: 0, scaleName: 'pentatonicMinor', tuning: { name: 'ET' } });
+    it('displays the scale label rather than its identifier', () => {
+        setProject({ name: 'X', createdAt: 0, keyRoot: 0, scaleName: 'harmonicMinor', tuning: { name: 'ET' } });
         render(<ProjectTab />);
-        expect(screen.getByText('pentatonicMinor')).toBeInTheDocument();
+        expect(screen.getByText('Harmonic Minor')).toBeInTheDocument();
+        expect(screen.queryByText('harmonicMinor')).not.toBeInTheDocument();
     });
 
     it('displays the key name from keyRoot (0 → C)', () => {
