@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
+import { registerKernelPorts } from '#/app/registerKernelPorts';
 import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import * as automergeStorage from '#/infra/store/storage/createAutomergeStorage';
 import {
@@ -199,6 +200,8 @@ function removeTargetFromDocument(doc: { tracks: TrackStoreState }): void {
     }
     clips.splice(index, 1);
 }
+
+registerKernelPorts();
 
 describe('authentic pre-capture trim history replay (#5696)', () => {
     beforeAll(() => {

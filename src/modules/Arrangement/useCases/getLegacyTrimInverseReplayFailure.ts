@@ -1,5 +1,7 @@
-import { resolveEligibleClipWriteTarget, trackStore } from '#/modules/Arrangement/stores';
 import { type AppAction } from '#/utils/handlerContract';
+
+import { resolveEligibleClipWriteTarget } from '../stores/resolveEligibleClipWriteTarget';
+import { trackStore } from '../stores/trackStore';
 
 function preservesTrimCoordinates(action: AppAction): boolean {
     switch (action.type) {
@@ -16,7 +18,12 @@ function preservesTrimCoordinates(action: AppAction): boolean {
     }
 }
 
-/** Admission for recorded inverses only; fresh trims never pass through this seam. */
+/**
+ * Admission for recorded inverses only; fresh trims never pass through this
+ * seam. Command's undo, redo and group revert ask it through
+ * `legacyInverseReplayAdmission`, and only for an action list that holds a
+ * keyless `trimClipStart` inverse.
+ */
 export function getLegacyTrimInverseReplayFailure(actions: readonly AppAction[]): string | null {
     for (const [index, action] of actions.entries()) {
         if (action.type !== 'trimClipStart' || action.payload.midiOffsetBeats !== undefined) {
