@@ -1,0 +1,43 @@
+src/modules/Arrangement/useCases/clipEditing/audioClipSourceEndBeat.ts
+  s_fec7059b7a251c::t_620deaf323350b 1-24,26-42
+  s_fec7059b7a251c::t_d669f98b3b8cba 25
+src/modules/Arrangement/handlers/clip/__tests__/handleTrimClipEndSourceBoundUndo.spec.ts
+  s_fec7059b7a251c::t_ee4ede889deebf 1-119
+src/modules/Arrangement/presentations/hooks/useTimelineInteractions.ts
+  s_fec7059b7a251c::t_4ecf9234819eca 684
+  s_fec7059b7a251c::t_1588ad78790a70 681-683
+  s_fec7059b7a251c::t_4d50e7333232e3 685-686
+  s_fec7059b7a251c::t_a1c5dedcd9d23d 27,680
+src/modules/Arrangement/handlers/clip/handleTrimClipEnd.ts
+  s_fec7059b7a251c::t_e342e055bee1b4 30
+  s_fec7059b7a251c::t_668bda29c51c88 2,4-5,10-24,29,32-42,58
+  s_fec7059b7a251c::t_fdf85724dc8447 25-28,31
+src/modules/Arrangement/useCases/clipEditing/__tests__/trimClipEndSourceBound.spec.ts
+  s_fec7059b7a251c::t_36cc321080ed02 1-186
+  s_fec7059b7a251c::t_faae359aca8ae6 187-189
+  s_fec7059b7a251c::t_4dbd58f106bb83 190-191
+src/modules/Arrangement/useCases/clipEditing/limitClipEndToSource.ts
+  s_fec7059b7a251c::t_ecc1ca282f3a80 22
+  s_fec7059b7a251c::t_3776bc72862834 1-21,23-34
+src/modules/Arrangement/useCases/clipEditing/trimClipEnd.ts
+  s_fec7059b7a251c::t_edaca881a3ac2c 29
+  s_fec7059b7a251c::t_e84e67ed0b75c9 5-6
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx
+  s_fec7059b7a251c::t_3d1ca4ab235114 25,84,143-146,1488-1551
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e0da105be9bee0f4a78ca113865359bcbd9b3f97",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
