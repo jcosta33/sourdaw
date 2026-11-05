@@ -62,9 +62,9 @@ function getYeastCandidateIterationRange({
     // iteration is the offset-relative start, wrapped into the iteration when
     // it slips before the head. A looped iteration therefore owns note-ons up
     // to `max(loopLength, widest positive reach)` past its start, and a
-    // wrapped note rings its release that far plus its duration, so the range
-    // widens backwards by both and forwards only while the iteration start
-    // still precedes the window.
+    // release lands at most its note's duration after that (a looped pass
+    // ends every note at the pass end), so the range widens backwards by both
+    // and forwards only while the iteration start still precedes the window.
     const latestOwnedOffsetBeats = Math.max(loopLengthBeats, maxEndpointBeat - midiOffsetBeats + loopAdvanceBeats);
     const firstEndpointIndex = Math.max(
         0,
