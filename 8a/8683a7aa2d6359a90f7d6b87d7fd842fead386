@@ -1,0 +1,60 @@
+src/modules/MIDI/useCases/webMidiInput/midiLearnRouting.ts
+  s_0314bb17e5dee3::t_c9e49b5b51622f 1-59
+src/modules/MIDI/useCases/webMidiInput/midiMessageHandlerDependencies.ts
+  s_0314bb17e5dee3::t_74f8f8459ccb33 41
+  s_0314bb17e5dee3::t_41d569b60d39d3 39-40
+  s_0314bb17e5dee3::t_520420b2fa01e5 42-44
+  s_0314bb17e5dee3::t_55d3878ba0666c 28,45-52
+src/modules/MIDI/useCases/recordedControllerTake/__tests__/recordedControllerTake.spec.ts
+  s_55244eb93b97d1::t_31d282c3efcda5 52-57
+src/modules/MIDI/useCases/recordedControllerTake/__tests__/recordedControllerTakeConcurrentNote.spec.ts
+  s_55244eb93b97d1::t_5879d35b5da5f4 13,34,36-38
+src/modules/MIDI/useCases/recordedControllerTake/__tests__/seedBendRangeAtTakeStart.spec.ts
+  s_55244eb93b97d1::t_ebceecebf3c388 64-69
+src/modules/MIDI/useCases/recordedControllerTake/__tests__/seedWheelAtTakeStart.spec.ts
+  s_55244eb93b97d1::t_e0a9a588c34b9b 39-44
+src/app/__tests__/registerSupportingServicePorts.spec.ts
+  s_0314bb17e5dee3::t_332397924f8724 14,18-19,22,43,46,86-94,96,98,103,107,109,114-116,119
+src/app/registerSupportingServicePorts.ts
+  s_0314bb17e5dee3::t_9c5dbd45203bba 4-5,9,20-24,30-32,38
+src/modules/Arrangement/handlers/recording/__tests__/overdubControllerUndo.integration.spec.ts
+  s_0314bb17e5dee3::t_cde985bcb9e869 19,75
+src/modules/Arrangement/handlers/recording/__tests__/recordedControllerTake.integration.spec.ts
+  s_0314bb17e5dee3::t_7141b2e222a1b3 18,76-77
+src/modules/AudioEngine/useCases/offlineRender/__tests__/controllerTakeExport.integration.spec.ts
+  s_0314bb17e5dee3::t_2b935d3ba6e239 18,78-79
+src/modules/MIDI/useCases/index.ts
+  s_0314bb17e5dee3::t_0966e5c3d318b9 121
+src/modules/MIDI/useCases/recordedControllerTake/readBendRangeSeedRows.ts
+  s_0314bb17e5dee3::t_2213dab4f2f8e3 4,24
+src/modules/MIDI/useCases/recordedControllerTake/readHeldPedalRows.ts
+  s_0314bb17e5dee3::t_e2da4adf943f71 7,19
+src/modules/Transport/useCases/scheduling/__tests__/controllerTakePlayback.integration.spec.ts
+  s_0314bb17e5dee3::t_3668932dba1a8b 59,118-119
+src/modules/Transport/useCases/transportControls/__tests__/stopActiveRecordingCommit.integration.spec.ts
+  s_0314bb17e5dee3::t_2c145366f37dc7 11,72-73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8a8683a7aa2d6359a90f7d6b87d7fd842fead386",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
