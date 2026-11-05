@@ -45,6 +45,9 @@ function Slider({
     };
     const _values = computeValues();
     const gesture = useSliderGesture({
+        value,
+        defaultValue,
+        min,
         onValueChange,
         onValueCommit,
         onPointerDown,

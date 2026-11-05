@@ -256,6 +256,45 @@ describe('Slider', () => {
             ]);
         });
 
+        it.each([
+            [
+                'a release',
+                ({ root, capture }: Harness) => {
+                    fireEvent.pointerUp(root, { pointerId: 1 });
+                    capture.held = false;
+                    fireEvent.lostPointerCapture(root, { pointerId: 1 });
+                },
+            ],
+            [
+                'a pointercancel',
+                ({ root, capture }: Harness) => {
+                    fireEvent.pointerCancel(root, { pointerId: 1 });
+                    capture.held = false;
+                    fireEvent.lostPointerCapture(root, { pointerId: 1 });
+                },
+            ],
+        ])('commits nothing for a drag that comes back to where it started before %s', (_route, end) => {
+            const harness = renderLevelSlider();
+            fireEvent.pointerDown(harness.root, { pointerId: 1, button: 0, clientX: 40, clientY: 10 });
+            fireEvent.pointerMove(harness.root, { pointerId: 1, clientX: 20, clientY: 10 });
+            expect(harness.changes).toEqual([[40], [20]]);
+            end(harness);
+            fireEvent.blur(window);
+            harness.view.unmount();
+            expect(harness.commits).toEqual([]);
+            expect(harness.changes).toEqual([[40], [20]]);
+        });
+
+        it('ends a drag only on its own pointer', () => {
+            const harness = renderLevelSlider();
+            drag(harness);
+            fireEvent.pointerCancel(harness.root, { pointerId: 2 });
+            fireEvent.lostPointerCapture(harness.root, { pointerId: 2 });
+            expect(harness.commits).toEqual([]);
+            fireEvent.pointerCancel(harness.root, { pointerId: 1 });
+            expect(harness.commits).toEqual([[65]]);
+        });
+
         it('commits nothing for a gesture that changed nothing', () => {
             const harness = renderLevelSlider();
             // Pressing where the thumb already sits reports no change.
