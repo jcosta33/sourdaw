@@ -35,6 +35,8 @@ export type WebMidiState = {
     selectedInputId: string | null;
     /** Retryable native/Web enumeration failure; null when listing succeeded. */
     enumerationError: string | null;
+    /** True when `enumerationError` is the user or site settings refusing MIDI access; refreshing cannot fix it. */
+    accessDenied: boolean;
     /** True once an enumeration completed successfully, including one that found no devices. */
     enumerationCompleted: boolean;
 };
