@@ -1835,12 +1835,12 @@ describe('usePianoRollInteractions', () => {
 
             fireEvent.mouseDown(canvas, { clientX: 55, clientY: yForPitch(70), detail: 1 });
             fireEvent.mouseUp(canvas, { clientX: 55, clientY: yForPitch(70), detail: 1 });
-            const stamped = (
-                vi.mocked(executeUserAppAction).mock.calls[0]?.[0] as {
-                    payload: { replacement: { startBeat: number } };
-                }
-            ).payload;
-            expect(stamped.replacement.startBeat).toBe(9.5);
+            expect(executeUserAppAction).toHaveBeenCalledWith({
+                type: 'replaceOriginalMidiTakeRow',
+                payload: expect.objectContaining({
+                    replacement: expect.objectContaining({ startBeat: 9.5, pitch: 70 }),
+                }),
+            });
             const stampedBeat = 4 * (1 / 3);
             const redisplayed = clipStart + stampedBeat - clipStart;
             expect(redisplayed).not.toBe(stampedBeat);
