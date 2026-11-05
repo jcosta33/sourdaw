@@ -17,6 +17,13 @@ type IOSectionProps = {
     track: Track;
 };
 
+function resolveOutputLabel(outputId: string, tracks: readonly Track[]): string {
+    if (outputId === 'master') {
+        return 'Master';
+    }
+    return tracks.find((candidate) => candidate.id === outputId)?.name ?? outputId;
+}
+
 export const IOSection = ({ track }: IOSectionProps): ReactElement => {
     const [outputOpen, setOutputOpen] = useState(false);
     const outputRef = useRef<HTMLDivElement>(null);
@@ -25,10 +32,7 @@ export const IOSection = ({ track }: IOSectionProps): ReactElement => {
     useContextMenuDismiss(outputRef, () => setOutputOpen(false));
 
     const inputLabel = track.kind === 'midi' ? 'MIDI In' : 'Default';
-    const outputLabel =
-        track.outputId === 'master'
-            ? 'Master'
-            : (tracks.find((candidate) => candidate.id === track.outputId)?.name ?? track.outputId);
+    const outputLabel = resolveOutputLabel(track.outputId, tracks);
 
     const outputTargets: { id: string; label: string }[] = [
         { id: 'master', label: 'Master' },
