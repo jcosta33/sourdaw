@@ -1,0 +1,163 @@
+src/components/ui/DragResizeHandle.tsx
+  s_0314bb17e5dee3::t_f60ba661068617 25-29,56-62,302,322-328
+src/components/ui/__tests__/dialog.spec.tsx
+  s_0314bb17e5dee3::t_8a2dfd8d2e589d 1,26-145
+src/components/ui/dialog.tsx
+  s_0314bb17e5dee3::t_bb40fb7fa2378a 1,10-24,52-124,130,137-138,144
+src/modules/AiRuntime/AGENTS.md
+  s_0314bb17e5dee3::t_3dd3ef1afb36f6 41
+src/modules/AiRuntime/models/MetricGoalAdmission.ts
+  s_0314bb17e5dee3::t_c16f3ea05a35a3 3,19-20,51-52,54-59
+src/modules/AiRuntime/models/PerceptualConstraint.ts
+  s_0314bb17e5dee3::t_2ac607f1df01e6 1-37
+src/modules/AiRuntime/models/ProposalGroundingBasis.ts
+  s_0314bb17e5dee3::t_3f48fb585058e2 1-2,54-58
+src/modules/AiRuntime/transformers/unionPerceptualConstraintReadings.ts
+  s_0314bb17e5dee3::t_37f8a1677bf91a 1-29
+src/modules/AiRuntime/useCases/__tests__/perceptualConstraints.spec.ts
+  s_0314bb17e5dee3::t_9124853f2e58bb 1-862
+src/modules/AiRuntime/useCases/__tests__/presetRecipes.spec.ts
+  s_0314bb17e5dee3::t_660ace766970aa 335-338
+src/modules/AiRuntime/useCases/__tests__/refinePendingProposal.spec.ts
+  s_0314bb17e5dee3::t_0ae050f13d29e0 47,274-275,815-899
+src/modules/AiRuntime/useCases/admitPerceptualGoalDecline.ts
+  s_0314bb17e5dee3::t_d47392e028928a 21,47
+src/modules/AiRuntime/useCases/agentReference/proposalGroundingBasis.ts
+  s_0314bb17e5dee3::t_cc467ae9aa8ef2 8,43,47-54
+src/modules/AiRuntime/useCases/agentRequestOrchestration/materializePromptCommandPlan.ts
+  s_0314bb17e5dee3::t_be8ac18db69769 165
+src/modules/AiRuntime/useCases/canonicalRoleFamilies.ts
+  s_0314bb17e5dee3::t_4d6119029b484d 3,51-58
+src/modules/AiRuntime/useCases/compileAgentActionExecution.ts
+  s_0314bb17e5dee3::t_cc5f0a164c9c84 5,12-14,26-27,87,93-107,118-124
+src/modules/AiRuntime/useCases/compilePreviewMeasurementProposal.ts
+  s_0314bb17e5dee3::t_3edf7119a00a63 6,22-23,40-41,156-167
+src/modules/AiRuntime/useCases/evaluateMetricGoalAdmission.ts
+  s_0314bb17e5dee3::t_26edc17d39f0e6 1,14-15,168-173,315,451-467,528-531
+src/modules/AiRuntime/useCases/getAgentApprovalView.ts
+  s_0314bb17e5dee3::t_f1c448f70c3db4 430-432,454-456
+src/modules/AiRuntime/useCases/groundCompiledCommandBatch.ts
+  s_0314bb17e5dee3::t_b54285649da17b 8,33-34,234-244,248-249,251,376-380,470-487
+src/modules/AiRuntime/useCases/maskTrackReferences.ts
+  s_0314bb17e5dee3::t_743c6a8988c8c9 1-23
+src/modules/AiRuntime/useCases/metricGoalStateCodec.ts
+  s_0314bb17e5dee3::t_a83a95b2c2187e 11,138-144,201
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_0314bb17e5dee3::t_075eacf7cb45ae 1972
+src/modules/AiRuntime/useCases/perceptualConstraints/compilePerceptualConstraints.ts
+  s_0314bb17e5dee3::t_c9dbb94f867ee3 1-249
+src/modules/AiRuntime/useCases/perceptualConstraints/describePerceptualConstraintFailure.ts
+  s_0314bb17e5dee3::t_ef52a2641ba5ef 1-34
+src/modules/AiRuntime/useCases/perceptualConstraints/findExcludedDimensionEdit.ts
+  s_0314bb17e5dee3::t_97b6b0f64021ce 1-395
+src/modules/AiRuntime/useCases/perceptualConstraints/perceptualConstraintInvariants.ts
+  s_0314bb17e5dee3::t_635132ae581a1c 1-58
+src/modules/AiRuntime/useCases/perceptualConstraints/readRequestPerceptualConstraints.ts
+  s_0314bb17e5dee3::t_8b9dcd19de9311 1-19
+src/modules/AiRuntime/useCases/perceptualConstraints/withPerceptualConstraintAuthority.ts
+  s_0314bb17e5dee3::t_d33c789d78b012 1-130
+src/modules/AiRuntime/useCases/planLastCommitContinuation.ts
+  s_0314bb17e5dee3::t_d2ed75c7573f20 10,141,168
+src/modules/AiRuntime/useCases/planWholeProjectVibeRun.ts
+  s_0314bb17e5dee3::t_cf74d0859443c3 22
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_0314bb17e5dee3::t_e0a4d7ecbf46fa 398
+src/modules/Arrangement/handlers/track/renameTrack.ts
+  s_0314bb17e5dee3::t_9a6a351f7bba2f 8-11
+src/modules/Arrangement/repositories/presets/expandedPresets.ts
+  s_0314bb17e5dee3::t_4cd803c6c7ad6f 632,647,827,1263
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_0314bb17e5dee3::t_3d97b0de6c90b1 564-570
+src/modules/Arrangement/useCases/__tests__/soundPresetLibrary.spec.ts
+  s_0314bb17e5dee3::t_e15973ee83ef48 6,59-78
+src/modules/Arrangement/useCases/preset/__tests__/presetLoading.spec.ts
+  s_0314bb17e5dee3::t_bc77d95c38b4fb 106-157
+src/modules/Arrangement/useCases/preset/compileLoadPresetActions.ts
+  s_0314bb17e5dee3::t_0098079a30754e 10,90-108,110
+src/modules/Arrangement/useCases/preset/hasAutomaticTrackName.ts
+  s_0314bb17e5dee3::t_846f790a6c2f85 1-22
+src/modules/Command/useCases/__tests__/canReportConflictRegistry.spec.ts
+  s_0314bb17e5dee3::t_3c13752fbc2f89 435-443
+src/modules/Command/useCases/__tests__/undoRedoReplayConflicts.spec.ts
+  s_0314bb17e5dee3::t_44b7eff80fea44 343-374
+src/modules/CommandInterface/presentations/views/__tests__/CommandPalette.spec.tsx
+  s_0314bb17e5dee3::t_de877029355e43 1-3,18-24,72-101
+src/modules/ContentBrowser/presentations/components/Sidebar/PresetItem.tsx
+  s_0314bb17e5dee3::t_8e45f8f0626b0d 1,27-33,44-47,50-52,54-57,60-116,118-121,123-125
+src/modules/ContentBrowser/presentations/components/Sidebar/__tests__/PresetItemBranches.spec.tsx
+  s_0314bb17e5dee3::t_7da394e4b2039b 143-201
+src/modules/ContentBrowser/useCases/__tests__/executePresetLoad.undo.integration.spec.ts
+  s_0314bb17e5dee3::t_fb9364adf10db8 253-254,263-296
+src/modules/Preferences/presentations/views/__tests__/PreferencesDialog.spec.tsx
+  s_0314bb17e5dee3::t_a22c9b13a10fdd 1-3,168-193
+src/modules/Project/presentations/views/RecentProjectsMenu.tsx
+  s_0314bb17e5dee3::t_e3631411eda039 1,19-26,31,71-74,80-81,84,166-167,172-178,181,184,193,197,199,205,208-210,213-215,218,220,223,231-233,241,243,247,250,252,255-257,260,263,266,268,272-273,275-276,289-290,299,301-302
+src/modules/Project/presentations/views/__tests__/RecentProjectsMenu.spec.tsx
+  s_0314bb17e5dee3::t_51fe592f149011 11,121-125,157,163,174,191,198,205,212,219,226,233,241,252,261,277,293,312,328,349,363,378,403,417,433,458,462,480,486,499,504,520,529,548,570,583-661
+src/modules/Project/presentations/views/__tests__/recentMenuSwitchAfterBootRestore.integration.spec.tsx
+  s_0314bb17e5dee3::t_d39000b14446f5 310-314,364,413
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx
+  s_0314bb17e5dee3::t_6bf78d924d817a 12,194
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollToolbar.spec.tsx
+  s_0314bb17e5dee3::t_37bd49dda87938 190-203
+src/modules/TimelineEditor/presentations/views/Inspector/ClipInspector.tsx
+  s_0314bb17e5dee3::t_ce404837c83cd1 12,15-16,46-47,56-62,206,211,216
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipInspector.spec.tsx
+  s_0314bb17e5dee3::t_6632b6c9f3fbe0 1,4,273-300
+src/modules/Transport/models/MusicalPositionFormat.ts
+  s_0314bb17e5dee3::t_ffbad0afe6600b 1-93
+src/modules/Transport/models/__tests__/MusicalPositionFormat.spec.ts
+  s_0314bb17e5dee3::t_57a10f7f752809 1-115
+src/modules/Transport/useCases/index.ts
+  s_0314bb17e5dee3::t_0224ea1fc32379 85-88
+src/modules/Transport/useCases/transportQueries/__tests__/formatMusicalPosition.spec.ts
+  s_0314bb17e5dee3::t_1d961a55ad242a 1-35
+src/modules/Transport/useCases/transportQueries/formatMusicalLength.ts
+  s_0314bb17e5dee3::t_dc2ba3fbdb152f 1-9
+src/modules/Transport/useCases/transportQueries/formatMusicalLengthParts.ts
+  s_0314bb17e5dee3::t_9fd6d4fccaaa3f 1-6
+src/modules/Transport/useCases/transportQueries/formatMusicalPosition.ts
+  s_0314bb17e5dee3::t_a3b3da8fe7559e 1-8
+src/modules/Transport/useCases/transportQueries/measureMusicalLength.ts
+  s_0314bb17e5dee3::t_cd1c18a560f0b2 1-10
+src/modules/Transport/useCases/transportQueries/meterInput.ts
+  s_0314bb17e5dee3::t_e3723e00df9a40 1-8
+src/modules/WorkspaceShell/presentations/components/InstrumentBottomPanel.tsx
+  s_0314bb17e5dee3::t_1ba8f94649c681 35
+src/modules/WorkspaceShell/presentations/components/__tests__/InstrumentBottomPanel.spec.tsx
+  s_0314bb17e5dee3::t_5e0970eaa3f8ae 29-48
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useSelectionLabel.spec.ts
+  s_0314bb17e5dee3::t_de455bb1656611 14-19,21-33,54-55,110-111,115,155,163,166-167,169,174,186-187,198-199,207,210-212,214,219-238
+src/modules/WorkspaceShell/presentations/hooks/useSelectionLabel.ts
+  s_0314bb17e5dee3::t_e562dde8cecec2 4-5,11,16,31-44,52
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_0314bb17e5dee3::t_daa3f7df37249a 528-535,541,546-556,627-658,812,818,820-821,837-838,1045-1047,1114,1135,1141,1143-1144
+src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx
+  s_0314bb17e5dee3::t_038b8fd25e1da7 4,8,277-287,290-322,324-326,328-329,331-332,335-388,391-395,397-469,472-524
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_0314bb17e5dee3::t_b3d70ae4adef3c 516-576
+src/modules/WorkspaceShell/presentations/views/__tests__/LaunchScreen.spec.tsx
+  s_0314bb17e5dee3::t_fa879169eb34eb 61-145
+src/utils/Math/roundToThousandths.ts
+  s_0314bb17e5dee3::t_90d816af6f0419 1-4
+src/utils/Music/MusicalScale.ts
+  s_0314bb17e5dee3::t_5a1ea8ff95544f 20-41
+src/utils/Music/__tests__/MusicalScale.spec.ts
+  s_0314bb17e5dee3::t_f8e2689f5803ac 3-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "453f365e4303bf14fb9c2ee2ad5a9ef397e22c4c",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
