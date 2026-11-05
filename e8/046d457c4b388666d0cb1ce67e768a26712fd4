@@ -1,0 +1,71 @@
+src/modules/Project/useCases/projectPersistence/projectSessionQuiescer.ts
+  s_0314bb17e5dee3::t_baba99a9076ae7 4
+  s_0314bb17e5dee3::t_a9607e2a46eaaf 44,105
+.dependency-cruiser-known-violations-module-tiers.json
+  s_0314bb17e5dee3::t_d2e9e7c33bac16 19
+src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts
+  s_0314bb17e5dee3::t_8878d25fc99b79 200
+  s_0314bb17e5dee3::t_bd4b8451b99ce2 39
+src/modules/Project/useCases/projectTemplates/templateFiles/stringOrchestra.ts
+  s_0314bb17e5dee3::t_48dd3b479d768e 8
+  s_0314bb17e5dee3::t_c55739e5193b7e 54,60
+src/app/__tests__/registerDeviceEnginePorts.spec.ts
+  s_0314bb17e5dee3::t_ac93f5a9a4f936 312-361,363
+  s_0314bb17e5dee3::t_9839bbf07fa009 44-45
+  s_0314bb17e5dee3::t_76d03ea361c7cb 27-28
+  s_0314bb17e5dee3::t_4f55e669c1d5f1 62-63
+  s_0314bb17e5dee3::t_86453cf485c2a0 118-133
+  s_0314bb17e5dee3::t_bad4592e2a5fe6 374-377
+  s_0314bb17e5dee3::t_8015ca2b3d6a35 464-485
+  s_0314bb17e5dee3::t_37fc9aafa421a6 391-394
+src/modules/Project/useCases/index.ts
+  s_0314bb17e5dee3::t_437bb0079f3db7 49-52
+src/app/registerDeviceEnginePorts.ts
+  s_0314bb17e5dee3::t_0274de923055be 119-120
+  s_0314bb17e5dee3::t_8da981f535ad71 137-140
+  s_0314bb17e5dee3::t_746b18f5145efa 100-112
+  s_0314bb17e5dee3::t_c286ae4941bd12 18,20-25,27,34-35
+  s_0314bb17e5dee3::t_6bcfc01ad1589a 48-51
+src/modules/Project/useCases/projectTemplates/templateHelpers/configureYeastArpeggiator.ts
+  s_0314bb17e5dee3::t_55d26f68fee44b 35-36,38,41-44,46
+  s_0314bb17e5dee3::t_23ff3c433d8b78 1
+src/modules/Project/useCases/getCanonicalTrackRole.ts
+  s_0314bb17e5dee3::t_ed37495dfe2be6 13-14
+  s_0314bb17e5dee3::t_ca09cbef95a4ed 388
+src/modules/Project/useCases/projectPersistence/fileIO/buildProjectData.ts
+  s_0314bb17e5dee3::t_cabe4a4d24c0f0 236
+  s_0314bb17e5dee3::t_4277d666a5b9cf 38
+src/modules/Project/useCases/projectPersistence/fileIO/rackProcessorReader.ts
+  s_0314bb17e5dee3::t_914605ca66d644 1-3
+  s_8d7c914c5d23a3::t_665728651dcc03 4-49
+src/modules/Project/useCases/projectTemplates/templateHelpers/templateArpeggiatorAuthoring.ts
+  s_0314bb17e5dee3::t_5a070a4aa2bb6d 1-57
+src/modules/Project/useCases/projectTemplates/templateHelpers/templateDeviceContent.ts
+  s_0314bb17e5dee3::t_9efabe5d9e8679 1-54
+src/modules/Project/useCases/storedDrumVoices.ts
+  s_0314bb17e5dee3::t_75ef2b61ad1760 1-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e8046d457c4b388666d0cb1ce67e768a26712fd4",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_8d7c914c5d23a3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6fd7cc34-70d0-4cef-8a70-4351ac0359b0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
