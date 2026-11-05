@@ -20,15 +20,17 @@ function yieldToEventLoop(): Promise<void> {
  * Cache the rendered buffers storage holds no audio for. A sample with stored
  * PCM keeps it, because a saved project may play that audio and a render of
  * another build can differ from it; a resident buffer is already the sample's
- * audio and an open project may hold it pinned.
+ * audio and an open project may hold it pinned. Answers whether the factory
+ * root is still connected.
  */
-async function cacheChunkWithoutStoredAudio(chunk: readonly FactorySample[]): Promise<void> {
+async function cacheChunkWithoutStoredAudio(chunk: readonly FactorySample[]): Promise<boolean> {
     const { absentIds, release } = await restoreUnpinnedAudioBuffersFromIdb({
         bufferIds: chunk.map((sample) => sample.id),
     });
     try {
+        // The read yields, so the user may have disconnected the root meanwhile.
         if (!findFactoryRoot()) {
-            return;
+            return false;
         }
         const absent = new Set(absentIds);
         for (const sample of chunk) {
@@ -36,6 +38,7 @@ async function cacheChunkWithoutStoredAudio(chunk: readonly FactorySample[]): Pr
                 cacheAudioBuffer({ buffer: sample.buffer, bufferId: sample.id });
             }
         }
+        return true;
     } finally {
         release();
     }
@@ -49,10 +52,10 @@ async function cacheChunkWithoutStoredAudio(chunk: readonly FactorySample[]): Pr
  */
 export async function cacheFactoryBuffers(samples: readonly FactorySample[]): Promise<void> {
     for (let i = 0; i < samples.length; i += CHUNK) {
-        if (!findFactoryRoot()) {
+        const rootConnected = await cacheChunkWithoutStoredAudio(samples.slice(i, i + CHUNK));
+        if (!rootConnected) {
             return;
         }
-        await cacheChunkWithoutStoredAudio(samples.slice(i, i + CHUNK));
         if (i + CHUNK < samples.length) {
             await yieldToEventLoop();
         }
