@@ -4,7 +4,7 @@
  * Grid over the real routing read-model. Rows are signal sources (audio, MIDI,
  * and bus tracks — buses both send and output); columns are the bus tracks plus
  * the Master output. Every cell reflects and writes real routing truth through
- * the same CRDT-backed Arrangement use cases the mixer strips use:
+ * the same undoable send actions the mixer strips dispatch:
  *
  * - A bus column shows the source's PRIMARY OUTPUT edge (`track.outputId`) when
  *   the output routes there — rendered distinctly from a send and read-only, so
@@ -26,7 +26,9 @@ import { type ReactElement } from 'react';
 
 import { DawDiagramFrame } from '#/components/daw/DawDiagramFrame';
 import { Button } from '#/components/ui/button';
-import { removeSend, setSend, setTrackOutput } from '#/modules/Arrangement/useCases';
+import { logger } from '#/infra/logger/appLogger';
+import { compileSendLevelAction, setTrackOutput } from '#/modules/Arrangement/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { wouldCreateRoutingCycle } from '#/utils/routingCycle';
 import { cn } from '#/utils/Styles/cn';
 
@@ -54,6 +56,18 @@ type CellDescriptor = {
     title: string;
     disabled: boolean;
     onClick: (() => void) | undefined;
+};
+
+// A matrix click previews nothing on the engine, so a refused commit has no
+// live state to restore; it is only reported.
+const commitSendEdit = (action: Parameters<typeof executeAppAction>[0]): void => {
+    void (async () => {
+        try {
+            await executeAppAction(action);
+        } catch (error) {
+            logger.error(new Error(`Routing matrix send commit failed for action: ${action.type}`, { cause: error }));
+        }
+    })();
 };
 
 function findActiveSendLevel(source: Track, busId: string): number | null {
@@ -120,7 +134,21 @@ export const RoutingMatrix = (): ReactElement => {
                 ariaLabel: `Disconnect send ${src.name} → ${dest.name}`,
                 title: `Send ${(sendLevel * 100).toFixed(0)}% — click to remove`,
                 disabled: false,
-                onClick: () => removeSend(src.id, dest.id),
+                onClick: () => {
+                    const send = src.sends.find((state) => state.busId === dest.id);
+                    if (!send) {
+                        return;
+                    }
+                    commitSendEdit({
+                        type: 'removeSend',
+                        payload: {
+                            trackId: src.id,
+                            busId: dest.id,
+                            expectedLevel: send.level,
+                            expectedPreFader: send.preFader,
+                        },
+                    });
+                },
             };
         }
 
@@ -145,7 +173,17 @@ export const RoutingMatrix = (): ReactElement => {
             ariaLabel: `Connect send ${src.name} → ${dest.name}`,
             title: `Send ${src.name} → ${dest.name}`,
             disabled: false,
-            onClick: () => setSend(src.id, dest.id, NEW_SEND_LEVEL),
+            // A send at silence is still a send, so connecting it moves the
+            // existing one back up; only a bus with no send gets a new one.
+            onClick: () =>
+                commitSendEdit(
+                    compileSendLevelAction(
+                        src.id,
+                        dest.id,
+                        NEW_SEND_LEVEL,
+                        src.sends.find((state) => state.busId === dest.id)
+                    )
+                ),
         };
     };
 

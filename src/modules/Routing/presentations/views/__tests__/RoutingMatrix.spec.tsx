@@ -1,15 +1,20 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { removeSend, setSend, setTrackOutput } from '#/modules/Arrangement/useCases';
+import { setTrackOutput } from '#/modules/Arrangement/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 
 import { useTracks } from '../../hooks/useTracks';
 import { RoutingMatrix } from '../RoutingMatrix';
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
-    setSend: vi.fn(),
-    removeSend: vi.fn(),
+vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/useCases')>()),
     setTrackOutput: vi.fn(),
+}));
+
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeAppAction: vi.fn(),
 }));
 
 vi.mock('../../hooks/useTracks', () => ({
@@ -40,6 +45,7 @@ const mockTracks = (tracks: TrackFixture[]): void => {
 describe('RoutingMatrix', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(executeAppAction).mockResolvedValue(undefined);
         mockTracks([
             track({ id: 'src-1', name: 'Kick', kind: 'audio' }),
             track({ id: 'bus-1', name: 'Drum Bus', kind: 'bus' }),
@@ -110,14 +116,35 @@ describe('RoutingMatrix', () => {
         expect(cell).not.toBeDisabled();
     });
 
-    it('dispatches setSend at unit level when a disconnected send cell is clicked', () => {
+    it('dispatches one addSend action at unit level when a disconnected send cell is clicked', () => {
         render(<RoutingMatrix />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Connect send Kick → Drum Bus' }));
 
-        expect(setSend).toHaveBeenCalledTimes(1);
-        expect(setSend).toHaveBeenCalledWith('src-1', 'bus-1', 1);
-        expect(removeSend).not.toHaveBeenCalled();
+        expect(executeAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'addSend',
+            payload: { trackId: 'src-1', busId: 'bus-1', level: 1 },
+        });
+    });
+
+    it('raises an existing silent send with setSend instead of adding a duplicate when connect is clicked', () => {
+        mockTracks([
+            track({
+                id: 'src-1',
+                name: 'Kick',
+                kind: 'audio',
+                sends: [{ busId: 'bus-1', level: 0, preFader: true }],
+            }),
+            track({ id: 'bus-1', name: 'Drum Bus', kind: 'bus' }),
+        ]);
+        render(<RoutingMatrix />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Connect send Kick → Drum Bus' }));
+
+        expect(executeAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'setSend',
+            payload: { trackId: 'src-1', busId: 'bus-1', level: 1, expectedLevel: 0, expectedPreFader: true },
+        });
     });
 
     it('removes a tuned send on disconnect and re-creates it fresh on reconnect (explicit round-trip)', () => {
@@ -135,9 +162,11 @@ describe('RoutingMatrix', () => {
         const { rerender } = render(<RoutingMatrix />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Disconnect send Kick → Drum Bus' }));
-        expect(removeSend).toHaveBeenCalledTimes(1);
-        expect(removeSend).toHaveBeenCalledWith('src-1', 'bus-1');
-        expect(setSend).not.toHaveBeenCalled();
+        expect(executeAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'removeSend',
+            payload: { trackId: 'src-1', busId: 'bus-1', expectedLevel: 0.6, expectedPreFader: false },
+        });
+        vi.mocked(executeAppAction).mockClear();
 
         // After the store drops the send, the cell is a fresh route-on at unity.
         mockTracks([
@@ -147,8 +176,10 @@ describe('RoutingMatrix', () => {
         rerender(<RoutingMatrix />);
 
         fireEvent.click(screen.getByRole('button', { name: 'Connect send Kick → Drum Bus' }));
-        expect(setSend).toHaveBeenCalledTimes(1);
-        expect(setSend).toHaveBeenCalledWith('src-1', 'bus-1', 1);
+        expect(executeAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'addSend',
+            payload: { trackId: 'src-1', busId: 'bus-1', level: 1 },
+        });
     });
 
     it('renders an output edge distinctly and does not stack a send where the output already routes', () => {
@@ -167,8 +198,7 @@ describe('RoutingMatrix', () => {
         expect(outputCell).toBeDisabled();
 
         fireEvent.click(outputCell);
-        expect(setSend).not.toHaveBeenCalled();
-        expect(removeSend).not.toHaveBeenCalled();
+        expect(executeAppAction).not.toHaveBeenCalled();
     });
 
     it('routes the track output to Master when a non-master output cell is clicked', () => {
@@ -224,7 +254,7 @@ describe('RoutingMatrix', () => {
         expect(blocked).toBeDisabled();
 
         fireEvent.click(blocked);
-        expect(setSend).not.toHaveBeenCalled();
+        expect(executeAppAction).not.toHaveBeenCalled();
     });
 
     it('still offers the send cell for a source the destination does not reach', () => {
@@ -241,6 +271,9 @@ describe('RoutingMatrix', () => {
         expect(connect).toBeEnabled();
 
         fireEvent.click(connect);
-        expect(setSend).toHaveBeenCalledWith('src-1', 'bus-2', 1);
+        expect(executeAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'addSend',
+            payload: { trackId: 'src-1', busId: 'bus-2', level: 1 },
+        });
     });
 });

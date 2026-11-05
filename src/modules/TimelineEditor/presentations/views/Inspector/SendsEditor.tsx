@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react';
+import { type ReactElement, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { Plus } from 'lucide-react';
 
@@ -8,8 +8,14 @@ import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
-import { setSend, toggleSendPreFader } from '#/modules/Arrangement/useCases';
+import {
+    commitSendEdit,
+    commitSendLevel,
+    compileSendPreFaderAction,
+    listSendDestinations,
+} from '#/modules/Arrangement/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
+import { setSend as previewSend } from '#/modules/Routing/useCases';
 import { gainToDb, levelToSendPosition, sendPositionToLevel } from '#/utils/audioLevelLaw';
 import { cn } from '#/utils/Styles/cn';
 
@@ -33,77 +39,161 @@ function formatSendLevel(level: number): string {
     }
     return `${gainToDb(level).toFixed(1)} dB`;
 }
+
+type SendState = Track['sends'][number];
+
+type SendCardProps = {
+    track: Track;
+    bus: Track;
+    send: SendState | undefined;
+};
+
+/**
+ * One send-level gesture: previews on the engine while it moves and commits one
+ * action when it ends. A pointer drag the browser abandons (pointercancel, lost
+ * capture) or a card unmounted mid-drag never reaches the slider's own commit,
+ * so it is settled at the level it was left, as a released fader is. Only a
+ * pointer drag can be abandoned: a keyboard step or a typed value commits in
+ * the same event as its change (Radix commits a key step before reporting it).
+ */
+const useSendLevelGesture = (trackId: string, busId: string, send: SendState | undefined) => {
+    const [localLevel, setLocalLevel] = useState<number | null>(null);
+    const pointerDragRef = useRef(false);
+    const uncommittedLevelRef = useRef<number | null>(null);
+    const latestCommitRef = useRef<Promise<void> | null>(null);
+
+    // The slider keeps showing the committed level until the last commit
+    // settles: an earlier one settling must not drop a later step's level.
+    const commit = (committed: number): void => {
+        pointerDragRef.current = false;
+        uncommittedLevelRef.current = null;
+        setLocalLevel(committed);
+        const pending = commitSendLevel(trackId, busId, committed);
+        latestCommitRef.current = pending;
+        void pending.then(() => {
+            if (latestCommitRef.current === pending) {
+                setLocalLevel(null);
+            }
+        });
+    };
+    const beginPointerDrag = (): void => {
+        pointerDragRef.current = true;
+    };
+    const settleAbandoned = (): void => {
+        const abandonedLevel = uncommittedLevelRef.current;
+        pointerDragRef.current = false;
+        uncommittedLevelRef.current = null;
+        if (abandonedLevel !== null) {
+            commit(abandonedLevel);
+        }
+    };
+    const settleOnUnmountRef = useRef(settleAbandoned);
+    useLayoutEffect(() => {
+        settleOnUnmountRef.current = settleAbandoned;
+    });
+    useEffect(() => () => settleOnUnmountRef.current(), []);
+
+    const preview = (next: number): void => {
+        if (pointerDragRef.current) {
+            uncommittedLevelRef.current = next;
+        }
+        setLocalLevel(next);
+        previewSend(trackId, busId, next, send?.preFader ?? false);
+    };
+    return { level: localLevel ?? send?.level ?? 0, preview, commit, beginPointerDrag, settleAbandoned };
+};
+
+const SendCard = ({ track, bus, send }: SendCardProps): ReactElement => {
+    const gesture = useSendLevelGesture(track.id, bus.id, send);
+    const level = gesture.level;
+    const isPreFader = send?.preFader ?? false;
+
+    const togglePreFader = (): void => {
+        if (!send) {
+            return;
+        }
+        void commitSendEdit(compileSendPreFaderAction(track.id, bus.id, send));
+    };
+
+    return (
+        <SurfaceCard className="w-full p-3">
+            <Stack gap={2} className="w-full">
+                <ControlHeader
+                    className="w-full"
+                    label={bus.name}
+                    labelClassName="max-w-[50%] truncate font-medium text-foreground"
+                    value={
+                        <Row gap={1.5}>
+                            <span className="text-[10px] font-mono text-muted-foreground w-8 text-right">
+                                {formatSendLevel(level)}
+                            </span>
+                            <Button
+                                variant="bare"
+                                size="bare"
+                                type="button"
+                                className="shrink-0"
+                                onClick={togglePreFader}
+                                aria-label={`Toggle send to ${bus.name} ${isPreFader ? 'post' : 'pre'}-fader`}
+                                title={isPreFader ? 'Pre-fader (click for post)' : 'Post-fader (click for pre)'}
+                            >
+                                <DawMicroBadge
+                                    tone={isPreFader ? 'peach' : 'muted'}
+                                    className={cn('transition-colors', !isPreFader && 'hover:text-foreground')}
+                                >
+                                    {isPreFader ? 'PRE' : 'POST'}
+                                </DawMicroBadge>
+                            </Button>
+                        </Row>
+                    }
+                    valueClassName="font-normal"
+                    title={bus.name}
+                />
+                <Row justify="center" className="w-full px-1">
+                    <Slider
+                        value={[Math.round(levelToSendPosition(level))]}
+                        onValueChange={([value]) => {
+                            if (value === undefined) {
+                                return;
+                            }
+                            gesture.preview(sendPositionToLevel(value));
+                        }}
+                        onValueCommit={([value]) => {
+                            if (value === undefined) {
+                                return;
+                            }
+                            gesture.commit(sendPositionToLevel(value));
+                        }}
+                        onPointerDown={gesture.beginPointerDrag}
+                        onPointerCancel={gesture.settleAbandoned}
+                        onLostPointerCapture={gesture.settleAbandoned}
+                        max={100}
+                        step={1}
+                        aria-label={`Send to ${bus.name}`}
+                        className="w-full"
+                    />
+                </Row>
+            </Stack>
+        </SurfaceCard>
+    );
+};
+
 export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
     const { tracks: allTracks } = useTracks();
-    const buses = allTracks.filter((time) => time.kind === 'bus');
+    const buses = listSendDestinations(track.id, allTracks);
 
     return (
         <div>
             <DawHeaderBand compact className="mb-2 rounded-sm" title="Sends" />
             {buses.length > 0 ? (
                 <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
-                    {buses.map((bus) => {
-                        const send = track.sends.find((state) => state.busId === bus.id);
-                        const level = send?.level ?? 0;
-                        const isPreFader = send?.preFader ?? false;
-                        return (
-                            <SurfaceCard key={bus.id} className="w-full p-3">
-                                <Stack gap={2} className="w-full">
-                                    <ControlHeader
-                                        className="w-full"
-                                        label={bus.name}
-                                        labelClassName="max-w-[50%] truncate font-medium text-foreground"
-                                        value={
-                                            <Row gap={1.5}>
-                                                <span className="text-[10px] font-mono text-muted-foreground w-8 text-right">
-                                                    {formatSendLevel(level)}
-                                                </span>
-                                                <Button
-                                                    variant="bare"
-                                                    size="bare"
-                                                    type="button"
-                                                    className="shrink-0"
-                                                    onClick={() => toggleSendPreFader(track.id, bus.id)}
-                                                    aria-label={`Toggle send to ${bus.name} ${isPreFader ? 'post' : 'pre'}-fader`}
-                                                    title={
-                                                        isPreFader
-                                                            ? 'Pre-fader (click for post)'
-                                                            : 'Post-fader (click for pre)'
-                                                    }
-                                                >
-                                                    <DawMicroBadge
-                                                        tone={isPreFader ? 'peach' : 'muted'}
-                                                        className={cn(
-                                                            'transition-colors',
-                                                            !isPreFader && 'hover:text-foreground'
-                                                        )}
-                                                    >
-                                                        {isPreFader ? 'PRE' : 'POST'}
-                                                    </DawMicroBadge>
-                                                </Button>
-                                            </Row>
-                                        }
-                                        valueClassName="font-normal"
-                                        title={bus.name}
-                                    />
-                                    <Row justify="center" className="w-full px-1">
-                                        <Slider
-                                            value={[Math.round(levelToSendPosition(level))]}
-                                            onValueChange={([value]) => {
-                                                if (value !== undefined) {
-                                                    setSend(track.id, bus.id, sendPositionToLevel(value));
-                                                }
-                                            }}
-                                            max={100}
-                                            step={1}
-                                            aria-label={`Send to ${bus.name}`}
-                                            className="w-full"
-                                        />
-                                    </Row>
-                                </Stack>
-                            </SurfaceCard>
-                        );
-                    })}
+                    {buses.map((bus) => (
+                        <SendCard
+                            key={`${track.id}:${bus.id}`}
+                            track={track}
+                            bus={bus}
+                            send={track.sends.find((state) => state.busId === bus.id)}
+                        />
+                    ))}
                 </div>
             ) : (
                 <DawEmptyState
