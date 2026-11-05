@@ -14,14 +14,13 @@ import { webMidiState, webMidiSubscribers } from './state';
 type SetStateOptions = { persistSelection?: false } | { persistSelection: true; identityScheme: MidiIdentityScheme };
 
 export function setState(next: Partial<WebMidiState>, options: SetStateOptions = {}): void {
-    // A denial is one cause of `enumerationError`, so any write that sets the error
-    // without naming the cause (a success clearing it, a native failure) clears it.
-    const accessDenied = 'enumerationError' in next && !('accessDenied' in next) ? false : undefined;
-    webMidiState.current = {
-        ...webMidiState.current,
-        ...next,
-        ...(accessDenied === undefined ? {} : { accessDenied }),
-    };
+    const merged: WebMidiState = { ...webMidiState.current, ...next };
+    // A denial is one cause of `enumerationError`: a write that replaces the error without
+    // saying it is a denial (a success clearing it, a native failure) ends the denial.
+    if ('enumerationError' in next && !('accessDenied' in next)) {
+        merged.accessDenied = false;
+    }
+    webMidiState.current = merged;
     if (options.persistSelection === true && 'selectedInputId' in next) {
         persistInputId(next.selectedInputId ?? null, options.identityScheme);
     }

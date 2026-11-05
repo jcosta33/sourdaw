@@ -1,4 +1,4 @@
-import type { PreferencesSection } from '#/modules/Preferences/presentations/views';
+import type { PreferencesSection } from '#/modules/Preferences/events';
 
 /** Payload for the unified device-panel event — one event for every panel open. */
 export type ShowDevicePanelGenericPayload = { deviceType: string; deviceId: string | null };

@@ -13,6 +13,7 @@ import { useStore } from '#/infra/store/useStore';
 import { AudioDevicePicker, PluginScanSettings } from '#/modules/AudioEngine/presentations/views';
 import { cn } from '#/utils/Styles/cn';
 
+import { type PreferencesSection } from '../../events/PreferencesEvents';
 import { defaultPreferences, type Preferences } from '../../models/Preferences';
 import { preferencesStore } from '../../stores/preferencesStore';
 import { resetPreferences } from '../../useCases/resetPreferences';
@@ -35,9 +36,6 @@ type PreferencesDialogProps = {
     /** Section to show each time the dialog opens; absent keeps the section the user last viewed. */
     requestedSection?: PreferencesSection;
 };
-
-export type PreferencesSection =
-    'general' | 'appearance' | 'layout' | 'audio' | 'midi' | 'performance' | 'ai' | 'shortcuts';
 
 type NavItem = {
     id: PreferencesSection;
