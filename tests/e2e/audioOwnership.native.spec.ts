@@ -1,10 +1,9 @@
 import { type BrowserContext, type Page } from '@playwright/test';
 
+import { chooseProjectDirectory } from './chosenProjectDirectory';
 import { expect, test } from './e2eTest';
 
 import type { ConfirmPayload, NotifyPayload, PromptPayload } from '../../src/utils/Notification/notificationEventBus';
-
-import { chooseProjectDirectory } from './chosenProjectDirectory';
 
 const MODULE_DOCUMENT = '/src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts';
 const PROJECT_AUDIO_STORAGE_LOCK_NAME = 'sourdaw:project-audio-storage';
