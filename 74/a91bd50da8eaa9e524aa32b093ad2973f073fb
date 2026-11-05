@@ -1,0 +1,21 @@
+src/modules/MIDI/useCases/midiClipData/projectMidiClipDataThroughRestores.ts
+  s_fec7059b7a251c::t_2f1b466c111ffc 65,68,73-74
+  s_fec7059b7a251c::t_556b25bcbc880f 53-54
+  s_fec7059b7a251c::t_bbc9dd144f5a44 34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "74a91bd50da8eaa9e524aa32b093ad2973f073fb",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
