@@ -178,9 +178,10 @@ export { bypassMidiFx } from './device/bypassMidiFx';
 export { updateMidiFxParam } from './device/updateMidiFxParam';
 export { bypassDevice } from './device/bypassDevice';
 export { compileReorderDevicesAction } from './device/compileReorderDevicesAction';
-export { setSend } from './device/sendManagement/setSend';
-export { removeSend } from './device/sendManagement/removeSend';
-export { toggleSendPreFader } from './device/sendManagement/toggleSendPreFader';
+export { compileSendLevelAction } from './device/sendManagement/compileSendLevelAction';
+export { compileSendPreFaderAction } from './device/sendManagement/compileSendPreFaderAction';
+export { listSendDestinations } from './device/sendManagement/listSendDestinations';
+export { restoreSendEngineFromProjectTruth } from './device/sendManagement/restoreSendEngineFromProjectTruth';
 export { setDeviceParameter } from './device/setDeviceParameter/setDeviceParameter';
 export { persistDevicePatch } from './device/setDeviceParameter/persistDevicePatch';
 

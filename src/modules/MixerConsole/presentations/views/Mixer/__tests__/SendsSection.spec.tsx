@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { SendsSection } from '../SendsSection';
@@ -6,14 +6,21 @@ import { SendsSection } from '../SendsSection';
 import type { Track } from '../../../../models/TrackViewTypes';
 
 const mocks = vi.hoisted(() => ({
-    setSend: vi.fn(),
-    toggleSendPreFader: vi.fn(),
+    previewSend: vi.fn(),
+    executeAppAction: vi.fn(),
     tracks: [] as Track[],
 }));
 
-vi.mock('#/modules/Arrangement/useCases', () => ({
-    setSend: mocks.setSend,
-    toggleSendPreFader: mocks.toggleSendPreFader,
+// Only the engine preview and the dispatch are doubled; the action builders and
+// the destination filter under test are the real ones.
+vi.mock('#/modules/Routing/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Routing/useCases')>()),
+    setSend: mocks.previewSend,
+}));
+
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeAppAction: mocks.executeAppAction,
 }));
 
 vi.mock('../../../hooks/useTracks', () => ({
@@ -66,6 +73,7 @@ const makeBus = (overrides: Partial<Track> = {}): Track => ({
 describe('SendsSection', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.executeAppAction.mockResolvedValue(undefined);
         mocks.tracks = [];
     });
 
@@ -90,7 +98,7 @@ describe('SendsSection', () => {
         expect(screen.getByRole('slider', { name: 'Send to Delay' })).toHaveAttribute('aria-valuenow', '0');
     });
 
-    it('calls setSend with the track id, bus id, and normalized level on slider edit', () => {
+    it('previews a typed slider edit on the engine and commits exactly one setSend guarded by the starting send', async () => {
         mocks.tracks = [makeBus({ id: 'bus-1', name: 'Reverb' })];
         const track: Track = { ...baseTrack, id: 'track-9', sends: [{ busId: 'bus-1', level: 0.2, preFader: false }] };
 
@@ -101,14 +109,41 @@ describe('SendsSection', () => {
         // Stored 0.2 is -13.98 dB, which reads as position 77 on the dB travel.
         const input = screen.getByDisplayValue('77');
         fireEvent.change(input, { target: { value: '65' } });
-        fireEvent.keyDown(input, { key: 'Enter' });
+        await act(async () => {
+            fireEvent.keyDown(input, { key: 'Enter' });
+        });
 
         // Position 65 of a -60 dB travel is -21 dB, i.e. a gain of 0.0891 — the
         // old linear law would have stored 0.65 for the same control position.
-        const [trackId, busId, level] = mocks.setSend.mock.calls[0]!;
-        expect(trackId).toBe('track-9');
-        expect(busId).toBe('bus-1');
-        expect(level).toBeCloseTo(0.0891, 4);
+        expect(mocks.previewSend).toHaveBeenCalledOnce();
+        expect(mocks.previewSend.mock.calls[0]![2]).toBeCloseTo(0.0891, 4);
+        expect(mocks.executeAppAction).toHaveBeenCalledOnce();
+        const action = mocks.executeAppAction.mock.calls[0]![0];
+        expect(action).toMatchObject({
+            type: 'setSend',
+            payload: { trackId: 'track-9', busId: 'bus-1', expectedLevel: 0.2, expectedPreFader: false },
+        });
+        expect(action.payload.level).toBeCloseTo(0.0891, 4);
+    });
+
+    it('commits addSend when the track has no send to that bus yet', async () => {
+        mocks.tracks = [makeBus({ id: 'bus-1', name: 'Reverb' })];
+
+        render(<SendsSection track={{ ...baseTrack, id: 'track-9' }} />);
+
+        const slider = screen.getByRole('slider', { name: 'Send to Reverb' });
+        fireEvent.doubleClick(slider);
+        const input = screen.getByDisplayValue('0');
+        fireEvent.change(input, { target: { value: '65' } });
+        await act(async () => {
+            fireEvent.keyDown(input, { key: 'Enter' });
+        });
+
+        expect(mocks.executeAppAction).toHaveBeenCalledOnce();
+        expect(mocks.executeAppAction.mock.calls[0]![0]).toMatchObject({
+            type: 'addSend',
+            payload: { trackId: 'track-9', busId: 'bus-1' },
+        });
     });
 
     it('shows POST for a post-fader send and toggles it to pre-fader on click', () => {
@@ -122,7 +157,17 @@ describe('SendsSection', () => {
 
         fireEvent.click(toggle);
 
-        expect(mocks.toggleSendPreFader).toHaveBeenCalledWith('track-9', 'bus-1');
+        expect(mocks.executeAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'setSend',
+            payload: {
+                trackId: 'track-9',
+                busId: 'bus-1',
+                level: 0.5,
+                preFader: true,
+                expectedLevel: 0.5,
+                expectedPreFader: false,
+            },
+        });
     });
 
     it('shows PRE for a pre-fader send and toggles it to post-fader on click', () => {
@@ -136,6 +181,45 @@ describe('SendsSection', () => {
 
         fireEvent.click(toggle);
 
-        expect(mocks.toggleSendPreFader).toHaveBeenCalledWith('track-9', 'bus-1');
+        expect(mocks.executeAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'setSend',
+            payload: {
+                trackId: 'track-9',
+                busId: 'bus-1',
+                level: 0.5,
+                preFader: false,
+                expectedLevel: 0.5,
+                expectedPreFader: true,
+            },
+        });
+    });
+
+    it('offers neither the track itself nor a bus that would close a routing loop', () => {
+        const edited = makeBus({ id: 'bus-self', name: 'Self' });
+        mocks.tracks = [
+            edited,
+            makeBus({ id: 'bus-ok', name: 'Fine' }),
+            // Routes its output into the edited track, so a send there is a cycle.
+            makeBus({ id: 'bus-loop', name: 'Loop', outputId: 'bus-self' }),
+        ];
+
+        render(<SendsSection track={edited} />);
+
+        expect(screen.getByRole('slider', { name: 'Send to Fine' })).toBeInTheDocument();
+        expect(screen.queryByRole('slider', { name: 'Send to Self' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('slider', { name: 'Send to Loop' })).not.toBeInTheDocument();
+    });
+
+    it('keeps listing a bus the track already sends to so the send can be lowered', () => {
+        const edited = makeBus({
+            id: 'bus-self',
+            name: 'Self',
+            sends: [{ busId: 'bus-loop', level: 0.5, preFader: false }],
+        });
+        mocks.tracks = [edited, makeBus({ id: 'bus-loop', name: 'Loop', outputId: 'bus-self' })];
+
+        render(<SendsSection track={edited} />);
+
+        expect(screen.getByRole('slider', { name: 'Send to Loop' })).toBeInTheDocument();
     });
 });

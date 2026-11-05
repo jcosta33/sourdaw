@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react';
+import { type ReactElement, useState } from 'react';
 
 import { Plus } from 'lucide-react';
 
@@ -8,8 +8,15 @@ import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
-import { setSend, toggleSendPreFader } from '#/modules/Arrangement/useCases';
-import { executeUserAppAction } from '#/modules/Command/useCases';
+import { logger } from '#/infra/logger/appLogger';
+import {
+    compileSendLevelAction,
+    compileSendPreFaderAction,
+    listSendDestinations,
+    restoreSendEngineFromProjectTruth,
+} from '#/modules/Arrangement/useCases';
+import { executeAppAction, executeUserAppAction } from '#/modules/Command/useCases';
+import { setSend as previewSend } from '#/modules/Routing/useCases';
 import { gainToDb, levelToSendPosition, sendPositionToLevel } from '#/utils/audioLevelLaw';
 import { cn } from '#/utils/Styles/cn';
 
@@ -33,9 +40,33 @@ function formatSendLevel(level: number): string {
     }
     return `${gainToDb(level).toFixed(1)} dB`;
 }
+
+const commitSendEdit = (
+    action: Parameters<typeof executeAppAction>[0],
+    trackId: string,
+    busId: string,
+    clearGesture: () => void
+): void => {
+    void (async () => {
+        try {
+            await executeAppAction(action);
+        } catch (error) {
+            logger.error(new Error(`Inspector send commit failed for action: ${action.type}`, { cause: error }));
+            restoreSendEngineFromProjectTruth(trackId, busId);
+        } finally {
+            clearGesture();
+        }
+    })();
+};
+
 export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
     const { tracks: allTracks } = useTracks();
-    const buses = allTracks.filter((time) => time.kind === 'bus');
+    const [localLevels, setLocalLevels] = useState<Record<string, number>>({});
+    const buses = listSendDestinations(track.id, allTracks);
+
+    const clearLocalLevel = (busId: string): void => {
+        setLocalLevels((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== busId)));
+    };
 
     return (
         <div>
@@ -44,7 +75,7 @@ export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
                 <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
                     {buses.map((bus) => {
                         const send = track.sends.find((state) => state.busId === bus.id);
-                        const level = send?.level ?? 0;
+                        const level = localLevels[bus.id] ?? send?.level ?? 0;
                         const isPreFader = send?.preFader ?? false;
                         return (
                             <SurfaceCard key={bus.id} className="w-full p-3">
@@ -63,7 +94,17 @@ export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
                                                     size="bare"
                                                     type="button"
                                                     className="shrink-0"
-                                                    onClick={() => toggleSendPreFader(track.id, bus.id)}
+                                                    onClick={() => {
+                                                        if (!send) {
+                                                            return;
+                                                        }
+                                                        commitSendEdit(
+                                                            compileSendPreFaderAction(track.id, bus.id, send),
+                                                            track.id,
+                                                            bus.id,
+                                                            () => undefined
+                                                        );
+                                                    }}
                                                     aria-label={`Toggle send to ${bus.name} ${isPreFader ? 'post' : 'pre'}-fader`}
                                                     title={
                                                         isPreFader
@@ -90,9 +131,25 @@ export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
                                         <Slider
                                             value={[Math.round(levelToSendPosition(level))]}
                                             onValueChange={([value]) => {
-                                                if (value !== undefined) {
-                                                    setSend(track.id, bus.id, sendPositionToLevel(value));
+                                                if (value === undefined) {
+                                                    return;
                                                 }
+                                                const next = sendPositionToLevel(value);
+                                                setLocalLevels((current) => ({ ...current, [bus.id]: next }));
+                                                previewSend(track.id, bus.id, next, send?.preFader ?? false);
+                                            }}
+                                            onValueCommit={([value]) => {
+                                                if (value === undefined) {
+                                                    return;
+                                                }
+                                                const committed = sendPositionToLevel(value);
+                                                setLocalLevels((current) => ({ ...current, [bus.id]: committed }));
+                                                commitSendEdit(
+                                                    compileSendLevelAction(track.id, bus.id, committed, send),
+                                                    track.id,
+                                                    bus.id,
+                                                    () => clearLocalLevel(bus.id)
+                                                );
                                             }}
                                             max={100}
                                             step={1}

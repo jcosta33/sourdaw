@@ -63,8 +63,8 @@ test.describe('Mixer sends + output routing — state changes', () => {
         await expect(latch).toBeVisible({ timeout: 10_000 });
 
         // The send must exist before its pre/post flag can toggle — a brand-new
-        // send at zero level has no send object (toggleSendPreFader no-ops until
-        // setSend creates one), so raise the level first.
+        // send at zero level has no send object (a PRE/POST edit needs an existing
+        // send), so raise the level first.
         await send.focus();
         await page.keyboard.press('ArrowUp');
         await page.waitForTimeout(200);
