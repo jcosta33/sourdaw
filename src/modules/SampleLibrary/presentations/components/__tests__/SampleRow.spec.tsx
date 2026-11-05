@@ -224,12 +224,11 @@ describe('SampleRow — overlay and decode-warning contracts', () => {
         expect(document.activeElement).toBe(play);
 
         expect(play.hasAttribute('data-sample-row-action')).toBe(false);
-        const marked = screen
+        const markedButtons = screen
             .getAllByRole('button')
-            .filter((button) => button.hasAttribute('data-sample-row-action'))
-            .map((button) => button.getAttribute('aria-label'))
-            .sort();
-        expect(marked).toEqual(['Add a to favorites', 'Add a to track', 'Find samples similar to a']);
+            .filter((button) => button.hasAttribute('data-sample-row-action'));
+        const markedLabels = markedButtons.map((button) => button.getAttribute('aria-label'));
+        expect([...markedLabels].sort()).toEqual(['Add a to favorites', 'Add a to track', 'Find samples similar to a']);
 
         // The only focus-driven reveals are keyboard focus anywhere in the row and any focus on a marked
         // action; a plain `:focus` on Play (or focus-within / has-[:focus]) must satisfy none of them.
