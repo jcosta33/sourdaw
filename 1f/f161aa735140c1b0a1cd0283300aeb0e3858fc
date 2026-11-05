@@ -1,0 +1,119 @@
+src/modules/MIDI/stores/webMidiStore.ts
+  s_fec7059b7a251c::t_3094a9f53c1397 21
+src/modules/WorkspaceShell/events/WorkspaceEvents.ts
+  s_fec7059b7a251c::t_2897c6e57e1615 2
+  s_fec7059b7a251c::t_5703a5d14fb68a 15-17
+  s_fec7059b7a251c::t_3d2250476a0363 1
+src/modules/WorkspaceShell/presentations/hooks/useAppEventHandlers.ts
+  s_fec7059b7a251c::t_bafcd504559460 19
+  s_fec7059b7a251c::t_aa3bf29429da87 29
+  s_fec7059b7a251c::t_4a4d8e998dfde0 8
+src/components/ui/dialog.tsx
+  s_fec7059b7a251c::t_20c933edb34702 58
+  s_fec7059b7a251c::t_342ee5e08b4bd3 118
+  s_fec7059b7a251c::t_e87e97a532329e 65,68,74-75
+  s_fec7059b7a251c::t_08851991204e35 57
+  s_fec7059b7a251c::t_a5275d3764a0f3 70,81,83
+  s_fec7059b7a251c::t_2773a4eee5828b 98
+  s_fec7059b7a251c::t_c0c4c8fedc465e 64,66-67,69,71-73,76-77
+  s_fec7059b7a251c::t_c0f636a63227f1 96
+src/modules/MIDI/repositories/webMidi/state.ts
+  s_fec7059b7a251c::t_fb6ec3bfdf2911 53
+src/modules/Preferences/presentations/views/PreferencesDialog.tsx
+  s_fec7059b7a251c::t_76cf7c9773e42c 36-37
+  s_fec7059b7a251c::t_edd91318f179a8 69-74
+  s_fec7059b7a251c::t_29b64b020f6dd9 75
+  s_fec7059b7a251c::t_5484fd88f47315 66
+  s_fec7059b7a251c::t_915b835964c8fd 16
+src/modules/WorkspaceShell/presentations/views/__tests__/MidiStatusBadgeFocusReturn.spec.tsx
+  s_fec7059b7a251c::t_00291d6ec6dc3a 78
+  s_fec7059b7a251c::t_3ed3e9c4e293c9 90
+  s_fec7059b7a251c::t_9eafdc6935f74d 36-38
+  s_fec7059b7a251c::t_619769ca077dcb 3
+  s_fec7059b7a251c::t_596c4895a86f27 1
+  s_fec7059b7a251c::t_e4e845cd813c4f 14-15
+  s_fec7059b7a251c::t_52c119f5485c81 2,4-13,16-35,39-77,79-89,91-92
+src/app/registerDependencies.ts
+  s_fec7059b7a251c::t_a6de8fddef4065 43
+  s_fec7059b7a251c::t_a12ed92d3bc01b 25
+src/modules/WorkspaceShell/events/index.ts
+  s_fec7059b7a251c::t_a1af008c554da0 8
+src/modules/MIDI/models/WebMidiTypes.ts
+  s_fec7059b7a251c::t_38a038f02e0cc6 38-39
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_fec7059b7a251c::t_d57e6540446756 1175-1179
+  s_fec7059b7a251c::t_54ab5e6a4a564e 317
+  s_fec7059b7a251c::t_62ceecc6985e92 401-404
+  s_fec7059b7a251c::t_5fbb3c433f6718 54-55
+src/modules/WorkspaceShell/presentations/views/MidiStatusBadge.tsx
+  s_fec7059b7a251c::t_8f28e8c8459023 48-50
+  s_fec7059b7a251c::t_4f0717c49d66fb 11
+  s_fec7059b7a251c::t_0544096974e818 20
+  s_fec7059b7a251c::t_1fbc694d6653bd 69
+src/modules/MIDI/repositories/webMidi/lifecycle/__tests__/webMidiLifecycle.spec.ts
+  s_fec7059b7a251c::t_82d661e9ad270a 278-318
+src/modules/AudioEngine/presentations/views/__tests__/MidiDevicePicker.spec.tsx
+  s_fec7059b7a251c::t_e4c3fd251ed1ce 127-144
+src/modules/WorkspaceShell/presentations/views/__tests__/MidiStatusBadge.spec.tsx
+  s_fec7059b7a251c::t_bbd0b115a1a929 7
+  s_fec7059b7a251c::t_9277d53dcc95c0 14-15
+  s_fec7059b7a251c::t_417ed95ab73bbe 133-149,155-156
+src/modules/Preferences/presentations/views/__tests__/PreferencesDialog.spec.tsx
+  s_fec7059b7a251c::t_ec6cc40901c5a4 57-72
+src/modules/WorkspaceShell/useCases/workspaceEventBus.ts
+  s_fec7059b7a251c::t_48448eb08501e1 10
+  s_fec7059b7a251c::t_565e9546a6c227 19
+src/modules/MIDI/repositories/webMidi/lifecycle/initWebMidi.ts
+  s_fec7059b7a251c::t_ac73886a8fc71a 45-49
+  s_fec7059b7a251c::t_7be2925c277b32 36-42
+  s_fec7059b7a251c::t_9eca5a7d3fc277 53
+  s_fec7059b7a251c::t_c58664bc79a19b 438-442
+  s_fec7059b7a251c::t_b40f83e861dbb0 322
+  s_fec7059b7a251c::t_03500645a99a26 365
+  s_fec7059b7a251c::t_2fe43d259f9e90 50-52
+  s_fec7059b7a251c::t_35bc7b99269580 43-44
+src/modules/AudioEngine/presentations/views/MidiDevicePicker.tsx
+  s_fec7059b7a251c::t_33655a048a0180 71-72
+  s_fec7059b7a251c::t_8d857ee8b3a181 21
+  s_fec7059b7a251c::t_4261f8b8bdfa5a 25-32
+  s_fec7059b7a251c::t_530e8d6d335a45 69,73,125
+src/modules/MIDI/repositories/webMidi/__tests__/setState.spec.ts
+  s_fec7059b7a251c::t_95f6f4800c18d4 61-86
+src/modules/WorkspaceShell/useCases/dialogs/onDialogOpenPreferences.ts
+  s_fec7059b7a251c::t_0666d52409ed1e 8
+  s_fec7059b7a251c::t_45a2ec86c7d3d0 3
+src/modules/WorkspaceShell/useCases/dialogs/openPreferencesSection.ts
+  s_fec7059b7a251c::t_c31c4f8127aef2 1-14
+src/modules/WorkspaceShell/useCases/dialogs/__tests__/openPreferencesSection.spec.ts
+  s_fec7059b7a251c::t_701dc591505ed8 1-21
+src/modules/Preferences/presentations/views/index.ts
+  s_fec7059b7a251c::t_74e05ebdc3326f 2
+src/modules/Preferences/events/PreferencesEvents.ts
+  s_fec7059b7a251c::t_8253fd4888e727 3-6
+src/modules/MIDI/repositories/webMidi/setState.ts
+  s_fec7059b7a251c::t_1b2b2d40b834b5 17-23
+src/modules/Preferences/events/index.ts
+  s_fec7059b7a251c::t_db020b885ca98f 1
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_fec7059b7a251c::t_aa920fc5ea62ce 269
+  s_fec7059b7a251c::t_8eb9f0af86d71d 487
+  s_fec7059b7a251c::t_a4b7a3b0522f96 489,492
+  s_fec7059b7a251c::t_18f6dcbf888860 503-504,506-507
+  s_fec7059b7a251c::t_434f346a8651fb 505
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1ff161aa735140c1b0a1cd0283300aeb0e3858fc",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
