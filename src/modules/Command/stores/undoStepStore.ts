@@ -1,7 +1,7 @@
 import { type ReadableStore } from '#/infra/store/types';
 
 import { type UndoEntry, type UndoSource } from '../models/UndoEntry';
-import { isInertUndoUnit, partitionUndoUnits, undoEntryLabel } from '../models/UndoUnit';
+import { isInertUndoUnit, partitionUndoUnits, undoStepLabel } from '../models/UndoUnit';
 
 import { undoStore as mutable_undo_store, type UndoStoreState as MutableUndoStoreState } from './undoStore';
 
@@ -25,8 +25,13 @@ export type UndoStepStoreState = {
 let cached_mutable_snapshot: MutableUndoStoreState | null | undefined;
 let cached_step_snapshot: UndoStepStoreState | null = null;
 
-function to_step(head: UndoEntry, target: UndoEntry): UndoStep {
-    return Object.freeze({ key: head.id, label: undoEntryLabel(head), source: head.source, targetEntryId: target.id });
+function to_step(head: UndoEntry, target: UndoEntry, entryCount: number): UndoStep {
+    return Object.freeze({
+        key: head.id,
+        label: undoStepLabel(head, entryCount),
+        source: head.source,
+        targetEntryId: target.id,
+    });
 }
 
 /** Undo names a past step by its newest entry, and reaching it keeps that entry applied.
@@ -34,13 +39,17 @@ function to_step(head: UndoEntry, target: UndoEntry): UndoStep {
 function to_past_steps(past: readonly UndoEntry[]): readonly UndoStep[] {
     const steps = partitionUndoUnits(past)
         .filter((unit) => !isInertUndoUnit(past.slice(unit.first, unit.last + 1)))
-        .map((unit) => to_step(past[unit.last]!, past[unit.last]!));
+        .map((unit) => to_step(past[unit.last]!, past[unit.last]!, unit.last - unit.first + 1));
     return Object.freeze(steps);
 }
 
 /** Redo names a future step by its first entry, and reaching it redoes through its last. */
 function to_future_steps(future: readonly UndoEntry[]): readonly UndoStep[] {
-    return Object.freeze(partitionUndoUnits(future).map((unit) => to_step(future[unit.first]!, future[unit.last]!)));
+    return Object.freeze(
+        partitionUndoUnits(future).map((unit) =>
+            to_step(future[unit.first]!, future[unit.last]!, unit.last - unit.first + 1)
+        )
+    );
 }
 
 function to_step_snapshot(mutable_snapshot: MutableUndoStoreState | null): UndoStepStoreState | null {

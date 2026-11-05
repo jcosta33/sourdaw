@@ -74,3 +74,16 @@ export function isInertUndoUnit(entries: readonly UndoEntry[]): boolean {
 export function undoEntryLabel(entry: UndoEntry): string {
     return entry.groupLabel || entry.label || (isActionEntry(entry) ? entry.action.type : 'action');
 }
+
+/**
+ * The name the history shows for a step. A group's label names a gesture of
+ * several entries; a step of one entry keeps that entry's own, more specific
+ * label, because callers also stamp single actions with a generic group label
+ * (a prompt's one action is grouped as "Prompt action").
+ */
+export function undoStepLabel(head: UndoEntry, entryCount: number): string {
+    if (entryCount === 1 && head.label) {
+        return head.label;
+    }
+    return undoEntryLabel(head);
+}

@@ -121,6 +121,30 @@ describe('undoStepStore', () => {
         ]);
     });
 
+    it("names a one-entry step by the entry's own label, not a generic group label", () => {
+        const applied: Applied = new Set();
+        pushTracked(applied, 'Add midi track MIDI 2', {
+            groupId: 'prompt-1',
+            groupLabel: 'Prompt action',
+            source: 'prompt',
+        });
+
+        expect(pastLabels()).toEqual(['Add midi track MIDI 2']);
+    });
+
+    it('names a one-entry future step by its own label too', async () => {
+        const applied: Applied = new Set();
+        pushTracked(applied, 'Add midi track MIDI 2', {
+            groupId: 'prompt-1',
+            groupLabel: 'Prompt action',
+            source: 'prompt',
+        });
+
+        await undo();
+
+        expect(futureLabels()).toEqual(['Add midi track MIDI 2']);
+    });
+
     it('leaves a fully inert unit out of the past steps, as one undo reverts past it', async () => {
         const applied: Applied = new Set();
         undoStore.set({ past: [trackedEntry(applied, 'Move clip'), inertEntry('Cut clip')], future: [] });
