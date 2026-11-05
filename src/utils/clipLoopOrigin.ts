@@ -241,8 +241,8 @@ export function midiFragmentWindowEntry(
     cutBeat: number,
     fragmentStartBeat: number
 ):
-    | ({ midiOffsetBeats: number; loopOriginBeat: number } & ReturnType<typeof loopingMidiLengthEntry>)
-    | ({ midiOffsetBeats: number } & ReturnType<typeof restampLoopOriginEntry>) {
+    | { midiOffsetBeats: number; loopOriginBeat: number; loopLength?: number }
+    | { midiOffsetBeats: number; loopOriginBeat?: number } {
     if (!continuesLoopingMidiPhase(clip)) {
         return { midiOffsetBeats: 0, ...restampLoopOriginEntry(clip, fragmentStartBeat) };
     }
