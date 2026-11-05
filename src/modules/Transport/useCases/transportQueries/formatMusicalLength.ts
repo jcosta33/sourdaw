@@ -1,9 +1,9 @@
 import { formatBarBeatSixteenthLength } from '../../models/musicalPositionFormat';
 
-import { readMeterMap } from './readMeterMap';
+import { measureMusicalLength } from './measureMusicalLength';
+import { type MeterInput } from './meterInput';
 
 /** A span starting at `startBeat` as 0-based `bars.beats.sixteenths` of duration. */
-export function formatMusicalLength(startBeat: number, lengthBeats: number): string {
-    const { changes, defaults } = readMeterMap();
-    return formatBarBeatSixteenthLength(changes, startBeat, lengthBeats, defaults);
+export function formatMusicalLength(input: MeterInput & { startBeat: number; lengthBeats: number }): string {
+    return formatBarBeatSixteenthLength(measureMusicalLength(input));
 }

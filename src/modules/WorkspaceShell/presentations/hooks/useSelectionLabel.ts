@@ -1,8 +1,8 @@
 import { useSyncExternalStore } from 'react';
 
 import { clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
-import { timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
-import { formatMusicalLength } from '#/modules/Transport/useCases';
+import { defaultTransportState, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
+import { formatMusicalLengthParts, measureMusicalLength } from '#/modules/Transport/useCases';
 
 const subscribe = (cb: () => void): (() => void) => {
     const unsub1 = clipSelectionStore.subscribe(cb);
@@ -28,14 +28,20 @@ const getSnapshot = (): string => {
         if (!clip) {
             return '1 clip';
         }
-        // Length reads through the project's meter map (bars.beats.sixteenths), so a
-        // meter change or a non-4/4 project never skews it; whole bars read as "N bars".
-        const length = formatMusicalLength(clip.startBeat, clip.endBeat - clip.startBeat);
-        const wholeBars = /^(\d+)\.0\.0$/.exec(length)?.[1];
-        if (wholeBars !== undefined && wholeBars !== '0') {
-            return `1 clip · ${wholeBars} bar${wholeBars === '1' ? '' : 's'}`;
+        // Length reads through the project's meter map, so a meter change or a non-4/4
+        // project never skews it; whole bars read as "N bars".
+        const transport = transportStore.value ?? defaultTransportState;
+        const length = measureMusicalLength({
+            startBeat: clip.startBeat,
+            lengthBeats: clip.endBeat - clip.startBeat,
+            changes: timeSignatureMapStore.value?.changes ?? [],
+            defaultNumerator: transport.timeSignatureNumerator,
+            defaultDenominator: transport.timeSignatureDenominator,
+        });
+        if (length.beats === 0 && length.sixteenths === 0 && length.bars > 0) {
+            return `1 clip · ${length.bars} bar${length.bars === 1 ? '' : 's'}`;
         }
-        return `1 clip · ${length}`;
+        return `1 clip · ${formatMusicalLengthParts(length)}`;
     }
     return `${ids.length} clips selected`;
 };

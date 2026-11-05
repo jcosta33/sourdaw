@@ -1,6 +1,7 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { timeSignatureMapStore } from '#/modules/Transport/stores';
 import { dbToGain } from '#/utils/audioLevelLaw';
 
 import { ClipInspector } from '../ClipInspector';
@@ -280,6 +281,21 @@ describe('ClipInspector', () => {
         expect(screen.getByText('9.4.3')).toBeInTheDocument();
         expect(screen.getByText('0.3.3')).toBeInTheDocument();
         expect(screen.queryByText(/\d\.\d{4,}/)).not.toBeInTheDocument();
+    });
+
+    it('re-reads the position and length when the project meter changes while open', () => {
+        timeSignatureMapStore.set({ changes: [] });
+        render(<ClipInspector {...defaultProps} clip={{ ...defaultProps.clip, startBeat: 9, endBeat: 18 }} />);
+        expect(screen.getByText('3.2.1')).toBeInTheDocument();
+        expect(screen.getByText('2.1.0')).toBeInTheDocument();
+
+        act(() => {
+            timeSignatureMapStore.set({ changes: [{ id: 'ts-1', beat: 0, numerator: 3, denominator: 4 }] });
+        });
+
+        expect(screen.getByText('4.1.1')).toBeInTheDocument();
+        expect(screen.getByText('3.0.0')).toBeInTheDocument();
+        timeSignatureMapStore.set({ changes: [] });
     });
 
     it('should render Trim section', () => {

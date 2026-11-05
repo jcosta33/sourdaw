@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatBarBeatSixteenth, formatBarBeatSixteenthLength } from '../musicalPositionFormat';
+import {
+    formatBarBeatSixteenth,
+    formatBarBeatSixteenthLength,
+    measureBarBeatSixteenthLength,
+} from '../musicalPositionFormat';
 import { type TimeSignatureChange } from '../TimeSignatureMap';
 
 const FOUR_FOUR = { defaultNumerator: 4, defaultDenominator: 4 };
@@ -46,26 +50,41 @@ describe('formatBarBeatSixteenth', () => {
 
 describe('formatBarBeatSixteenthLength', () => {
     it('reads a full 4/4 bar as 1.0.0', () => {
-        expect(formatBarBeatSixteenthLength([], 0, 4, FOUR_FOUR)).toBe('1.0.0');
+        expect(formatBarBeatSixteenthLength(measureBarBeatSixteenthLength([], 0, 4, FOUR_FOUR))).toBe('1.0.0');
     });
 
     it('rounds a recorded length to the nearest sixteenth', () => {
-        expect(formatBarBeatSixteenthLength([], 31.666666666666668, 3.874666666666304, FOUR_FOUR)).toBe('0.3.3');
+        expect(
+            formatBarBeatSixteenthLength(
+                measureBarBeatSixteenthLength([], 31.666666666666668, 3.874666666666304, FOUR_FOUR)
+            )
+        ).toBe('0.3.3');
     });
 
     it('sizes a bar at three beats in 3/4', () => {
-        expect(formatBarBeatSixteenthLength([], 0, 4, THREE_FOUR)).toBe('1.1.0');
-        expect(formatBarBeatSixteenthLength([], 0, 9, THREE_FOUR)).toBe('3.0.0');
+        expect(formatBarBeatSixteenthLength(measureBarBeatSixteenthLength([], 0, 4, THREE_FOUR))).toBe('1.1.0');
+        expect(formatBarBeatSixteenthLength(measureBarBeatSixteenthLength([], 0, 9, THREE_FOUR))).toBe('3.0.0');
     });
 
     it('sizes a bar by the meter governing the start', () => {
         const changes = [meterChange];
-        expect(formatBarBeatSixteenthLength(changes, 0, 6, FOUR_FOUR)).toBe('1.2.0');
-        expect(formatBarBeatSixteenthLength(changes, 8, 6, FOUR_FOUR)).toBe('2.0.0');
+        expect(formatBarBeatSixteenthLength(measureBarBeatSixteenthLength(changes, 0, 6, FOUR_FOUR))).toBe('1.2.0');
+        expect(formatBarBeatSixteenthLength(measureBarBeatSixteenthLength(changes, 8, 6, FOUR_FOUR))).toBe('2.0.0');
     });
 
     it('reads a zero or negative length as 0.0.0', () => {
-        expect(formatBarBeatSixteenthLength([], 0, 0, FOUR_FOUR)).toBe('0.0.0');
-        expect(formatBarBeatSixteenthLength([], 0, -1, FOUR_FOUR)).toBe('0.0.0');
+        expect(formatBarBeatSixteenthLength(measureBarBeatSixteenthLength([], 0, 0, FOUR_FOUR))).toBe('0.0.0');
+        expect(formatBarBeatSixteenthLength(measureBarBeatSixteenthLength([], 0, -1, FOUR_FOUR))).toBe('0.0.0');
+    });
+});
+
+describe('measureBarBeatSixteenthLength', () => {
+    it('returns the parts the string is made of', () => {
+        expect(measureBarBeatSixteenthLength([], 0, 4, FOUR_FOUR)).toEqual({ bars: 1, beats: 0, sixteenths: 0 });
+        expect(measureBarBeatSixteenthLength([], 0, 3.874666666666304, FOUR_FOUR)).toEqual({
+            bars: 0,
+            beats: 3,
+            sixteenths: 3,
+        });
     });
 });

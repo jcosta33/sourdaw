@@ -1,9 +1,6 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { timeSignatureMapStore as realMeterMap } from '#/modules/Transport/stores/timeSignatureMapStore';
-import { transportStore as realTransport } from '#/modules/Transport/stores/transportStore';
-
 import { useSelectionLabel } from '../useSelectionLabel';
 
 type ClipSelection = { selectedClipIds: string[] };
@@ -14,11 +11,18 @@ const trackState = vi.hoisted(() => ({ value: null as { tracks: TrackShape[] } |
 const clipSubscribers = vi.hoisted(() => new Set<() => void>());
 const trackSubscribers = vi.hoisted(() => new Set<() => void>());
 const transportSubscribers = vi.hoisted(() => new Set<() => void>());
-const transportState = vi.hoisted(() => ({ value: null as { timeSignatureNumerator: number } | null }));
+type TransportMeter = { timeSignatureNumerator: number; timeSignatureDenominator: number };
+const transportState = vi.hoisted(() => ({ value: null as TransportMeter | null }));
+const meterMap = vi.hoisted(() => ({
+    value: { changes: [] } as { changes: { id: string; beat: number; numerator: number; denominator: number }[] },
+}));
 
 vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
     timeSignatureMapStore: {
+        get value() {
+            return meterMap.value;
+        },
         subscribe: vi.fn((cb: () => void) => {
             transportSubscribers.add(cb);
             return () => {
@@ -102,9 +106,8 @@ describe('useSelectionLabel', () => {
     beforeEach(() => {
         clipSelection.value = null;
         trackState.value = null;
-        transportState.value = { timeSignatureNumerator: 4 };
-        realTransport.set({ ...realTransport.value!, timeSignatureNumerator: 4, timeSignatureDenominator: 4 });
-        realMeterMap.set({ changes: [] });
+        transportState.value = { timeSignatureNumerator: 4, timeSignatureDenominator: 4 };
+        meterMap.value = { changes: [] };
         clipSubscribers.clear();
         trackSubscribers.clear();
         transportSubscribers.clear();
@@ -179,7 +182,7 @@ describe('useSelectionLabel', () => {
     });
 
     it('measures bars against the project time signature, not a fixed 4 (3/4)', () => {
-        realTransport.set({ ...realTransport.value!, timeSignatureNumerator: 3, timeSignatureDenominator: 4 });
+        transportState.value = { timeSignatureNumerator: 3, timeSignatureDenominator: 4 };
         clipSelection.value = { selectedClipIds: ['clip-e'] };
         trackState.value = {
             tracks: [{ clips: [{ id: 'clip-e', startBeat: 0, endBeat: 9 }] }],
@@ -191,7 +194,7 @@ describe('useSelectionLabel', () => {
     });
 
     it('reads 4 beats as 1 bar and 1 beat in 3/4', () => {
-        realTransport.set({ ...realTransport.value!, timeSignatureNumerator: 3, timeSignatureDenominator: 4 });
+        transportState.value = { timeSignatureNumerator: 3, timeSignatureDenominator: 4 };
         clipSelection.value = { selectedClipIds: ['clip-f'] };
         trackState.value = {
             tracks: [{ clips: [{ id: 'clip-f', startBeat: 0, endBeat: 4 }] }],
@@ -203,7 +206,7 @@ describe('useSelectionLabel', () => {
     });
 
     it('sizes a bar by the meter change governing the clip start', () => {
-        realMeterMap.set({ changes: [{ id: 'ts-1', beat: 8, numerator: 3, denominator: 4 }] });
+        meterMap.value = { changes: [{ id: 'ts-1', beat: 8, numerator: 3, denominator: 4 }] };
         clipSelection.value = { selectedClipIds: ['clip-m'] };
         trackState.value = {
             tracks: [{ clips: [{ id: 'clip-m', startBeat: 8, endBeat: 17 }] }],

@@ -33,17 +33,22 @@ export function formatBarBeatSixteenth(
     return `${bar}.${beat}.${sixteenth + 1}`;
 }
 
+export type BarBeatSixteenthLength = {
+    bars: number;
+    beats: number;
+    sixteenths: number;
+};
+
 /**
- * Length as `bars.beats.sixteenths` of duration, all 0-based (`0.3.3`, a full
- * 4/4 bar is `1.0.0`). Bars are sized by the meter governing `startBeat`; the
- * length rounds to the nearest sixteenth first.
+ * Length as 0-based bars, beats and sixteenths of duration. Bars are sized by
+ * the meter governing `startBeat`; the length rounds to the nearest sixteenth first.
  */
-export function formatBarBeatSixteenthLength(
+export function measureBarBeatSixteenthLength(
     changes: readonly TimeSignatureChange[],
     startBeat: number,
     lengthBeats: number,
     { defaultNumerator, defaultDenominator }: MeterDefaults
-): string {
+): BarBeatSixteenthLength {
     const { numerator, denominator } = getTimeSignatureAtBeat(changes, startBeat, defaultNumerator, defaultDenominator);
     const sixteenthsPerBeat = 16 / denominator;
     const totalSixteenths = Math.round(roundToSixteenth(Math.max(0, lengthBeats)) * SIXTEENTHS_PER_QUARTER);
@@ -51,6 +56,10 @@ export function formatBarBeatSixteenthLength(
     const bars = Math.floor(totalSixteenths / sixteenthsPerBar);
     const intoBar = totalSixteenths - bars * sixteenthsPerBar;
     const beats = Math.floor(intoBar / sixteenthsPerBeat);
-    const sixteenths = intoBar - beats * sixteenthsPerBeat;
+    return { bars, beats, sixteenths: intoBar - beats * sixteenthsPerBeat };
+}
+
+/** A measured length as `bars.beats.sixteenths` (`0.3.3`; a full 4/4 bar is `1.0.0`). */
+export function formatBarBeatSixteenthLength({ bars, beats, sixteenths }: BarBeatSixteenthLength): string {
     return `${bars}.${beats}.${sixteenths}`;
 }
