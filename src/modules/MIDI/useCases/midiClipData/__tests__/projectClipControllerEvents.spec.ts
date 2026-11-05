@@ -829,6 +829,36 @@ describe('projectClipControllerEvents', () => {
             expect(headMoves(rows, trimmed)).toEqual([{ controller: 11, value: 90 }]);
         });
 
+        it('carries a lane row of the pass before the cut over that lane row from the pass before it', () => {
+            const rows = [controller('press-this-pass', 0.2, 127), controller('lift-pass-before', 3.5, 0)];
+            const trimmed = cutHead({ ...uncut, type: 'midi' }, 9.5, 1);
+
+            expect(inForceAt(rows, uncut, 9.5)).toEqual({ '0:64': 127 });
+            expect(headMoves(rows, trimmed)).toEqual([{ controller: 64, value: 127 }]);
+        });
+
+        it('posts the pass before ahead of this pass on the head, so one controller across channels ends on the later row', () => {
+            // The instrument holds one value per controller number: the lift on
+            // channel 1 played at 8.5 in the uncut loop, the press on channel 0
+            // at 9.2, so the pedal is down at 9.5.
+            const rows = [
+                controller('press-this-pass', 0.2, 127, 64, 0),
+                controller('lift-pass-before', 3.5, 0, 64, 1),
+            ];
+            const trimmed = cutHead({ ...uncut, type: 'midi' }, 9.5, 1);
+            const onHead = projectClipControllerEvents({
+                controlChanges: rows,
+                clip: trimmed,
+                fromBeat: trimmed.startBeat,
+                toBeat: trimmed.endBeat,
+            }).filter((move) => move.beat === trimmed.startBeat);
+
+            expect(onHead.map(({ channel, value }) => ({ channel, value }))).toEqual([
+                { channel: 1, value: 0 },
+                { channel: 0, value: 127 },
+            ]);
+        });
+
         it('plays a row exactly on the cut once, never behind the value the pass before left', () => {
             const rows = [controller('press-on-cut', 0.5, 127), controller('lift', 3.5, 0)];
             const trimmed = cutHead({ ...uncut, type: 'midi' }, 9.5, 1);
@@ -868,9 +898,10 @@ describe('projectClipControllerEvents', () => {
             const shiftBeats = cutBeat - 1.9;
 
             expect(inForceAt(rows, source, cutBeat)).toEqual({ '0:64': 0, '0:11': 90 });
+            // In the order the pass before played them: expression at 1.6, the lift at 2.15.
             expect(headMoves(rows, trimmed)).toEqual([
-                { controller: 64, value: 0 },
                 { controller: 11, value: 90 },
+                { controller: 64, value: 0 },
             ]);
             for (const beat of [5.8, 6.33, 7.05, 9.41, 12.2]) {
                 expect({ beat, held: inForceAt(rows, trimmed, beat - shiftBeats) }).toEqual({

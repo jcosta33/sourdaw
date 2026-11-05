@@ -112,10 +112,10 @@ type CarriedRow<TRow> = { row: TRow; sourceIndex: number };
 
 type ProjectedControllerRows<TRow> = {
     /**
-     * The source rows whose values each lane carries onto the window start, at their own beats, with their
-     * index in the source rows, in the order their lanes first appear; `placeOnWindowStart` puts them there.
+     * The source rows whose values each lane carries onto the window start, at their own beats, in the order
+     * continuous playback played them (`inPlaybackOrder`); `placeOnWindowStart` puts them there.
      */
-    carried: CarriedRow<TRow>[];
+    carried: TRow[];
     /** The rows inside the window, rebased, in source order, up to (not on) its closing line. */
     visible: TRow[];
     /** The rows on the closing line, placed at `closingLineBeat`; none when the window has no closing line of its own. */
@@ -190,10 +190,14 @@ function projectVisibleControllerRows<TRow extends ControllerRow>(
         visible.push({ ...row, beat: row.beat + window.beatOffset });
     }
 
-    const wrappedIntoStart = [...inForceAtPriorPassEnd].filter(([key]) => !inForceAtStart.has(key));
-    const carried = [...inForceAtStart, ...wrappedIntoStart].flatMap(([key, carry]) =>
+    const carriedFromThisPass = [...inForceAtStart].flatMap(([key, carry]) =>
         lanesStartingAtWindow.has(key) ? [] : [carry]
     );
+    const carriedFromPriorPass = [...inForceAtPriorPassEnd].flatMap(([key, carry]) =>
+        inForceAtStart.has(key) || lanesStartingAtWindow.has(key) ? [] : [carry]
+    );
+    // The pass before played its rows before any row of this pass ahead of the window, so they go first.
+    const carried = [...inPlaybackOrder(carriedFromPriorPass), ...inPlaybackOrder(carriedFromThisPass)];
 
     return { carried, visible, closing };
 }
@@ -203,12 +207,13 @@ function placeOnWindowStart<TRow extends ControllerRow>(rows: readonly TRow[], w
 }
 
 /**
- * The bends carried onto one window start all play on it, and the player reads the last that reaches a note,
- * so they keep the order they were recorded in: the later of a drawn row and a recorded wheel of one channel
- * stays the one in force for that channel's notes. Rows on one beat keep their source order, which is how the
- * player breaks the tie on the untrimmed clip (an MPE switch writes its rows on one beat).
+ * The rows carried onto one window start all play on it, and the player ends on the last of them, so they keep
+ * the order continuous playback played them in: a controller is one value per instrument whatever channel its
+ * row names, and the later of a drawn bend row and a recorded wheel of one channel stays the one in force for
+ * that channel's notes. Rows on one beat keep their source order, which is how the player breaks the tie on
+ * the untrimmed clip (an MPE switch writes its rows on one beat).
  */
-function orderByRecordedBeat<TRow extends ControllerRow>(carried: readonly CarriedRow<TRow>[]): TRow[] {
+function inPlaybackOrder<TRow extends ControllerRow>(carried: readonly CarriedRow<TRow>[]): TRow[] {
     return carried
         .toSorted((left, right) => left.row.beat - right.row.beat || left.sourceIndex - right.sourceIndex)
         .map(({ row }) => row);
@@ -257,14 +262,8 @@ export function projectMidiClipWindow<TPitchBend extends MidiPitchBend>({
     });
     return {
         notes: notes.flatMap((note) => projectVisibleNote(note, window, locatesOwnBend) ?? []),
-        controlChanges: [
-            ...placeOnWindowStart(
-                controllers.carried.map(({ row }) => row),
-                window
-            ),
-            ...controllers.visible,
-        ],
+        controlChanges: [...placeOnWindowStart(controllers.carried, window), ...controllers.visible],
         closingControlChanges: controllers.closing.filter(playsOnClosingLine),
-        pitchBends: [...placeOnWindowStart(orderByRecordedBeat(bends.carried), window), ...bends.visible],
+        pitchBends: [...placeOnWindowStart(bends.carried, window), ...bends.visible],
     };
 }
