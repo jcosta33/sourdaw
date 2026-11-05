@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { nextDefaultTrackName } from '../../../models/DefaultTrackName';
 import { hasAutomaticTrackName } from '../hasAutomaticTrackName';
+
+registerDeviceEnginePorts();
 
 describe('hasAutomaticTrackName', () => {
     it.each(['audio', 'midi', 'bus', 'folder', 'master'] as const)(
