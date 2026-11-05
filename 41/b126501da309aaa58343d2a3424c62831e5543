@@ -1,0 +1,51 @@
+src/modules/Arrangement/useCases/index.ts
+  s_fec7059b7a251c::t_35152773581f7a 184
+src/modules/Arrangement/useCases/device/sendManagement/__tests__/commitSendEdit.spec.ts
+  s_fec7059b7a251c::t_c7b2e42a1026ed 1-85
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/SendsSection.spec.tsx
+  s_fec7059b7a251c::t_e10434ba29cef9 10
+  s_fec7059b7a251c::t_e7525e679c4ec0 20
+  s_fec7059b7a251c::t_396b2f650f9ba3 151-200,203-210
+  s_fec7059b7a251c::t_7131ae67d5761a 201-202
+src/modules/Arrangement/useCases/device/sendManagement/commitSendEdit.ts
+  s_fec7059b7a251c::t_891a4a5c3ba860 1-18,20-21
+  s_fec7059b7a251c::t_f1d5a7165cc0a2 19
+src/modules/TimelineEditor/presentations/views/Inspector/SendsEditor.tsx
+  s_fec7059b7a251c::t_c8182201ba9b63 142,148,151
+  s_fec7059b7a251c::t_dca4439a58da9e 1
+  s_fec7059b7a251c::t_50a17a22525996 12,17
+  s_fec7059b7a251c::t_8e1497f5801816 150
+  s_fec7059b7a251c::t_a72b432e7a77c0 174
+  s_fec7059b7a251c::t_3109213eb464b5 76,78,80
+  s_fec7059b7a251c::t_a0a45f154bd0e7 59,64,67,72-73,83
+  s_fec7059b7a251c::t_aa844522387ada 61-62,65-66
+  s_fec7059b7a251c::t_ba9fb843ffd5f2 43,48,51-57,60,63,68-71,74-75,77,79,81-82,84-92,99
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/SendsEditor.spec.tsx
+  s_fec7059b7a251c::t_d5684f773b32e1 4
+  s_fec7059b7a251c::t_c725fb1e8f9a33 291-341
+  s_fec7059b7a251c::t_45593f222e6eeb 39,42
+  s_fec7059b7a251c::t_2da26b6cf248ef 84,90,100
+src/modules/MixerConsole/presentations/views/Mixer/SendsSection.tsx
+  s_fec7059b7a251c::t_bcd5e192a1d925 50,52,54
+  s_fec7059b7a251c::t_e9ff04b49a05be 38,41,46-47,57
+  s_fec7059b7a251c::t_7e6a3f9c67bfc6 1,7,23-32,34-37,42-45,49,51,53,55-56,58-115,127-134
+  s_fec7059b7a251c::t_41b2ab90f45909 39
+  s_fec7059b7a251c::t_20884d1db7398f 33
+  s_fec7059b7a251c::t_8c1c38b9c5f2ae 48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "41b126501da309aaa58343d2a3424c62831e5543",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
