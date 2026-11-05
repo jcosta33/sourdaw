@@ -1,0 +1,71 @@
+src/modules/AudioRendering/useCases/__tests__/renderAgentProjectSections.spec.ts
+  s_55244eb93b97d1::t_3af8b50fdf16aa 16,30,71,721,734
+src/modules/Command/useCases/commandProjectRevisionPort.ts
+  s_55244eb93b97d1::t_3f2bf2aa6d98fc 34
+  s_55244eb93b97d1::t_b2163aaf089791 21
+src/modules/AiRuntime/AGENTS.md
+  s_55244eb93b97d1::t_d38f8b3a758be0 23
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeCommittedSectionRenderRetry.spec.ts
+  s_55244eb93b97d1::t_3482e9e22c5d14 18,57,257,292
+src/modules/Command/useCases/finalizeRecoveredCommandBatchEffects.ts
+  s_55244eb93b97d1::t_239b63c0c8d7d2 30
+src/app/bootstrap.ts
+  s_55244eb93b97d1::t_f9aeb87f02a925 126
+  s_55244eb93b97d1::t_da947365846b39 282
+src/modules/AiRuntime/useCases/agentRequestOrchestration/executeCommittedSectionRenderRetry.ts
+  s_55244eb93b97d1::t_d28bea0f97cbd6 446
+  s_55244eb93b97d1::t_25cc5a26efd572 8
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_55244eb93b97d1::t_80f8b79295d450 39
+  s_55244eb93b97d1::t_f00467da001af7 1273
+src/modules/AudioRendering/useCases/renderAgentProjectSections.ts
+  s_55244eb93b97d1::t_282eadac994171 2
+  s_55244eb93b97d1::t_031f24e09bf354 213,249
+src/modules/WorkspaceShell/presentations/views/__tests__/promptBarApprovalParity.spec.tsx
+  s_55244eb93b97d1::t_4d1dbe1eeca171 34
+  s_55244eb93b97d1::t_1b938c17a9a065 90
+src/app/__tests__/bootstrap.spec.ts
+  s_55244eb93b97d1::t_35c4b490df6106 558
+  s_55244eb93b97d1::t_df2763c1c89c69 170
+  s_55244eb93b97d1::t_6fc90a3b24d758 316
+  s_55244eb93b97d1::t_90e01c1023823a 527
+  s_55244eb93b97d1::t_eeebf1ee5c7d71 331
+  s_55244eb93b97d1::t_aa060fa8fd925b 181
+  s_55244eb93b97d1::t_f4ccabcb636f93 1158-1163
+src/modules/AiRuntime/useCases/__tests__/aiWorkflowCommandCheckpointRuntime.ts
+  s_55244eb93b97d1::t_0e39882843691a 34
+  s_55244eb93b97d1::t_23cbfeeeddefcd 8
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeCommittedSectionRenderRetryAfterSave.spec.ts
+  s_55244eb93b97d1::t_69b175a48e849d 1-55,60,65-324
+  s_55244eb93b97d1::t_22f4333e2c474b 56-59,61-64
+src/modules/AudioRendering/useCases/__tests__/renderAgentProjectSectionsAfterSave.spec.ts
+  s_55244eb93b97d1::t_fac2f1446d8c9a 1-197
+src/modules/Command/useCases/__tests__/commandProjectRevisionPort.spec.ts
+  s_55244eb93b97d1::t_2e0e88f9b5037a 1-31
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/finalizeRecoveredEffectsAfterSave.spec.ts
+  s_55244eb93b97d1::t_f0d3c829d15674 1-8,10-38,40-265
+  s_55244eb93b97d1::t_49f7b1c29b7315 9
+  s_55244eb93b97d1::t_a8c9137902478a 39
+src/modules/AudioRendering/useCases/__tests__/agentOfflineRender.spec.ts
+  s_55244eb93b97d1::t_878c3147591379 13,25,83
+src/modules/AudioRendering/useCases/__tests__/rebindAgentProjectSectionArtifactRevisions.spec.ts
+  s_55244eb93b97d1::t_2ec1a16350dfbe 13,25,75
+evidence/agent-campaign/manifest.json
+  s_55244eb93b97d1::t_7f7bb1958a72c4 647
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d3f3e0409b97fb229af13442847e843d77397854",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
