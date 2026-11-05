@@ -706,16 +706,43 @@ describe('excluded dimensions', () => {
             );
         });
 
-        it('refuses removing a device-less bus whose reach holds a reverb', () => {
+        it('admits removing a device-less bus on the vocal output chain, which hands its output on', () => {
             const context = contextWithRouting(
-                { vocal: { outputId: 'hop-bus' }, 'hop-bus': { outputId: 'verb-bus-b' } },
+                { vocal: { sends: [], outputId: 'hop-bus' }, 'hop-bus': { sends: [], outputId: 'verb-bus-b' } },
                 [
                     { id: 'hop-bus', name: 'Hop Bus', devices: [] },
                     { id: 'verb-bus-b', name: 'Verb Bus B', devices: [device('b-verb', 'builtin-reverb')] },
                 ]
             );
-            expect(removeFrom(context, 'hop-bus')).toContain(
-                'command 1 (removeTrack removing Hop Bus) edits the ambience of “Hop Bus”'
+            expect(removeFrom(context, 'hop-bus')).toBeNull();
+        });
+
+        it('refuses removing a device-less bus on the vocal output chain whose own send reaches a reverb', () => {
+            const context = contextWithRouting(
+                { vocal: { sends: [], outputId: 'bus-a' }, 'bus-a': { sends: ['verb-bus-b'] } },
+                [
+                    { id: 'bus-a', name: 'Bus A', devices: [] },
+                    { id: 'verb-bus-b', name: 'Verb Bus B', devices: [device('b-verb', 'builtin-reverb')] },
+                ]
+            );
+            expect(removeFrom(context, 'bus-a')).toContain(
+                'command 1 (removeTrack removing Bus A) edits the ambience of “Bus A”'
+            );
+        });
+
+        it('refuses removing a device-less return the vocal sends to whose output reaches a reverb', () => {
+            const context = contextWithRouting(
+                {
+                    vocal: { sends: ['hop-return'], outputId: 'master' },
+                    'hop-return': { sends: [], outputId: 'verb-bus-b' },
+                },
+                [
+                    { id: 'hop-return', name: 'Hop Return', devices: [] },
+                    { id: 'verb-bus-b', name: 'Verb Bus B', devices: [device('b-verb', 'builtin-reverb')] },
+                ]
+            );
+            expect(removeFrom(context, 'hop-return')).toContain(
+                'command 1 (removeTrack removing Hop Return) edits the ambience of “Hop Return”'
             );
         });
 

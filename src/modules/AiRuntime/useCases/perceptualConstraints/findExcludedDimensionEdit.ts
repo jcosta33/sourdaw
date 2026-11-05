@@ -239,10 +239,27 @@ function readRoutingEdits(action: AppAction, actions: readonly AppAction[], cont
     return edits(dimensions, action.payload.trackId, `to ${destination?.name ?? destinationId}`);
 }
 
+/** Whether any other track sends into this one, in the routing as the batch leaves it. */
+function isSentInto(trackId: string, actions: readonly AppAction[], context: ProjectContext): boolean {
+    return context.tracks.some(
+        (track) => track.id !== trackId && readRouting(track.id, actions, context).sends.includes(trackId)
+    );
+}
+
+/** The tracks whose devices a deletion takes from what the scoped tracks sound through. */
+function readCutTrackIds(removedId: string, actions: readonly AppAction[], context: ProjectContext): Set<string> {
+    if (isSentInto(removedId, actions, context)) {
+        return readReachedTrackIds([removedId], actions, context);
+    }
+    const sendReach = readReachedTrackIds(readRouting(removedId, actions, context).sends, actions, context);
+    return new Set([removedId, ...sendReach]);
+}
+
 /**
- * Removing a track removes its devices, so every track that sounds through it loses the space or
- * spectral shaping the track and everything it reaches, bus to bus, applied. The removed track is the
- * edit's owner, so a constraint holds it exactly when its scope reaches that track.
+ * Removing a track takes its devices and its sends with it, while every track routed into its output
+ * is repointed to the output it had, so what lies past it on an output chain stays heard. A track
+ * sending into it loses the whole parallel copy, its output chain included. The removed track owns the
+ * edit, so a constraint holds it exactly when its scope reaches that track.
  */
 function readTrackRemovalEdits(
     action: AppAction,
@@ -258,9 +275,9 @@ function readTrackRemovalEdits(
         .touchedObjectIds(action.type, readPayload(action), context)
         .filter((id) => trackIds.has(id));
     return removedIds.flatMap((removedId) => {
-        const dimensions = reachedChainDimensions(readReachedTrackIds([removedId], actions, context), context);
+        const cut = readCutTrackIds(removedId, actions, context);
         const name = context.tracks.find((track) => track.id === removedId)?.name ?? removedId;
-        return edits(dimensions, removedId, `removing ${name}`);
+        return edits(reachedChainDimensions(cut, context), removedId, `removing ${name}`);
     });
 }
 
@@ -350,7 +367,11 @@ function readActionEdits(action: AppAction, actions: readonly AppAction[], conte
  * with the batch's own routing commands applied in order. A later output replaces an earlier one, and
  * a removed send no longer reaches its bus. The batch is applied and heard as one change.
  */
-function readDestinations(trackId: string, actions: readonly AppAction[], context: ProjectContext): string[] {
+function readRouting(
+    trackId: string,
+    actions: readonly AppAction[],
+    context: ProjectContext
+): { sends: string[]; outputId: string | undefined } {
     const track = context.tracks.find((candidate) => candidate.id === trackId);
     let sends = (track?.sends ?? []).map((send) => send.busId);
     let outputId = track?.outputId;
@@ -365,6 +386,11 @@ function readDestinations(trackId: string, actions: readonly AppAction[], contex
             outputId = action.payload.outputId;
         }
     }
+    return { sends, outputId };
+}
+
+function readDestinations(trackId: string, actions: readonly AppAction[], context: ProjectContext): string[] {
+    const { sends, outputId } = readRouting(trackId, actions, context);
     return outputId === undefined ? sends : [...sends, outputId];
 }
 
