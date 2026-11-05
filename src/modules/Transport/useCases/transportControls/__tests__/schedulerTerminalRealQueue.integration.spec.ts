@@ -2,6 +2,7 @@ import { clone as cloneAutomergeDoc, toJS } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import * as automergeStorage from '#/infra/store/storage/createAutomergeStorage';
 import {
     configureAutomergeStoragePort,
@@ -345,6 +346,7 @@ describe('scheduler terminal through the real snapshot queue', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         branchStore.set({
             branches: [

@@ -172,13 +172,10 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
         missingKeys: [
             'appendClipToTrack',
             'clipSelectionStore',
-            'gainEnvelopeStore',
             'getTrackEligibility',
             'markerStore',
             'resolveEligibleClipWriteTarget',
-            'takeLaneStore',
             'updateClipInStore',
-            'vcaGroupStore',
         ],
         reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
     },
@@ -217,14 +214,7 @@ const exemptions: ReadonlyArray<ExemptionRow> = [
     {
         spec: 'src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts',
         barrel: '#/modules/Arrangement/stores',
-        missingKeys: [
-            'appendClipToTrack',
-            'clipSelectionStore',
-            'gainEnvelopeStore',
-            'resolveEligibleClipWriteTarget',
-            'updateClipInStore',
-            'vcaGroupStore',
-        ],
+        missingKeys: ['appendClipToTrack', 'clipSelectionStore', 'resolveEligibleClipWriteTarget', 'updateClipInStore'],
         reason: "Reachable via this spec's graph but never read by its tests (verified passing).",
     },
     {

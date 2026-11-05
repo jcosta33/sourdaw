@@ -18,7 +18,7 @@ export const commandProjectRevisionPort = {
     isConfigured(): boolean {
         return providerConfigured;
     },
-    matchesLiveIgnoringCommandCheckpoint(expectedRevision: string): boolean {
+    matchesLiveIgnoringSaveWrites(expectedRevision: string): boolean {
         if (provider() === expectedRevision) {
             return true;
         }
@@ -31,7 +31,7 @@ export const commandProjectRevisionPort = {
             liveMatch = null;
         }
     },
-    setLiveMatchIgnoringCommandCheckpoint(nextMatch: CommandProjectRevisionLiveMatch | null): void {
+    setLiveMatchIgnoringSaveWrites(nextMatch: CommandProjectRevisionLiveMatch | null): void {
         liveMatch = nextMatch;
     },
 };

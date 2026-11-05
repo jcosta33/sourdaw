@@ -1,6 +1,7 @@
 import { type ProjectContext } from '../../models/ProjectContext';
 import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuotedText';
 
+import { blankRanges } from './blankRanges';
 import {
     CONNECTIVE_WORDS,
     KIND_NOUNS,
@@ -397,13 +398,6 @@ function getExtraCandidates(context: ProjectContext): ReferenceCandidate[] {
             .trim(),
         denotes: new Set([object.id]),
     }));
-}
-
-function blankRanges(text: string, ranges: readonly Range[]): string {
-    return ranges.reduce(
-        (blanked, { start, end }) => `${blanked.slice(0, start)}${'□'.repeat(end - start)}${blanked.slice(end)}`,
-        text
-    );
 }
 
 function normalizeName(name: string): string {

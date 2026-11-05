@@ -1,5 +1,5 @@
 import { isRenderBusyError, renderOffline } from '#/modules/AudioEngine/useCases';
-import { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from '#/modules/CrdtDocument/useCases';
+import { projectRevisionMatchesLiveIgnoringSaveWrites } from '#/modules/CrdtDocument/useCases';
 import {
     cloneAgentWorkOwnerIdentity,
     getAudioBufferContentAddress,
@@ -210,7 +210,7 @@ async function runAgentProjectSectionRenders(input: RenderAgentProjectSectionsIn
 
         const warnings: string[] = [];
         try {
-            if (!projectRevisionMatchesLiveIgnoringCommandCheckpoint(input.sourceRevision)) {
+            if (!projectRevisionMatchesLiveIgnoringSaveWrites(input.sourceRevision)) {
                 throw new Error('Project changed during rendering; the artifact was not attached');
             }
         } catch (error) {
@@ -246,7 +246,7 @@ async function runAgentProjectSectionRenders(input: RenderAgentProjectSectionsIn
                 receipts.emitCancelled();
                 throw createCancellationError();
             }
-            if (!projectRevisionMatchesLiveIgnoringCommandCheckpoint(input.sourceRevision)) {
+            if (!projectRevisionMatchesLiveIgnoringSaveWrites(input.sourceRevision)) {
                 receipts.emitFailure('revision-mismatch');
                 throw new Error('Project changed during rendering; the artifact was not attached');
             }

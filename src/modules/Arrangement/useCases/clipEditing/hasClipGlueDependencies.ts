@@ -1,5 +1,6 @@
 import { hasActiveStepRecordingDependency } from '#/modules/MIDI/useCases';
 
+import { getHeldClips } from '../../models/TrackAlternativeClips';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { getTrackStoreState } from '../getTrackStoreState';
 
@@ -30,11 +31,6 @@ export function hasClipGlueDependencies(clipIds: readonly string[]): boolean {
     }
     return (
         (state?.ghostClips ?? []).some(hasExternalLinkedChild) ||
-        (state?.tracks.some(
-            (track) =>
-                track.clips.some(hasExternalLinkedChild) ||
-                track.alternatives.some((alternative) => alternative.clips.some(hasExternalLinkedChild))
-        ) ??
-            false)
+        (state?.tracks.some((track) => getHeldClips(track).some(hasExternalLinkedChild)) ?? false)
     );
 }

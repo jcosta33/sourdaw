@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { logger } from '#/infra/logger/appLogger';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { defaultTransportState, playheadPositionRef, transportStore } from '#/modules/Transport/stores';
@@ -98,6 +99,7 @@ describe('branch switch stops the transport', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         automergeRepository.reset();
+        registerProjectSlotProjections();
         vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         automergeRepository.createProject('branch transport test');
         branchStore.set({

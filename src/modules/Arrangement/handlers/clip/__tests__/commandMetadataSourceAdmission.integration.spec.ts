@@ -1,6 +1,7 @@
 import { getHeads } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
 import {
@@ -135,6 +136,7 @@ describe('completed command metadata and audio source admission', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         setNotificationEventBus(createEventBus<NotificationEvents>());
         clearHandlerRegistry();
         clearUndoHistory();
