@@ -5,7 +5,6 @@ import {
     finalizeRecoveredCommandBatchEffects,
     type createVerifiedBatchReceipt,
 } from '#/modules/Command/useCases';
-import { projectRevisionMatchesLiveIgnoringSaveWrites } from '#/modules/CrdtDocument/useCases';
 import { type AgentWorkOwnerIdentity } from '#/utils/agentRenderReceipt';
 
 import { describeAgentRunHardLimit } from '../../models/AgentResourceLimits';
@@ -20,6 +19,7 @@ import {
 } from '../../stores/pendingActionConfirmationStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
+import { settledProjectContentMatches } from '../settledProjectContentMatches';
 
 import { formatSectionRenderReviewSummary } from './formatSectionRenderReviewSummary';
 import { projectSectionRenderConfirmation } from './projectSectionRenderConfirmation';
@@ -443,7 +443,7 @@ export async function executeCommittedSectionRenderRetry(input: {
         return finishAlreadyComplete(confirmation, durableReceipt, input.commandBatch);
     }
     const sourceRevision = confirmation.followUpProjectRevision;
-    if (!sourceRevision || !projectRevisionMatchesLiveIgnoringSaveWrites(sourceRevision)) {
+    if (!sourceRevision || !settledProjectContentMatches(sourceRevision)) {
         return failStaleRevision(confirmation);
     }
     if (!canExecuteCommandBatchEffects()) {

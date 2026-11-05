@@ -644,7 +644,7 @@
                 },
                 {
                     "path": "src/modules/AudioRendering/useCases/__tests__/agentOfflineRender.spec.ts",
-                    "digest": "74f7c83ca1e5d33b0f2a9ac7b6b3841788a99f7e1fd00ed69ecd4f196a80ab81"
+                    "digest": "c8807b20b8ccc6b262fc94deb9ea3417dfb7c52c758b63a62a17df84b764680c"
                 }
             ]
         },
