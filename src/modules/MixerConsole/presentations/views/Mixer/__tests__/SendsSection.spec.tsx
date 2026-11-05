@@ -2,7 +2,7 @@ import { act, render, screen, fireEvent, type RenderResult } from '@testing-libr
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { trackStore } from '#/modules/Arrangement/stores';
-import { levelToSendPosition } from '#/utils/audioLevelLaw';
+import { levelToSendPosition, sendPositionToLevel } from '#/utils/audioLevelLaw';
 
 import { SendsSection } from '../SendsSection';
 
@@ -261,6 +261,59 @@ describe('SendsSection', () => {
         expect(action).toMatchObject({ type: 'setSend', payload: { trackId: 'track-9', expectedLevel: 0.2 } });
         expect(action.payload.level).toBeCloseTo(previewedLevel, 6);
         // The next track shows its own level, not the one left on the last.
+        expect(screen.getByRole('slider', { name: 'Send to Reverb' })).toHaveAttribute(
+            'aria-valuenow',
+            String(Math.round(levelToSendPosition(0.5)))
+        );
+    });
+
+    it('writes nothing for a drag that comes back to the level it started on, and then follows the project', async () => {
+        mocks.tracks = [makeBus({ id: 'bus-1', name: 'Reverb' })];
+        // A level on the slider's own grid, so coming back to its position is coming back to it exactly.
+        const startLevel = sendPositionToLevel(77);
+        const track: Track = {
+            ...baseTrack,
+            id: 'track-9',
+            sends: [{ busId: 'bus-1', level: startLevel, preFader: false }],
+        };
+        const view = renderInProject(track);
+        const root = screen.getByRole('slider', { name: 'Send to Reverb' }).closest('[data-slot="slider"]');
+        if (!(root instanceof HTMLElement)) {
+            throw new Error('Missing Slider root');
+        }
+        let captured = false;
+        Object.defineProperties(root, {
+            setPointerCapture: { configurable: true, value: () => (captured = true) },
+            releasePointerCapture: { configurable: true, value: () => (captured = false) },
+            hasPointerCapture: { configurable: true, value: () => captured },
+        });
+        vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
+            x: 0,
+            y: 0,
+            top: 0,
+            bottom: 20,
+            left: 0,
+            right: 100,
+            width: 100,
+            height: 20,
+            toJSON: () => ({}),
+        });
+
+        fireEvent.pointerDown(root, { pointerId: 1, button: 0, clientX: 40, clientY: 10 });
+        fireEvent.pointerMove(root, { pointerId: 1, clientX: 77, clientY: 10 });
+        expect(mocks.previewSend.mock.lastCall![2]).toBe(startLevel);
+        await act(async () => {
+            fireEvent.pointerUp(root, { pointerId: 1 });
+            fireEvent.lostPointerCapture(root, { pointerId: 1 });
+        });
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+
+        // Undo or automation moves the send afterwards: the row shows it, not the level it was left on.
+        await act(async () => {
+            view.rerender(
+                <SendsSection track={{ ...track, sends: [{ busId: 'bus-1', level: 0.5, preFader: false }] }} />
+            );
+        });
         expect(screen.getByRole('slider', { name: 'Send to Reverb' })).toHaveAttribute(
             'aria-valuenow',
             String(Math.round(levelToSendPosition(0.5)))

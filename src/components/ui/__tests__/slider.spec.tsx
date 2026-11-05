@@ -273,15 +273,18 @@ describe('Slider', () => {
                     fireEvent.lostPointerCapture(root, { pointerId: 1 });
                 },
             ],
-        ])('commits nothing for a drag that comes back to where it started before %s', (_route, end) => {
+        ])('commits the start value once for a drag that comes back to it before %s', (_route, end) => {
             const harness = renderLevelSlider();
             fireEvent.pointerDown(harness.root, { pointerId: 1, button: 0, clientX: 40, clientY: 10 });
             fireEvent.pointerMove(harness.root, { pointerId: 1, clientX: 20, clientY: 10 });
             expect(harness.changes).toEqual([[40], [20]]);
+            // Radix stays silent on a release at the start value; the gesture still
+            // previewed, so its caller must still see it end.
             end(harness);
+            expect(harness.commits).toEqual([[20]]);
             fireEvent.blur(window);
             harness.view.unmount();
-            expect(harness.commits).toEqual([]);
+            expect(harness.commits).toEqual([[20]]);
             expect(harness.changes).toEqual([[40], [20]]);
         });
 
