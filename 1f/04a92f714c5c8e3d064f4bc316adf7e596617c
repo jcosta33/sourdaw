@@ -1,0 +1,21 @@
+src/modules/ContentBrowser/presentations/components/Sidebar/PresetItem.tsx
+  s_5f607c93467e2c::t_a60d94dad7ca7a 27-33,44-47,74,84,95
+src/modules/ContentBrowser/presentations/components/Sidebar/__tests__/PresetItemBranches.spec.tsx
+  s_5f607c93467e2c::t_e00f97da5ebc3d 144-155,160,171-178
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1f04a92f714c5c8e3d064f4bc316adf7e596617c",
+  "prompts": {},
+  "sessions": {
+    "s_5f607c93467e2c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_5f607c93467e2c",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
