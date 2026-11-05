@@ -1,0 +1,55 @@
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRollToolbar.tsx
+  s_0314bb17e5dee3::t_d182c5c8c76ca2 12,194
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollToolbar.spec.tsx
+  s_0314bb17e5dee3::t_e67747d7ffc960 190-203
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipInspector.spec.tsx
+  s_0314bb17e5dee3::t_f92e53fe02f817 272-284
+src/modules/Transport/models/__tests__/musicalPositionFormat.spec.ts
+  s_0314bb17e5dee3::t_def7f36f3a0dfe 1-71
+src/modules/Transport/models/musicalPositionFormat.ts
+  s_55244eb93b97d1::t_64a7d741b70c2f 1-56
+src/modules/Transport/useCases/index.ts
+  s_0314bb17e5dee3::t_358c0763a8e27c 82-83
+src/modules/Transport/useCases/transportQueries/__tests__/formatMusicalPosition.spec.ts
+  s_0314bb17e5dee3::t_85f192a1868ac6 1-32
+src/modules/Transport/useCases/transportQueries/formatMusicalLength.ts
+  s_0314bb17e5dee3::t_433129b4d1257e 1-9
+src/modules/Transport/useCases/transportQueries/formatMusicalPosition.ts
+  s_0314bb17e5dee3::t_eaa10791461a88 1-9
+src/modules/Transport/useCases/transportQueries/readMeterMap.ts
+  s_0314bb17e5dee3::t_f0e3c7f35fd6eb 1-13
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useSelectionLabel.spec.ts
+  s_0314bb17e5dee3::t_6fde77c5e7e291 4-6,19-28,49-50,106-107,150,158,161-162,164,169,181-182,193-194,202,205-207,209,214
+src/utils/Music/MusicalScale.ts
+  s_55244eb93b97d1::t_c69798d79b1772 20-41
+src/utils/Music/__tests__/MusicalScale.spec.ts
+  s_0314bb17e5dee3::t_cd5bd23078a73c 3-27
+src/modules/TimelineEditor/presentations/views/Inspector/ClipInspector.tsx
+  s_0314bb17e5dee3::t_601da04f49adeb 14,195,200,205
+src/modules/WorkspaceShell/presentations/hooks/useSelectionLabel.ts
+  s_0314bb17e5dee3::t_9d41f5cf204116 4-5,11,16,31-38,46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2a8300148a7325ace2d59737a29e8047b28ce755",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
