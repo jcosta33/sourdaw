@@ -34,7 +34,14 @@ describe('findShortcutConflicts', () => {
             'shift+n',
             ['arrangement.addAudioTrack', 'loopStation.pad.r3c5.record'],
         ],
-        ['a play pad against a play pad', 'loopStation.pad.r3c6.play', 'r', ['loopStation.pad.r1c3.play']],
+        ['a global against a play pad', 'transport.toggleLoop', 'r', ['loopStation.pad.r1c3.play']],
+        ['a play pad against a global', 'loopStation.pad.r1c3.play', 'alt+i', ['workspace.toggleInspector']],
+        [
+            'a play pad against a global and a play pad sharing a default',
+            'loopStation.pad.r1c3.play',
+            'm',
+            ['transport.toggleMetronome', 'loopStation.pad.r3c6.play'],
+        ],
         ['a play pad against a record pad', 'loopStation.pad.r3c6.play', 'shift+r', ['loopStation.pad.r1c3.record']],
         [
             'a key named in another case',
@@ -47,10 +54,8 @@ describe('findShortcutConflicts', () => {
     });
 
     it.each([
-        ['a global against a play pad, which armed mode overrides', 'transport.toggleLoop', 'r'],
-        ['a play pad against a global it overrides', 'loopStation.pad.r1c3.play', 'alt+i'],
         ['a default key the custom mapping replaced', 'transport.toggleMetronome', 'l'],
-        ['the definition against its own key', 'transport.toggleMetronome', 'm'],
+        ['the definition against its own key', 'transport.toggleLoop', 'mod+shift+l'],
         ['the same key under different modifiers', 'transport.toggleLoop', 'mod+n'],
     ])('reports no conflict for %s', (_label, definitionId, combo) => {
         expect(conflictIds(definitionId, combo)).toStrictEqual([]);

@@ -5,11 +5,11 @@ import { findShortcutConflicts } from './findShortcutConflicts';
 
 /**
  * Set the custom key combo for one shortcut definition, reassigning it: every
- * definition that held the combo where it would compete for the same keypress
- * (see `findShortcutConflicts`) loses it in the same write, so one key never
- * fires two commands. A definition left with no key stays explicitly unbound
- * (`[]`) rather than falling back to its defaults. Callers that should ask
- * first (the Preferences editor) check `findShortcutConflicts` before calling.
+ * other definition that held the combo (see `findShortcutConflicts`) loses it
+ * in the same write, so one key never fires two commands. A definition left
+ * with no key stays explicitly unbound (`[]`) rather than falling back to its
+ * defaults. Callers that should ask first (the Preferences editor) check
+ * `findShortcutConflicts` before calling.
  *
  * The shortcut store is owned by the Command module; cross-module callers (the
  * Workspace preferences editor) route mapping edits through this use case rather

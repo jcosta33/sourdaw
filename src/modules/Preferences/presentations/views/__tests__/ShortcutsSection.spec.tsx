@@ -29,6 +29,8 @@ const DEFINITIONS: ShortcutDefinition[] = [
     definition('transport.toggleMetronome', 'Toggle Metronome', ['m']),
     definition('transport.toggleLoop', 'Toggle Loop', ['l']),
     { ...definition('editing.undo', 'Undo', ['mod+z']), category: 'editing' },
+    { ...definition('editing.copyClip', 'Copy', ['mod+c']), category: 'editing' },
+    definition('loopStation.pad.r0c0.play', 'Loop Station: Play row 1 col 1', ['1']),
 ];
 
 function setCustomMappings(customMappings: Record<string, string[]>): void {
@@ -124,6 +126,27 @@ describe('ShortcutsSection', () => {
         });
         expect(bindingButton('Toggle Metronome')).toHaveTextContent('L');
         expect(bindingButton('Toggle Loop')).toHaveTextContent('Unassigned');
+    });
+
+    it('asks before moving a global key onto a Loop Station play pad, and unbinds the global on confirm', async () => {
+        vi.mocked(confirmUser).mockResolvedValue(true);
+        render(<ShortcutsSection />);
+        startCapture('Loop Station: Play row 1 col 1');
+
+        fireEvent.keyDown(window, { key: 'c', code: 'KeyC', metaKey: true });
+
+        expect(confirmUser).toHaveBeenCalledWith(
+            expect.objectContaining({
+                message: '⌘ C is assigned to Copy. Reassign it to Loop Station: Play row 1 col 1?',
+            })
+        );
+        await vi.waitFor(() => {
+            expect(shortcutStore.value?.customMappings).toStrictEqual({
+                'loopStation.pad.r0c0.play': ['mod+c'],
+                'editing.copyClip': [],
+            });
+        });
+        expect(bindingButton('Copy')).toHaveTextContent('Unassigned');
     });
 
     it('leaves both commands unchanged when the reassignment is cancelled', async () => {

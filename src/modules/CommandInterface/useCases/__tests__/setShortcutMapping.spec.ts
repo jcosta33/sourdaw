@@ -95,12 +95,22 @@ describe('setShortcutMapping reassignment', () => {
         shortcutStore.set({ definitions: reassignState.definitions, customMappings: {} });
     });
 
-    it('moves the combo off the global binding that held it, leaving it explicitly unbound', () => {
+    it('moves the combo off every binding that held it, pads included, leaving them explicitly unbound', () => {
         setShortcutMapping('transport.toggleMetronome', 'l');
 
         expect(shortcutStore.value?.customMappings).toStrictEqual({
             'transport.toggleMetronome': ['l'],
             'transport.toggleLoop': [],
+            'loopStation.pad.r2c8.play': [],
+        });
+    });
+
+    it('moves a global key onto a play pad, unbinding the global', () => {
+        setShortcutMapping('loopStation.pad.r2c8.play', 'mod+i');
+
+        expect(shortcutStore.value?.customMappings).toStrictEqual({
+            'loopStation.pad.r2c8.play': ['mod+i'],
+            'workspace.toggleInspector': ['alt+i'],
         });
     });
 
