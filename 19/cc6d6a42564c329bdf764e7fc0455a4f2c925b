@@ -1,0 +1,27 @@
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheUnpinnedRestore.spec.ts
+  s_05e88737aac85b::t_d0d2bc7dcd0f0b 28,30,84,86,103-139,161,199,219-324
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_05e88737aac85b::t_de05c7794b77e5 1755,1757,1768,1772-1804,1812,1840-1845,1870,1877-1880
+src/modules/AudioEngine/useCases/restoreUnpinnedAudioBuffersFromIdb.ts
+  s_05e88737aac85b::t_1132ff2ef286fb 9,16-18
+src/modules/SampleLibrary/AGENTS.md
+  s_05e88737aac85b::t_4b81e3c2f67e5b 23
+src/modules/SampleLibrary/useCases/__tests__/ensureFactorySampleBuffer.spec.ts
+  s_05e88737aac85b::t_3635b25c8ceea7 4-5,13,21,34,121,173-185,251-267
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "19cc6d6a42564c329bdf764e7fc0455a4f2c925b",
+  "prompts": {},
+  "sessions": {
+    "s_05e88737aac85b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_05e88737aac85b",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
