@@ -1,0 +1,19 @@
+.dependency-cruiser-known-violations-module-tiers.json
+  s_a73f7bcc4a21d9::t_42358372ad792b 16-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "376c875582d1554fcd37aac3a5f8dceac0fa7be1",
+  "prompts": {},
+  "sessions": {
+    "s_a73f7bcc4a21d9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_a73f7bcc4a21d9",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
