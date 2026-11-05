@@ -6,7 +6,7 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
-import { clearHandlerRegistry, registerHandlerMap, type ActionHandler, type AppAction } from '#/modules/Command/stores';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     compileVersionedCommandBatchEnvelope,
@@ -36,6 +36,7 @@ import {
     projectStore,
 } from '#/modules/Project/stores';
 import { buildProjectData } from '#/modules/Project/useCases';
+import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import {
     configureAiWorkflowCommandPreflightFixture,

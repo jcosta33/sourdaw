@@ -53,7 +53,15 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
 }));
 
 vi.mock('#/modules/AudioRendering/useCases', () => ({
+    disposeExactAgentSectionRenderArtifact: vi.fn(),
+    getAgentMeasurementArtifact: vi.fn(),
+    getAgentSectionRenderArtifacts: vi.fn(),
+    getExactAgentSectionRenderArtifact: vi.fn(),
     getSectionRenderFollowUpFailure: () => null,
+    rebindAgentProjectSectionArtifactRevisions: vi.fn(),
+    renderAgentMeasurementScope: vi.fn(),
+    renderAgentPreviewMeasurementScope: vi.fn(),
+    retainAgentMeasurementRenders: vi.fn(),
     retryAgentProjectSectionRenders: mocks.retryRenders,
 }));
 
