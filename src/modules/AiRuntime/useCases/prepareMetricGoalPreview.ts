@@ -22,9 +22,9 @@ import { bindMetricGoalsToBatch } from './bindMetricGoalsToBatch';
 import { agentRunCancellation } from './cancelAgentRun';
 import { collectMetricGoalProof } from './collectMetricGoalProof';
 import { digestCommandBatchContent } from './digestCommandBatchContent';
-import { readGoalPrefix } from './evaluateMetricGoalAdmission';
 import { executeAnalysisMeasure } from './executeAnalysisMeasure';
 import { type MetricGoal, type MetricGoalState } from './metricGoalContractTypes';
+import { readGoalPrefix } from './readGoalPrefix';
 
 type PreviewInput = {
     state: MetricGoalState;
@@ -164,14 +164,56 @@ function scopeMembers(ids: string[], kind: PreviewRequest['scope']['kind'], cont
  */
 function goalReads(goal: PreviewGoal, binding: Binding): GoalRead[] {
     const prefix = readGoalPrefix(goal, binding);
-    const hashes =
-        prefix === undefined
-            ? [binding.contentHash]
-            : [prefix.after, prefix.before, binding.contentHash].filter((hash) => hash !== null);
-    return [
-        ...hashes.map((hash) => ({ hash, goal, ids: goal.targetIds })),
-        { hash: binding.contentHash, goal, ids: goal.referenceTargetIds },
-    ];
+    if (prefix === undefined) {
+        return subjectReads(goal, [binding.contentHash], binding);
+    }
+    const hashes = [prefix.after, prefix.before, binding.contentHash].filter((hash) => hash !== null);
+    return subjectReads(goal, hashes, binding);
+}
+
+/** A goal's targets at each prefix it is read at, and its reference targets at the whole batch. */
+function subjectReads(goal: PreviewGoal, hashes: readonly string[], binding: Binding): GoalRead[] {
+    const targetReads = hashes.map((hash) => ({ hash, goal, ids: goal.targetIds }));
+    return [...targetReads, { hash: binding.contentHash, goal, ids: goal.referenceTargetIds }];
+}
+
+function readScopeGroup(
+    groups: Map<string, ScopeGroup>,
+    kind: PreviewRequest['scope']['kind'],
+    range: PreviewGoal['range']
+): ScopeGroup {
+    const key = JSON.stringify([kind, range]);
+    const existing = groups.get(key);
+    if (existing !== undefined) {
+        return existing;
+    }
+    const created: ScopeGroup = { kind, range, metricsById: new Map<string, Set<PreviewGoal['metricId']>>() };
+    groups.set(key, created);
+    return created;
+}
+
+function addSubjectMetric(group: ScopeGroup, id: string, metricId: PreviewGoal['metricId']): void {
+    const metrics = group.metricsById.get(id);
+    if (metrics === undefined) {
+        group.metricsById.set(id, new Set([metricId]));
+        return;
+    }
+    metrics.add(metricId);
+}
+
+/** Every metric a goal reads on any subject of one chunk, in first-read order. */
+function chunkMetrics(metricsById: ScopeGroup['metricsById'], chunk: readonly string[]): PreviewGoal['metricId'][] {
+    const metrics = new Set<PreviewGoal['metricId']>();
+    for (const id of chunk) {
+        const subjectMetrics = metricsById.get(id);
+        if (subjectMetrics === undefined) {
+            continue;
+        }
+        for (const metricId of subjectMetrics) {
+            metrics.add(metricId);
+        }
+    }
+    return [...metrics];
 }
 
 /**
@@ -193,11 +235,9 @@ function sharedScopeRequests(
             if (members.length === 0) {
                 continue;
             }
-            const key = JSON.stringify([kind, goal.range]);
-            const group = groups.get(key) ?? { kind, range: goal.range, metricsById: new Map() };
-            groups.set(key, group);
+            const group = readScopeGroup(groups, kind, goal.range);
             for (const id of members) {
-                group.metricsById.set(id, (group.metricsById.get(id) ?? new Set()).add(goal.metricId));
+                addSubjectMetric(group, id, goal.metricId);
             }
         }
     }
@@ -206,7 +246,7 @@ function sharedScopeRequests(
         const requests: PreviewRequest[] = [];
         for (let start = 0; start < members.length; start += ANALYSIS_MEASURE_MAX_TARGETS) {
             const chunk = members.slice(start, start + ANALYSIS_MEASURE_MAX_TARGETS);
-            const metrics = [...new Set(chunk.flatMap((id) => [...(metricsById.get(id) ?? [])]))];
+            const metrics = chunkMetrics(metricsById, chunk);
             const scope = kind === 'master' ? { kind } : { kind, ids: chunk };
             requests.push({ hash, envelope, scope, range, metrics });
         }
@@ -220,10 +260,9 @@ function buildPreviewRequests(
     envelope: PreviewEnvelope,
     context: ProjectContext
 ): PreviewRequest[] {
-    const reads = state.authorities
-        .flatMap((authority) => authority.goals)
-        .filter((goal) => currentPreviewGoal(goal, context))
-        .flatMap((goal) => goalReads(goal, binding));
+    const goals = state.authorities.flatMap((authority) => authority.goals);
+    const previewGoals = goals.filter((goal) => currentPreviewGoal(goal, context));
+    const reads = previewGoals.flatMap((goal) => goalReads(goal, binding));
     const requests: PreviewRequest[] = [];
     const needed = [...binding.prefixes];
     if (!needed.some((prefix) => prefix.after === binding.contentHash)) {

@@ -13,6 +13,7 @@ import { type MetricGoal, type MetricGoalState } from './metricGoalContractTypes
 import { objectiveMetricProjection } from './objectiveMetricProjection';
 import { describePerceptualConstraintFailure } from './perceptualConstraints/describePerceptualConstraintFailure';
 import { perceptualConstraintCriterionMatches } from './perceptualConstraints/perceptualConstraintInvariants';
+import { readGoalPrefix } from './readGoalPrefix';
 
 type AdmissionInput = {
     state: MetricGoalState | null | undefined;
@@ -410,17 +411,6 @@ function criterionTargets(
         }
     }
     return { baseline, observed, reference, unit, failure };
-}
-
-/** The logical step a goal is judged across; an overall goal spans the whole batch from the live project. */
-export function readGoalPrefix(
-    goal: Pick<MetricGoal, 'stepId'>,
-    binding: Binding
-): Binding['prefixes'][number] | undefined {
-    if (goal.stepId === 'overall') {
-        return { stepId: 'overall', before: null, after: binding.contentHash };
-    }
-    return binding.prefixes.find((entry) => entry.stepId === goal.stepId);
 }
 
 function evaluateCriterion(
