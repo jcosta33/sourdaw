@@ -1,0 +1,31 @@
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_fec7059b7a251c::t_5fbb3c433f6718 54-55
+src/modules/Preferences/presentations/views/index.ts
+  s_fec7059b7a251c::t_74e05ebdc3326f 2
+src/modules/WorkspaceShell/events/WorkspaceEvents.ts
+  s_fec7059b7a251c::t_3d2250476a0363 1
+src/modules/Preferences/events/PreferencesEvents.ts
+  s_fec7059b7a251c::t_8253fd4888e727 3-6
+src/modules/MIDI/repositories/webMidi/setState.ts
+  s_fec7059b7a251c::t_1b2b2d40b834b5 17-23
+src/modules/Preferences/events/index.ts
+  s_fec7059b7a251c::t_db020b885ca98f 1
+src/modules/Preferences/presentations/views/PreferencesDialog.tsx
+  s_fec7059b7a251c::t_915b835964c8fd 16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f5bccdb2ff9682a2eaf5589ae867331537639038",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
