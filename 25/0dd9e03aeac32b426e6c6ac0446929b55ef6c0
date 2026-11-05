@@ -1,0 +1,31 @@
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastGrooveWindowAdmission.spec.ts
+  s_ba80576e6f5cb5::t_72c8ecd208e429 828,830-831
+  s_ba80576e6f5cb5::t_6a69769e9b043e 914-915,918,922-924,926
+  s_ba80576e6f5cb5::t_01e8c47470a17e 1175,1219-1289,1292
+  s_ba80576e6f5cb5::t_f2ee780dab0e85 1174
+  s_ba80576e6f5cb5::t_388994893a5f6c 1290-1291
+  s_ba80576e6f5cb5::t_dcf702b641b0db 1140-1141
+src/modules/Transport/useCases/scheduling/processLiveYeastTrackBlock.ts
+  s_ba80576e6f5cb5::t_14a10486e421d4 226-230
+  s_ba80576e6f5cb5::t_e2059c59894683 223-225
+  s_ba80576e6f5cb5::t_61712d19e0ac83 231-233
+  s_ba80576e6f5cb5::t_6ce36821bf0b55 4-8,72-73,138,220-222,234-240,244-254,271,453
+src/modules/Transport/useCases/scheduling/prepareYeastTrackNotes.ts
+  s_ba80576e6f5cb5::t_6028156aa55ceb 200,271
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "250dd9e03aeac32b426e6c6ac0446929b55ef6c0",
+  "prompts": {},
+  "sessions": {
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
