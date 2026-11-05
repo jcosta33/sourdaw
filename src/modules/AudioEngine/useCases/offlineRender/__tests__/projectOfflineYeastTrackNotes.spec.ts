@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 
+import { defaultGrooveTemplateState } from '#/modules/MIDI/stores';
+import { createGrooveMidiEventProjector } from '#/modules/MIDI/useCases';
 import { createOfflineYeastMidiProcessor } from '#/modules/Yeast/useCases';
 
 import { type OfflineMidiEventProjector } from '../../../repositories/offlineScheduler/offlineMidiEventProjectorState';
@@ -269,6 +271,50 @@ describe('projectOfflineYeastTrackNotes', () => {
             expect.objectContaining({ pitch: 60, startBeat: 4, endBeat: 4.5, beatsIntoNote: 0.5, expression }),
         ]);
         expect(notes[0]?.beatsIntoNote).toBeUndefined();
+    });
+
+    it('ends at the pass end the length a rack adds past it, as the live window must', () => {
+        // A rack that lengthens the 0.25-beat note at 3.5 fourfold returns a
+        // note running to 4.5, past the pass end. Live playback cannot strike
+        // that added length on the head of a pass it has already played, so
+        // the bounce, through the real projection, ends it at the pass end too.
+        const processYeastMidi = vi.fn<OfflineYeastMidiProcessor>((input) =>
+            input.events.map((event) => {
+                const timePpq = event.timePpq ?? event.timeSamples / 100;
+                if (event.kind.type !== 'noteOff') {
+                    return { ...event, timePpq };
+                }
+                return { ...event, timePpq: timePpq + 0.75, timeSamples: event.timeSamples + 75 };
+            })
+        );
+
+        const notes = projectOfflineYeastTrackNotes({
+            trackId: 'track-1',
+            iterations: [0, 4].map((iterationStartBeat) => ({
+                sourceNotes: [{ id: 'lengthened', pitch: 60, startBeat: 3.5, duration: 0.25, velocity: 100 }],
+                clipId: 'clip-1',
+                clipStartBeat: 0,
+                clipEndBeat: 8,
+                iterationStartBeat,
+                loopLengthBeats: 4,
+                midiOffsetBeats: 0,
+                loopEnabled: true,
+            })),
+            sampleRate: 100,
+            blockStartSamples: 0,
+            blockEndSamples: 800,
+            defaultTempo: 60,
+            changes: [],
+            projectMidiEvents: createGrooveMidiEventProjector(defaultGrooveTemplateState),
+            projectPpqEndpoints,
+            processYeastMidi,
+            projectPitch: ({ pitch }) => pitch,
+        });
+
+        expect(notes.map((note) => [note.startBeat, note.endBeat])).toEqual([
+            [3.5, 4],
+            [7.5, 8],
+        ]);
     });
 
     it('anchors source-free generator notes to the active carrier clip chord', () => {
