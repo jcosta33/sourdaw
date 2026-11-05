@@ -1,0 +1,21 @@
+src/modules/Project/presentations/views/TemplateGallery.tsx
+  s_fec7059b7a251c::t_4eb0e2b21a5dfb 61
+tests/e2e/launchFlows.spec.ts
+  s_fec7059b7a251c::t_5dc00b2ec4a933 29-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "83d1bc122a72a51c767929dce7573e9a331cc89f",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
