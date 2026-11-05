@@ -68,18 +68,32 @@ function preservesNativeTabTraversal(event: KeyboardEvent): boolean {
     );
 }
 
-function preservesNativeButtonActivation(event: KeyboardEvent): boolean {
-    if (
-        (event.key !== 'Enter' && event.key !== ' ') ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.altKey ||
-        event.shiftKey
-    ) {
+function isUnmodifiedActivationKey(event: KeyboardEvent): boolean {
+    return (
+        (event.key === 'Enter' || event.key === ' ') &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        !event.shiftKey
+    );
+}
+
+function preservesNativeButtonActivation(event: KeyboardEvent, keyboardFocusedElement: Element | null): boolean {
+    if (!isUnmodifiedActivationKey(event)) {
         return false;
     }
     const target = event.target;
-    return target instanceof HTMLButtonElement && target.ownerDocument.activeElement === target;
+    return (
+        target instanceof HTMLButtonElement &&
+        target.ownerDocument.activeElement === target &&
+        target === keyboardFocusedElement
+    );
+}
+
+// Stop returns false so Escape and Enter keep their default elsewhere, which
+// would let Enter also click a mouse-focused button after stopping transport.
+function claimsButtonActivation(event: KeyboardEvent): boolean {
+    return isUnmodifiedActivationKey(event) && event.target instanceof HTMLButtonElement;
 }
 
 /**
@@ -87,8 +101,21 @@ function preservesNativeButtonActivation(event: KeyboardEvent): boolean {
  */
 export const useGlobalKeyboardShortcuts = (): void => {
     useEffect(() => {
+        // Chromium flips the focused element to :focus-visible on the keypress
+        // itself, so keyboard focus is read when focus arrives. A mouse-clicked
+        // button is never recorded and keeps Space and Enter as transport keys.
+        let keyboardFocusedElement: Element | null = null;
+        const focusinHandler = (event: FocusEvent) => {
+            const target = event.target;
+            keyboardFocusedElement = target instanceof Element && target.matches(':focus-visible') ? target : null;
+        };
+        const focusoutHandler = (event: FocusEvent) => {
+            if (event.target === keyboardFocusedElement) {
+                keyboardFocusedElement = null;
+            }
+        };
         const handler = (event: KeyboardEvent) => {
-            if (preservesNativeTabTraversal(event) || preservesNativeButtonActivation(event)) {
+            if (preservesNativeTabTraversal(event) || preservesNativeButtonActivation(event, keyboardFocusedElement)) {
                 return;
             }
             // A load that replaced the CRDT authority and then failed leaves the
@@ -163,7 +190,7 @@ export const useGlobalKeyboardShortcuts = (): void => {
                 keyTarget,
             });
 
-            if (shouldPreventDefault) {
+            if (shouldPreventDefault || (!isTextEntry && claimsButtonActivation(event))) {
                 event.preventDefault();
             }
         };
@@ -173,10 +200,14 @@ export const useGlobalKeyboardShortcuts = (): void => {
         };
 
         void loadKeyboardLayoutMap();
+        window.addEventListener('focusin', focusinHandler, true);
+        window.addEventListener('focusout', focusoutHandler, true);
         window.addEventListener('keydown', handler);
         window.addEventListener('keyup', keyupHandler);
 
         return () => {
+            window.removeEventListener('focusin', focusinHandler, true);
+            window.removeEventListener('focusout', focusoutHandler, true);
             window.removeEventListener('keydown', handler);
             window.removeEventListener('keyup', keyupHandler);
         };

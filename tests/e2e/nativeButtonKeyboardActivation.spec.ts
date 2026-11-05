@@ -56,6 +56,8 @@ test('native button Enter and Space activate once without transport shortcuts; w
     expect(pausedPosition).toMatch(POSITION);
     expect(pausedPosition).not.toBe('1.1.000');
 
+    // Script focus is :focus-visible only after keyboard use; the prior mouse click would make it a pointer focus.
+    await page.keyboard.press('Shift+Tab');
     await toggle.focus();
     await page.keyboard.press('Enter');
     await expect(toggle).toHaveAttribute('aria-pressed', 'false');
@@ -81,4 +83,44 @@ test('native button Enter and Space activate once without transport shortcuts; w
     await page.keyboard.press('Enter');
     await expect(play).toHaveAttribute('aria-label', 'Play');
     await expect.poll(() => readPlayhead(page)).toBe('1.1.000');
+});
+
+test('Space and Enter stay transport keys after a mouse click leaves a button focused', async ({ page }) => {
+    test.setTimeout(120_000);
+    await setupWorkspace(page);
+    await launch_new_project(page);
+    await page.locator('#main-content').click();
+    await page.keyboard.press('n');
+    await expect(
+        page
+            .getByRole('grid', { name: /Track list/i })
+            .first()
+            .getByText('MIDI', { exact: true })
+    ).toBeVisible();
+
+    const play = page.getByTestId('transport-play');
+    const loop = page.getByRole('button', { name: 'Loop', exact: true });
+    await expect(play).toHaveAttribute('aria-label', 'Play');
+    await expect(loop).toHaveAttribute('aria-pressed', 'false');
+
+    await loop.click();
+    await expect(loop).toHaveAttribute('aria-pressed', 'true');
+    await expect(loop).toBeFocused();
+
+    await page.keyboard.press('Space');
+    await expect(play).toHaveAttribute('aria-label', 'Pause');
+    await waitForMovingPlayhead(page);
+    await expect(loop).toHaveAttribute('aria-pressed', 'true');
+
+    await page.keyboard.press('Enter');
+    await expect(play).toHaveAttribute('aria-label', 'Play');
+    await expect(loop).toHaveAttribute('aria-pressed', 'true');
+
+    await page.keyboard.press('Tab');
+    const focused = page.locator(':focus');
+    const before = await focused.getAttribute('aria-pressed');
+    expect(before).not.toBeNull();
+    await page.keyboard.press('Space');
+    await expect(focused).not.toHaveAttribute('aria-pressed', before ?? '');
+    await expect(play).toHaveAttribute('aria-label', 'Play');
 });

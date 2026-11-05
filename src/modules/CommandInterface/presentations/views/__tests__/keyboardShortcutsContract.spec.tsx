@@ -90,6 +90,15 @@ describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#2
         registerHandlerMap({ togglePlayback: stubTogglePlaybackHandler() });
     }
 
+    // jsdom does not compute :focus-visible; stub the one element for the
+    // focus-time read, then focus it so a real focusin event is dispatched.
+    function focusWithModality(element: HTMLElement, focusVisible: boolean): void {
+        const nativeMatches = element.matches.bind(element);
+        element.matches = (selector: string) =>
+            selector === ':focus-visible' ? focusVisible : nativeMatches(selector);
+        element.focus();
+    }
+
     function mount(node: HTMLElement): HTMLElement {
         document.body.appendChild(node);
         cleanupNodes.push(node);
@@ -384,12 +393,52 @@ describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#2
             mocks.handleKeydown.mockReturnValue(true);
             render(<Host />);
             const button = mount(document.createElement('button'));
-            button.focus();
+            focusWithModality(button, true);
 
             const event = dispatchKey(button, { key });
 
             expect(mocks.handleKeydown).not.toHaveBeenCalled();
             expect(event.defaultPrevented).toBe(false);
+        });
+
+        it.each(['Enter', ' '])('routes %s from a focused button that is not focus-visible (mouse click)', (key) => {
+            openSessionWithCommandHandlers();
+            mocks.handleKeydown.mockReturnValue(true);
+            render(<Host />);
+            const button = mount(document.createElement('button'));
+            focusWithModality(button, false);
+
+            const event = dispatchKey(button, { key });
+
+            expect(mocks.handleKeydown).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ key }));
+            expect(event.defaultPrevented).toBe(true);
+        });
+
+        it('prevents the default of Enter on a mouse-focused button even when the shortcut reports false (stop)', () => {
+            openSessionWithCommandHandlers();
+            mocks.handleKeydown.mockReturnValue(false);
+            render(<Host />);
+            const button = mount(document.createElement('button'));
+            focusWithModality(button, false);
+
+            const event = dispatchKey(button, { key: 'Enter' });
+
+            expect(mocks.handleKeydown).toHaveBeenCalledOnce();
+            expect(event.defaultPrevented).toBe(true);
+        });
+
+        it('forgets keyboard focus when the button is refocused without it', () => {
+            openSessionWithCommandHandlers();
+            mocks.handleKeydown.mockReturnValue(true);
+            render(<Host />);
+            const button = mount(document.createElement('button'));
+            focusWithModality(button, true);
+            button.blur();
+            focusWithModality(button, false);
+
+            dispatchKey(button, { key: ' ' });
+
+            expect(mocks.handleKeydown).toHaveBeenCalledOnce();
         });
 
         it.each(['Enter', ' '])('routes modified %s from a focused button', (key) => {
