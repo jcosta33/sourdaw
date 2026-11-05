@@ -1,13 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { defaultTrackState, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
-import { addClip, createTrack, setTrackStoreState } from '#/modules/Arrangement/useCases';
+import { addClip, createTrack, getArrangementHandlers, setTrackStoreState } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { macroStore, undoHistoryStore } from '#/modules/Command/stores';
+import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     redo,
@@ -23,6 +23,9 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 
 import { duplicateSelectedClipsForward } from '../duplicateSelectedClipsForward';
+
+// A refused redo reports through `notifyUser`; the notification bus does not exist here.
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -49,6 +52,8 @@ describe('duplicateSelectedClipsForward take restore', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        clearHandlerRegistry();
+        registerHandlerMap(getArrangementHandlers());
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
@@ -65,6 +70,7 @@ describe('duplicateSelectedClipsForward take restore', () => {
     afterEach(() => {
         clearUndoHistory();
         resetActionReplayAuthority();
+        clearHandlerRegistry();
         setTrackStoreState(structuredClone(defaultTrackState));
         takeLaneStore.set({ lanes: [] });
         flushAutomergeStorageWrites();
@@ -73,7 +79,7 @@ describe('duplicateSelectedClipsForward take restore', () => {
     });
 
     it('keeps a take on the copy across undo, redo and undo, named by a live clip', async () => {
-        duplicateSelectedClipsForward(['clip-1']);
+        await duplicateSelectedClipsForward(['clip-1']);
         const copyId = clipIds().find((id) => id !== 'clip-1');
         if (!copyId) {
             throw new Error('expected the duplicated copy');
@@ -107,7 +113,7 @@ describe('duplicateSelectedClipsForward take restore', () => {
     });
 
     it('refuses the redo when it cannot re-create its copy', async () => {
-        duplicateSelectedClipsForward(['clip-1']);
+        await duplicateSelectedClipsForward(['clip-1']);
         const copyId = clipIds().find((id) => id !== 'clip-1');
         if (!copyId) {
             throw new Error('expected the duplicated copy');
@@ -132,18 +138,18 @@ describe('duplicateSelectedClipsForward take restore', () => {
 
         await redo();
 
-        // The redo refused: a not-applied redo drops its entry rather than moving it to
+        // The redo refused: a refused action redo stays in `future` rather than moving to
         // `past`, which is what tells this refusal apart from a redo that ran and merely
         // restored nothing.
         expect(undoHistoryStore.value?.past).toHaveLength(0);
-        expect(undoHistoryStore.value?.future).toHaveLength(0);
+        expect(undoHistoryStore.value?.future).toHaveLength(1);
         // Nothing was re-created, so no lane may come back for a track that is gone.
         expect(clipIds()).toEqual([]);
         expect(takeIdsInLiveLanes()).toEqual([]);
         expect(takeLaneStore.value?.lanes).toEqual([]);
     });
 
-    it('leaves no lane for the copy whose destination track was gone', async () => {
+    it('refuses the whole redo when one copy has lost its destination track', async () => {
         setTrackStoreState({
             ...defaultTrackState,
             tracks: [
@@ -155,7 +161,7 @@ describe('duplicateSelectedClipsForward take restore', () => {
         addClip({ id: 'clip-1', trackId: 'track-1', startBeat: 0, endBeat: 4, name: 'Clip A', type: 'audio' });
         addClip({ id: 'clip-2', trackId: 'track-2', startBeat: 0, endBeat: 4, name: 'Clip B', type: 'audio' });
 
-        duplicateSelectedClipsForward(['clip-1', 'clip-2']);
+        await duplicateSelectedClipsForward(['clip-1', 'clip-2']);
         const firstCopy = trackStore.value?.tracks[0]?.clips.find((clip) => clip.id !== 'clip-1');
         const secondCopy = trackStore.value?.tracks[1]?.clips.find((clip) => clip.id !== 'clip-2');
         if (!firstCopy || !secondCopy) {
@@ -200,12 +206,12 @@ describe('duplicateSelectedClipsForward take restore', () => {
 
         await redo();
 
-        // Only the copy that came back may carry a lane, and it must name a live clip.
-        // The closure's own per-copy filter is observed by the unit case in
-        // `duplicateSelectedClipsForward.spec.ts`; here the shared restore guard refuses
-        // the missing track as well, so this case pins the end-to-end outcome.
-        expect(clipIds()).toEqual(['clip-1', firstCopy.id]);
-        expect(takeIdsInLiveLanes()).toEqual([firstTake.id]);
-        expect(clipIdsNamedByLiveTakes()).toEqual([firstCopy.id]);
+        // One gesture redoes atomically: a copy that cannot come back refuses the whole
+        // group, so neither copy returns and no lane comes back for either.
+        expect(trackStore.value?.tracks.flatMap((track) => track.clips.map((clip) => clip.id))).toEqual(['clip-1']);
+        expect(takeIdsInLiveLanes()).toEqual([]);
+        expect(clipIdsNamedByLiveTakes()).toEqual([]);
+        expect(undoHistoryStore.value?.past).toHaveLength(0);
+        expect(undoHistoryStore.value?.future).toHaveLength(2);
     });
 });

@@ -1,55 +1,27 @@
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
-import { addClip, captureRetiredTakeLanes, removeClip, restoreTakesForClip } from '#/modules/Arrangement/useCases';
-import { duplicateClipAutomation } from '#/modules/Automation/useCases';
-import { pushUndoEntry, REDO_NOT_APPLIED } from '#/modules/Command/useCases';
-import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
+import { executeAppActionBatch } from '#/modules/Command/useCases';
+import { type AppAction } from '#/utils/handlerContract';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
-type ClipInfo = {
+type ClipPlacement = {
     clipId: string;
     trackId: string;
     startBeat: number;
     endBeat: number;
-    name: string;
-    type: 'audio' | 'midi';
-    audioBufferId?: string;
-};
-
-type ClipCopy = {
-    info: ClipInfo;
-    createdId: string;
 };
 
 /** The selected clips with the placement data a copy needs, in track order. */
-function collectSelectedClips(tracks: readonly Track[], selectedClipIds: readonly string[]): ClipInfo[] {
-    const selected: ClipInfo[] = [];
+function collectSelectedClips(tracks: readonly Track[], selectedClipIds: readonly string[]): ClipPlacement[] {
+    const selected: ClipPlacement[] = [];
     for (const track of tracks) {
         for (const clip of track.clips) {
             if (!selectedClipIds.includes(clip.id)) {
                 continue;
             }
-            selected.push({
-                clipId: clip.id,
-                trackId: track.id,
-                startBeat: clip.startBeat,
-                endBeat: clip.endBeat,
-                name: clip.name,
-                type: clip.type,
-                audioBufferId: clip.audioBufferId,
-            });
+            selected.push({ clipId: clip.id, trackId: track.id, startBeat: clip.startBeat, endBeat: clip.endBeat });
         }
     }
     return selected;
-}
-
-/** The buffers the redo brings back with the copies it re-creates. */
-function readCopyBufferIds(copies: readonly ClipCopy[]): string[] {
-    const ids: string[] = [];
-    for (const copy of copies) {
-        if (copy.info.audioBufferId !== undefined) {
-            ids.push(copy.info.audioBufferId);
-        }
-    }
-    return ids;
 }
 
 /**
@@ -58,8 +30,11 @@ function readCopyBufferIds(copies: readonly ClipCopy[]): string[] {
  * Selection span = latestEnd - earliestStart.
  * All clips are offset forward by that span.
  * Repeated invocations stack — each press adds another copy immediately after the previous.
+ *
+ * Each copy is one `duplicateClipAt` in a single batch, so every copy carries what a
+ * single duplicate carries and one undo step removes them all.
  */
-export function duplicateSelectedClipsForward(selectedClipIds: string[]): void {
+export async function duplicateSelectedClipsForward(selectedClipIds: readonly string[]): Promise<void> {
     if (selectedClipIds.length === 0) {
         return;
     }
@@ -74,84 +49,30 @@ export function duplicateSelectedClipsForward(selectedClipIds: string[]): void {
         return;
     }
 
-    const earliestStart = Math.min(...selected.map((context) => context.startBeat));
-    const latestEnd = Math.max(...selected.map((context) => context.endBeat));
+    const earliestStart = Math.min(...selected.map((clip) => clip.startBeat));
+    const latestEnd = Math.max(...selected.map((clip) => clip.endBeat));
     const span = latestEnd - earliestStart;
 
     if (span <= 0) {
         return;
     }
 
-    const copies: ClipCopy[] = [];
+    const actions: AppAction[] = selected.map((clip) => ({
+        type: 'duplicateClipAt',
+        payload: { clipId: clip.clipId, destinationTrackId: clip.trackId, startBeat: clip.startBeat + span },
+    }));
+    const result = await executeAppActionBatch(actions, {
+        groupId: `duplicate-clips-forward-${crypto.randomUUID()}`,
+        groupLabel: `Duplicate ${actions.length} clip${actions.length > 1 ? 's' : ''} forward`,
+        source: 'manual',
+    });
 
-    for (const info of selected) {
-        const newClip = addClip({
-            trackId: info.trackId,
-            startBeat: info.startBeat + span,
-            endBeat: info.endBeat + span,
-            name: `${info.name} (copy)`,
-            type: info.type,
-            audioBufferId: info.audioBufferId,
-        });
-        if (!newClip) {
-            continue;
-        }
-        copies.push({ info, createdId: newClip.id });
-        duplicateClipAutomation(info.clipId, newClip.id);
-    }
-
-    if (copies.length === 0) {
+    // A refusal is the user's to see; a handler failure is a defect and propagates.
+    if (result.status === 'rejected' || result.status === 'conflicted') {
+        notifyUser(`Duplicate clips forward was refused: ${result.reason}`, 'warning');
         return;
     }
-
-    const createdIds = copies.map((copy) => copy.createdId);
-
-    // Redo re-creates every copy under the id it was minted with, so the takes the
-    // undo retires come back under the same clip identity. Only the undo knows what
-    // the copies are carrying by the time they leave, so it takes the capture.
-    let retiredTakeLanes: readonly RetiredTakeLaneSnapshot[] = [];
-
-    pushUndoEntry(
-        `Duplicate ${createdIds.length} clip${createdIds.length > 1 ? 's' : ''} forward`,
-        () => {
-            retiredTakeLanes = captureRetiredTakeLanes(createdIds);
-            for (const id of createdIds) {
-                removeClip(id);
-            }
-        },
-        () => {
-            const recreatedIds = new Set<string>();
-            for (const copy of copies) {
-                const newClip = addClip({
-                    id: copy.createdId,
-                    trackId: copy.info.trackId,
-                    startBeat: copy.info.startBeat + span,
-                    endBeat: copy.info.endBeat + span,
-                    name: `${copy.info.name} (copy)`,
-                    type: copy.info.type,
-                    audioBufferId: copy.info.audioBufferId,
-                });
-                if (!newClip) {
-                    continue;
-                }
-                recreatedIds.add(newClip.id);
-                duplicateClipAutomation(copy.info.clipId, newClip.id);
-            }
-            if (recreatedIds.size === 0) {
-                // The destination tracks are gone, or the ids are taken: nothing came back,
-                // so putting the capture back would insert lanes for tracks and clips that
-                // exist nowhere. The redo reports that it did not apply instead.
-                return REDO_NOT_APPLIED;
-            }
-            // Only the copies that came back may take their lanes with them: a copy whose
-            // destination track is gone was never re-created, and restoring its capture
-            // would leave a lane nothing owns.
-            restoreTakesForClip(
-                retiredTakeLanes.filter((capture) => capture.lane.takes.some((take) => recreatedIds.has(take.clipId)))
-            );
-            return undefined;
-        },
-        // The redo re-creates each audio copy on its buffer.
-        { restoresBufferIds: readCopyBufferIds(copies) }
-    );
+    if (result.status === 'failed' || result.status === 'cancelled') {
+        throw new Error(`Duplicate clips forward failed: ${result.reason}`);
+    }
 }
