@@ -26,6 +26,26 @@ describe('InstrumentBottomPanel', () => {
 });
 
 describe('InstrumentBottomPanel — height under pressure', () => {
+    it('names its resize separator after the panel', () => {
+        render(
+            <InstrumentBottomPanel
+                label="Fermenter"
+                labelColor="text-accent"
+                borderColor="border-accent"
+                height={300}
+                onResize={vi.fn()}
+                onClose={vi.fn()}
+            >
+                <div />
+            </InstrumentBottomPanel>
+        );
+
+        expect(screen.getByRole('separator', { name: 'Resize Fermenter panel' })).toHaveAttribute(
+            'aria-orientation',
+            'horizontal'
+        );
+    });
+
     it('requests its height but can shrink to the 160px resize floor', () => {
         render(
             <InstrumentBottomPanel

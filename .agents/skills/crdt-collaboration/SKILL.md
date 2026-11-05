@@ -59,7 +59,7 @@ A `store.set(...)` on a projected or Automerge-persisted store "to just update t
 
 **Why:** a direct store write bypasses rule 1: the document, undo, persistence, and collaboration never see it.
 
-**Enforced by:** ESLint `sourdaw/no-foreign-store-write` (warn) for foreign stores only; a write to a module's own CRDT-backed store is review only.
+**Enforced by:** ESLint `sourdaw/no-foreign-store-write` (error) for foreign stores only; a write to a module's own CRDT-backed store is review only.
 
 ### 5. The document holds serializable truth only
 

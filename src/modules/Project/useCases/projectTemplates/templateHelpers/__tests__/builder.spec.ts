@@ -54,6 +54,7 @@ vi.mock('#/modules/Transport/stores', () => ({
 }));
 vi.mock('#/modules/Transport/useCases', () => ({
     preferencesSeededTransportState: vi.fn(),
+    seedTransportForNewProject: vi.fn(),
     ensureTrackStrips: vi.fn(),
 }));
 vi.mock('#/modules/Preferences/stores', () => ({ preferencesStore: { value: {}, set: vi.fn() } }));

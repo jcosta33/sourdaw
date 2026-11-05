@@ -13,21 +13,24 @@
  * Toaster folder + pad tracks use **muted oklch** strip/clip colors (not the kit’s bright PAD_COLORS).
  */
 import { assertReleaseAdmittedDevices } from '#/infra/release/deviceReleaseAdmission';
-import { trackStore, markerStore } from '#/modules/Arrangement/stores';
-import { createTrack, projectTrackToLiveStrip } from '#/modules/Arrangement/useCases';
+import {
+    createTrack,
+    projectTrackToLiveStrip,
+    restoreMarkerSnapshot,
+    setTrackState,
+} from '#/modules/Arrangement/useCases';
 import { waitForDevices } from '#/modules/AudioEngine/useCases';
-import { automationStore } from '#/modules/Automation/stores';
-import { createAutomationLane } from '#/modules/Automation/useCases';
-import { LEGACY_MIDI_PROBABILITY_SEED, midiStore } from '#/modules/MIDI/stores';
-import { addChordEvent, replaceChordTrackState } from '#/modules/MIDI/useCases';
+import { createAutomationLane, restoreAutomationSnapshot } from '#/modules/Automation/useCases';
+import { addChordEvent, replaceChordTrackState, setMidiStoreState } from '#/modules/MIDI/useCases';
 import { addSidechainRoute } from '#/modules/Routing/useCases';
 import { getDefaultPadNames } from '#/modules/Toaster/useCases';
-import { timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
+import { timeSignatureMapStore } from '#/modules/Transport/stores';
 import {
     restoreTimelineMapSnapshot,
     addTimeSignatureChange,
     ensureTrackStrips,
-    preferencesSeededTransportState,
+    replaceTimeSignatureMap,
+    seedTransportForNewProject,
 } from '#/modules/Transport/useCases';
 
 import { projectStore } from '../../../stores/projectStore';
@@ -1357,7 +1360,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
     ];
 
     assertReleaseAdmittedDevices(tracks);
-    trackStore.set({ tracks, selectedTrackId: tLeadMoog.id });
+    setTrackState({ tracks, selectedTrackId: tLeadMoog.id });
 
     const notesByClipId: Record<string, MidiNote[]> = {
         [cSub.id]: subN,
@@ -1386,14 +1389,15 @@ export async function demo5_NebulaDrift(): Promise<void> {
     };
     Object.assign(notesByClipId, toasterNotesByClipId);
 
-    midiStore.set({
-        probabilitySeed: midiStore.value?.probabilitySeed ?? LEGACY_MIDI_PROBABILITY_SEED,
+    // The MIDI owner keeps the current probability seed (the legacy seed when
+    // there is none) for a state that names no seed of its own.
+    setMidiStoreState({
         notesByClipId,
         ccByClipId: {},
         pitchBendByClipId: {},
     });
 
-    transportStore.set({ ...preferencesSeededTransportState(), tempo: bpm, loopEnd: TB, isLooping: true });
+    seedTransportForNewProject({ tempo: bpm, loopEnd: TB, isLooping: true });
 
     function mkLane(trackId: string, param: string, label: string, min: number, max: number) {
         return createAutomationLane(trackId, param, label, min, max);
@@ -2228,9 +2232,9 @@ export async function demo5_NebulaDrift(): Promise<void> {
         }),
     ];
 
-    automationStore.set({ lanes });
+    restoreAutomationSnapshot({ lanes });
 
-    markerStore.set({
+    restoreMarkerSnapshot({
         markers: [
             { id: crypto.randomUUID(), beat: 0, name: 'Horizon', color: 'oklch(0.38 0.08 260)' },
             { id: crypto.randomUUID(), beat: S.build1, name: 'Tide In', color: 'oklch(0.40 0.07 200)' },
@@ -2280,7 +2284,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
     });
 
     // ── Time signature: brief 6/8 excursion at Peak, back to 4/4 ──────────
-    timeSignatureMapStore.set({ changes: [] });
+    replaceTimeSignatureMap({ changes: [] });
     addTimeSignatureChange(0, 4, 4);
     addTimeSignatureChange(S.peak, 6, 8);
     addTimeSignatureChange(S.peak + 12, 4, 4);

@@ -36,7 +36,14 @@ import {
 } from '#/modules/WorkspaceShell/useCases';
 import { isDragGestureActive } from '#/utils/UI/activeDragGesture';
 
-import { parseLoopStationPadCallbackId, shortcutStore, type ShortcutAction } from '../../../stores/shortcutStore';
+import { isLoopStationPadDefinitionId, isLoopStationPlayPadDefinitionId } from '../../../models/LoopStationPadShortcut';
+import { canonicalShortcutKey, parseShortcutCombo } from '../../../models/ShortcutCombo';
+import {
+    parseLoopStationPadCallbackId,
+    shortcutStore,
+    type ShortcutAction,
+    type ShortcutDefinition,
+} from '../../../stores/shortcutStore';
 import { getAllClipIds } from '../../selectionHelpers/getAllClipIds';
 import { goToNextMarker } from '../../selectionHelpers/goToNextMarker';
 import { goToPreviousMarker } from '../../selectionHelpers/goToPreviousMarker';
@@ -146,6 +153,12 @@ function dispatchAiChord(key: string): boolean {
 export type KeyTarget = 'workspace' | 'textEntry' | 'noteEditor';
 
 export type KeyDescriptor = {
+    /**
+     * The key a shortcut combo names, as `resolveShortcutKey` derives it from
+     * the event: the physical key's unmodified character when Alt, or Shift on
+     * a non-letter, changed the produced character. Never the raw
+     * `KeyboardEvent.key` (Option+D reports `∂`).
+     */
     key: string;
     mod: boolean;
     shift: boolean;
@@ -155,46 +168,34 @@ export type KeyDescriptor = {
 };
 
 function matches(desc: KeyDescriptor, keys: string[]): boolean {
-    return keys.some((combo) => {
-        // Special-case: combos whose final key is `+`. A bare `'+'` or a combo
-        // like `'mod++'` / `'mod+shift++'` previously broke `matches` because
-        // `split('+')` turns the trailing `+` into an empty string and `pop()`
-        // returns `''` instead of the `+` key. Peel off the trailing `+` and
-        // recover the modifier list before splitting.
-        let keyPart: string;
-        let modifiers: string[];
-        if (combo === '+') {
-            keyPart = '+';
-            modifiers = [];
-        } else if (combo.endsWith('++')) {
-            keyPart = '+';
-            modifiers = combo.slice(0, -2).split('+');
-        } else {
-            const parts = combo.split('+');
-            const popped = parts.pop();
-            if (!popped) {
-                return false;
-            }
-            keyPart = popped;
-            modifiers = parts;
-        }
-
-        const hasMod = modifiers.includes('mod');
-        const hasShift = modifiers.includes('shift');
-        const hasAlt = modifiers.includes('alt');
-
-        const normalizedKey = keyPart === 'Space' ? ' ' : keyPart;
-        const eventKey = desc.key;
-
-        // Simple match for exact key or case-insensitive character match
-        const keyMatch =
-            normalizedKey === eventKey ||
-            (normalizedKey.length === 1 &&
-                eventKey.length === 1 &&
-                normalizedKey.toLowerCase() === eventKey.toLowerCase());
-
-        return keyMatch && hasMod === desc.mod && hasShift === desc.shift && hasAlt === desc.alt;
+    const pressedKey = canonicalShortcutKey(desc.key);
+    return keys.some((key) => {
+        const combo = parseShortcutCombo(key);
+        return (
+            combo !== null &&
+            combo.key === pressedKey &&
+            combo.mod === desc.mod &&
+            combo.shift === desc.shift &&
+            combo.alt === desc.alt
+        );
     });
+}
+
+/**
+ * Definitions in the order a keypress resolves them; the first match wins.
+ * Armed Loop Station is a performance mode (Ableton's computer-keyboard pads):
+ * its pads take every key they share with a global binding (R records, M is
+ * the metronome, N and Shift+N add tracks, F and Shift+F zoom, A cycles
+ * automation, G leads the AI chord), so they resolve first. Unarmed, the
+ * shipped order stands.
+ */
+function dispatchOrder(definitions: ShortcutDefinition[], loopStationArmed: boolean): ShortcutDefinition[] {
+    if (!loopStationArmed) {
+        return definitions;
+    }
+    const pads = definitions.filter((definition) => isLoopStationPadDefinitionId(definition.id));
+    const rest = definitions.filter((definition) => !isLoopStationPadDefinitionId(definition.id));
+    return [...pads, ...rest];
 }
 
 /**
@@ -612,7 +613,9 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                 goToPreviousMarker();
                 return false;
             default: {
-                const tool = getToolForKeyPress(desc);
+                // Tool keys are unshifted. Shift+1 now reaches here as `1`
+                // rather than `!`, and must not select the tool `1` selects.
+                const tool = desc.shift ? null : getToolForKeyPress(desc);
                 if (tool) {
                     setEditingTool(tool);
                 }
@@ -634,19 +637,21 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
             disarmAiLeader();
         }
 
-        // V has no keyboard voice-admission path. Microphone start accepts
-        // only the one-use token issued from the voice control's trusted UI event.
-        if (key === 'v' && !mod && !shift && !alt && !repeat) {
-            return false;
-        }
-
         // Check shortcut store first for ALL keys (including those with modifiers)
         const { definitions, customMappings } = shortcutStore.value ?? {
             definitions: [],
             customMappings: {},
         };
         const loopStationArmed = loopStationStore.value?.armed === true;
-        for (const def of definitions) {
+
+        // V has no keyboard voice-admission path. Microphone start accepts
+        // only the one-use token issued from the voice control's trusted UI
+        // event. An armed Loop Station still owns V as a pad.
+        if (key === 'v' && !mod && !shift && !alt && !repeat && !loopStationArmed) {
+            return false;
+        }
+
+        for (const def of dispatchOrder(definitions, loopStationArmed)) {
             const keys = customMappings[def.id] ?? def.defaultKeys;
             if (matches(desc, keys)) {
                 // Some shortcuts (like Cmd+K) should work even in inputs
@@ -657,12 +662,12 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                 if (keyTarget === 'noteEditor' && !NOTE_EDITOR_SHORTCUT_IDS.has(def.id)) {
                     continue;
                 }
-                // Gate Loop Station play-pad shortcuts behind the `armed`
-                // toggle so they don't steal letter keys from existing
-                // transport / tool bindings. Shift-press record variants
-                // always fire — they carry a shift modifier that otherwise
-                // has no binding, so there is no conflict to gate against.
-                if (def.id.startsWith('loopStation.pad.') && def.id.endsWith('.play') && !loopStationArmed) {
+                // Play pads take unmodified letter and digit keys that transport,
+                // track and tool bindings also use, so they fire only while the
+                // Loop Station is armed. Record pads fire armed or not; unarmed,
+                // a global binding on the same Shift combo (Shift+N adds an
+                // audio track) resolves first by definition order.
+                if (isLoopStationPlayPadDefinitionId(def.id) && !loopStationArmed) {
                     continue;
                 }
                 if (repeat && !REPEATABLE_ON_HOLD_SHORTCUT_IDS.has(def.id)) {

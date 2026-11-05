@@ -513,6 +513,67 @@ describe('AppShell', () => {
         expect(screen.queryByTestId('sidebar')).not.toBeInTheDocument();
     });
 
+    describe('side-panel resize separators', () => {
+        const withWindowWidth = (width: number, run: () => void): void => {
+            const original = window.innerWidth;
+            Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width });
+            try {
+                run();
+            } finally {
+                Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: original });
+            }
+        };
+
+        const renderWithPanels = (sidebarWidth: number, inspectorWidth: number): void => {
+            workspaceState = createWorkspaceState({
+                sidebarOpen: true,
+                inspectorOpen: true,
+                mixerOpen: false,
+                chatPanelOpen: false,
+                virtualKeyboardOpen: false,
+                sidebarWidth,
+                inspectorWidth,
+            });
+            vi.mocked(useWorkspaceState).mockImplementation(() => workspaceState);
+            render(<AppShell>Content</AppShell>);
+        };
+
+        it('names each separator and exposes its orientation, width and bounds', () => {
+            withWindowWidth(2400, () => {
+                renderWithPanels(260, 300);
+
+                const sidebarHandle = screen.getByRole('separator', { name: 'Resize sidebar' });
+                expect(sidebarHandle).toHaveAttribute('aria-orientation', 'vertical');
+                expect(sidebarHandle).toHaveAttribute('aria-valuenow', '260');
+                expect(sidebarHandle).toHaveAttribute('aria-valuemin', '180');
+                expect(sidebarHandle).toHaveAttribute('aria-valuemax', '500');
+
+                const inspectorHandle = screen.getByRole('separator', { name: 'Resize inspector' });
+                expect(inspectorHandle).toHaveAttribute('aria-orientation', 'vertical');
+                expect(inspectorHandle).toHaveAttribute('aria-valuenow', '300');
+                expect(inspectorHandle).toHaveAttribute('aria-valuemin', '200');
+                expect(inspectorHandle).toHaveAttribute('aria-valuemax', '500');
+            });
+        });
+
+        it('sends Home and End to the real bounds of a squeezed panel, not a delta from its shown width', () => {
+            withWindowWidth(640, () => {
+                renderWithPanels(400, 400);
+
+                const handle = screen.getByRole('separator', { name: 'Resize sidebar' });
+                const shown = Number(handle.getAttribute('aria-valuenow'));
+                expect(shown).toBeLessThan(400);
+                expect(shown).toBeGreaterThan(0);
+
+                fireEvent.keyDown(handle, { key: 'Home' });
+                expect(workspaceStore.value?.sidebarWidth).toBe(180);
+
+                fireEvent.keyDown(handle, { key: 'End' });
+                expect(workspaceStore.value?.sidebarWidth).toBe(500);
+            });
+        });
+    });
+
     it('should have correct layout structure', () => {
         render(<AppShell>Content</AppShell>);
         const shell = screen.getByTestId('app-shell');
