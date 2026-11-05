@@ -43,7 +43,7 @@ describe('initProject', () => {
 
     afterEach(() => {
         preferencesStore.set(defaultPreferences);
-        transportStore.set({ ...defaultTransportState });
+        transportStore.set(defaultTransportState);
     });
 
     it('does not signal workspace-ready — the async template build has not settled yet', () => {
