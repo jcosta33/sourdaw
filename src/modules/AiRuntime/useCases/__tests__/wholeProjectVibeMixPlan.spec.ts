@@ -12,9 +12,15 @@ import {
     configureRuntimeGraphTopologyValidator,
 } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
-import { getAutomationHandlers } from '#/modules/Automation/useCases';
+import { getAutomationHandlers, getAutomationValueAtBeat } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
-import { clearUndoHistory, resetActionReplayAuthority, setActionHistoryMetadataPort } from '#/modules/Command/useCases';
+import {
+    clearUndoHistory,
+    redo,
+    resetActionReplayAuthority,
+    setActionHistoryMetadataPort,
+    undo,
+} from '#/modules/Command/useCases';
 import {
     captureProjectRevision,
     createCrdtDoc,
@@ -34,11 +40,15 @@ import {
     getPendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { matchesJsonSchema } from '../../validators/matchesJsonSchema';
+import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { planPromptActions } from '../planPromptActions';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 
 import {
+    AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+    ambiguousSameObjectDivergence,
+    ambiguousSameObjectDivergenceMessage,
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
@@ -276,6 +286,22 @@ const proposeNamedGainRange: ScriptedPlanningTurn = () => [
                     arguments: { trackIds: [...IMPACT_BUS_IDS], sectionName: 'Chorus Two', gainDb: 1.5 },
                 },
             ],
+            plan: {
+                semantic: { classification: 'simple', uncertainty: [] },
+                objective: 'Lift the Drum Bus and Bass Bus by 1.5 dB in Chorus Two.',
+                constraints: [],
+                scope: {
+                    targetIds: [...IMPACT_BUS_IDS],
+                    targetRanges: [CHORUS_TWO],
+                    protectedTargetIds: [],
+                    protectedRanges: [],
+                },
+                capabilityIds: ['automateTrackGainRange'],
+                assetIds: [],
+                alternatives: [],
+                validationStrategy: ['Validate the named buses, the section and the stated gain.'],
+                stoppingConditions: ['Stop if the revision, the section or a bus changes.'],
+            },
         },
     },
 ];
@@ -349,6 +375,41 @@ function getPendingProposal() {
         throw new TypeError(`Expected one pending proposal: ${last?.error ?? last?.content ?? 'no reply'}`);
     }
     return { message, confirmation };
+}
+
+function getGainLanes() {
+    return automationStore.value?.lanes.filter((lane) => lane.parameterId === 'gain') ?? [];
+}
+
+/** The section gain trajectory the literal lift commits on each bus: a step up over Chorus Two and back. */
+function expectExactGainAutomation(): void {
+    const liftedGain = 0.8 * 10 ** (1.5 / 20);
+    const trajectory = [
+        { beat: 0, value: 0.8, curve: 'step', tension: 0 },
+        { beat: CHORUS_TWO.startBeat, value: liftedGain, curve: 'step', tension: 0 },
+        { beat: CHORUS_TWO.endBeat, value: 0.8, curve: 'step', tension: 0 },
+    ];
+    expect(getGainLanes()).toEqual([
+        expect.objectContaining({
+            id: 'auto-gain-bus-drums',
+            trackId: 'bus-drums',
+            parameterName: 'Drum Bus Gain',
+            points: trajectory,
+        }),
+        expect.objectContaining({
+            id: 'auto-gain-bus-bass',
+            trackId: 'bus-bass',
+            parameterName: 'Bass Bus Gain',
+            points: trajectory,
+        }),
+    ]);
+}
+
+/** Plans the literal lift through the chat and returns the card it waits on. */
+async function proposeLiteralLift() {
+    scriptPlanningTurns([literalIntake, discoverGainRange, proposeNamedGainRange]);
+    await sendChatMessage(LITERAL_PROMPT);
+    return getPendingProposal().confirmation;
 }
 
 function snapshotProject() {
@@ -529,5 +590,170 @@ describe('retired whole-project vibe-mix workflow (AC-002 of #4372)', () => {
         expect(confirmation.actions.some((action) => JSON.stringify(action).includes('track-lead-vocal'))).toBe(false);
         expect(message.content).toContain('Protected unchanged: "Lead Vocal" (track-lead-vocal)');
         expect(message.content).not.toContain('Whole-project plan');
+    });
+
+    // The retired workflow's commit-path pins, carried to the literal route that now reaches the command.
+    describe('literal gain lift commit path', () => {
+        it('confirms, atomically commits, receipts, and whole-group undoes and redoes only the section gain trajectory', async () => {
+            const tracksBefore = structuredClone(trackStore.value?.tracks);
+            const sectionsBefore = structuredClone(markerStore.value?.sections);
+            const transportBefore = structuredClone(transportStore.value);
+
+            const confirmation = await proposeLiteralLift();
+
+            expect(confirmation.executionMode).toBe('atomic');
+            expect(confirmation.risk?.level).toBe('authority-sensitive');
+            expect(confirmation.affectedIds).toEqual(['bus-drums', 'bus-bass', 'section-chorus-two']);
+            expect(confirmation.actions).toEqual([
+                {
+                    type: 'automateTrackGainRange',
+                    payload: {
+                        trackIds: [...IMPACT_BUS_IDS],
+                        sectionName: 'Chorus Two',
+                        gainDb: 1.5,
+                        sectionId: 'section-chorus-two',
+                        ...CHORUS_TWO,
+                        expectedTracks: [
+                            {
+                                trackId: 'bus-drums',
+                                trackName: 'Drum Bus',
+                                gain: 0.8,
+                                automationMode: 'read',
+                                frozen: false,
+                            },
+                            {
+                                trackId: 'bus-bass',
+                                trackName: 'Bass Bus',
+                                gain: 0.8,
+                                automationMode: 'read',
+                                frozen: false,
+                            },
+                        ],
+                        expectedSection: { name: 'Chorus Two', ...CHORUS_TWO },
+                    },
+                },
+            ]);
+
+            const revisionBefore = captureProjectRevision();
+            await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+                status: 'executed',
+            });
+
+            expect(captureProjectRevision()).not.toBe(revisionBefore);
+            expectExactGainAutomation();
+            const drumLane = getGainLanes().find((lane) => lane.trackId === 'bus-drums');
+            if (!drumLane) {
+                throw new Error('Expected the committed Drum Bus gain lane');
+            }
+            expect(getAutomationValueAtBeat(drumLane.id, 55.999)).toBe(0.8);
+            expect(getAutomationValueAtBeat(drumLane.id, 56)).toBe(0.8 * 10 ** (1.5 / 20));
+            expect(getAutomationValueAtBeat(drumLane.id, 71.999)).toBe(0.8 * 10 ** (1.5 / 20));
+            expect(getAutomationValueAtBeat(drumLane.id, 72)).toBe(0.8);
+            expect(trackStore.value?.tracks).toEqual(tracksBefore);
+            expect(markerStore.value?.sections).toEqual(sectionsBefore);
+            expect(transportStore.value).toEqual(transportBefore);
+            const receipt = chatStore.value?.messages.find(
+                (message) => message.pendingActionConfirmationId === confirmation.id
+            );
+            expect(receipt?.content).toContain('Outcome: committed');
+            expect(receipt?.content).toContain('Affected IDs: bus-drums, bus-bass, section-chorus-two');
+            expect(undoStore.value?.past).toHaveLength(1);
+
+            await undo();
+            expect(getGainLanes()).toEqual([]);
+            expect(undoStore.value?.future).toHaveLength(1);
+
+            await redo();
+            expectExactGainAutomation();
+            expect(undoStore.value?.past).toHaveLength(1);
+        });
+
+        // The edit below changes automation mode for a target this plan names, and the refusal names
+        // that target: the divergence port classifies the conflict rather than reporting a bare move.
+        it('leaves no partial lanes or receipt when the project changes before confirmation', async () => {
+            const confirmation = await proposeLiteralLift();
+            landProjectEdit(() => {
+                trackStore.set({
+                    ...trackStore.value!,
+                    tracks: trackStore.value!.tracks.map((track) =>
+                        track.id === 'bus-bass' ? { ...track, automationMode: 'off' } : track
+                    ),
+                });
+            });
+
+            const result = await confirmPendingChatActions({ confirmationId: confirmation.id });
+
+            expect(result).toEqual({
+                status: 'invalidated',
+                reason: AMBIGUOUS_SAME_OBJECT_DIVERGENCE_REASON,
+                divergence: ambiguousSameObjectDivergence(['bus-bass']),
+            });
+            expect(getGainLanes()).toEqual([]);
+            expect(undoStore.value?.past).toEqual([]);
+            expect(getPendingActionConfirmation(confirmation.id)).toMatchObject({
+                status: 'invalidated',
+                executedActions: [],
+            });
+            const terminalMessage = chatStore.value?.messages.find(
+                (message) => message.pendingActionConfirmationId === confirmation.id
+            );
+            expect(terminalMessage?.content).toBe(ambiguousSameObjectDivergenceMessage(['bus-bass']));
+        });
+
+        it('aborts a failed atomic store write without lane, receipt, or undo residue', async () => {
+            const confirmation = await proposeLiteralLift();
+            const originalSet = automationStore.set.bind(automationStore);
+            vi.spyOn(automationStore, 'set').mockImplementationOnce((state) => {
+                originalSet(state);
+                throw new Error('injected gain-lift persistence failure');
+            });
+
+            const result = await confirmPendingChatActions({ confirmationId: confirmation.id });
+
+            expect(result).toEqual({ status: 'failed', reason: 'injected gain-lift persistence failure' });
+            expect(getGainLanes()).toEqual([]);
+            expect(undoStore.value?.past).toEqual([]);
+            const terminalMessage = chatStore.value?.messages.find(
+                (message) => message.pendingActionConfirmationId === confirmation.id
+            );
+            expect(terminalMessage?.content).not.toContain('Outcome: committed');
+        });
+
+        it('preserves collaborator lane edits and keeps the whole undo group retryable', async () => {
+            const confirmation = await proposeLiteralLift();
+            await confirmPendingChatActions({ confirmationId: confirmation.id });
+            const committed = structuredClone(automationStore.value);
+            const drumLane = getGainLanes().find((lane) => lane.trackId === 'bus-drums');
+            if (!drumLane) {
+                throw new Error('Expected Drum Bus gain automation lane');
+            }
+            automationStore.set({
+                lanes: automationStore.value!.lanes.map((lane) => {
+                    if (lane.id !== drumLane.id) {
+                        return lane;
+                    }
+                    return {
+                        ...lane,
+                        points: lane.points.map((point, index) =>
+                            index === 1 ? { ...point, value: point.value - 0.01 } : point
+                        ),
+                    };
+                }),
+            });
+            const collaboratorState = structuredClone(automationStore.value);
+            const pastBeforeConflict = structuredClone(undoStore.value?.past);
+            await undo();
+
+            expect(automationStore.value).toEqual(collaboratorState);
+            expect(undoStore.value?.past).toEqual(pastBeforeConflict);
+            expect(undoStore.value?.future).toEqual([]);
+
+            // Once the collaborator edit is undone back to the committed state,
+            // the same grouped undo applies: retryability survives the divergence.
+            automationStore.set(committed);
+            await undo();
+            expect(getGainLanes()).toEqual([]);
+            expect(undoStore.value?.future).toHaveLength(1);
+        });
     });
 });
