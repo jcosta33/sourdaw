@@ -296,7 +296,8 @@ async function resolveConfirmationAdmission(input: {
                     status: 'handled',
                     result: await confirmationTerminalSettlement.invalidateForDivergence(
                         confirmation,
-                        refreshed.divergence
+                        refreshed.divergence,
+                        refreshed.refusal
                     ),
                 };
             }

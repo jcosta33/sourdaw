@@ -1,8 +1,11 @@
 import { isProductionBrief, type ProductionBrief, type ProductionBriefScope } from '../models/ProductionBrief';
 
 type DescribeInput = {
-    before: ProductionBrief;
-    /** A command payload carries the brief as data, so it is read as a brief here before it is described. */
+    /**
+     * Both sides are read as briefs here before they are described: a command payload carries the brief
+     * as data, and a caller's own projection of the brief is its type, not this module's.
+     */
+    before: unknown;
     after: unknown;
     /** Display names for the ids the brief names; an id with no name is shown as "an unnamed track". */
     trackNames: Readonly<Record<string, string>>;
@@ -18,7 +21,7 @@ function removed<Entry extends { id: string }>(before: readonly Entry[], after: 
     return added(after, before);
 }
 
-type Described = Omit<DescribeInput, 'after'> & { after: ProductionBrief };
+type Described = Omit<DescribeInput, 'before' | 'after'> & { before: ProductionBrief; after: ProductionBrief };
 
 function trackName(input: Described, trackId: string): string {
     return input.trackNames[trackId] ?? 'an unnamed track';
@@ -55,12 +58,11 @@ function describeVision(input: Described): string[] {
  * nothing, so the caller can say so instead of showing a change it cannot read.
  */
 export function describeProductionBriefChange(described: DescribeInput): string[] | null {
-    const { after } = described;
-    if (!isProductionBrief(after)) {
+    const { before, after } = described;
+    if (!isProductionBrief(before) || !isProductionBrief(after)) {
         return null;
     }
-    const input: Described = { ...described, after };
-    const { before } = input;
+    const input: Described = { ...described, before, after };
     const lines = [
         ...describeVision(input),
         ...added(before.references, after.references).map((entry) => `Reference: ${entry.label}`),

@@ -61,17 +61,24 @@ function readEntries<Entry>(
 }
 
 function readReference(entry: Record<string, unknown>): { label: string } | null {
-    return isText(entry.label) ? { label: entry.label } : null;
+    if (!isText(entry.label)) {
+        return null;
+    }
+    return { label: entry.label };
 }
 
 function readSectionGoal(entry: Record<string, unknown>): { sectionId: string; statement: string } | null {
-    return isText(entry.sectionId) && isText(entry.statement)
-        ? { sectionId: entry.sectionId, statement: entry.statement }
-        : null;
+    if (!isText(entry.sectionId) || !isText(entry.statement)) {
+        return null;
+    }
+    return { sectionId: entry.sectionId, statement: entry.statement };
 }
 
 function readTrackRole(entry: Record<string, unknown>): { trackId: string; role: string } | null {
-    return isText(entry.trackId) && isText(entry.role) ? { trackId: entry.trackId, role: entry.role } : null;
+    if (!isText(entry.trackId) || !isText(entry.role)) {
+        return null;
+    }
+    return { trackId: entry.trackId, role: entry.role };
 }
 
 function readPreference(entry: Record<string, unknown>): BriefStatement | null {
@@ -85,9 +92,10 @@ function readPreference(entry: Record<string, unknown>): BriefStatement | null {
     if (isText(trackId)) {
         return { scope: { kind: 'track', trackId }, statement };
     }
-    return isText(sectionId)
-        ? { scope: { kind: 'section', sectionId }, statement }
-        : { scope: { kind: 'project' }, statement };
+    if (isText(sectionId)) {
+        return { scope: { kind: 'section', sectionId }, statement };
+    }
+    return { scope: { kind: 'project' }, statement };
 }
 
 /** A strict reply states every optional property, as `null` when it means none. */
@@ -125,16 +133,11 @@ function parseBriefUpdate(provided: Record<string, unknown>): Parsed {
     if (trackRoles === null) {
         return { status: 'invalid', reason: 'trackRoles: each track role names a trackId and a role.' };
     }
-    return {
-        status: 'parsed',
-        update: {
-            ...(isText(args.vision) ? { vision: args.vision } : {}),
-            references,
-            preferences,
-            sectionGoals,
-            trackRoles,
-        },
-    };
+    const update: BriefUpdate = { references, preferences, sectionGoals, trackRoles };
+    if (isText(args.vision)) {
+        update.vision = args.vision;
+    }
+    return { status: 'parsed', update };
 }
 
 /**
@@ -143,14 +146,15 @@ function parseBriefUpdate(provided: Record<string, unknown>): Parsed {
  * what the request said and the objects it said it about.
  */
 function readRequestHardConstraints(prompt: string, context: ProjectContext): BriefStatement[] {
-    return compilePerceptualConstraints(prompt, context).constraints.flatMap((constraint) =>
-        constraint.scope.kind === 'mix'
-            ? [{ scope: { kind: 'project' as const }, statement: constraint.clause }]
-            : constraint.scope.trackIds.map((trackId) => ({
-                  scope: { kind: 'track' as const, trackId },
-                  statement: constraint.clause,
-              }))
-    );
+    return compilePerceptualConstraints(prompt, context).constraints.flatMap((constraint): BriefStatement[] => {
+        if (constraint.scope.kind === 'mix') {
+            return [{ scope: { kind: 'project' }, statement: constraint.clause }];
+        }
+        return constraint.scope.trackIds.map((trackId) => ({
+            scope: { kind: 'track', trackId },
+            statement: constraint.clause,
+        }));
+    });
 }
 
 /**

@@ -53,6 +53,14 @@ describe('describe a production brief change', () => {
                 sectionNames: {},
             })
         ).toBeNull();
+        expect(
+            describeProductionBriefChange({
+                before: { ...before, schemaVersion: 2 },
+                after: before,
+                trackNames: {},
+                sectionNames: {},
+            })
+        ).toBeNull();
     });
 
     it('lists nothing for entries both briefs hold', () => {

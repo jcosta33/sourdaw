@@ -143,22 +143,20 @@ function describeProductionBriefAction(
     action: Extract<AppAction, { type: 'setProductionBrief' }>,
     context: ProjectContext
 ): string {
-    const lines =
-        context.productionBrief === undefined
-            ? null
-            : describeProductionBriefChange({
-                  before: context.productionBrief,
-                  after: action.payload.brief,
-                  trackNames: Object.fromEntries(context.tracks.map((track) => [track.id, track.name])),
-                  sectionNames: Object.fromEntries(
-                      (context.sections ?? []).map((section) => [section.id, section.name])
-                  ),
-              });
+    const label = `Update the production brief from revision ${String(action.payload.expectedRevision)}`;
+    const lines = describeProductionBriefChange({
+        before: context.productionBrief,
+        after: action.payload.brief,
+        trackNames: Object.fromEntries(context.tracks.map((track) => [track.id, track.name])),
+        sectionNames: Object.fromEntries((context.sections ?? []).map((section) => [section.id, section.name])),
+    });
     if (lines === null) {
-        return `Update the production brief from revision ${String(action.payload.expectedRevision)}`;
+        return label;
     }
-    const changes = lines.length > 0 ? lines.join('; ') : 'no entry changes';
-    return `Update the production brief from revision ${String(action.payload.expectedRevision)}: ${changes}`;
+    if (lines.length === 0) {
+        return `${label}: no entry changes`;
+    }
+    return `${label}: ${lines.join('; ')}`;
 }
 
 function describeExactAction(action: AppAction, actions: readonly AppAction[], context: ProjectContext): string {

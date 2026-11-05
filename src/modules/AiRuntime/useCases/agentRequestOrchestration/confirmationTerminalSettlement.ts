@@ -120,15 +120,28 @@ async function invalidateForProjectChange(
     return { status: 'invalidated', reason, ...(detail ? { detail } : {}) };
 }
 
+/**
+ * A command whose owner refused it on revalidation names why; that reason is the musician's answer,
+ * since the divergence alone may read as a change the batch could have survived.
+ */
+function describeDivergence(divergence: ApprovalDivergence, refusal: string | null): string {
+    const reason = `The approved command was not executed because project divergence is ${divergence.kind}.`;
+    if (refusal === null) {
+        return reason;
+    }
+    return `${reason} ${refusal}`;
+}
+
 async function invalidateForDivergence(
     confirmation: PendingAppActionConfirmation,
-    divergence: ApprovalDivergence
+    divergence: ApprovalDivergence,
+    refusal: string | null = null
 ): Promise<TerminalConfirmationResult> {
     const targetIds = divergence.targetIds.length > 0 ? divergence.targetIds.join(', ') : 'none';
     const candidates = divergence.repairCandidates
         .map((candidate) => `${candidate.kind}: ${candidate.targetIds.join(', ') || 'project'}`)
         .join('; ');
-    const reason = `The approved command was not executed because project divergence is ${divergence.kind}.`;
+    const reason = describeDivergence(divergence, refusal);
     await agentRunCancellation.cancel({ runId: confirmation.runId, reason });
     updatePendingActionConfirmationStatus({
         confirmationId: confirmation.id,

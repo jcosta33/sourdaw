@@ -5,13 +5,14 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
+import { markerStore, trackStore } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    executeAppAction,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
     undo,
@@ -107,6 +108,8 @@ vi.mock('../llmOrchestration/inference', async (importOriginal) => ({
 type ProviderRequest = { userMessage: string; schemas: readonly ToolSchema[] };
 type ScriptedPlanningTurn = (request: ProviderRequest) => ToolCallResult[];
 type ProductionBrief = NonNullable<typeof projectStore.value>['productionBrief'];
+/** A track as the track store holds it, read from the store contract rather than Arrangement's model. */
+type StoredTrack = NonNullable<typeof trackStore.value>['tracks'][number];
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -202,7 +205,7 @@ function readReceipt(userMessage: string, callId: string): Record<string, unknow
     return receipt;
 }
 
-function createTrack(id: string, name: string): Track {
+function createTrack(id: string, name: string): StoredTrack {
     return {
         id,
         name,
@@ -354,7 +357,7 @@ describe('writing the production brief from a whole-project request (AC-001 of #
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         markerStore.set({ markers: [], sections: [] });
         automationStore.set({ lanes: [] });
-        transportStore.set({ ...defaultTransportState });
+        transportStore.set(defaultTransportState);
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         vi.restoreAllMocks();
@@ -512,6 +515,66 @@ describe('writing the production brief from a whole-project request (AC-001 of #
         expect(readBrief()).toEqual(changed);
     });
 
+    it.each([
+        ['a track the card names is removed', { type: 'removeTrack', payload: { trackId: KEYS_ID } }],
+        ['a section the card names is removed', { type: 'removeSection', payload: { sectionId: CHORUS_ID } }],
+    ] satisfies [string, AppAction][])(
+        'refuses a pending card at Confirm once %s, writing nothing',
+        async (_label, edit) => {
+            scriptPlanningTurns(BRIEF_ROUTE);
+            await sendChatMessage(VIBE_PROMPT);
+            const { confirmation } = getPendingProposal();
+            await executeAppAction(edit);
+            const before = readBrief();
+
+            const result = await confirmPendingChatActions({ confirmationId: confirmation.id });
+
+            expect(result.status).not.toBe('executed');
+            expect(JSON.stringify(result)).toContain('production brief names');
+            expect(readBrief()).toEqual(before);
+        }
+    );
+
+    it('refuses a pending card at Confirm once the track its hard constraint names is removed', async () => {
+        scriptPlanningTurns([briefIntake, compileBrief({ vision: 'A late-night lo-fi record' }), proposeCompiled()]);
+        await sendChatMessage(CONSTRAINED_VIBE_PROMPT);
+        const { confirmation } = getPendingProposal();
+        await executeAppAction({ type: 'removeTrack', payload: { trackId: VOCAL_ID } });
+        const before = readBrief();
+
+        const result = await confirmPendingChatActions({ confirmationId: confirmation.id });
+
+        expect(result.status).not.toBe('executed');
+        expect(JSON.stringify(result)).toContain(
+            `production brief names a track the project no longer holds (${VOCAL_ID})`
+        );
+        expect(readBrief()).toEqual(before);
+    });
+
+    // Any edit rebinds a pending card to the live revision and asks for Confirm again; what matters
+    // is that the card survives the edit, and that the second Confirm writes the brief.
+    it.each([
+        [
+            'a fader move on a track it names',
+            { type: 'setTrackGain', payload: { trackId: KEYS_ID, gain: 0.5, expectedGain: 0.8 } },
+        ],
+        ['the removal of a track the brief already names', { type: 'removeTrack', payload: { trackId: DRUMS_ID } }],
+    ] satisfies [string, AppAction][])('still confirms a pending card after %s', async (_label, edit) => {
+        scriptPlanningTurns(BRIEF_ROUTE);
+        await sendChatMessage(VIBE_PROMPT);
+        const { confirmation } = getPendingProposal();
+        await executeAppAction(edit);
+        const before = readBrief();
+
+        const rebound = await confirmPendingChatActions({ confirmationId: confirmation.id });
+        expect(rebound.status).toBe('reapproval_required');
+        const result = await confirmPendingChatActions({ confirmationId: confirmation.id });
+
+        expect(result.status).toBe('executed');
+        expect(readBrief().revision).toBe(before.revision + 1);
+        expect(readBrief().trackRoles.map(({ trackId }) => trackId)).toContain(KEYS_ID);
+    });
+
     it("carries the confirmed brief into a later request's context", async () => {
         scriptPlanningTurns(BRIEF_ROUTE);
         await sendChatMessage(VIBE_PROMPT);
@@ -530,12 +593,17 @@ describe('writing the production brief from a whole-project request (AC-001 of #
         await sendChatMessage(CONSTRAINED_VIBE_PROMPT);
 
         const { confirmation } = getPendingProposal();
-        const [action] = confirmation.actions;
-        expect(action?.type === 'setProductionBrief' ? action.payload.brief.hardConstraints : null).toEqual([
-            expect.objectContaining({
-                scope: { kind: 'track', trackId: VOCAL_ID },
-                statement: 'keep the vocal intimate',
-            }),
+        expect(confirmation.actions).toMatchObject([
+            {
+                type: 'setProductionBrief',
+                payload: {
+                    brief: {
+                        hardConstraints: [
+                            { scope: { kind: 'track', trackId: VOCAL_ID }, statement: 'keep the vocal intimate' },
+                        ],
+                    },
+                },
+            },
         ]);
         const view = getAgentApprovalView({ confirmationId: confirmation.id });
         expect(view?.metricGoals).toMatchObject({ status: 'not-required' });
