@@ -1,0 +1,34 @@
+src/modules/Arrangement/useCases/clipEditing/getClipEndLimit.ts
+  s_fec7059b7a251c::t_7b5dbbde990c40 1-20
+src/modules/Arrangement/useCases/clipEditing/limitClipEndToSource.ts
+  s_fec7059b7a251c::t_6b898fe84028c3 26
+src/modules/Arrangement/useCases/index.ts
+  s_fec7059b7a251c::t_6b898fe84028c3 93
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx
+  s_fec7059b7a251c::t_bcb93663845d7e 1552-1605,1607-1609
+  s_fec7059b7a251c::t_cde216791a5638 1606
+src/modules/TimelineEditor/presentations/views/Inspector/ClipInspector.tsx
+  s_fec7059b7a251c::t_fcc5af8b34091a 100-101
+  s_fec7059b7a251c::t_6b898fe84028c3 13-19,270-271
+src/modules/Arrangement/useCases/clipEditing/__tests__/getClipEndLimit.spec.ts
+  s_fec7059b7a251c::t_499179fab0b925 1-95
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipInspector.spec.tsx
+  s_fec7059b7a251c::t_57c45e955ed574 193-196,201,255,498-522
+  s_fec7059b7a251c::t_9433864fa9e020 523
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "50b379bbddd63b86886f268c7647b5271bef955b",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
