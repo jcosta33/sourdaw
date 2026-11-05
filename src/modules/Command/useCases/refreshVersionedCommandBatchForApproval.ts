@@ -18,6 +18,15 @@ type RefreshVersionedCommandBatchForApprovalInput = {
     serialized: string;
 };
 
+/** The owner's own reason, when it gives one, so the musician reads why rather than the operation name. */
+function describeValidationConflict(actionType: string, refusal: string | null): string {
+    const conflict = `Action conflicts with current project state: ${actionType}`;
+    if (refusal === null) {
+        return conflict;
+    }
+    return `${conflict}: ${refusal}`;
+}
+
 function failureReason(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
@@ -57,6 +66,7 @@ export function refreshVersionedCommandBatchForApproval(input: RefreshVersionedC
             status: 'conflicted' as const,
             divergence,
             reason: `Command batch project divergence is ${divergence.kind}`,
+            refusal: null,
         };
     }
     try {
@@ -65,20 +75,24 @@ export function refreshVersionedCommandBatchForApproval(input: RefreshVersionedC
                 status: 'conflicted' as const,
                 divergence,
                 reason: 'Command device versions changed after approval',
+                refusal: null,
             };
         }
         for (const [actionIndex, action] of actions.entries()) {
             const handler = getCommandHandler(action);
-            if (!handler?.validate || !handler.validate(action, { actions, actionIndex })) {
+            const validationContext = { actions, actionIndex };
+            if (!handler?.validate || !handler.validate(action, validationContext)) {
                 const incompatible = commandProjectDivergencePort.classify({
                     baseRevision: envelope.baseRevision,
                     commandsCompatible: false,
                     targetIds,
                 });
+                const refusal = handler?.validationRefusalReason?.(action, validationContext) ?? null;
                 return {
                     status: 'conflicted' as const,
                     divergence: incompatible ?? divergence,
-                    reason: `Action conflicts with current project state: ${action.type}`,
+                    reason: describeValidationConflict(action.type, refusal),
+                    refusal,
                 };
             }
         }

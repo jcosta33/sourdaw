@@ -47,6 +47,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
+import { getProjectHandlers } from '#/modules/Project/useCases';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import { hasValidAudioSourceState, projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import { type AppAction, type HandlerCommitValidation } from '#/utils/handlerContract';
@@ -100,6 +101,7 @@ function registerProductionTempoHandlers(): void {
         getAutomationHandlers(),
         getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
         getMidiNoteTransformHandlers(),
+        getProjectHandlers(),
         getTransportHandlers(),
         getYeastHandlers(),
     ]);

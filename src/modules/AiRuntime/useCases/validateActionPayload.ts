@@ -493,6 +493,14 @@ const validators = {
         isObj(param) &&
         isInRange(param.numerator, 1, 32) &&
         (param.denominator === 2 || param.denominator === 4 || param.denominator === 8 || param.denominator === 16),
+    // Only the application composes a brief write (`brief.compile`), and the Project handler reads
+    // the whole brief again before writing, so this checks the envelope it arrives in.
+    setProductionBrief: (param): param is PayloadOf<'setProductionBrief'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['expectedRevision', 'brief']) &&
+        Number.isInteger(param.expectedRevision) &&
+        isNonNegativeNumber(param.expectedRevision) &&
+        isObj(param.brief),
     setPlayback: (param): param is PayloadOf<'setPlayback'> =>
         isObj(param) && hasExactKeys(param, ['playing']) && typeof param.playing === 'boolean',
     // `setMasterGain`'s `gain` is the same linear-amplitude fraction as

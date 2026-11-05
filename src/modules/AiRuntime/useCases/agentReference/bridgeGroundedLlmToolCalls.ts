@@ -7132,8 +7132,8 @@ function findWorkflowInterpretationConflict(
     ) {
         return null;
     }
-    if (authority.mode === 'read-only') {
-        return 'A read-only interpretation cannot select a writing workflow.';
+    if (authority.mode === 'read-only' || authority.mode === 'brief') {
+        return `A ${authority.mode} interpretation cannot select a writing workflow.`;
     }
     const protectedObjects = authority.prohibitions.flatMap((restriction) =>
         restriction.kind === 'protect-object' ? [{ id: restriction.objectId, name: restriction.objectId }] : []
@@ -8116,6 +8116,7 @@ function bridgeUnrefinedLlmToolCalls(
         // target and value, and a read-only interpretation still forbids every write.
         const ordinaryLiteralControl =
             creativeAuthority?.mode !== 'read-only' &&
+            creativeAuthority?.mode !== 'brief' &&
             isOrdinaryLiteralControl(getExecutableAppActionEffect(call.name));
         const creativeAdmission = ordinaryLiteralControl ? undefined : creativeAdmissionsByCallIndex?.get(index);
         const createdTargetIntent = getExplicitCreatedTargetIntent({

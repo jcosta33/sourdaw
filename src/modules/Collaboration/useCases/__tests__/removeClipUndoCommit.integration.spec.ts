@@ -42,6 +42,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers, restoreMidiClipData } from '#/modules/MIDI/useCases';
+import { getProjectHandlers } from '#/modules/Project/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
@@ -796,6 +797,7 @@ describe('committed clip restoration through Command and real peer sync', () => 
                 getAutomationHandlers(),
                 getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => true }),
                 getMidiNoteTransformHandlers(),
+                getProjectHandlers(),
                 getTransportHandlers(),
                 getYeastHandlers(),
             ]);

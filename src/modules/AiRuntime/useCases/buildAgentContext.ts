@@ -19,6 +19,8 @@ import {
 } from '../transformers/llmActionBridge';
 
 const MAX_CONTEXT_TARGETS = 64;
+/** How many of each brief intent field a request reads, newest kept; the rest are counted. */
+const MAX_BRIEF_ENTRIES_PER_FIELD = 32;
 const MAX_VALIDATION_FAILURES = 16;
 const MAX_SELECTED_CLIPS = 16;
 const MAX_IMPORTED_STRING_LENGTH = 512;
@@ -205,6 +207,53 @@ function buildAvailableCapabilities(capabilityData: LlmActionCapabilityData | un
 
 function boundedTo(value: string, maxLength: number): { value: string; truncated: boolean } {
     return { value: value.slice(0, maxLength), truncated: value.length > maxLength };
+}
+
+type BriefIntent = NonNullable<ProjectContext['productionBrief']>;
+
+/** The newest entries of one brief field, so a later request reads the intent written last. */
+function newestBriefEntries<Entry>(entries: readonly Entry[]): Entry[] {
+    return entries.slice(-MAX_BRIEF_ENTRIES_PER_FIELD);
+}
+
+function boundBriefStatements(entries: BriefIntent['preferences']) {
+    return newestBriefEntries(entries).map((entry) => ({
+        id: entry.id,
+        scope: entry.scope,
+        statement: boundedString(entry.statement),
+    }));
+}
+
+function countOmittedBriefIntent(brief: BriefIntent): number {
+    return [brief.hardConstraints, brief.preferences, brief.sectionGoals, brief.trackRoles].reduce(
+        (omitted, entries) => omitted + Math.max(0, entries.length - MAX_BRIEF_ENTRIES_PER_FIELD),
+        0
+    );
+}
+
+/**
+ * The brief's written intent beside its locks, for a delta turn alone. A full turn closes with the
+ * project context, which already carries the whole brief (the local profile its intent fields), so
+ * stating it here too would spend the window twice and move the hosted bytes a provider's prompt
+ * cache reads. A delta turn carries no project context, so without this a correction round would
+ * plan blind to the brief's constraints, preferences, section goals and track roles.
+ */
+function readDeltaBriefIntent(brief: BriefIntent) {
+    return {
+        hardConstraints: boundBriefStatements(brief.hardConstraints),
+        preferences: boundBriefStatements(brief.preferences),
+        sectionGoals: newestBriefEntries(brief.sectionGoals).map((goal) => ({
+            id: goal.id,
+            sectionId: goal.sectionId,
+            statement: boundedString(goal.statement),
+        })),
+        trackRoles: newestBriefEntries(brief.trackRoles).map((role) => ({
+            id: role.id,
+            trackId: role.trackId,
+            role: role.role,
+        })),
+        omittedIntentCount: countOmittedBriefIntent(brief),
+    };
 }
 
 function boundedString(value: string): { value: string; truncated: boolean } {
@@ -653,6 +702,7 @@ export function buildAgentContext(input: BuildAgentContextInput): {
                       scope: lock.scope,
                       statement: boundedString(lock.statement),
                   })),
+              ...(revisionPayload.delta.mode === 'delta' ? readDeltaBriefIntent(input.context.productionBrief) : {}),
               omittedLockCount: Math.max(0, input.context.productionBrief.locks.length - MAX_CONTEXT_TARGETS),
               incompleteRelevantAuthority:
                   input.context.productionBrief.locks.filter((lock) => isRelevantLock(lock, input.context)).length >

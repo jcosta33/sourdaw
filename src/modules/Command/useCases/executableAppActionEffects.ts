@@ -336,6 +336,11 @@ export const executableAppActionEffectsByType = {
         dimensions: ['project-timing', 'arrangement', 'clip-audio'],
         scope: 'project',
     },
+    // The brief is project intent: it changes no sound, timing or arrangement, and carries the locks.
+    setProductionBrief: {
+        dimensions: ['protection'],
+        scope: 'project',
+    },
     setTimeSignature: {
         dimensions: ['project-timing'],
         scope: 'project',
