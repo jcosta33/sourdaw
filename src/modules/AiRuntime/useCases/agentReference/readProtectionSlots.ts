@@ -129,6 +129,16 @@ function readProtectionStartRanges(masked: string): Range[] {
     return collectStarts(masked).map(({ index, end }) => ({ start: index, end }));
 }
 
+/** A `then` opening an instruction cuts where its joining `and` starts, so the conjunction stays with the instruction. */
+function readBoundaryCutAt(masked: string, match: RegExpExecArray): number {
+    const opensInstructionAfterThen =
+        match[0].toLowerCase() === 'then' && instructionStartPattern.test(masked.slice(match.index + match[0].length));
+    if (!opensInstructionAfterThen) {
+        return match.index;
+    }
+    return joiningAndStart(masked, match.index);
+}
+
 function collectEvents(masked: string): Event[] {
     const starts = collectStarts(masked);
     const insideStart = (index: number) => starts.some((start) => index >= start.index && index < start.end);
@@ -137,11 +147,7 @@ function collectEvents(masked: string): Event[] {
             index: match.index,
             end: match.index + match[0].length,
             kind: 'cut' as const,
-            cutAt:
-                match[0].toLowerCase() === 'then' &&
-                instructionStartPattern.test(masked.slice(match.index + match[0].length))
-                    ? joiningAndStart(masked, match.index)
-                    : match.index,
+            cutAt: readBoundaryCutAt(masked, match),
         })).filter((cut) => !insideStart(cut.index))
     );
     const instructions: Event[] = Array.from(masked.matchAll(instructionPattern), (match) => ({
