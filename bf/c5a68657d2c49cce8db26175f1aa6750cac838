@@ -1,0 +1,115 @@
+evidence/agent-campaign/corpora/source-examples.json
+  s_fec7059b7a251c::t_aaca9f39f62e24 31-32
+evidence/agent-campaign/manifest.json
+  s_fec7059b7a251c::t_07d7608dcc10ee 539,695
+release/open-source-inventory.json
+  s_fec7059b7a251c::t_081e4a1eb4df7d 1214,1217
+scripts/__tests__/hostedAptInstall.spec.ts
+  s_fec7059b7a251c::t_a83509c19ef67c 218-232,265-271,273-279
+src/modules/AiRuntime/models/WorkflowCapability.ts
+  s_fec7059b7a251c::t_4f34003007d8b9 3
+src/modules/AiRuntime/transformers/llmActionStrategies/__tests__/automationRangeStrategy.spec.ts
+  s_fec7059b7a251c::t_3757c180344665 132
+src/modules/AiRuntime/transformers/llmActionStrategies/automationRangeStrategy.ts
+  s_fec7059b7a251c::t_cf05a1f74b5bfa 239,267
+src/modules/AiRuntime/useCases/__tests__/automateTrackGainRangeAdmission.spec.ts
+  s_fec7059b7a251c::t_e73bb9b5574c24 26-28,63-85,87-90,92-112,114,130,135,140,156-158,163,166-168,171-206
+src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts
+  s_fec7059b7a251c::t_7e33ca3cf3fe81 1047-1048,1050-1051,1055-1057,1064,1066,1070-1071,1083,1103-1104,1106,1109-1110,1112-1113,1115-1118,1122-1124,1130,1137-1139,1146-1147,1162,1165,1213,1215,1222,1234,1239,1242,1248,1250-1252,1256,1258,1263,1268-1271,1275-1276,1278,1287
+src/modules/AiRuntime/useCases/__tests__/materializeActionStateGuardsGainRange.spec.ts
+  s_fec7059b7a251c::t_3eec719b8ca1da 5-9,75-76,99-204
+src/modules/AiRuntime/useCases/__tests__/metricGoalPreviewRenders.spec.ts
+  s_fec7059b7a251c::t_d528a121e5376a 1,3-9,11-24,26-27,29,31-42,44-67,70-90,93-97,99-104,107-117,119-135,140-141,143-161,163-164,166-204,206-225,227-233,235,237-244,246-255,257-315,317-348,352-424
+src/modules/AiRuntime/useCases/__tests__/validateActionPayload.spec.ts
+  s_fec7059b7a251c::t_f6e6a2c0cb5eaf 174,179
+src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts
+  s_fec7059b7a251c::t_044cc921d732d2 34,44,55-59,61-62,66-83,97-106,126-127,136,139-147,149,151,154-157,159,162-179,181-195,197,200-202,205-221,223-228,231-303,305-318,370-375,377,384,387-391,397,403,408-425,427,430,450-451,485,500,513,516-518,520,522-523,527-529,531,533-539,541-555,558-560,562,564-567,569-570,574-576,578-579,582-583,585,587-592,595-607,609-632,635-656,658-660,662-664,666-668,671-682,684,686-695,697-700,703-709,711,713-719,722-756
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_fec7059b7a251c::t_5e0c60fd1019ae 280-299,303,306-307,310-312,314,318-325,330-332,334-342,344-346,349-450
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_fec7059b7a251c::t_daafc92d87efba 153,1308-1327,1333-1335,1404-1421,1434-1436,1472-1482,4119-4168,5238-5245,8154
+src/modules/AiRuntime/useCases/agentReference/getApplicationProtectedObjects.ts
+  s_fec7059b7a251c::t_c7201de8d5a1f7 31
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/readSourceSetLiftShape.ts
+  s_fec7059b7a251c::t_c4fb09cc575443 1-48
+src/modules/AiRuntime/useCases/describePendingActionConfirmation.ts
+  s_fec7059b7a251c::t_1341fb7963559a 342
+src/modules/AiRuntime/useCases/evaluateMetricGoalAdmission.ts
+  s_fec7059b7a251c::t_423ec5b9674f5b 16,420
+src/modules/AiRuntime/useCases/materializeActionStateGuards.ts
+  s_fec7059b7a251c::t_0421419be3a72f 661,678
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_fec7059b7a251c::t_efb025da83c741 821
+src/modules/AiRuntime/useCases/prepareMetricGoalPreview.ts
+  s_fec7059b7a251c::t_06c30d5fc0c1ce 27,49-56,156-181,183-226,228-240,244-254,264-265,278-281,286
+src/modules/AiRuntime/useCases/readGoalPrefix.ts
+  s_fec7059b7a251c::t_46a7cafd0e1405 1-18
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_fec7059b7a251c::t_9b829a9db65540 1041-1050,1062
+src/modules/Arrangement/handlers/device/__tests__/handleSetSend.spec.ts
+  s_fec7059b7a251c::t_c6c60bb8c97f34 97,275-360
+src/modules/Arrangement/handlers/device/handleSetSend.ts
+  s_fec7059b7a251c::t_111a7ec08c975d 83-89,113-117,123,152-153,155,162,164,180
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_fec7059b7a251c::t_bde408c0982bc5 906-924,979-987,991-995
+src/modules/Arrangement/useCases/device/sendManagement/__tests__/commitSendEdit.spec.ts
+  s_fec7059b7a251c::t_b27b130e79cd70 3-5,8,10,14-20,24-26,29-31,33-36,38-40,42-49,52-53,55,57,60,62-64,66,68,70,73-75,77,79-141,144-148,150,152,154-166
+src/modules/Arrangement/useCases/device/sendManagement/__tests__/setSend.spec.ts
+  s_fec7059b7a251c::t_1529e1ba45f386 95-96,110-129
+src/modules/Arrangement/useCases/device/sendManagement/commitSendEdit.ts
+  s_fec7059b7a251c::t_bfdf2622ba99b0 1-21
+src/modules/Arrangement/useCases/device/sendManagement/commitSendLevel.ts
+  s_fec7059b7a251c::t_cfae35c9931402 1-36
+src/modules/Arrangement/useCases/device/sendManagement/compileSendLevelAction.ts
+  s_fec7059b7a251c::t_f0d152e1235c41 1-32
+src/modules/Arrangement/useCases/device/sendManagement/compileSendPreFaderAction.ts
+  s_fec7059b7a251c::t_eeab7c1411f6db 1-22
+src/modules/Arrangement/useCases/device/sendManagement/listSendDestinations.ts
+  s_fec7059b7a251c::t_1d2b523288449b 1-2,4,6-8,11-28
+src/modules/Arrangement/useCases/device/sendManagement/removeSend.ts
+  s_fec7059b7a251c::t_3aeded14e8253a 38
+src/modules/Arrangement/useCases/device/sendManagement/restoreSendEngineFromProjectTruth.ts
+  s_fec7059b7a251c::t_7c7a3cf850e199 1,5-12,15
+src/modules/Arrangement/useCases/device/sendManagement/setSend.ts
+  s_fec7059b7a251c::t_df41ae6ddce1b0 23-26,32,39,73,80,82
+src/modules/Arrangement/useCases/index.ts
+  s_fec7059b7a251c::t_1c0bbd20022713 182-186
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_fec7059b7a251c::t_32439e7787145c 1223,1230,1232,1237,2769,2777-2780
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_fec7059b7a251c::t_1d92afb745b9e8 2431-2432,2440-2443,2451,2453,2458
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_fec7059b7a251c::t_e0696ce5ec65b3 2716
+src/modules/MixerConsole/presentations/views/Mixer/SendsSection.tsx
+  s_fec7059b7a251c::t_2fe9fdc13ad152 1,6-12,23-134,137,144-151
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/SendsSection.spec.tsx
+  s_fec7059b7a251c::t_166beee57944a7 1,4-6,12-14,18-28,78-84,88,90,114,118,125-127,131-286,300-310,324-363
+src/modules/Routing/presentations/views/RoutingMatrix.tsx
+  s_fec7059b7a251c::t_f1bcb2746d243b 7,29-31,61-72,137-151,176-186
+src/modules/Routing/presentations/views/__tests__/RoutingMatrix.spec.tsx
+  s_fec7059b7a251c::t_ad7424b1b6a9c5 4-5,10-11,15-19,48,119,124-147,165-169,179-182,201,257,274-277
+src/modules/TimelineEditor/presentations/views/Inspector/SendsEditor.tsx
+  s_fec7059b7a251c::t_8f6767c602b152 1,11-16,18,42-179,182,189-196
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/SendsEditor.spec.tsx
+  s_fec7059b7a251c::t_a3de944d2844cf 1,4-6,12-13,24,33-36,39-40,43,81-95,98,102-110,116-125,242-430
+src/utils/handlerContract.ts
+  s_fec7059b7a251c::t_28213dcfd1ec41 2021-2022
+tests/e2e/mixerSendsRoutingTestId.spec.ts
+  s_fec7059b7a251c::t_bc49188299057b 66-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bfc5a68657d2c49cce8db26175f1aa6750cac838",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
