@@ -135,6 +135,8 @@ export default defineConfig({
     },
     server: {
         hmr: process.env.NO_HMR !== '1',
+        // Agent lanes under `.agents/` mirror the repository, so a change there must not reload the app being served.
+        watch: { ignored: ['**/.agents/**'] },
         headers: {
             'Cross-Origin-Opener-Policy': 'same-origin',
             'Cross-Origin-Embedder-Policy': 'require-corp',
