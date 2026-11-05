@@ -15,8 +15,7 @@
       "Project",
       "Routing",
       "SampleLibrary",
-      "Transport",
-      "WorkspaceShell"
+      "Transport"
     ]
   },
   {
@@ -38,11 +37,6 @@
     "type": "module-tier",
     "from": "Arrangement",
     "to": "Synth"
-  },
-  {
-    "type": "module-tier",
-    "from": "Arrangement",
-    "to": "WorkspaceShell"
   },
   {
     "type": "module-tier",
@@ -111,11 +105,6 @@
   },
   {
     "type": "module-tier",
-    "from": "Command",
-    "to": "WorkspaceShell"
-  },
-  {
-    "type": "module-tier",
     "from": "CommandInterface",
     "to": "Onboarding"
   },
@@ -131,16 +120,6 @@
   },
   {
     "type": "module-tier",
-    "from": "ElasticAudio",
-    "to": "WorkspaceShell"
-  },
-  {
-    "type": "module-tier",
-    "from": "GrandBoule",
-    "to": "WorkspaceShell"
-  },
-  {
-    "type": "module-tier",
     "from": "MIDI",
     "to": "ControlSurface"
   },
@@ -148,11 +127,6 @@
     "type": "module-tier",
     "from": "MIDI",
     "to": "Synth"
-  },
-  {
-    "type": "module-tier",
-    "from": "MIDI",
-    "to": "WorkspaceShell"
   },
   {
     "type": "module-tier",
@@ -168,16 +142,6 @@
     "type": "module-tier",
     "from": "Project",
     "to": "SampleLibrary"
-  },
-  {
-    "type": "module-tier",
-    "from": "Project",
-    "to": "WorkspaceShell"
-  },
-  {
-    "type": "module-tier",
-    "from": "Setlist",
-    "to": "WorkspaceShell"
   },
   {
     "type": "module-tier",
