@@ -1,0 +1,29 @@
+src/modules/Arrangement/useCases/recording/commitRecording.ts
+  s_e55e77499e6fbf::t_017d9163cf90c8 3,80-92,96-98,101
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_0314bb17e5dee3::t_2441966ab7e7af 898-948
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b637e0007674186ef1cf90f638a5f604a9028b4a",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_e55e77499e6fbf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd7dd5e0-857f-4467-a958-f9009df751e8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
