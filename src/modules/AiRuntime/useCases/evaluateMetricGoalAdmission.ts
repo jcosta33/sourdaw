@@ -525,10 +525,10 @@ export function evaluateMetricGoalAdmission(input: AdmissionInput): MetricGoalEv
         });
     }
     for (const [goalIndex, goal] of goals.entries()) {
-        const result = evaluateCriterion(goal, { state, binding });
-        criteria[goalIndex] = result.criterion;
-        if (result.failure !== null) {
-            return blocked(criteria, { failure: result.failure, reason: criterionFailureReason(result) });
+        const { criterion, failure } = evaluateCriterion(goal, { state, binding });
+        criteria[goalIndex] = criterion;
+        if (failure !== null) {
+            return blocked(criteria, { failure, reason: criterionFailureReason({ criterion, failure }) });
         }
     }
     return {

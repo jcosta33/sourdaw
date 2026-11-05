@@ -377,11 +377,13 @@ describe('compiling perceptual constraints', () => {
     });
 });
 
+const bypassEq: AppAction = { type: 'bypassDevice', payload: { deviceId: 'bass-eq', bypassed: true } };
+
 describe('excluded dimensions', () => {
     it.each([
         ['an EQ low band', setParameter('bass-eq', 'eq-low-gain', -3)],
         ['a filter', setParameter('bass-eq-new', 'filter-cutoff', 80)],
-        ['bypassing the EQ', { type: 'bypassDevice', payload: { deviceId: 'bass-eq', bypassed: true } } as AppAction],
+        ['bypassing the EQ', bypassEq],
     ])('refuses %s under "don\'t touch the low end" before anything is compiled or previewed', (_label, action) => {
         expect(() => compile("Clean up the Bass but don't touch the low end", [action])).toThrow(
             /“don't touch the low end”.*low end of/u

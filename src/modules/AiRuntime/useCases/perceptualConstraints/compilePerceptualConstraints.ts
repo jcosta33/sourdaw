@@ -1,7 +1,6 @@
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 
 import {
-    type PerceptualConstraint,
     type PerceptualConstraintReading,
     type PerceptualConstraintScope,
     type UnsupportedPerceptualConstraint,

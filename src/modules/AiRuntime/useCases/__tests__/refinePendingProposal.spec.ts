@@ -827,8 +827,8 @@ describe('refining the pending proposal', () => {
             const state = metricGoalStateCodec(
                 getPendingActionConfirmation(confirmationId)?.approvalSnapshot.metricGoalState
             );
-            return (state?.authorities ?? [])
-                .flatMap((authority) => authority.goals)
+            const goals = (state?.authorities ?? []).flatMap((authority) => authority.goals);
+            return goals
                 .filter((goal) => goal.source.kind === 'constraint')
                 .map(({ metricId, band, relation, targetIds, tolerance, source }) => ({
                     metricId,

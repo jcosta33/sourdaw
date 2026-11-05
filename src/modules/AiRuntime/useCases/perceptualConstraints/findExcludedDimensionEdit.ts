@@ -354,6 +354,18 @@ function describeEdit(constraint: PerceptualConstraint, edit: Edit, command: str
     return `The request says “${constraint.clause}”, but ${command} edits the ${label} of ${owner}.`;
 }
 
+/** A mix-scoped constraint holds every track, so it reads no routing. */
+function readConstraintReach(
+    constraint: PerceptualConstraint,
+    actions: readonly AppAction[],
+    context: ProjectContext
+): Set<string> | null {
+    if (constraint.scope.kind === 'mix') {
+        return null;
+    }
+    return readReachedTrackIds(constraint.scope.trackIds, actions, context);
+}
+
 /**
  * The first command that edits a dimension a constraint excludes on its scope, as the refusal the
  * user sees, or `null`. It reads the batch before any preview renders it, so a batch that would
@@ -367,13 +379,10 @@ export function findExcludedDimensionEdit(input: {
     if (input.constraints.length === 0) {
         return null;
     }
-    // A mix-scoped constraint holds every track, so it reads no routing.
     const reach = new Map(
         input.constraints.map((constraint) => [
             constraint,
-            constraint.scope.kind === 'mix'
-                ? null
-                : readReachedTrackIds(constraint.scope.trackIds, input.actions, input.context),
+            readConstraintReach(constraint, input.actions, input.context),
         ])
     );
     for (const [index, action] of input.actions.entries()) {
