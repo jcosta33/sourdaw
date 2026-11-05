@@ -219,6 +219,54 @@ describe('SendsSection', () => {
         expect(action.payload.level).toBeCloseTo(mocks.previewSend.mock.lastCall![2], 6);
     });
 
+    it('settles a drag on the track it began on when the strip switches track mid-drag', async () => {
+        mocks.tracks = [makeBus({ id: 'bus-1', name: 'Reverb' })];
+        const view = renderInProject({
+            ...baseTrack,
+            id: 'track-9',
+            sends: [{ busId: 'bus-1', level: 0.2, preFader: false }],
+        });
+        const root = screen.getByRole('slider', { name: 'Send to Reverb' }).closest('[data-slot="slider"]');
+        if (!(root instanceof HTMLElement)) {
+            throw new Error('Missing Slider root');
+        }
+        Object.defineProperties(root, {
+            setPointerCapture: { configurable: true, value: vi.fn() },
+            hasPointerCapture: { configurable: true, value: () => true },
+        });
+        vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
+            x: 0,
+            y: 0,
+            top: 0,
+            bottom: 20,
+            left: 0,
+            right: 100,
+            width: 100,
+            height: 20,
+            toJSON: () => ({}),
+        });
+
+        fireEvent.pointerDown(root, { pointerId: 1, button: 0, clientX: 40, clientY: 10 });
+        const previewedLevel = mocks.previewSend.mock.lastCall![2];
+        await act(async () => {
+            view.rerender(
+                <SendsSection
+                    track={{ ...baseTrack, id: 'track-10', sends: [{ busId: 'bus-1', level: 0.5, preFader: false }] }}
+                />
+            );
+        });
+
+        expect(mocks.executeAppAction).toHaveBeenCalledOnce();
+        const action = mocks.executeAppAction.mock.calls[0]![0];
+        expect(action).toMatchObject({ type: 'setSend', payload: { trackId: 'track-9', expectedLevel: 0.2 } });
+        expect(action.payload.level).toBeCloseTo(previewedLevel, 6);
+        // The next track shows its own level, not the one left on the last.
+        expect(screen.getByRole('slider', { name: 'Send to Reverb' })).toHaveAttribute(
+            'aria-valuenow',
+            String(Math.round(levelToSendPosition(0.5)))
+        );
+    });
+
     it('commits a keyboard step on the send slider as one setSend at the stepped level', async () => {
         mocks.tracks = [makeBus({ id: 'bus-1', name: 'Reverb' })];
         renderInProject({ ...baseTrack, id: 'track-9', sends: [{ busId: 'bus-1', level: 0.2, preFader: false }] });

@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { type ReactElement, useRef, useState } from 'react';
 
 import { LatchButton } from '#/components/daw/LatchButton';
 import { Row } from '#/components/layout';
@@ -24,23 +24,19 @@ type SendState = Track['sends'][number];
 
 /**
  * One send-level gesture: previews on the engine while it moves and commits one
- * action when it ends. A pointer drag the browser abandons (pointercancel, lost
- * capture) or a row unmounted mid-drag never reaches the slider's own commit,
- * so it is settled at the level it was left, as a released fader is. Only a
- * pointer drag can be abandoned: a keyboard step or a typed value commits in
- * the same event as its change (Radix commits a key step before reporting it).
+ * action when it ends. The Slider ends every gesture in one commit, including
+ * one the browser abandons or a row unmounted mid-drag; this hook orders those
+ * commits, so a step taken before the previous one lands is guarded on the
+ * level that one wrote, and the row shows the latest committed level until it
+ * lands.
  */
 const useSendLevelGesture = (trackId: string, busId: string, send: SendState | undefined) => {
     const [localLevel, setLocalLevel] = useState<number | null>(null);
-    const pointerDragRef = useRef(false);
-    const uncommittedLevelRef = useRef<number | null>(null);
     const latestCommitRef = useRef<Promise<void> | null>(null);
 
     // The slider keeps showing the committed level until the last commit
     // settles: an earlier one settling must not drop a later step's level.
     const commit = (committed: number): void => {
-        pointerDragRef.current = false;
-        uncommittedLevelRef.current = null;
         setLocalLevel(committed);
         const pending = commitSendLevel(trackId, busId, committed);
         latestCommitRef.current = pending;
@@ -50,31 +46,12 @@ const useSendLevelGesture = (trackId: string, busId: string, send: SendState | u
             }
         });
     };
-    const beginPointerDrag = (): void => {
-        pointerDragRef.current = true;
-    };
-    const settleAbandoned = (): void => {
-        const abandonedLevel = uncommittedLevelRef.current;
-        pointerDragRef.current = false;
-        uncommittedLevelRef.current = null;
-        if (abandonedLevel !== null) {
-            commit(abandonedLevel);
-        }
-    };
-    const settleOnUnmountRef = useRef(settleAbandoned);
-    useLayoutEffect(() => {
-        settleOnUnmountRef.current = settleAbandoned;
-    });
-    useEffect(() => () => settleOnUnmountRef.current(), []);
 
     const preview = (next: number): void => {
-        if (pointerDragRef.current) {
-            uncommittedLevelRef.current = next;
-        }
         setLocalLevel(next);
         previewSend(trackId, busId, next, send?.preFader ?? false);
     };
-    return { level: localLevel ?? send?.level ?? 0, preview, commit, beginPointerDrag, settleAbandoned };
+    return { level: localLevel ?? send?.level ?? 0, preview, commit };
 };
 
 type SendRowProps = {
@@ -104,9 +81,6 @@ const SendRow = ({ track, bus, send }: SendRowProps): ReactElement => {
                     }
                     gesture.commit(sendPositionToLevel(value));
                 }}
-                onPointerDown={gesture.beginPointerDrag}
-                onPointerCancel={gesture.settleAbandoned}
-                onLostPointerCapture={gesture.settleAbandoned}
                 max={100}
                 step={1}
                 className="flex-1"
