@@ -139,7 +139,7 @@ export function useSliderGesture({
         onValueCommit?.(value);
     };
 
-    const handlePointerDown = (event: PointerEvent<HTMLSpanElement>): void => {
+    const handlePointerDown = (event: PointerEvent<HTMLDivElement>): void => {
         onPointerDown?.(event);
         // Radix starts no slide for a pointerdown a caller prevented.
         if (event.defaultPrevented) {
@@ -151,7 +151,7 @@ export function useSliderGesture({
         state.pointerId = event.pointerId;
     };
 
-    const handlePointerEnd = (event: PointerEvent<HTMLSpanElement>): void => {
+    const handlePointerEnd = (event: PointerEvent<HTMLDivElement>): void => {
         const state = stateRef.current;
         if (state.pointerId !== event.pointerId) {
             return;
@@ -160,14 +160,14 @@ export function useSliderGesture({
         settleGesture(state);
     };
 
-    const handleKeyDownCapture = (event: KeyboardEvent<HTMLSpanElement>): void => {
+    const handleKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>): void => {
         onKeyDownCapture?.(event);
         if (STEP_KEYS.has(event.key)) {
             stateRef.current.settled = null;
         }
     };
 
-    const handleBlur = (event: FocusEvent<HTMLSpanElement>): void => {
+    const handleBlur = (event: FocusEvent<HTMLDivElement>): void => {
         onBlur?.(event);
         if (!event.currentTarget.contains(event.relatedTarget)) {
             settleGesture(stateRef.current);
@@ -180,11 +180,11 @@ export function useSliderGesture({
             onValueChange: handleValueChange,
             onValueCommit: handleValueCommit,
             onPointerDown: handlePointerDown,
-            onPointerCancel: (event: PointerEvent<HTMLSpanElement>): void => {
+            onPointerCancel: (event: PointerEvent<HTMLDivElement>): void => {
                 onPointerCancel?.(event);
                 handlePointerEnd(event);
             },
-            onLostPointerCapture: (event: PointerEvent<HTMLSpanElement>): void => {
+            onLostPointerCapture: (event: PointerEvent<HTMLDivElement>): void => {
                 onLostPointerCapture?.(event);
                 handlePointerEnd(event);
             },
