@@ -1,7 +1,7 @@
 import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { sendPositionToLevel } from '#/utils/audioLevelLaw';
+import { levelToSendPosition, sendPositionToLevel } from '#/utils/audioLevelLaw';
 
 import { SendsEditor } from '../SendsEditor';
 
@@ -36,8 +36,10 @@ vi.mock('#/modules/Routing/useCases', async (importOriginal) => {
     return {
         ...actual,
         setSend: (...args: unknown[]) => mockPreviewSend(...args),
+        removeSend: (...args: unknown[]) => mockEngineRemoveSend(...args),
     };
 });
+const mockEngineRemoveSend = vi.fn();
 
 const mockUseTracks = vi.fn((): { tracks: Track[] } => ({ tracks: [] }));
 vi.mock('../../../hooks/useTracks', () => ({
@@ -79,11 +81,13 @@ vi.mock('#/components/ui/slider', () => ({
         value,
         onValueChange,
         onValueCommit,
+        onPointerCancel,
         'aria-label': ariaLabel,
     }: {
         value: number[];
         onValueChange: (values: number[]) => void;
         onValueCommit: (values: number[]) => void;
+        onPointerCancel?: () => void;
         'aria-label'?: string;
     }) => (
         <input
@@ -93,6 +97,7 @@ vi.mock('#/components/ui/slider', () => ({
             value={value[0]}
             onChange={(event) => onValueChange([Number(event.target.value)])}
             onMouseUp={(event) => onValueCommit([Number(event.currentTarget.value)])}
+            onPointerCancel={onPointerCancel}
         />
     ),
 }));
@@ -281,6 +286,57 @@ describe('SendsEditor', () => {
                 type: 'addSend',
                 payload: { trackId: 'track-1', busId: 'bus-1', level: sendPositionToLevel(40) },
             });
+        });
+
+        it('removes the previewed send from the engine when the first send to a bus is refused', async () => {
+            mockUseTracks.mockReturnValue({ tracks: [bus('bus-1')] });
+            mockExecuteAppAction.mockRejectedValueOnce(new Error('conflict'));
+            render(<SendsEditor track={mockTrack} />);
+
+            const slider = screen.getByTestId('slider');
+            fireEvent.change(slider, { target: { value: '40' } });
+            await act(async () => {
+                fireEvent.mouseUp(slider);
+            });
+
+            expect(mockEngineRemoveSend).toHaveBeenCalledWith('track-1', 'bus-1');
+        });
+
+        it('settles a drag the pointer abandons as one commit at the level it was left', async () => {
+            mockUseTracks.mockReturnValue({ tracks: [bus('bus-1')] });
+            render(<SendsEditor track={{ ...mockTrack, sends: [sendTo('bus-1')] }} />);
+
+            const slider = screen.getByTestId('slider');
+            fireEvent.change(slider, { target: { value: '40' } });
+            await act(async () => {
+                fireEvent.pointerCancel(slider);
+            });
+
+            expect(mockExecuteAppAction).toHaveBeenCalledOnce();
+            expect(mockExecuteAppAction).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    type: 'setSend',
+                    payload: expect.objectContaining({ level: sendPositionToLevel(40), expectedLevel: 0.5 }),
+                })
+            );
+        });
+
+        it('settles a drag on the track it began on and shows the next track its own level', async () => {
+            mockUseTracks.mockReturnValue({ tracks: [bus('bus-1')] });
+            const view = render(<SendsEditor track={{ ...mockTrack, sends: [sendTo('bus-1')] }} />);
+
+            fireEvent.change(screen.getByTestId('slider'), { target: { value: '40' } });
+            await act(async () => {
+                view.rerender(
+                    <SendsEditor track={{ ...mockTrack, id: 'track-2', sends: [sendTo('bus-1', { level: 0.25 })] }} />
+                );
+            });
+
+            expect(mockExecuteAppAction).toHaveBeenCalledOnce();
+            expect(mockExecuteAppAction).toHaveBeenCalledWith(
+                expect.objectContaining({ payload: expect.objectContaining({ trackId: 'track-1' }) })
+            );
+            expect(screen.getByTestId('slider')).toHaveValue(String(Math.round(levelToSendPosition(0.25))));
         });
 
         it('commits the PRE/POST click as one setSend that flips only the tap point', () => {

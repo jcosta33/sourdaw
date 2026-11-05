@@ -7,6 +7,7 @@ import type { Track } from '../../../../models/TrackViewTypes';
 
 const mocks = vi.hoisted(() => ({
     previewSend: vi.fn(),
+    engineRemoveSend: vi.fn(),
     executeAppAction: vi.fn(),
     tracks: [] as Track[],
 }));
@@ -16,6 +17,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/modules/Routing/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Routing/useCases')>()),
     setSend: mocks.previewSend,
+    removeSend: mocks.engineRemoveSend,
 }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
@@ -144,6 +146,66 @@ describe('SendsSection', () => {
             type: 'addSend',
             payload: { trackId: 'track-9', busId: 'bus-1' },
         });
+    });
+
+    it('removes the previewed send from the engine when the first send to a bus is refused', async () => {
+        mocks.tracks = [makeBus({ id: 'bus-1', name: 'Reverb' })];
+        mocks.executeAppAction.mockRejectedValueOnce(new Error('conflict'));
+
+        render(<SendsSection track={{ ...baseTrack, id: 'track-9' }} />);
+
+        fireEvent.doubleClick(screen.getByRole('slider', { name: 'Send to Reverb' }));
+        fireEvent.change(screen.getByDisplayValue('0'), { target: { value: '65' } });
+        await act(async () => {
+            fireEvent.keyDown(screen.getByDisplayValue('65'), { key: 'Enter' });
+        });
+
+        expect(mocks.engineRemoveSend).toHaveBeenCalledWith('track-9', 'bus-1');
+    });
+
+    it('settles a pointer drag the browser cancels as one commit at the level it was left', async () => {
+        mocks.tracks = [makeBus({ id: 'bus-1', name: 'Reverb' })];
+        render(
+            <SendsSection
+                track={{ ...baseTrack, id: 'track-9', sends: [{ busId: 'bus-1', level: 0.2, preFader: false }] }}
+            />
+        );
+        const root = screen.getByRole('slider', { name: 'Send to Reverb' }).closest('[data-slot="slider"]');
+        if (!(root instanceof HTMLElement)) {
+            throw new Error('Missing Slider root');
+        }
+        Object.defineProperties(root, {
+            setPointerCapture: { configurable: true, value: vi.fn() },
+            releasePointerCapture: { configurable: true, value: vi.fn() },
+            hasPointerCapture: { configurable: true, value: () => true },
+        });
+        vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
+            x: 0,
+            y: 0,
+            top: 0,
+            bottom: 20,
+            left: 0,
+            right: 100,
+            width: 100,
+            height: 20,
+            toJSON: () => ({}),
+        });
+
+        fireEvent.pointerDown(root, { pointerId: 1, button: 0, clientX: 40, clientY: 10 });
+        fireEvent.pointerMove(root, { pointerId: 1, clientX: 50, clientY: 10 });
+        expect(mocks.previewSend).toHaveBeenCalled();
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        await act(async () => {
+            fireEvent.pointerCancel(root, { pointerId: 1 });
+            fireEvent.lostPointerCapture(root, { pointerId: 1 });
+            // A pointerup the slider still sees afterwards must not commit the gesture twice.
+            fireEvent.pointerUp(root, { pointerId: 1 });
+        });
+
+        expect(mocks.executeAppAction).toHaveBeenCalledOnce();
+        const action = mocks.executeAppAction.mock.calls[0]![0];
+        expect(action).toMatchObject({ type: 'setSend', payload: { trackId: 'track-9', expectedLevel: 0.2 } });
+        expect(action.payload.level).toBeCloseTo(mocks.previewSend.mock.lastCall![2], 6);
     });
 
     it('shows POST for a post-fader send and toggles it to pre-fader on click', () => {

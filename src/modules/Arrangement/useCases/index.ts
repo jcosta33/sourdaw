@@ -181,7 +181,7 @@ export { compileReorderDevicesAction } from './device/compileReorderDevicesActio
 export { compileSendLevelAction } from './device/sendManagement/compileSendLevelAction';
 export { compileSendPreFaderAction } from './device/sendManagement/compileSendPreFaderAction';
 export { listSendDestinations } from './device/sendManagement/listSendDestinations';
-export { restoreSendEngineFromProjectTruth } from './device/sendManagement/restoreSendEngineFromProjectTruth';
+export { commitSendEdit } from './device/sendManagement/commitSendEdit';
 export { setDeviceParameter } from './device/setDeviceParameter/setDeviceParameter';
 export { persistDevicePatch } from './device/setDeviceParameter/persistDevicePatch';
 
