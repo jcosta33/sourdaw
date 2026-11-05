@@ -1,0 +1,29 @@
+src/modules/AiRuntime/useCases/__tests__/presetRecipeApplication.spec.ts
+  s_55244eb93b97d1::t_c44ca007e3becb 110
+  s_55244eb93b97d1::t_89df02c10ac489 77-81
+  s_55244eb93b97d1::t_b81744bce911c5 29
+  s_55244eb93b97d1::t_176886cffcd307 36
+  s_55244eb93b97d1::t_eae3b0f93603c8 113
+  s_55244eb93b97d1::t_4529c43b42497f 82-87
+src/modules/Arrangement/useCases/device/composeAddedDeviceParameterValues.ts
+  s_55244eb93b97d1::t_574a8125c54c47 11-15
+src/modules/AiRuntime/useCases/__tests__/presetRecipes.spec.ts
+  s_55244eb93b97d1::t_eae3b0f93603c8 512-515
+  s_55244eb93b97d1::t_dbf238c00c3825 510
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bb87a3c72cd6304aa24acecea553ea6b3b61110c",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
