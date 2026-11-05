@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/__tests__/materializeActionStateGuardsGainRange.spec.ts
+  s_0314bb17e5dee3::t_8d4c454b81841a 5-9,99-204
+src/modules/AiRuntime/useCases/materializeActionStateGuards.ts
+  s_0314bb17e5dee3::t_d2545d00fbb6ca 661,678
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c21baa21458f65d38d63d38a4013843f48c1da94",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
