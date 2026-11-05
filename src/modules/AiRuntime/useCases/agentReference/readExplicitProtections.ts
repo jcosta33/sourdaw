@@ -1,6 +1,7 @@
 import { type ProjectContext } from '../../models/ProjectContext';
 import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuotedText';
 
+import { blankRanges } from './blankRanges';
 import {
     CONNECTIVE_WORDS,
     KIND_NOUNS,
@@ -14,7 +15,6 @@ import {
     type Token,
 } from './protectionObjectForms';
 import { protectionSlots, type Range, type Slot } from './readProtectionSlots';
-import { blankRanges } from './blankRanges';
 import { refinementRequestReading, type ReferenceCandidate } from './refinementRequestReading';
 
 /**

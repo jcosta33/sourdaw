@@ -2,8 +2,8 @@ import { type ProjectContext } from '../../models/ProjectContext';
 import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuotedText';
 import { getSelectedClipReferenceIds } from '../../transformers/promptParser/selectedClipReference';
 
-import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { blankRanges } from './blankRanges';
+import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { CONNECTIVE_WORDS, CONVENTIONAL_WORDS, protectionObjectForms } from './protectionObjectForms';
 import { protectionSlots, type Range, type Slot } from './readProtectionSlots';
 import { refinementRequestReading } from './refinementRequestReading';
