@@ -1,0 +1,205 @@
+src/modules/SampleLibrary/useCases/seedFactoryLibrary.ts
+  s_fec7059b7a251c::t_f5bb69a873539a 7,10,13-14,15,17-18,31,37,40-41,44-46,48,50-51,53-54,61,63-65,70-73,88-95
+  s_fec7059b7a251c::t_399f1245afeb5f 74-87,97
+  s_fec7059b7a251c::t_55d9668645f41d 55-59
+src/modules/SampleLibrary/useCases/factoryLibrary/findFactoryRoot.ts
+  s_fec7059b7a251c::t_e74c2c22dc7333 1-8
+src/modules/SampleLibrary/useCases/factoryLibrary/toFactorySampleRecord.ts
+  s_fec7059b7a251c::t_aebedc8ea1e81d 1-52
+src/modules/SampleLibrary/useCases/connectFolder/rescanRoot.ts
+  s_fec7059b7a251c::t_bece263ef51bc6 1-4,31-32,34-39
+  s_fec7059b7a251c::t_f79aff16fa8244 6,29-30,33
+src/modules/SampleLibrary/useCases/factoryLibrary/cacheFactoryBuffers.ts
+  s_fec7059b7a251c::t_01c560c4336b16 6,8-19,52-54,58,60-63
+  s_fec7059b7a251c::t_654afb545aeebf 1-5,20-22,27-30,32,34-40,42-43,48-51
+  s_bf218e6b9b3914::t_66c029265a89aa 23-24,26,31,33,41,55-56
+src/modules/FactorySynthesis/transformers/generateImpactsPack.ts
+  s_fec7059b7a251c::t_93b007e9ad4548 88
+  s_fec7059b7a251c::t_466be8e2feafcd 86-87
+  s_fec7059b7a251c::t_bb23ceeae43316 89-91
+  s_fec7059b7a251c::t_664b129f9fedaa 84,93-94,99
+src/modules/SampleLibrary/useCases/factoryLibrary/renderFactoryLibraryPack.ts
+  s_fec7059b7a251c::t_b11e92acf4760a 1-5,6-23,25,27-37,39,40-41,43-44,47-48,55,59,62,65
+  s_fec7059b7a251c::t_16d96eb113ed9a 26,38,42,45
+  s_fec7059b7a251c::t_7fec8c3546eb29 24,46,49-54,56-58,60-61,63-64
+src/modules/SampleLibrary/useCases/connectFolder/__tests__/rescanRoot.spec.ts
+  s_fec7059b7a251c::t_deff951ab1289b 10-11,28-31,84-90,92-97,99-107
+  s_fec7059b7a251c::t_a4052d0e575102 9,26-27,91,98
+src/modules/SampleLibrary/useCases/__tests__/seedFactoryLibrary.spec.ts
+  s_fec7059b7a251c::t_745d61e2f08289 41-48,57,58-71,81,227,282-284,291,293,297,303-308,310-314,316-319,328-330,333-348,369,376,378,383,387,389,392-393,399,406,412,459
+  s_fec7059b7a251c::t_a6a057ea5952e6 309,315,320-327,331-332,349-356,358-368,370-375,379-382,384-386,390-391,394-398,402-405,453,455-458
+  s_fec7059b7a251c::t_92bbc0239caf33 38-39,104-107,124,160,264-281,357,377,388,400,407-452,454
+src/modules/FactorySynthesis/AGENTS.md
+  s_fec7059b7a251c::t_642e38eeeecedf 22
+src/modules/FactorySynthesis/transformers/__tests__/generateFactorySamples.spec.ts
+  s_fec7059b7a251c::t_2378c865b21da5 24-44
+src/modules/SampleLibrary/useCases/__tests__/ensureFactorySampleBuffer.spec.ts
+  s_fec7059b7a251c::t_1d075b3cd134ef 1-2,8-12,15-20,23-26,27-30,42,45-46,48-57,62-69,72-96,97-113,118-124,127-146,148-155,157-159,161-168,172-173,188-189,191-198,200-202,213,234-246,278-287
+  s_fec7059b7a251c::t_36c7f3892d0647 3,6-7,14,22,30,34-36,38-41,43-44,47,71,114-117,126,147,156,160,169-171,174,190,199,203-207,209,211,214-216,221,223,226,233,247-258
+  s_0314bb17e5dee3::t_f466f83cb39d14 259-260
+  s_05e88737aac85b::t_3635b25c8ceea7 4-5,13,21,37,125,177-189,261-277
+  s_fec7059b7a251c::t_b380a68dbc81c6 31-33,70,219-220,224-225,228-232
+src/modules/SampleLibrary/presentations/views/__tests__/LibraryBrowser.spec.tsx
+  s_fec7059b7a251c::t_bdefdeeb6f64e3 49-50
+  s_fec7059b7a251c::t_5f9e6822202b83 23-29,45,71-74,146-147,713,765,769-823
+  s_fec7059b7a251c::t_f4854bd94512fc 52
+  s_fec7059b7a251c::t_a18a1d6d2685b4 829-836
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  s_fec7059b7a251c::t_1b563adfcb5b96 56
+  s_fec7059b7a251c::t_11fcb7cde5306a 59
+  s_fec7059b7a251c::t_a57106e8ea647d 60
+src/modules/SampleLibrary/useCases/ensureFactorySampleBuffer.ts
+  s_fec7059b7a251c::t_c16ac43788a779 2-5,8-13,15-30,33,37,40,46-50,73,75-78,84-87,88-91,93-97,103-116,123-124
+  s_fec7059b7a251c::t_fabacbfc6a9083 1
+  s_fec7059b7a251c::t_d7800fea5edfe9 7,14,31-32,34-36,38-39,41-45,51,69-70,72,74,83,117-120
+  s_fec7059b7a251c::t_5c93c5007b835f 6,52-68,71,92,98-102,121-122
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  s_0314bb17e5dee3::t_9ac637a5101a61 34,83,172-173,329-381
+src/modules/SampleLibrary/useCases/index.ts
+  s_0314bb17e5dee3::t_91089326ec3fcf 12
+src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts
+  s_fec7059b7a251c::t_d496e200c2c1cb 7-11,300-314
+src/modules/SampleLibrary/presentations/views/LibraryBrowser.tsx
+  s_fec7059b7a251c::t_d73466ac9f03d3 38,250-258
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheUnpinnedRestore.spec.ts
+  s_fec7059b7a251c::t_d78d7380b646fa 1-27,31,33-70,72-75,77-86,90,92-107,145-165,167-203,205-223,381
+  s_05e88737aac85b::t_d0d2bc7dcd0f0b 30,32,89,91,108-144,166,204,224-329
+  s_fec7059b7a251c::t_11eaef1672aa4d 28-29,71,76,87-88,330-348
+  s_1d4588d31724fa::t_0a7fcc057722e5 349-380
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheBase64Surface.spec.ts
+  s_fec7059b7a251c::t_0d7e700615766b 124
+  s_fec7059b7a251c::t_4fb568ca963efd 92
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_fec7059b7a251c::t_8a8448b3991beb 1459-1484,1682,1754,1756,1758-1767,1769-1771,1805-1811,1813-1839,1846-1869,1871-1876,1881-1886,2561-2562
+  s_05e88737aac85b::t_de05c7794b77e5 1755,1757,1768,1772-1804,1812,1840-1845,1870,1877-1880
+  s_fec7059b7a251c::t_8bef189dfd7fb5 2390-2400
+src/modules/AudioEngine/useCases/index.ts
+  s_fec7059b7a251c::t_2edc850fd6619d 59
+  s_fec7059b7a251c::t_30efc31a1b670e 45
+src/modules/AudioEngine/useCases/restoreUnpinnedAudioBuffersFromIdb.ts
+  s_fec7059b7a251c::t_e99e5946231e5d 1-8,10-15,19-37
+  s_05e88737aac85b::t_1132ff2ef286fb 9,16-18
+src/modules/AudioRendering/presentations/views/__tests__/exportStreamingMemory.spec.tsx
+  s_fec7059b7a251c::t_21230bb63da4b5 625
+  s_fec7059b7a251c::t_5e72e482bac160 626
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_fec7059b7a251c::t_08a26e825fa0be 341
+  s_fec7059b7a251c::t_57b8ec5a7721e3 342
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_fec7059b7a251c::t_5da459431ffc36 113
+  s_fec7059b7a251c::t_3823b9a9b23e2a 114
+src/modules/Gluten/useCases/glutenParamBridge/__tests__/glutenParameterUndo.integration.spec.ts
+  s_fec7059b7a251c::t_bc87816e062a1d 72
+  s_fec7059b7a251c::t_ed2fb8e2859ebe 73
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_fec7059b7a251c::t_bbec1ad81066d7 100
+  s_fec7059b7a251c::t_93d90745d95ff3 101
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  s_fec7059b7a251c::t_be314cdedd9a46 188
+  s_fec7059b7a251c::t_570ecf244d3e6a 189
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  s_fec7059b7a251c::t_1af0131b448bf1 69
+  s_fec7059b7a251c::t_c394a0b1bd4939 70
+src/modules/Arrangement/handlers/track/__tests__/duplicateTrack.integration.spec.ts
+  s_fec7059b7a251c::t_fb2f1c6d9db1d2 40
+  s_fec7059b7a251c::t_ddeefc4d0f830e 41
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_fec7059b7a251c::t_ae26c0993070b5 80
+  s_fec7059b7a251c::t_56588c283f6e6f 81
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_fec7059b7a251c::t_defb36c0117dd2 161
+  s_fec7059b7a251c::t_c1b4095f9f6e7c 162
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/finalizeTemplate.spec.ts
+  s_fec7059b7a251c::t_a5e2fdbdad6bf9 60
+  s_fec7059b7a251c::t_8513cc5cf36765 61
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_fec7059b7a251c::t_dd157257f1761c 89
+  s_fec7059b7a251c::t_ca2f62969d268b 90
+src/modules/Crumbs/useCases/__tests__/crumbsParameterPersistence.integration.spec.ts
+  s_fec7059b7a251c::t_716bf27a59736b 80
+  s_fec7059b7a251c::t_16c2297e8195a6 81
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.roundTrip.spec.ts
+  s_fec7059b7a251c::t_41bd427c43c4f6 84
+  s_fec7059b7a251c::t_c6c5e841e7a580 85
+src/modules/Bacteria/useCases/bacteriaParamBridge/__tests__/chooseBacteriaBodyUndo.integration.spec.ts
+  s_fec7059b7a251c::t_260f26acea5fde 78
+  s_fec7059b7a251c::t_24dd46e316058e 79
+src/modules/Proof/presentations/views/__tests__/ProofPanel.spec.tsx
+  s_fec7059b7a251c::t_5ae27988987dbf 68
+  s_fec7059b7a251c::t_9849633f594e9c 69
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_fec7059b7a251c::t_06b73d365db2ed 143
+  s_fec7059b7a251c::t_961805a3a53b9b 144
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  s_fec7059b7a251c::t_4bb75136a5f434 180
+  s_fec7059b7a251c::t_5c03fe0bbc5844 181
+src/modules/Arrangement/handlers/track/__tests__/trackStateUndo.integration.spec.ts
+  s_fec7059b7a251c::t_1f6b74e818aa47 66
+  s_fec7059b7a251c::t_6d7a7057f1210b 67
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  s_fec7059b7a251c::t_0d7e3455444f02 191
+  s_fec7059b7a251c::t_9a18f71944f460 192
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_fec7059b7a251c::t_71c98614bae682 65
+  s_fec7059b7a251c::t_f2e2e195910173 66
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_fec7059b7a251c::t_d3774172ed06de 353
+  s_fec7059b7a251c::t_46b3d48ae7cfa9 354
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberPresetUndo.integration.spec.tsx
+  s_fec7059b7a251c::t_255b04c681a822 73
+  s_fec7059b7a251c::t_67420ee5413440 74
+src/modules/SampleLibrary/useCases/factoryLibrary/rescanFactoryLibrary.ts
+  s_fec7059b7a251c::t_67c397cecc4868 1-11
+src/modules/AudioEngine/useCases/holdAudioBufferForSession.ts
+  s_fec7059b7a251c::t_79b4855e042fc4 1-16
+src/modules/SampleLibrary/AGENTS.md
+  s_fec7059b7a251c::t_d90dbf3159b002 23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "61130f7f942acd80b8a1cfabbd0d865ce8f999dd",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_05e88737aac85b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_05e88737aac85b",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_1d4588d31724fa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_1d4588d31724fa",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_bf218e6b9b3914": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_bf218e6b9b3914",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
