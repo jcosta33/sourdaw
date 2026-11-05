@@ -109,6 +109,11 @@ function deviceTypeDimensions(deviceType: string | null): PerceptualExcludedDime
     return SPATIAL_DEVICE_TYPES.has(deviceType) ? ['ambience'] : [];
 }
 
+/** Every dimension a chain of these device types shapes, once each. */
+function chainDimensions(deviceTypes: readonly string[]): PerceptualExcludedDimension[] {
+    return [...new Set(deviceTypes.flatMap(deviceTypeDimensions))];
+}
+
 function edits(dimensions: readonly EditDimension[], trackId: string | null, detail: string): Edit[] {
     return dimensions.map((dimension) => ({ dimension, trackId, detail }));
 }
@@ -194,9 +199,7 @@ function readOutputEdits(action: AppAction, context: ProjectContext): Edit[] | n
         return null;
     }
     const destination = context.tracks.find((track) => track.id === action.payload.outputId);
-    const dimensions = [
-        ...new Set((destination?.devices ?? []).flatMap((device) => deviceTypeDimensions(device.type))),
-    ];
+    const dimensions = chainDimensions((destination?.devices ?? []).map((device) => device.type));
     return edits(dimensions, action.payload.trackId, `to ${destination?.name ?? action.payload.outputId}`);
 }
 
@@ -229,8 +232,7 @@ function readDeviceChainEdits(
             ...action.payload.devices.map((device) => device.type),
             ...action.payload.expectedBefore.devices.map((device) => device.type),
         ];
-        const dimensions = [...new Set(types.flatMap(deviceTypeDimensions))];
-        return edits(dimensions, action.payload.trackId, action.payload.presetId);
+        return edits(chainDimensions(types), action.payload.trackId, action.payload.presetId);
     }
     return null;
 }
@@ -291,9 +293,49 @@ function readActionEdits(action: AppAction, actions: readonly AppAction[], conte
     );
 }
 
+/** Where a track's signal goes: its sends and its output, in the project and as the batch adds them. */
+function readDestinations(trackId: string, actions: readonly AppAction[], context: ProjectContext): string[] {
+    const track = context.tracks.find((candidate) => candidate.id === trackId);
+    const destinations = [...(track?.sends ?? []).map((send) => send.busId)];
+    if (track?.outputId !== undefined) {
+        destinations.push(track.outputId);
+    }
+    for (const action of actions) {
+        if (action.type === 'addSend' && action.payload.trackId === trackId) {
+            destinations.push(action.payload.busId);
+        }
+        if (action.type === 'setTrackOutput' && action.payload.trackId === trackId) {
+            destinations.push(action.payload.outputId);
+        }
+    }
+    return destinations;
+}
+
+/**
+ * The tracks a constraint's scope sounds through: each scoped track and every bus its sends or output
+ * reach, bus to bus, since processing on a return or a bus it feeds shapes the scoped track as heard.
+ */
+function readReachedTrackIds(
+    trackIds: readonly string[],
+    actions: readonly AppAction[],
+    context: ProjectContext
+): Set<string> {
+    const reached = new Set<string>();
+    const pending = [...trackIds];
+    while (pending.length > 0) {
+        const trackId = pending.pop();
+        if (trackId === undefined || reached.has(trackId)) {
+            continue;
+        }
+        reached.add(trackId);
+        pending.push(...readDestinations(trackId, actions, context));
+    }
+    return reached;
+}
+
 /** An owner the batch does not reveal is inside every scope: an unknown edit is never assumed elsewhere. */
-function inScope(constraint: PerceptualConstraint, trackId: string | null): boolean {
-    return constraint.scope.kind === 'mix' || trackId === null || constraint.scope.trackIds.includes(trackId);
+function inScope(reached: ReadonlySet<string> | null, trackId: string | null): boolean {
+    return reached === null || trackId === null || reached.has(trackId);
 }
 
 function nameOf(trackId: string | null, context: ProjectContext): string {
@@ -325,12 +367,21 @@ export function findExcludedDimensionEdit(input: {
     if (input.constraints.length === 0) {
         return null;
     }
+    // A mix-scoped constraint holds every track, so it reads no routing.
+    const reach = new Map(
+        input.constraints.map((constraint) => [
+            constraint,
+            constraint.scope.kind === 'mix'
+                ? null
+                : readReachedTrackIds(constraint.scope.trackIds, input.actions, input.context),
+        ])
+    );
     for (const [index, action] of input.actions.entries()) {
         for (const edit of readActionEdits(action, input.actions, input.context)) {
             const constraint = input.constraints.find(
                 (candidate) =>
                     (edit.dimension === 'unclassified' || candidate.protection.dimension === edit.dimension) &&
-                    inScope(candidate, edit.trackId)
+                    inScope(reach.get(candidate) ?? null, edit.trackId)
             );
             if (constraint !== undefined) {
                 const command = `command ${String(index + 1)} (${action.type} ${edit.detail})`;

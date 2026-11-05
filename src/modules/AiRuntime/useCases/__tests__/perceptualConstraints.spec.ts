@@ -19,6 +19,7 @@ import { groundCompiledCommandBatch } from '../groundCompiledCommandBatch';
 import { type MetricGoalState } from '../metricGoalContractTypes';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { compilePerceptualConstraints } from '../perceptualConstraints/compilePerceptualConstraints';
+import { findExcludedDimensionEdit } from '../perceptualConstraints/findExcludedDimensionEdit';
 import { prepareMetricGoalPreview } from '../prepareMetricGoalPreview';
 import { validateAgentRiskApproval } from '../validateAgentRiskApproval';
 
@@ -151,6 +152,51 @@ function contextWithLanes(lanes: { id: string; trackId: string; parameterId: str
             points: [],
         })),
     };
+}
+
+type ProjectContext = ReturnType<typeof getProjectContext>;
+type ContextTrack = ProjectContext['tracks'][number];
+
+function device(id: string, type: string): ContextTrack['devices'][number] {
+    return { id, name: id, type, bypassed: false };
+}
+
+/**
+ * The project with buses and routing the store fixture does not hold: each extra bus is the Verb Bus
+ * with its own id, name and devices, and each route sets a track's sends and output.
+ */
+function contextWithRouting(
+    routes: Readonly<Record<string, { sends?: string[]; outputId?: string }>>,
+    buses: Pick<ContextTrack, 'id' | 'name' | 'devices'>[]
+): ProjectContext {
+    const context = getProjectContext();
+    const template = context.tracks.find((track) => track.id === 'verb-bus');
+    if (template === undefined) {
+        throw new Error('The fixture holds the Verb Bus.');
+    }
+    const tracks = [...context.tracks, ...buses.map((bus) => ({ ...template, ...bus }))];
+    return {
+        ...context,
+        tracks: tracks.map((track) => {
+            const route = routes[track.id];
+            if (route === undefined) {
+                return track;
+            }
+            const sends = route.sends?.map((busId) => ({ busId, level: 0.5, preFader: false })) ?? track.sends;
+            return { ...track, sends, outputId: route.outputId ?? track.outputId };
+        }),
+    };
+}
+
+/** The refusal the edit reader gives a batch under the request's constraints, or `null` when it admits it. */
+function readExcludedEdit(prompt: string, actions: AppAction[], context: ProjectContext): string | null {
+    return (
+        findExcludedDimensionEdit({
+            constraints: compilePerceptualConstraints(prompt, context).constraints,
+            actions,
+            context,
+        })?.reason ?? null
+    );
 }
 
 type CompileOptions = {
@@ -491,6 +537,71 @@ describe('excluded dimensions', () => {
         ['scaling the fader lane', [{ type: 'scaleAutomation', payload: { laneId: 'vocal-gain-lane', factor: 0.5 } }]],
     ] satisfies [string, AppAction[]][])('admits %s under "keep the vocal intimate"', (_label, actions) => {
         expect(() => compile(intimate, actions, { context: lanes() })).not.toThrow();
+    });
+
+    describe('the buses a scoped track sounds through', () => {
+        const lowEnd = "Clean up the mix but don't touch the low end of the Vocal";
+        const routed = () =>
+            contextWithRouting(
+                {
+                    vocal: { sends: ['verb-bus'], outputId: 'stem-bus' },
+                    'stem-bus': { outputId: 'glue-bus' },
+                    bass: { sends: ['bass-return'] },
+                },
+                [
+                    { id: 'bass-return', name: 'Bass Return', devices: [device('bass-plate', 'builtin-reverb')] },
+                    { id: 'stem-bus', name: 'Stem Bus', devices: [] },
+                    { id: 'glue-bus', name: 'Glue Bus', devices: [device('glue-eq', 'builtin-eq')] },
+                    { id: 'drum-bus', name: 'Drum Bus', devices: [device('drum-eq', 'builtin-eq')] },
+                ]
+            );
+
+        it.each([
+            {
+                label: 'a reverb size on the return the vocal sends to',
+                prompt: intimate,
+                actions: [setParameter('bus-plate', 'rev-size', 0.8)],
+                reason: 'command 1 (setDeviceParameter rev-size) edits the ambience of “Verb Bus”',
+            },
+            {
+                label: 'a reverb added on the bus the vocal is routed into',
+                prompt: intimate,
+                actions: [
+                    {
+                        type: 'addDevice',
+                        payload: { trackId: 'stem-bus', deviceType: 'builtin-reverb', deviceId: 'stem-verb' },
+                    },
+                ],
+                reason: 'command 1 (addDevice builtin-reverb) edits the ambience of “Stem Bus”',
+            },
+            {
+                label: 'a low band cut two buses down the vocal output',
+                prompt: lowEnd,
+                actions: [setParameter('glue-eq', 'eq-low-gain', -3)],
+                reason: 'command 1 (setDeviceParameter eq-low-gain) edits the low end of “Glue Bus”',
+            },
+            {
+                label: 'a low band cut on a bus the same batch sends the vocal to',
+                prompt: lowEnd,
+                actions: [
+                    { type: 'addSend', payload: { trackId: 'vocal', busId: 'drum-bus', levelDb: -12 } },
+                    setParameter('drum-eq', 'eq-low-gain', -3),
+                ],
+                reason: 'command 2 (setDeviceParameter eq-low-gain) edits the low end of “Drum Bus”',
+            },
+        ] satisfies { label: string; prompt: string; actions: AppAction[]; reason: string }[])(
+            'refuses $label',
+            ({ prompt, actions, reason }) => {
+                expect(readExcludedEdit(prompt, actions, routed())).toContain(reason);
+            }
+        );
+
+        it.each([
+            ['a reverb size on a return only the Bass feeds', intimate, setParameter('bass-plate', 'rev-size', 0.8)],
+            ['a low band cut on a bus the vocal never reaches', lowEnd, setParameter('drum-eq', 'eq-low-gain', -3)],
+        ] satisfies [string, string, AppAction][])('admits %s', (_label, prompt, action) => {
+            expect(readExcludedEdit(prompt, [action], routed())).toBeNull();
+        });
     });
 
     it('refuses at compilation an excluded edit the refined card recorded, though the refinement states none', () => {
