@@ -1,0 +1,39 @@
+src/modules/CvGate/useCases/getCvGateHandlers.ts
+  s_0314bb17e5dee3::t_b941fdec56f1db 1-15
+src/modules/CvGate/handlers/cvOutput/handleAddCvOutput.ts
+  s_0314bb17e5dee3::t_a47f88777161e4 1-54
+src/app/__tests__/bootstrap.spec.ts
+  s_0314bb17e5dee3::t_b941fdec56f1db 535-538,952
+src/app/getProductionCommandHandlerMaps.ts
+  s_0314bb17e5dee3::t_b941fdec56f1db 14,70
+src/modules/CvGate/useCases/index.ts
+  s_0314bb17e5dee3::t_b941fdec56f1db 7
+src/modules/CvGate/handlers/cvOutput/__tests__/handleAddCvOutput.spec.ts
+  s_0314bb17e5dee3::t_a47f88777161e4 1-95
+src/modules/CvGate/useCases/__tests__/getCvGateHandlers.spec.ts
+  s_0314bb17e5dee3::t_b941fdec56f1db 1-17
+src/modules/CvGate/handlers/cvOutput/__tests__/cvOutputUndo.integration.spec.ts
+  s_0314bb17e5dee3::t_0271af31528c04 1-149
+src/modules/CvGate/AGENTS.md
+  s_0314bb17e5dee3::t_1f7272a71b7dad 13
+src/app/__tests__/getProductionCommandHandlerMaps.spec.ts
+  s_0314bb17e5dee3::t_b941fdec56f1db 78
+src/modules/CvGate/handlers/cvOutput/handleRemoveCvOutput.ts
+  s_0314bb17e5dee3::t_a47f88777161e4 1-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7dd5fce84ff8adf5085d97bc948fec147286f331",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
