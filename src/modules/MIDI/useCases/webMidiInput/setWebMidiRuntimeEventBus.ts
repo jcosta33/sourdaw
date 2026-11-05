@@ -1,6 +1,6 @@
 import { setWebMidiEventBus } from '../../repositories/webMidi/webMidiEventBus';
 
-import type { MidiNoteOffPayload, MidiNoteOnPayload, MidiPedalCcPayload } from '#/modules/WorkspaceShell/events';
+import type { MidiNoteOffPayload, MidiNoteOnPayload, MidiPedalCcPayload } from '../../events/MidiEvents';
 
 /**
  * The Note Offs a MIDI effect rack's Worker settled, in MIDI's own words. The
