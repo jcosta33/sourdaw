@@ -1,0 +1,27 @@
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipInspector.spec.tsx
+  s_fec7059b7a251c::t_46ef92e0714adc 280
+src/modules/Transport/models/__tests__/MusicalPositionFormat.spec.ts
+  s_fec7059b7a251c::t_3beb75f82f8954 23-24,28-36,59-65,67,70-71,75-76,79-97,101-102
+src/modules/Transport/useCases/transportQueries/__tests__/formatMusicalPosition.spec.ts
+  s_fec7059b7a251c::t_cff940c860826a 11
+src/modules/Transport/models/MusicalPositionFormat.ts
+  s_fec7059b7a251c::t_f61d5738fe8c92 1-2,12-25,29-31,38-44,54-58,66-87
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useSelectionLabel.spec.ts
+  s_fec7059b7a251c::t_3b331811bb2d56 14,28,30,115,166,210,214,219-237
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "08cae6b358bcc01f23b2bdbf9c7265b3dce418a6",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
