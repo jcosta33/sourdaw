@@ -84,6 +84,9 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
         () => ({ status: 'missing' })
     ),
+    resolveEligibleDeviceWriteTarget: vi.fn<
+        typeof import('#/modules/Arrangement/stores').resolveEligibleDeviceWriteTarget
+    >(() => ({ status: 'missing' })),
     clipSelectionStore: { value: { selectedClipId: null, selectedClipIds: [], marqueeSelection: null } },
     readMusicalRange: vi.fn(),
     zoomTimeline: vi.fn(),
