@@ -1,0 +1,19 @@
+src/modules/TimelineEditor/presentations/views/Inspector/TrackRoutingSection.tsx
+  s_9750512ae83fc5::t_9f792df4da3473 23-28,32-35,37-39,42-46,56,58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "65195e958883c1110ba9993c487ec468bdfca5b0",
+  "prompts": {},
+  "sessions": {
+    "s_9750512ae83fc5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_9750512ae83fc5",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
