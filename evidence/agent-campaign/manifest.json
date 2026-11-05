@@ -359,7 +359,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/modelProviderProtocol.spec.ts",
-                    "digest": "56d8687405cb978f02673e765c544ef6476c7eafd3ff490fe8f20e6c9d4f24d7"
+                    "digest": "c6ecdb1818c6a33f1a613accbc567086e32bb2954368b4a2c63ce1aa772b77cc"
                 }
             ]
         },
