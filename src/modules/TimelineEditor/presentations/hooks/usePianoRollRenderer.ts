@@ -61,6 +61,7 @@ import { clampMidiData7 } from '#/utils/midiData';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 import { type MidiNote } from '../../models/MidiNoteViewTypes';
+import { type ClipPlacement, resolveAudibleNoteWindow } from '../helpers/audibleNoteWindow';
 import {
     NOTE_NAMES,
     ROW_HEIGHT,
@@ -399,6 +400,7 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                     view,
                     deps.dragPreviewRef.current
                 );
+                drawSilentRegions(ctx, resolvePrimaryClipWindow(tracks, cId), bw, view, noteAreaHeight);
                 if (si) {
                     drawStepCursor(ctx, pitchToRow, sb, sp, bw, gs, view, noteAreaHeight);
                 }
@@ -822,6 +824,78 @@ function drawActiveNotes(
             ctx.fillText(`${NOTE_NAMES[displayPitch % 12]}${Math.floor(displayPitch / 12) - 1}`, x + 6, y + 11);
         }
     }
+}
+
+type NoteWindow = NonNullable<ReturnType<typeof resolveAudibleNoteWindow>>;
+
+/** The primary clip's audible window in stored note beats, or undefined when it has no finite span. */
+function resolvePrimaryClipWindow(
+    tracks: Array<{
+        clips: Array<{
+            id: string;
+            startBeat?: number;
+            endBeat?: number;
+            midiOffsetBeats?: number;
+            loopEnabled?: boolean;
+            loopLength?: number;
+            loopOriginBeat?: number;
+        }>;
+    }> | null,
+    clipId: string
+): NoteWindow | undefined {
+    for (const track of tracks ?? []) {
+        const clip = track.clips.find((candidate) => candidate.id === clipId);
+        if (!clip) {
+            continue;
+        }
+        const placement: ClipPlacement = {
+            startBeat: clip.startBeat ?? 0,
+            endBeat: clip.endBeat ?? Number.POSITIVE_INFINITY,
+            midiOffsetBeats: clip.midiOffsetBeats ?? 0,
+            loopEnabled: clip.loopEnabled ?? false,
+            configuredLoopLengthBeats: clip.loopLength,
+            loopOriginBeat: clip.loopOriginBeat,
+        };
+        return resolveAudibleNoteWindow(placement);
+    }
+    return undefined;
+}
+
+/**
+ * Dim the part of the grid whose notes playback skips, with a 1px line at each
+ * edge of the audible window. Paint only: the canvas never takes pointer events.
+ */
+function drawSilentRegions(
+    ctx: CanvasRenderingContext2D,
+    window: NoteWindow | undefined,
+    beatWidth: number,
+    view: ViewportRange,
+    noteAreaHeight: number
+): void {
+    if (!window) {
+        return;
+    }
+    const startPx = window.startBeat * beatWidth;
+    const endPx = window.endBeat * beatWidth;
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = resolveToken('--color-bg-panel', '#111111');
+    const beforeLeftPx = Math.max(0, view.leftPx);
+    if (startPx > beforeLeftPx) {
+        ctx.fillRect(beforeLeftPx, 0, startPx - beforeLeftPx, noteAreaHeight);
+    }
+    const afterLeftPx = Math.max(endPx, view.leftPx);
+    if (view.rightPx > afterLeftPx) {
+        ctx.fillRect(afterLeftPx, 0, view.rightPx - afterLeftPx, noteAreaHeight);
+    }
+    ctx.globalAlpha = 0.8;
+    ctx.fillStyle = resolveToken('--color-accent-amber', '#c4aa5f');
+    for (const edgePx of [startPx, endPx]) {
+        if (edgePx > 0 && edgePx >= view.leftPx && edgePx <= view.rightPx) {
+            ctx.fillRect(edgePx, 0, 1, noteAreaHeight);
+        }
+    }
+    ctx.restore();
 }
 
 function drawStepCursor(

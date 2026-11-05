@@ -9,7 +9,14 @@ const mocks = vi.hoisted(() => {
         id: string;
         kind: string;
         color: string;
-        clips: Array<{ id: string; type: string; color: string; startBeat?: number; endBeat?: number }>;
+        clips: Array<{
+            id: string;
+            type: string;
+            color: string;
+            startBeat?: number;
+            endBeat?: number;
+            midiOffsetBeats?: number;
+        }>;
     };
     return {
         midiState: { notesByClipId: {} },
@@ -420,6 +427,55 @@ describe('usePianoRollRenderer', () => {
 
         // width = 4 * 10 - 2 at the original position
         expect(roundRect).toHaveBeenCalledWith(21, rowY(60) + 1, 38, 14, 2);
+    });
+
+    describe('silent region shading', () => {
+        const NOTE_AREA_H = 2048;
+        const withClip = (clip: Partial<(typeof mocks.trackState.tracks)[number]['clips'][number]>): void => {
+            mocks.trackState = {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        kind: 'midi',
+                        color: 'oklch(0.5 0.1 200)',
+                        clips: [{ id: 'clip-1', type: 'midi', color: '', startBeat: 0, endBeat: 16, ...clip }],
+                    },
+                ],
+            };
+        };
+
+        it('shades from the clip end to the right edge of the drawn grid', () => {
+            const fillRect = vi.spyOn(ctx, 'fillRect');
+            withClip({ endBeat: 16 });
+            renderHook(() => usePianoRollRenderer(buildDeps({ beatWidth: 10 })));
+
+            runTick();
+
+            // Window ends at beat 16 = 160px; the slice ends at 360px.
+            expect(fillRect).toHaveBeenCalledWith(160, 0, 200, NOTE_AREA_H);
+            expect(fillRect).toHaveBeenCalledWith(160, 0, 1, NOTE_AREA_H);
+        });
+
+        it('shades before the window start when the clip is left-trimmed', () => {
+            const fillRect = vi.spyOn(ctx, 'fillRect');
+            withClip({ endBeat: 16, midiOffsetBeats: 2 });
+            renderHook(() => usePianoRollRenderer(buildDeps()));
+
+            runTick();
+
+            expect(fillRect).toHaveBeenCalledWith(0, 0, 20, NOTE_AREA_H);
+            expect(fillRect).toHaveBeenCalledWith(180, 0, 180, NOTE_AREA_H);
+        });
+
+        it('shades nothing for a clip without a finite span', () => {
+            const fillRect = vi.spyOn(ctx, 'fillRect');
+            withClip({ endBeat: undefined });
+            renderHook(() => usePianoRollRenderer(buildDeps()));
+
+            runTick();
+
+            expect(fillRect).not.toHaveBeenCalledWith(expect.anything(), 0, expect.anything(), NOTE_AREA_H);
+        });
     });
 
     it('draws the drag-to-create preview rectangle', () => {
