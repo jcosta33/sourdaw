@@ -1,0 +1,40 @@
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/scriptedProviderProtocol.spec.ts
+  s_0314bb17e5dee3::t_ee068e6098cbca 5
+  s_0314bb17e5dee3::t_903affb72ab64a 156
+src/modules/AiRuntime/useCases/planningProviderSchema.ts
+  s_0314bb17e5dee3::t_839a4514e2bdb8 13
+  s_0314bb17e5dee3::t_2f40e0f4c57b3a 8
+src/modules/AiRuntime/useCases/__tests__/transformToolCompile.spec.ts
+  s_0314bb17e5dee3::t_583826631e5cdd 171,191,295
+  s_0314bb17e5dee3::t_fa2c3b9f9552e6 8
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateAnthropicToolCalls.spec.ts
+  s_0314bb17e5dee3::t_5804c70d14ac0d 728
+  s_0314bb17e5dee3::t_f0b49a979d0852 9
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_0314bb17e5dee3::t_4221f544b14aa5 418,453
+  s_0314bb17e5dee3::t_fbc2d410a3a1fe 22
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_0314bb17e5dee3::t_f4ba90e075b9c4 527,2325-2326
+  s_0314bb17e5dee3::t_456687592da49a 17
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_0314bb17e5dee3::t_81da75eae65a04 1987-1998
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/projectQueryStrictSelection.spec.ts
+  s_0314bb17e5dee3::t_901e75d5d79176 4
+  s_0314bb17e5dee3::t_f50f556e57ce11 76,105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "54ce87be97b65bdf28cdabbff1f98c288d2b976a",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
