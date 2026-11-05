@@ -77,7 +77,7 @@ function press(key: string, modifiers: Partial<KeyDescriptor> = {}): void {
         shift: false,
         alt: false,
         repeat: false,
-        isInput: false,
+        keyTarget: 'workspace',
         ...modifiers,
     };
     handleKeydown(descriptor);

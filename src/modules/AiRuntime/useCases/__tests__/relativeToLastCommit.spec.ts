@@ -39,6 +39,7 @@ import {
 } from '../../stores/pendingActionConfirmationStore';
 import { readLastCommitRequest } from '../../transformers/readLastCommitRequest';
 import { revertThreadCommit } from '../agentRequestOrchestration/revertThreadCommit';
+import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
@@ -409,6 +410,8 @@ describe('relative to the last commit', () => {
                 clear: () => undefined,
             });
             clearAiHistory();
+            // Every run is persisted whole on each update, so runs left by earlier cases would slow this one.
+            agentRunLifecycle.clear();
             clearPendingActionConfirmations();
             setArrangementEventBus({ emit: () => Promise.resolve() });
             setNotificationEventBus(notificationEventBus);
@@ -470,6 +473,7 @@ describe('relative to the last commit', () => {
             resetActionReplayAuthority();
             clearHandlerRegistry();
             clearAiHistory();
+            agentRunLifecycle.clear();
             clearPendingActionConfirmations();
             trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
             automationStore.set({ lanes: [] });

@@ -1018,6 +1018,8 @@ describe('default budgets', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         },
         { profile: 'extended' as const, command: 'node', args: ['typecheck:test'], expected: 4 * 1024 ** 3 },
         { profile: 'focused' as const, command: 'pnpm', args: ['constructor'], expected: 4 * 1024 ** 3 },
+        { profile: 'focused' as const, command: 'pnpm', args: ['lint', 'src/x.ts'], expected: 4864 * 1024 ** 2 },
+        { profile: 'focused' as const, command: 'pnpm', args: ['lint:fix', 'src/x.ts'], expected: 4 * 1024 ** 3 },
         {
             profile: 'focused' as const,
             command: 'pnpm',

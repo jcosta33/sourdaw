@@ -125,7 +125,7 @@ describe('handleKeyboardShortcut', () => {
             shift: false,
             alt: false,
             repeat: false,
-            isInput: false,
+            keyTarget: 'workspace',
         };
 
         const prevent = handleKeydown(desc);

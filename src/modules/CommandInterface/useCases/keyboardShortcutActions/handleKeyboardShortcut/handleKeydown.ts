@@ -54,6 +54,35 @@ const REPEATABLE_ON_HOLD_SHORTCUT_IDS = new Set([
     'view.zoomTracksVerticalOut',
 ]);
 
+// A focused note editor owns the keyboard for its own content, so only
+// shortcuts that act independently of the arrangement behind it are admitted:
+// transport, undo/redo, project-level dialogs and workspace panel toggles.
+// Everything else (clip clipboard, track creation, selection, time-range and
+// zoom commands, tool keys, marker/seek keys) would act on the arrangement from
+// inside the editor. `transport.stopPlayback` is excluded on purpose: Escape and
+// Enter belong to the note editor, and stopPlayback also clears the arrangement
+// clip selection.
+const NOTE_EDITOR_SHORTCUT_IDS = new Set([
+    'transport.togglePlayback',
+    'transport.panicAllNotes',
+    'transport.toggleMetronome',
+    'transport.toggleRecording',
+    'transport.toggleLoop',
+    'editing.undo',
+    'editing.redo',
+    'project.saveProject',
+    'project.openExportDialog',
+    'project.openPreferencesDialog',
+    'workspace.toggleCommandPalette',
+    'workspace.toggleSidebar',
+    'workspace.toggleInspector',
+    'workspace.toggleMixer',
+    'workspace.toggleChatPanel',
+    'workspace.toggleTrackList',
+    'workspace.toggleVirtualKeyboard',
+    'workspace.showAutomationPanel',
+]);
+
 const AI_LEADER_TIMEOUT_MS = 1500;
 
 type AiLeaderState = {
@@ -110,13 +139,19 @@ function dispatchAiChord(key: string): boolean {
     }
 }
 
+/**
+ * Where the key was pressed: the workspace at large, a text-entry surface that
+ * consumes typed characters, or a focused note editor (canvas editor).
+ */
+export type KeyTarget = 'workspace' | 'textEntry' | 'noteEditor';
+
 export type KeyDescriptor = {
     key: string;
     mod: boolean;
     shift: boolean;
     alt: boolean;
     repeat: boolean;
-    isInput: boolean;
+    keyTarget: KeyTarget;
 };
 
 function matches(desc: KeyDescriptor, keys: string[]): boolean {
@@ -587,12 +622,12 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
     }
 
     return function handleKeydown(desc: KeyDescriptor): boolean {
-        const { key, mod, shift, alt, repeat, isInput } = desc;
+        const { key, mod, shift, alt, repeat, keyTarget } = desc;
 
         // AI leader chord resolution — if `g` was pressed recently and this
         // keypress is a bare letter (no modifiers), consume it as the second
         // stroke of `g, <letter>`.
-        if (isAiLeaderArmed() && !mod && !shift && !alt && !repeat && !isInput && key.length === 1) {
+        if (isAiLeaderArmed() && !mod && !shift && !alt && !repeat && keyTarget === 'workspace' && key.length === 1) {
             if (dispatchAiChord(key)) {
                 return true;
             }
@@ -602,9 +637,6 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
         // V has no keyboard voice-admission path. Microphone start accepts
         // only the one-use token issued from the voice control's trusted UI event.
         if (key === 'v' && !mod && !shift && !alt && !repeat) {
-            if (isInput) {
-                return false;
-            }
             return false;
         }
 
@@ -619,7 +651,10 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
             if (matches(desc, keys)) {
                 // Some shortcuts (like Cmd+K) should work even in inputs
                 const allowedInInput = def.id === 'workspace.toggleCommandPalette';
-                if (isInput && !allowedInInput) {
+                if (keyTarget === 'textEntry' && !allowedInInput) {
+                    continue;
+                }
+                if (keyTarget === 'noteEditor' && !NOTE_EDITOR_SHORTCUT_IDS.has(def.id)) {
                     continue;
                 }
                 // Gate Loop Station play-pad shortcuts behind the `armed`
@@ -639,8 +674,9 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
 
         // All remaining shortcuts are blocked in input fields — the
         // one exception (`mod+k` → command palette) already matched
-        // above via its `allowedInInput` flag.
-        if (isInput) {
+        // above via its `allowedInInput` flag — and in note editors, whose
+        // admitted shortcuts are all definitions.
+        if (keyTarget !== 'workspace') {
             return false;
         }
 

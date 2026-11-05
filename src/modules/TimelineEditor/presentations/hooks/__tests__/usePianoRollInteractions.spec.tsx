@@ -1105,6 +1105,40 @@ describe('usePianoRollInteractions', () => {
     });
 
     describe('keyboard editing', () => {
+        // `fireEvent.keyDown` returns false exactly when a handler called
+        // preventDefault, which is how the global shortcut layer learns the
+        // focused piano roll consumed the key.
+        describe('claiming consumed keys from the global shortcut layer', () => {
+            it.each([
+                ['Delete with a note selected', { key: 'Delete' }, { selectedNoteIds: new Set(['n1']) }],
+                ['Backspace with a note selected', { key: 'Backspace' }, { selectedNoteIds: new Set(['n1']) }],
+                ['Delete with nothing selected', { key: 'Delete' }, {}],
+                ['Backspace with nothing selected', { key: 'Backspace' }, {}],
+                ['cmd+A', { key: 'a', metaKey: true }, {}],
+                ['cmd+D', { key: 'd', metaKey: true }, { selectedNoteIds: new Set(['n1']) }],
+                ['ArrowRight nudge with a note selected', { key: 'ArrowRight' }, { selectedNoteIds: new Set(['n1']) }],
+                ['ArrowUp transpose with a note selected', { key: 'ArrowUp' }, { selectedNoteIds: new Set(['n1']) }],
+                ['Enter in step input', { key: 'Enter' }, { stepInput: true }],
+                ['ctrl+Space in step input', { key: ' ', ctrlKey: true }, { stepInput: true }],
+                ['velocity digit in step input', { key: '5' }, { stepInput: true }],
+            ] as const)('%s is claimed', (_name, key, overrides) => {
+                const { canvas } = renderRoll(overrides);
+
+                expect(fireEvent.keyDown(canvas, key)).toBe(false);
+            });
+
+            it.each([
+                ['cmd+Z undo', { key: 'z', metaKey: true }],
+                ['cmd+shift+Z redo', { key: 'z', metaKey: true, shiftKey: true }],
+                ['Space transport toggle', { key: ' ' }],
+                ['cmd+S save', { key: 's', metaKey: true }],
+            ] as const)('%s is left to the global layer', (_name, key) => {
+                const { canvas } = renderRoll({ selectedNoteIds: new Set(['n1']) });
+
+                expect(fireEvent.keyDown(canvas, key)).toBe(true);
+            });
+        });
+
         it('Delete removes the selected notes across clips and clears the selection', () => {
             const { canvas } = renderRoll({
                 selectedNoteIds: new Set(['n1', 'n2']),

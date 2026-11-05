@@ -5,8 +5,18 @@ import { projectLoadFailureStore, projectStore } from '#/modules/Project/stores'
 
 import { isKeyboardEditableTarget } from '../../useCases/isKeyboardEditableTarget';
 import { isWithinModalSurface } from '../../useCases/isWithinModalSurface';
-import { handleKeydown } from '../../useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown';
+import {
+    handleKeydown,
+    type KeyTarget,
+} from '../../useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown';
 import { handleKeyup } from '../../useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeyup';
+
+function resolveKeyTarget(isTextEntry: boolean, target: EventTarget | null): KeyTarget {
+    if (isTextEntry) {
+        return 'textEntry';
+    }
+    return target instanceof Element && target.closest('[data-canvas-editor]') !== null ? 'noteEditor' : 'workspace';
+}
 
 function shouldDispatchShortcutAppActions(): boolean {
     if (projectLoadFailureStore.value !== null) {
@@ -26,6 +36,11 @@ function preservesNativeTabTraversal(event: KeyboardEvent): boolean {
         return false;
     }
     const target = event.target;
+    // A canvas never keeps native traversal here: the arrangement timeline
+    // canvas is focusable (tabIndex 0) and takes focus on click, and Tab over
+    // it toggles workspace mode. The focused piano-roll canvas still reaches
+    // native traversal, because handleKeydown does not admit workspace-mode Tab
+    // for a note editor and returns false, so nothing prevents the default.
     if (!(target instanceof HTMLElement) || target instanceof HTMLCanvasElement) {
         return false;
     }
@@ -91,26 +106,29 @@ export const useGlobalKeyboardShortcuts = (): void => {
                 return;
             }
 
-            const target = event.target as HTMLElement;
-            // A *focusable* canvas editor that owns its destructive keys marks
-            // its focused surface with `data-canvas-editor`. When the focused
-            // element is inside one, gate the global shortcut layer exactly
-            // like a text input so Delete / Backspace routes to that editor's
-            // own delete instead of also firing the arrangement clip-delete.
-            // Today only the PianoRoll canvas qualifies: it is `tabIndex`-
-            // focusable and `handleKeyDown` deletes the selected notes, so the
-            // focused canvas *is* `event.target`. The arrangement timeline is
-            // not marked, so Delete there still reaches the clip-delete path.
+            // A focused editor claims the keys it handles by calling
+            // `preventDefault` in its own handler (the piano roll canvas does,
+            // for Delete / Backspace and its note edits). React's root listener
+            // runs before this bubbling `window` listener, so the flag is
+            // visible here; a claimed key is the editor's alone and must not
+            // also reach a global shortcut such as arrangement clip-delete.
+            // Keys the editor does not claim (undo, redo, Space, save, ...)
+            // keep routing globally, as in every other DAW's note editor.
             //
-            // Not gated here, by design (this is a focus/target-based gate):
+            // Not covered by a claim, by design:
             //   • Elastic editor — its Delete is a `window` listener and its
-            //     canvas is not focusable, so `event.target` is never inside
-            //     it; a marker would be inert. Its double-fire with the global
-            //     clip-delete needs a different mechanism — see
+            //     canvas is not focusable, so no React handler can claim it.
+            //     Its double-fire with the global clip-delete needs a
+            //     different mechanism — see
             //     FINDING-inventory-decisions-backlog.md (#21 residual).
-            //   • Mixer — has no keyboard Delete of its own, so gating it would
-            //     disable delete with no replacement (same finding).
-            //
+            //   • Mixer — has no keyboard Delete of its own, so claiming
+            //     would disable delete with no replacement (same finding).
+            if (event.defaultPrevented) {
+                return;
+            }
+
+            const target = event.target as HTMLElement;
+
             // A portaled modal or menu surface owns the keyboard while focus is
             // inside it (#3618). Radix marks its Dialog/Popover content with
             // `role="dialog"` and its DropdownMenu content with `role="menu"`,
@@ -126,10 +144,13 @@ export const useGlobalKeyboardShortcuts = (): void => {
             // A native select owns Home, End, Space, and arrow navigation just
             // like a text field. Keep this adapter-local so native Edit routing
             // retains its narrower shared editable-target contract.
-            const isInput =
+            const isTextEntry =
                 target instanceof HTMLSelectElement ||
                 isKeyboardEditableTarget(target) ||
                 isWithinModalSurface(event.target);
+            // A focused canvas editor (`data-canvas-editor`) keeps only the
+            // editor-safe global shortcuts; see NOTE_EDITOR_SHORTCUT_IDS.
+            const keyTarget = resolveKeyTarget(isTextEntry, target);
 
             const shouldPreventDefault = handleKeydown({
                 key: event.key,
@@ -137,7 +158,7 @@ export const useGlobalKeyboardShortcuts = (): void => {
                 shift: event.shiftKey,
                 alt: event.altKey,
                 repeat: event.repeat,
-                isInput,
+                keyTarget,
             });
 
             if (shouldPreventDefault) {

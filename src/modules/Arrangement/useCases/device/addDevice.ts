@@ -5,7 +5,9 @@ import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateTrack } from '../../repositories/track/updateTrack';
 import { getTrackEligibility } from '../../stores/trackEligibility';
 import { type Device } from '../../stores/trackStore';
-import { getPlatformPlugins } from '../getPlatformPlugins';
+
+import { composeAddedDeviceParameterValues } from './composeAddedDeviceParameterValues';
+import { findAddedDevicePlugin } from './findAddedDevicePlugin';
 
 function nextDeviceId(): string {
     return `device-${crypto.randomUUID().slice(0, 8)}`;
@@ -44,16 +46,8 @@ export function writeDeviceToProject(
         notifyUser(`"${deviceType}" is not available and was not added.`, 'error');
         return null;
     }
-    const plugin = getPlatformPlugins().find(
-        (candidate) => candidate.name.toLowerCase() === deviceType.toLowerCase() || candidate.id === deviceType
-    );
-    const internalParameterValues = initialInternalParameterValues ?? plugin?.internalParameterValues ?? {};
-    const parameterValues: Record<string, number> = { ...internalParameterValues };
-    if (plugin) {
-        for (const parameter of plugin.parameters) {
-            parameterValues[parameter.id] = parameter.value;
-        }
-    }
+    const plugin = findAddedDevicePlugin(deviceType);
+    const parameterValues = composeAddedDeviceParameterValues(plugin, initialInternalParameterValues);
     const device: Device = {
         id: resolvedDeviceId,
         name: displayName ?? (plugin ? plugin.name : deviceType),

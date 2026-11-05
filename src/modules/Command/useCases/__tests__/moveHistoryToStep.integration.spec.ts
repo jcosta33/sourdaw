@@ -1,18 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { AppActionConflictError } from '../../errors/AppActionExecutionError';
+import { moveHistoryToStep } from '../moveHistoryToStep';
 import { REDO_NOT_APPLIED } from '../redoResult';
-import { undoToIndex } from '../undoToIndex';
 
 import type { ActionUndoEntry, CallbackUndoEntry } from '../../models/UndoEntry';
 import type { UndoStoreState } from '../../stores/undoStore';
 
 /**
- * Panel-path integration: the Undo History panel lists every past entry —
- * including inert ones — and passes the clicked row's raw `past` index to
- * undoToIndex. These tests run the real undo()/redo() against a writable
- * undoStore double, so the variable per-call consumption of undo() (dropping
- * inert entries while scanning for something undoable) is exercised for real.
+ * Panel-path integration: the Undo History panel passes the clicked step's
+ * target entry id to moveHistoryToStep. These tests run the real undo()/redo()
+ * against a writable undoStore double, so the variable per-call consumption of
+ * undo() and redo() (dropping inert or not-applied entries while scanning for
+ * something to apply) is exercised for real.
  */
 
 const mocks = vi.hoisted(() => {
@@ -83,7 +83,7 @@ function notAppliedCallbackEntry(id: string): CallbackUndoEntry {
     };
 }
 
-describe('undoToIndex via the Undo History panel path', () => {
+describe('moveHistoryToStep via the Undo History panel path', () => {
     beforeEach(() => {
         mocks.executeAppAction.mockReset();
         mocks.executeAppAction.mockResolvedValue(undefined);
@@ -97,7 +97,7 @@ describe('undoToIndex via the Undo History panel path', () => {
     function settledUndoState(): UndoStoreState {
         const state = mocks.undoStoreValue.value;
         if (!state) {
-            throw new Error('undoToIndex left no undo state behind');
+            throw new Error('moveHistoryToStep left no undo state behind');
         }
         return state;
     }
@@ -124,8 +124,8 @@ describe('undoToIndex via the Undo History panel path', () => {
     it('reverts nothing when the head conflicts and the clicked row is the one beneath it', async () => {
         stackWithConflictingHead();
 
-        // Row 'E3' is index 3: the user asked for E4 gone and everything else kept.
-        await undoToIndex(3);
+        // Row 'E3': the user asked for E4 gone and everything else kept.
+        await moveHistoryToStep('E3');
 
         // E4's inverse writes nothing, so the row the user asked to remove is still
         // applied and the sweep cannot advance. Reaching past E4 for E3 would revert
@@ -141,8 +141,8 @@ describe('undoToIndex via the Undo History panel path', () => {
     it('reverts nothing beneath the conflict when the clicked row is several rows lower', async () => {
         stackWithConflictingHead();
 
-        // Row 'E0' is index 0: three undoable entries sit between it and the conflict.
-        await undoToIndex(0);
+        // Row 'E0': three undoable entries sit between it and the conflict.
+        await moveHistoryToStep('E0');
 
         // None of them may be reverted. The history below a blocked entry is only
         // reachable in the order the user recorded it.
@@ -159,8 +159,7 @@ describe('undoToIndex via the Undo History panel path', () => {
         const undoableC = undoableEntry('c');
         mocks.undoStoreValue.value = { past: [undoableA, inertB, undoableC], future: [] };
 
-        // The panel passes the clicked row's raw past index; row 'a' is index 0.
-        await undoToIndex(0);
+        await moveHistoryToStep('a');
 
         // Only 'c' is undone: the inert 'b' is dropped without reaching future
         // and the clicked 'a' stays at the head of past.
@@ -169,14 +168,14 @@ describe('undoToIndex via the Undo History panel path', () => {
         expect(mocks.undoTreeMoveTo).toHaveBeenLastCalledWith('a');
     });
 
-    it('undoes only the entries above the clicked inert row', async () => {
+    it('undoes only the entries above a target entry that is itself inert', async () => {
         const undoableA = undoableEntry('a');
         const inertB = inertEntry('b');
         const undoableC = undoableEntry('c');
         mocks.undoStoreValue.value = { past: [undoableA, inertB, undoableC], future: [] };
 
-        // Row 'b' is index 1: only 'c' sits above it.
-        await undoToIndex(1);
+        // A step whose newest entry is inert targets that entry; only 'c' sits above it.
+        await moveHistoryToStep('b');
 
         expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
         expect(mocks.undoStoreValue.value).toEqual({ past: [undoableA, inertB], future: [undoableC] });
@@ -188,9 +187,9 @@ describe('undoToIndex via the Undo History panel path', () => {
         const undoableB = undoableEntry('b');
         mocks.undoStoreValue.value = { past: [undoableA], future: [stuck, undoableB] };
 
-        // Target row index 1 = the state after re-applying 'b'; 'stuck' can never
-        // re-apply, so the sweep must drop it instead of retrying it forever.
-        await undoToIndex(1);
+        // Target 'b'; 'stuck' can never re-apply, so the sweep must drop it
+        // instead of retrying it forever.
+        await moveHistoryToStep('b');
 
         expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
         const [executedAction, options] = mocks.executeAppAction.mock.calls[0]!;
@@ -205,10 +204,24 @@ describe('undoToIndex via the Undo History panel path', () => {
         const stuck = notAppliedCallbackEntry('stuck');
         mocks.undoStoreValue.value = { past: [undoableA], future: [stuck] };
 
-        // Target unreachable: the purge still makes progress and the sweep exits.
-        await undoToIndex(1);
+        // The target itself can never re-apply: redo drops it, it leaves both
+        // stacks, and the sweep exits.
+        await moveHistoryToStep('stuck');
 
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
         expect(mocks.undoStoreValue.value).toEqual({ past: [undoableA], future: [] });
+    });
+
+    it('stops at the target when a dropped not-applied entry ahead of it shifts every position', async () => {
+        const base = undoableEntry('base');
+        const stuck = notAppliedCallbackEntry('X');
+        const y = undoableEntry('Y');
+        const z = undoableEntry('Z');
+        mocks.undoStoreValue.value = { past: [base], future: [stuck, y, z] };
+
+        await moveHistoryToStep('Y');
+
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+        expect(mocks.undoStoreValue.value).toEqual({ past: [base, y], future: [z] });
     });
 });
