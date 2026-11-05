@@ -24,7 +24,6 @@ import {
 } from '#/modules/MIDI/stores';
 import { getAllSidechainRoutes } from '#/modules/Routing/useCases';
 import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
-import { readYeastRack } from '#/modules/Yeast/stores';
 
 import {
     CURRENT_PROJECT_VERSION,
@@ -36,6 +35,7 @@ import { arrangementStore } from '../../../stores/arrangementStore';
 import { projectStore } from '../../../stores/projectStore';
 import { syncCurrentArrangementToStore } from '../../arrangement/syncCurrentArrangementToStore';
 
+import { rackProcessorReader } from './rackProcessorReader';
 import { serializeArrangementTracks } from './serializeArrangementTracks';
 import { serializeProjectGrooves } from './serializeProjectGrooves';
 import { serializeProjectMidi } from './serializeProjectMidi';
@@ -233,7 +233,7 @@ export async function buildProjectData({
     const racks: NonNullable<ProjectData['yeast']> = { racks: {} };
     for (const deviceId of yeastDeviceIds) {
         racks.racks[deviceId] = {
-            processors: structuredClone(readYeastRack(deviceId).processors),
+            processors: structuredClone(rackProcessorReader.read('buildProjectData').readProcessors(deviceId)),
         };
     }
     let yeast: ProjectData['yeast'];

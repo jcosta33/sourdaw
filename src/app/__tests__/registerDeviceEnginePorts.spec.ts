@@ -24,6 +24,8 @@ async function loadFreshModules() {
         toasterStores,
         grandBouleStores,
         levain,
+        toaster,
+        project,
         app,
     ] = await Promise.all([
         import('#/modules/Arrangement/useCases'),
@@ -39,6 +41,8 @@ async function loadFreshModules() {
         import('#/modules/Toaster/stores'),
         import('#/modules/GrandBoule/stores'),
         import('#/modules/Levain/useCases'),
+        import('#/modules/Toaster/useCases'),
+        import('#/modules/Project/useCases'),
         import('../registerDeviceEnginePorts'),
     ]);
     return {
@@ -55,6 +59,8 @@ async function loadFreshModules() {
         toasterStores,
         grandBouleStores,
         levain,
+        toaster,
+        project,
         app,
     };
 }
@@ -100,6 +106,22 @@ describe('registerDeviceEnginePorts before registration', () => {
             ['modelCaller', () => audioEngine.neuralModelContent.read('modelCaller')],
             ['velocityCaller', () => midi.velocityCalibration.read('velocityCaller')],
             ['articulationCaller', () => midi.articulationIdResolvers.read('articulationCaller', 'levain')],
+        ];
+
+        for (const [caller, read] of reads) {
+            expect(read).toThrow(
+                new RegExp(`^${caller}: .*registerDeviceEnginePorts\\(\\) from #/app/registerDeviceEnginePorts`)
+            );
+        }
+    });
+
+    it('refuses every project save, template and track-role port read and names the registering function', () => {
+        const { project } = modules;
+        const reads: [string, () => unknown][] = [
+            ['rackCaller', () => project.rackProcessorReader.read('rackCaller')],
+            ['authoringCaller', () => project.templateArpeggiatorAuthoring.read('authoringCaller')],
+            ['contentCaller', () => project.templateDeviceContent.read('contentCaller')],
+            ['voicesCaller', () => project.storedDrumVoices.read('voicesCaller')],
         ];
 
         for (const [caller, read] of reads) {
@@ -287,8 +309,58 @@ describe('registerDeviceEnginePorts after registration', () => {
         expect(midi.resolveMidiNoteArticulationId({ deviceType: 'levain', articulation: undefined })).toBeNull();
     });
 
+    it("answers a saved rack with Yeast's own live processors, which the save then clones", () => {
+        const { project, yeastStores } = modules;
+        const reader = project.rackProcessorReader.read('spec');
+        const deviceId = 'yeast-save-port-spec';
+        const processors = [
+            { id: 'arp-1', type: 'arpeggiator' as const, name: 'Arpeggiator', bypassed: false, params: { rate: 3 } },
+        ];
+        yeastStores.setActiveYeastDevice(deviceId);
+        yeastStores.yeastStore.set({ processors, uiLevel: 1 });
+
+        expect(reader.readProcessors(deviceId)).toBe(yeastStores.readYeastRack(deviceId).processors);
+        expect(reader.readProcessors(deviceId)).toEqual(processors);
+        expect(reader.readProcessors('yeast-without-rack')).toEqual(
+            yeastStores.readYeastRack('yeast-without-rack').processors
+        );
+    });
+
+    it("authors a template's arpeggiator through Yeast's own rack writes", () => {
+        const { project, yeast, yeastStores } = modules;
+        const authoring = project.templateArpeggiatorAuthoring.read('spec');
+
+        expect(authoring.focusRack).toBe(yeastStores.setActiveYeastDevice);
+        expect(authoring.addProcessor).toBe(yeast.addYeastProcessor);
+        expect(authoring.setProcessorParam).toBe(yeast.setYeastProcessorParam);
+    });
+
+    it("seeds template devices with Levain's section patches and Toaster's pad names", () => {
+        const { project, levain, toaster } = modules;
+        const content = project.templateDeviceContent.read('spec');
+
+        expect(content.stringSectionState).toBe(levain.createLevainTemplateDeviceState);
+        for (const instrumentId of ['violin-1', 'violin-2', 'viola', 'cello', 'double-bass'] as const) {
+            expect(content.stringSectionState(instrumentId)).toEqual(
+                levain.createLevainTemplateDeviceState(instrumentId)
+            );
+        }
+        expect(content.defaultPadNames).toBe(toaster.getDefaultPadNames);
+        const padNames = content.defaultPadNames();
+        expect(padNames.length).toBeGreaterThan(0);
+        expect(padNames).toEqual(toaster.getDefaultPadNames());
+        expect(content.defaultPadNames()).not.toBe(padNames);
+    });
+
+    it("reads a kit's stored voices exactly as Toaster's own metadata read does", () => {
+        const { project, toaster } = modules;
+
+        expect(project.storedDrumVoices.read('spec').voicesOf).toBe(toaster.getStoredDrumVoiceMetadata);
+        expect(project.storedDrumVoices.read('spec').voicesOf(undefined)).toEqual({ status: 'unknown' });
+    });
+
     it('treats a repeated registration as a no-op', () => {
-        const { arrangement, audioEngine, transport, midi, app } = modules;
+        const { arrangement, audioEngine, transport, midi, project, app } = modules;
         const vocabulary = audioEngine.nativeBodyVocabularyRegistry.read('spec', 'fermenter');
         const writer = transport.deviceRuntimeParameterWriters.read('spec', 'fermenter');
         const sources = arrangement.deviceFactoryPresetSources.read('spec');
@@ -299,6 +371,10 @@ describe('registerDeviceEnginePorts after registration', () => {
         const model = audioEngine.neuralModelContent.read('spec');
         const calibration = midi.velocityCalibration.read('spec');
         const articulation = midi.articulationIdResolvers.read('spec', 'levain');
+        const rackReader = project.rackProcessorReader.read('spec');
+        const authoring = project.templateArpeggiatorAuthoring.read('spec');
+        const content = project.templateDeviceContent.read('spec');
+        const voices = project.storedDrumVoices.read('spec');
 
         expect(() => app.registerDeviceEnginePorts()).not.toThrow();
 
@@ -312,6 +388,10 @@ describe('registerDeviceEnginePorts after registration', () => {
         expect(audioEngine.neuralModelContent.read('spec')).toBe(model);
         expect(midi.velocityCalibration.read('spec')).toBe(calibration);
         expect(midi.articulationIdResolvers.read('spec', 'levain')).toBe(articulation);
+        expect(project.rackProcessorReader.read('spec')).toBe(rackReader);
+        expect(project.templateArpeggiatorAuthoring.read('spec')).toBe(authoring);
+        expect(project.templateDeviceContent.read('spec')).toBe(content);
+        expect(project.storedDrumVoices.read('spec')).toBe(voices);
     });
 
     it('refuses a registration that differs from the registered one', () => {
@@ -380,5 +460,27 @@ describe('registerDeviceEnginePorts after registration', () => {
 
         expect(transport.liveMidiProcessor.read('spec')).toBe(processor);
         expect(audioEngine.engineAttachmentTracking.read('spec')).toBe(tracking);
+    });
+
+    it('refuses a project save, template or track-role registration that differs from the registered one', () => {
+        const { project } = modules;
+        const authoring = project.templateArpeggiatorAuthoring.read('spec');
+        const content = project.templateDeviceContent.read('spec');
+
+        expect(() => project.rackProcessorReader.configure({ readProcessors: () => [] })).toThrow(
+            /rackProcessorReader\.configure: .*differs/
+        );
+        expect(() =>
+            project.templateArpeggiatorAuthoring.configure({ ...authoring, focusRack: () => undefined })
+        ).toThrow(/templateArpeggiatorAuthoring\.configure: .*differs/);
+        expect(() => project.templateDeviceContent.configure({ ...content, defaultPadNames: () => [] })).toThrow(
+            /templateDeviceContent\.configure: .*differs/
+        );
+        expect(() => project.storedDrumVoices.configure({ voicesOf: () => ({ status: 'unknown' }) })).toThrow(
+            /storedDrumVoices\.configure: .*differs/
+        );
+
+        expect(project.templateArpeggiatorAuthoring.read('spec')).toBe(authoring);
+        expect(project.templateDeviceContent.read('spec')).toBe(content);
     });
 });

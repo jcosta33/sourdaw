@@ -15,17 +15,24 @@ import {
 } from '#/modules/Fermenter/useCases';
 import { applyVelocityCurve, createGrandBouleStore } from '#/modules/GrandBoule/stores';
 import { readGrinderNeuralModelContent } from '#/modules/Grinder/stores';
-import { getLevainArticulationId } from '#/modules/Levain/useCases';
+import { createLevainTemplateDeviceState, getLevainArticulationId } from '#/modules/Levain/useCases';
 import { articulationIdResolvers, velocityCalibration } from '#/modules/MIDI/useCases';
+import {
+    rackProcessorReader,
+    storedDrumVoices,
+    templateArpeggiatorAuthoring,
+    templateDeviceContent,
+} from '#/modules/Project/useCases';
 import { toasterStore } from '#/modules/Toaster/stores';
+import { getDefaultPadNames, getStoredDrumVoiceMetadata } from '#/modules/Toaster/useCases';
 import {
     deviceRuntimeParameterWriters,
     kitSwing,
     liveMidiProcessor,
     notePanicParticipants,
 } from '#/modules/Transport/useCases';
-import { readYeastRack } from '#/modules/Yeast/stores';
-import { processYeastMidi, yeastPanic } from '#/modules/Yeast/useCases';
+import { readYeastRack, setActiveYeastDevice } from '#/modules/Yeast/stores';
+import { addYeastProcessor, processYeastMidi, setYeastProcessorParam, yeastPanic } from '#/modules/Yeast/useCases';
 
 type DeviceEnginePorts = {
     nativeBodyVocabularies: Parameters<typeof nativeBodyVocabularyRegistry.configure>[0];
@@ -38,6 +45,10 @@ type DeviceEnginePorts = {
     neuralModelContent: Parameters<typeof neuralModelContent.configure>[0];
     velocityCalibration: Parameters<typeof velocityCalibration.configure>[0];
     articulationIdResolvers: Parameters<typeof articulationIdResolvers.configure>[0];
+    rackProcessorReader: Parameters<typeof rackProcessorReader.configure>[0];
+    templateArpeggiatorAuthoring: Parameters<typeof templateArpeggiatorAuthoring.configure>[0];
+    templateDeviceContent: Parameters<typeof templateDeviceContent.configure>[0];
+    storedDrumVoices: Parameters<typeof storedDrumVoices.configure>[0];
 };
 
 let productionPorts: DeviceEnginePorts | null = null;
@@ -86,14 +97,27 @@ function buildProductionPorts(): DeviceEnginePorts {
             },
         },
         articulationIdResolvers: { levain: getLevainArticulationId },
+        rackProcessorReader: {
+            readProcessors: (deviceId) => readYeastRack(deviceId).processors,
+        },
+        templateArpeggiatorAuthoring: {
+            focusRack: setActiveYeastDevice,
+            addProcessor: addYeastProcessor,
+            setProcessorParam: setYeastProcessorParam,
+        },
+        templateDeviceContent: {
+            stringSectionState: createLevainTemplateDeviceState,
+            defaultPadNames: getDefaultPadNames,
+        },
+        storedDrumVoices: { voicesOf: getStoredDrumVoiceMetadata },
     };
 }
 
 /**
  * Engine and core modules may not import a device module, so the device
  * modules' parameter vocabularies, runtime writes, factory presets, MIDI
- * processing, note releases and live state reach them through ports this
- * composition root fills. Called by bootstrap and again when `App` loads,
+ * processing, note releases, live state, saved racks, template content and
+ * stored kit voices reach them through ports this composition root fills. Called by bootstrap and again when `App` loads,
  * because `main.tsx` loads the two independently and the preset browser can
  * render before bootstrap has run; registering the same ports twice is a
  * no-op.
@@ -110,4 +134,8 @@ export function registerDeviceEnginePorts(): void {
     neuralModelContent.configure(productionPorts.neuralModelContent);
     velocityCalibration.configure(productionPorts.velocityCalibration);
     articulationIdResolvers.configure(productionPorts.articulationIdResolvers);
+    rackProcessorReader.configure(productionPorts.rackProcessorReader);
+    templateArpeggiatorAuthoring.configure(productionPorts.templateArpeggiatorAuthoring);
+    templateDeviceContent.configure(productionPorts.templateDeviceContent);
+    storedDrumVoices.configure(productionPorts.storedDrumVoices);
 }

@@ -9,18 +9,14 @@
       "Command",
       "ControlSurface",
       "CrdtDocument",
-      "Crumbs",
       "ElasticAudio",
       "Knead",
-      "Levain",
       "MIDI",
       "Project",
       "Routing",
       "SampleLibrary",
-      "Toaster",
       "Transport",
-      "WorkspaceShell",
-      "Yeast"
+      "WorkspaceShell"
     ]
   },
   {
@@ -166,17 +162,7 @@
   {
     "type": "module-tier",
     "from": "Project",
-    "to": "Crumbs"
-  },
-  {
-    "type": "module-tier",
-    "from": "Project",
     "to": "CvGate"
-  },
-  {
-    "type": "module-tier",
-    "from": "Project",
-    "to": "Levain"
   },
   {
     "type": "module-tier",
@@ -186,17 +172,7 @@
   {
     "type": "module-tier",
     "from": "Project",
-    "to": "Toaster"
-  },
-  {
-    "type": "module-tier",
-    "from": "Project",
     "to": "WorkspaceShell"
-  },
-  {
-    "type": "module-tier",
-    "from": "Project",
-    "to": "Yeast"
   },
   {
     "type": "module-tier",
