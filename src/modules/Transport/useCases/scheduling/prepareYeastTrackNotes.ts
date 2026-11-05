@@ -197,6 +197,7 @@ function prepareFrozenClipYeastIterations(
             loopEnabled: false,
             loopLengthBeats: repeat.strideBeats,
             clipStartBeat: clip.startBeat,
+            clipEndBeat: clip.endBeat,
             sourceNotes,
         } satisfies LiveYeastIteration;
         cancellation?.yeastRouteLineage.set(routeId, descriptor);
@@ -267,6 +268,7 @@ function prepareRawClipYeastIterations(
             loopLengthBeats: loopLength,
             clipStartBeat: clip.startBeat,
             loopOriginBeat: clip.loopOriginBeat,
+            clipEndBeat: clip.endBeat,
             sourceNotes,
         } satisfies LiveYeastIteration;
         cancellation?.yeastRouteLineage.set(routeId, iterationDescriptor);

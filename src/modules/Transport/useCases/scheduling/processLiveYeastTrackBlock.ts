@@ -1,7 +1,11 @@
 import { type MidiNote } from '#/modules/MIDI/stores';
 import { projectCommittedGroove } from '#/modules/MIDI/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
-import { isBeatInEnabledClipLoopWindow, resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
+import {
+    CLIP_LOOP_WINDOW_BEAT_TOLERANCE,
+    isBeatInEnabledClipLoopWindow,
+    resolveClipLoopOriginAdvance,
+} from '#/utils/clipLoopOrigin';
 import {
     LOOP_PASS_GROOVE_INSTANCE_SUFFIX,
     LOOP_PASS_OVERFLOW_INSTANCE_SUFFIX,
@@ -65,6 +69,8 @@ export type LiveYeastIteration = {
      */
     clipStartBeat?: number;
     loopOriginBeat?: number;
+    /** The owning clip's end, whose closing line a release on it is owned on; absent, every release is half-open. */
+    clipEndBeat?: number;
     sourceNotes: readonly LiveYeastNote[];
 };
 
@@ -129,6 +135,7 @@ type LiveSegmentEventContext = {
     pitch: number;
     /** The note-on's duration when the pass does not loop; a looped segment's is its own length. */
     durationPpq: number | undefined;
+    clipEndBeat: number | undefined;
 };
 
 /** A head off the grid opens the first pass before the clip does; the clip head cuts what that pass places ahead of it. */
@@ -210,11 +217,41 @@ function recordLiveSegmentInstance(
     }
 }
 
-/** Hands the rack the segment's note-on and note-off this block owns: each one whose beat lies in `[from, to)`. */
+/**
+ * Whether the block owns a release at `endBeat`: the block whose `[from, to)` holds it, except on the clip's
+ * closing line, where the block with `from < clipEnd <= to` (the last the clip plays in) owns it. A window that
+ * opens on the clip end no longer schedules the clip, so a release there would otherwise reach no live block,
+ * while the bounce hands it to the rack; an inner loop seam stays half-open.
+ */
+function ownsLiveRelease(
+    endBeat: number,
+    block: LiveSegmentEventContext['block'],
+    clipEndBeat: number | undefined
+): boolean {
+    if (clipEndBeat !== undefined && Math.abs(endBeat - clipEndBeat) <= CLIP_LOOP_WINDOW_BEAT_TOLERANCE) {
+        return clipEndBeat > block.fromBeat && clipEndBeat <= block.toBeat;
+    }
+    return endBeat >= block.fromBeat && endBeat < block.toBeat;
+}
+
+/**
+ * Hands the rack the segment's note-on this block owns, the one whose beat lies in `[from, to)`, and the
+ * note-off it owns (`ownsLiveRelease`).
+ */
 function pushLiveSegmentEvents(
     inputEvents: LiveYeastMidiEvent[],
     { instanceId, startBeat, endBeat, velocity }: LivePassSegment,
-    { block, changes, transport, sampleRate, routeId, channel, pitch, durationPpq }: LiveSegmentEventContext
+    {
+        block,
+        changes,
+        transport,
+        sampleRate,
+        routeId,
+        channel,
+        pitch,
+        durationPpq,
+        clipEndBeat,
+    }: LiveSegmentEventContext
 ): void {
     const noteStartSamples = beatToSamples(changes, startBeat, transport.tempo, sampleRate);
     const noteEndSamples = beatToSamples(changes, endBeat, transport.tempo, sampleRate);
@@ -231,7 +268,7 @@ function pushLiveSegmentEvents(
             kind: { type: 'noteOn', channel, note: pitch, velocity },
         });
     }
-    if (endBeat >= block.fromBeat && endBeat < block.toBeat) {
+    if (ownsLiveRelease(endBeat, block, clipEndBeat)) {
         inputEvents.push({
             timeSamples: noteEndSamples,
             trackId: routeId,
@@ -413,6 +450,7 @@ export async function processLiveYeastTrackBlock({
                     channel: sourceNote.channel ?? 0,
                     pitch: groovedNote.pitch,
                     durationPpq: loops ? undefined : Math.max(0, groovedNote.duration),
+                    clipEndBeat: iteration.clipEndBeat,
                 };
                 for (const rackSegment of rackSegments) {
                     recordLiveSegmentInstance(rackSegment, headCutBeatsByInstance, sequencerGroovedInstances);
