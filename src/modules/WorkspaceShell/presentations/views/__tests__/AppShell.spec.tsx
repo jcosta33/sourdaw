@@ -266,7 +266,7 @@ vi.mock('../../../useCases/dismissAlphaNotice', () => ({
 
 const mockWorkspaceEventBus = {
     emit: vi.fn().mockResolvedValue(undefined),
-    on: vi.fn(() => () => {}),
+    on: vi.fn((_event: string, _handler: (payload: unknown) => void) => () => {}),
 };
 
 const mockVoiceToggleEventBus = {
@@ -484,12 +484,12 @@ describe('AppShell', () => {
     describe('Preferences open requests', () => {
         const emitOpenPreferences = (payload: { section: 'midi' } | undefined): void => {
             const subscription = mockWorkspaceEventBus.on.mock.calls.find(
-                ([event]: readonly unknown[]) => event === 'dialog.openPreferences'
+                ([event]) => event === 'dialog.openPreferences'
             );
-            const handler = subscription?.[1] as ((request: typeof payload) => void) | undefined;
-            if (handler === undefined) {
+            if (subscription === undefined) {
                 throw new Error('AppShell did not subscribe to dialog.openPreferences');
             }
+            const [, handler] = subscription;
             act(() => handler(payload));
         };
 
