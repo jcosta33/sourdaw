@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/agentReference/readProtectionSlots.ts
+  s_55244eb93b97d1::t_50766dac5532a4 132-134,136-141
+  s_55244eb93b97d1::t_a4b55d0d767de2 135
+  s_55244eb93b97d1::t_2798d62eaea2ce 150
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "219133f20e4cbc4af012f84c0a6329761c5e7d72",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
