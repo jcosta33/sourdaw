@@ -1,0 +1,23 @@
+src/modules/CommandInterface/presentations/views/keyboardShortcutsContract.ts
+  s_91f8b522168bd8::t_fe28b4cea29bbf 81,86-94,100-105,113-120,123-124,127-128,132-136,211,221,228
+tests/e2e/nativeButtonKeyboardActivation.spec.ts
+  s_91f8b522168bd8::t_7d7857e9e22b36 125-145
+src/modules/CommandInterface/presentations/views/__tests__/keyboardShortcutsContract.spec.tsx
+  s_91f8b522168bd8::t_3ee2cc897397d4 93-95,388,393,401-416,421,429-447,452,460,465,467,469,471-472
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5ab4a6aac069cfc3b2e62657e0b2ee33eaf57610",
+  "prompts": {},
+  "sessions": {
+    "s_91f8b522168bd8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea993bb3-f8f9-4703-aa93-ef8a806d9107",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
