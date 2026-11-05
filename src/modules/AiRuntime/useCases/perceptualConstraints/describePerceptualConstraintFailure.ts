@@ -1,3 +1,5 @@
+import { roundToThousandths } from '#/utils/Math/roundToThousandths';
+
 import { type MetricGoalEvaluation } from '../../models/MetricGoalAdmission';
 import { OBJECTIVE_METRIC_LABELS, OBJECTIVE_METRIC_UNITS } from '../objectiveMetricProjection';
 
@@ -5,7 +7,7 @@ type Criterion = MetricGoalEvaluation['criteria'][number];
 type Failure = NonNullable<MetricGoalEvaluation['failure']>;
 
 function figure(value: number | undefined): string {
-    return value === undefined ? 'unavailable' : String(Math.round(value * 1000) / 1000);
+    return value === undefined ? 'unavailable' : String(roundToThousandths(value));
 }
 
 /** The refusal the user sees for a constraint goal: the clause, and for a measured one the metric and figures. */

@@ -6,11 +6,11 @@ import {
     type PerceptualConstraintScope,
     type UnsupportedPerceptualConstraint,
 } from '../../models/PerceptualConstraint';
-import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
+import { type ProjectContext } from '../../models/ProjectContext';
 import { type SemanticCommandListRoleFamily } from '../../models/SemanticCommandList';
-import { maskQuotedTextContents } from '../../transformers/promptParser/promptQuotedText';
 import { escapeRegExp } from '../agentReference/groundingStrategies/escapeRegExp';
-import { CANONICAL_ROLE_OPTIONS, CANONICAL_ROLE_TO_RECIPE_ROLE } from '../canonicalRoleFamilies';
+import { resolveRoleFamily } from '../canonicalRoleFamilies';
+import { maskTrackReferences } from '../maskTrackReferences';
 
 type ObjectResolution =
     | { kind: 'mix' }
@@ -58,25 +58,6 @@ function normalizeObjectText(text: string): string {
         .replaceAll(/\s+/gu, ' ')
         .trim()
         .replace(LEADING_DETERMINER, '');
-}
-
-/** Track names are masked so a quality word inside a name ("Warm Pad") never reads as a quality. */
-function maskTrackNames(text: string, context: ProjectContext): string {
-    const names = context.tracks.map((track) => track.name).toSorted((left, right) => right.length - left.length);
-    let masked = text;
-    for (const name of names) {
-        if (name.trim().length === 0) {
-            continue;
-        }
-        const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(name)}(?![\\p{L}\\p{N}])`, 'giu');
-        masked = masked.replaceAll(pattern, (found) => '□'.repeat(found.length));
-    }
-    return masked;
-}
-
-function resolveRoleFamily(track: ProjectContextTrack): SemanticCommandListRoleFamily | null {
-    const role = CANONICAL_ROLE_OPTIONS.find((candidate) => candidate === track.canonicalRole?.role) ?? 'unknown';
-    return CANONICAL_ROLE_TO_RECIPE_ROLE[role];
 }
 
 function nameVariants(name: string): string[] {
@@ -262,7 +243,9 @@ function sameConstraint(left: PerceptualConstraint, right: PerceptualConstraint)
  * unsupported rather than dropped, so the batch it rides can never be approved as verified.
  */
 export function compilePerceptualConstraints(prompt: string, context: ProjectContext): PerceptualConstraintReading {
-    const masked = maskTrackNames(maskQuotedTextContents(prompt), context);
+    // A name keeps its place as one masked word, so a clause still holds it as its object, which is
+    // then read from the prompt itself; a quality word inside a name ("Warm Pad") states nothing.
+    const masked = maskTrackReferences(prompt, context, '□');
     const reading: PerceptualConstraintReading = { constraints: [], unsupported: [] };
     readLowEndConstraints(masked, prompt, context, reading);
     readQualityConstraints(masked, prompt, context, reading);

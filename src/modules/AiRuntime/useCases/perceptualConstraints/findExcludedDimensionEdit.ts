@@ -40,11 +40,6 @@ function readDeviceFacts(deviceId: string, actions: readonly AppAction[], contex
     return { type: null, trackId: null };
 }
 
-/**
- * The dimensions one parameter write edits. A filter's type and cutoff decide together whether it
- * removes the low end, and either may stay at its current value, so every filter write counts. A
- * device whose type is unknown is read by its parameter id alone, which every built-in names uniquely.
- */
 /** A device of unknown type is judged by its parameter's prefix, a known one by its type. */
 function isSpatialParameter(deviceType: string | null, paramId: string): boolean {
     if (deviceType === null) {
@@ -53,6 +48,11 @@ function isSpatialParameter(deviceType: string | null, paramId: string): boolean
     return SPATIAL_DEVICE_TYPES.has(deviceType);
 }
 
+/**
+ * The dimensions one parameter write edits. A filter's type and cutoff decide together whether it
+ * removes the low end, and either may stay at its current value, so every filter write counts. A
+ * device whose type is unknown is read by its parameter id alone, which every built-in names uniquely.
+ */
 function parameterDimensions(deviceType: string | null, paramId: string): PerceptualExcludedDimension[] {
     const dimensions: PerceptualExcludedDimension[] = [];
     const eqLowBand = paramId.startsWith('eq-low-') && (deviceType === null || deviceType === 'builtin-eq');
