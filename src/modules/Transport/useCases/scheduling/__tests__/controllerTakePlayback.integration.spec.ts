@@ -56,6 +56,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     getTrackStrip: () => ({ deviceNodes: engineStub.nodes }),
 }));
 
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -113,6 +114,8 @@ import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
 import { transportStore } from '../../../stores/transportStore';
 import { forgetHeldNoteExpression } from '../forgetHeldNoteExpression';
 import { scheduleMidiNotes } from '../scheduleMidiNotes';
+
+registerSupportingServicePorts();
 
 const TRACK_ID = 'track-midi';
 const DEVICE_ID = 'gb-1';

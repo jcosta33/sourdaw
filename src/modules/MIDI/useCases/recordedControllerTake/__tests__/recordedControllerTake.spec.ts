@@ -41,10 +41,6 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     },
 }));
 
-vi.mock('#/modules/ControlSurface/useCases', () => ({
-    getMidiLearnState: () => mocks.learnState.value,
-}));
-
 vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
     getTargetTrackId: () => mocks.targetTrackId.value,
 }));
@@ -53,6 +49,12 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.executeAppAction,
 }));
 
+const { midiLearnRouting } = await import('../../webMidiInput/midiLearnRouting');
+midiLearnRouting.configure({
+    getMidiLearnState: () => mocks.learnState.value,
+    completeMidiLearn: vi.fn(),
+    applyMidiMappings: vi.fn(),
+});
 const { logger } = await import('#/infra/logger/appLogger');
 const { midiStore } = await import('../../../stores/midiStore');
 const { heldPedalState } = await import('../../../repositories/webMidi/heldPedalState');
