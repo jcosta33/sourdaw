@@ -20,6 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 
 import { selectAffectedE2e } from '../e2eAffectedGraph';
+import { TEST_FIXTURE_REASON, type TestSideRoute } from '../e2eTestSideRoute';
 import {
     canNarrow,
     parseChangedPaths,
@@ -2499,4 +2500,158 @@ describe('unit test sources select no browser suite', () => {
         );
         expect(collected).toEqual([]);
     });
+});
+
+const HELPER = 'tests/e2e/chosenProjectDirectory.ts';
+const SRC_FIXTURE = 'src/modules/AudioRendering/useCases/audioExport/__tests__/wavReportFixtures.ts';
+const FULL_REASON = 'product, shared, deleted, renamed, or unclassified dependency; full browser coverage';
+
+describe('test-side modules select the browser specs importing them', () => {
+    const helperRoute: TestSideRoute = { path: HELPER, kind: 'specs', specs: [...TUNER_SPECS] };
+
+    function planWith(paths: string[], routes: TestSideRoute[], affected?: Parameters<typeof selectValidationPlan>[4]) {
+        return selectValidationPlan(paths, INVENTORY, new Map(), false, affected, undefined, routes);
+    }
+
+    it('selects exactly the specs a helper reaches', () => {
+        const plan = planWith([HELPER], [helperRoute]);
+        expect(allSelected(plan)).toEqual([...TUNER_SPECS].sort());
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: false, codeql: true });
+        expect(plan.reasons).toEqual([{ path: HELPER, reason: 'test-side module imported by 2 browser specs' }]);
+    });
+
+    it('routes a src fixture no browser spec reaches to broad validation without browser execution', () => {
+        const plan = planWith([SRC_FIXTURE], [{ path: SRC_FIXTURE, kind: 'specs', specs: [] }]);
+        expect(plan).toMatchObject({ ...BROAD_WITHOUT_BROWSER, codeql: true });
+        expect(plan.reasons).toEqual([{ path: SRC_FIXTURE, reason: TEST_FIXTURE_REASON }]);
+    });
+
+    it('widens a full route and a route naming an uncollected spec', () => {
+        const full = planWith([HELPER], [{ path: HELPER, kind: 'full', reason: 'imported by no browser spec' }]);
+        expect(allSelected(full)).toEqual(fullInventory(INVENTORY));
+        expect(full).toMatchObject({ browser: true, browserAi: true });
+        expect(full.reasons).toEqual([
+            { path: HELPER, reason: `${FULL_REASON}; test-side module imported by no browser spec` },
+        ]);
+        const stale = planWith([HELPER], [{ path: HELPER, kind: 'specs', specs: ['tests/e2e/retired.spec.ts'] }]);
+        expect(allSelected(stale)).toEqual(fullInventory(INVENTORY));
+    });
+
+    it('keeps the route of a path without a test-side route', () => {
+        const plan = planWith([SRC_FIXTURE], [helperRoute]);
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+        expect(plan.reasons).toEqual([{ path: SRC_FIXTURE, reason: FULL_REASON }]);
+    });
+
+    it('keeps a product path on its own route and unions in the helper specs', () => {
+        const undoRoute: TestSideRoute = { path: HELPER, kind: 'specs', specs: ['tests/e2e/undo.spec.ts'] };
+        const narrowed = planWith([HELPER, TUNER], [undoRoute], {
+            kind: 'narrow',
+            specs: [TUNER_SPECS[0]],
+            browserAi: false,
+            owners: ['Tuner'],
+        });
+        expect(allSelected(narrowed)).toEqual([TUNER_SPECS[0], 'tests/e2e/undo.spec.ts'].sort());
+        expect(narrowed.reasons).toEqual([
+            { path: HELPER, reason: 'test-side module imported by 1 browser specs' },
+            { path: TUNER, reason: 'affected feature owners: Tuner' },
+        ]);
+        const shared = planWith([HELPER, 'src/app/bootstrap.ts'], [undoRoute]);
+        expect(allSelected(shared)).toEqual(fullInventory(INVENTORY));
+        expect(shared.reasons).toContainEqual({ path: 'src/app/bootstrap.ts', reason: FULL_REASON });
+    });
+
+    it(
+        'plans helper, fixture, deleted, and non-script test changes from the import graph',
+        () => {
+            const root = temporaryRoot();
+            const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+            const specs = [
+                SMOKE_SPEC,
+                'tests/e2e/exportDialog.spec.ts',
+                'tests/e2e/importDialog.spec.ts',
+                'tests/e2e/mixer.spec.ts',
+            ];
+            const loaded = 'src/app/__tests__/loadedFixture.ts';
+            const sources: Record<string, string> = {
+                'tsconfig.json': JSON.stringify({ compilerOptions: { paths: { '#/*': ['./src/*'] } } }),
+                [HELPER]: 'export const chosen = 1;\n',
+                [SRC_FIXTURE]: 'export const fixture = 1;\n',
+                [loaded]: 'export const loaded = 1;\n',
+                'src/app/bootstrap.ts':
+                    "import { loaded } from './__tests__/loadedFixture';\nexport const boot = loaded;\n",
+                'tests/e2e/fixtures/project.json': '{"tracks":[]}\n',
+                [specs[1]!]:
+                    "import { test } from '@playwright/test';\nimport { chosen } from './chosenProjectDirectory';\ntest('export', () => void chosen);\n",
+                [specs[2]!]:
+                    "import { test } from '@playwright/test';\nimport { chosen } from './chosenProjectDirectory';\ntest('import', () => void chosen);\n",
+            };
+            for (const [path, content] of Object.entries(sources)) {
+                mkdirSync(join(root, path.slice(0, path.lastIndexOf('/') + 1) || '.'), { recursive: true });
+                writeFileSync(join(root, path), content);
+            }
+            fixturePlaywright(root);
+            fixtureBrowserCase(root, SMOKE_SPEC);
+            fixtureBrowserCase(root, specs[3]!);
+            git(['init', '--quiet']);
+            git(['config', 'user.email', 'ci@example.invalid']);
+            git(['config', 'user.name', 'Scope test']);
+            git(['add', '.']);
+            git(['commit', '--quiet', '-m', 'base']);
+            const output = join(root, 'github-output');
+            const planAfter = (change: () => void) => {
+                const base = git(['rev-parse', 'HEAD']);
+                change();
+                git(['add', '--all', 'src', 'tests']);
+                git(['commit', '--quiet', '-m', 'change']);
+                const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+                    cwd: root,
+                    encoding: 'utf8',
+                    env: {
+                        ...process.env,
+                        BASE_SHA: base,
+                        HEAD_SHA: git(['rev-parse', 'HEAD']),
+                        GITHUB_OUTPUT: output,
+                        E2E_COVERAGE_MAP: join(root, 'absent-coverage-map.json'),
+                    },
+                });
+                expect(result.status, result.stderr).toBe(0);
+                return JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')) as ReturnType<
+                    typeof selectValidationPlan
+                >;
+            };
+            const helper = planAfter(() => writeFileSync(join(root, HELPER), 'export const chosen = 2;\n'));
+            expect(allSelected(helper)).toEqual([specs[1], specs[2]].sort());
+            expect(helper.reasons).toEqual([{ path: HELPER, reason: 'test-side module imported by 2 browser specs' }]);
+
+            const fixture = planAfter(() => writeFileSync(join(root, SRC_FIXTURE), 'export const fixture = 2;\n'));
+            expect(fixture).toMatchObject(BROAD_WITHOUT_BROWSER);
+            expect(fixture.reasons).toEqual([{ path: SRC_FIXTURE, reason: TEST_FIXTURE_REASON }]);
+
+            const productLoaded = planAfter(() => writeFileSync(join(root, loaded), 'export const loaded = 2;\n'));
+            expect(allSelected(productLoaded)).toEqual(fullInventory(specs));
+            expect(productLoaded.reasons[0]).toMatchObject({ path: loaded });
+            expect(productLoaded.reasons[0]!.reason).not.toContain('test-side');
+
+            const json = planAfter(() => writeFileSync(join(root, 'tests/e2e/fixtures/project.json'), '{}\n'));
+            expect(allSelected(json)).toEqual(fullInventory(specs));
+
+            const deleted = planAfter(() => {
+                writeFileSync(
+                    join(root, specs[1]!),
+                    "import { test } from '@playwright/test';\ntest('export', () => {});\n"
+                );
+                writeFileSync(
+                    join(root, specs[2]!),
+                    "import { test } from '@playwright/test';\ntest('import', () => {});\n"
+                );
+                rmSync(join(root, HELPER));
+            });
+            expect(allSelected(deleted)).toEqual(fullInventory(specs));
+            const deletedReason = deleted.reasons.find((row) => row.path === HELPER)?.reason;
+            expect(deletedReason).toContain(FULL_REASON);
+            expect(deletedReason).not.toContain('test-side');
+        },
+        GIT_PLANNER_CASE_TIMEOUT_MS
+    );
 });
