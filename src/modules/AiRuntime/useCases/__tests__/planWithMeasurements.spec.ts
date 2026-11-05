@@ -48,6 +48,7 @@ import {
     readMetricPublication,
     resetMetricGoalProject,
 } from './metricGoalWorkflowFixture';
+import { seedSavableProject, writeProjectSave } from './projectSaveFixture';
 import { decodeReceiptContext, readReceiptSummary } from './receiptContextFixture';
 
 registerDeviceEnginePorts();
@@ -110,6 +111,8 @@ describe('configured mixing plan with actual measurements', () => {
         'two-recipes-order-drift',
         'stopped-repreview',
         'project-edited-repreview',
+        'project-saved-repreview',
+        'project-edited-saved-repreview',
         'configuration-replaced-repreview',
         'two-recipes-subset',
     ] as const)('keeps the real five-turn warm-vocal plan visible and verifies %s evidence', async (mode) => {
@@ -122,6 +125,10 @@ describe('configured mixing plan with actual measurements', () => {
         let prompt = PROMPT;
         if (multipleRecipes) {
             prompt = 'Make Lead Vocal warmer and darker over Chorus';
+        }
+        const savedRepreview = mode === 'project-saved-repreview' || mode === 'project-edited-saved-repreview';
+        if (savedRepreview) {
+            seedSavableProject();
         }
         flushAutomergeStorageWrites();
         let renderStarts = 0;
@@ -574,10 +581,13 @@ describe('configured mixing plan with actual measurements', () => {
             await entered.promise;
             if (mode === 'stopped-repreview') {
                 await agentRunCancellation.cancel({ runId: RUN_ID, reason: 'Musician pressed Stop.' });
-            } else if (mode === 'project-edited-repreview') {
+            } else if (mode === 'project-edited-repreview' || mode === 'project-edited-saved-repreview') {
                 await executeAppAction({ type: 'renameTrack', payload: { trackId: 'vocal', name: 'Edited Vocal' } });
                 flushAutomergeStorageWrites();
-            } else {
+            }
+            if (savedRepreview) {
+                await writeProjectSave();
+            } else if (mode === 'configuration-replaced-repreview') {
                 aiBackendPreferenceStore.set('cloud');
             }
             const settledBeforeResume = {
@@ -586,6 +596,18 @@ describe('configured mixing plan with actual measurements', () => {
                 messages: structuredClone(chatStore.value?.messages),
             };
             resume.resolve();
+            if (mode === 'project-saved-repreview') {
+                // A save changes nothing the preview measured, so its refreshed proof is kept.
+                const replaced = await refreshing;
+                expect(replaced, JSON.stringify(replaced)).toMatchObject({ status: 'reproposed' });
+                if (replaced.status !== 'reproposed') {
+                    throw new Error('Expected the re-preview to survive the save.');
+                }
+                expect(getAgentApprovalView({ confirmationId: replaced.confirmationId })?.canConfirm).toBe(true);
+                expect(trackStore.value).toEqual(settledBeforeResume.tracks);
+                expect(undoHistoryStore.value).toEqual(settledBeforeResume.undo);
+                return;
+            }
             expect(await refreshing).toMatchObject({ status: 'rejected' });
             expect(getPendingActionConfirmation(confirmationId)?.supersededBy).toBeNull();
             expect(trackStore.value).toEqual(settledBeforeResume.tracks);

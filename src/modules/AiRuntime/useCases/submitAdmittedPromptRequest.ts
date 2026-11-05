@@ -38,6 +38,7 @@ import { notifyAiChange } from './notifyAiChange';
 import { parsePromptToActions } from './parsePromptToActions';
 import { type PlannedPromptActions, planPromptActions } from './planPromptActions';
 import { recordAgentProviderUsage } from './recordAgentProviderUsage';
+import { settledProjectContentMatches } from './settledProjectContentMatches';
 import { stopMeasuredPreviewAudition } from './stopMeasuredPreviewAudition';
 
 export type PromptRequestSource = 'prompt-bar' | 'preset';
@@ -328,7 +329,7 @@ export async function submitAdmittedPromptRequest(
             ) {
                 return { status: 'rejected', runId };
             }
-            if (settlePendingProjectWritesAndCaptureRevision() !== planned.projectRevision) {
+            if (!settledProjectContentMatches(planned.projectRevision)) {
                 throw new AiProposalInvalidatedError();
             }
             const answeredProjectIdentity = captureProjectIdentity();

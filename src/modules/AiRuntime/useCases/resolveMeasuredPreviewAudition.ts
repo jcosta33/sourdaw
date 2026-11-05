@@ -1,12 +1,12 @@
 import { getAgentMeasurementArtifact } from '#/modules/AudioRendering/useCases';
 import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { dbToGain } from '#/utils/audioLevelLaw';
 import { digest } from '#/utils/canonicalDigest';
 
 import { getPendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 
 import { agentRunLifecycle } from './agentRunLifecycle';
+import { approvedProjectRevision } from './approvedProjectRevision';
 import { digestCommandBatchContent } from './digestCommandBatchContent';
 import { getAgentApprovalView } from './getAgentApprovalView';
 import { metricGoalStateCodec } from './metricGoalStateCodec';
@@ -162,7 +162,10 @@ function readCurrentProposal(input: AuditionInput) {
     if (parsed.status !== 'valid') {
         return unavailable('The proposed command batch is unavailable.');
     }
-    const revision = captureProjectRevision();
+    // The card asks whether this proposal is current through the same proof, so a save leaves the pair
+    // audible against the proposal's own revision; any other change hands back the live one, which
+    // no binding carries.
+    const revision = approvedProjectRevision.readValidationRevision(confirmation.projectRevision);
     const hash = digestCommandBatchContent(parsed.envelope);
     if (
         !bindingMatches(state, parsed.envelope, {

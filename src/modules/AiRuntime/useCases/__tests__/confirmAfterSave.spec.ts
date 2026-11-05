@@ -49,8 +49,10 @@ import { confirmationAdmission } from '../agentRequestOrchestration/resolveConfi
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { executePlannedActions } from '../executePlannedActions';
 import { getAgentApprovalView } from '../getAgentApprovalView';
 import { getProjectContext } from '../getProjectContext';
+import { issueAgentCommandApprovalBinding } from '../issueAgentCommandApprovalBinding';
 import { materializeActionStateGuards } from '../materializeActionStateGuards';
 
 import {
@@ -153,7 +155,8 @@ function activeArrangementTrackIds(): string[] {
     return entry?.tracks.tracks.map((track) => track.id) ?? [];
 }
 
-function proposeVocalsColor(): string {
+/** The vocals-color batch planned against the live project, as the planner hands it to approval. */
+function planVocalsColor() {
     const context = getProjectContext();
     const projectRevision = captureProjectRevision();
     const materialized = materializeActionStateGuards(
@@ -182,6 +185,11 @@ function proposeVocalsColor(): string {
         ),
     });
     const metricGoalState = configuredLiteralMetricState(commandBatch);
+    return { projectRevision, actions, commandBatch, metricGoalState };
+}
+
+function proposeVocalsColor(): string {
+    const { projectRevision, actions, commandBatch, metricGoalState } = planVocalsColor();
     proposePendingActionConfirmation({
         id: CONFIRMATION_ID,
         prompt: 'color the vocals orange',
@@ -387,6 +395,84 @@ describe('Confirm after a save', () => {
         });
 
         expect(execution.status).toBe('settled');
+        expect(vocalsColor()).toBe(DEFAULT_TRACK_COLOR);
+    });
+});
+
+describe('Direct commit after a save', () => {
+    beforeEach(() => {
+        configureAiWorkflowCommandPreflightFixture();
+        configureAutomergeStoragePort(null);
+        resetCrdtProjectAuthority('direct commit after save test');
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
+        clearHandlerRegistry();
+        registerHandlerMap(getArrangementHandlers());
+        setArrangementEventBus({ emit: () => Promise.resolve() });
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        setActionHistoryMetadataPort(noActionHistoryMetadataPort);
+        clearAiHistory();
+        agentRunLifecycle.clear();
+        agentProjectRepairStateStore.set(null);
+        macroStore.set({ macros: [], recording: false, currentRecording: [] });
+        projectStore.set(defaultProjectStoreState);
+        seedProject();
+    });
+
+    afterEach(() => {
+        resetAiWorkflowCommandPreflightFixture();
+        clearUndoHistory();
+        resetActionReplayAuthority();
+        clearHandlerRegistry();
+        clearAiHistory();
+        agentRunLifecycle.clear();
+        agentProjectRepairStateStore.set(null);
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        projectStore.set(defaultProjectStoreState);
+        configureAutomergeStoragePort(null);
+        removeCrdtDoc('root');
+    });
+
+    /** Runs the batch the way a direct commit does: bound to its approval, against the revision it was planned at. */
+    function commitPlanned(planned: ReturnType<typeof planVocalsColor>) {
+        const approval = compileAgentRiskApproval({
+            commandBatch: planned.commandBatch,
+            metricGoalState: planned.metricGoalState,
+        });
+        return executePlannedActions({
+            prompt: 'color the vocals orange',
+            actions: planned.actions,
+            projectRevision: planned.projectRevision,
+            executionMode: 'atomic',
+            commandBatch: {
+                ...planned.commandBatch,
+                approvalBinding: issueAgentCommandApprovalBinding({ approval, commandBatch: planned.commandBatch }),
+            },
+        });
+    }
+
+    it('commits a batch planned before the project was saved', async () => {
+        const planned = planVocalsColor();
+
+        await writeSave();
+
+        expect(projectRevisionMatchesLiveIgnoringCommandCheckpoint(planned.projectRevision)).toBe(false);
+        await expect(commitPlanned(planned)).resolves.toMatchObject({ status: 'committed' });
+        expect(vocalsColor()).toBe(APPROVED_COLOR);
+    });
+
+    it('refuses a batch planned before a track was renamed, saved or not', async () => {
+        const planned = planVocalsColor();
+
+        renameDrums();
+        await writeSave();
+
+        await expect(commitPlanned(planned)).resolves.toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
         expect(vocalsColor()).toBe(DEFAULT_TRACK_COLOR);
     });
 });
