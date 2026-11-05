@@ -64,6 +64,7 @@ export { getNextAppActionClipId } from './clip/getNextAppActionClipId';
 export { removeClip } from './clip/removeClip';
 export { duplicateClip } from './clip/duplicateClip';
 export { duplicateClipToNextBar } from './clip/duplicateClipToNextBar';
+export { prepareDuplicateClipTargetId } from './clip/prepareDuplicateClipTargetId';
 export { acceptGhostClip } from './clip/acceptGhostClip';
 export { dismissGhostClip } from './clip/dismissGhostClip';
 export { setClipAudioAssetStager } from './clip/setClipAudioAssetStager';

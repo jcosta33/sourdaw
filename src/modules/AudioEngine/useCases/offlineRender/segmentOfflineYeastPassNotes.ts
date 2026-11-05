@@ -6,6 +6,7 @@ import {
     loopPassNoteEndBeat,
     loopPassNoteOverflowBeats,
     loopPassProducedNoteStartBeat,
+    passSegmentSoundingEndBeat,
 } from '#/utils/loopPassNoteSegments';
 
 type OfflineYeastPassIteration = {
@@ -14,6 +15,7 @@ type OfflineYeastPassIteration = {
     midiOffsetBeats: number;
     loopEnabled: boolean;
     clipStartBeat: number;
+    clipEndBeat: number;
     loopOriginBeat?: number;
 };
 
@@ -85,6 +87,16 @@ function cutAtClipHead(
     return passNote(note, id, startBeat + cutBeats, endBeat, beatsIntoNote + cutBeats);
 }
 
+/** The segment cut at its pass's sounding end, or none when nothing of it sounds (`passSegmentSoundingEndBeat`). */
+function cutAtSoundingEnd(segment: OfflineYeastPassNote, soundingEndBeat: number): OfflineYeastPassNote[] {
+    const endBeat = passSegmentSoundingEndBeat(
+        segment.startBeat,
+        segment.startBeat + segment.duration,
+        soundingEndBeat
+    );
+    return endBeat === undefined ? [] : [{ ...segment, duration: endBeat - segment.startBeat }];
+}
+
 /**
  * A pass segment as the rack is handed it: where the project groove, which
  * follows the rack, would move its start out of its pass, the segment is
@@ -144,7 +156,10 @@ function placeProjectGrooveDisplacement(
  * ring past it handed on as its own note struck on the pass head, because a
  * live window cannot see a note-on later in its pass and the bounce must not
  * hear what playback cannot. For the same reason a segment the project groove
- * moves out of its pass is handed on where the loop places it.
+ * moves out of its pass is handed on where the loop places it. Every segment
+ * is then cut where the pass stops sounding, its end or the clip end when that
+ * comes first (`passSegmentSoundingEndBeat`): one starting there or later is
+ * never handed on, and one ringing past it is released there.
  */
 export function segmentOfflineYeastPassNotes(
     iteration: OfflineYeastPassIteration,
@@ -160,11 +175,21 @@ export function segmentOfflineYeastPassNotes(
             loopOriginBeat: iteration.loopOriginBeat,
             loopEnabled: iteration.loopEnabled,
         });
+    // The pass stops sounding at its end, or at the clip end when that comes
+    // first: what starts there or later is never struck, and what rings past it
+    // is released there, as the synth route and the live window cut it.
+    const soundingEndBeat = Math.min(passStartBeat + loopLengthBeats, iteration.clipEndBeat);
     return groovedNotes.flatMap((note) => {
         const audibleStartBeat = contentZeroBeat + note.startBeat - iteration.midiOffsetBeats;
         if (!loops) {
             const startBeat = Math.max(audibleStartBeat, passStartBeat);
-            return passNote(note, note.id, startBeat, audibleStartBeat + note.duration, startBeat - audibleStartBeat);
+            return passNote(
+                note,
+                note.id,
+                startBeat,
+                audibleStartBeat + note.duration,
+                startBeat - audibleStartBeat
+            ).flatMap((segment) => cutAtSoundingEnd(segment, soundingEndBeat));
         }
         const passNoteStartBeat = loopPassProducedNoteStartBeat(audibleStartBeat, passStartBeat, loopLengthBeats);
         const passNoteEndBeat = loopPassNoteEndBeat(passNoteStartBeat, note.duration, passStartBeat, loopLengthBeats);
@@ -187,8 +212,8 @@ export function segmentOfflineYeastPassNotes(
                 )
             );
         }
-        return segments.flatMap((segment) =>
-            placeProjectGrooveDisplacement(iteration, note, segment, projectSequencerGroove)
-        );
+        return segments
+            .flatMap((segment) => placeProjectGrooveDisplacement(iteration, note, segment, projectSequencerGroove))
+            .flatMap((segment) => cutAtSoundingEnd(segment, soundingEndBeat));
     });
 }
