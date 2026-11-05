@@ -1,0 +1,47 @@
+src/modules/SampleLibrary/useCases/seedFactoryLibrary.ts
+  s_fec7059b7a251c::t_f5bb69a873539a 7,10,13-16,18-19,32,38,41-42,45-47,49,51-52,54-55,57,59-61,66-80,82
+src/modules/SampleLibrary/useCases/factoryLibrary/findFactoryRoot.ts
+  s_fec7059b7a251c::t_e74c2c22dc7333 1-8
+src/modules/SampleLibrary/useCases/factoryLibrary/toFactorySampleRecord.ts
+  s_fec7059b7a251c::t_aebedc8ea1e81d 1-52
+src/modules/SampleLibrary/useCases/connectFolder/rescanRoot.ts
+  s_fec7059b7a251c::t_c035d501ca16ce 6
+  s_fec7059b7a251c::t_bece263ef51bc6 1-4,29-39
+src/modules/SampleLibrary/useCases/factoryLibrary/cacheFactoryBuffers.ts
+  s_fec7059b7a251c::t_01c560c4336b16 1-29
+src/modules/FactorySynthesis/transformers/generateImpactsPack.ts
+  s_fec7059b7a251c::t_93b007e9ad4548 88
+  s_fec7059b7a251c::t_466be8e2feafcd 86-87
+  s_fec7059b7a251c::t_bb23ceeae43316 89-91
+  s_fec7059b7a251c::t_664b129f9fedaa 84,93-94,99
+src/modules/SampleLibrary/useCases/factoryLibrary/reloadFactoryLibraryBuffers.ts
+  s_fec7059b7a251c::t_b11e92acf4760a 1-64
+src/modules/SampleLibrary/AGENTS.md
+  s_fec7059b7a251c::t_78d28a781c8536 23
+src/modules/SampleLibrary/useCases/connectFolder/__tests__/rescanRoot.spec.ts
+  s_fec7059b7a251c::t_aa9fd3d3fe0b03 26
+  s_fec7059b7a251c::t_deff951ab1289b 9-11,27-31,84-107
+src/modules/SampleLibrary/useCases/__tests__/seedFactoryLibrary.spec.ts
+  s_fec7059b7a251c::t_642080005220a5 112
+  s_fec7059b7a251c::t_745d61e2f08289 39-64,74,214,251-253,260,262,266,272-361
+src/modules/FactorySynthesis/AGENTS.md
+  s_fec7059b7a251c::t_642e38eeeecedf 22
+src/modules/FactorySynthesis/transformers/__tests__/generateFactorySamples.spec.ts
+  s_fec7059b7a251c::t_2378c865b21da5 24-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5d97b298eefaddbdc4ebae43f22fdac405bb2cd2",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
