@@ -154,6 +154,52 @@ describe('commitSendLevel', () => {
         expect(mocks.executeAppAction.mock.calls.map(([action]) => action.type)).toEqual(['addSend', 'setSend']);
     });
 
+    it('writes nothing for a level the send already holds, and puts the engine back on it', async () => {
+        await commitSendLevel('track-1', 'bus-1', 0.2);
+
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.engineSetSend).toHaveBeenCalledWith('track-1', 'bus-1', 0.2, false);
+    });
+
+    it('writes nothing for silence to a bus the track does not send to, and drops the previewed send', async () => {
+        projectSends.current = [];
+
+        await commitSendLevel('track-1', 'bus-1', 0);
+
+        expect(mocks.executeAppAction).not.toHaveBeenCalled();
+        expect(mocks.engineRemoveSend).toHaveBeenCalledWith('track-1', 'bus-1');
+    });
+
+    it.each([
+        ['moves an existing send to silence', [{ busId: 'bus-1', level: 0.2, preFader: false }], 0, 'setSend'],
+        ['adds a first send at an audible level', [], 0.2, 'addSend'],
+    ])('still %s', async (_case, sends, level, type) => {
+        projectSends.current = sends;
+        mocks.executeAppAction.mockResolvedValue(undefined);
+
+        await commitSendLevel('track-1', 'bus-1', level);
+
+        expect(mocks.executeAppAction).toHaveBeenCalledOnce();
+        expect(mocks.executeAppAction.mock.lastCall![0]).toMatchObject({ type, payload: { level } });
+    });
+
+    it('judges a queued step against the level the step before it wrote', async () => {
+        mocks.executeAppAction.mockImplementationOnce(async () => {
+            await Promise.resolve();
+            projectSends.current = [{ busId: 'bus-1', level: 0.3, preFader: false }];
+        });
+        mocks.executeAppAction.mockResolvedValueOnce(undefined);
+
+        // The second step returns to the level the project held when both were taken.
+        await Promise.all([commitSendLevel('track-1', 'bus-1', 0.3), commitSendLevel('track-1', 'bus-1', 0.2)]);
+
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(2);
+        expect(mocks.executeAppAction.mock.lastCall![0]).toMatchObject({
+            type: 'setSend',
+            payload: { level: 0.2, expectedLevel: 0.3 },
+        });
+    });
+
     it('still applies a later step when an earlier one is refused', async () => {
         mocks.executeAppAction.mockRejectedValueOnce(new Error('conflict')).mockResolvedValueOnce(undefined);
 
