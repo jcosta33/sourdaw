@@ -1,0 +1,19 @@
+.agents/skills/review-stances/test-validity.md
+  s_31df7298dd434c::t_60c20957d0e701 132-136,141
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "790315a4e5d7bfd81e577f3ef9b61f53a32c380c",
+  "prompts": {},
+  "sessions": {
+    "s_31df7298dd434c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_31df7298dd434c",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
