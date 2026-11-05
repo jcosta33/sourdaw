@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/agentReference/blankRanges.ts
+  s_55244eb93b97d1::t_19c61aab451684 1-9
+src/modules/AiRuntime/useCases/agentReference/clipProtectionReading.ts
+  s_55244eb93b97d1::t_48582c5a8f00c8 6,115-117
+src/modules/AiRuntime/useCases/agentReference/readExplicitProtections.ts
+  s_55244eb93b97d1::t_df9265770651af 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eb727865b2744366178bf9973a6c61fb914af319",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
