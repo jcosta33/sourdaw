@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { resolveClipLoopPassGrid } from '#/utils/clipLoopOrigin';
+
 import { type MidiCC } from '../../../models/MidiNote';
 import { getGrooveProjection } from '../../grooveTemplates/getGrooveProjection';
 import { projectClipControllerEvents } from '../projectClipControllerEvents';
@@ -629,14 +631,24 @@ describe('projectClipControllerEvents', () => {
 
         it('wraps the region head onto the same phase the note window plays it at', () => {
             const straightProjection = getGrooveProjection({ templates: [], assignments: [] });
-            const wrappedNoteBeats = [0, 1].flatMap((pass) =>
+            // The note passes open on the anchor's seams (0, 4, 8); the first
+            // opens before the trimmed head, which cuts the note it places at 0.5.
+            const { firstPassStartBeat, passCount } = resolveClipLoopPassGrid({
+                startBeat: clip.startBeat,
+                endBeat: clip.endBeat,
+                loopOriginBeat: clip.loopOriginBeat,
+                loopEnabled: true,
+                loopLengthBeats: 4,
+                iterationCount: 2,
+            });
+            const wrappedNoteBeats = Array.from({ length: passCount }, (_, pass) => pass).flatMap((pass) =>
                 straightProjection
                     .projectClipMidiEvents({
                         events: [{ id: 'note-at-region-head', startBeat: 0.5, duration: 1, velocity: 100 }],
                         clipId: 'clip-1',
                         clipStartBeat: clip.startBeat,
                         clipEndBeat: clip.endBeat,
-                        iterationStartBeat: clip.startBeat + pass * 4,
+                        iterationStartBeat: firstPassStartBeat + pass * 4,
                         loopLengthBeats: 4,
                         midiOffsetBeats: clip.midiOffsetBeats ?? 0,
                         loopEnabled: true,

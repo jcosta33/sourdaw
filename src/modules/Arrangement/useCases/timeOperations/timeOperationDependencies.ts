@@ -47,6 +47,8 @@ type MidiSplitOperation = {
     discardBeforeBeat?: number;
     /** Media windows that stay on the source clip beside the boundary split (#5112). */
     retainOnSourceWindows?: readonly { start: number; end: number }[];
+    /** The source loops: the new clip copies its whole loop, and nothing is partitioned. */
+    copiesLoopMaterial?: true;
 };
 
 type MidiCopyOperation = {

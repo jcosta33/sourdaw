@@ -240,6 +240,42 @@ describe('handleRestoreClipSplitState — surviving left source', () => {
     );
 });
 
+describe('handleRestoreClipSplitState — derived loop length on the split left', () => {
+    /** A loop-enabled source over [0,16) with no stored loop length: it loops its own 16 beats. */
+    function unsizedLoopSource(type: 'midi' | 'audio', loopEnabled: boolean): ClipStateSnapshot {
+        return { ...makeClipSnapshot('c1'), type, endBeat: 16, loopEnabled, loopOriginBeat: 0 };
+    }
+
+    function splitAt6(source: ClipStateSnapshot, leftChange: Partial<ClipStateSnapshot>) {
+        return makeAction(
+            makeSnapshot({
+                leftClip: { ...source, endBeat: 6, ...leftChange },
+                rightClip: { ...makeClipSnapshot('c2'), type: source.type, startBeat: 6, endBeat: 16 },
+            }),
+            makeSnapshot({ leftClip: source, rightClip: null })
+        );
+    }
+
+    it('admits a looping MIDI left carrying the loop length the split derives from the whole source', () => {
+        const action = splitAt6(unsizedLoopSource('midi', true), { loopLength: 16 });
+        expect(handleRestoreClipSplitState.validateSessionActionArguments?.(action.payload)).toBe(true);
+    });
+
+    it.each([
+        ['a looping MIDI left whose loop length differs from the derived one', 'midi', true, { loopLength: 8 }],
+        ['a non-looping MIDI left that gains a loop length', 'midi', false, { loopLength: 16 }],
+        ['an audio left whose loop length changes', 'audio', true, { loopLength: 16 }],
+    ] satisfies [string, 'midi' | 'audio', boolean, Partial<ClipStateSnapshot>][])(
+        'refuses %s before writes',
+        (_case, type, loopEnabled, leftChange) => {
+            const action = splitAt6(unsizedLoopSource(type, loopEnabled), leftChange);
+            expect(handleRestoreClipSplitState.validateSessionActionArguments?.(action.payload)).toBe(false);
+            expect(handleRestoreClipSplitState.execute(action)).toEqual({ status: 'conflict' });
+            expect(mockedReplaceTrackState).not.toHaveBeenCalled();
+        }
+    );
+});
+
 describe('handleRestoreClipSplitState — satellites', () => {
     it.each(['clipSatellites', 'clipAutomationLanes'] as const)(
         'refuses asymmetric %s presence during session admission, preflight and execution',

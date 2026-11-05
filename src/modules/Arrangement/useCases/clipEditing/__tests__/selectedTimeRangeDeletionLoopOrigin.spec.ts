@@ -13,17 +13,20 @@ import {
 import { prepareTimelineMapTimeOperation, prepareTimelineMapStateRestore } from '#/modules/Transport/useCases';
 import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 
+import { loopPhaseControllers, loopPhaseNotes, scoreMidiClips } from '../../../__tests__/midiClipScore';
 import { setTimeOperationDependencies } from '../../timeOperations/timeOperationDependencies';
 import { executeSelectedTimeRangeDeletion } from '../executeSelectedTimeRangeDeletion';
 
 /**
- * #5198, the anchor's write law in the selected-range excise. The spanning
- * fragment re-bases its notes by −splitBeat under `midiOffsetBeats` 0 and
- * moves its head to the range end — a fresh coordinate basis, so the writer
- * re-stamps the anchor to the fragment's own start. The right-edge trim keeps
- * the clip's id, notes, and content offset — a whole-clip relocation — so the
- * anchor rides the placement delta. Carried through, the stale anchor silenced
- * every surviving note of an excised head (the #5198 review draw).
+ * #5198, the anchor's write law in the selected-range excise. A looping MIDI
+ * clip's spanning fragment keeps the source's basis: it holds every row of the
+ * source's loop, its content offset advances to the range end and it carries
+ * the source's anchor, so it plays exactly what the source played from the
+ * range end on. A MIDI clip that does not loop still re-bases its fragment's
+ * notes under `midiOffsetBeats` 0. The right-edge trim keeps the clip's id,
+ * notes, and content offset — a whole-clip relocation — so the anchor rides
+ * the placement delta. Carried through, the stale anchor silenced every
+ * surviving note of an excised head (the #5198 review draw).
  *
  * The audio twins follow the same per-basis law on the other side: an audio
  * fragment's `audioOffsetBeats` stays in source coordinates, advanced by the
@@ -36,7 +39,7 @@ import { executeSelectedTimeRangeDeletion } from '../executeSelectedTimeRangeDel
  * `timelineDelta * (stretch - 1)` source beats — the stretched pins below.
  *
  * Each case drives the real transaction (real MIDI split, real arrangement
- * write) and reads the survivor back through `projectMidiClipPlayback`.
+ * write) and reads what the survivors play through `projectMidiClipPlayback`.
  */
 
 // The MIDI restore dependency has no real export outside its own module; the
@@ -148,6 +151,27 @@ function audioTrack(clips: Clip[]): Track {
     };
 }
 
+/**
+ * The loop phrase on one looping MIDI clip, anchored at beat 0 unless the
+ * overrides say otherwise. An override of `undefined` drops the key, the way
+ * the CRDT normalizer stores an absent optional field.
+ */
+function seedLoopPhrase(clipOverrides: Partial<Clip>): void {
+    const clip: Clip = loopedClip({ loopOriginBeat: 0, ...clipOverrides });
+    for (const key of ['loopLength', 'loopOriginBeat'] as const) {
+        if (clip[key] === undefined) {
+            delete clip[key];
+        }
+    }
+    midiStore.set({
+        ...defaultMidiStoreState,
+        notesByClipId: { 'c-loop': loopPhaseNotes() },
+        ccByClipId: { 'c-loop': loopPhaseControllers() },
+        pitchBendByClipId: {},
+    });
+    trackStore.set({ ...defaultTrackState, tracks: [midiTrack([clip])] });
+}
+
 function seedLoopedClip(notes: Array<{ id: string; startBeat: number }>): void {
     midiStore.set({ ...defaultMidiStoreState, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
     trackStore.set({ ...defaultTrackState, tracks: [midiTrack([loopedClip()])] });
@@ -205,15 +229,56 @@ describe('selected-range excise keeps looped survivors sounding (#5198)', () => 
         midiStore.set({ ...defaultMidiStoreState, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
     });
 
-    it('the spanning fragment re-stamps the anchor to its head and keeps sounding its surviving notes', () => {
-        // Excise [4,8) over the looped clip [0,16): n-a/n-b/n-c (m 8.5, 10,
-        // 12.5) move to the right fragment re-based by −8, landing at 0.5, 2
-        // and 4.5.
-        seedLoopedClip([
-            { id: 'n-a', startBeat: 8.5 },
-            { id: 'n-b', startBeat: 10 },
-            { id: 'n-c', startBeat: 12.5 },
-        ]);
+    it.each([
+        { name: 'an off-grid spanning excise', clip: {}, range: { startBeat: 2, endBeat: 7 } },
+        {
+            name: 'a spanning excise through a start-trimmed clip anchored before its start',
+            clip: { startBeat: 3, endBeat: 19, midiOffsetBeats: 2, loopOriginBeat: 1 },
+            range: { startBeat: 5.5, endBeat: 9 },
+        },
+        {
+            name: 'a spanning excise through a clip the loop gesture never anchored',
+            clip: { loopOriginBeat: undefined },
+            range: { startBeat: 4, endBeat: 8 },
+        },
+    ])('$name keeps every beat the looping MIDI clip still plays', ({ clip, range }) => {
+        // The spanning fragment used to re-base its notes to 0 and restamp the
+        // anchor at its own head (#5495), so it restarted the loop at the
+        // range end: an excise ending at 7 on a loop-4 clip struck n-a where
+        // the source struck n-c.
+        seedLoopPhrase(clip);
+        const source = structuredClone(allClips()[0]);
+        if (!source) {
+            throw new Error('Expected the seeded clip');
+        }
+        const headEnd = Math.max(source.startBeat, range.startBeat);
+        const tailStart = Math.min(source.endBeat, range.endBeat);
+        const expected = [
+            ...scoreMidiClips([source], source.startBeat, headEnd),
+            ...scoreMidiClips([source], tailStart, source.endBeat),
+        ];
+
+        const result = executeSelectedTimeRangeDeletion({ ...range, trackIds: ['t-keys'] });
+        expect(result.status).toBe('applied');
+
+        const survivors = allClips();
+        expect([
+            ...scoreMidiClips(survivors, source.startBeat, headEnd),
+            ...scoreMidiClips(survivors, tailStart, source.endBeat),
+        ]).toEqual(expected);
+        expect(scoreMidiClips(survivors, headEnd, tailStart).flatMap((beat) => beat.sounding)).toEqual([]);
+    });
+
+    it('keeps re-basing the fragment of a MIDI clip that does not loop, without an anchor key', () => {
+        midiStore.set({
+            ...defaultMidiStoreState,
+            notesByClipId: { 'c-loop': [{ id: 'n-a', pitch: 60, startBeat: 8.5, duration: 0.5, velocity: 100 }] },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        const plain = loopedClip({ loopEnabled: false });
+        delete plain.loopLength;
+        trackStore.set({ ...defaultTrackState, tracks: [midiTrack([plain])] });
 
         const result = executeSelectedTimeRangeDeletion({ startBeat: 4, endBeat: 8, trackIds: ['t-keys'] });
         expect(result.status).toBe('applied');
@@ -222,16 +287,9 @@ describe('selected-range excise keeps looped survivors sounding (#5198)', () => 
         if (!fragment) {
             throw new Error('Expected the excise right fragment in the track store');
         }
-        expect(fragment.startBeat).toBe(8);
         expect(fragment.midiOffsetBeats).toBe(0);
-        // Re-stamped to the fragment's own head: advance zero, the window
-        // opening where the surviving material starts. The stale carry would
-        // derive advance 8, whose window [−8,−4) silences every survivor.
-        expect(fragment.loopOriginBeat).toBe(8);
-
-        const sounded = projectSoundingStartBeats(fragment);
-        expect(sounded).toEqual([8.5, 10, 12.5, 14]);
-        expect(sounded).toEqual(projectSoundingStartBeats({ ...fragment, loopOriginBeat: undefined }));
+        expect(Object.hasOwn(fragment, 'loopOriginBeat')).toBe(false);
+        expect(midiStore.value?.notesByClipId[fragment.id]?.map((note) => note.startBeat)).toEqual([0.5]);
     });
 
     it('the right-edge trim rides the anchor with its relocation and keeps sounding its surviving notes', () => {
@@ -361,30 +419,5 @@ describe('selected-range excise keeps looped survivors sounding (#5198)', () => 
         expect(trimmed.audioOffsetBeats).toBe(12);
         expect(trimmed.loopOriginBeat).toBe(-6);
         expect(regionOf(trimmed)).toEqual({ region: 0, entry: 0 });
-    });
-
-    it('an unanchored clip writes no anchor key on its fragment', () => {
-        // The entry-helper law: the key is written only when an anchor exists,
-        // so a legacy clip the loop field never stamped stays key-absent — the
-        // inverse plan compares clip snapshots structurally. The fixture is
-        // loop-enabled but carries no loopOriginBeat and setClipLoop never
-        // stamps one.
-        midiStore.set({ ...defaultMidiStoreState, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
-        trackStore.set({ ...defaultTrackState, tracks: [midiTrack([loopedClip()])] });
-        setNotesForClip('c-loop', [{ id: 'n-a', pitch: 60, startBeat: 8.5, duration: 0.5, velocity: 100 }]);
-        const seeded = trackStore.value?.tracks.flatMap((track) => track.clips)[0];
-        if (!seeded) {
-            throw new Error('Expected the seeded clip');
-        }
-        expect(Object.hasOwn(seeded, 'loopOriginBeat')).toBe(false);
-
-        const result = executeSelectedTimeRangeDeletion({ startBeat: 4, endBeat: 8, trackIds: ['t-keys'] });
-        expect(result.status).toBe('applied');
-
-        const fragment = allClips().find((clip) => clip.id.startsWith('clip-dtr-'));
-        if (!fragment) {
-            throw new Error('Expected the excise right fragment in the track store');
-        }
-        expect(Object.hasOwn(fragment, 'loopOriginBeat')).toBe(false);
     });
 });

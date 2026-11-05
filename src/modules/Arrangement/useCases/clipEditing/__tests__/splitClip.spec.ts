@@ -212,6 +212,7 @@ describe('splitClip', () => {
             sourceClipId: 'c1',
             newClipId: 'captured-right',
             splitBeat: 2,
+            copiesLoopMaterial: false,
             targetNoteIds: [],
         });
     });
@@ -322,6 +323,7 @@ describe('splitClip', () => {
             sourceClipId: 'c1',
             newClipId: 'new-clip-right',
             splitBeat: 3,
+            copiesLoopMaterial: false,
             targetNoteIds: [],
         });
     });

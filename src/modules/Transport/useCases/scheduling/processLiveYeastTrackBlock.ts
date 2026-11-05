@@ -1,7 +1,7 @@
 import { type MidiNote } from '#/modules/MIDI/stores';
 import { projectCommittedGroove } from '#/modules/MIDI/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
-import { isBeatAdmittedByAnchoredClipLoopWindow } from '#/utils/clipLoopOrigin';
+import { isBeatAdmittedByAnchoredClipLoopWindow, resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 
 import {
     beatToSamples,
@@ -186,9 +186,19 @@ export async function processLiveYeastTrackBlock({
                 // its full duration from the wrapped start, past the iteration
                 // end, with the owning window following the release, as the
                 // loop-work bounds spec pins.
-                const audibleStartBeat =
-                    iteration.iterationStartBeat + groovedNote.startBeat - iteration.midiOffsetBeats;
                 const loopLengthBeats = iteration.loopLengthBeats ?? 0;
+                // An iteration opens on the anchor's pass grid, where a row
+                // sounds at its offset-relative start plus the trim advance.
+                const loopAdvanceBeats =
+                    iteration.clipStartBeat === undefined
+                        ? 0
+                        : resolveClipLoopOriginAdvance({
+                              startBeat: iteration.clipStartBeat,
+                              loopOriginBeat: iteration.loopOriginBeat,
+                              loopEnabled: iteration.loopEnabled === true,
+                          });
+                const audibleStartBeat =
+                    iteration.iterationStartBeat + loopAdvanceBeats + groovedNote.startBeat - iteration.midiOffsetBeats;
                 let noteStartBeat = Math.max(audibleStartBeat, iteration.iterationStartBeat);
                 let noteEndBeat = audibleStartBeat + groovedNote.duration;
                 let headCutBeats = noteStartBeat - audibleStartBeat;
@@ -203,6 +213,16 @@ export async function processLiveYeastTrackBlock({
                     noteEndBeat = noteStartBeat + groovedNote.duration;
                     // A wrapped note rings its full duration from the wrapped start: nothing was cut.
                     headCutBeats = 0;
+                }
+                // A head off the grid opens the first pass before the clip
+                // does; the clip head cuts what that pass places ahead of it.
+                if (
+                    iteration.loopEnabled === true &&
+                    iteration.clipStartBeat !== undefined &&
+                    noteStartBeat < iteration.clipStartBeat
+                ) {
+                    headCutBeats += iteration.clipStartBeat - noteStartBeat;
+                    noteStartBeat = iteration.clipStartBeat;
                 }
                 if (noteEndBeat <= noteStartBeat) {
                     continue;

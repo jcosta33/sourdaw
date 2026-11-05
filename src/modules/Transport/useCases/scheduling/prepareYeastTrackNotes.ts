@@ -5,21 +5,19 @@ import {
     selectMidiNotesForRecordingPass,
 } from '#/modules/MIDI/stores';
 import { projectCommittedGroove, shouldPlayMidiEvent } from '#/modules/MIDI/useCases';
-import { isBeatAdmittedByAnchoredClipLoopWindow } from '#/utils/clipLoopOrigin';
+import { isBeatAdmittedByAnchoredClipLoopWindow, resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
 import { lowerBoundMidiNoteEnd, lowerBoundMidiNoteStart } from '../../services/midiNoteBounds';
 import {
-    getScheduledIterationRange,
     getSourceOccurrenceOffset,
     MAX_GROOVE_STAGE_DISPLACEMENT_BEATS,
-    type GetScheduledIterationRangeInput,
-    type ScheduledIterationRange,
 } from '../../services/midiSchedulerWindowGeometry';
 import { timeSignatureMapStore } from '../../stores/timeSignatureMapStore';
 
 import { getScheduledMidiNoteIndex, type ScheduledMidiNote } from './getScheduledMidiNoteIndex';
 import { processLiveYeastTrackBlock, type LiveYeastIteration, type LiveYeastNote } from './processLiveYeastTrackBlock';
+import { resolveRawClipYeastPasses } from './resolveRawClipYeastPasses';
 
 import type { trackStore } from '#/modules/Arrangement/stores';
 import type { MidiStoreState } from '#/modules/MIDI/stores';
@@ -133,16 +131,20 @@ function getYeastLoopPhaseIndex({
     const orderByNote = new Map<ScheduledMidiNote, number>();
     const sortedEntries: YeastLoopPhaseEntry[] = [];
     const sortedEnds: YeastLoopPhaseEntry[] = [];
+    // Iterations open on the anchor's pass grid: a row sits its
+    // offset-relative start plus the trim advance into its pass.
+    const loopAdvanceBeats = resolveClipLoopOriginAdvance({ startBeat: clipStartBeat, loopOriginBeat, loopEnabled });
     for (let index = 0; index < notes.length; index++) {
         const note = notes[index]!;
         orderByNote.set(note, index);
         const relativeStartBeat = note.startBeat - midiOffsetBeats;
+        const passRelativeStartBeat = relativeStartBeat + loopAdvanceBeats;
         // Membership mirrors the twin's wrap class on both sides of the head: a
         // start already before it re-anchors as-is, and a start up to one groove
         // stage after it can be displaced across by the clip groove — the twin
         // then re-anchors the displaced start to the iteration's late phase, so
         // the note must be a phase-index candidate for that window.
-        if (relativeStartBeat >= MAX_GROOVE_STAGE_DISPLACEMENT_BEATS) {
+        if (passRelativeStartBeat >= MAX_GROOVE_STAGE_DISPLACEMENT_BEATS) {
             continue;
         }
         // #5198 — the anchored loop window is the index's membership too: a row
@@ -160,11 +162,11 @@ function getYeastLoopPhaseIndex({
         ) {
             continue;
         }
-        const phaseBeat = positiveModulo(relativeStartBeat, loopLengthBeats);
+        const phaseBeat = positiveModulo(passRelativeStartBeat, loopLengthBeats);
         const entry = { endPhaseBeat: phaseBeat + note.duration, note, phaseBeat };
         sortedEntries.push(entry);
         sortedEnds.push(entry);
-        if (relativeStartBeat >= 0) {
+        if (passRelativeStartBeat >= 0) {
             // The groove-crossing class sounds un-wrapped only while the groove
             // leaves the start on the head's near side; when it pulls the start
             // across, ownership re-anchors it a full loop later and the release
@@ -218,13 +220,17 @@ function selectYeastNotesForSchedulerWindow({
     // them.
     const schedulesIterationBoundary = iterationStartBeat >= fromBeat && iterationStartBeat < toBeat;
     const leadingIntervalLookbehindBeats = schedulesIterationBoundary ? maxDurationBeats : 0;
+    // The iteration opens on the anchor's pass grid, where the content's
+    // offset-relative zero sounds the trim advance in.
+    const contentZeroBeat =
+        iterationStartBeat + resolveClipLoopOriginAdvance({ startBeat: clipStartBeat, loopOriginBeat, loopEnabled });
     const sourceStartBeat =
         fromBeat -
-        iterationStartBeat +
+        contentZeroBeat +
         midiOffsetBeats -
         MAX_GROOVE_STAGE_DISPLACEMENT_BEATS -
         leadingIntervalLookbehindBeats;
-    const sourceEndBeat = toBeat - iterationStartBeat + midiOffsetBeats + MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
+    const sourceEndBeat = toBeat - contentZeroBeat + midiOffsetBeats + MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
     const startIndex = lowerBoundMidiNoteStart(sortedNotes, sourceStartBeat);
     const endIndex = lowerBoundMidiNoteStart(sortedNotes, sourceEndBeat);
     const noteEndStartIndex = lowerBoundMidiNoteEnd(sortedNoteEnds, sourceStartBeat);
@@ -307,60 +313,6 @@ function selectYeastNotesForSchedulerWindow({
             })
         )
         .sort((left, right) => orderByNote.get(left)! - orderByNote.get(right)!);
-}
-
-function getYeastCandidateIterationRange({
-    clipStartBeat,
-    fromBeat,
-    iterationCount,
-    loopEnabled,
-    loopLengthBeats,
-    midiOffsetBeats,
-    toBeat,
-    notes,
-}: GetScheduledIterationRangeInput & {
-    midiOffsetBeats: number;
-    notes: readonly ScheduledMidiNote[];
-}): ScheduledIterationRange {
-    const activeRange = getScheduledIterationRange({
-        clipStartBeat,
-        fromBeat,
-        iterationCount,
-        loopEnabled,
-        loopLengthBeats,
-        toBeat,
-    });
-    if (!loopEnabled || notes.length === 0) {
-        return activeRange;
-    }
-    const { maxDurationBeats, maxEndpointBeat } = getScheduledMidiNoteIndex(notes);
-    // #4655 — endpoints are content beats; their audible position inside an
-    // iteration is the offset-relative start, wrapped into the iteration when
-    // it slips before the head. A looped iteration therefore owns note-ons up
-    // to `max(loopLength, widest positive reach)` past its start, and a
-    // wrapped note rings its release that far plus its duration, so the range
-    // widens backwards by both and forwards only while the iteration start
-    // still precedes the window.
-    const latestOwnedOffsetBeats = Math.max(loopLengthBeats, maxEndpointBeat - midiOffsetBeats);
-    const firstEndpointIndex = Math.max(
-        0,
-        Math.ceil(
-            (fromBeat -
-                MAX_GROOVE_STAGE_DISPLACEMENT_BEATS -
-                clipStartBeat -
-                latestOwnedOffsetBeats -
-                maxDurationBeats) /
-                loopLengthBeats
-        )
-    );
-    const endpointEndIndex = Math.min(
-        iterationCount,
-        Math.floor((toBeat + MAX_GROOVE_STAGE_DISPLACEMENT_BEATS - clipStartBeat) / loopLengthBeats) + 1
-    );
-    return {
-        startIndex: Math.min(activeRange.startIndex, firstEndpointIndex),
-        endIndex: Math.max(activeRange.endIndex, endpointEndIndex),
-    };
 }
 
 function probableYeastNotes(
@@ -472,38 +424,8 @@ function prepareRawClipYeastIterations(
         clip.midiTakeRecordingPassIndex
     );
 
-    const clipVisualLength = clip.endBeat - clip.startBeat;
-    const loopProjection = projectClipLoopExpansion({
-        clipDurationBeats: clipVisualLength,
-        configuredLoopLengthBeats: clip.loopLength,
-        loopEnabled: clip.loopEnabled ?? false,
-    });
-    const loopLength = loopProjection.loopLengthBeats;
-    const sourceOccurrenceOffset = getSourceOccurrenceOffset({
-        sourceStartBeat: clip.sourceStartBeat,
-        segmentStartBeat: clip.startBeat,
-        loopLength,
-        loopEnabled: clip.loopEnabled ?? false,
-    });
-    const iterationCount = loopProjection.iterationCount;
-    const activeIterationRange = getScheduledIterationRange({
-        clipStartBeat: clip.startBeat,
-        fromBeat,
-        iterationCount,
-        loopEnabled: clip.loopEnabled ?? false,
-        loopLengthBeats: loopLength,
-        toBeat,
-    });
-    const candidateIterationRange = getYeastCandidateIterationRange({
-        clipStartBeat: clip.startBeat,
-        fromBeat,
-        iterationCount,
-        loopEnabled: clip.loopEnabled ?? false,
-        loopLengthBeats: loopLength,
-        midiOffsetBeats: clip.midiOffsetBeats ?? 0,
-        notes: sourceNotes,
-        toBeat,
-    });
+    const { loopLength, firstPassStartBeat, sourceOccurrenceOffset, activeIterationRange, candidateIterationRange } =
+        resolveRawClipYeastPasses({ clip, sourceNotes, fromBeat, toBeat });
     for (
         let iteration = candidateIterationRange.startIndex;
         iteration < candidateIterationRange.endIndex;
@@ -513,7 +435,7 @@ function prepareRawClipYeastIterations(
             return null;
         }
         const absoluteOccurrenceIndex = sourceOccurrenceOffset + iteration;
-        const iterationStartBeat = clip.startBeat + iteration * loopLength;
+        const iterationStartBeat = firstPassStartBeat + iteration * loopLength;
         const iterationEndBeat = Math.min(iterationStartBeat + loopLength, clip.endBeat);
         const routeId = `live-yeast:${track.id}:${clip.id}:${absoluteOccurrenceIndex}`;
         const candidateNotes = selectYeastNotesForSchedulerWindow({

@@ -6,22 +6,23 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { projectClipMidiEvents } from '#/modules/MIDI/useCases';
 import { readSecondsAtBeat, readTempoAtBeat, tempoMapStore } from '#/modules/Transport/stores';
 import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
-import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
+import { resolveClipLoopOriginAdvance, resolveLoopAnchoredStartBeat } from '#/utils/clipLoopOrigin';
 
+import { loopPhaseControllers, loopPhaseNotes, scoreMidiClips } from '../../../__tests__/midiClipScore';
 import { createTrack } from '../../../models/Track';
 
 /**
  * #4988 — the split write law: the right fragment's loop anchor follows its
- * basis. A MIDI fragment re-bases its notes (`midiOffsetBeats` 0, notes
- * shifted down by the split), so the source's timeline anchor derives a
- * spurious advance there — the loop window opens behind the fragment's head,
- * a split past the first loop span projects nothing and one inside it drops
- * the tail of every pass — and the fragment restamps at its own start. An
- * audio fragment's media basis is preserved (its `audioOffsetBeats` advances
- * with the head by the same timeline delta the carried anchor's advance grows
- * by), so it keeps the carried anchor. A source with no anchor leaves the key
- * absent, never `undefined` (the CRDT normalizer rebuilds optional fields as
- * present-or-absent).
+ * basis. A looping MIDI fragment keeps the source's basis: it holds every row
+ * of the source's loop unchanged and carries the source's anchor with its
+ * content offset advanced by the split, so it plays the source's passes from
+ * the split on. A MIDI fragment of a clip that does not loop re-bases its notes
+ * (`midiOffsetBeats` 0, notes shifted down by the split) and restamps at its
+ * own start. An audio fragment's media basis is preserved (its
+ * `audioOffsetBeats` advances with the head by the same timeline delta the
+ * carried anchor's advance grows by), so it keeps the carried anchor. A source
+ * with no anchor leaves the key absent, never `undefined` (the CRDT normalizer
+ * rebuilds optional fields as present-or-absent).
  */
 
 const LOOP_LENGTH = 4;
@@ -206,7 +207,14 @@ describe('splitClip loop anchoring', () => {
         ]);
     });
 
-    it('restamps the MIDI fragment anchor at its own start so the fragment keeps sounding', () => {
+    // These two cases used to pin the restamp: the right fragment held only the
+    // notes after the split, re-based to offset 0, and looped them from its own
+    // head. That restarts the loop at the cut, so a split off the loop grid
+    // changed what every later pass plays (beat 5 of the loop-4 clip below
+    // played n-next where it had played n-head). A looping fragment now holds
+    // the whole loop in the source's basis and carries the advanced offset and
+    // the anchor, so its passes are the source's passes.
+    it('carries the anchor and the whole loop onto a fragment split on the loop grid', () => {
         seedTrack([loopedMidiClip()]);
         midiStore.set({
             probabilitySeed: 1,
@@ -225,22 +233,17 @@ describe('splitClip loop anchoring', () => {
 
         const right = readClip(rightId!);
         expect(right.startBeat).toBe(8);
-        expect(right.midiOffsetBeats).toBe(0);
-        // The fragment re-based its notes, so the source anchor at 0 no longer
-        // means anything in its coordinates: it restamps at its own start.
-        expect(right.loopOriginBeat).toBe(8);
-        // The left fragment keeps the original basis and start, so it keeps
-        // the source anchor.
+        expect(right.midiOffsetBeats).toBe(8);
+        expect(right.loopOriginBeat).toBe(0);
         expect(readClip('c-loop').loopOriginBeat).toBe(0);
 
-        // Projecting the fragment as stored: the rebased note sounds in every
-        // pass. Under the carried anchor (advance 8, window [-8, -4)) this
-        // projection returns nothing at all.
-        expect(projectFragmentPass(rightId!, 8)).toEqual([{ id: 'n-late', startBeat: 9 }]);
-        expect(projectFragmentPass(rightId!, 12)).toEqual([{ id: 'n-late', startBeat: 13 }]);
+        // n-late sits past the loop region, so the source never plays it; the
+        // fragment plays the loop's n-early on every pass, as the source did.
+        expect(projectFragmentPass(rightId!, 8)).toEqual([{ id: expect.any(String), startBeat: 9 }]);
+        expect(projectFragmentPass(rightId!, 12)).toEqual([{ id: expect.any(String), startBeat: 13 }]);
     });
 
-    it('keeps every pass whole when the split falls inside the first loop span', () => {
+    it('keeps every pass on the source phase when the split falls inside the first loop span', () => {
         seedTrack([loopedMidiClip()]);
         midiStore.set({
             probabilitySeed: 1,
@@ -258,23 +261,29 @@ describe('splitClip loop anchoring', () => {
         const rightId = splitClip('c-loop', 2);
         expect(rightId).not.toBeNull();
 
-        // The fragment [2, 16) holds the rebased tail notes (media 1 and 3)
-        // and restamps at 2: full passes sound. The carried anchor would
-        // advance 2 and open the window at [-2, 2), dropping the media-3
-        // note — the tail of every pass — from all of them.
+        // The source plays n-head at 1, 5, 9, 13 and n-tail at 3, 7, 11, 15;
+        // n-next is past the loop region and never sounds.
         const right = readClip(rightId!);
-        expect(right.loopOriginBeat).toBe(2);
-        expect(projectFragmentPass(rightId!, 2)).toEqual([
-            { id: 'n-tail', startBeat: 3 },
-            { id: 'n-next', startBeat: 5 },
+        expect(right.loopOriginBeat).toBe(0);
+        const pitchesOf = (iterationStartBeat: number) =>
+            projectFragmentPass(rightId!, iterationStartBeat).map((event) => ({
+                pitch: midiStore.value?.notesByClipId[rightId!]?.find((note) => note.id === event.id)?.pitch,
+                startBeat: event.startBeat,
+            }));
+        // The fragment's passes open on the source's seams 0, 4, 8 and 12; the
+        // first opens before the fragment head at 2, which cuts n-head there.
+        expect(pitchesOf(0)).toEqual([{ pitch: 62, startBeat: 3 }]);
+        expect(pitchesOf(4)).toEqual([
+            { pitch: 60, startBeat: 5 },
+            { pitch: 62, startBeat: 7 },
         ]);
-        expect(projectFragmentPass(rightId!, 6)).toEqual([
-            { id: 'n-tail', startBeat: 7 },
-            { id: 'n-next', startBeat: 9 },
+        expect(pitchesOf(8)).toEqual([
+            { pitch: 60, startBeat: 9 },
+            { pitch: 62, startBeat: 11 },
         ]);
-        expect(projectFragmentPass(rightId!, 10)).toEqual([
-            { id: 'n-tail', startBeat: 11 },
-            { id: 'n-next', startBeat: 13 },
+        expect(pitchesOf(12)).toEqual([
+            { pitch: 60, startBeat: 13 },
+            { pitch: 62, startBeat: 15 },
         ]);
     });
 
@@ -362,5 +371,99 @@ describe('splitClip loop anchoring', () => {
         const right = readClip(rightId!);
         expect(Object.hasOwn(right, 'loopOriginBeat')).toBe(false);
         expect(right.loopOriginBeat).toBeUndefined();
+    });
+});
+
+describe('splitting a looping MIDI clip keeps every beat it plays', () => {
+    beforeEach(() => {
+        resetMidiStore();
+    });
+
+    afterEach(() => {
+        resetMidiStore();
+    });
+
+    it.each([
+        { name: 'a loop-4 clip split inside its first pass', clip: {}, splitBeat: 2 },
+        { name: 'a loop-4 clip split one beat into its second pass', clip: {}, splitBeat: 5 },
+        { name: 'a loop-4 clip split one beat into its third pass', clip: {}, splitBeat: 9 },
+        {
+            name: 'a start-trimmed clip',
+            clip: { startBeat: 1, endBeat: 17, midiOffsetBeats: 1, loopOriginBeat: 0 },
+            splitBeat: 6,
+        },
+        {
+            name: 'a clip anchored before its start',
+            clip: { startBeat: 3, endBeat: 19, midiOffsetBeats: 2, loopOriginBeat: 1 },
+            splitBeat: 8.5,
+        },
+        { name: 'a clip whose loop is its whole length', clip: { endBeat: 12, loopLength: undefined }, splitBeat: 5 },
+        { name: 'a looping clip with no anchor', clip: { loopOriginBeat: undefined }, splitBeat: 6 },
+    ])("plays the source's notes and controllers on every beat after splitting $name", ({ clip, splitBeat }) => {
+        const source = loopedMidiClip(clip);
+        if (source.loopLength === undefined) {
+            delete source.loopLength;
+        }
+        if (source.loopOriginBeat === undefined) {
+            delete source.loopOriginBeat;
+        }
+        seedTrack([source]);
+        midiStore.set({
+            probabilitySeed: 1,
+            notesByClipId: { 'c-loop': loopPhaseNotes() },
+            ccByClipId: { 'c-loop': loopPhaseControllers() },
+            pitchBendByClipId: {},
+        });
+        const before = scoreMidiClips([source], source.startBeat, source.endBeat);
+        // The fixture is not vacuous: the source strikes notes on several passes.
+        expect(before.filter((beat) => beat.struck.length > 0).length).toBeGreaterThan(4);
+
+        const rightId = splitClip('c-loop', splitBeat);
+        expect(rightId).not.toBeNull();
+
+        const left = readClip('c-loop');
+        const right = readClip(rightId!);
+        expect(scoreMidiClips([left, right], source.startBeat, source.endBeat)).toEqual(before);
+        // The probability roll counts passes from the loop anchor; the fragment
+        // counts from the source's, so its first pass is the source pass the
+        // split falls in rather than pass zero.
+        const anchoredStartOf = (candidate: Clip) =>
+            resolveLoopAnchoredStartBeat({
+                startBeat: candidate.startBeat,
+                loopOriginBeat: candidate.loopOriginBeat,
+                loopEnabled: candidate.loopEnabled ?? false,
+            });
+        expect(anchoredStartOf(right)).toBe(anchoredStartOf(source));
+    });
+
+    it('keeps re-basing the right fragment of a clip that does not loop', () => {
+        const source = unloopedMidiClip();
+        seedTrack([source]);
+        // No note crosses the split: a clip that does not loop splits a note
+        // that does into two notes, the right one struck at the split.
+        midiStore.set({
+            probabilitySeed: 1,
+            notesByClipId: {
+                'c-plain': loopPhaseNotes().filter((note) => note.id !== 'n-b'),
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        const before = scoreMidiClips([source], 0, 16);
+
+        const rightId = splitClip('c-plain', 2);
+        expect(rightId).not.toBeNull();
+
+        const right = readClip(rightId!);
+        expect(right.midiOffsetBeats).toBe(0);
+        expect(midiStore.value?.notesByClipId[rightId!]?.map((note) => [note.pitch, note.startBeat])).toEqual([
+            [66, 0.5],
+            [64, 1],
+            [70, 3],
+        ]);
+        expect(midiStore.value?.notesByClipId['c-plain']?.map((note) => [note.pitch, note.startBeat])).toEqual([
+            [60, 0.5],
+        ]);
+        expect(scoreMidiClips([readClip('c-plain'), right], 0, 16)).toEqual(before);
     });
 });

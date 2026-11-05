@@ -4,6 +4,7 @@ import { type Clip, type Track, defaultTrackState, trackStore } from '#/modules/
 import { trimClipStart } from '#/modules/Arrangement/useCases';
 import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
 import { getNotesForClip, projectClipMidiEvents } from '#/modules/MIDI/useCases';
+import { resolveClipLoopPassGrid } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
 import { selectMidiNotesForLoopWindow } from '../selectMidiNotesForLoopWindow';
@@ -128,14 +129,26 @@ describe('trimClipStart keeps a wrapping trim audible on the scheduler stream', 
 
         const trimmed = readClip('c-keys');
         const notes = getNotesForClip('c-keys');
-        const loopLengthBeats = projectClipLoopExpansion({
+        const expansion = projectClipLoopExpansion({
             clipDurationBeats: trimmed.endBeat - trimmed.startBeat,
             configuredLoopLengthBeats: trimmed.loopLength,
             loopEnabled: trimmed.loopEnabled ?? false,
-        }).loopLengthBeats;
+        });
+        const { loopLengthBeats } = expansion;
+        // The pass the note sounds in opens on the anchor's seam at 2, half a
+        // loop before the trimmed head, as the scheduler iterates it.
+        const { firstPassStartBeat } = resolveClipLoopPassGrid({
+            startBeat: trimmed.startBeat,
+            endBeat: trimmed.endBeat,
+            loopOriginBeat: trimmed.loopOriginBeat,
+            loopEnabled: trimmed.loopEnabled ?? false,
+            loopLengthBeats,
+            iterationCount: expansion.iterationCount,
+        });
+        expect(firstPassStartBeat).toBe(2);
         const selected = selectMidiNotesForLoopWindow({
             notes,
-            iterationStartBeat: trimmed.startBeat,
+            iterationStartBeat: firstPassStartBeat,
             loopLengthBeats,
             midiOffsetBeats: trimmed.midiOffsetBeats ?? 0,
             fromBeat: 7.5,
@@ -155,10 +168,11 @@ describe('trimClipStart keeps a wrapping trim audible on the scheduler stream', 
             clipId: trimmed.id,
             clipStartBeat: trimmed.startBeat,
             clipEndBeat: trimmed.endBeat,
-            iterationStartBeat: trimmed.startBeat,
+            iterationStartBeat: firstPassStartBeat,
             loopLengthBeats,
             midiOffsetBeats: trimmed.midiOffsetBeats ?? 0,
             loopEnabled: trimmed.loopEnabled ?? false,
+            loopOriginBeat: trimmed.loopOriginBeat,
         });
         expect(projected.map((event) => event.startBeat)).toEqual([8]);
     });
