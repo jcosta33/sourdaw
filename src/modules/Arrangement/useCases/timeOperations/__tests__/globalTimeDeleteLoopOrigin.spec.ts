@@ -275,7 +275,9 @@ describe('global time delete keeps a looped fragment sounding (#5198)', () => {
         // moves with the material it heads.
         const tail = survivors.find((clip) => clip.id !== 'c-loop');
         if (tail) {
-            expect(resolveLoopAnchoredStartBeat(tail)).toBe(resolveLoopAnchoredStartBeat(source) - span);
+            const anchoredStartBeat = ({ startBeat, loopOriginBeat, loopEnabled }: Clip) =>
+                resolveLoopAnchoredStartBeat({ startBeat, loopOriginBeat, loopEnabled: loopEnabled ?? false });
+            expect(anchoredStartBeat(tail)).toBe(anchoredStartBeat(source) - span);
         }
     });
 
