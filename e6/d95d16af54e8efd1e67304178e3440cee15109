@@ -1,0 +1,55 @@
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydownDeleteSelection.integration.spec.ts
+  s_fec7059b7a251c::t_764b41afc032f3 119
+src/modules/CommandInterface/presentations/views/__tests__/keyboardShortcutsContract.spec.tsx
+  s_fec7059b7a251c::t_657961ddb2391c 29
+  s_fec7059b7a251c::t_c2459de5afdbe1 37-43
+  s_fec7059b7a251c::t_04470d202f3a61 235
+  s_fec7059b7a251c::t_673c448cf40b06 176
+  s_fec7059b7a251c::t_e13403f61a3c1c 386
+  s_fec7059b7a251c::t_e8c2166a4dcbb7 163
+src/modules/CommandInterface/presentations/views/keyboardShortcutsContract.ts
+  s_fec7059b7a251c::t_3e01a77dcf7158 15
+  s_fec7059b7a251c::t_b4892214069e88 11
+  s_55244eb93b97d1::t_cb7a628ad513da 8-10,14,16-20,145,149-151,159
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydownToolKeys.spec.ts
+  s_fec7059b7a251c::t_3c48eb882967fc 80
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydown.spec.ts
+  s_fec7059b7a251c::t_741a17c0f26ce9 1526-1528,1530
+  s_fec7059b7a251c::t_0ed3c962c285c2 545
+  s_fec7059b7a251c::t_06288aa526fb63 1449-1525,1529,1531-1534
+  s_fec7059b7a251c::t_e6e54a86cefffc 204
+  s_fec7059b7a251c::t_819d359863378d 282
+  s_fec7059b7a251c::t_9aa49caa610548 685
+  s_fec7059b7a251c::t_54e64799cde793 240
+  s_fec7059b7a251c::t_a802450e17c2e9 681
+src/modules/CommandInterface/useCases/keyboardShortcutActions/__tests__/handleKeyboardShortcut.spec.ts
+  s_fec7059b7a251c::t_22881a8d3e37d5 128
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts
+  s_fec7059b7a251c::t_bbe3b6da92893e 57-85,142-147,154,625,630,654-657,677-679
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx
+  s_fec7059b7a251c::t_056f0e42bfadc9 577-584
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e6d95d16af54e8efd1e67304178e3440cee15109",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
