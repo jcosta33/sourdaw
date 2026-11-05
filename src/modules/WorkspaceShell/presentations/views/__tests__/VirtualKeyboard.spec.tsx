@@ -328,7 +328,7 @@ describe('VirtualKeyboard', () => {
             fireEvent.keyDown(panel(), { code: 'KeyS' });
 
             await waitFor(() => {
-                expect(screen.getByLabelText('MIDI 62')).toHaveAttribute('aria-pressed', 'false');
+                expect(screen.getByLabelText('D4 (MIDI 62)')).toHaveAttribute('aria-pressed', 'false');
             });
             expect(offMock).toHaveBeenCalledWith(0, 62);
             expect(screen.getAllByRole('status')).toHaveLength(1);
@@ -451,7 +451,7 @@ describe('VirtualKeyboard', () => {
         it('glides to the neighbouring key when the drag started on a white key (captured pointer)', () => {
             render(<VirtualKeyboard />);
             const c4 = screen.getByLabelText('C4 (MIDI 60)');
-            const d4 = screen.getByLabelText('MIDI 62');
+            const d4 = screen.getByLabelText('D4 (MIDI 62)');
 
             fireEvent.pointerDown(c4, { pointerId: 1 });
             expect(onMock).toHaveBeenCalledWith(0, 60, 100);
@@ -486,7 +486,7 @@ describe('VirtualKeyboard', () => {
         it('ignores a captured move with no button held', () => {
             render(<VirtualKeyboard />);
             const c4 = screen.getByLabelText('C4 (MIDI 60)');
-            const d4 = screen.getByLabelText('MIDI 62');
+            const d4 = screen.getByLabelText('D4 (MIDI 62)');
 
             fireEvent.pointerDown(c4, { pointerId: 1 });
             onMock.mockClear();
@@ -612,7 +612,7 @@ describe('VirtualKeyboard', () => {
         it('releases the previous note and fires the new one when gliding to a different white key', () => {
             render(<VirtualKeyboard />);
             const c4 = screen.getByLabelText('C4 (MIDI 60)');
-            const d4 = screen.getByLabelText('MIDI 62');
+            const d4 = screen.getByLabelText('D4 (MIDI 62)');
             fireEvent.pointerDown(c4, { pointerId: 1 });
             onMock.mockClear();
             offMock.mockClear();
@@ -625,7 +625,7 @@ describe('VirtualKeyboard', () => {
         it('does not glide when no mouse button is held (buttons !== 1)', () => {
             render(<VirtualKeyboard />);
             const c4 = screen.getByLabelText('C4 (MIDI 60)');
-            const d4 = screen.getByLabelText('MIDI 62');
+            const d4 = screen.getByLabelText('D4 (MIDI 62)');
             fireEvent.pointerDown(c4, { pointerId: 1 });
             onMock.mockClear();
             offMock.mockClear();
@@ -638,7 +638,7 @@ describe('VirtualKeyboard', () => {
         it('switches the held mouse note when pointerDown fires on a different key', () => {
             render(<VirtualKeyboard />);
             const c4 = screen.getByLabelText('C4 (MIDI 60)');
-            const d4 = screen.getByLabelText('MIDI 62');
+            const d4 = screen.getByLabelText('D4 (MIDI 62)');
             fireEvent.pointerDown(c4, { pointerId: 1 });
             offMock.mockClear();
             // Pressing another key while the first is still held releases the first.
@@ -647,10 +647,17 @@ describe('VirtualKeyboard', () => {
             expect(onMock).toHaveBeenLastCalledWith(0, 62, 100);
         });
 
+        it('names every key with its pitch and octave, not only C keys', () => {
+            render(<VirtualKeyboard />);
+            expect(screen.getByRole('button', { name: 'C4 (MIDI 60)' })).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'D4 (MIDI 62)' })).toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'C#4 (MIDI 61)' })).toBeInTheDocument();
+        });
+
         it('fires noteOn on black-key pointerDown and stops propagation', () => {
             render(<VirtualKeyboard />);
             // C#4 = MIDI 61
-            const cs4 = screen.getByLabelText('MIDI 61');
+            const cs4 = screen.getByLabelText('C#4 (MIDI 61)');
             fireEvent.pointerDown(cs4, { pointerId: 1 });
             expect(onMock).toHaveBeenCalledWith(0, 61, 100);
             fireEvent.pointerUp(cs4, { pointerId: 1 });
@@ -660,7 +667,7 @@ describe('VirtualKeyboard', () => {
         it('releases the prior white-key note when pressing a black key', () => {
             render(<VirtualKeyboard />);
             const c4 = screen.getByLabelText('C4 (MIDI 60)');
-            const cs4 = screen.getByLabelText('MIDI 61');
+            const cs4 = screen.getByLabelText('C#4 (MIDI 61)');
             fireEvent.pointerDown(c4, { pointerId: 1 });
             offMock.mockClear();
             // Pressing C#4 while C4 is held releases C4 first.
@@ -672,7 +679,7 @@ describe('VirtualKeyboard', () => {
         it('glides from a white key to a black key while dragging', () => {
             render(<VirtualKeyboard />);
             const c4 = screen.getByLabelText('C4 (MIDI 60)');
-            const cs4 = screen.getByLabelText('MIDI 61');
+            const cs4 = screen.getByLabelText('C#4 (MIDI 61)');
             fireEvent.pointerDown(c4, { pointerId: 1 });
             offMock.mockClear();
             onMock.mockClear();
@@ -695,7 +702,7 @@ describe('VirtualKeyboard', () => {
         it('does not double-release when pointerUp fires on a different key than the one held', () => {
             render(<VirtualKeyboard />);
             const c4 = screen.getByLabelText('C4 (MIDI 60)');
-            const d4 = screen.getByLabelText('MIDI 62');
+            const d4 = screen.getByLabelText('D4 (MIDI 62)');
             fireEvent.pointerDown(c4, { pointerId: 1 });
             offMock.mockClear();
             // The per-key handler is a no-op for D4 (mouseNote is C4), but the global
