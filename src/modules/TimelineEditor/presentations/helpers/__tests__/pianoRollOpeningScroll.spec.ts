@@ -4,7 +4,7 @@ import { getVisiblePitches } from '../pianoRollConstants';
 import { getPianoRollOpeningScroll } from '../pianoRollOpeningScroll';
 
 // Geometry restated from the roll's law: ruler 22px, then 16px per row, row 0
-// = pitch 83 (B5), 60 rows, so content is 22 + 60 * 16 = 982px tall.
+// = pitch 127 (G9), 128 rows, so content is 22 + 128 * 16 = 2070px tall.
 const chromatic = getVisiblePitches('chromatic', 0, false);
 const note = (pitch: number, startBeat = 0): { pitch: number; startBeat: number } => ({ pitch, startBeat });
 
@@ -23,13 +23,13 @@ const open = (
 
 describe('getPianoRollOpeningScroll vertical', () => {
     it.each([
-        // C3 (48) is row 35, E3 (52) is row 31: span 518..598, centre 558, minus (300 + 22) / 2.
-        ['notes C3..E3 are centred below the ruler', [note(48), note(52)], 300, 558 - 161],
-        // Span 80px does not fit the 78px area under the ruler: highest note (top 518) sits under the ruler.
-        ['a span taller than the viewport anchors the highest note', [note(48), note(52)], 100, 518 - 22],
-        ['an empty clip is centred on middle C (row 23, centre 398)', [], 300, 398 - 161],
-        ['the top of the range clamps to 0', [note(83)], 300, 0],
-        ['the bottom of the range clamps to content height minus viewport', [note(24)], 300, 982 - 300],
+        // C3 (48) is row 79, E3 (52) is row 75: span 1222..1302, centre 1262, minus (300 + 22) / 2.
+        ['notes C3..E3 are centred below the ruler', [note(48), note(52)], 300, 1262 - 161],
+        // Span 80px does not fit the 78px area under the ruler: highest note (top 1222) sits under the ruler.
+        ['a span taller than the viewport anchors the highest note', [note(48), note(52)], 100, 1222 - 22],
+        ['an empty clip is centred on middle C (row 67, centre 1102)', [], 300, 1102 - 161],
+        ['the top of the range clamps to 0', [note(127)], 300, 0],
+        ['the bottom of the range clamps to content height minus viewport', [note(0)], 300, 2070 - 300],
     ])('%s', (_name, notes, viewportHeight, expected) => {
         expect(open({ notes, viewportHeight })?.scrollTop).toBe(expected);
     });
