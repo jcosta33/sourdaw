@@ -78,27 +78,20 @@ function isUnmodifiedActivationKey(event: KeyboardEvent): boolean {
     );
 }
 
-function isPointerFocusedButton(event: KeyboardEvent, pointerFocusedButton: Element | null): boolean {
-    const target = event.target;
-    return (
-        target instanceof HTMLButtonElement &&
-        target.ownerDocument.activeElement === target &&
-        target === pointerFocusedButton
-    );
+// Only a focused button activates natively; a key event dispatched at any
+// other button is not an activation and still reaches the shortcuts.
+function isFocusedButton(target: EventTarget | null): target is HTMLButtonElement {
+    return target instanceof HTMLButtonElement && target.ownerDocument.activeElement === target;
 }
 
 function preservesNativeButtonActivation(event: KeyboardEvent, pointerFocusedButton: Element | null): boolean {
-    return (
-        isUnmodifiedActivationKey(event) &&
-        event.target instanceof HTMLButtonElement &&
-        !isPointerFocusedButton(event, pointerFocusedButton)
-    );
+    return isUnmodifiedActivationKey(event) && isFocusedButton(event.target) && event.target !== pointerFocusedButton;
 }
 
 // Stop returns false so Escape and Enter keep their default elsewhere, which
 // would let Enter also click a mouse-focused button after stopping transport.
 function claimsButtonActivation(event: KeyboardEvent, pointerFocusedButton: Element | null): boolean {
-    return isUnmodifiedActivationKey(event) && isPointerFocusedButton(event, pointerFocusedButton);
+    return isUnmodifiedActivationKey(event) && isFocusedButton(event.target) && event.target === pointerFocusedButton;
 }
 
 function closestButton(target: EventTarget | null): HTMLButtonElement | null {
