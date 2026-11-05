@@ -39,6 +39,16 @@ const nearestRow = (visiblePitches: readonly number[], pitch: number): number =>
     return best;
 };
 
+type SpanInput = { spanTop: number; spanBottom: number; viewportHeight: number; areaHeight: number };
+
+/** Centres the span below the ruler; a span taller than that area anchors its top just under the ruler. */
+const wantedScrollTop = ({ spanTop, spanBottom, viewportHeight, areaHeight }: SpanInput): number => {
+    if (spanBottom - spanTop > areaHeight) {
+        return spanTop - RULER_HEIGHT;
+    }
+    return (spanTop + spanBottom) / 2 - (viewportHeight + RULER_HEIGHT) / 2;
+};
+
 /**
  * Where the piano roll should scroll when a clip is opened so its notes are in
  * view, or `null` when the viewport has no usable size yet.
@@ -62,10 +72,7 @@ export const getPianoRollOpeningScroll = (input: OpeningScrollInput): OpeningScr
     const spanTop = getPianoRollRowTop(highestRow);
     const spanBottom = getPianoRollRowTop(lowestRow) + ROW_HEIGHT;
     const areaHeight = viewportHeight - RULER_HEIGHT;
-    const wanted =
-        spanBottom - spanTop > areaHeight
-            ? spanTop - RULER_HEIGHT
-            : (spanTop + spanBottom) / 2 - (viewportHeight + RULER_HEIGHT) / 2;
+    const wanted = wantedScrollTop({ spanTop, spanBottom, viewportHeight, areaHeight });
     const maxScrollTop = Math.max(0, getPianoRollContentHeight(visiblePitches.length) - viewportHeight);
     const scrollTop = Math.min(maxScrollTop, Math.max(0, wanted));
 

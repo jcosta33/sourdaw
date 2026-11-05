@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { PianoRoll } from '../PianoRoll';
 
 const { holder, trackState, projectState } = vi.hoisted(() => ({
-    holder: { midi: { notesByClipId: {} as Record<string, unknown[]>, ccByClipId: {}, pitchBendByClipId: {} } },
+    holder: { midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} } },
     trackState: { tracks: [], selectedTrackId: null },
     projectState: { keyRoot: 0, scaleName: 'chromatic' },
 }));
