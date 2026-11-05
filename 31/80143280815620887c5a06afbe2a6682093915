@@ -1,0 +1,26 @@
+src/modules/Command/models/UndoUnit.ts
+  s_fec7059b7a251c::t_e89c5a4da50d06 77-84,86-89
+  s_fec7059b7a251c::t_358609cf093c1c 85
+src/modules/Command/stores/__tests__/undoStepStore.spec.ts
+  s_fec7059b7a251c::t_35cf4d14c96a19 132
+  s_fec7059b7a251c::t_15c7472d1d41e6 124-131,133-147
+src/modules/Command/stores/undoStepStore.ts
+  s_fec7059b7a251c::t_07a4aa37b20e01 4
+  s_fec7059b7a251c::t_d7c87a34966270 28-34,42,48-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3180143280815620887c5a06afbe2a6682093915",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
