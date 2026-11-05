@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
@@ -33,6 +34,8 @@ import {
     nonAcousticMetricIntakeTurn,
     readMetricPublication,
 } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 const {
     mockLogger,

@@ -2,9 +2,9 @@ import { type ReactElement } from 'react';
 
 import { useStore } from '#/infra/store/useStore';
 import { shortcutStore, type ShortcutStoreState } from '#/modules/CommandInterface/stores';
+import { formatShortcutCombo } from '#/modules/CommandInterface/useCases';
 
 import { ShortcutCheatSheet, type ShortcutRow } from '../components/ShortcutCheatSheet';
-import { formatShortcutCombo } from '../helpers/formatShortcutCombo';
 
 // Bindings the sheet lists from the store rather than by hand: a hand-written
 // row said A selected the automation tool while the store binds it to the

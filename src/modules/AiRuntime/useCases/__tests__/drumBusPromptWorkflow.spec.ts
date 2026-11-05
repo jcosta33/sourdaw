@@ -4,6 +4,7 @@ import {
     captureAgentProjectInspectionState,
     captureCommandBatchPreflightState,
 } from '#/app/captureCommandBatchPreflightState';
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     countPendingAutomergeStorageWrites,
@@ -74,6 +75,8 @@ import { advertisedAnswerSchema } from './answerWireFixture';
 import { type ScriptedTurn } from './highLevelIntentWorkflowFixture';
 import { literalMetricIntakeTurn, readMetricPublication } from './metricGoalWorkflowFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+
+registerDeviceEnginePorts();
 
 const PROMPT = 'Create a Drum Bus and route Kick, Snare, and Hats into it, leaving Parallel Compression unchanged.';
 const MF01_PROMPT = 'Route every drum track except the parallel-compression return into the Drum Bus.';

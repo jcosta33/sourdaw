@@ -2,6 +2,7 @@ import { clone } from '@automerge/automerge';
 import { parse as parsePersistedValue } from 'superjson';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { asBaseAudioContext, createMockAudioContext } from '#/helpers/__tests__/audioContext.mock';
 import { logger } from '#/infra/logger/appLogger';
 import { createStore } from '#/infra/store/createStore';
@@ -89,6 +90,8 @@ import {
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
 import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
 type AddDeviceAction = Extract<AppAction, { type: 'addDevice' }>;

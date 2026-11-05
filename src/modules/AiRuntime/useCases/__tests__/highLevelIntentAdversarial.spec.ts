@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { ADD_NOTES_MAX_NOTES_PER_COMMAND, MIDI_NOTE_MIN_DURATION_BEATS } from '#/utils/midiNoteBatchLimits';
 
 import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
@@ -12,6 +13,8 @@ import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 
 import { literalMetricIntakeTurn, nonAcousticMetricIntakeTurn } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 vi.mock('../llmOrchestration/inference', async (importOriginal) => {
     const original = await importOriginal<typeof import('../llmOrchestration/inference')>();

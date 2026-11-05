@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { Container } from '#/infra/di/Container';
 import {
     configureAutomergeStoragePort,
@@ -79,6 +80,8 @@ import {
     searchCalls,
 } from './highLevelIntentWorkflowFixture';
 import { nonAcousticMetricIntakeTurn } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 const bluesIntake = nonAcousticMetricIntakeTurn({
     modeId: 'create',

@@ -19,6 +19,8 @@ type ProcessedOfflineYeastNote = {
      * already owned membership on this same figure.
      */
     sourceRelativeBeat?: number;
+    /** How far into its source row the rack input began: the cut the pass made before the rack (absent: none). */
+    beatsIntoNote?: number;
 };
 
 type ProjectOfflineYeastClipNotesInput = {
@@ -79,13 +81,16 @@ export function projectOfflineYeastClipNotes({
                 loopEnabled,
             })
     );
+    // The rack was handed each note at its audible beat, already cut to its
+    // pass, so its output is absolute; the cut it was made from carries on.
     const projectedNotes = projectMidiEvents({
         events: admittedNotes.map((note) => ({
             id: note.id,
             pitch: note.pitch,
             velocity: note.velocity,
-            startBeat: note.startPpq - midiOffsetBeats,
+            startBeat: note.startPpq,
             duration: Math.max(0, note.endPpq - note.startPpq),
+            beatsIntoNote: note.beatsIntoNote,
         })),
         clipId,
         clipStartBeat,

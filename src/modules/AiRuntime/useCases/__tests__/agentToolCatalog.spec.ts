@@ -20,7 +20,8 @@ import {
     RECIPE_DISCOVERY_TOOL_NAME,
     RECIPE_EXPANSION_TOOL_NAME,
 } from '../agentToolCatalog';
-import { getApplicationOwnedToolSchemas, runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
+import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
+import { getApplicationOwnedToolSchemas } from '../getApplicationOwnedToolSchemas';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 

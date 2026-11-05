@@ -527,9 +527,12 @@ export async function scheduleMidiNotes(
     const changes = tempoMapStore.value?.changes ?? [];
     const automationLanes = automationStore.value?.lanes ?? [];
     // #4924 — the earliest start an admitted Yeast segment may still schedule
-    // (the gate below). A wrap re-anchors a duration tail to the iteration head
-    // at its note's own loop phase — arbitrarily close behind the owning window
-    // — so staleness is a clock question, not a window-grace question:
+    // (the gate below). After the rack a segment can land behind the window
+    // that owns its note: a sequencer push across the pass end re-anchors it
+    // onto the pass head, and a rack may re-time it, arbitrarily close behind
+    // that window — so staleness is a clock question, not a window-grace
+    // question (a note's own tail past the pass end is no such segment: the
+    // rack is handed it as its own note on the pass head, owned there):
     // `accumulatedPosition` is the beat `getCurrentTime()` stands for this tick
     // (the same position the note time formula measures against), and a start
     // behind it computes a time in the past that Web Audio clamps to an
@@ -1164,9 +1167,9 @@ export async function scheduleMidiNotes(
                         // #4910 admitted the note on its owned coordinate, so its
                         // segments schedule where the projection lands them — a
                         // groove displacement past `toBeat` included. What they may
-                        // never do is start before the audio clock: the wrap lands
-                        // a tail behind the owning window at its note's loop phase
-                        // — arbitrarily small — so `admittedSegmentFloorBeat` gates
+                        // never do is start before the audio clock: a re-anchor
+                        // lands a segment behind the owning window by an amount
+                        // arbitrarily small, so `admittedSegmentFloorBeat` gates
                         // on the clock position instead of a window grace, and the
                         // drop is strict beyond its rounding tolerance: a landing
                         // on the clock computes `getCurrentTime()`, the onset's own

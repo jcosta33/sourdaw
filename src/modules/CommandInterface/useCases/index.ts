@@ -2,6 +2,9 @@
 // Re-exports only from files within this folder. See docs/architecture/03-typescript-module.md §3.3.
 
 export { setShortcutMapping } from './setShortcutMapping';
+export { findShortcutConflicts } from './findShortcutConflicts';
+export { shortcutComboFromKeyPress } from './shortcutComboFromKeyPress';
+export { formatShortcutCombo } from './formatShortcutCombo';
 export { resetShortcutMappings } from './resetShortcutMappings';
 export { isKeyboardEditableTarget } from './isKeyboardEditableTarget';
 export { isNativeTextEditableTarget } from './isNativeTextEditableTarget';

@@ -1,9 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { APPLICATION_OWNED_CAPABILITY_OPERATIONS } from '../../models/AgentCapabilityOperations';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { DEFERRED_AGENT_CAPABILITIES } from '../deferredAgentCapabilities';
 import { getAgentCapabilityCatalog } from '../getAgentCapabilityCatalog';
+
+registerDeviceEnginePorts();
 
 const QUERY_CONTRACT = {
     id: 'query',

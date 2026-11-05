@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import {
@@ -55,6 +56,8 @@ import {
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
 import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 const PROMPT = 'Insert a compressor after EQ on every bass track, excluding frozen tracks.';
 const BASS_DI_DEVICE_IDS = ['device-bass-di-eq', 'device-bass-di-saturator'];

@@ -164,6 +164,92 @@ describe('getExplicitlyProtectedClips', () => {
         });
     });
 
+    describe('a protection verb that follows only courtesy openers', () => {
+        const track = (names: string[]) =>
+            createTrack(
+                'track-courtesy',
+                'Pair',
+                names.map((name) => createClip(`clip-${name}`, name))
+            );
+
+        it.each([
+            ['Please leave Intro alone and rename Intro to Bridge Solo', ['Intro', 'Alone']],
+            ['Please Keep Alpha alone and rename Alpha to Gamma', ['Alpha', 'Beta']],
+            ['Could you please leave Alpha alone and rename Alpha to Gamma', ['Alpha', 'Alone']],
+        ])('reads an unbound protection as incomplete: %s', (prompt, names) => {
+            expect(getExplicitClipProtection(prompt, { ...context, tracks: [track(names)] }).complete).toBe(false);
+        });
+
+        it.each([
+            'Thanks, Keep Alpha alone and rename Alpha to Gamma',
+            'Please - Keep Alpha alone and rename Alpha to Gamma',
+        ])('reads an unbound protection after punctuated courtesy as incomplete: %s', (prompt) => {
+            expect(getExplicitClipProtection(prompt, { ...context, tracks: [track(['Alpha', 'Beta'])] }).complete).toBe(
+                false
+            );
+        });
+
+        it.each([
+            'please',
+            'can you',
+            'could you',
+            'would you',
+            'just',
+            'now',
+            'ok',
+            'okay',
+            'actually',
+            'also',
+            'hi',
+            'hey',
+            'hello',
+            'thanks',
+            'thank you',
+            'kindly',
+            'sorry',
+        ])('reads the opener %s as opening its clause', (opener) => {
+            expect(
+                getExplicitClipProtection(`${opener} leave Intro alone and rename Intro to Bridge Solo`, {
+                    ...context,
+                    tracks: [track(['Intro', 'Alone'])],
+                }).complete
+            ).toBe(false);
+        });
+
+        it('keeps a verb after any other word as mid-clause', () => {
+            expect(
+                getExplicitClipProtection('Make Intro louder but keep it punchy', {
+                    ...context,
+                    tracks: [track(['Intro'])],
+                })
+            ).toEqual({ clips: [], complete: true });
+        });
+
+        it('still protects the clip a courtesy-prefixed protection binds', () => {
+            expect(
+                getExplicitClipProtection('Please leave Intro alone and rename Outro to Bridge', {
+                    ...context,
+                    tracks: [track(['Intro', 'Outro'])],
+                })
+            ).toEqual({ clips: [{ id: 'clip-Intro', name: 'Intro' }], complete: true });
+        });
+
+        it('keeps the request without a courtesy word as incomplete', () => {
+            expect(
+                getExplicitClipProtection('leave Intro alone and rename Intro', {
+                    ...context,
+                    tracks: [track(['Intro', 'Alone'])],
+                }).complete
+            ).toBe(false);
+        });
+
+        it('reads a courtesy request without a protection verb as complete with no clips', () => {
+            expect(
+                getExplicitClipProtection('Please rename Intro to Bridge', { ...context, tracks: [track(['Intro'])] })
+            ).toEqual({ clips: [], complete: true });
+        });
+    });
+
     describe('a clip named like the words that open a protection', () => {
         const alpha = createClip('clip-alpha', 'Alpha');
 

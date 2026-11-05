@@ -5,6 +5,7 @@ await vi.hoisted(async () => {
     vi.stubGlobal('AudioContext', createMockAudioContext);
 });
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -55,6 +56,8 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+
+registerDeviceEnginePorts();
 
 const initialTracks = structuredClone(trackStore.value!);
 const initialCollaboration = structuredClone(collaborationStore.value!);

@@ -645,7 +645,7 @@ describe('excluded dimensions', () => {
                     { type: 'addSend', payload: { trackId: 'vocal', busId: 'drum-bus', levelDb: -12 } },
                     setParameter('drum-eq', 'eq-low-gain', -3),
                 ],
-                reason: 'command 2 (setDeviceParameter eq-low-gain) edits the low end of “Drum Bus”',
+                reason: 'command 1 (addSend send) edits the low end of “Vocal”',
             },
             {
                 label: 'a reverb added on a bus the same batch routes the vocal into',
@@ -671,6 +671,123 @@ describe('excluded dimensions', () => {
             ['a low band cut on a bus the vocal never reaches', lowEnd, setParameter('drum-eq', 'eq-low-gain', -3)],
         ] satisfies [string, string, AppAction][])('admits %s', (_label, prompt, action) => {
             expect(readExcludedEdit(prompt, [action], routed())).toBeNull();
+        });
+    });
+
+    describe('the routing a batch leaves behind', () => {
+        const lowEnd = "Clean up the mix but don't touch the low end of the Vocal";
+        const routed = () =>
+            contextWithRouting(
+                {
+                    vocal: { outputId: 'bus-a' },
+                    'vocal-bus': { outputId: 'verb-bus' },
+                    'eq-bus': { outputId: 'low-bus' },
+                },
+                [
+                    { id: 'bus-a', name: 'Bus A', devices: [device('a-verb', 'builtin-reverb')] },
+                    { id: 'vocal-bus', name: 'Vocal Bus', devices: [] },
+                    { id: 'eq-bus', name: 'EQ Bus', devices: [] },
+                    { id: 'low-bus', name: 'Low Bus', devices: [device('low-eq', 'builtin-eq')] },
+                ]
+            );
+        const outputTo = (outputId: string): AppAction => ({
+            type: 'setTrackOutput',
+            payload: { trackId: 'vocal', outputId },
+        });
+
+        it.each([
+            {
+                label: 'an output into a device-less bus that sends to a reverb return',
+                prompt: intimate,
+                actions: [outputTo('vocal-bus')],
+                reason: 'command 1 (setTrackOutput to Vocal Bus) edits the ambience of “Vocal”',
+            },
+            {
+                label: 'a send into a device-less bus that outputs to a reverb return',
+                prompt: intimate,
+                actions: [{ type: 'addSend', payload: { trackId: 'vocal', busId: 'vocal-bus', levelDb: -12 } }],
+                reason: 'command 1 (addSend send) edits the ambience of “Vocal”',
+            },
+            {
+                label: 'an output into a device-less bus that outputs to a bus holding an equalizer',
+                prompt: lowEnd,
+                actions: [outputTo('eq-bus')],
+                reason: 'command 1 (setTrackOutput to EQ Bus) edits the low end of “Vocal”',
+            },
+            {
+                label: 'a send reaching an equalizer, which adds a processed parallel copy',
+                prompt: lowEnd,
+                actions: [{ type: 'addSend', payload: { trackId: 'vocal', busId: 'eq-bus', levelDb: -12 } }],
+                reason: 'command 1 (addSend send) edits the low end of “Vocal”',
+            },
+            {
+                label: 'a reverb edit when the later output is the one into the reverb bus',
+                prompt: intimate,
+                actions: [outputTo('master'), outputTo('bus-a'), setParameter('a-verb', 'rev-size', 0.8)],
+                reason: 'command 2 (setTrackOutput to Bus A) edits the ambience of “Vocal”',
+            },
+        ] satisfies { label: string; prompt: string; actions: AppAction[]; reason: string }[])(
+            'refuses $label',
+            ({ prompt, actions, reason }) => {
+                expect(readExcludedEdit(prompt, actions, routed())).toContain(reason);
+            }
+        );
+
+        it.each([
+            {
+                label: 'a reverb edit on the bus the batch moved the vocal output away from',
+                actions: [outputTo('master'), setParameter('a-verb', 'rev-size', 0.8)],
+            },
+            {
+                label: 'a reverb edit when the later output is the one to master',
+                actions: [outputTo('bus-a'), outputTo('master'), setParameter('a-verb', 'rev-size', 0.8)],
+            },
+        ] satisfies { label: string; actions: AppAction[] }[])('admits $label', ({ actions }) => {
+            expect(readExcludedEdit(intimate, actions, routed())).toBeNull();
+        });
+
+        const withVocalSends = (busIds: string[]): ProjectContext => {
+            const context = contextWithRouting({ vocal: { outputId: 'master' } }, [
+                { id: 'bus-a', name: 'Bus A', devices: [device('a-verb', 'builtin-reverb')] },
+                { id: 'low-bus', name: 'Low Bus', devices: [device('low-eq', 'builtin-eq')] },
+            ]);
+            const sends = busIds.map((busId) => ({ busId, level: 0.5, preFader: false }));
+            const tracks = context.tracks.map((track) => {
+                if (track.id !== 'vocal') {
+                    return track;
+                }
+                return { ...track, sends };
+            });
+            return { ...context, tracks };
+        };
+
+        it.each([
+            {
+                label: 'removing the vocal send into a bus holding an equalizer',
+                action: { type: 'removeSend', payload: { trackId: 'vocal', busId: 'low-bus' } },
+                detail: 'removeSend send',
+            },
+            {
+                label: 'changing the vocal send into a bus holding an equalizer',
+                action: { type: 'setSend', payload: { trackId: 'vocal', busId: 'low-bus', levelDb: -6 } },
+                detail: 'setSend send',
+            },
+        ] satisfies { label: string; action: AppAction; detail: string }[])(
+            'refuses $label under the low-end constraint',
+            ({ action, detail }) => {
+                expect(readExcludedEdit(lowEnd, [action], withVocalSends(['low-bus']))).toContain(
+                    `command 1 (${detail}) edits the low end of “Vocal”`
+                );
+            }
+        );
+
+        it('admits a reverb low-cut edit on a bus the batch first removed the vocal send into', () => {
+            const edit = setParameter('a-verb', 'rev-lowcut', 0.4);
+            const remove: AppAction = { type: 'removeSend', payload: { trackId: 'vocal', busId: 'bus-a' } };
+            expect(readExcludedEdit(lowEnd, [edit], withVocalSends(['bus-a']))).toContain(
+                'edits the low end of “Bus A”'
+            );
+            expect(readExcludedEdit(lowEnd, [remove, edit], withVocalSends(['bus-a']))).toBeNull();
         });
     });
 

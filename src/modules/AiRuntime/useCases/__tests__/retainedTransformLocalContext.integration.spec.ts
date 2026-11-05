@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -33,6 +34,8 @@ import {
 } from './aiWorkflowCommandPreflightFixture';
 import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 import { decodeReceiptContext, readReceiptSummary } from './receiptContextFixture';
+
+registerDeviceEnginePorts();
 
 const provider = vi.hoisted(() => vi.fn());
 vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({ getBackendChain: () => ['webllm'] }));

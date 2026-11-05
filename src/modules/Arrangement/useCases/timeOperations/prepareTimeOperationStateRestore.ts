@@ -3,6 +3,7 @@ import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { hasExactAudioSourceFields } from '#/utils/hasExactAudioSourceFields';
 
 import { type Clip } from '../../models/Track';
+import { getHeldClips } from '../../models/TrackAlternativeClips';
 import { getTrackState, type TrackState } from '../../repositories/track/getTrackState';
 import { setTrackState } from '../../repositories/track/setTrackState';
 import { collectLiveClipIds } from '../../services/collectLiveClipIds';
@@ -237,9 +238,10 @@ function takeRetirementsMatchDeletedRange(
     const afterIds = collectLiveClipIds(after.tracks);
     // A right fragment can replace its source id without erasing its material.
     // Only a clip wholly inside the original delete span belongs to retirement.
+    // Erased means held before and not after, so both sides read held clips.
     const erasedIds = new Set(
         before.tracks.flatMap((track) =>
-            [...track.clips, ...track.alternatives.flatMap((alternative) => alternative.clips)]
+            getHeldClips(track)
                 .filter(
                     (clip) =>
                         clip.startBeat >= range.startBeat && clip.endBeat <= range.endBeat && !afterIds.has(clip.id)

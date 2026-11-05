@@ -1,12 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { type HostedProviderTurn } from '../../models/HostedTurnHistory';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { projectAnthropicStrictToolSchema } from '../../repositories/cloudLlm/cloudInference/projectAnthropicStrictToolSchema';
 import { projectOpenAiStrictToolSchema } from '../../repositories/cloudLlm/cloudInference/projectOpenAiStrictToolSchema';
 import { tryCompoundFastPath, tryParameterizedPath, tryPresetMatch } from '../../transformers/promptParser/parsing';
-import { getApplicationOwnedToolSchemas, runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
+import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { executeTransformCompile } from '../executeTransformCompile';
+import { getApplicationOwnedToolSchemas } from '../getApplicationOwnedToolSchemas';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 import { projectDeclarativeTransformSnapshot } from '../projectDeclarativeTransformSnapshot';
@@ -14,6 +17,8 @@ import { projectDeclarativeTransformSnapshot } from '../projectDeclarativeTransf
 import { type ScriptedTurn } from './highLevelIntentWorkflowFixture';
 import { literalMetricIntakeTurn, nonAcousticMetricIntakeTurn } from './metricGoalWorkflowFixture';
 import { eventEnvelope, finishEnvelope, readyRequest } from './modelProviderProtocolFixture';
+
+registerDeviceEnginePorts();
 
 vi.mock('../llmOrchestration/inference', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../llmOrchestration/inference')>()),

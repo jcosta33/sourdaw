@@ -1,6 +1,13 @@
 import { type MidiNote } from '#/modules/MIDI/stores';
 import { projectCommittedGroove } from '#/modules/MIDI/useCases';
 import { isBeatAdmittedByAnchoredClipLoopWindow, resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
+import {
+    LOOP_PASS_OVERFLOW_INSTANCE_SUFFIX,
+    loopPassNoteEndBeat,
+    loopPassNoteOverflowBeats,
+    loopPassProducedNoteStartBeat,
+    loopPassSourceInstanceId,
+} from '#/utils/loopPassNoteSegments';
 
 import {
     beatToSamples,
@@ -88,10 +95,6 @@ type PendingIdentifiedLiveYeastNote = {
     index: number;
 };
 
-function positiveModulo(value: number, divisor: number): number {
-    return ((value % divisor) + divisor) % divisor;
-}
-
 export async function processLiveYeastTrackBlock({
     context,
     rackId,
@@ -171,24 +174,25 @@ export async function processLiveYeastTrackBlock({
 
                 // #4655 — own the note at its audible beat, the same coordinate
                 // every other path uses: `iterationStartBeat + startBeat −
-                // midiOffsetBeats`. The offset locates the content inside the
-                // clip; selecting and owning on the un-offset beat and shifting
-                // back afterwards dropped every note whose offset was wider
-                // than one scheduler window. Where a displaced start lands is
-                // the twin's law, not this module's: a non-looped clip clamps
-                // it to the iteration start — the boundary clamp
-                // `projectClipMidiEvents` applies to the projected note — while
-                // a looped iteration wraps it, the same
-                // `((offset % loopLength) + loopLength) % loopLength` re-anchor
-                // the twin applies to a looped clip's negative relative start.
-                // The release keeps its full audible time either way: a clamped
-                // note keeps its original end beat, and a wrapped note rings
-                // its full duration from the wrapped start, past the iteration
-                // end, with the owning window following the release, as the
-                // loop-work bounds spec pins.
+                // midiOffsetBeats`, plus the trim advance on the anchor's pass
+                // grid. The offset locates the content inside the clip;
+                // selecting and owning on the un-offset beat and shifting back
+                // afterwards dropped every note whose offset was wider than one
+                // scheduler window. A non-looped clip clamps a displaced start
+                // to the iteration start — the boundary clamp
+                // `projectClipMidiEvents` applies — and keeps its original end.
+                //
+                // A looped pass plays the note as every route segments it
+                // (`loopPassNoteSegments`): a start before the head re-anchors
+                // by the loop, the note keeps at most one loop of its length and
+                // ends at the pass end, and the part that would ring past the
+                // pass end is handed to the rack as its own note, struck on the
+                // pass head. A live window cannot see a note-on later in its
+                // pass, so a tail wrapped onto the head after the rack sounded
+                // only when one window spanned both the head and the note's
+                // start; as its own note-on it is owned by the window holding
+                // the head, whatever windows the timeline is cut into.
                 const loopLengthBeats = iteration.loopLengthBeats ?? 0;
-                // An iteration opens on the anchor's pass grid, where a row
-                // sounds at its offset-relative start plus the trim advance.
                 const loopAdvanceBeats =
                     iteration.clipStartBeat === undefined
                         ? 0
@@ -199,70 +203,78 @@ export async function processLiveYeastTrackBlock({
                           });
                 const audibleStartBeat =
                     iteration.iterationStartBeat + loopAdvanceBeats + groovedNote.startBeat - iteration.midiOffsetBeats;
-                let noteStartBeat = Math.max(audibleStartBeat, iteration.iterationStartBeat);
-                let noteEndBeat = audibleStartBeat + groovedNote.duration;
-                let headCutBeats = noteStartBeat - audibleStartBeat;
-                if (
-                    iteration.loopEnabled === true &&
-                    loopLengthBeats > 0 &&
-                    audibleStartBeat < iteration.iterationStartBeat
-                ) {
-                    noteStartBeat =
-                        iteration.iterationStartBeat +
-                        positiveModulo(audibleStartBeat - iteration.iterationStartBeat, loopLengthBeats);
-                    noteEndBeat = noteStartBeat + groovedNote.duration;
-                    // A wrapped note rings its full duration from the wrapped start: nothing was cut.
-                    headCutBeats = 0;
-                }
-                // A head off the grid opens the first pass before the clip
-                // does; the clip head cuts what that pass places ahead of it.
-                if (
-                    iteration.loopEnabled === true &&
-                    iteration.clipStartBeat !== undefined &&
-                    noteStartBeat < iteration.clipStartBeat
-                ) {
-                    headCutBeats += iteration.clipStartBeat - noteStartBeat;
-                    noteStartBeat = iteration.clipStartBeat;
-                }
-                if (noteEndBeat <= noteStartBeat) {
-                    continue;
-                }
-                const noteStartSamples = beatToSamples(changes, noteStartBeat, transport.tempo, sampleRate);
-                const noteEndSamples = beatToSamples(changes, noteEndBeat, transport.tempo, sampleRate);
-                const noteInstanceId = `${iteration.routeId}:${sourceNote.id}`;
-                if (headCutBeats > 0) {
-                    headCutBeatsByInstance.set(noteInstanceId, headCutBeats);
-                }
-                const ownsNoteOn = noteStartBeat >= block.fromBeat && noteStartBeat < block.toBeat;
-                const ownsNoteOff = noteEndBeat >= block.fromBeat && noteEndBeat < block.toBeat;
-                if (ownsNoteOn) {
-                    inputEvents.push({
-                        timeSamples: noteStartSamples,
-                        durationSamples: Math.max(0, noteEndSamples - noteStartSamples),
-                        durationPpq: Math.max(0, groovedNote.duration),
-                        trackId: iteration.routeId,
-                        sourceEventId: `${noteInstanceId}:on`,
-                        noteInstanceId,
-                        timePpq: noteStartBeat,
-                        tempoBpm: getTempoAtBeat(changes, noteStartBeat, transport.tempo),
-                        kind: {
-                            type: 'noteOn',
-                            channel: sourceNote.channel ?? 0,
-                            note: groovedNote.pitch,
-                            velocity: groovedNote.velocity,
-                        },
-                    });
-                }
-                if (ownsNoteOff) {
-                    inputEvents.push({
-                        timeSamples: noteEndSamples,
-                        trackId: iteration.routeId,
-                        sourceEventId: `${noteInstanceId}:off`,
-                        noteInstanceId,
-                        timePpq: noteEndBeat,
-                        tempoBpm: getTempoAtBeat(changes, noteEndBeat, transport.tempo),
-                        kind: { type: 'noteOff', channel: sourceNote.channel ?? 0, note: groovedNote.pitch },
-                    });
+                const loops = iteration.loopEnabled === true && loopLengthBeats > 0;
+                const passStartBeat = iteration.iterationStartBeat;
+                const passNoteStartBeat = loops
+                    ? loopPassProducedNoteStartBeat(audibleStartBeat, passStartBeat, loopLengthBeats)
+                    : Math.max(audibleStartBeat, passStartBeat);
+                const passNoteEndBeat = loops
+                    ? loopPassNoteEndBeat(passNoteStartBeat, groovedNote.duration, passStartBeat, loopLengthBeats)
+                    : audibleStartBeat + groovedNote.duration;
+                const overflowBeats = loops
+                    ? loopPassNoteOverflowBeats(passNoteStartBeat, groovedNote.duration, passStartBeat, loopLengthBeats)
+                    : 0;
+                const sourceInstanceId = `${iteration.routeId}:${sourceNote.id}`;
+                const segmentCount = overflowBeats > 0 ? 2 : 1;
+                for (let segment = 0; segment < segmentCount; segment++) {
+                    const isPassHeadTail = segment === 1;
+                    let noteStartBeat = isPassHeadTail ? passStartBeat : passNoteStartBeat;
+                    const noteEndBeat = isPassHeadTail ? passStartBeat + overflowBeats : passNoteEndBeat;
+                    // How far into its note the segment begins: a clamped start
+                    // cut its head off, a re-anchored start cut nothing, and the
+                    // pass-head tail begins where the in-pass segment ends.
+                    let headCutBeats = passNoteStartBeat - audibleStartBeat;
+                    if (loops) {
+                        headCutBeats = isPassHeadTail ? passNoteEndBeat - passNoteStartBeat : 0;
+                    }
+                    // A head off the grid opens the first pass before the clip
+                    // does; the clip head cuts what that pass places ahead of it.
+                    if (loops && iteration.clipStartBeat !== undefined && noteStartBeat < iteration.clipStartBeat) {
+                        headCutBeats += iteration.clipStartBeat - noteStartBeat;
+                        noteStartBeat = iteration.clipStartBeat;
+                    }
+                    if (noteEndBeat <= noteStartBeat) {
+                        continue;
+                    }
+                    const noteStartSamples = beatToSamples(changes, noteStartBeat, transport.tempo, sampleRate);
+                    const noteEndSamples = beatToSamples(changes, noteEndBeat, transport.tempo, sampleRate);
+                    const noteInstanceId = isPassHeadTail
+                        ? `${sourceInstanceId}${LOOP_PASS_OVERFLOW_INSTANCE_SUFFIX}`
+                        : sourceInstanceId;
+                    if (headCutBeats > 0) {
+                        headCutBeatsByInstance.set(noteInstanceId, headCutBeats);
+                    }
+                    const ownsNoteOn = noteStartBeat >= block.fromBeat && noteStartBeat < block.toBeat;
+                    const ownsNoteOff = noteEndBeat >= block.fromBeat && noteEndBeat < block.toBeat;
+                    if (ownsNoteOn) {
+                        inputEvents.push({
+                            timeSamples: noteStartSamples,
+                            durationSamples: Math.max(0, noteEndSamples - noteStartSamples),
+                            durationPpq: loops ? noteEndBeat - noteStartBeat : Math.max(0, groovedNote.duration),
+                            trackId: iteration.routeId,
+                            sourceEventId: `${noteInstanceId}:on`,
+                            noteInstanceId,
+                            timePpq: noteStartBeat,
+                            tempoBpm: getTempoAtBeat(changes, noteStartBeat, transport.tempo),
+                            kind: {
+                                type: 'noteOn',
+                                channel: sourceNote.channel ?? 0,
+                                note: groovedNote.pitch,
+                                velocity: groovedNote.velocity,
+                            },
+                        });
+                    }
+                    if (ownsNoteOff) {
+                        inputEvents.push({
+                            timeSamples: noteEndSamples,
+                            trackId: iteration.routeId,
+                            sourceEventId: `${noteInstanceId}:off`,
+                            noteInstanceId,
+                            timePpq: noteEndBeat,
+                            tempoBpm: getTempoAtBeat(changes, noteEndBeat, transport.tempo),
+                            kind: { type: 'noteOff', channel: sourceNote.channel ?? 0, note: groovedNote.pitch },
+                        });
+                    }
                 }
             }
         }
@@ -324,8 +336,10 @@ export async function processLiveYeastTrackBlock({
         }
 
         if (event.kind.type === 'noteOn') {
+            // A pass-head tail plays its note's template: it is that note.
+            const sourceInstanceId = event.noteInstanceId && loopPassSourceInstanceId(event.noteInstanceId);
             const identifiedTemplate = iteration?.sourceNotes.find(
-                (sourceNote) => `${iteration.routeId}:${sourceNote.id}` === event.noteInstanceId
+                (sourceNote) => `${iteration.routeId}:${sourceNote.id}` === sourceInstanceId
             );
             const template = identifiedTemplate ??
                 iteration?.sourceNotes[0] ?? {

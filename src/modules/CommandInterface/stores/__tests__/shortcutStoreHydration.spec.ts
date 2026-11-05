@@ -1,9 +1,14 @@
-import { stringify } from 'superjson';
+import { parse, stringify } from 'superjson';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type ShortcutStoreState } from '../shortcutStore';
 
-const STORAGE_KEY = 'sourdaw-shortcuts';
+const STORAGE_KEY = 'sourdaw-shortcut-bindings';
+const LEGACY_STORAGE_KEY = 'sourdaw-shortcuts';
+
+function storedMappings(customMappings: Record<string, string[]>): string {
+    return stringify({ definitions: [], customMappings });
+}
 
 async function importFreshShortcutStore(): Promise<ShortcutStoreState | null> {
     vi.resetModules();
@@ -64,6 +69,35 @@ describe('shortcutStore hydration', () => {
 
         expect(state?.definitions.some((definition) => definition.id === 'editing.undo')).toBe(true);
         expect(state?.customMappings).toEqual({});
+    });
+
+    it('keeps a current binding that names a US shifted or Option character across reloads', async () => {
+        // AZERTY Shift+Digit1 and Danish Option+Æ, as the physical-key capture stores them.
+        const current = { 'transport.toggleLoop': ['shift+&'], 'transport.toggleMetronome': ['alt+æ'] };
+        window.localStorage.setItem(STORAGE_KEY, storedMappings(current));
+
+        expect((await importFreshShortcutStore())?.customMappings).toEqual(current);
+        expect((await importFreshShortcutStore())?.customMappings).toEqual(current);
+    });
+
+    it('seeds the current key from legacy produced-character bindings, migrated', async () => {
+        window.localStorage.setItem(
+            LEGACY_STORAGE_KEY,
+            storedMappings({ 'transport.toggleLoop': ['shift+!'], 'transport.toggleMetronome': ['alt+∂'] })
+        );
+
+        const migrated = { 'transport.toggleLoop': ['shift+1'], 'transport.toggleMetronome': ['alt+d'] };
+        expect((await importFreshShortcutStore())?.customMappings).toEqual(migrated);
+        expect(parse<ShortcutStoreState>(window.localStorage.getItem(STORAGE_KEY) ?? '').customMappings).toEqual(
+            migrated
+        );
+    });
+
+    it('ignores legacy bindings once the current key exists', async () => {
+        window.localStorage.setItem(STORAGE_KEY, storedMappings({ 'transport.toggleLoop': ['shift+&'] }));
+        window.localStorage.setItem(LEGACY_STORAGE_KEY, storedMappings({ 'transport.toggleLoop': ['shift+!'] }));
+
+        expect((await importFreshShortcutStore())?.customMappings).toEqual({ 'transport.toggleLoop': ['shift+&'] });
     });
 
     it('should hydrate malformed raw localStorage text to current definitions and empty custom mappings', async () => {

@@ -503,6 +503,191 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
             expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
         });
 
+        it('steps over inert units beneath a conflicted head onto the conflict-capable unit below them', async () => {
+            const older = actionEntry({
+                id: 'older-1',
+                label: 'First Action',
+                inverseAction: conflictCapableFadeInverse,
+            });
+            const inert = actionEntry({ id: 'inert-1', label: 'Dead Row', inverseAction: null });
+            const conflicting = actionEntry({
+                id: 'conflict-1',
+                label: 'Cut Clip',
+                inverseAction: conflictCapableGainInverse,
+            });
+            mocks.undoStoreValue.value = { past: [older, inert, conflicting], future: [] };
+            conflictOn('setTrackGain');
+
+            await expect(undo()).resolves.toEqual({ headConsumed: false });
+
+            // The inert row writes nothing when undone, so it is no step target:
+            // undo passes it and steps onto the real unit beneath. The inert row
+            // is dropped as the head purge drops one — gone from `past` and never
+            // on `future` — and the skip summary names the unit actually undone.
+            expect(mocks.executeAppAction.mock.calls.map(([action]) => action.type)).toEqual([
+                'setTrackGain',
+                'setClipFade',
+            ]);
+            expect(mocks.undoStoreSet).toHaveBeenCalledTimes(1);
+            expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [conflicting], future: [older] });
+            expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('conflict-1');
+            expect(mocks.notifyUser.mock.calls.map(([message]) => message)).toEqual([
+                'Cannot undo "Cut Clip": project state has changed',
+                'Skipped "Cut Clip": project state has changed; undid "First Action"',
+            ]);
+        });
+
+        it('steps over a run of inert units, a grouped one included, beneath a conflicted head', async () => {
+            const older = actionEntry({
+                id: 'older-1',
+                label: 'First Action',
+                inverseAction: conflictCapableFadeInverse,
+            });
+            const inertSingle = actionEntry({ id: 'inert-1', label: 'Dead Row', inverseAction: null });
+            const inertGroupOldest = actionEntry({
+                id: 'inert-g1',
+                groupId: 'inert-group',
+                groupLabel: 'Dead Group',
+                inverseAction: null,
+            });
+            const inertGroupNewest = actionEntry({
+                id: 'inert-g2',
+                groupId: 'inert-group',
+                groupLabel: 'Dead Group',
+                inverseAction: null,
+            });
+            const conflicting = actionEntry({
+                id: 'conflict-1',
+                label: 'Cut Clip',
+                inverseAction: conflictCapableGainInverse,
+            });
+            mocks.undoStoreValue.value = {
+                past: [older, inertSingle, inertGroupOldest, inertGroupNewest, conflicting],
+                future: [],
+            };
+            conflictOn('setTrackGain');
+
+            await expect(undo()).resolves.toEqual({ headConsumed: false });
+
+            // Every fully inert unit between the conflicted head and the real
+            // target is passed and dropped; only the target is undone, so the
+            // press still touches two real units.
+            expect(mocks.executeAppAction.mock.calls.map(([action]) => action.type)).toEqual([
+                'setTrackGain',
+                'setClipFade',
+            ]);
+            expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+            expect(mocks.undoStoreSet).toHaveBeenCalledTimes(1);
+            expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [conflicting], future: [older] });
+            expect(mocks.notifyUser.mock.calls.map(([message]) => message)).toEqual([
+                'Cannot undo "Cut Clip": project state has changed',
+                'Skipped "Cut Clip": project state has changed; undid "First Action"',
+            ]);
+        });
+
+        it.each([
+            [
+                'an unflagged handler',
+                () =>
+                    actionEntry({
+                        id: 'older-1',
+                        label: 'First Action',
+                        inverseAction: { type: 'soloTrack', payload: { trackId: 'track-1', soloed: true } },
+                    }),
+            ],
+            ['a callback', () => callbackEntry({ id: 'older-1', label: 'First Action' })],
+        ])(
+            'drops inert units beneath a conflicted head but never steps onto %s below them',
+            async (_name, makeOlder) => {
+                const older = makeOlder();
+                const inert = actionEntry({ id: 'inert-1', label: 'Dead Row', inverseAction: null });
+                const conflicting = actionEntry({
+                    id: 'conflict-1',
+                    label: 'Cut Clip',
+                    inverseAction: conflictCapableGainInverse,
+                });
+                mocks.undoStoreValue.value = { past: [older, inert, conflicting], future: [] };
+                conflictOn('setTrackGain');
+
+                await expect(undo()).resolves.toEqual({ headConsumed: false });
+
+                // The real unit beneath cannot refuse, so the gate keeps it
+                // untouched. The inert row passed on the way is still dropped,
+                // as the head purge drops inert rows even when the undo that
+                // follows refuses: undoing it was a no-op either way.
+                expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+                expect(mocks.executeAppAction).toHaveBeenCalledWith(conflictCapableGainInverse, expect.anything());
+                if (older.kind === 'callback') {
+                    expect(older.undo).not.toHaveBeenCalled();
+                }
+                expect(mocks.undoStoreSet).toHaveBeenCalledTimes(1);
+                expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [older, conflicting], future: [] });
+                expect(mocks.notifyUser.mock.calls.map(([message]) => message)).toEqual([
+                    'Cannot undo "Cut Clip": project state has changed',
+                ]);
+            }
+        );
+
+        it('drops passed inert units when the step target beneath them refuses too', async () => {
+            const older = actionEntry({
+                id: 'older-1',
+                label: 'First Action',
+                inverseAction: conflictCapableFadeInverse,
+            });
+            const inert = actionEntry({ id: 'inert-1', label: 'Dead Row', inverseAction: null });
+            const conflicting = actionEntry({
+                id: 'conflict-1',
+                label: 'Cut Clip',
+                inverseAction: conflictCapableGainInverse,
+            });
+            mocks.undoStoreValue.value = { past: [older, inert, conflicting], future: [] };
+            conflictOn('setTrackGain', 'setClipFade');
+
+            await expect(undo()).resolves.toEqual({ headConsumed: false });
+
+            expect(mocks.executeAppAction.mock.calls.map(([action]) => action.type)).toEqual([
+                'setTrackGain',
+                'setClipFade',
+            ]);
+            expect(mocks.undoStoreSet).toHaveBeenCalledTimes(1);
+            expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [older, conflicting], future: [] });
+            expect(mocks.notifyUser.mock.calls.map(([message]) => message)).toEqual([
+                'Cannot undo "Cut Clip": project state has changed',
+            ]);
+        });
+
+        it('never steps onto a group mixing an inert member with a flagged one beneath a conflicted head', async () => {
+            const inertMember = actionEntry({
+                id: 'g-inert',
+                groupId: 'mixed-3',
+                groupLabel: 'Half Dead Group',
+                inverseAction: null,
+            });
+            const flaggedMember = actionEntry({
+                id: 'g-flagged',
+                groupId: 'mixed-3',
+                groupLabel: 'Half Dead Group',
+                inverseAction: conflictCapableFadeInverse,
+            });
+            const conflicting = actionEntry({
+                id: 'conflict-1',
+                label: 'Cut Clip',
+                inverseAction: conflictCapableGainInverse,
+            });
+            mocks.undoStoreValue.value = { past: [inertMember, flaggedMember, conflicting], future: [] };
+            conflictOn('setTrackGain');
+
+            await expect(undo()).resolves.toEqual({ headConsumed: false });
+
+            // A group with one real member is not fully inert, so it is not
+            // passed over: the gate governs it, and its inert member fails the
+            // gate. Nothing moves.
+            expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
+            expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+            expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        });
+
         it('attempts no inverse at all while project mutation admission fails', async () => {
             mocks.admissionFailure = 'Project repair is required before project actions can execute';
             const older = actionEntry({

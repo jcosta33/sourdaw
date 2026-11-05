@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { type ToolSchema } from '../../../../models/ToolDefinitions';
-import { getApplicationOwnedToolSchemas } from '../../../../useCases/applicationOwnedToolLoop';
+import { getApplicationOwnedToolSchemas } from '../../../../useCases/getApplicationOwnedToolSchemas';
 import { projectAnthropicStrictToolSchema } from '../projectAnthropicStrictToolSchema';
 import { projectOpenAiStrictToolSchema } from '../projectOpenAiStrictToolSchema';
 import { selectAnthropicStrictTools } from '../selectAnthropicStrictTools';
+
+registerDeviceEnginePorts();
 
 const PUBLISHED_FILTER_KEYS = [
     'stableId',
