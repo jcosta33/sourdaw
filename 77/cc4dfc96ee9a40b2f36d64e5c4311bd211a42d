@@ -1,0 +1,25 @@
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/ProjectTab.spec.tsx
+  s_0314bb17e5dee3::t_50cc33d9821d36 49-50,52-53
+src/modules/ContentBrowser/presentations/views/Sidebar/ProjectTab.tsx
+  s_0314bb17e5dee3::t_e8ed3f8d1a8140 10,70
+src/modules/TimelineEditor/presentations/views/ClipView/KneadEditor.tsx
+  s_0314bb17e5dee3::t_7c5fe636ea338d 19,786
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/KneadEditor.spec.tsx
+  s_0314bb17e5dee3::t_153f0611c32ab6 1,355-365
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "77cc4dfc96ee9a40b2f36d64e5c4311bd211a42d",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
