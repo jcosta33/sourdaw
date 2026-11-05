@@ -2367,7 +2367,7 @@ describe('repository tooling selects no browser suite', () => {
         'evidence/agent-campaign/corpora/held-out.json',
         '.dependency-cruiser.cjs',
         '.dependency-cruiser.module-tiers.cjs',
-        '.dependency-cruiser-known-violations-module-tiers.json',
+        '.dependency-cruiser-known-violations.json',
         '.prettierignore',
         '.prettierrc',
         '.editorconfig',

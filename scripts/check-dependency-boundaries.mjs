@@ -35,10 +35,6 @@ const gates = {
         baseline: '.dependency-cruiser-known-violations-contract-reexports.json',
         static: true,
     },
-    moduleTiers: {
-        baseline: '.dependency-cruiser-known-violations-module-tiers.json',
-        static: true,
-    },
     workerSpawns: {
         baseline: '.dependency-cruiser-known-violations-worker-spawns.json',
         static: true,
@@ -1746,6 +1742,10 @@ export function findContractReexportFindings(repositoryRoot = root) {
 // (#6059) measured that value-only edges give the same cycle, and a type edge still couples the
 // modules' languages. Presentation code on either end is excluded because a presentation projection
 // is a layer allowed to read widely, and tests, `testing/` helpers and specs are not shipped.
+//
+// The gate has no baseline file. Its only known rows are the manifest's `allowedCycles` and
+// `acceptedTierEdges`, each carrying its reason, so an allowance is a reviewed manifest change and
+// `--write-baseline` cannot bless a new cycle or edge.
 const moduleTierManifestPath = '.dependency-cruiser.module-tiers.cjs';
 const moduleFilePath = /^src\/modules\/([^/]+)(?:\/(.*))?$/;
 const specFilePath = new RegExp(SPEC_FILE_RE, 'i');
@@ -1852,7 +1852,71 @@ function findModuleManifestFindings({ moduleNames, manifest }) {
             findings.push(`module ${name} has no tier`);
         }
     }
+    findings.push(...findAllowedCycleFindings(manifest), ...findAcceptedTierEdgeFindings(manifest));
     return findings.map((reason) => ({ file: moduleTierManifestPath, line: 1, reason }));
+}
+
+// Allowances: the manifest's `allowedCycles` and `acceptedTierEdges` are the only rows the gate
+// accepts. An absent list allows nothing. Each entry must say why it stands, so an empty or
+// missing reason is a manifest finding, never a silently accepted row.
+function isNonEmptyText(value) {
+    return typeof value === 'string' && value.trim() !== '';
+}
+
+function allowedCyclesOf(manifest) {
+    return manifest.allowedCycles ?? [];
+}
+
+function acceptedTierEdgesOf(manifest) {
+    return manifest.acceptedTierEdges ?? [];
+}
+
+function findAllowedCycleFindings(manifest) {
+    const findings = [];
+    const names = new Set();
+    for (const [index, cycle] of allowedCyclesOf(manifest).entries()) {
+        const label = isNonEmptyText(cycle.name) ? `allowed cycle "${cycle.name}"` : `allowed cycle #${index + 1}`;
+        if (!isNonEmptyText(cycle.name)) {
+            findings.push(`${label} has no name`);
+        } else if (names.has(cycle.name)) {
+            findings.push(`${label} is declared twice`);
+        }
+        names.add(cycle.name);
+        const members = Array.isArray(cycle.members) ? cycle.members : [];
+        if (new Set(members).size < 2 || new Set(members).size !== members.length) {
+            findings.push(`${label} must list at least two distinct members`);
+        }
+        for (const member of members.filter((candidate) => !Object.hasOwn(manifest.modules, candidate))) {
+            findings.push(`${label} names module ${member}, which has no tier`);
+        }
+        if (!isNonEmptyText(cycle.reason)) {
+            findings.push(`${label} has no reason`);
+        }
+        if (!isNonEmptyText(cycle.retiredBy)) {
+            findings.push(`${label} names no decision that would retire it`);
+        }
+    }
+    return findings;
+}
+
+function findAcceptedTierEdgeFindings(manifest) {
+    const findings = [];
+    const seen = new Set();
+    for (const edge of acceptedTierEdgesOf(manifest)) {
+        const label = `accepted tier edge ${edge.from} → ${edge.to}`;
+        const key = `${edge.from}\u0000${edge.to}`;
+        if (seen.has(key)) {
+            findings.push(`${label} is declared twice`);
+        }
+        seen.add(key);
+        for (const end of [edge.from, edge.to].filter((name) => !Object.hasOwn(manifest.modules, name))) {
+            findings.push(`${label} names module ${end}, which has no tier`);
+        }
+        if (!isNonEmptyText(edge.reason)) {
+            findings.push(`${label} has no reason`);
+        }
+    }
+    return findings;
 }
 
 function isTierEdgeAllowed(manifest, from, to) {
@@ -1907,7 +1971,7 @@ function findStronglyConnectedComponents(nodes, successorsOf) {
     return components;
 }
 
-// Rows carry no file or line, so moving an import never stales the baseline; the example
+// Rows carry no file or line, so moving an import never stales an allowance; the example
 // edge travels separately in `details`, keyed like the rows, for the failure message only.
 export function computeModuleTierRows({ edges, manifest }) {
     const details = new Map();
@@ -1932,6 +1996,21 @@ export function computeModuleTierRows({ edges, manifest }) {
         .map((component) => ({ type: 'module-cycle', members: [...component].sort(comparePaths) }));
 
     return { rows: sortRows([...tierRows, ...cycleRows]), details };
+}
+
+function allowanceRows(manifest) {
+    const cycleRows = allowedCyclesOf(manifest).map(({ members }) => ({
+        type: 'module-cycle',
+        members: [...members].sort(comparePaths),
+    }));
+    const tierRows = acceptedTierEdgesOf(manifest).map(({ from, to }) => ({ type: 'module-tier', from, to }));
+    return sortRows([...tierRows, ...cycleRows]);
+}
+
+// The manifest's allowances are the gate's only known rows, compared exactly: a cycle that gains or
+// loses a member is a different row, so it reports as novel beside its allowance reported as stale.
+export function judgeModuleTierRows({ rows, manifest }) {
+    return compareRows({ current: rows, known: allowanceRows(manifest) });
 }
 
 function collectModuleTierState({ repositoryRoot, files, sourceFileFor, manifest }) {
@@ -2267,6 +2346,17 @@ function validateGate(name, gate, cruise, rowDetails) {
     return true;
 }
 
+function validateModuleTiers(moduleTierState, manifest, rowDetails) {
+    const { novel, stale } = judgeModuleTierRows({ rows: moduleTierState.rows, manifest });
+    if (novel.length > 0 || stale.length > 0) {
+        printRows('NEW', novel, rowDetails);
+        printRows('STALE', stale, rowDetails);
+        return false;
+    }
+    console.log(`✔ moduleTiers: ${moduleTierState.rows.length} row(s), each an exact manifest allowance`);
+    return true;
+}
+
 function writeBaseline(name, gate, cruise) {
     const rows = currentRows(gate, cruise);
     writeFileSync(resolve(root, gate.baseline), `${JSON.stringify(rows, null, 2)}\n`);
@@ -2281,17 +2371,17 @@ function main() {
         sourceFiles,
         sourceFileFor,
     } = buildStaticGuardState(root);
+    const moduleTierManifest = loadModuleTierManifest(root);
     const moduleTierState = collectModuleTierState({
         repositoryRoot: root,
         files,
         sourceFileFor,
-        manifest: loadModuleTierManifest(root),
+        manifest: moduleTierManifest,
     });
     const staticFindings = [...guardFindings, ...moduleTierState.findings];
     const workerSpawnState = computeWorkerSpawnRows({ files: sourceFiles, sourceFileFor });
     const staticRows = {
         contractReexports: contractReexportRows,
-        moduleTiers: moduleTierState.rows,
         workerSpawns: workerSpawnState.rows,
     };
     const rowDetails = new Map([...moduleTierState.details, ...workerSpawnState.details]);
@@ -2305,6 +2395,12 @@ function main() {
     const writeIndex = process.argv.indexOf('--write-baseline');
     if (writeIndex >= 0) {
         const name = process.argv[writeIndex + 1];
+        if (name === 'moduleTiers') {
+            console.error(
+                `moduleTiers has no baseline: its allowances are reviewed entries in ${moduleTierManifestPath}`
+            );
+            process.exit(1);
+        }
         const gate = gates[name];
         if (!gate) {
             console.error(`Choose one baseline: ${Object.keys(gates).join(', ')}`);
@@ -2319,9 +2415,17 @@ function main() {
         const cruise = gate.static ? staticRows[name] : runCruise(gate);
         valid = validateGate(name, gate, cruise, rowDetails) && valid;
     }
+    const moduleTiersValid = validateModuleTiers(moduleTierState, moduleTierManifest, rowDetails);
     if (!valid) {
         console.error('\nRefresh only after an intentional debt decision:');
         console.error('  node scripts/check-dependency-boundaries.mjs --write-baseline <gate>');
+    }
+    if (!moduleTiersValid) {
+        console.error(
+            `\nmoduleTiers: declare, shrink or delete the allowance in ${moduleTierManifestPath}, with its reason.`
+        );
+    }
+    if (!valid || !moduleTiersValid) {
         process.exit(1);
     }
 }
