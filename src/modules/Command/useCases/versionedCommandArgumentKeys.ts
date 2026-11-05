@@ -227,7 +227,7 @@ const schemaDefinitions = [
             outputId: 0,
             withoutDefaultDevice: 33,
         },
-        required: ['name', 'kind'],
+        required: ['kind'],
         additionalProperties: false,
     },
     {

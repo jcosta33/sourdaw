@@ -1367,7 +1367,8 @@ export type AppAction =
           type: 'addTrack';
           payload: {
               id?: string;
-              name: string;
+              /** Omitted for the owner's next default name for the kind ("MIDI 3"), resolved once before the action is recorded. */
+              name?: string;
               kind: TrackKind;
               select?: boolean;
               /** Internal replay metadata; provider payloads cannot set this field. */

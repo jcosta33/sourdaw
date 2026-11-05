@@ -206,7 +206,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
             <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {
-                    void executeUserAppAction({ type: 'addTrack', payload: { name: 'Audio', kind: 'audio' } });
+                    void executeUserAppAction({ type: 'addTrack', payload: { kind: 'audio' } });
                 })}
             >
                 Add Audio Track
@@ -214,7 +214,7 @@ export const TimelineEmptyMenu = ({ x, y, trackId, beat, onClose }: TimelineEmpt
             <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {
-                    void executeUserAppAction({ type: 'addTrack', payload: { name: 'MIDI', kind: 'midi' } });
+                    void executeUserAppAction({ type: 'addTrack', payload: { kind: 'midi' } });
                 })}
             >
                 Add MIDI Track

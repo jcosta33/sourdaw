@@ -14,7 +14,7 @@ async function addMidiTrack(page: Page): Promise<void> {
     await expect.poll(() => trackList.getByRole('row').count()).toBeGreaterThan(before);
     await trackList
         .getByRole('row')
-        .filter({ has: page.getByText('MIDI', { exact: true }) })
+        .filter({ has: page.getByText('MIDI 1', { exact: true }) })
         .first()
         .click();
 }

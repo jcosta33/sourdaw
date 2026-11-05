@@ -39,7 +39,7 @@ test('native button Enter and Space activate once without transport shortcuts; w
         page
             .getByRole('grid', { name: /Track list/i })
             .first()
-            .getByText('MIDI', { exact: true })
+            .getByText('MIDI 1', { exact: true })
     ).toBeVisible();
 
     const play = page.getByTestId('transport-play');

@@ -3,6 +3,7 @@ import { type HandlerValidationContext } from '#/utils/handlerContract';
 import { createTrack, type Track } from '../models/Track';
 import { getTrackStoreState } from '../useCases/getTrackStoreState';
 
+import { planDefaultTrackName } from './planDefaultTrackName';
 import { projectTrackThroughPriorBatchActions } from './projectTrackThroughPriorBatchActions';
 
 function createPlannedTrack(input: {
@@ -35,12 +36,14 @@ export function getPlannedTrackState(context: HandlerValidationContext, trackId:
     if (current) {
         return projectTrackThroughPriorBatchActions(current, context);
     }
-    for (const action of context.actions.slice(0, context.actionIndex)) {
+    for (const [actionIndex, action] of context.actions.slice(0, context.actionIndex).entries()) {
         if (action.type === 'addTrack' && action.payload.id === trackId && action.payload.kind !== 'master') {
             return projectTrackThroughPriorBatchActions(
                 createPlannedTrack({
                     id: trackId,
-                    name: action.payload.name,
+                    name:
+                        action.payload.name ??
+                        planDefaultTrackName(action.payload.kind, { actions: context.actions, actionIndex }),
                     kind: action.payload.kind,
                     gain: 0.8,
                     initialDeviceId: action.payload.initialDeviceId,
