@@ -226,6 +226,7 @@ describe('saved audio collection race', () => {
             { readNamedProjectJson },
             { registerProjectLifecycle },
             { registerDeviceEnginePorts },
+            { registerSupportingServicePorts },
         ] = await Promise.all([
             import('#/modules/AudioEngine/useCases'),
             import('#/modules/Arrangement/useCases'),
@@ -239,6 +240,7 @@ describe('saved audio collection race', () => {
             import('../../../../repositories/project/readNamedProjectJson'),
             import('#/app/registerProjectLifecycle'),
             import('#/app/registerDeviceEnginePorts'),
+            import('#/app/registerSupportingServicePorts'),
         ]);
         reportStage('imports:done');
         const context = audio.audioEngine.context as AudioContext & {
@@ -259,6 +261,7 @@ describe('saved audio collection race', () => {
         crdt.resetCrdtProjectAuthority('Project A');
         registerProjectLifecycle();
         registerDeviceEnginePorts();
+        registerSupportingServicePorts();
         resetModuleStoresToDefault();
         projectStore.set({
             ...createFreshProjectMetadata({ name: 'Project A', loading: false, initialized: true }),

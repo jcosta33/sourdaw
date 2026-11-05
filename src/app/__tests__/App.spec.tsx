@@ -5,9 +5,14 @@ import { describe, it, expect, vi } from 'vitest';
 
 import { App } from '../App';
 import { registerDeviceEnginePorts } from '../registerDeviceEnginePorts';
+import { registerSupportingServicePorts } from '../registerSupportingServicePorts';
 
 vi.mock('../registerDeviceEnginePorts', () => ({
     registerDeviceEnginePorts: vi.fn<() => void>(),
+}));
+
+vi.mock('../registerSupportingServicePorts', () => ({
+    registerSupportingServicePorts: vi.fn<() => void>(),
 }));
 
 // Mock providers and components
@@ -45,6 +50,10 @@ describe('App', () => {
         // `main.tsx` may render App before bootstrap has run, and the preset
         // browser reads the preset port while it renders.
         expect(registerDeviceEnginePorts).toHaveBeenCalledExactlyOnceWith();
+    });
+
+    it('registers the supporting service ports when the module loads, before any render', () => {
+        expect(registerSupportingServicePorts).toHaveBeenCalledExactlyOnceWith();
     });
 
     it('should render all providers and router', () => {

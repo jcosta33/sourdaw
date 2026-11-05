@@ -249,6 +249,7 @@ import { registerDeviceEnginePorts } from './registerDeviceEnginePorts';
 import { registerGlobalErrorHandlers } from './registerGlobalErrorHandlers';
 import { registerProjectLifecycle } from './registerProjectLifecycle';
 import { registerProjectSlotProjections } from './registerProjectSlotProjections';
+import { registerSupportingServicePorts } from './registerSupportingServicePorts';
 
 logCapabilities();
 
@@ -264,6 +265,7 @@ registerCrdtStorageRuntime();
 registerProjectSlotProjections();
 registerProjectLifecycle();
 registerDeviceEnginePorts();
+registerSupportingServicePorts();
 setElasticSensitivityRootIdentityCapture(captureProjectRootIdentity);
 configureCommandBatchIdempotency({ canExecute: canExecuteCommandBatch });
 setActionHistoryMetadataPort({

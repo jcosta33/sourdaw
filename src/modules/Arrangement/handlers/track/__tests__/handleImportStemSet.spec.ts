@@ -31,6 +31,7 @@ import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { trackStore } from '../../../stores/trackStore';
 import { setArrangementEventBus } from '../../../useCases/arrangementEventBus';
+import { collaborationAssetTransfer } from '../../../useCases/collaborationAssetTransfer';
 import { createImportedStemTracks } from '../../../useCases/stemImport/createImportedStemTracks';
 import { handleDiscardImportedStemSet, handleImportStemSet } from '../handleImportStemSet';
 
@@ -38,7 +39,7 @@ const mocks = vi.hoisted(() => ({
     activateExternalPlugin: vi.fn<() => void>(),
     initializeTrackStripFromSnapshot: vi.fn(() => ({ acceptance: 'accepted', application: 'applied' })),
     promoteDurableStagedAsset: vi.fn(),
-    promoteStagedAsset: vi.fn<(leaseId: string) => void>(),
+    promoteStagedAsset: vi.fn<(leaseId: string) => boolean>(),
     publishTrackAdded: vi.fn<() => Promise<void>>(() => Promise.resolve()),
     publishTrackRemoved: vi.fn<() => Promise<void>>(() => Promise.resolve()),
     removeBusStrip: vi.fn<() => void>(),
@@ -86,12 +87,16 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
-vi.mock('#/modules/Collaboration/useCases', () => ({
-    getAssetTransfer: () => ({
-        promoteDurableStagedAsset: mocks.promoteDurableStagedAsset,
+collaborationAssetTransfer.configure({
+    current: () => ({
+        stageLocalAsset: vi.fn(),
         promoteStagedAsset: mocks.promoteStagedAsset,
+        releaseStagedAsset: vi.fn(),
+        promoteDurableStagedAsset: mocks.promoteDurableStagedAsset,
+        requestAsset: vi.fn(),
     }),
-}));
+    isSessionActive: () => false,
+});
 vi.mock('#/modules/PluginHost/useCases', () => ({
     isFaustInstrumentModule: vi.fn(() => false),
     registerFaustDSP: vi.fn(),

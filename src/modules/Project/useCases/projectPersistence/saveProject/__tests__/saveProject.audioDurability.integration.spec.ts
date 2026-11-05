@@ -166,6 +166,7 @@ describe('saveProject audio durability integration', () => {
             { withProjectAudioStorageLock },
             { registerProjectLifecycle },
             { registerDeviceEnginePorts },
+            { registerSupportingServicePorts },
         ] = await Promise.all([
             import('#/modules/AudioEngine/useCases'),
             import('#/modules/AudioEngine/stores'),
@@ -180,6 +181,7 @@ describe('saveProject audio durability integration', () => {
             import('#/infra/storage/withProjectAudioStorageLock'),
             import('#/app/registerProjectLifecycle'),
             import('#/app/registerDeviceEnginePorts'),
+            import('#/app/registerSupportingServicePorts'),
         ]);
         const context = audioEngine.context as AudioContext & {
             createBuffer: typeof createAudioBuffer;
@@ -198,6 +200,7 @@ describe('saveProject audio durability integration', () => {
         resetCrdtProjectAuthority('Durability');
         registerProjectLifecycle();
         registerDeviceEnginePorts();
+        registerSupportingServicePorts();
         resetModuleStoresToDefault();
         projectStore.set({
             ...createFreshProjectMetadata({

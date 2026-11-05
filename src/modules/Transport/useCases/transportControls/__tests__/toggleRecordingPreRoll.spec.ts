@@ -100,8 +100,6 @@ vi.mock('#/modules/Arrangement/stores', () => ({
         },
     },
 }));
-vi.mock('#/modules/Collaboration/stores', () => ({ collaborationStore: { value: null } }));
-vi.mock('#/modules/Collaboration/useCases', () => ({ getAssetTransfer: () => null }));
 vi.mock('../../scheduling/scheduleFrozenTrack', () => ({ scheduleFrozenTrack: () => false }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioEngine: { beginAudioPreviewIntent: () => ({ release: vi.fn() }) },
