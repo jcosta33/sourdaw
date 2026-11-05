@@ -54,6 +54,7 @@ vi.mock('../../saveProject/captureExternalPluginStates', () => ({
 }));
 
 import { registerProjectLifecycle } from '#/app/registerProjectLifecycle';
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import { Container } from '#/infra/di/Container';
 import {
     configureAutomergeStoragePort,
@@ -237,6 +238,7 @@ describe('project export snapshot consistency integration', () => {
         resetCrdtProjectAuthority('export snapshot bootstrap');
         registerCrdtStorageRuntime();
         registerProjectLifecycle();
+        registerSupportingServicePorts();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         registerHandlerMap(getTransportHandlers());

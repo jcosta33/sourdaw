@@ -49,6 +49,7 @@ export { rearmInputMonitoring } from './rearmInputMonitoring';
 export { exportMidiClip } from './exportMidiClip';
 export { importMidiFile } from './importMidiFile';
 export { importAudioFile } from './importAudioFile';
+export { collaborationAssetTransfer } from './collaborationAssetTransfer';
 
 export { setTrackGain } from './setTrackGainPan/setTrackGain';
 export { clampTrackGain } from './setTrackGainPan/clampTrackGain';

@@ -75,8 +75,6 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     persistDeviceParam: vi.fn(),
     resolveEligibleDeviceWriteTarget: vi.fn(),
 }));
-vi.mock('#/modules/Collaboration/stores', () => ({ collaborationStore: { value: null } }));
-vi.mock('#/modules/Collaboration/useCases', () => ({ getAssetTransfer: () => null }));
 vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
     midiStore: {

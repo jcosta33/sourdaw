@@ -1,5 +1,5 @@
 import { getGainEnvelopeSeries, trackStore } from '#/modules/Arrangement/stores';
-import { resolveClipsWithComping } from '#/modules/Arrangement/useCases';
+import { collaborationAssetTransfer, resolveClipsWithComping } from '#/modules/Arrangement/useCases';
 import {
     createBufferSource,
     ensureTrackStrip,
@@ -8,8 +8,6 @@ import {
     getCompensationDelay,
     getCurrentTime,
 } from '#/modules/AudioEngine/useCases';
-import { collaborationStore } from '#/modules/Collaboration/stores';
-import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import {
     MICRO_FADE_SECONDS,
@@ -783,8 +781,8 @@ export function scheduleAudioClips(
             if (!buffer) {
                 const isRecordingClip = bufferId.startsWith('rec-');
                 if (!isRecordingClip) {
-                    const inSession = collaborationStore.value?.isEnabled ?? false;
-                    if (inSession && clip.assetHash) {
+                    const assets = collaborationAssetTransfer.read('scheduleAudioClips');
+                    if (assets.isSessionActive() && clip.assetHash) {
                         // Deliberately unconditional: AssetTransfer owns both the
                         // dedup and the retry policy, because only it knows
                         // whether a request is still alive. It drops calls while
@@ -794,7 +792,7 @@ export function scheduleAudioClips(
                         // after a corrupt chunk or a dead sender aborted the
                         // transfer, the asset could never be re-requested for the
                         // rest of the session and the clip stayed silent forever.
-                        getAssetTransfer()?.requestAsset(clip.assetHash);
+                        assets.current()?.requestAsset(clip.assetHash);
                     } else {
                         notifyUser(`Missing audio for clip "${clip.name}" — re-import the audio file`, 'warning');
                         scheduledAudioClipsSet.add(clipKey);

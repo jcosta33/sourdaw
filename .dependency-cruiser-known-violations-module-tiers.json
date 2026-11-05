@@ -5,16 +5,13 @@
       "Arrangement",
       "AudioEngine",
       "Automation",
-      "Collaboration",
       "Command",
-      "ControlSurface",
       "CrdtDocument",
       "ElasticAudio",
       "Knead",
       "MIDI",
       "Project",
       "Routing",
-      "SampleLibrary",
       "Transport"
     ]
   },
@@ -22,16 +19,6 @@
     "type": "module-tier",
     "from": "AiRuntime",
     "to": "WorkspaceShell"
-  },
-  {
-    "type": "module-tier",
-    "from": "Arrangement",
-    "to": "Collaboration"
-  },
-  {
-    "type": "module-tier",
-    "from": "Arrangement",
-    "to": "SampleLibrary"
   },
   {
     "type": "module-tier",
@@ -121,32 +108,12 @@
   {
     "type": "module-tier",
     "from": "MIDI",
-    "to": "ControlSurface"
-  },
-  {
-    "type": "module-tier",
-    "from": "MIDI",
     "to": "Synth"
   },
   {
     "type": "module-tier",
     "from": "Project",
-    "to": "ControlSurface"
-  },
-  {
-    "type": "module-tier",
-    "from": "Project",
     "to": "CvGate"
-  },
-  {
-    "type": "module-tier",
-    "from": "Project",
-    "to": "SampleLibrary"
-  },
-  {
-    "type": "module-tier",
-    "from": "Transport",
-    "to": "Collaboration"
   },
   {
     "type": "module-tier",

@@ -1,10 +1,10 @@
-import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { serializeMidiStateForClips } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type GeneratedMidiStateGuard } from '#/utils/handlerContract';
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
 import { captureTrackRemovalRuntimeAuthority } from '../../useCases/captureTrackRemovalRuntimeAuthority';
+import { collaborationAssetTransfer } from '../../useCases/collaborationAssetTransfer';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { projectTrackToLiveStrip } from '../../useCases/projectTrackToLiveStrip';
 import { publishTrackAdded } from '../../useCases/publishTrackAdded';
@@ -96,7 +96,7 @@ async function reconcileImportedStemEffects({
             ...assetBindings
                 .filter(({ leaseId }) => !promotedAssetLeaseIds.has(leaseId))
                 .map(({ leaseId, hash }) => async () => {
-                    const transfer = getAssetTransfer();
+                    const transfer = collaborationAssetTransfer.read('handleImportStemSet').current();
                     if (!transfer) {
                         throw new Error(`Asset transfer is unavailable for staged lease: ${leaseId}`);
                     }

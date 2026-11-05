@@ -165,6 +165,7 @@ const {
     registerProjectSlotProjectionsMock,
     registerProjectLifecycleMock,
     registerDeviceEnginePortsMock,
+    registerSupportingServicePortsMock,
     captureProjectRootIdentityMock,
     setElasticSensitivityRootIdentityCaptureMock,
     captureProjectIdentityMock,
@@ -301,6 +302,7 @@ const {
         registerProjectSlotProjectionsMock: vi.fn<() => void>(),
         registerProjectLifecycleMock: vi.fn<() => void>(),
         registerDeviceEnginePortsMock: vi.fn<() => void>(),
+        registerSupportingServicePortsMock: vi.fn<() => void>(),
         captureProjectRootIdentityMock: vi.fn<() => string>(() => 'root-identity'),
         setElasticSensitivityRootIdentityCaptureMock: vi.fn(),
         captureProjectIdentityMock: vi.fn<() => string>(() => 'identity-1'),
@@ -694,6 +696,10 @@ vi.mock('#/modules/Routing/useCases', () => ({
     getNodeViewHandlers: sentinelHandlers('NodeView'),
 }));
 
+vi.mock('#/modules/SampleLibrary/useCases', () => ({
+    getSampleLibraryHandlers: sentinelHandlers('SampleLibrary'),
+}));
+
 vi.mock('#/modules/SessionLauncher/useCases', () => ({
     getSessionLauncherHandlers: sentinelHandlers('SessionLauncher'),
 }));
@@ -802,6 +808,10 @@ vi.mock('../registerDeviceEnginePorts', () => ({
     registerDeviceEnginePorts: registerDeviceEnginePortsMock,
 }));
 
+vi.mock('../registerSupportingServicePorts', () => ({
+    registerSupportingServicePorts: registerSupportingServicePortsMock,
+}));
+
 vi.mock('../composeGrandBoule', () => ({
     composeGrandBoule: composeGrandBouleMock,
 }));
@@ -899,6 +909,7 @@ describe('bootstrap', () => {
     // (nothing missing) and idempotent (nothing registered twice).
     const expectedRegistrationOrder = [
         'Arrangement',
+        'SampleLibrary',
         'Transport',
         'SessionLauncher',
         'Setlist',
@@ -1090,6 +1101,11 @@ describe('bootstrap', () => {
         expect(registerDeviceEnginePortsMock).toHaveBeenCalledExactlyOnceWith();
         expect(registerDeviceEnginePortsMock).toHaveBeenCalledAfter(registerProjectLifecycleMock);
         expect(registerDeviceEnginePortsMock).toHaveBeenCalledBefore(setProjectIdentityTransitionDependenciesMock);
+        // Beside the device ports, before an import, a save or playback can
+        // reach a supporting module through a port.
+        expect(registerSupportingServicePortsMock).toHaveBeenCalledExactlyOnceWith();
+        expect(registerSupportingServicePortsMock).toHaveBeenCalledAfter(registerDeviceEnginePortsMock);
+        expect(registerSupportingServicePortsMock).toHaveBeenCalledBefore(setProjectIdentityTransitionDependenciesMock);
         expect(agentProjectInspectionSetProviderMock).toHaveBeenCalledExactlyOnceWith(
             captureAgentProjectInspectionState
         );

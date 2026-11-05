@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import { midiStore } from '#/modules/MIDI/stores';
 
 import {
@@ -34,6 +35,8 @@ function arrangementSnapshot(id: string, name: string): ArrangementSnapshot {
  * named-project reopen runs: real stores, a real build, a JSON round-trip,
  * and the real hydrator.
  */
+registerSupportingServicePorts();
+
 describe('noteCoordinateFormat across a named-project reopen', () => {
     beforeEach(() => {
         midiStore.set(null);

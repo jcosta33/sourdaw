@@ -3,12 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { logger } from '#/infra/logger/appLogger';
 import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
 import { captureProjectOriginalMedia } from '#/modules/Collaboration/useCases';
+import { midiLearnStore } from '#/modules/ControlSurface/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { CURRENT_PROJECT_VERSION, type ProjectData } from '../../../../models/ProjectData';
 import { downloadProjectFile } from '../../../../repositories/project/downloadProjectFile';
 import { projectOriginalMediaPort } from '../../projectOriginalMediaPort';
 import { exportProjectFile } from '../exportProjectFile';
+import { midiLearnProjection } from '../midiLearnProjection';
 
 import type { Track } from '#/modules/Arrangement/stores';
 import type { ProjectDataWithOriginalMedia } from '../projectOriginalMediaArchive';
@@ -158,6 +160,10 @@ function seedMissingOriginalExport(): void {
         unavailable: ['sha256:missing-original'],
     });
 }
+
+// The composition root's MIDI learn projection over the live store: the
+// registrar itself cannot load while whole module barrels are mocked.
+midiLearnProjection.configure({ readMidiLearn: () => midiLearnStore.value });
 
 describe('exportProjectFile', () => {
     beforeEach(() => {
