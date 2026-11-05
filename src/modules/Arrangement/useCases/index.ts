@@ -265,7 +265,7 @@ export { syncSoloModePreference } from './soloMode/syncSoloModePreference';
 // ── Track View / Zoom ─────────────────────────────────────────────────────────
 
 export { zoomTracksVertical } from './trackZoom';
-export { initTimelineScrollClamp } from './initTimelineScrollClamp';
+export { initTimelineViewReconciliation } from './initTimelineViewReconciliation';
 export { detectVariationLaneEnabling } from './detectVariationLaneEnabling';
 export { hasVariationLanes } from './hasVariationLanes';
 export { getAlternativeClips } from './getAlternativeClips';

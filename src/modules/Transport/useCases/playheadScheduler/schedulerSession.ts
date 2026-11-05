@@ -1,11 +1,7 @@
-import type { TempoChange } from '../../stores/tempoMapStore';
+import { type SourceWithFade } from '../../models/SourceWithFade';
+import { type TempoChange } from '../../stores/tempoMapStore';
 
-/**
- * A buffer source the scheduler tracks, with the handle its fade rides and —
- * for sources scheduled on the compensated clock (#4784) — the compensation it
- * was scheduled with, so a loop-seam fence can spare the tail it is still due.
- */
-export type SourceWithFade = AudioBufferSourceNode & { fadeGainNode?: GainNode; compensationSeconds?: number };
+import { cutSource } from './cutSource';
 
 /**
  * Stop every source in the pool through its optional fade, and drop the
@@ -40,7 +36,7 @@ export function stopActiveSources(sources: AudioBufferSourceNode[], ctx: BaseAud
     for (const src of sources as SourceWithFade[]) {
         const stopAt =
             stopAtTime === undefined ? now + 0.005 : Math.max(stopAtTime + (src.compensationSeconds ?? 0), now);
-        cutSourceAt(src, now, stopAt);
+        cutSource(src, ctx, stopAt);
         if (stopAtTime !== undefined && stopAt > now) {
             schedulerSession.pendingFences.push({ source: src, stopAt });
         }
@@ -49,27 +45,13 @@ export function stopActiveSources(sources: AudioBufferSourceNode[], ctx: BaseAud
     if (stopAtTime === undefined) {
         for (const fence of schedulerSession.pendingFences) {
             if (fence.stopAt > now) {
-                cutSourceAt(fence.source, now, now + 0.005);
+                cutSource(fence.source, ctx);
             }
         }
         schedulerSession.pendingFences.length = 0;
         return;
     }
     schedulerSession.pendingFences = schedulerSession.pendingFences.filter((fence) => fence.stopAt > now);
-}
-
-function cutSourceAt(src: SourceWithFade, now: number, stopAt: number): void {
-    try {
-        if (src.fadeGainNode) {
-            const fadeStart = Math.max(stopAt - 0.005, now);
-            src.fadeGainNode.gain.cancelScheduledValues(now);
-            src.fadeGainNode.gain.setValueAtTime(src.fadeGainNode.gain.value, fadeStart);
-            src.fadeGainNode.gain.linearRampToValueAtTime(0, stopAt);
-        }
-        src.stop(stopAt);
-    } catch {
-        /* already stopped */
-    }
 }
 
 // §28.1 / §107.1 — Coalesce scheduler mutables into a single holder so

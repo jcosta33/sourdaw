@@ -1,3 +1,4 @@
+import { resolveClipLoopPassGrid } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
 import { type MidiCC, type MidiNote } from '../../models/MidiNote';
@@ -53,15 +54,24 @@ export function projectMidiClipPlayback({ notes, controlChanges, clip }: Project
         loopEnabled,
     });
 
+    const loopPassGrid = resolveClipLoopPassGrid({
+        startBeat: clip.startBeat,
+        endBeat: clip.endBeat,
+        loopOriginBeat: clip.loopOriginBeat,
+        loopEnabled,
+        loopLengthBeats: expansion.loopLengthBeats,
+        iterationCount: expansion.iterationCount,
+    });
+
     const playedNotes: MidiNote[] = [];
-    for (let iteration = 0; iteration < expansion.iterationCount; iteration++) {
+    for (let iteration = 0; iteration < loopPassGrid.passCount; iteration++) {
         playedNotes.push(
             ...straightProjection.projectClipMidiEvents({
                 events: notes,
                 clipId: clip.id,
                 clipStartBeat: clip.startBeat,
                 clipEndBeat: clip.endBeat,
-                iterationStartBeat: clip.startBeat + iteration * expansion.loopLengthBeats,
+                iterationStartBeat: loopPassGrid.firstPassStartBeat + iteration * expansion.loopLengthBeats,
                 loopLengthBeats: expansion.loopLengthBeats,
                 midiOffsetBeats,
                 loopEnabled,
