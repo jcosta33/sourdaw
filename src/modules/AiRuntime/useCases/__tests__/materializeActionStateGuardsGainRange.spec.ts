@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
-import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
+import {
+    type ProjectContext,
+    type ProjectContextAutomationLane,
+    type ProjectContextTrack,
+} from '../../models/ProjectContext';
 import { materializeActionStateGuards } from '../materializeActionStateGuards';
 
 const BUS_ID = 'bus-impact';
@@ -90,5 +94,111 @@ describe('materializeActionStateGuards — automateTrackGainRange headroom', () 
 
         expect(result.status).toBe('rejected');
         expect(result.status === 'rejected' && result.reason).toContain(BUS_ID);
+    });
+});
+
+/**
+ * Every refusal the gain-range guard owns, one cause per row: each row changes one fact of a bus the
+ * guard otherwise admits, so removing that clause from the guard admits the row.
+ */
+describe('materializeActionStateGuards — automateTrackGainRange refusals', () => {
+    const ADMITTED_GAIN = 0.8;
+    const LIFT_DB = 1.5;
+
+    function materializeWith(
+        changeContext: (context: ProjectContext) => ProjectContext,
+        payload: { trackIds?: string[]; sectionName?: string } = {}
+    ) {
+        return materializeActionStateGuards(
+            [
+                {
+                    type: 'automateTrackGainRange',
+                    payload: { trackIds: [BUS_ID], sectionName: 'Verse', gainDb: LIFT_DB, ...payload },
+                },
+            ],
+            changeContext(contextWithBusGain(ADMITTED_GAIN))
+        );
+    }
+
+    function lane(identity: Pick<ProjectContextAutomationLane, 'id' | 'trackId' | 'parameterId'>) {
+        return { ...identity, name: 'Gain', enabled: true, minValue: 0, maxValue: 1, points: [] };
+    }
+
+    function withBus(change: Partial<ProjectContextTrack>) {
+        return (context: ProjectContext): ProjectContext => ({
+            ...context,
+            tracks: context.tracks.map((track) => (track.id === BUS_ID ? { ...track, ...change } : track)),
+        });
+    }
+
+    it('admits the unchanged bus every row below departs from', () => {
+        expect(materializeWith((context) => context).status).toBe('accepted');
+    });
+
+    it.each([
+        {
+            cause: 'a section the project does not hold',
+            changeContext: (context: ProjectContext) => context,
+            payload: { sectionName: 'Bridge' },
+            reason: 'Section is unavailable: Bridge',
+        },
+        {
+            cause: 'a track the project does not hold',
+            changeContext: (context: ProjectContext) => context,
+            payload: { trackIds: ['bus-missing'] },
+            reason: 'Bus is unavailable: bus-missing',
+        },
+        {
+            cause: 'a target that is not a bus',
+            changeContext: withBus({ kind: 'audio' }),
+            payload: {},
+            reason: `Bus is unavailable: ${BUS_ID}`,
+        },
+        {
+            cause: 'a frozen bus',
+            changeContext: withBus({ frozen: true }),
+            payload: {},
+            reason: `Bus cannot accept gain automation: ${BUS_ID}`,
+        },
+        {
+            cause: 'a bus with automation off',
+            changeContext: withBus({ automationMode: 'off' }),
+            payload: {},
+            reason: `Bus cannot accept gain automation: ${BUS_ID}`,
+        },
+        {
+            cause: 'a bus whose gain is not a finite number',
+            changeContext: withBus({ gain: Number.NaN }),
+            payload: {},
+            reason: `Bus cannot accept gain automation: ${BUS_ID}`,
+        },
+        {
+            cause: 'a bus at zero gain',
+            changeContext: withBus({ gain: 0 }),
+            payload: {},
+            reason: `Bus cannot accept gain automation: ${BUS_ID}`,
+        },
+        {
+            cause: 'a bus whose gain lane the guard would create already exists',
+            changeContext: (context: ProjectContext): ProjectContext => ({
+                ...context,
+                automationLanes: [
+                    lane({ id: `auto-gain-${BUS_ID}`, trackId: 'track-elsewhere', parameterId: 'volume' }),
+                ],
+            }),
+            payload: {},
+            reason: `Bus cannot accept gain automation: ${BUS_ID}`,
+        },
+        {
+            cause: 'a bus that already carries a track gain lane',
+            changeContext: (context: ProjectContext): ProjectContext => ({
+                ...context,
+                automationLanes: [lane({ id: 'lane-bus-gain', trackId: BUS_ID, parameterId: 'gain' })],
+            }),
+            payload: {},
+            reason: `Bus cannot accept gain automation: ${BUS_ID}`,
+        },
+    ])('refuses $cause', ({ changeContext, payload, reason }) => {
+        expect(materializeWith(changeContext, payload)).toEqual({ status: 'rejected', reason });
     });
 });
