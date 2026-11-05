@@ -64,11 +64,14 @@ describe('materializeActionStateGuards — created track names', () => {
             context([track('t-midi', 'MIDI 2', 'midi'), track('t-lead', 'Lead', 'midi')])
         );
 
-        expect(result.status).toBe('accepted');
-        const names =
-            result.status === 'accepted'
-                ? result.actions.map((action) => (action.type === 'addTrack' ? action.payload.name : action.type))
-                : [];
-        expect(names).toEqual(['MIDI 3', 'Pad', 'MIDI 4', 'Audio 1']);
+        expect(result).toMatchObject({
+            status: 'accepted',
+            actions: [
+                { type: 'addTrack', payload: { id: 'track-a', name: 'MIDI 3' } },
+                { type: 'addTrack', payload: { id: 'track-b', name: 'Pad' } },
+                { type: 'addTrack', payload: { id: 'track-c', name: 'MIDI 4' } },
+                { type: 'addTrack', payload: { id: 'track-d', name: 'Audio 1' } },
+            ],
+        });
     });
 });
