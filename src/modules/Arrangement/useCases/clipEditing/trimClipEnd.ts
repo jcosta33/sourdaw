@@ -2,8 +2,6 @@ import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
 import { findClipById } from '../../services/findClipById';
 
-import { limitClipEndToSource } from './limitClipEndToSource';
-
 export function trimClipEnd(clipId: string, newEndBeat: number): boolean {
     if (!Number.isFinite(newEndBeat)) {
         return false;
@@ -26,6 +24,6 @@ export function trimClipEnd(clipId: string, newEndBeat: number): boolean {
             return context;
         }
 
-        return { ...context, endBeat: limitClipEndToSource(context, newEndBeat) };
+        return { ...context, endBeat: newEndBeat };
     });
 }

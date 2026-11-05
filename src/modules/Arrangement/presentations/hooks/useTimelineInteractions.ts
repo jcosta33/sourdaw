@@ -674,7 +674,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             if (preferencesStore.value?.snapToZeroCrossing && trimmedClip?.type === 'audio') {
                 newEnd = snapToZeroCrossing(trimmedClip, newEnd);
             }
-            // The edge stops where the commit (trimClipEnd) will: the end of the clip's source.
+            // The edge stops at the end of the clip's source, and the commit writes the end previewed.
             if (trimmedClip) {
                 newEnd = limitClipEndToSource(trimmedClip, newEnd);
             }

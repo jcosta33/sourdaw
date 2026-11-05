@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type Clip, defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
+import { type Clip } from '#/modules/Arrangement/stores';
 import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import { CLIP_LOOP_WINDOW_BEAT_TOLERANCE } from '#/utils/clipLoopOrigin';
 
-import { createTrack } from '../../../models/Track';
-import { trimClipEnd } from '../trimClipEnd';
+import { limitClipEndToSource } from '../limitClipEndToSource';
 
 const mocks = vi.hoisted(() => ({
     getCachedAudioBuffer: vi.fn<(input: { bufferId: string }) => { length: number; sampleRate: number } | null>(),
@@ -15,12 +15,10 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
 }));
 
-const SAMPLE_RATE = 48_000;
-
 /** A decoded source of `seconds` length under the buffer id every fixture clip names. */
-function cacheSource(seconds: number): void {
+function cacheSource(seconds: number, sampleRate = 48_000): void {
     mocks.getCachedAudioBuffer.mockImplementation(({ bufferId }) =>
-        bufferId === 'buffer-1' ? { length: seconds * SAMPLE_RATE, sampleRate: SAMPLE_RATE } : null
+        bufferId === 'buffer-1' ? { length: seconds * sampleRate, sampleRate } : null
     );
 }
 
@@ -43,26 +41,12 @@ function audioClip(fields: Partial<Clip>): Clip {
     };
 }
 
-function seed(clip: Clip): void {
-    const track = createTrack({
-        id: 'track-1',
-        name: 'Audio',
-        kind: clip.type === 'midi' ? 'midi' : 'audio',
-        withoutDefaultDevice: true,
-    });
-    trackStore.set({ ...defaultTrackState, tracks: [{ ...track, clips: [clip] }] });
-}
-
-function writtenEndBeat(): number | undefined {
-    return trackStore.value?.tracks[0]?.clips[0]?.endBeat;
-}
-
 /**
  * 120 BPM until beat 8, then 60 BPM. A clip at beat 2 entering its 4 s source
  * 1 beat (0.5 s) in has 3.5 s left: 3 s to beat 8, then 0.5 s, so its source
  * runs out on beat 8.5. A flat 120 BPM conversion would put that on beat 9.
  */
-describe('trimClipEnd keeps a non-looping audio clip within its source', () => {
+describe('limitClipEndToSource keeps a non-looping audio clip within its source', () => {
     let previousTransport: typeof transportStore.value;
     let previousTempoMap: typeof tempoMapStore.value;
 
@@ -83,42 +67,57 @@ describe('trimClipEnd keeps a non-looping audio clip within its source', () => {
     afterEach(() => {
         transportStore.set(previousTransport);
         tempoMapStore.set(previousTempoMap);
-        trackStore.set(defaultTrackState);
     });
 
     it('stops a lengthened end at the beat its source runs out, through the tempo map', () => {
-        seed(audioClip({ audioOffsetBeats: 1 }));
+        expect(limitClipEndToSource(audioClip({ audioOffsetBeats: 1 }), 12)).toBeCloseTo(8.5, 9);
+    });
 
-        expect(trimClipEnd('clip-1', 12)).toBe(true);
+    it('reads a legacy beat offset at the tempo where the clip starts, not where it ends', () => {
+        // The 1-beat offset is 0.5 s at the start's 120 BPM, leaving 5.5 s of a 6 s source:
+        // 3 s to beat 8, then 2.5 s at 60 BPM. Read at the end's 60 BPM it would be 1 s, ending on beat 10.
+        cacheSource(6);
 
-        expect(writtenEndBeat()).toBeCloseTo(8.5, 9);
+        expect(limitClipEndToSource(audioClip({ audioOffsetBeats: 1, endBeat: 9 }), 12)).toBeCloseTo(10.5, 9);
     });
 
     it('reads a canonical seconds entry and the stretch rate the clip consumes its source at', () => {
         // 1 s into a 4 s source at twice the rate: 3 s of source last 1.5 s, three beats at 120 BPM.
-        seed(
-            audioClip({
-                startBeat: 0,
-                endBeat: 2,
-                audioOffsetSeconds: 1,
-                stretchMode: 'timestretch',
-                stretchRatio: 2,
-            })
-        );
+        const clip = audioClip({
+            startBeat: 0,
+            endBeat: 2,
+            audioOffsetSeconds: 1,
+            stretchMode: 'timestretch',
+            stretchRatio: 2,
+        });
 
-        trimClipEnd('clip-1', 6);
+        expect(limitClipEndToSource(clip, 6)).toBeCloseTo(3, 9);
+    });
 
-        expect(writtenEndBeat()).toBeCloseTo(3, 9);
+    it('reads the source length at its own sample rate', () => {
+        // The same 4 s source decoded at 44.1 kHz still runs out on beat 8.5.
+        cacheSource(4, 44_100);
+
+        expect(limitClipEndToSource(audioClip({ audioOffsetBeats: 1 }), 12)).toBeCloseTo(8.5, 9);
     });
 
     it('counts the silence a negative entry plays before the source begins', () => {
         // One second of pre-roll, then the 2 s source: six beats at 120 BPM.
         cacheSource(2);
-        seed(audioClip({ startBeat: 0, endBeat: 2, audioOffsetSeconds: -1 }));
 
-        trimClipEnd('clip-1', 7);
+        expect(limitClipEndToSource(audioClip({ startBeat: 0, endBeat: 2, audioOffsetSeconds: -1 }), 7)).toBeCloseTo(
+            6,
+            9
+        );
+    });
 
-        expect(writtenEndBeat()).toBeCloseTo(6, 9);
+    it('keeps a requested end within the tolerance past the source end', () => {
+        // 1 s into a 4 s source from beat 0 ends on beat 6 exactly.
+        const requestedEndBeat = 6 + CLIP_LOOP_WINDOW_BEAT_TOLERANCE / 2;
+
+        expect(
+            limitClipEndToSource(audioClip({ startBeat: 0, endBeat: 2, audioOffsetSeconds: 1 }), requestedEndBeat)
+        ).toBe(requestedEndBeat);
     });
 
     const unclampedCases = [
@@ -148,12 +147,12 @@ describe('trimClipEnd keeps a non-looping audio clip within its source', () => {
             requestedEndBeat: 9,
         },
         {
-            name: 'a lengthened end the source still covers is written as requested',
+            name: 'a lengthened end the source still covers is kept as requested',
             clip: audioClip({ audioOffsetBeats: 1 }),
             requestedEndBeat: 6,
         },
         {
-            name: 'a lengthened end exactly on the source end is written as requested',
+            name: 'a lengthened end exactly on the source end is kept as requested',
             clip: audioClip({ startBeat: 0, endBeat: 2, audioOffsetSeconds: 1 }),
             requestedEndBeat: 6,
         },
@@ -165,27 +164,16 @@ describe('trimClipEnd keeps a non-looping audio clip within its source', () => {
     ];
 
     it.each(unclampedCases)('$name', ({ clip, requestedEndBeat }) => {
-        seed(clip);
-
-        trimClipEnd('clip-1', requestedEndBeat);
-
-        expect(writtenEndBeat()).toBe(requestedEndBeat);
+        expect(limitClipEndToSource(clip, requestedEndBeat)).toBe(requestedEndBeat);
     });
 
     it('keeps the requested end when the decoded source is not cached', () => {
         mocks.getCachedAudioBuffer.mockReturnValue(null);
-        seed(audioClip({ audioOffsetBeats: 1 }));
 
-        trimClipEnd('clip-1', 12);
-
-        expect(writtenEndBeat()).toBe(12);
+        expect(limitClipEndToSource(audioClip({ audioOffsetBeats: 1 }), 12)).toBe(12);
     });
 
     it('does not lengthen a clip that already ends past its source', () => {
-        seed(audioClip({ audioOffsetBeats: 1, endBeat: 10 }));
-
-        trimClipEnd('clip-1', 12);
-
-        expect(writtenEndBeat()).toBe(10);
+        expect(limitClipEndToSource(audioClip({ audioOffsetBeats: 1, endBeat: 10 }), 12)).toBe(10);
     });
 });
