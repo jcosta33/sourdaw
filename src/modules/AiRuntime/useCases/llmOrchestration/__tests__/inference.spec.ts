@@ -248,14 +248,38 @@ describe('generateToolPlanningOutcome', () => {
             return getAgentToolCatalogSchemas().filter((schema) => schema.function.name === 'project.query');
         }
 
-        function replyWithQueryArguments(queryArguments: Record<string, unknown>): void {
+        function replyWithQueryArguments(
+            queryArguments: Record<string, unknown>,
+            strictness: { strictToolSchemas: boolean; nonStrictToolNames?: string[] } = { strictToolSchemas: false }
+        ): void {
             mocks.backendChain.value = ['cloud'];
             mocks.generateCloudToolCalls.mockResolvedValue({
                 providerRequestId: null,
                 calls: [{ id: 'query-call', name: 'project.query', arguments: queryArguments }],
-                strictToolSchemas: false,
+                ...strictness,
                 usage: null,
             });
+        }
+
+        /** The loop's own turn, which says it answers a schema-invalid call with a receipt. */
+        function planLoopTurn() {
+            return generateToolPlanningOutcome(
+                'system',
+                'find the lead vocal',
+                projectQuerySchemas(),
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                {
+                    firstUserMessage: 'find the lead vocal',
+                    history: [],
+                    budgetNote: '',
+                    answersSchemaInvalidCalls: true,
+                }
+            );
         }
 
         it('admits a filter the owner publishes', async () => {
@@ -271,16 +295,67 @@ describe('generateToolPlanningOutcome', () => {
             });
         });
 
-        // A schema-invalid reply is refused at provider admission, before the application loop runs,
-        // so the model gets no tool receipt to correct itself with: the attempt fails.
+        // Red when admission still fails the attempt for a call the provider never held to its schema,
+        // or admits it without saying where it misses, which the loop's receipt names to the model.
         it.each([
-            { label: 'an unknown filter key', filters: { unknownFilter: 'x' } },
-            { label: 'a wrong-typed filter value', filters: { startBeat: '4' } },
-        ])('fails the attempt for $label instead of returning a recoverable tool error', async ({ filters }) => {
+            {
+                label: 'an unknown filter key',
+                filters: { unknownFilter: 'x' },
+                violation: { kind: 'undeclared-property', path: '/filters/unknownFilter' },
+            },
+            {
+                label: 'a wrong-typed filter value',
+                filters: { startBeat: '4' },
+                violation: { kind: 'invalid-value', path: '/filters/startBeat' },
+            },
+        ])('admits $label as a recoverable schema violation the loop answers', async ({ filters, violation }) => {
             replyWithQueryArguments({ type: 'object', filters });
 
+            await expect(planLoopTurn()).resolves.toMatchObject({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'query-call',
+                        name: 'project.query',
+                        arguments: { type: 'object', filters },
+                        argumentSchemaViolation: violation,
+                    },
+                ],
+                proposal: null,
+            });
+        });
+
+        // Red when Anthropic's per-tool strictness is read as the request's: a tool its strict budget
+        // sent loose is no more enforced than one on a non-strict request.
+        it('admits the violation from a tool a strict request sent without strict enforcement', async () => {
+            replyWithQueryArguments(
+                { type: 'object', filters: { startBeat: '4' } },
+                { strictToolSchemas: true, nonStrictToolNames: ['project.query'] }
+            );
+
+            await expect(planLoopTurn()).resolves.toMatchObject({
+                status: 'complete',
+                toolCalls: [{ argumentSchemaViolation: { kind: 'invalid-value', path: '/filters/startBeat' } }],
+            });
+        });
+
+        // Red when the violation is admitted where the provider enforced the schema, which only a broken
+        // stream can violate, or for a caller that has no receipt to answer it with.
+        it.each([
+            { label: 'a strict-schema request', strictness: { strictToolSchemas: true }, answers: true },
+            {
+                label: 'a strict request that names other tools loose',
+                strictness: { strictToolSchemas: true, nonStrictToolNames: ['answer.respond'] },
+                answers: true,
+            },
+            { label: 'a caller that does not answer it', strictness: { strictToolSchemas: false }, answers: false },
+        ])('still fails the attempt on $label', async ({ strictness, answers }) => {
+            replyWithQueryArguments({ type: 'object', filters: { startBeat: '4' } }, strictness);
+
             await expect(
-                generateToolPlanningOutcome('system', 'find the lead vocal', projectQuerySchemas())
+                answers
+                    ? planLoopTurn()
+                    : generateToolPlanningOutcome('system', 'find the lead vocal', projectQuerySchemas())
             ).rejects.toThrow('The model provider request failed.');
         });
     });

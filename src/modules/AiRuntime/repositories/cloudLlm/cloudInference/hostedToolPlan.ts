@@ -19,6 +19,12 @@ export type HostedToolPlan = {
     calls: ToolCallResult[];
     assistantItems: readonly unknown[];
     strictToolSchemas: boolean;
+    /**
+     * The advertised tools a strict request still sent without strict enforcement, by canonical
+     * name. Absent when every tool followed `strictToolSchemas`; only a dialect that admits strict
+     * mode per tool within a budget (Anthropic) narrows it.
+     */
+    nonStrictToolNames?: readonly string[];
     usage: HostedToolPlanUsage | null;
 };
 

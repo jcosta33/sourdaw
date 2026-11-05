@@ -277,6 +277,9 @@ export async function generateAnthropicToolCalls(input: {
         calls: results,
         assistantItems: payload.content,
         strictToolSchemas: true,
+        nonStrictToolNames: wireToolSchemas
+            .filter((_schema, index) => !strictToolAdmission[index])
+            .map((schema) => schema.function.name),
         usage,
     };
 }
