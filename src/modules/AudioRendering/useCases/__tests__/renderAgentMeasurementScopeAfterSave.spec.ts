@@ -74,7 +74,10 @@ beforeEach(() => {
     registerCrdtStorageRuntime();
     projectStore.set(defaultProjectStoreState);
     trackStore.set({
-        tracks: [createTrack({ id: 'master', name: 'master', kind: 'master' }), createTrack({ id: 'track-1', name: 'track-1', kind: 'audio' })],
+        tracks: [
+            createTrack({ id: 'master', name: 'master', kind: 'master' }),
+            createTrack({ id: 'track-1', name: 'track-1', kind: 'audio' }),
+        ],
         selectedTrackId: null,
         ghostClips: [],
     });
