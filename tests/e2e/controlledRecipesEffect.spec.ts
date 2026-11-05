@@ -51,12 +51,14 @@ test('every controlled compressor expansion lowers measured dynamic range throug
             { expandMixRecipe },
             { createWebAudioDevice },
             { measureAgentObjectiveBuffer },
+            { getAddedDeviceParameterValues },
         ] = await Promise.all([
             import('/src/modules/Command/useCases/index.ts'),
             import('/src/modules/AiRuntime/useCases/getProjectContext.ts'),
             import('/src/modules/AiRuntime/useCases/expandMixRecipe.ts'),
             import('/src/modules/AudioEngine/repositories/deviceStrategy/WebAudioDeviceStrategy.ts'),
             import('/src/modules/AudioAnalysis/useCases/measureAgentObjectiveBuffer.ts'),
+            import('/src/modules/Arrangement/useCases/device/getAddedDeviceParameterValues.ts'),
         ]);
         const sampleRate = 48_000;
         const frameCount = sampleRate * 8;
@@ -81,7 +83,11 @@ test('every controlled compressor expansion lowers measured dynamic range throug
             ) {
                 throw new Error(`${entry.id}: not an ordinary compressor insertion`);
             }
-            const parameters: Record<string, number> = {};
+            // The added compressor starts from its initial values; the expansion writes only the
+            // values that differ from them.
+            const initial = getAddedDeviceParameterValues('builtin-compressor');
+            if (initial === null) throw new Error('builtin-compressor has no initial values');
+            const parameters: Record<string, number> = { ...initial };
             for (const item of expansion.commands.slice(1)) {
                 if (
                     item.operation !== 'setDeviceParameter' ||

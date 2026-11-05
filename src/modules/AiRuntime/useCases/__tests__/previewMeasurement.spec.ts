@@ -7,6 +7,7 @@ import {
 import { markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
 import {
     createTrack,
+    getAddedDeviceParameterValues,
     getArrangementHandlers,
     reserveNextTrackColorForCommand,
     setArrangementEventBus,
@@ -119,6 +120,12 @@ const DEVICE_NAMES: Readonly<Record<string, string>> = {
     [DRUMS_TRIM_ID]: 'Drums Trim',
     [BASS_GAIN_ID]: 'Bass Gain',
 };
+
+/** The recipe values an expansion writes: an added compressor already holds the rest. */
+function compressorWrites(values: readonly { paramId: string; value: number }[]) {
+    const held = getAddedDeviceParameterValues('builtin-compressor');
+    return values.filter(({ paramId, value }) => !(held !== null && Object.is(held[paramId], value)));
+}
 
 function gainDevice(id: string): Track['devices'][number] {
     return {
@@ -1082,7 +1089,7 @@ describe('a measured preview through proposal and approval', () => {
         expect(expandedValues).toMatchObject(recipeValues);
         expect(planned.actions).toMatchObject([
             { type: 'addDevice', payload: { trackId: 'drums', deviceType: 'builtin-compressor' } },
-            ...recipeValues.map(({ paramId, value }) => ({
+            ...compressorWrites(recipeValues).map(({ paramId, value }) => ({
                 type: 'setDeviceParameter',
                 payload: { paramId, value },
             })),
@@ -1095,7 +1102,7 @@ describe('a measured preview through proposal and approval', () => {
         ]);
         expect(view?.recipes).toHaveLength(1);
         expect(planned.adoptedRecipes ?? []).toEqual([]);
-        expect(planned.actions).toHaveLength(6);
+        expect(planned.actions).toHaveLength(1 + compressorWrites(recipeValues).length);
         const [target] = view?.measuredPreview?.targets ?? [];
         const loudness = target?.metrics.find((metric) => metric.metricId === 'integratedLoudness');
         expect(target?.targetId).toBe('drums');
@@ -1161,8 +1168,12 @@ describe('a measured preview through proposal and approval', () => {
         );
         expect(planned.actions).toMatchObject([
             { type: 'addDevice', payload: { trackId: 'drums', deviceType: 'builtin-compressor' } },
-            ...recipeValues.map(({ paramId, value }) => ({ type: 'setDeviceParameter', payload: { paramId, value } })),
+            ...compressorWrites(recipeValues).map(({ paramId, value }) => ({
+                type: 'setDeviceParameter',
+                payload: { paramId, value },
+            })),
         ]);
+        expect(planned.actions).toHaveLength(1 + compressorWrites(recipeValues).length);
         expect(planned.measuredPreview).toBeUndefined();
     });
 

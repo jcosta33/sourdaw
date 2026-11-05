@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
+import {
+    getAddedDeviceParameterValues,
+    getArrangementHandlers,
+    getMixRecipeCatalog,
+} from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { getCanonicalTrackRoleOptions, querySemanticProject } from '#/modules/Project/useCases';
@@ -10,6 +14,7 @@ import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { tryCompoundFastPath, tryParameterizedPath, tryPresetMatch } from '../../transformers/promptParser/parsing';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
+import { discoverMixRecipes } from '../discoverMixRecipes';
 import { executeRecipeExpansion } from '../executeRecipeExpansion';
 import { executeTransformCompile } from '../executeTransformCompile';
 import { getProjectContext } from '../getProjectContext';
@@ -355,37 +360,74 @@ describe('recipe.discover', () => {
                 role: { recipeRole: expectedRecipeRole, source: 'target', canonicalRole },
             });
 
+            const data = receipt.data as { total: number; candidates: { roles: string[] }[] };
             if (expectedRecipeRole === null) {
-                // Matches the shape asserted by the FX Return case above: no recipe role
-                // means zero candidates and a warning naming the missing recipe role.
-                expect(receipt.data).toMatchObject({ total: 0, candidates: [] });
+                // Matches the FX Return case below: an audio track with no recipe role is offered
+                // only the recipes that name no role, beside a warning naming the missing role.
+                expect(data.total).toBeGreaterThan(0);
+                expect(data.candidates.every((candidate) => candidate.roles.length === 0)).toBe(true);
                 expect(receipt.warnings.some((warning) => warning.toLowerCase().includes('recipe role'))).toBe(true);
                 return;
             }
 
-            const data = receipt.data as { total: number; candidates: { roles: string[] }[] };
+            // A recipe naming no role serves any source, never a bus or the master.
+            const servedWithoutRole = expectedRecipeRole !== 'bus' && expectedRecipeRole !== 'master';
             expect(data.total).toBeGreaterThan(0);
             for (const candidate of data.candidates) {
-                expect(candidate.roles).toContain(expectedRecipeRole);
+                expect(
+                    candidate.roles.includes(expectedRecipeRole) || (servedWithoutRole && candidate.roles.length === 0)
+                ).toBe(true);
             }
         }
     );
 
-    it('returns zero candidates and a no-recipe-role warning for an FX Return with no role argument', async () => {
+    // The FX Return here is an audio track whose canonical role (fx) gives no recipe role.
+    it('offers an FX Return with no role argument only the recipes that name no role, with a no-recipe-role warning', async () => {
         trackStore.set({
             tracks: [createTrack({ id: 'fx-1', name: 'FX Return' })],
             selectedTrackId: null,
             ghostClips: [],
         });
 
-        const receipt = await runRecipeDiscovery('loop-fx-return', { descriptors: ['warmer'], targetId: 'fx-1' });
+        const receipt = await runRecipeDiscovery('loop-fx-return', {
+            descriptors: ['warmer'],
+            targetId: 'fx-1',
+            limit: 8,
+        });
 
+        const data = receipt.data as { total: number; candidates: { id: string; roles: string[] }[] };
+        const roleLessWarm = new Set(
+            getMixRecipeCatalog()
+                .recipes.filter((recipe) => recipe.descriptor === 'warm' && recipe.roles.length === 0)
+                .map((recipe) => recipe.id)
+        );
         expect(receipt.status).toBe('success');
-        expect(receipt.data).toMatchObject({ total: 0, candidates: [] });
+        expect(data.total).toBeGreaterThan(0);
+        expect(data.candidates.length).toBeGreaterThan(0);
+        expect(data.candidates.every((candidate) => roleLessWarm.has(candidate.id))).toBe(true);
         expect(receipt.warnings.some((warning) => warning.toLowerCase().includes('recipe role'))).toBe(true);
     });
 
-    it('lets a role argument override an FX Return target and filters candidates to that role', async () => {
+    it('offers a bus no recipe that names no role, even when a source role is argued', async () => {
+        trackStore.set({
+            tracks: [createTrack({ id: 'bus-1', name: 'FX Return', kind: 'bus' })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+
+        const receipt = await runRecipeDiscovery('loop-bus-role-less', {
+            descriptors: ['warmer'],
+            targetId: 'bus-1',
+            role: 'vocal',
+            limit: 8,
+        });
+
+        const data = receipt.data as { candidates: { roles: string[] }[] };
+        expect(data.candidates.length).toBeGreaterThan(0);
+        expect(data.candidates.filter((candidate) => candidate.roles.length === 0)).toEqual([]);
+    });
+
+    it('lets a role argument override an FX Return target and filters candidates to recipes serving that role', async () => {
         trackStore.set({
             tracks: [createTrack({ id: 'fx-1', name: 'FX Return' })],
             selectedTrackId: null,
@@ -402,8 +444,27 @@ describe('recipe.discover', () => {
         const data = receipt.data as { candidates: { roles: string[] }[] };
         expect(data.candidates.length).toBeGreaterThan(0);
         for (const candidate of data.candidates) {
-            expect(candidate.roles).toContain('vocal');
+            expect(candidate.roles.length === 0 || candidate.roles.includes('vocal')).toBe(true);
         }
+
+        // Red when a recipe naming another role, and not vocal, passes the vocal filter.
+        const otherRoleWarm = getMixRecipeCatalog()
+            .recipes.filter(
+                (recipe) => recipe.descriptor === 'warm' && recipe.roles.length > 0 && !recipe.roles.includes('vocal')
+            )
+            .map((recipe) => recipe.id);
+        const everyMatch = discoverMixRecipes({
+            descriptors: ['warmer'],
+            targetId: 'fx-1',
+            role: 'vocal',
+            limit: getMixRecipeCatalog().recipes.length,
+        });
+        if (everyMatch.status !== 'ok') {
+            throw new Error('discovery refused the FX Return target');
+        }
+        const listed = everyMatch.data.candidates.map((candidate) => candidate.id);
+        expect(otherRoleWarm.length).toBeGreaterThan(0);
+        expect(listed.filter((id) => otherRoleWarm.includes(id))).toEqual([]);
     });
 
     it('excludes a bus recipe whose edit step needs a compressor the bus does not have', async () => {
@@ -722,10 +783,17 @@ describe('recipe.expand', () => {
                 name: 'addDevice',
                 arguments: { trackId: 'controlled-target', deviceType, binding: 'recipe-1-0' },
             });
-            expect(data.commands.slice(1).map((command) => command.name)).toEqual(
-                midpoints.map(() => 'setDeviceParameter')
+            // The added device already holds its initial values, so a midpoint equal to one is not rewritten.
+            const held = getAddedDeviceParameterValues(deviceType);
+            const written = data.values.filter(
+                (entry) => !(held !== null && Object.is(held[entry.paramId], entry.value))
             );
-            expect(data.commands.slice(1).map((command) => command.arguments.value)).toEqual(midpoints);
+            expect(data.commands.slice(1).map((command) => command.name)).toEqual(
+                written.map(() => 'setDeviceParameter')
+            );
+            expect(
+                data.commands.slice(1).map((command) => [command.arguments.paramId, command.arguments.value])
+            ).toEqual(written.map((entry) => [entry.paramId, entry.value]));
             expect(data.values.map((entry) => entry.value)).toEqual(midpoints);
             expect(data.values.every((entry) => entry.source === 'midpoint')).toBe(true);
             expect(data.values.every((entry) => entry.value >= entry.minimum && entry.value <= entry.maximum)).toBe(
@@ -740,7 +808,11 @@ describe('recipe.expand', () => {
             });
             const suppliedData = readExpansion(supplied);
             expect(suppliedData.values[0]).toMatchObject({ value: data.values[0]!.minimum, source: 'supplied' });
-            expect(suppliedData.commands[1]?.arguments.value).toBe(data.values[0]!.minimum);
+            const suppliedWrite = suppliedData.commands.find(
+                (command) => command.arguments.paramId === data.values[0]!.paramId
+            );
+            const minimumHeld = held !== null && Object.is(held[data.values[0]!.paramId], data.values[0]!.minimum);
+            expect(suppliedWrite?.arguments.value).toBe(minimumHeld ? undefined : data.values[0]!.minimum);
 
             const refused = await runRecipeExpansion(`loop-controlled-refusal-${role}`, {
                 recipeId,
