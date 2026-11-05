@@ -1,0 +1,51 @@
+src/modules/Project/useCases/projectTemplates/templateFiles/__tests__/stringOrchestra.spec.ts
+  s_0314bb17e5dee3::t_5aa8194eccfaaa 3
+  s_0314bb17e5dee3::t_7da5391daebd3d 20
+  s_0314bb17e5dee3::t_85fd428d440fed 21
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/projectSessionPluginRetirement.integration.spec.ts
+  s_0314bb17e5dee3::t_ba2bf55c76f21f 47-50
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/buildProjectData.spec.ts
+  s_0314bb17e5dee3::t_d7126a2c0fc028 103-104,107-111
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/configureYeastArpeggiator.spec.ts
+  s_0314bb17e5dee3::t_0dfcaa9eb3c857 16-17,20-28
+src/modules/Project/useCases/projectTemplates/templateFiles/__tests__/templateDeviceDescriptorCensus.spec.ts
+  s_0314bb17e5dee3::t_a858e3d808160d 20
+  s_0314bb17e5dee3::t_cebc006c6b8333 40
+src/modules/Project/useCases/projectPersistence/__tests__/quiesceProjectSession.spec.ts
+  s_0314bb17e5dee3::t_edd4d4edb04f2d 26
+  s_0314bb17e5dee3::t_4737a237199b93 9
+src/modules/Project/useCases/__tests__/canonicalTrackRoles.spec.ts
+  s_0314bb17e5dee3::t_d86f981fad1978 12
+  s_0314bb17e5dee3::t_90d50b63af9350 3
+  s_91f8b522168bd8::t_d89621c8afb812 13
+src/modules/Project/useCases/projectPersistence/__tests__/nativeTimelineMaterialRetirement.integration.spec.ts
+  s_0314bb17e5dee3::t_0af5fa41f64bad 18
+src/modules/Project/useCases/projectPersistence/__tests__/projectSessionQuiescer.spec.ts
+  s_0314bb17e5dee3::t_35d674e3fbc5ce 20
+  s_0314bb17e5dee3::t_ea4408ee68087e 73
+  s_0314bb17e5dee3::t_849d739662770c 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "25041927a95272166273dc3bd8f12e388f73f2be",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_91f8b522168bd8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea993bb3-f8f9-4703-aa93-ef8a806d9107",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
