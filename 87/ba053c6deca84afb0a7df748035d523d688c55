@@ -1,0 +1,19 @@
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydown.spec.ts
+  s_3a058ad20c93f2::t_98415bc9804c0c 1459-1462,1464-1486,1492-1501
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "87ba053c6deca84afb0a7df748035d523d688c55",
+  "prompts": {},
+  "sessions": {
+    "s_3a058ad20c93f2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_3a058ad20c93f2",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
