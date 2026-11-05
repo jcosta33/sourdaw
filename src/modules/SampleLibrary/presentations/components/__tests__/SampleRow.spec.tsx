@@ -180,7 +180,7 @@ describe('SampleRow — overlay and decode-warning contracts', () => {
         const classes = overlay?.className.split(/\s+/) ?? [];
         expect(classes).toContain('pointer-events-none');
         expect(classes).toContain('group-hover:pointer-events-auto');
-        expect(classes).toContain('group-has-[button:focus]:pointer-events-auto');
+        expect(classes).toContain('group-has-[button:focus-visible]:pointer-events-auto');
     });
 
     it('reveals a favorite or find-similar button focused by mouse click, not only by keyboard', () => {
@@ -191,21 +191,43 @@ describe('SampleRow — overlay and decode-warning contracts', () => {
         expect(document.activeElement).toBe(findSimilar);
 
         const overlayClasses = findSimilar.parentElement?.className.split(/\s+/) ?? [];
-        expect(overlayClasses).toContain('group-has-[button:focus]:pointer-events-auto');
-        expect(overlayClasses).toContain('group-has-[button:focus]:opacity-100');
-        expect(
-            overlayClasses.filter((c) => c.includes('focus-visible:opacity') || c.includes('focus-visible]'))
-        ).toEqual([]);
+        expect(overlayClasses).toContain('group-has-[[data-sample-row-action]:focus]:pointer-events-auto');
+        expect(overlayClasses).toContain('group-has-[[data-sample-row-action]:focus]:opacity-100');
+        expect(overlayClasses).toContain('group-has-[button:focus-visible]:opacity-100');
 
         const favoriteClasses = favorite.className.split(/\s+/);
-        expect(favoriteClasses).toContain('group-has-[button:focus]:opacity-100');
+        expect(favoriteClasses).toContain('group-has-[[data-sample-row-action]:focus]:opacity-100');
+        expect(favoriteClasses).toContain('group-has-[button:focus-visible]:opacity-100');
         expect(favoriteClasses).toContain('focus:opacity-100');
-        expect(
-            favoriteClasses.filter((c) => c.includes('focus-visible:opacity') || c.includes('focus-visible]'))
-        ).toEqual([]);
 
         const metadata = screen.getByText('1.2s').parentElement;
-        expect(metadata?.className.split(/\s+/)).toContain('group-has-[button:focus]:invisible');
+        const metadataClasses = metadata?.className.split(/\s+/) ?? [];
+        expect(metadataClasses).toContain('group-has-[[data-sample-row-action]:focus]:invisible');
+        expect(metadataClasses).toContain('group-has-[button:focus-visible]:invisible');
+    });
+
+    it('does not let a mouse-focused Play button reveal the actions or hide the metadata', () => {
+        render(<SampleRow sample={createSample()} isPlaying={false} {...baseProps} onAddToTrack={vi.fn()} />);
+        const play = screen.getByRole('button', { name: 'Play a' });
+        play.focus();
+        expect(document.activeElement).toBe(play);
+
+        expect(play.hasAttribute('data-sample-row-action')).toBe(false);
+        const marked = screen
+            .getAllByRole('button')
+            .filter((button) => button.hasAttribute('data-sample-row-action'))
+            .map((button) => button.getAttribute('aria-label'))
+            .sort();
+        expect(marked).toEqual(['Add a to favorites', 'Add a to track', 'Find samples similar to a']);
+
+        const allClasses = [
+            ...(screen.getByText('1.2s').parentElement?.className.split(/\s+/) ?? []),
+            ...(screen
+                .getByRole('button', { name: 'Find samples similar to a' })
+                .parentElement?.className.split(/\s+/) ?? []),
+            ...screen.getByRole('button', { name: 'Add a to favorites' }).className.split(/\s+/),
+        ];
+        expect(allClasses.filter((c) => c.startsWith('group-has-[button:focus]'))).toEqual([]);
     });
 
     it('never hides the decode warning behind a container-width threshold', () => {

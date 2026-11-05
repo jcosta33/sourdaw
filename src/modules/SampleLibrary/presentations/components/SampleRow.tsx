@@ -131,7 +131,7 @@ export const SampleRow = ({
             threshold (size, duration, extension, key, then BPM); the cluster never
             shrinks or clips. The decode warning always shows. On hover/focus the
             cluster gives way to the action overlay so the actions never reserve row width. */}
-        <span className="flex shrink-0 items-center gap-1 group-hover:invisible group-has-[button:focus]:invisible">
+        <span className="flex shrink-0 items-center gap-1 group-hover:invisible group-has-[button:focus-visible]:invisible group-has-[[data-sample-row-action]:focus]:invisible">
             {/* BPM & Key metadata (G1) */}
             {sample.analysis?.bpm ? (
                 <span className="hidden @[10.5rem]:inline text-[8px] text-accent-cyan/60 font-mono shrink-0 px-1">
@@ -172,14 +172,15 @@ export const SampleRow = ({
 
         {/* Hover/focus actions float over the metadata at the row's right edge instead
             of reserving width. Hidden, they take no pointer hits (so the metadata beneath keeps
-            its clicks) but stay Tab-focusable; a focused button in the row (mouse or keyboard) reveals them. */}
-        <span className="pointer-events-none absolute inset-y-0 right-5.5 flex items-center gap-1 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-has-[button:focus]:pointer-events-auto group-has-[button:focus]:opacity-100 transition-opacity">
+            its clicks) but stay Tab-focusable; keyboard focus on any row button, or any focus on an action itself, reveals them (a Play click must not). */}
+        <span className="pointer-events-none absolute inset-y-0 right-5.5 flex items-center gap-1 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-has-[button:focus-visible]:pointer-events-auto group-has-[button:focus-visible]:opacity-100 group-has-[[data-sample-row-action]:focus]:pointer-events-auto group-has-[[data-sample-row-action]:focus]:opacity-100 transition-opacity">
             {/* Add to track — keyboard/non-pointer alternative to drag-to-timeline */}
             {onAddToTrack ? (
                 <Button
                     variant="bare"
                     size="bare"
                     type="button"
+                    data-sample-row-action
                     aria-label={`Add ${sample.displayName} to track`}
                     className="size-3 shrink-0 text-muted-foreground hover:text-accent-cyan"
                     onClick={(e) => {
@@ -197,6 +198,7 @@ export const SampleRow = ({
                 variant="bare"
                 size="bare"
                 type="button"
+                data-sample-row-action
                 aria-label={`Find samples similar to ${sample.displayName}`}
                 className="size-3 shrink-0 text-muted-foreground hover:text-accent-cyan"
                 onClick={(e) => {
@@ -214,6 +216,7 @@ export const SampleRow = ({
             variant="bare"
             size="bare"
             type="button"
+            data-sample-row-action
             aria-pressed={sample.favorite}
             aria-label={
                 sample.favorite
@@ -221,7 +224,7 @@ export const SampleRow = ({
                     : `Add ${sample.displayName} to favorites`
             }
             className={cn(
-                'size-3 shrink-0 opacity-0 group-hover:opacity-100 group-has-[button:focus]:opacity-100 focus:opacity-100 transition-opacity',
+                'size-3 shrink-0 opacity-0 group-hover:opacity-100 group-has-[button:focus-visible]:opacity-100 group-has-[[data-sample-row-action]:focus]:opacity-100 focus:opacity-100 transition-opacity',
                 sample.favorite && 'opacity-100'
             )}
             onClick={(e) => {
