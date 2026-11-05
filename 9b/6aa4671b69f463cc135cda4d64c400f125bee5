@@ -1,0 +1,23 @@
+src/utils/Music/MusicalScale.ts
+  s_fec7059b7a251c::t_79973de03ad49c 39
+src/utils/Music/__tests__/MusicalScale.spec.ts
+  s_fec7059b7a251c::t_47e5cbc293ace6 27-32
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/ProjectTab.spec.tsx
+  s_fec7059b7a251c::t_78fc76fbf0e586 56-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9b6aa4671b69f463cc135cda4d64c400f125bee5",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
