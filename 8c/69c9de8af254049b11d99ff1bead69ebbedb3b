@@ -1,0 +1,26 @@
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_0314bb17e5dee3::t_dd131800dfb7ca 4685-4689
+scripts/healthGateWorkflowContract.ts
+  s_0314bb17e5dee3::t_720c9fbda34c3b 72-73
+  s_0314bb17e5dee3::t_be278c66f36904 191
+.github/workflows/nightly.yml
+  s_0314bb17e5dee3::t_74caba874e2282 265-273
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_0314bb17e5dee3::t_29c0dd24793181 1802-1806
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8c69c9de8af254049b11d99ff1bead69ebbedb3b",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
