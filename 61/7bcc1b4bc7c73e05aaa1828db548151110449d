@@ -1,0 +1,52 @@
+src/modules/Transport/useCases/transportQueries/measureMusicalLength.ts
+  s_fec7059b7a251c::t_40abcb59efb536 1-10
+src/modules/Transport/models/musicalPositionFormat.ts
+  s_fec7059b7a251c::t_40abcb59efb536 36-41,43-44,46,51,59-63
+src/modules/Transport/useCases/index.ts
+  s_fec7059b7a251c::t_3908863a34f98e 84
+  s_fec7059b7a251c::t_40abcb59efb536 85
+src/modules/Transport/useCases/transportQueries/formatMusicalPosition.ts
+  s_fec7059b7a251c::t_40abcb59efb536 3,5-6
+src/modules/Transport/models/__tests__/musicalPositionFormat.spec.ts
+  s_fec7059b7a251c::t_40abcb59efb536 3-7,53,65-66,71-72,76-88
+  s_fec7059b7a251c::t_1c1fb120eddb72 57-61
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipInspector.spec.tsx
+  s_fec7059b7a251c::t_3908863a34f98e 286-300
+  s_fec7059b7a251c::t_de4e28a809af3b 4
+  s_fec7059b7a251c::t_7096db9e529bea 1
+src/modules/Transport/useCases/transportQueries/formatMusicalLengthParts.ts
+  s_fec7059b7a251c::t_3908863a34f98e 1-6
+src/modules/Transport/useCases/transportQueries/meterInput.ts
+  s_fec7059b7a251c::t_40abcb59efb536 1-8
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useSelectionLabel.spec.ts
+  s_fec7059b7a251c::t_30ee59dea3ace6 14-18,23-25,109-110,185,197
+  s_fec7059b7a251c::t_0ab15203514436 209
+src/modules/Transport/useCases/transportQueries/__tests__/formatMusicalPosition.spec.ts
+  s_fec7059b7a251c::t_40abcb59efb536 1,5,7,9-11,17-18,20-21,24-25,27-33
+  s_fec7059b7a251c::t_1c1fb120eddb72 12-14
+src/modules/Transport/useCases/transportQueries/formatMusicalLength.ts
+  s_fec7059b7a251c::t_19d876ab5f9423 4
+  s_fec7059b7a251c::t_40abcb59efb536 3,7-8
+src/modules/TimelineEditor/presentations/views/Inspector/ClipInspector.tsx
+  s_fec7059b7a251c::t_40abcb59efb536 15,46-47,56-62,206,211,216
+  s_fec7059b7a251c::t_19d876ab5f9423 12
+src/modules/WorkspaceShell/presentations/hooks/useSelectionLabel.ts
+  s_fec7059b7a251c::t_40abcb59efb536 4,31-33,35-40
+  s_fec7059b7a251c::t_3908863a34f98e 5,34,41-42,44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "617bcc1b4bc7c73e05aaa1828db548151110449d",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
