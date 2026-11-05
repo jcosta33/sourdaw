@@ -13,8 +13,9 @@ boundary rule, check it against every row below.
 ## The gates
 
 `pnpm deps:validate` (`scripts/check-dependency-boundaries.mjs`) first runs its static source
-guards, then seven gates, each with its own exact known-violations baseline (repaired debt cannot stay
-silently authorized):
+guards, then seven gates. Each compares its rows exactly against what it accepts, so repaired debt
+cannot stay silently authorized: six against their own known-violations baselines, and module tiers
+against the reasoned allowances in its manifest ([03 §7.5](./03-typescript-module.md#75-module-tiers)):
 
 | Gate                    | Source                                 | Sees                                                    |
 | ----------------------- | -------------------------------------- | ------------------------------------------------------- |
