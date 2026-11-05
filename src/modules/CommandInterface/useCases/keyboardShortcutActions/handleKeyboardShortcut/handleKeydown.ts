@@ -241,7 +241,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                 // R-B2: if multiple clips are selected, duplicate all forward by selection span
                 const selectedClipIds = clipSelectionStore.value?.selectedClipIds ?? [];
                 if (selectedClipIds.length > 1) {
-                    duplicateSelectedClipsForward(selectedClipIds);
+                    void duplicateSelectedClipsForward(selectedClipIds);
                 } else {
                     const selectedClipId = clipSelectionStore.value?.selectedClipId;
                     if (selectedClipId) {

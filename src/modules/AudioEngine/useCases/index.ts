@@ -42,6 +42,7 @@ export { garbageCollectCachedAudioBuffersBySize } from './garbageCollectCachedAu
 export { garbageCollectFreezeAudioBuffers } from './garbageCollectFreezeAudioBuffers';
 export { getCachedAudioBuffer } from './getCachedAudioBuffer';
 export { getCachedAudioBufferWaveformPeaks } from './getCachedAudioBufferWaveformPeaks';
+export { holdAudioBufferForSession } from './holdAudioBufferForSession';
 export { importCachedAudioBuffers } from './importCachedAudioBuffers';
 export { prepareCachedAudioBuffersFromIdb } from './prepareCachedAudioBuffersFromIdb';
 export { cachePreviewAudioBuffer } from './cachePreviewAudioBuffer';
@@ -55,6 +56,7 @@ export { releasePreparedAudioBuffer } from './releasePreparedAudioBuffer';
 export { releasePreviewAudioBuffer } from './releasePreviewAudioBuffer';
 export { reopenPreparedAudioBuffer } from './reopenPreparedAudioBuffer';
 export { restoreCachedAudioBuffersFromIdb } from './restoreCachedAudioBuffersFromIdb';
+export { restoreUnpinnedAudioBuffersFromIdb } from './restoreUnpinnedAudioBuffersFromIdb';
 
 export { scheduleFaustNote } from './faustScheduler/scheduleFaustNote';
 export { startFaustNote } from './faustScheduler/startFaustNote';
