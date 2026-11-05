@@ -172,3 +172,28 @@ describe('SampleRow — hover actions stay keyboard reachable', () => {
         }
     });
 });
+
+describe('SampleRow — overlay and decode-warning contracts', () => {
+    it('keeps the action overlay out of pointer hit-testing until hover or keyboard focus reveals it', () => {
+        render(<SampleRow sample={createSample()} isPlaying={false} {...baseProps} onAddToTrack={vi.fn()} />);
+        const overlay = screen.getByRole('button', { name: 'Find samples similar to a' }).parentElement;
+        const classes = overlay?.className.split(/\s+/) ?? [];
+        expect(classes).toContain('pointer-events-none');
+        expect(classes).toContain('group-hover:pointer-events-auto');
+        expect(classes).toContain('group-has-[button:focus-visible]:pointer-events-auto');
+    });
+
+    it('never hides the decode warning behind a container-width threshold', () => {
+        render(
+            <SampleRow
+                sample={createSample({ ext: 'aiff' })}
+                isPlaying={false}
+                {...baseProps}
+                showBrowserDecodeWarnings
+            />
+        );
+        const badge = screen.getByTitle('AIFF may not preview in your browser');
+        const classes = badge.className.split(/\s+/);
+        expect(classes.filter((c) => c === 'hidden' || c.startsWith('@['))).toEqual([]);
+    });
+});

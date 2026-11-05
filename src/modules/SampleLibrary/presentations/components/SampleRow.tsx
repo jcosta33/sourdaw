@@ -127,23 +127,24 @@ export const SampleRow = ({
 
         <File className="size-3 text-muted-foreground/40 shrink-0" />
         <span className="min-w-16 flex-1 text-[10px] text-foreground truncate">{sample.displayName}</span>
-        {/* Metadata yields to the name as the list narrows (size, then duration, then
-            extension); BPM and key stay. On hover/focus the cluster gives way to the
-            action overlay so the actions never reserve row width. */}
-        <span className="flex min-w-0 items-center gap-1 overflow-hidden group-hover:invisible group-has-[button:focus-visible]:invisible">
+        {/* Every optional metadata item is shown whole or hidden by a container-width
+            threshold (size, duration, extension, key, then BPM); the cluster never
+            shrinks or clips. The decode warning always shows. On hover/focus the
+            cluster gives way to the action overlay so the actions never reserve row width. */}
+        <span className="flex shrink-0 items-center gap-1 group-hover:invisible group-has-[button:focus-visible]:invisible">
             {/* BPM & Key metadata (G1) */}
             {sample.analysis?.bpm ? (
-                <span className="text-[8px] text-accent-cyan/60 font-mono shrink-0 px-1">
+                <span className="hidden @[10.5rem]:inline text-[8px] text-accent-cyan/60 font-mono shrink-0 px-1">
                     {Math.round(sample.analysis.bpm)}
                 </span>
             ) : null}
             {sample.analysis?.key ? (
-                <span className="text-[8px] text-accent-gold/60 font-mono shrink-0 w-[24px] text-center">
+                <span className="hidden @[12.5rem]:block text-[8px] text-accent-gold/60 font-mono shrink-0 w-[24px] text-center">
                     {sample.analysis.key}
                 </span>
             ) : null}
 
-            <span className="hidden @[14rem]:inline text-[8px] text-muted-foreground/30 uppercase shrink-0">
+            <span className="hidden @[14.5rem]:inline text-[8px] text-muted-foreground/30 uppercase shrink-0">
                 {sample.ext}
             </span>
 
@@ -157,21 +158,22 @@ export const SampleRow = ({
             ) : null}
 
             {sample.format.durationSec ? (
-                <span className="text-[8px] text-muted-foreground/40 font-mono shrink-0 w-[32px] text-right hidden @[16.5rem]:block">
+                <span className="text-[8px] text-muted-foreground/40 font-mono shrink-0 w-[32px] text-right hidden @[17rem]:block">
                     {formatDuration(sample.format.durationSec)}
                 </span>
             ) : null}
 
             {sample.sync.sizeBytes ? (
-                <span className="text-[8px] text-muted-foreground/30 font-mono shrink-0 w-[32px] text-right hidden @[19rem]:block">
+                <span className="text-[8px] text-muted-foreground/30 font-mono shrink-0 w-[32px] text-right hidden @[19.5rem]:block">
                     {formatSize(sample.sync.sizeBytes)}
                 </span>
             ) : null}
         </span>
 
         {/* Hover/focus actions float over the metadata at the row's right edge instead
-            of reserving width; focus-within keeps them reachable by keyboard. */}
-        <span className="absolute inset-y-0 right-5.5 flex items-center gap-1 opacity-0 group-hover:opacity-100 group-has-[button:focus-visible]:opacity-100 transition-opacity">
+            of reserving width. Hidden, they take no pointer hits (so the metadata beneath keeps
+            its clicks) but stay Tab-focusable; focus-visible reveals them. */}
+        <span className="pointer-events-none absolute inset-y-0 right-5.5 flex items-center gap-1 opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-has-[button:focus-visible]:pointer-events-auto group-has-[button:focus-visible]:opacity-100 transition-opacity">
             {/* Add to track — keyboard/non-pointer alternative to drag-to-timeline */}
             {onAddToTrack ? (
                 <Button
