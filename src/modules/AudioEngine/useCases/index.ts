@@ -113,7 +113,7 @@ export { getMasterStereoAnalysers } from './engineAccess/getMasterStereoAnalyser
 export { getMasterPeakLevel } from './engineAccess/getMasterPeakLevel';
 export { setMasterGainValue } from './engineAccess/setMasterGainValue';
 export { setMasterComparisonTrimDb } from './engineAccess/setMasterComparisonTrimDb';
-export { syncControlRoomMonitoring } from './engineAccess/syncControlRoomMonitoring';
+export { setControlRoomMonitoring } from './engineAccess/setControlRoomMonitoring';
 export { getAudioSampleRate } from './engineAccess/getAudioSampleRate';
 export { getTrackAnalyser } from './engineAccess/getTrackAnalyser';
 export { getDeviceOutputNode } from './engineAccess/getDeviceOutputNode';
