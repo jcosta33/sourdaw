@@ -2804,13 +2804,18 @@ function getStatedDecibelFigures(
     return getFiguresInLevelForm(classifyPromptDecibelFigures(maskedScope, numbers), levelForm);
 }
 
-/** Every named project object the scope text names, longest name first, one span per stretch of text. */
+/**
+ * Every named project object the scope text names, longest name first, one span per stretch of text.
+ * A name is as long as the words {@link getReferenceRanges} matches, so symbols it never matches ("Chorus
+ * ***") cannot rank a shorter name above a longer one ("Chorus 2").
+ */
 function getNamedReferenceSpans(
     scopeText: string,
     objects: readonly { id: string; name: string }[]
 ): PromptReferenceSpan[] {
+    const matchedLength = (name: string) => normalizePromptText(name).length;
     const spans: PromptReferenceSpan[] = [];
-    for (const object of objects.toSorted((left, right) => right.name.length - left.name.length)) {
+    for (const object of objects.toSorted((left, right) => matchedLength(right.name) - matchedLength(left.name))) {
         for (const range of getReferenceRanges(scopeText, object.name)) {
             if (spans.some((span) => range.start < span.end && range.end > span.start)) {
                 continue;

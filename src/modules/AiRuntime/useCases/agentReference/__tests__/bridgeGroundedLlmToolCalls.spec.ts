@@ -395,6 +395,45 @@ describe('automateTrackGainRange grounding', () => {
         });
     });
 
+    // Names are ranked by the words the request matches, never their raw length: "Chorus ***" matches
+    // only "Chorus", so it is the shorter name beside "Chorus B" however many symbols it carries.
+    describe('beside a name longer only in symbols', () => {
+        const SYMBOL_SECTIONS = [
+            { id: 'section-chorus-stars', name: 'Chorus ***', startBeat: 32, endBeat: 48 },
+            { id: 'section-chorus-b', name: 'Chorus B', startBeat: 56, endBeat: 72 },
+        ];
+        const PROMPT = 'Lift Drum Bus by 1.5 dB in Chorus B';
+
+        it('grounds the section whose whole name the request states', () => {
+            expect(
+                groundBusGainRange(PROMPT, { ...DRUM_BUS_LIFT, sectionName: 'Chorus B' }, [], SYMBOL_SECTIONS)
+            ).toEqual({
+                actions: [
+                    {
+                        type: 'automateTrackGainRange',
+                        payload: { trackIds: ['bus-drums'], sectionName: 'Chorus B', gainDb: 1.5 },
+                    },
+                ],
+                rejections: [],
+            });
+        });
+
+        it('refuses the section whose name the request states only in part', () => {
+            expect(
+                groundBusGainRange(PROMPT, { ...DRUM_BUS_LIFT, sectionName: 'Chorus ***' }, [], SYMBOL_SECTIONS)
+            ).toEqual({
+                actions: [],
+                rejections: [
+                    {
+                        index: 0,
+                        name: 'automateTrackGainRange',
+                        reason: 'Provider value sectionName does not match the user request',
+                    },
+                ],
+            });
+        });
+    });
+
     // Without a "Chorus Two" section the shared reading still takes the "Chorus" the text contains,
     // so the lift's own shape is what holds the section to the one the request names in whole.
     it.each([
@@ -1196,6 +1235,48 @@ describe('section references beside a section whose name the other contains', ()
                     reason: 'Provider value sectionName does not match the user request',
                 },
             ],
+        });
+    });
+
+    // A name is as long as the words the request matches: "Chorus ***" matches only "Chorus", so beside
+    // "Chorus B" it is the shorter name, and a send, which no shape check of its own backs, reads it so.
+    describe('beside a name longer only in symbols', () => {
+        const SYMBOL_SECTIONS = [
+            { id: 'section-chorus-stars', name: 'Chorus ***', startBeat: 16, endBeat: 32 },
+            { id: 'section-chorus-b', name: 'Chorus B', startBeat: 48, endBeat: 64 },
+        ];
+        const PROMPT = 'Lower send from Lead Vocal to Hall by 3 dB in Chorus B';
+
+        it('grounds the section whose whole name the request states', () => {
+            expect(
+                groundSectionCall(
+                    { name: 'automateSendRange', arguments: { ...SEND_LOWER, sectionName: 'Chorus B' } },
+                    PROMPT,
+                    SYMBOL_SECTIONS
+                )
+            ).toEqual({
+                actions: [{ type: 'automateSendRange', payload: { ...SEND_LOWER, sectionName: 'Chorus B' } }],
+                rejections: [],
+            });
+        });
+
+        it('refuses the section whose name the request states only in part', () => {
+            expect(
+                groundSectionCall(
+                    { name: 'automateSendRange', arguments: { ...SEND_LOWER, sectionName: 'Chorus ***' } },
+                    PROMPT,
+                    SYMBOL_SECTIONS
+                )
+            ).toEqual({
+                actions: [],
+                rejections: [
+                    {
+                        index: 0,
+                        name: 'automateSendRange',
+                        reason: 'Provider value sectionName does not match the user request',
+                    },
+                ],
+            });
         });
     });
 });
