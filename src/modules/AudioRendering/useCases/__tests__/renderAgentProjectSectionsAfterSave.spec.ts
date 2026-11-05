@@ -102,14 +102,24 @@ async function writeSave(): Promise<void> {
     flushAutomergeStorageWrites();
 }
 
-function writeKickGain(gain: number): void {
+function setKickGain(gain: number): void {
     const tracks = trackStore.value?.tracks ?? [];
     trackStore.set({
         tracks: tracks.map((track) => ({ ...track, gain })),
         selectedTrackId: 'track-kick',
         ghostClips: [],
     });
+}
+
+function writeKickGain(gain: number): void {
+    setKickGain(gain);
     flushAutomergeStorageWrites();
+}
+
+/** A fader move whose document write still waits on its animation frame, as in a background window. */
+function moveKickGainBeforeItsFrame(gain: number): void {
+    vi.stubGlobal('requestAnimationFrame', () => 0);
+    setKickGain(gain);
 }
 
 registerSupportingServicePorts();
@@ -143,6 +153,8 @@ describe('renderAgentProjectSections across a save', () => {
     });
 
     afterEach(() => {
+        flushAutomergeStorageWrites();
+        vi.unstubAllGlobals();
         clearAgentSectionRenderArtifacts();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         projectStore.set(defaultProjectStoreState);
@@ -195,6 +207,34 @@ describe('renderAgentProjectSections across a save', () => {
             'Project changed during rendering; the artifact was not attached'
         );
 
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
+    });
+
+    it('refuses to render after a track edit that has not reached the document yet', async () => {
+        const sourceRevision = captureProjectRevision();
+        moveKickGainBeforeItsFrame(0.5);
+        expect(captureProjectRevision()).toBe(sourceRevision);
+
+        await expect(renderAgentProjectSections({ jobs: [JOB], sourceRevision })).rejects.toThrow(
+            'Project changed during rendering; the artifact was not attached'
+        );
+
+        expect(mocks.renderOffline).not.toHaveBeenCalled();
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
+    });
+
+    it('drops the artifact when a track edit made while the section renders has not reached the document yet', async () => {
+        const sourceRevision = captureProjectRevision();
+        mocks.renderOffline.mockImplementation(() => {
+            moveKickGainBeforeItsFrame(0.5);
+            return Promise.resolve(createAudioBuffer());
+        });
+
+        await expect(renderAgentProjectSections({ jobs: [JOB], sourceRevision })).rejects.toThrow(
+            'Project changed during rendering; the artifact was not attached'
+        );
+
+        expect(mocks.renderOffline).toHaveBeenCalledOnce();
         expect(getAgentSectionRenderArtifacts()).toEqual([]);
     });
 });
