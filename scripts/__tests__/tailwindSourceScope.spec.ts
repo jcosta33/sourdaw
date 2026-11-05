@@ -1,23 +1,28 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 // Pull-request planning keeps scripts, docs and tool configuration off the browser suite because
 // none of them reaches the bundle. Tailwind's automatic source detection would scan them all for
-// class names, so the stylesheet must name the app's sources explicitly.
-const stylesheet = readFileSync(join(process.cwd(), 'src/styles/main.css'), 'utf8');
+// class names, so the stylesheets must name the app's sources explicitly, and only main.css may.
+const root = process.cwd();
+const stylesheets = readdirSync(join(root, 'src'), { recursive: true, encoding: 'utf8' })
+    .filter((path) => path.endsWith('.css'))
+    .map((path) => ({ path: `src/${path}`, text: readFileSync(join(root, 'src', path), 'utf8') }));
+
+function directives(pattern: RegExp): string[] {
+    return stylesheets.flatMap(({ path, text }) =>
+        Array.from(text.matchAll(pattern), (match) => `${path}: ${match[1]?.trim() ?? ''}`)
+    );
+}
 
 describe('Tailwind class-name sources', () => {
-    it('scans src through an explicit base instead of automatic detection', () => {
-        const imports = Array.from(stylesheet.matchAll(/^@import\s+'tailwindcss'(.*);$/gm), (match) =>
-            match[1]?.trim()
-        );
-        expect(imports).toEqual(["source('../')"]);
+    it('imports Tailwind once, through an explicit base at src/', () => {
+        expect(directives(/^\s*@import\s+['"]tailwindcss['"](.*);/gm)).toEqual(["src/styles/main.css: source('../')"]);
     });
 
     it('adds only the HTML entry as an extra source', () => {
-        const sources = Array.from(stylesheet.matchAll(/^@source\s+(.+);$/gm), (match) => match[1]?.trim());
-        expect(sources).toEqual(["'../../index.html'"]);
+        expect(directives(/^\s*@source\s+(.+);/gm)).toEqual(["src/styles/main.css: '../../index.html'"]);
     });
 });
