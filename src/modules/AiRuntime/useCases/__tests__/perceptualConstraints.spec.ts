@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { type renderTrackSubgraphOffline } from '#/modules/AudioEngine/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
@@ -25,8 +26,10 @@ import { prepareMetricGoalPreview } from '../prepareMetricGoalPreview';
 import { validateAgentRiskApproval } from '../validateAgentRiskApproval';
 
 import { configureMetricGoalProject, metricGoalAudioBuffer, resetMetricGoalProject } from './metricGoalWorkflowFixture';
+import { moveTrackFader, seedSavableProject, writeProjectSave } from './projectSaveFixture';
 
 registerDeviceEnginePorts();
+registerSupportingServicePorts();
 
 const audio = vi.hoisted(() => ({
     renderTrackSubgraphOffline: vi.fn(),
@@ -1039,6 +1042,55 @@ describe('measured invariants before approval', () => {
         const compiled = compile(prompt, [setParameter('bass-eq', 'eq-high-gain', 0.1)]);
         const { evaluation } = await measureBeforeApproval(prompt, compiled);
         expect(evaluation).toMatchObject({ status: 'verified' });
+    });
+});
+
+describe('a metric-goal preview of a batch compiled before a save', () => {
+    const prompt = 'Lower the Vocal Trim and keep the vocal intimate';
+
+    /** The preview a card asks for, run after the project moved past the revision the batch was compiled at. */
+    function previewCompiledBatch(compiled: ReturnType<typeof compile>) {
+        const state = metricGoalStateCodec(compiled.metricGoalState);
+        if (state === null) {
+            throw new Error('The compiled batch carries no metric goal state.');
+        }
+        return prepareMetricGoalPreview({
+            state,
+            commandBatch: compiled.commandBatch,
+            context: getProjectContext(),
+            prompt,
+            runId: RUN_ID,
+        });
+    }
+
+    it('renders and proves a batch the project was saved after, before any render started', async () => {
+        seedSavableProject();
+        const compiledAt = captureProjectRevision();
+        const compiled = compile(prompt, [setParameter('vocal-trim', 'gain-level', -0.2)]);
+
+        await writeProjectSave();
+
+        expect(captureProjectRevision()).not.toBe(compiledAt);
+        const refreshed = await previewCompiledBatch(compiled);
+        expect(audio.renderTrackSubgraphOffline.mock.calls.map(([input]) => input.targetTrackId)).toEqual([
+            'vocal',
+            'vocal',
+        ]);
+        expect(refreshed.receipts).toHaveLength(1);
+        expect(refreshed.state.proofs).not.toHaveLength(0);
+    });
+
+    it('refuses before rendering a batch compiled before another track’s fader moved and the project was saved', async () => {
+        seedSavableProject();
+        const compiled = compile(prompt, [setParameter('vocal-trim', 'gain-level', -0.2)]);
+
+        moveTrackFader('bass', 0.5);
+        await writeProjectSave();
+
+        await expect(previewCompiledBatch(compiled)).rejects.toThrow(
+            'The project, provider configuration or run changed while metric proof was being refreshed.'
+        );
+        expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
     });
 });
 

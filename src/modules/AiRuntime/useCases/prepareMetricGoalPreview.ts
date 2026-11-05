@@ -3,7 +3,7 @@ import {
     parseVersionedCommandBatchEnvelope,
     serializeVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
+import { projectRevisionMatchesLiveIgnoringSaveWrites } from '#/modules/CrdtDocument/useCases';
 
 import { ANALYSIS_MEASURE_MAX_TARGETS } from '../models/AnalysisMeasureLimits';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
@@ -346,7 +346,7 @@ async function measurePreviewRequests(
     const compilations: RetainedCompilation[] = [];
     let receipts: ApplicationToolReceipt[] = [];
     for (const request of requests) {
-        if (signal.aborted || captureProjectRevision() !== envelope.baseRevision) {
+        if (signal.aborted || !projectRevisionMatchesLiveIgnoringSaveWrites(envelope.baseRevision)) {
             break;
         }
         const callId = `goal-measure-${crypto.randomUUID()}`;
@@ -409,7 +409,7 @@ function previewInvalidated(
         aiBackendPreferenceStore.value !== snapshot.backendPreference ||
         signal.aborted ||
         agentRunLifecycle.get(input.runId)?.cancellation.generation !== run.cancellation.generation ||
-        captureProjectRevision() !== revision
+        !projectRevisionMatchesLiveIgnoringSaveWrites(revision)
     );
 }
 

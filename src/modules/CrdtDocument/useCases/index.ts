@@ -9,6 +9,7 @@ export { captureDurableDocumentWitness } from './captureDurableDocumentWitness';
 export { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from './projectRevisionMatchesLiveIgnoringCommandCheckpoint';
 export { projectRevisionMatchesLiveIgnoringSaveWrites } from './projectRevisionMatchesLiveIgnoringSaveWrites';
 export { settlePendingProjectWritesAndCaptureRevision } from './settlePendingProjectWritesAndCaptureRevision';
+export { settledProjectRevisionMatchesLiveIgnoringSaveWrites } from './settledProjectRevisionMatchesLiveIgnoringSaveWrites';
 export { captureProjectMutationAuthorization } from './captureProjectMutationAuthorization';
 export { readOwnedProjectPublications } from './readOwnedProjectPublications';
 export { commandSourcePublicationMatches } from './commandSourcePublicationMatches';

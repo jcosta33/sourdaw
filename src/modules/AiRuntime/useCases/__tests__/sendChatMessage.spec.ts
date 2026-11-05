@@ -134,6 +134,7 @@ const mocks = vi.hoisted(() => ({
     appendChatMessage: vi.fn(),
     captureProjectRevision: vi.fn(),
     settlePendingProjectWritesAndCaptureRevision: vi.fn(),
+    projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn<(expectedRevision: string) => boolean>(),
     chatState: { value: { chatMode: 'chat', isGenerating: false, messages: [] } },
     compileAgentActionExecution: vi.fn(),
     describeAgentRiskApproval: vi.fn(),
@@ -170,6 +171,7 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     captureProjectRevision: mocks.captureProjectRevision,
     settlePendingProjectWritesAndCaptureRevision: mocks.settlePendingProjectWritesAndCaptureRevision,
+    projectRevisionMatchesLiveIgnoringSaveWrites: mocks.projectRevisionMatchesLiveIgnoringSaveWrites,
     DOC_BRANCHES: '__branches__',
     DOC_PREFIX_ROOT: 'root',
     captureActiveBranchReference: vi.fn(),
@@ -702,6 +704,11 @@ describe('sendChatMessage retained-provider selection', () => {
         mocks.chatState.value = { chatMode: 'chat', isGenerating: false, messages: [] };
         mocks.captureProjectRevision.mockReturnValue('revision-fixture');
         mocks.settlePendingProjectWritesAndCaptureRevision.mockReturnValue('revision-fixture');
+        // Revisions here are labels with no document behind them, so the save-insensitive question is
+        // answered as equality with the live label; answerAfterSave.spec.ts asks it over a real save.
+        mocks.projectRevisionMatchesLiveIgnoringSaveWrites.mockImplementation(
+            (expectedRevision) => expectedRevision === mocks.captureProjectRevision()
+        );
         mocks.describeAgentRiskApproval.mockReturnValue('Risk approval required.');
         mocks.describePendingActionConfirmation.mockReturnValue({
             actionLabels: ['Fixture action'],

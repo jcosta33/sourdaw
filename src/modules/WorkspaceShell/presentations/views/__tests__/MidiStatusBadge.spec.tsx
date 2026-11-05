@@ -4,15 +4,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TooltipProvider } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 
-import { openPreferencesDialog } from '../../../useCases/dialogs/openPreferencesDialog';
+import { openPreferencesSection } from '../../../useCases/dialogs/openPreferencesSection';
 import { MidiStatusBadge } from '../MidiStatusBadge';
 
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(),
 }));
 
-vi.mock('../../../useCases/dialogs/openPreferencesDialog', () => ({
-    openPreferencesDialog: vi.fn(),
+vi.mock('../../../useCases/dialogs/openPreferencesSection', () => ({
+    openPreferencesSection: vi.fn(),
 }));
 
 const useStoreMock = vi.mocked(useStore);
@@ -130,12 +130,29 @@ describe('MidiStatusBadge', () => {
         expect(screen.getByRole('button')).toHaveAccessibleName('MIDI: Launchkey Mini');
     });
 
-    it('opens the preferences dialog when clicked', () => {
+    it('shows a denied permission as blocked, not as an error', () => {
+        useStoreMock.mockReturnValue({
+            isSupported: true,
+            inputs: [],
+            selectedInputId: null,
+            enumerationError: 'Permission denied',
+            accessDenied: true,
+        });
+
+        renderBadge();
+
+        const button = screen.getByRole('button', { name: 'MIDI access was not allowed for this site' });
+        expect(button).toHaveTextContent('MIDI blocked');
+        expect(button).not.toHaveTextContent('MIDI error');
+    });
+
+    it('opens Preferences on its MIDI section when clicked', () => {
         useStoreMock.mockReturnValue({ isSupported: true, inputs: [], selectedInputId: null, enumerationError: null });
 
         renderBadge();
         fireEvent.click(screen.getByRole('button'));
 
-        expect(openPreferencesDialog).toHaveBeenCalledTimes(1);
+        expect(openPreferencesSection).toHaveBeenCalledTimes(1);
+        expect(openPreferencesSection).toHaveBeenCalledWith({ section: 'midi' });
     });
 });

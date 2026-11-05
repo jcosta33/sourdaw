@@ -29,6 +29,7 @@ import { alphaNoticeStore } from '../../../stores/alphaNoticeStore';
 import { workspaceStore } from '../../../stores/workspaceStore';
 import { setWorkspaceEventBus } from '../../../useCases/workspaceEventBus';
 import { type ActiveDevicePanel } from '../../hooks/useActiveDevicePanel';
+import { useAppEventHandlers } from '../../hooks/useAppEventHandlers';
 import { useProjectState } from '../../hooks/useProjectState';
 import { useWorkspaceState } from '../../hooks/useWorkspaceState';
 import { AppShell } from '../AppShell';
@@ -129,7 +130,11 @@ vi.mock('#/modules/Arrangement/presentations/views', async (importOriginal) => (
 
 vi.mock('#/modules/Preferences/presentations/views', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Preferences/presentations/views')>()),
-    PreferencesDialog: () => <div data-testid="preferences-dialog">Preferences</div>,
+    PreferencesDialog: ({ open, requestedSection }: { open: boolean; requestedSection?: string }) => (
+        <div data-testid="preferences-dialog" data-open={String(open)} data-requested-section={requestedSection ?? ''}>
+            Preferences
+        </div>
+    ),
 }));
 
 vi.mock('#/modules/ElasticAudio/presentations/views', async (importOriginal) => ({
@@ -261,7 +266,7 @@ vi.mock('../../../useCases/dismissAlphaNotice', () => ({
 
 const mockWorkspaceEventBus = {
     emit: vi.fn().mockResolvedValue(undefined),
-    on: vi.fn(() => () => {}),
+    on: vi.fn((_event: string, _handler: (payload: unknown) => void) => () => {}),
 };
 
 const mockVoiceToggleEventBus = {
@@ -474,6 +479,52 @@ describe('AppShell', () => {
         render(<AppShell>Content</AppShell>);
         expect(screen.getByTestId('app-shell')).toBeInTheDocument();
         expect(screen.getByTestId('sidebar')).toBeInTheDocument();
+    });
+
+    describe('Preferences open requests', () => {
+        const emitOpenPreferences = (payload: { section: 'midi' } | undefined): void => {
+            const subscription = mockWorkspaceEventBus.on.mock.calls.find(
+                ([event]) => event === 'dialog.openPreferences'
+            );
+            if (subscription === undefined) {
+                throw new Error('AppShell did not subscribe to dialog.openPreferences');
+            }
+            const [, handler] = subscription;
+            act(() => handler(payload));
+        };
+
+        beforeEach(async () => {
+            const actual = await vi.importActual<typeof import('../../hooks/useAppEventHandlers')>(
+                '../../hooks/useAppEventHandlers'
+            );
+            vi.mocked(useAppEventHandlers).mockImplementation(actual.useAppEventHandlers);
+        });
+
+        afterEach(() => {
+            // The factory stub is a bare vi.fn(), so a reset returns it to that stub.
+            vi.mocked(useAppEventHandlers).mockReset();
+        });
+
+        it('opens Preferences on the section a dialog.openPreferences event requests', () => {
+            render(<AppShell>Content</AppShell>);
+            expect(screen.getByTestId('preferences-dialog')).toHaveAttribute('data-open', 'false');
+
+            emitOpenPreferences({ section: 'midi' });
+
+            const dialog = screen.getByTestId('preferences-dialog');
+            expect(dialog).toHaveAttribute('data-open', 'true');
+            expect(dialog).toHaveAttribute('data-requested-section', 'midi');
+        });
+
+        it('asks for no section when the event carries none', () => {
+            render(<AppShell>Content</AppShell>);
+
+            emitOpenPreferences(undefined);
+
+            const dialog = screen.getByTestId('preferences-dialog');
+            expect(dialog).toHaveAttribute('data-open', 'true');
+            expect(dialog).toHaveAttribute('data-requested-section', '');
+        });
     });
 
     it('gives the sidebar a revealDevice action that shows the device in the inspector', () => {

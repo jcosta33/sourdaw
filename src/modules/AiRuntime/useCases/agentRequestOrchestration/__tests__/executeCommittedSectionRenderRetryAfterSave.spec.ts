@@ -174,14 +174,24 @@ async function writeSave(): Promise<void> {
     flushAutomergeStorageWrites();
 }
 
-function writeKickGain(gain: number): void {
+function setKickGain(gain: number): void {
     const tracks = trackStore.value?.tracks ?? [];
     trackStore.set({
         tracks: tracks.map((track) => (track.id === 'track-kick' ? { ...track, gain } : track)),
         selectedTrackId: 'track-kick',
         ghostClips: [],
     });
+}
+
+function writeKickGain(gain: number): void {
+    setKickGain(gain);
     flushAutomergeStorageWrites();
+}
+
+/** A fader move whose document write still waits on its animation frame, as in a background window. */
+function moveKickGainBeforeItsFrame(gain: number): void {
+    vi.stubGlobal('requestAnimationFrame', () => 0);
+    setKickGain(gain);
 }
 
 function createInput(committedRevision: string): Parameters<typeof executeCommittedSectionRenderRetry>[0] {
@@ -289,6 +299,8 @@ describe('Retry renders after a save', () => {
     });
 
     afterEach(() => {
+        flushAutomergeStorageWrites();
+        vi.unstubAllGlobals();
         resetAiWorkflowCommandPreflightFixture();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         projectStore.set(defaultProjectStoreState);
@@ -317,6 +329,20 @@ describe('Retry renders after a save', () => {
 
         writeKickGain(0.5);
         await writeSave();
+
+        await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
+            status: 'failed',
+            reason: STALE_REASON,
+        });
+        expect(mocks.retryRenders).not.toHaveBeenCalled();
+    });
+
+    it('refuses the retry after a track edit that has not reached the document yet', async () => {
+        const committedRevision = captureProjectRevision();
+        const input = createInput(committedRevision);
+
+        moveKickGainBeforeItsFrame(0.5);
+        expect(captureProjectRevision()).toBe(committedRevision);
 
         await expect(executeCommittedSectionRenderRetry(input)).resolves.toEqual({
             status: 'failed',

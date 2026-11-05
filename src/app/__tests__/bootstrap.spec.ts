@@ -171,7 +171,7 @@ const {
     setElasticSensitivityRootIdentityCaptureMock,
     captureProjectIdentityMock,
     captureProjectRevisionMock,
-    projectRevisionMatchesLiveIgnoringSaveWritesMock,
+    settledProjectRevisionMatchesLiveIgnoringSaveWritesMock,
     agentProjectInspectionSetProviderMock,
     setArrangementEventBusMock,
     setRecordingMidiAdmissionPortMock,
@@ -309,7 +309,9 @@ const {
         setElasticSensitivityRootIdentityCaptureMock: vi.fn(),
         captureProjectIdentityMock: vi.fn<() => string>(() => 'identity-1'),
         captureProjectRevisionMock: vi.fn<() => string>(() => 'revision-1'),
-        projectRevisionMatchesLiveIgnoringSaveWritesMock: vi.fn<(expectedRevision: string) => boolean>(() => true),
+        settledProjectRevisionMatchesLiveIgnoringSaveWritesMock: vi.fn<(expectedRevision: string) => boolean>(
+            () => true
+        ),
         agentProjectInspectionSetProviderMock: vi.fn(),
         setArrangementEventBusMock: vi.fn<(eventBus: ArrangementEventBus) => void>(),
         setRecordingMidiAdmissionPortMock: vi.fn(),
@@ -552,7 +554,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectIdentity: captureProjectIdentityMock,
     captureProjectRootIdentity: captureProjectRootIdentityMock,
     captureProjectRevision: captureProjectRevisionMock,
-    projectRevisionMatchesLiveIgnoringSaveWrites: projectRevisionMatchesLiveIgnoringSaveWritesMock,
+    settledProjectRevisionMatchesLiveIgnoringSaveWrites: settledProjectRevisionMatchesLiveIgnoringSaveWritesMock,
     createCommandPreviewWorkspace: noop,
     createCommandRecoveryWorkspace: noop,
     getCrdtDoc: noop,
@@ -1191,9 +1193,9 @@ describe('bootstrap', () => {
         );
     });
 
-    it('lets command finalization tolerate a save by registering the save-insensitive revision matcher', () => {
+    it('lets command finalization tolerate a save, but not an unflushed edit, by registering the settling save-insensitive revision matcher', () => {
         expect(commandProjectRevisionPortMock.setLiveMatchIgnoringSaveWrites).toHaveBeenCalledExactlyOnceWith(
-            projectRevisionMatchesLiveIgnoringSaveWritesMock
+            settledProjectRevisionMatchesLiveIgnoringSaveWritesMock
         );
     });
 

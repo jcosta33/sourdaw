@@ -8,9 +8,15 @@ describe('commandProjectRevisionPort.matchesLiveIgnoringSaveWrites', () => {
         commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(null);
     });
 
-    it('accepts the exact live revision without asking the registered matcher', () => {
+    it('asks the registered matcher even for the exact live revision, which a write not yet in the heads may have changed', () => {
         commandProjectRevisionPort.setProvider(() => 'revision-live');
         commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(() => false);
+
+        expect(commandProjectRevisionPort.matchesLiveIgnoringSaveWrites('revision-live')).toBe(false);
+    });
+
+    it('accepts the exact live revision while no matcher is registered', () => {
+        commandProjectRevisionPort.setProvider(() => 'revision-live');
 
         expect(commandProjectRevisionPort.matchesLiveIgnoringSaveWrites('revision-live')).toBe(true);
     });

@@ -5,4 +5,5 @@ export type {
     PromptPayload,
     ZoomToSelectionPayload,
     ImportMidiPayload,
+    OpenPreferencesPayload,
 } from './WorkspaceEvents';
