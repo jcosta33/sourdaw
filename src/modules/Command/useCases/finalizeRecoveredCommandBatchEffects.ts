@@ -27,7 +27,7 @@ function sameReceipt(left: VerifiedBatchReceipt, right: VerifiedBatchReceipt): b
 }
 
 function commandProjectRevisionIsCurrent(expectedProjectRevision: string): boolean {
-    return commandProjectRevisionPort.matchesLiveIgnoringCommandCheckpoint(expectedProjectRevision);
+    return commandProjectRevisionPort.matchesLiveIgnoringSaveWrites(expectedProjectRevision);
 }
 
 function getFinalizationAdmissionFailure(input: {

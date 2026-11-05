@@ -123,7 +123,7 @@ import {
     initBranchState,
     captureProjectRootIdentity,
     captureProjectRevision,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
+    projectRevisionMatchesLiveIgnoringSaveWrites,
     inspectAgentProjectDivergence,
     createCommandPreviewWorkspace,
     createCommandRecoveryWorkspace,
@@ -277,7 +277,7 @@ setActionHistoryMetadataPort({
 sessionUndoWitnessStampPort.setProvider(stampSessionUndoWitness);
 productionBriefAdmissionPort.setGuard(productionBriefActionBatchAdmission.capture);
 commandProjectRevisionPort.setProvider(captureProjectRevision);
-commandProjectRevisionPort.setLiveMatchIgnoringCommandCheckpoint(projectRevisionMatchesLiveIgnoringCommandCheckpoint);
+commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(projectRevisionMatchesLiveIgnoringSaveWrites);
 configureAudioEngineRuntime();
 commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
 // AiRuntime publishes the capability catalog and imports Project, so capability
