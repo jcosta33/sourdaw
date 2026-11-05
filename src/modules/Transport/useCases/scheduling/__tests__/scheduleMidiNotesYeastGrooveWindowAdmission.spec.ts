@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { type Clip, trackStore } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping } from '#/modules/Arrangement/useCases';
-import { ensureTrackStrip } from '#/modules/AudioEngine/useCases';
+import { ensureTrackStrip, projectOfflineYeastTrackNotes } from '#/modules/AudioEngine/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import {
     defaultGrooveTemplateState,
@@ -10,7 +10,7 @@ import {
     midiStore,
     type GrooveTemplateState,
 } from '#/modules/MIDI/stores';
-import { projectClipMidiEvents, projectCommittedGroove } from '#/modules/MIDI/useCases';
+import { createGrooveMidiEventProjector, projectClipMidiEvents, projectCommittedGroove } from '#/modules/MIDI/useCases';
 import { scheduleNote } from '#/modules/Synth/useCases';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
@@ -59,6 +59,26 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     // file at import, not at a test.
     persistDeviceParam: vi.fn(),
     resolveEligibleDeviceWriteTarget: vi.fn(),
+    // The AudioEngine use-case double loads the real bounce projection with
+    // `vi.importActual`, which the barrel-mock coverage check reads as loading
+    // that whole barrel; these are what its offline render reads from here.
+    addWarpMarker: vi.fn(),
+    adjustmentLayerStore: { value: null },
+    clampDeviceParamWrite: vi.fn(),
+    clipHasActiveGainEnvelope: vi.fn(() => false),
+    deriveEffectiveAudibility: vi.fn(),
+    deriveVcaMultiplier: vi.fn(() => 1),
+    gainEnvelopeStore: { value: null },
+    getGainEnvelopeSeries: vi.fn(),
+    getStoredWarpState: vi.fn(),
+    getTrackEligibility: vi.fn(),
+    getVcaGroupsState: vi.fn(),
+    getWarpState: vi.fn(),
+    setWarpState: vi.fn(),
+    shouldCreateLiveTrackStrip: vi.fn(),
+    soloModeStore: { value: null },
+    takeLaneStore: { value: null },
+    vcaGroupStore: { value: null },
 }));
 vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/MIDI/stores')>();
@@ -79,10 +99,15 @@ vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
 });
 vi.mock('#/modules/Automation/stores', () => ({
     automationStore: { value: null },
+    // Read by the AudioEngine offline render (see the Arrangement stores double).
+    modulationStore: { value: null },
 }));
 vi.mock('#/modules/Automation/useCases', () => ({
     getAutomationValueAtBeat: vi.fn(() => null),
     isRecordingAutomation: vi.fn(() => false),
+    // Read by the AudioEngine offline render (see the Arrangement stores double).
+    buildOfflineModulatorPlans: vi.fn(),
+    getAutomationLaneCeiling: vi.fn(),
 }));
 vi.mock('#/modules/Toaster/stores', () => ({ toasterStore: { value: null } }));
 vi.mock('../../../stores/tempoMapStore', () => ({
@@ -102,7 +127,14 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     ),
     getSynthParamsForTrack: vi.fn(() => ({})),
 }));
-vi.mock('#/modules/AudioEngine/useCases', () => ({
+vi.mock('#/modules/AudioEngine/useCases', async () => ({
+    // The bounce's own Yeast projection: what the export renders is what the
+    // live windows are compared against, so the barrel serves the real one.
+    projectOfflineYeastTrackNotes: (
+        await vi.importActual<Pick<typeof import('#/modules/AudioEngine/useCases'), 'projectOfflineYeastTrackNotes'>>(
+            '#/modules/AudioEngine/useCases/offlineRender/projectOfflineYeastTrackNotes'
+        )
+    ).projectOfflineYeastTrackNotes,
     applyNoteExpression: vi.fn(),
     startNoteExpression: vi.fn(),
     advanceNoteExpression: vi.fn(),
@@ -139,6 +171,8 @@ vi.mock('#/modules/Synth/useCases', () => ({
     scheduleDrumKitNote: vi.fn(),
     scheduleKitNote: vi.fn(),
     scheduleNote: vi.fn(),
+    // Read by the AudioEngine offline render (see the Arrangement stores double).
+    scheduleNoteOffline: vi.fn(),
 }));
 vi.mock('#/modules/Yeast/useCases', () => ({
     processYeastMidi: vi.fn(),
@@ -476,14 +510,17 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
         ]);
     });
 
-    it('drops the segment a sequencer push re-anchors across the pass end behind the owning window', async () => {
-        // The same note under slot-0 timingOffset +0.5: the rack is handed the
-        // in-pass segment at 3.9 and the head tail at the pass head, both on
-        // slot 0. The groove pushes the in-pass segment to 4.15, across the
-        // pass end, and the projection re-anchors it to the pass head at 0.15
-        // — 3.75 beats behind the window that owns it at 3.9. Every pass
-        // would fire that stale start immediately, so it drops; the head tail,
-        // pushed 0.25 inside its own pass, sounds there.
+    it('strikes the segment a sequencer push carries past the pass end on the head of the same pass, from the window holding the head', async () => {
+        // The same note under slot-0 timingOffset +0.5: its in-pass segment at
+        // 3.9 and its head tail at the pass head both sit on slot 0. The groove
+        // pushes the head tail 0.25 inside its own pass, and the in-pass
+        // segment to 4.15, past the pass end, which the loop law puts on the
+        // head of the same pass at 0.15. Pushed after the rack, that landing
+        // was 3.75 beats behind the window owning the note at 3.9 and dropped
+        // as stale. The push is placed before the rack instead, so the window
+        // holding the head owns it and every pass sounds it there. Voices list
+        // in posting order: the head tail is owned at the head and pushed
+        // after the rack, the push is owned where it lands.
         expect(
             await sweepScheduledVoices({
                 clip: { endBeat: 8, loopEnabled: true, loopLength: 4 },
@@ -493,7 +530,9 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
             })
         ).toEqual([
             { pitch: 60, beat: 0.25, durationBeats: 0.4 },
+            { pitch: 60, beat: expect.closeTo(0.15, 9), durationBeats: expect.closeTo(0.1, 9) },
             { pitch: 60, beat: 4.25, durationBeats: 0.4 },
+            { pitch: 60, beat: expect.closeTo(4.15, 9), durationBeats: expect.closeTo(0.1, 9) },
         ]);
     });
 
@@ -765,6 +804,420 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
             // undisplaced at 3.75.
             const voices = await sweepSynthVoices(defaultGrooveTemplateState);
             expect(voices).toEqual([{ pitch: 72, beat: 3.75, durationBeats: 0.25 }]);
+        });
+    });
+
+    // Live playback hands the rack one look-ahead window at a time; the bounce
+    // hands it the whole render. A looping clip must sound the same notes at
+    // the same beats on both, wherever the windows fall. Each case sweeps a
+    // three-pass clip under irregular partitions that straddle the seams and
+    // the pass heads, and compares the voices with the offline projection of
+    // the same clip through the same identity rack. A realistic clock stands
+    // at each window's start, so a voice landing before the window that
+    // posted it would be a note scheduled in the past.
+    describe('live windows sound what the bounce renders', () => {
+        const PASS_COUNT = 3;
+        const LOOP_BEATS = 4;
+        const CLIP_END_BEAT = PASS_COUNT * LOOP_BEATS;
+
+        type Row = { id: string; startBeat: number; duration: number };
+        /** The looped clip both routes play: its end and loop, and its anchor when it carries one. */
+        type LoopedClip = { endBeat: number; loopEnabled: boolean; loopLength: number; loopOriginBeat?: number };
+        type Voice = { beat: number; durationBeats: number };
+
+        function windowEdges(widths: readonly number[]): number[] {
+            const edges = [0];
+            for (let index = 0; edges.at(-1)! < CLIP_END_BEAT; index++) {
+                edges.push(Math.min(CLIP_END_BEAT, edges.at(-1)! + widths[index % widths.length]!));
+            }
+            return edges;
+        }
+
+        const PARTITIONS = [
+            { partition: 'the production grain', widths: [WINDOW_BEATS] },
+            { partition: 'irregular windows straddling the seams', widths: [0.3, 0.7, 0.13] },
+            { partition: 'wide and narrow windows', widths: [1.1, 0.05, 0.9, 0.37] },
+        ];
+
+        function rounded(voice: Voice): Voice {
+            return {
+                beat: Math.round(voice.beat * 1e6) / 1e6,
+                durationBeats: Math.round(voice.durationBeats * 1e6) / 1e6,
+            };
+        }
+
+        function inBeatOrder(voices: readonly Voice[]): Voice[] {
+            return voices
+                .map(rounded)
+                .sort((left, right) => left.beat - right.beat || left.durationBeats - right.durationBeats);
+        }
+
+        async function liveVoices(
+            clip: LoopedClip,
+            rows: readonly Row[],
+            grooveState: GrooveTemplateState,
+            edges: readonly number[],
+            route: 'yeast' | 'synth' = 'yeast'
+        ): Promise<{ voices: Voice[]; postedBehindWindow: Voice[] }> {
+            grooveTemplateStore.set(grooveState);
+            const devices = route === 'yeast' ? [{ id: 'yeast-rack', type: 'yeast' }] : [];
+            const track = midiTrack({ clips: [midiClip(clip)], devices });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                notesByClipId: { 'clip-1': rows.map((row) => ({ ...row, pitch: 60, velocity: 100 })) },
+            };
+            vi.mocked(scheduleNote).mockClear();
+            vi.mocked(processYeastMidi).mockClear();
+            const voices: Voice[] = [];
+            const postedBehindWindow: Voice[] = [];
+            for (let index = 1; index < edges.length; index++) {
+                const fromBeat = edges[index - 1]!;
+                const callsBefore = vi.mocked(scheduleNote).mock.calls.length;
+                await scheduleMidiNotes(fromBeat, edges[index]!, 0, new Set<string>(), [], defaultTransportState, 120);
+                for (const call of vi.mocked(scheduleNote).mock.calls.slice(callsBefore)) {
+                    const voice = { beat: call[3] * BEATS_PER_SECOND, durationBeats: call[4] * BEATS_PER_SECOND };
+                    voices.push(voice);
+                    if (voice.beat < fromBeat - 1e-9) {
+                        postedBehindWindow.push(rounded(voice));
+                    }
+                }
+            }
+            return { voices: inBeatOrder(voices), postedBehindWindow };
+        }
+
+        type RackInputEvent = { kind: { type: string }; noteInstanceId?: string; timePpq?: number };
+        type RackNoteOff = { instance: string; beat: number };
+
+        /** The note-offs a rack was handed, by the instance suffix after the row id and the beat. */
+        function rackNoteOffs(events: readonly RackInputEvent[], rowId: string): RackNoteOff[] {
+            const noteOffs = events.filter((event) => event.kind.type === 'noteOff');
+            const placed = noteOffs.map((event) => {
+                const instanceId = event.noteInstanceId ?? '';
+                return {
+                    instance: instanceId.slice(instanceId.indexOf(rowId)),
+                    beat: Math.round((event.timePpq ?? Number.NaN) * 1e6) / 1e6,
+                };
+            });
+            return placed.sort((left, right) => left.beat - right.beat || left.instance.localeCompare(right.instance));
+        }
+
+        function liveRackInput(): RackInputEvent[] {
+            return vi.mocked(processYeastMidi).mock.calls.flatMap(([input]) => input.events);
+        }
+
+        function offlineVoices(
+            clip: LoopedClip,
+            rows: readonly Row[],
+            grooveState: GrooveTemplateState,
+            rackInput: RackInputEvent[] = []
+        ): Voice[] {
+            const notes = projectOfflineYeastTrackNotes({
+                trackId: 'track-1',
+                iterations: Array.from({ length: PASS_COUNT }, (_pass, pass) => ({
+                    sourceNotes: rows.map((row) => ({ ...row, pitch: 60, velocity: 100 })),
+                    clipId: 'clip-1',
+                    clipStartBeat: 0,
+                    clipEndBeat: CLIP_END_BEAT,
+                    iterationStartBeat: pass * LOOP_BEATS,
+                    loopLengthBeats: LOOP_BEATS,
+                    midiOffsetBeats: 0,
+                    loopEnabled: true,
+                    loopOriginBeat: clip.loopOriginBeat,
+                })),
+                sampleRate: 48_000,
+                blockStartSamples: 0,
+                blockEndSamples: CLIP_END_BEAT * 48_000,
+                defaultTempo: 120,
+                changes: [],
+                projectMidiEvents: createGrooveMidiEventProjector(grooveState),
+                projectPpqEndpoints: ({ startPpq, endPpq, sampleRate }) => ({
+                    startSamples: startPpq * sampleRate,
+                    endSamples: endPpq * sampleRate,
+                    durationSamples: (endPpq - startPpq) * sampleRate,
+                    startSeconds: startPpq,
+                    endSeconds: endPpq,
+                    durationSeconds: endPpq - startPpq,
+                }),
+                processYeastMidi: (input) => {
+                    rackInput.push(...input.events);
+                    return input.events.map((event) => ({
+                        ...event,
+                        timePpq: event.timePpq ?? event.timeSamples / 24_000,
+                    }));
+                },
+                projectPitch: ({ pitch }) => pitch,
+            });
+            return inBeatOrder(
+                notes.map((note) => ({ beat: note.startBeat, durationBeats: note.endBeat - note.startBeat }))
+            );
+        }
+
+        describe('a row an anchorless loop stores past its loop length', () => {
+            // Loop 4 with no anchor: content outside the loop region does not
+            // play while the loop is on, so the row at relative beat 5 is
+            // silent on every route — the synth route, the Yeast rack live and
+            // the bounce — while the row inside the loop sounds on all three.
+            const clip = { endBeat: CLIP_END_BEAT, loopEnabled: true, loopLength: LOOP_BEATS };
+            const rows = [
+                { id: 'past-loop-length', startBeat: 5, duration: 0.5 },
+                { id: 'inside', startBeat: 2, duration: 0.5 },
+            ];
+            const IN_LOOP_VOICES = [2, 6, 10].map((beat) => ({ beat, durationBeats: 0.5 }));
+
+            it('renders only the in-loop row in the bounce', () => {
+                expect(offlineVoices(clip, rows, defaultGrooveTemplateState)).toEqual(IN_LOOP_VOICES);
+            });
+
+            it.each(PARTITIONS)(
+                'plays only the in-loop row live on the Yeast and synth routes under $partition',
+                async ({ widths }) => {
+                    const edges = windowEdges(widths);
+                    const yeast = await liveVoices(clip, rows, defaultGrooveTemplateState, edges);
+                    const synth = await liveVoices(clip, rows, defaultGrooveTemplateState, edges, 'synth');
+                    expect(yeast).toEqual({ voices: IN_LOOP_VOICES, postedBehindWindow: [] });
+                    expect(synth).toEqual({ voices: IN_LOOP_VOICES, postedBehindWindow: [] });
+                }
+            );
+        });
+
+        describe('a segment the sequencer groove pushes across the pass end', () => {
+            // The note at 3.9 crosses the pass end: the rack is handed its
+            // in-pass segment [3.9, 4) and its tail [0, 0.4) on the pass head,
+            // both on slot 0. Slot-0 timingOffset +0.5 pushes each 0.25 later:
+            // the tail to 0.25 inside its pass, and the in-pass segment to
+            // 4.15, past the pass end, which the loop law re-anchors to the
+            // head of the same pass at 0.15, as the synth route places it.
+            const clip = { endBeat: CLIP_END_BEAT, loopEnabled: true, loopLength: LOOP_BEATS };
+            const rows = [{ id: 'crossing', startBeat: 3.9, duration: 0.5 }];
+            const pushState = sequencerGrooveState({ index: 0, timingOffset: 0.5 });
+
+            it('renders on the head of every pass in the bounce', () => {
+                expect(offlineVoices(clip, rows, pushState)).toEqual(
+                    [0, 4, 8].flatMap((passStart) => [
+                        { beat: passStart + 0.15, durationBeats: 0.1 },
+                        { beat: passStart + 0.25, durationBeats: 0.4 },
+                    ])
+                );
+            });
+
+            it.each(PARTITIONS)('plays there live under $partition', async ({ widths }) => {
+                const live = await liveVoices(clip, rows, pushState, windowEdges(widths));
+                expect(live.voices).toEqual(offlineVoices(clip, rows, pushState));
+                expect(live.postedBehindWindow).toEqual([]);
+            });
+        });
+
+        describe('a segment the sequencer groove pulls back across the pass head', () => {
+            // The note at 1/32 sits on slot 0; timingOffset −0.5 pulls it to
+            // −0.21875, before the pass head. The loop law re-anchors it to
+            // 3.78125, ends it on the pass end, and strikes the 0.28125 beats
+            // left on the head of the same pass at 0. Pulled after the rack,
+            // that head strike was posted by the window owning the note at
+            // 1/32, which opens after it: a note scheduled in the past.
+            const clip = { endBeat: CLIP_END_BEAT, loopEnabled: true, loopLength: LOOP_BEATS };
+            const rows = [{ id: 'pulled', startBeat: 1 / 32, duration: 0.5 }];
+            const pullState = sequencerGrooveState({ index: 0, timingOffset: -0.5 });
+
+            it('renders on the pass end and the head of every pass in the bounce', () => {
+                expect(offlineVoices(clip, rows, pullState)).toEqual(
+                    [0, 4, 8].flatMap((passStart) => [
+                        { beat: passStart, durationBeats: 0.28125 },
+                        { beat: passStart + 3.78125, durationBeats: 0.21875 },
+                    ])
+                );
+            });
+
+            it.each(PARTITIONS)('plays there live under $partition', async ({ widths }) => {
+                const live = await liveVoices(clip, rows, pullState, windowEdges(widths));
+                expect(live).toEqual({ voices: offlineVoices(clip, rows, pullState), postedBehindWindow: [] });
+            });
+        });
+
+        describe('a note the clip groove and then the sequencer groove pull back across the pass head', () => {
+            // The row at 0.3 starts inside its pass, more than one groove stage
+            // after the head. The clip groove (slot 1 −0.5) moves it to 0.05,
+            // onto slot 0, which the sequencer groove (−0.5) pulls to −0.2,
+            // before the pass head: the pass plays its 0.2 beats on the pass
+            // end at 3.8 and strikes the 0.3 beats left on its head. Two
+            // groove stages after the head, it reaches the window holding the
+            // pass end only if the phase index offers it there.
+            const clip = { endBeat: CLIP_END_BEAT, loopEnabled: true, loopLength: LOOP_BEATS };
+            const rows = [{ id: 'twice-pulled', startBeat: 0.3, duration: 0.5 }];
+            const slotGroove = (id: string, index: number): GrooveTemplateState['templates'][number] => ({
+                id,
+                name: id,
+                schemaVersion: 1,
+                subdivision: '1/8',
+                slots: [{ index, timingOffset: -0.5, dynamicsOffset: 0 }],
+                provenance: { type: 'user', sourceId: 'spec' },
+            });
+            const twoStageState: GrooveTemplateState = {
+                templates: [slotGroove('clip-pull', 1), slotGroove('sequencer-pull', 0)],
+                assignments: [
+                    { consumerType: 'clip', consumerId: 'clip-1', templateId: 'clip-pull', amount: 1 },
+                    { consumerType: 'sequencer', consumerId: 'project', templateId: 'sequencer-pull', amount: 1 },
+                ],
+            };
+
+            it('renders on the pass end and the head of every pass in the bounce', () => {
+                expect(offlineVoices(clip, rows, twoStageState)).toEqual(
+                    [0, 4, 8].flatMap((passStart) => [
+                        { beat: passStart, durationBeats: 0.3 },
+                        { beat: passStart + 3.8, durationBeats: 0.2 },
+                    ])
+                );
+            });
+
+            it.each(PARTITIONS)('plays there live under $partition', async ({ widths }) => {
+                const live = await liveVoices(clip, rows, twoStageState, windowEdges(widths));
+                expect(live).toEqual({ voices: offlineVoices(clip, rows, twoStageState), postedBehindWindow: [] });
+            });
+        });
+
+        describe('a long note the clip groove pulls across the head and the sequencer groove pulls again', () => {
+            // The row at 0.1 lasts 2 beats. The clip groove (slot 0 −0.5)
+            // pulls it to −0.15, which the loop re-anchors to 3.85: its 0.15
+            // in-pass beats end on the pass end and its 1.85-beat tail is
+            // struck on the head. The sequencer groove (slot 0 −0.5) then pulls
+            // both by 0.25: the in-pass segment, after the rack, to 3.6; the
+            // tail, before the rack, back across the head onto 3.75, with the
+            // 1.6 beats left struck on the head again and released at 1.6.
+            const clip = { endBeat: CLIP_END_BEAT, loopEnabled: true, loopLength: LOOP_BEATS };
+            const rows = [{ id: 'long-pulled', startBeat: 0.1, duration: 2 }];
+            const slotGroove = (id: string): GrooveTemplateState['templates'][number] => ({
+                id,
+                name: id,
+                schemaVersion: 1,
+                subdivision: '1/8',
+                slots: [{ index: 0, timingOffset: -0.5, dynamicsOffset: 0 }],
+                provenance: { type: 'user', sourceId: 'spec' },
+            });
+            const twoStageState: GrooveTemplateState = {
+                templates: [slotGroove('clip-pull'), slotGroove('sequencer-pull')],
+                assignments: [
+                    { consumerType: 'clip', consumerId: 'clip-1', templateId: 'clip-pull', amount: 1 },
+                    { consumerType: 'sequencer', consumerId: 'project', templateId: 'sequencer-pull', amount: 1 },
+                ],
+            };
+            // Two full pulls release the tail a whole two stages early: at 1.6
+            // for the row below and at 1.4 for the crossing row, each exactly
+            // one stage from the entry that must reach it, so windows that
+            // close on those releases pin that edge for both classes.
+            const LONG_PULL_PARTITIONS = [
+                ...PARTITIONS,
+                { partition: 'tenth-beat windows', widths: [0.1] },
+                { partition: 'windows closing on the two-pull releases', widths: [1.4, 0.2, 2.4] },
+            ];
+
+            it('renders the pulled segment, the pulled tail and its head strike on every pass in the bounce', () => {
+                expect(offlineVoices(clip, rows, twoStageState)).toEqual(
+                    [0, 4, 8].flatMap((passStart) => [
+                        { beat: passStart, durationBeats: 1.6 },
+                        { beat: passStart + 3.6, durationBeats: 0.15 },
+                        { beat: passStart + 3.75, durationBeats: 0.25 },
+                    ])
+                );
+            });
+
+            it.each(LONG_PULL_PARTITIONS)(
+                'plays there live and hands the rack every release the bounce does under $partition',
+                async ({ widths }) => {
+                    const live = await liveVoices(clip, rows, twoStageState, windowEdges(widths));
+                    const offlineRackInput: RackInputEvent[] = [];
+                    const bounced = offlineVoices(clip, rows, twoStageState, offlineRackInput);
+                    expect(live.voices).toEqual(bounced);
+                    // Only the in-pass segment the sequencer groove pulls after
+                    // the rack may land behind the window that owns it, by at
+                    // most one stage: every Yeast note the project groove pulls
+                    // does (#4910), and the clock floor admits it. Everything
+                    // placed before the rack is posted from its own window.
+                    const pulledAfterRack = [3.6, 7.6, 11.6].map((beat) => ({ beat, durationBeats: 0.15 }));
+                    for (const behind of live.postedBehindWindow) {
+                        expect(pulledAfterRack).toContainEqual(behind);
+                    }
+                    // A live window that opens on the clip end no longer
+                    // schedules the clip, so the release on it is the bounce's
+                    // alone; every release before it reaches the rack live.
+                    const beforeClipEnd = (noteOff: RackNoteOff) => noteOff.beat < CLIP_END_BEAT;
+                    expect(rackNoteOffs(liveRackInput(), 'long-pulled').filter(beforeClipEnd)).toEqual(
+                        rackNoteOffs(offlineRackInput, 'long-pulled').filter(beforeClipEnd)
+                    );
+                }
+            );
+
+            describe('when the note already crosses the pass end', () => {
+                // The row at 3.9 lasts 2 beats. The clip groove (slot 0 −0.5)
+                // pulls it to 3.65, still in its pass: 0.35 beats end on the
+                // pass end and a 1.65-beat tail is struck on the head. The
+                // sequencer groove leaves the in-pass segment (slot 7) where it
+                // is and pulls the tail (slot 0) back across the head onto
+                // 3.75, its 1.4 beats left struck on the head again and
+                // released at 1.4, two stages before the 1.9 the uncut row
+                // would release its tail at.
+                const crossingRows = [{ id: 'twice-pulled-crossing', startBeat: 3.9, duration: 2 }];
+
+                it('renders the segment, the pulled tail and its head strike on every pass in the bounce', () => {
+                    expect(offlineVoices(clip, crossingRows, twoStageState)).toEqual(
+                        [0, 4, 8].flatMap((passStart) => [
+                            { beat: passStart, durationBeats: 1.4 },
+                            { beat: passStart + 3.65, durationBeats: 0.35 },
+                            { beat: passStart + 3.75, durationBeats: 0.25 },
+                        ])
+                    );
+                });
+
+                it.each(LONG_PULL_PARTITIONS)(
+                    'plays there live and hands the rack every release the bounce does under $partition',
+                    async ({ widths }) => {
+                        const live = await liveVoices(clip, crossingRows, twoStageState, windowEdges(widths));
+                        const offlineRackInput: RackInputEvent[] = [];
+                        const bounced = offlineVoices(clip, crossingRows, twoStageState, offlineRackInput);
+                        expect(live.voices).toEqual(bounced);
+                        const beforeClipEnd = (noteOff: RackNoteOff) => noteOff.beat < CLIP_END_BEAT;
+                        expect(rackNoteOffs(liveRackInput(), 'twice-pulled-crossing').filter(beforeClipEnd)).toEqual(
+                            rackNoteOffs(offlineRackInput, 'twice-pulled-crossing').filter(beforeClipEnd)
+                        );
+                    }
+                );
+            });
+        });
+
+        describe('a note the clip groove and then the sequencer groove push across the pass end', () => {
+            // The row at 3.6 ends well inside its pass. The clip groove (slot 7
+            // +0.5) moves it to 3.85, onto slot 0 of the next bar, which the
+            // sequencer groove (+0.5) pushes to 4.1, past the pass end: the
+            // pass strikes it on its head at 0.1. Two groove stages from the
+            // pass end, it reaches the head window only if the phase index
+            // offers it there.
+            const clip = { endBeat: CLIP_END_BEAT, loopEnabled: true, loopLength: LOOP_BEATS };
+            const rows = [{ id: 'twice-pushed', startBeat: 3.6, duration: 0.05 }];
+            const slotGroove = (id: string, index: number): GrooveTemplateState['templates'][number] => ({
+                id,
+                name: id,
+                schemaVersion: 1,
+                subdivision: '1/8',
+                slots: [{ index, timingOffset: 0.5, dynamicsOffset: 0 }],
+                provenance: { type: 'user', sourceId: 'spec' },
+            });
+            const twoStageState: GrooveTemplateState = {
+                templates: [slotGroove('clip-push', 7), slotGroove('sequencer-push', 0)],
+                assignments: [
+                    { consumerType: 'clip', consumerId: 'clip-1', templateId: 'clip-push', amount: 1 },
+                    { consumerType: 'sequencer', consumerId: 'project', templateId: 'sequencer-push', amount: 1 },
+                ],
+            };
+
+            it('renders on the head of every pass in the bounce', () => {
+                expect(offlineVoices(clip, rows, twoStageState)).toEqual(
+                    [0, 4, 8].map((passStart) => ({ beat: passStart + 0.1, durationBeats: 0.05 }))
+                );
+            });
+
+            it.each(PARTITIONS)('plays there live under $partition', async ({ widths }) => {
+                const live = await liveVoices(clip, rows, twoStageState, windowEdges(widths));
+                expect(live.voices).toEqual(offlineVoices(clip, rows, twoStageState));
+                expect(live.postedBehindWindow).toEqual([]);
+            });
         });
     });
 });

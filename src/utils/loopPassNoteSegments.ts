@@ -30,12 +30,29 @@ const LOOP_PASS_BEAT_TOLERANCE = 1e-9;
 /** The instance id suffix of a note's tail struck on the pass head. */
 export const LOOP_PASS_OVERFLOW_INSTANCE_SUFFIX = ':pass-head';
 
-/** The note instance a segment was cut from: the tail's suffix removed. */
-export function loopPassSourceInstanceId(instanceId: string): string {
-    if (instanceId.endsWith(LOOP_PASS_OVERFLOW_INSTANCE_SUFFIX)) {
-        return instanceId.slice(0, -LOOP_PASS_OVERFLOW_INSTANCE_SUFFIX.length);
+/** The instance id suffix of a segment the project groove moves out of its pass, placed back into it by the loop. */
+export const LOOP_PASS_GROOVE_INSTANCE_SUFFIX = ':pass-groove';
+
+const LOOP_PASS_SEGMENT_INSTANCE_SUFFIXES = [LOOP_PASS_OVERFLOW_INSTANCE_SUFFIX, LOOP_PASS_GROOVE_INSTANCE_SUFFIX];
+
+function stripLoopPassSegmentSuffix(instanceId: string): string | undefined {
+    for (const suffix of LOOP_PASS_SEGMENT_INSTANCE_SUFFIXES) {
+        if (instanceId.endsWith(suffix)) {
+            return instanceId.slice(0, -suffix.length);
+        }
     }
-    return instanceId;
+    return undefined;
+}
+
+/** The note instance a segment was cut from: every tail and groove suffix removed. */
+export function loopPassSourceInstanceId(instanceId: string): string {
+    let sourceInstanceId = instanceId;
+    let strippedInstanceId = stripLoopPassSegmentSuffix(sourceInstanceId);
+    while (strippedInstanceId !== undefined) {
+        sourceInstanceId = strippedInstanceId;
+        strippedInstanceId = stripLoopPassSegmentSuffix(sourceInstanceId);
+    }
+    return sourceInstanceId;
 }
 
 /**
@@ -96,4 +113,30 @@ export function loopPassNoteOverflowBeats(
         loopPassNoteEndBeat(passNoteStartBeat, durationBeats, passStartBeat, loopLengthBeats) - passNoteStartBeat;
     const overflowBeats = keptBeats - inPassBeats;
     return overflowBeats <= LOOP_PASS_BEAT_TOLERANCE ? 0 : overflowBeats;
+}
+
+/**
+ * Where a pass segment sounds once the project groove has moved its start to
+ * `groovedStartBeat`, when that move carries it out of its pass: pushed to or
+ * past the pass end, it lands on the head of the same pass; pulled back across
+ * the head, it lands before the pass end, and what then rings past the pass
+ * end is a tail struck on the head (`loopPassNoteOverflowBeats`). `undefined`
+ * when the start stays inside the pass.
+ *
+ * A Yeast rack hands its output to the project groove, so a landing decided
+ * after the rack can fall on a head the live windows have already played, and
+ * a pulled-back segment's tail always does. Both routes therefore apply the
+ * project groove to such a segment before the rack and hand on what it lands
+ * as notes of their own, each owned by the window holding its start.
+ */
+export function loopPassGrooveDisplacedNoteStartBeat(
+    groovedStartBeat: number,
+    passStartBeat: number,
+    loopLengthBeats: number
+): number | undefined {
+    const offsetBeats = groovedStartBeat - passStartBeat;
+    if (offsetBeats >= 0 && loopLengthBeats - offsetBeats > LOOP_PASS_BEAT_TOLERANCE) {
+        return undefined;
+    }
+    return loopPassNoteStartBeat(groovedStartBeat, passStartBeat, loopLengthBeats);
 }
