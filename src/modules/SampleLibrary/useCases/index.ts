@@ -9,5 +9,6 @@ export { searchSamples } from './searchSamples';
 export { findSimilarSamples } from './findSimilarSamples';
 export { projectSpatialMap } from './projectSpatialMap';
 export { seedFactoryLibrary } from './seedFactoryLibrary';
+export { ensureFactorySampleBuffer } from './ensureFactorySampleBuffer';
 export { searchAgentCatalog } from './searchAgentCatalog';
 export { resolveAgentCatalogCandidate } from './resolveAgentCatalogCandidate';
