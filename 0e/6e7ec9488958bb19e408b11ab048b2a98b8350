@@ -1,0 +1,87 @@
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_ba80576e6f5cb5::t_f72675f291e625 946-950
+  s_ba80576e6f5cb5::t_f32398ac86e82e 20,953
+src/modules/Transport/useCases/scheduling/prepareYeastTrackNotes.ts
+  s_ba80576e6f5cb5::t_bbdeeffcd2ac6e 8,110
+  s_ba80576e6f5cb5::t_919be525012bd8 103-107
+src/modules/Transport/useCases/scheduling/processLiveYeastTrackBlock.ts
+  s_ba80576e6f5cb5::t_12169639badf10 537
+  s_ba80576e6f5cb5::t_27c3d36ed7be18 103-105,109-116,119-131,134-137,141-148,150-155,159-198,213-243
+  s_ba80576e6f5cb5::t_b8c1604f7369f8 369-395,397-400
+  s_ba80576e6f5cb5::t_a5679f04e306d7 4,307
+  s_ba80576e6f5cb5::t_a3a840d9a1d4e2 199-212
+  s_ba80576e6f5cb5::t_f52cb694e4d537 6,8
+  s_ba80576e6f5cb5::t_37d0e2f0cc84d1 272-273
+  s_ba80576e6f5cb5::t_c103aa8bd080a3 45
+  s_ba80576e6f5cb5::t_5925e5c9031245 297-302
+  s_ba80576e6f5cb5::t_2ee2f98b5cbfe7 401-419
+src/modules/AudioEngine/useCases/offlineRender/projectOfflineYeastTrackNotes.ts
+  s_ba80576e6f5cb5::t_e97cadf107b2b7 124-127
+  s_ba80576e6f5cb5::t_288143e0e90fd9 1,129
+src/utils/clipLoopOrigin.ts
+  s_ba80576e6f5cb5::t_9a10f2ba0a87e2 101-107,109-110
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastGrooveWindowAdmission.spec.ts
+  s_ba80576e6f5cb5::t_4e11e6b35bb9a4 824-825,828-829
+  s_ba80576e6f5cb5::t_f5261bdcbe006b 884-885
+  s_ba80576e6f5cb5::t_a5deba5a21772d 894-897,903,905-906,909-918
+  s_ba80576e6f5cb5::t_495ab44fac36d6 948-973
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectOfflineYeastClipNotes.spec.ts
+  s_ba80576e6f5cb5::t_45db1e2ec1dd9d 199-201,204-221
+  s_8d7c914c5d23a3::t_c4991a9501575f 222
+src/modules/Transport/useCases/scheduling/yeastLoopPhaseIndex.ts
+  s_ba80576e6f5cb5::t_eb2c91feca1af6 155
+  s_ba80576e6f5cb5::t_fa237b250784d1 81-83
+  s_ba80576e6f5cb5::t_f4a7ecb8907fd1 137
+  s_ba80576e6f5cb5::t_25517931896e2e 1,145
+  s_ba80576e6f5cb5::t_f34907c2eb518d 140-143
+src/modules/AudioEngine/useCases/offlineRender/projectOfflineYeastClipNotes.ts
+  s_ba80576e6f5cb5::t_731b0c3b3d1038 1,78
+src/utils/loopPassNoteSegments.ts
+  s_ba80576e6f5cb5::t_2f912f81e275fc 33-34,36,38,44-55
+  s_ba80576e6f5cb5::t_7b3d0fe5ed4aae 119-124,126-130,132,137-138
+src/modules/AudioEngine/useCases/offlineRender/segmentOfflineYeastPassNotes.ts
+  s_ba80576e6f5cb5::t_8fb6a32339c288 114
+  s_ba80576e6f5cb5::t_e4cb82bd38037c 122-134,192
+  s_ba80576e6f5cb5::t_5d0933de440d27 38
+  s_ba80576e6f5cb5::t_3b1dc188a9295f 3,5
+  s_ba80576e6f5cb5::t_8301dda4abcf64 89-94,96,103-106,109-113,116-119,121
+  s_ba80576e6f5cb5::t_bd796b94cb51df 191
+  s_ba80576e6f5cb5::t_b840ada46d66f5 146-147
+  s_ba80576e6f5cb5::t_d8a24624cb0919 177-188,190
+src/modules/MIDI/useCases/grooveTemplates/getGrooveProjection.ts
+  s_ba80576e6f5cb5::t_77eeed3a098d14 3
+  s_ba80576e6f5cb5::t_03e0cfbe9461d7 66-67,75,78-79,83-165,171,281
+  s_ba80576e6f5cb5::t_dddf770d834a24 16-17
+  s_ba80576e6f5cb5::t_24f7849472e916 252-257
+  s_8d7c914c5d23a3::t_c04264d1f7e172 166-170,258,262-267,280,282-285
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectOfflineYeastTrackNotes.spec.ts
+  s_ba80576e6f5cb5::t_856f6ea673b80a 454
+  s_ba80576e6f5cb5::t_d53a687164026d 379-380,390-410,412-453,455
+  s_ba80576e6f5cb5::t_e6d55685825d07 342,411
+  s_ba80576e6f5cb5::t_f37a2610d5c46f 638-641
+  s_ba80576e6f5cb5::t_4b4a41992dc4e6 456-457
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0e6e7ec9488958bb19e408b11ab048b2a98b8350",
+  "prompts": {},
+  "sessions": {
+    "s_8d7c914c5d23a3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6fd7cc34-70d0-4cef-8a70-4351ac0359b0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
