@@ -292,7 +292,7 @@ other unknown top-level or comment key is dropped silently, so a misspelled opti
 | `body`            | Required and nonblank for both events.                                                                                                                                    |
 | `comments`        | `REQUEST_CHANGES` requires at least one; `APPROVE` must carry none. Each entry: `path`, `line`, `side` (`LEFT`/`RIGHT`), `defect`, `consequence`, `done`, `sources`.      |
 | `sources`         | Per comment: non-empty `{ stance, reviewerModel }` pairs naming the completed draws that independently detected the finding; required on fresh plan-carrying publication. |
-| `reviewerModel`   | Required on fresh reviewer publication: a permitted Review-ceiling model, in `lane:open --model` token form.                                                              |
+| `reviewerModel`   | Required on fresh reviewer publication: the model that performed the review stance, in `lane:open --model` token form.                                                    |
 | `modelExhaustion` | Only when a reviewer model equals an authoring model: one line naming what made every other model unavailable; the body must then name that reviewer model.               |
 | `draws`           | One `{ stance, reviewerModel, tier, outcome }` per completed blind draw; required on fresh plan-carrying publication.                                                     |
 | `discarded`       | Optional; one `{ finding, reason }` per discarded candidate.                                                                                                              |
@@ -638,7 +638,7 @@ without a posture and a probe duty returns a pass that proves nothing.
 - **Report**: per finding `path`, `line`, `side`, `defect`, `consequence`, `done`, and the
   reproduction input, state, or mutation with its observed result; or `clean` plus the probe that
   ran and its result. Findings go only to the orchestrator.
-- **Model**: economy or standard tier on a Review-ceiling model family, different from the PR's
+- **Model**: economy or standard tier on a configured model, different from the PR's
   `Authored by` model when one is available, otherwise recorded through `modelExhaustion` (step h).
   A harness that cannot select models uses
   [headless reviewer dispatch](references/review-records.md#headless-reviewer-dispatch).

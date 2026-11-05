@@ -1349,6 +1349,13 @@ describe('executeSelectedTimeRangeDeletion', () => {
     });
 
     it('keeps selected and unselected three-pass MIDI sources through Delete Time and replay', () => {
+        // The looping fragment copies both loop notes, so each copy needs its
+        // own minted id; the shared prefix keeps the fragment id fixed.
+        let mintedIds = 0;
+        vi.spyOn(crypto, 'randomUUID').mockImplementation(() => {
+            mintedIds += 1;
+            return `12345678-1234-4123-8123-${mintedIds.toString(16).padStart(12, '0')}`;
+        });
         const span = {
             ...createClip({ id: 'span', trackId: 'target', startBeat: 0, endBeat: 10, type: 'midi' }),
             loopEnabled: true,

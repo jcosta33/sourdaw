@@ -24,6 +24,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 vi.mock('../../saveProject/saveProject', () => ({ saveProject: mocks.saveProject }));
 
+import { committedProject } from '../committedProjectAuthority';
 import { resetCrdtProjectWithTransportStopped } from '../resetCrdtProjectWithTransportStopped';
 import { unsavedClosedTakes } from '../unsavedClosedTakes';
 
@@ -82,10 +83,12 @@ describe('resetCrdtProjectWithTransportStopped', () => {
         expect(mocks.unloadPlugin).not.toHaveBeenCalled();
     });
 
-    it('tells the caller once the authority is replaced', async () => {
+    it('tells the caller once the authority is replaced and records the committed project', async () => {
         const onReplaced = vi.fn();
+        const generationBefore = committedProject.generation;
         mocks.resetCrdtProject.mockImplementationOnce((_name: string, onAuthorityReplaced: () => void) => {
             expect(onReplaced).not.toHaveBeenCalled();
+            expect(committedProject.generation).toBe(generationBefore);
             onAuthorityReplaced();
             return Promise.resolve(replaced);
         });
@@ -93,6 +96,9 @@ describe('resetCrdtProjectWithTransportStopped', () => {
         await resetCrdtProjectWithTransportStopped('Song', onReplaced, () => true);
 
         expect(onReplaced).toHaveBeenCalledOnce();
+        // The real switch is what moves the committed generation a delayed
+        // readiness report compares against.
+        expect(committedProject.generation).toBe(generationBefore + 1);
     });
 
     it('hands every attempt a check that is quiet only when the transport is idle and no take closed unsaved', async () => {
@@ -140,9 +146,12 @@ describe('resetCrdtProjectWithTransportStopped', () => {
 
     it('passes a refusal through untouched', async () => {
         const refused = { status: 'refused', reason: 'session-active' };
+        const generationBefore = committedProject.generation;
         mocks.resetCrdtProject.mockResolvedValueOnce({ status: 'transport-active' }).mockResolvedValueOnce(refused);
 
         await expect(resetCrdtProjectWithTransportStopped('Song', vi.fn(), () => true)).resolves.toBe(refused);
+
+        expect(committedProject.generation).toBe(generationBefore);
     });
 
     it('refuses as superseded, without asking again, when the caller no longer wants the replacement', async () => {
@@ -163,6 +172,7 @@ describe('resetCrdtProjectWithTransportStopped', () => {
     it('keeps the outgoing project when the caller gives up while the reset awaits its durable steps', async () => {
         let wanted = true;
         const onReplaced = vi.fn();
+        const generationBefore = committedProject.generation;
         mocks.resetCrdtProject.mockImplementationOnce(
             async (_name: string, onAuthorityReplaced: () => void, isQuietAtSwitch: () => boolean) => {
                 await Promise.resolve();
@@ -181,6 +191,7 @@ describe('resetCrdtProjectWithTransportStopped', () => {
         });
 
         expect(onReplaced).not.toHaveBeenCalled();
+        expect(committedProject.generation).toBe(generationBefore);
         expect(mocks.resetCrdtProject).toHaveBeenCalledOnce();
         expect(mocks.stopPlayback).not.toHaveBeenCalled();
         expect(mocks.resetAudioGraph).not.toHaveBeenCalled();

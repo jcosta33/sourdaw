@@ -1,5 +1,6 @@
 import { clampMidiData7, clampVelocity, DEFAULT_NOTE_PROBABILITY, DEFAULT_NOTE_VELOCITY } from '#/utils/midiData';
 
+import { pitchBendLaneKey } from './pitchBendLaneKey';
 import {
     carriedBendReturnBeat,
     carriedBendReturnIdKey,
@@ -62,6 +63,16 @@ export type MidiGlobalTimeCommand =
            * whole-note copy is what the unsplit comped clip sounds.
            */
           retainOnSourceWindows?: readonly { start: number; end: number }[];
+          /**
+           * The source loops, so the target is a fragment of its loop and
+           * not of the rows after the cut: the target receives an exact copy
+           * of every source row in the source's own coordinates and the
+           * source keeps all of its rows, and `discardBeforeBeat` and
+           * `retainOnSourceWindows` partition nothing. The fragment's content
+           * offset and loop anchor (`midiFragmentWindowEntry`) make the copy
+           * play the source's passes from the cut on.
+           */
+          copiesLoopMaterial?: true;
       }
     | {
           type: 'remove-clips';
@@ -518,6 +529,12 @@ type SplitEventsInput<TRow extends SplitEventRow> = {
     existingRightEvents: readonly TRow[];
     /** Rows that share a key share one controller lane; the lane's value in force at the cut is carried per key. */
     laneKey: (event: TRow) => string;
+    /**
+     * Whether the rows carried onto the right clip's origin keep the order they were recorded in (by beat, rows on
+     * one beat in source order) rather than the order their lanes first appear. A player that reads the last of them that reaches a note needs it (pitch
+     * bend, whose lanes overlap); a controller lane's carry is the only one of its lane.
+     */
+    carriesInRecordedOrder?: boolean;
     idPrefix: string;
     stateMessages?: StateMessageCarry<TRow>;
 };
@@ -600,6 +617,14 @@ function registeredParameterCarry(bends: RightClipBends): StateMessageCarry<Midi
     };
 }
 
+function inRecordedOrder<TCarry extends { event: { beat: number }; sourceIndex: number }>(
+    carries: readonly TCarry[]
+): TCarry[] {
+    return carries.toSorted(
+        (left, right) => left.event.beat - right.event.beat || left.sourceIndex - right.sourceIndex
+    );
+}
+
 /**
  * Partitions recorded controller events at the cut the way notes are: the left
  * clip keeps what precedes the kept range, the deleted window is dropped, and
@@ -624,6 +649,7 @@ function splitSourceEvents<TRow extends SplitEventRow>({
     command,
     existingRightEvents,
     laneKey,
+    carriesInRecordedOrder = false,
     idPrefix,
     stateMessages,
 }: SplitEventsInput<TRow>): SplitEventsResult<TRow> {
@@ -674,14 +700,14 @@ function splitSourceEvents<TRow extends SplitEventRow>({
         moved,
         createId: createRightId,
     }) ?? { origin: [], beforeMoved: [] };
-    const carriedFromBefore: TRow[] = [];
-    const carried: TRow[] = [];
-    for (const [key, { event, sourceIndex }] of inForceAtCut) {
-        if (!lanesStartingAtOrigin.has(key)) {
-            carriedFromBefore.push(event);
-            carried.push({ ...event, id: createRightId(sourceIndex), beat: 0 });
-        }
-    }
+    const carries = [...inForceAtCut].flatMap(([key, carry]) => (lanesStartingAtOrigin.has(key) ? [] : [carry]));
+    const orderedCarries = carriesInRecordedOrder ? inRecordedOrder(carries) : carries;
+    const carriedFromBefore = orderedCarries.map(({ event }) => event);
+    const carried = orderedCarries.map(({ event, sourceIndex }) => ({
+        ...event,
+        id: createRightId(sourceIndex),
+        beat: 0,
+    }));
 
     return {
         status: 'ready',
@@ -704,6 +730,77 @@ function placeSplitEvents<TRow extends SplitEventRow>(
         next[command.targetClipId] = [...existingRightEvents, ...split.right];
     }
     return next;
+}
+
+/**
+ * A looping source's cut (`copiesLoopMaterial`): the target holds every source
+ * row unchanged but for its id, so the loop the source plays is the loop the
+ * fragment plays, and the source keeps every row of its loop. Each note copy
+ * draws its id from the replay plan as a split's right half does; controller
+ * and bend copies take ids from the target clip and the source row's index.
+ */
+function copyLoopMaterial(
+    state: MidiGlobalTimeState,
+    command: Extract<MidiGlobalTimeCommand, { type: 'split-notes' }>,
+    cursor: IdentityCursor
+): TransformCommandResult {
+    const sourceNotes = state.notesByClipId[command.sourceClipId] ?? [];
+    const sourceControlChanges = state.ccByClipId[command.sourceClipId] ?? [];
+    const sourcePitchBends = state.pitchBendByClipId[command.sourceClipId] ?? [];
+    let nextState = state;
+
+    if (sourceNotes.length > 0) {
+        const copies: MidiNote[] = [];
+        for (const [sourceNoteIndex, note] of sourceNotes.entries()) {
+            const targetNoteId = takeTargetNoteId(cursor, {
+                role: 'split-right',
+                sourceClipId: command.sourceClipId,
+                sourceNoteId: note.id,
+                sourceNoteIndex,
+                targetClipId: command.targetClipId,
+            });
+            if (!targetNoteId) {
+                return { status: 'rejected', state };
+            }
+            copies.push({ ...note, id: targetNoteId });
+        }
+        const existingTargetNotes = state.notesByClipId[command.targetClipId] ?? [];
+        nextState = {
+            ...nextState,
+            notesByClipId: {
+                ...nextState.notesByClipId,
+                [command.targetClipId]: [...existingTargetNotes, ...copies],
+            },
+        };
+    }
+    if (sourceControlChanges.length > 0) {
+        const existingTargetEvents = state.ccByClipId[command.targetClipId] ?? [];
+        nextState = {
+            ...nextState,
+            ccByClipId: {
+                ...nextState.ccByClipId,
+                [command.targetClipId]: [
+                    ...existingTargetEvents,
+                    ...cloneControllerEvents(sourceControlChanges, 'cc-split', command.targetClipId),
+                ],
+            },
+        };
+    }
+    if (sourcePitchBends.length > 0) {
+        const existingTargetEvents = state.pitchBendByClipId[command.targetClipId] ?? [];
+        nextState = {
+            ...nextState,
+            pitchBendByClipId: {
+                ...nextState.pitchBendByClipId,
+                [command.targetClipId]: [
+                    ...existingTargetEvents,
+                    ...cloneControllerEvents(sourcePitchBends, 'pb-split', command.targetClipId),
+                ],
+            },
+        };
+    }
+
+    return { status: 'ready', hasChanges: true, state: nextState };
 }
 
 function transformSplit(
@@ -731,6 +828,9 @@ function transformSplit(
     if (sourceNotes.length === 0 && sourceControlChanges.length === 0 && sourcePitchBends.length === 0) {
         return { status: 'ready', hasChanges: false, state };
     }
+    if (command.copiesLoopMaterial === true) {
+        return copyLoopMaterial(state, command, cursor);
+    }
 
     let nextState = state;
 
@@ -756,7 +856,8 @@ function transformSplit(
         events: sourcePitchBends,
         command,
         existingRightEvents: existingRightPitchBends,
-        laneKey: (event) => `${event.channel}`,
+        laneKey: pitchBendLaneKey,
+        carriesInRecordedOrder: true,
         idPrefix: 'pb-split',
     });
     if (pitchBends.status === 'rejected') {

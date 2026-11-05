@@ -60,7 +60,16 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    the case to fail. Beside a valid commit, inject each extra write through the real store (a duplicate barrel
    action, an unrelated entity, a wrong value on an authorized field); with a real controller, fail the actual
    storage write once and repeat the cancellation. Read logged errors even when every assertion passes.
-   (#5639, #4271, #5615, #5705, #5595, #5363, #5284, #2097, #4496, #1949, #4577, #5649, #474, #2597, #2811, #2035)
+   A fake message port must consume replies in posted order: a refusal (`sampleBankError`) fences
+   nothing about chunks queued behind it, so feed the double the first refusal, the still-queued stale
+   chunks, then the `retiredBankReleased` reply; manually emitting that release before the stale chunks,
+   or acknowledging rejected chunks, cannot prove the fence. Restore early credit release on the
+   refusal in a committed private probe: the maintained ordered-port case must fail when a second port
+   uploads before the release, while its healthy eight-chunk successor still respects the four-credit
+   limit. Pair the shared-owner progress oracle with a real processor zone table larger than the credit
+   window, and require a delivered owner zone acknowledgement to keep every staged follower pending
+   beyond ten seconds (#5239).
+   (#5639, #4271, #5615, #5705, #5595, #5363, #5284, #2097, #4496, #1949, #4577, #5649, #474, #2597, #2811, #2035, #5239)
 
 7. **A configuration value, snapshot or count stands for runtime behavior.**
    Probe: a configuration value, successful scan, snapshot, literal checkout depth or request count proves no

@@ -898,7 +898,9 @@ Code that executes on the audio rendering thread inside an `AudioWorkletGlobalSc
 Code that executes in a dedicated `Worker`.
 
 - The same lists apply as for worklets (`workers-no-module-runtime-imports`, `workers-no-app-helper-or-desktop-ipc`): the forbidden layers are identical, and `models/`, `transformers/`, `errors/`, and `wasm/` stay allowed.
-- Use cases, repositories, stores, handlers, and presentation do not `import` worker files (`module-runtime-no-worker-imports`). They start one with `new Worker(new URL('…', import.meta.url))`, which is a URL reference, not an import edge, and talk to it by message.
+- Use cases, repositories, stores, handlers, and presentation do not `import` worker files (`module-runtime-no-worker-imports`), and that includes a Vite `?worker` import. They start one with `new Worker(new URL('…', import.meta.url))`, which is a URL reference, not an import edge, and talk to it by message.
+- Every worker entry lives in `workers/` (or `src/infra/<area>/workers/` for cross-cutting infra). The `worker spawns` gate in `pnpm deps:validate` reads each spawn site, including `?worker` imports, and fails a target outside such a folder or one that is not a string literal ([boundary enforcement limits](./05-boundary-enforcement-limits.md)).
+- What a worker needs to share with the main thread goes in `models/` (protocol types, constants), where both sides may import it. `engine/` may import stateful worker-folder code that must also run synchronously on the main thread, such as an offline render path; that code touches no worker globals, and the worker entry stays the only file that does. Test doubles that run a worker entry in process live in `testing/`, because a spec in `useCases/` or `repositories/` that imports a worker trips `module-runtime-no-worker-imports`.
 
 ### `wasm/`
 

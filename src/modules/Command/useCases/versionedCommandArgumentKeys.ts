@@ -912,6 +912,7 @@ const schemaDefinitions = [
             value: 1,
             beat: 1,
             channel: 1,
+            channelScoped: 33,
         },
         required: ['id', 'value', 'beat', 'channel'],
         additionalProperties: false,

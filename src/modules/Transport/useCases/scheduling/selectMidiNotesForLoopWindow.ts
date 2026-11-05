@@ -1,6 +1,6 @@
 import { type MidiStoreState } from '#/modules/MIDI/stores';
 import { projectCommittedGroove } from '#/modules/MIDI/useCases';
-import { isBeatInClipLoopWindow } from '#/utils/clipLoopOrigin';
+import { isBeatInClipLoopWindow, resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 
 type ScheduledMidiNote = MidiStoreState['notesByClipId'][string][number];
 
@@ -76,6 +76,9 @@ function getScheduledMidiLoopIndex({
 
     const orderByNote = new Map<ScheduledMidiNote, number>();
     const sortedEntries: LoopPhaseEntry[] = [];
+    // Iterations open on the anchor's pass grid, so a row's phase inside one
+    // is its offset-relative start plus the trim advance.
+    const loopAdvanceBeats = resolveClipLoopOriginAdvance({ startBeat: clipStartBeat, loopOriginBeat, loopEnabled });
     for (let index = 0; index < notes.length; index++) {
         const note = notes[index]!;
         orderByNote.set(note, index);
@@ -85,7 +88,7 @@ function getScheduledMidiLoopIndex({
         // across a bound independently of this cache's geometry key, so the
         // test must stay out of the cached build. Over-admission here is the
         // contract — the final admission stays with the caller.
-        const phaseBeat = positiveModulo(relativeStartBeat, loopLengthBeats);
+        const phaseBeat = positiveModulo(relativeStartBeat + loopAdvanceBeats, loopLengthBeats);
         sortedEntries.push({
             endPhaseBeat: phaseBeat + Math.min(note.duration, loopLengthBeats),
             note,

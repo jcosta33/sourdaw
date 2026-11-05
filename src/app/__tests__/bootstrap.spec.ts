@@ -191,7 +191,7 @@ const {
     setCrumbsEventBusMock,
     initCrumbsModePushMock,
     initDeviceStateReconciliationMock,
-    initTimelineScrollClampMock,
+    initTimelineViewReconciliationMock,
     initAudioBufferCacheAccessMock,
     initInputMonitoringProjectAccessMock,
     initLevainDeviceStateProjectAccessMock,
@@ -289,7 +289,7 @@ const {
         setCrumbsEventBusMock: vi.fn(),
         initCrumbsModePushMock: vi.fn(),
         initDeviceStateReconciliationMock: vi.fn(),
-        initTimelineScrollClampMock: vi.fn(),
+        initTimelineViewReconciliationMock: vi.fn(),
         initAudioBufferCacheAccessMock: vi.fn(),
         initInputMonitoringProjectAccessMock: vi.fn(),
         initLevainDeviceStateProjectAccessMock: vi.fn(),
@@ -404,7 +404,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     setDeviceParameter: noop,
     getArrangementHandlers: sentinelHandlers('Arrangement'),
     initStalenessDetection: noop,
-    initTimelineScrollClamp: initTimelineScrollClampMock,
+    initTimelineViewReconciliation: initTimelineViewReconciliationMock,
     setArrangementEventBus: setArrangementEventBusMock,
     setOfflineRenderDependencies: noop,
     setTimeOperationDependencies: setTimeOperationDependenciesMock,
@@ -480,13 +480,16 @@ vi.mock('#/modules/BrowserAi/useCases', () => ({
 }));
 
 vi.mock('#/modules/Collaboration/useCases', () => ({
+    activateProjectOriginalMedia: noop,
     canExecuteCommandBatch: canExecuteCommandBatchMock,
     canMutateBranchMetadata: () => true,
     configureCollaborationAssetOwner: configureCollaborationAssetOwnerMock,
+    captureProjectOriginalMedia: noop,
     configureDurableAssetCommitProof: configureDurableAssetCommitProofMock,
     getCollaborationHandlers: sentinelHandlers('Collaboration'),
     getAssetTransfer: getAssetTransferMock,
     leaveSession: noop,
+    restoreProjectOriginalMedia: noop,
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
@@ -654,6 +657,7 @@ vi.mock('#/modules/Project/useCases', () => ({
     productionBriefActionBatchAdmission: { capture: () => ({ allowsCurrent: () => true }) },
     getProjectHandlers: sentinelHandlers('Project'),
     initGrooveTemplateDirtyTracking: noop,
+    projectOriginalMediaPort: { configure: noop },
     initPluginStateDirtyTracking: noop,
     initProjectDirtyTracking: noop,
     getDurableProjectOwnerId: getDurableProjectOwnerIdMock,
@@ -1484,11 +1488,12 @@ describe('bootstrap', () => {
         expect(initDeviceStateReconciliationMock).toHaveBeenCalledExactlyOnceWith();
     });
 
-    it('registers the timeline scroll clamp as an explicit boot step', () => {
+    it('registers the timeline view reconciliation as an explicit boot step', () => {
         // Deleting a track or collapsing a folder shrinks the timeline's
-        // content; without this registration the scroll offset stays past the
-        // last row and leaves blank canvas until the next wheel event.
-        expect(initTimelineScrollClampMock).toHaveBeenCalledExactlyOnceWith();
+        // content, and a clip can leave the project by undo, a collaborator's
+        // delete or a project load; without this registration the scroll offset
+        // stays past the last row and the selection keeps ids of missing clips.
+        expect(initTimelineViewReconciliationMock).toHaveBeenCalledExactlyOnceWith();
     });
 
     it('wires the Crumbs mode push to the shared event bus', () => {

@@ -43,8 +43,8 @@ base context. For a plan-carrying bundle it derives the canonical record from
 refuses before any remote write when the plan is missing, malformed, or rebound
 from the head/base/pr it must bind; when `review.json` carries no `draws` and no
 reusable unpublished record supplies them; when
-the draws miss the plan's draw floor; when the summary reviewer model or any effective
-draw exceeds the review cost ceiling below; or when a value is unsafe. Effective
+the draws miss the plan's draw floor; when any effective draw's tier is not
+economy or standard; or when a value is unsafe. Effective
 draws include an unpublished historical dossier reused by a caller document with
 no draws. These are fresh-publication gates: exact published replay and recovery
 keep their original model and tier metadata without rewriting canonical bytes.

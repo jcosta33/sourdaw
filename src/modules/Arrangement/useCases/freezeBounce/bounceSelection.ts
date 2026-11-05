@@ -6,7 +6,7 @@ import {
     restoreMidiClipData,
     splitMidiNotesAtBeat,
 } from '#/modules/MIDI/useCases';
-import { restampLoopOriginEntry } from '#/utils/clipLoopOrigin';
+import { continuesLoopingMidiPhase, loopingMidiLengthEntry, midiFragmentWindowEntry } from '#/utils/clipLoopOrigin';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip } from '../../models/Track';
@@ -52,6 +52,20 @@ function applyMidiClipDataSnapshot(clipId: string, snapshot: MidiClipDataSnapsho
         controlChangeSnapshot: snapshot.controlChanges ? structuredClone(snapshot.controlChanges) : null,
         pitchBendSnapshot: snapshot.pitchBends ? structuredClone(snapshot.pitchBends) : null,
     });
+}
+
+/**
+ * The content fields of a fragment kept to the right of the bounced range,
+ * which plays the source from `endBeat` on with its head there: the MIDI
+ * fragment law (`midiFragmentWindowEntry`) for a MIDI clip. An audio fragment
+ * keeps source-coordinate offsets advanced by the cut, so it carries the
+ * source anchor: the offset advance and the anchor-advance growth cancel.
+ */
+function bouncedRightContentEntry(clip: Clip, endBeat: number) {
+    if (clip.type === 'midi') {
+        return midiFragmentWindowEntry(clip, endBeat, endBeat);
+    }
+    return { midiOffsetBeats: 0 };
 }
 
 export async function bounceSelection(trackId: string, startBeat: number, endBeat: number): Promise<boolean> {
@@ -143,6 +157,7 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
         newClipId: string;
         splitBeat: number;
         discardBeforeBeat?: number;
+        copiesLoopMaterial: boolean;
     }> = [];
 
     for (const clip of targetTrack.clips) {
@@ -161,28 +176,17 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
         if (clip.startBeat < startBeat && clip.endBeat > endBeat) {
             // Spans the selection: keep both outside parts.
             const rightClipId = `clip-bsel-${crypto.randomUUID().slice(0, 8)}`;
-            // The fragment anchor follows the basis it creates (#4988). The
-            // MIDI fragment re-bases its notes by −splitBeat under
-            // midiOffsetBeats 0 — a fresh coordinate basis the source anchor
-            // has no meaning in, whose carried advance would open the window
-            // behind the head and silence the survivors — so it re-stamps to
-            // its own start, key absent for an unanchored source. The audio
-            // fragment keeps source-coordinate offsets advanced by the cut,
-            // so it carries the source anchor: the offset advance and the
-            // anchor-advance growth cancel, the region
-            // `audioOffsetBeats - (startBeat - loopOriginBeat)` stays the
-            // source's own, and the entry lands at the cut phase.
-            const rightLoopOriginEntry = clip.type === 'midi' ? restampLoopOriginEntry(clip, endBeat) : {};
+            // The fragment anchor follows the basis it creates (#4988):
+            // `bouncedRightContentEntry`.
             keptClips.push(
-                { ...clip, endBeat: startBeat, name: `${clip.name} (L)` },
+                { ...clip, endBeat: startBeat, name: `${clip.name} (L)`, ...loopingMidiLengthEntry(clip) },
                 {
                     ...clip,
                     id: rightClipId,
                     startBeat: endBeat,
                     name: `${clip.name} (R)`,
                     audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (endBeat - clip.startBeat),
-                    midiOffsetBeats: 0,
-                    ...rightLoopOriginEntry,
+                    ...bouncedRightContentEntry(clip, endBeat),
                 }
             );
             if (clip.type === 'midi') {
@@ -192,6 +196,7 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
                     newClipId: rightClipId,
                     splitBeat: endBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0),
                     discardBeforeBeat: startBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0),
+                    copiesLoopMaterial: continuesLoopingMidiPhase(clip),
                 });
             }
             continue;
@@ -199,16 +204,19 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
         if (clip.startBeat < startBeat) {
             // Crosses the left edge: keep the left part; in-selection notes
             // move to a throwaway id and are removed.
-            keptClips.push({ ...clip, endBeat: startBeat });
+            keptClips.push({ ...clip, endBeat: startBeat, ...loopingMidiLengthEntry(clip) });
             if (clip.type === 'midi') {
                 const mediaSplit = startBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0);
                 const discardId = `clip-bsel-discard-${crypto.randomUUID().slice(0, 8)}`;
                 generatedMidiClipIds.push(discardId);
+                // A looping clip keeps its whole loop: the discard copy takes
+                // the rows only to be removed.
                 splitOps.push({
                     sourceClipId: clip.id,
                     newClipId: discardId,
                     splitBeat: mediaSplit,
                     discardBeforeBeat: mediaSplit,
+                    copiesLoopMaterial: continuesLoopingMidiPhase(clip),
                 });
                 removedMidiClipIds.push(discardId);
             }
@@ -217,21 +225,13 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
         // Crosses the right edge: keep the right part, re-based to endBeat on
         // a fresh id (its MIDI media starts at the split point).
         const rightClipId = `clip-bsel-${crypto.randomUUID().slice(0, 8)}`;
-        // Same per-basis law as the spanning fragment above (#4988): the MIDI
-        // notes re-base under midiOffsetBeats 0, so the source anchor
-        // re-stamps to the fragment's own start instead of deriving a
-        // spurious advance there. The audio offset stays in source
-        // coordinates advanced by the cut, so the audio side carries the
-        // source anchor — the region stays the source's own, entering at the
-        // cut phase. Unanchored sources keep the key absent.
-        const rightLoopOriginEntry = clip.type === 'midi' ? restampLoopOriginEntry(clip, endBeat) : {};
+        // Same per-basis law as the spanning fragment above (#4988).
         keptClips.push({
             ...clip,
             id: rightClipId,
             startBeat: endBeat,
             audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + (endBeat - clip.startBeat),
-            midiOffsetBeats: 0,
-            ...rightLoopOriginEntry,
+            ...bouncedRightContentEntry(clip, endBeat),
         });
         if (clip.type === 'midi') {
             generatedMidiClipIds.push(rightClipId);
@@ -241,6 +241,7 @@ export async function bounceSelection(trackId: string, startBeat: number, endBea
                 newClipId: rightClipId,
                 splitBeat: mediaSplit,
                 discardBeforeBeat: mediaSplit,
+                copiesLoopMaterial: continuesLoopingMidiPhase(clip),
             });
             removedMidiClipIds.push(clip.id);
         }

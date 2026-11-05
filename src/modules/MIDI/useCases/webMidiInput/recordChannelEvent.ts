@@ -19,7 +19,12 @@ export type RecordableChannelEvent =
           /** The input's registered-parameter state before this message moved it, when the message is one. */
           registeredStateBefore?: readonly MidiCC[];
       }
-    | { kind: 'pitchBend'; value: number };
+    | {
+          kind: 'pitchBend';
+          value: number;
+          /** True for a wheel moved with MPE off: the row then bends only its own channel's notes, as live. */
+          channelScoped?: boolean;
+      };
 
 type RecordChannelEventInput = {
     /** Track the live input is routed to; `null` when none is selected. */
@@ -81,7 +86,7 @@ export function recordChannelEvent(
         }
         deps.bufferRecordedMidiPitchBend({
             clipId: placement.clipId,
-            row: { value: event.value, beat: rowBeat, channel },
+            row: { value: event.value, beat: rowBeat, channel, channelScoped: event.channelScoped },
         });
     } catch (error: unknown) {
         logger.warn('[MIDI] Recording a channel event failed:', error);

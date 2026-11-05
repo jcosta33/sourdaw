@@ -2360,13 +2360,13 @@ export default defineConfig(
             // Pinned codec distribution bytes, including the explicitly modified Vorbis
             // wrapper; exact provenance and reproduction recipe are recorded under
             // release/upstream-proofs/audio-export-codecs/. Handwritten adapters stay checked.
-            'src/modules/AudioRendering/repositories/audioEncoders/vendor/vorbis/ogg-encode.js',
-            'src/modules/AudioRendering/repositories/audioEncoders/vendor/vorbis/ogg-encode.d.ts',
-            'src/modules/AudioRendering/repositories/audioEncoders/vendor/opus/opus-encode.js',
-            'src/modules/AudioRendering/repositories/audioEncoders/vendor/opus/opus-encode.d.ts',
-            'src/modules/AudioRendering/repositories/audioEncoders/vendor/opus/core.js',
-            'src/modules/AudioRendering/repositories/audioEncoders/vendor/vorbis/vorbis.wasm.js',
-            'src/modules/AudioRendering/repositories/audioEncoders/vendor/opus/src/opus.wasm.js',
+            'src/modules/AudioRendering/workers/vendor/vorbis/ogg-encode.js',
+            'src/modules/AudioRendering/workers/vendor/vorbis/ogg-encode.d.ts',
+            'src/modules/AudioRendering/workers/vendor/opus/opus-encode.js',
+            'src/modules/AudioRendering/workers/vendor/opus/opus-encode.d.ts',
+            'src/modules/AudioRendering/workers/vendor/opus/core.js',
+            'src/modules/AudioRendering/workers/vendor/vorbis/vorbis.wasm.js',
+            'src/modules/AudioRendering/workers/vendor/opus/src/opus.wasm.js',
             'test-debug.mjs',
             'test-manual-fix.mjs',
             'test-manual-fix.ts',

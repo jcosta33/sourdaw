@@ -9,6 +9,37 @@ describe('deviceReadinessDiagnostics', () => {
         deviceReadinessDiagnostics = createDeviceReadinessDiagnostics();
     });
 
+    it('counts current content activity without inflating decoded progress and rejects stale epochs', () => {
+        const clock = vi.spyOn(Date, 'now').mockReturnValue(100);
+        try {
+            const token = deviceReadinessDiagnostics.begin({
+                deviceId: 'levain',
+                deviceType: 'levain',
+                requiresContent: true,
+            });
+            deviceReadinessDiagnostics.markGraphReady({ token });
+            deviceReadinessDiagnostics.markContentProgress({ token, epoch: 2, progress: 0.25 });
+            clock.mockReturnValue(9000);
+            deviceReadinessDiagnostics.markContentActivity({ token, epoch: 2 });
+            expect(deviceReadinessDiagnostics.getWaitState(token).lastActivityAtMs).toBe(9000);
+            clock.mockReturnValue(9500);
+            deviceReadinessDiagnostics.markContentProgress({ token, epoch: 2, progress: 0.25 });
+            deviceReadinessDiagnostics.markContentActivity({ token, epoch: 1 });
+            expect(deviceReadinessDiagnostics.getWaitState(token).lastActivityAtMs).toBe(9000);
+            const successor = deviceReadinessDiagnostics.begin({
+                deviceId: 'levain',
+                deviceType: 'levain',
+                requiresContent: true,
+            });
+            deviceReadinessDiagnostics.markGraphReady({ token: successor });
+            clock.mockReturnValue(9900);
+            deviceReadinessDiagnostics.markContentActivity({ token, epoch: 3 });
+            expect(deviceReadinessDiagnostics.getWaitState(successor).lastActivityAtMs).toBe(9500);
+        } finally {
+            clock.mockRestore();
+        }
+    });
+
     it('increments the readiness generation once per graph reset', () => {
         expect(deviceReadinessDiagnostics.snapshot().generation).toBe(0);
 

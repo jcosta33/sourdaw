@@ -31,7 +31,7 @@ import {
     setTrackPan as setTrackPanArrangement,
     setDeviceParameter,
     initStalenessDetection,
-    initTimelineScrollClamp,
+    initTimelineViewReconciliation,
     setArrangementEventBus,
     setClipAudioAssetStager,
     setOfflineRenderDependencies,
@@ -231,6 +231,7 @@ import {
 } from './captureCommandBatchPreflightState';
 import { composeGrandBoule } from './composeGrandBoule';
 import { configureAudioEngineRuntime } from './configureAudioEngineRuntime';
+import { configureProjectOriginalMediaPort } from './configureProjectOriginalMediaPort';
 import { getAgentProtocolManifest } from './getAgentProtocolManifest';
 import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMaps';
 import { initAudioBufferCacheAccess } from './initAudioBufferCacheAccess';
@@ -431,6 +432,7 @@ setTimeOperationDependencies({
     prepareTimelineMapTimeOperation,
     prepareTimelineMapStateRestore,
 });
+configureProjectOriginalMediaPort();
 setProjectIdentityTransitionDependencies({
     leaveCollaborationSession: leaveSession,
     resumeDurableAssetOwnerHandoffsAfterProjectLoad: async (authority) => {
@@ -706,7 +708,7 @@ initCrumbsModePush(eventBus);
 // this restores.
 syncCrumbsNativeInstances();
 initStalenessDetection();
-initTimelineScrollClamp();
+initTimelineViewReconciliation();
 
 // Registered for the life of the process, so deadline-evidence reading has
 // main-thread long-task coverage from startup regardless of what is mounted.

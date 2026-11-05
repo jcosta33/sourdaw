@@ -37,6 +37,13 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    delay the case must still discriminate, and a real retention (the previous render's channels or
    encoder state reachable at the next render's first write) must still fail the bound; a local green
    proves nothing about load-dependent roots.
+   The #5798 composite factory persistence case failed [hosted run 40777377382, unit shard
+   3/4](https://github.com/jcosta33/sourdaw/actions/runs/40777377382/job/123131079682) with
+   continuing progress: the final position transition began at 4834 ms of a 5000 ms case budget.
+   Measure phase progress and CPU before adjusting a deadline, never raise global timeouts or treat
+   a green retry as recovery, and check that the whole-case budget accommodates sequential committed
+   transitions and their individual waits. Mutate a real producer to persist the wrong value and
+   require the existing functional case to fail under the adjusted budget.
    (#5191, #6011, #5964, #3270, #3356, #5459, #6000, #4775, #5798, #3222, #2976, #5337, #4228, #5115, #5924)
 
 3. **Fixture state leaks across cases or depends on chance or the runner's environment.**
