@@ -201,6 +201,12 @@ function reachedChainDimensions(trackIds: ReadonlySet<string>, context: ProjectC
     return chainDimensions(deviceTypes);
 }
 
+function isSendCommand(
+    action: AppAction
+): action is Extract<AppAction, { type: 'addSend' | 'setSend' | 'removeSend' }> {
+    return action.type === 'addSend' || action.type === 'setSend' || action.type === 'removeSend';
+}
+
 /** An output a later output on the same track replaces never survives the batch, so it edits nothing. */
 function isSupersededOutput(action: AppAction, actions: readonly AppAction[]): boolean {
     if (action.type !== 'setTrackOutput') {
@@ -213,11 +219,11 @@ function isSupersededOutput(action: AppAction, actions: readonly AppAction[]): b
 
 /**
  * A track routed into a bus takes on the processing of everything that bus reaches, bus to bus: its
- * space, or its spectral shaping. A send adds a processed parallel copy, so it is always space and
- * also reshapes the low end when a reached track holds a spectral device.
+ * space, or its spectral shaping. A send, added, changed or removed, moves a processed parallel copy,
+ * so it is always space and also reshapes the low end when a reached track holds a spectral device.
  */
 function readRoutingEdits(action: AppAction, actions: readonly AppAction[], context: ProjectContext): Edit[] | null {
-    if (action.type !== 'setTrackOutput' && action.type !== 'addSend') {
+    if (action.type !== 'setTrackOutput' && !isSendCommand(action)) {
         return null;
     }
     if (isSupersededOutput(action, actions)) {
@@ -225,7 +231,7 @@ function readRoutingEdits(action: AppAction, actions: readonly AppAction[], cont
     }
     const destinationId = action.type === 'setTrackOutput' ? action.payload.outputId : action.payload.busId;
     const dimensions = reachedChainDimensions(readReachedTrackIds([destinationId], actions, context), context);
-    if (action.type === 'addSend') {
+    if (isSendCommand(action)) {
         const lowEnd = dimensions.filter((dimension) => dimension === 'low-frequency-band');
         return edits(['ambience', ...lowEnd], action.payload.trackId, 'send');
     }
@@ -261,9 +267,6 @@ function readDeviceChainEdits(
 }
 
 function readSendEdits(action: AppAction): Edit[] | null {
-    if (action.type === 'setSend' || action.type === 'removeSend') {
-        return edits(['ambience'], action.payload.trackId, 'send');
-    }
     if (action.type === 'automateSendRange' || action.type === 'automateSendRanges') {
         return action.payload.trackIds.flatMap((trackId) => edits(['ambience'], trackId, 'send automation'));
     }
