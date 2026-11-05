@@ -1,0 +1,49 @@
+src/modules/AiRuntime/useCases/planWholeProjectVibeRun.ts
+  s_55244eb93b97d1::t_49498977d0418b 22
+src/modules/AiRuntime/useCases/planLastCommitContinuation.ts
+  s_55244eb93b97d1::t_89434837412d3c 10
+  s_55244eb93b97d1::t_b53ef5cb99bfdc 141
+  s_55244eb93b97d1::t_ae2555afe02b58 168
+src/modules/AiRuntime/useCases/perceptualConstraints/describePerceptualConstraintFailure.ts
+  s_55244eb93b97d1::t_91833345f0db9d 10
+  s_55244eb93b97d1::t_3a371df9831cad 1-2
+src/modules/AiRuntime/useCases/perceptualConstraints/compilePerceptualConstraints.ts
+  s_55244eb93b97d1::t_d771ed9dd54bda 9,12-13
+  s_55244eb93b97d1::t_6634b16d3eeea8 246-248
+src/modules/AiRuntime/useCases/admitPerceptualGoalDecline.ts
+  s_55244eb93b97d1::t_8b3cd8558a8b5b 47
+  s_55244eb93b97d1::t_f2137e33ab4efd 21
+src/modules/AiRuntime/useCases/maskTrackReferences.ts
+  s_55244eb93b97d1::t_902e94ccc7fe10 1-23
+src/utils/Math/roundToThousandths.ts
+  s_55244eb93b97d1::t_a3c492303852a1 1-4
+src/modules/AiRuntime/useCases/perceptualConstraints/findExcludedDimensionEdit.ts
+  s_55244eb93b97d1::t_38a4291d8c96a5 51-55
+src/modules/AiRuntime/useCases/canonicalRoleFamilies.ts
+  s_55244eb93b97d1::t_46617e61f86861 3
+  s_fec7059b7a251c::t_17e0b841609a21 51-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "458838633d881b5260fda703a51830dab8724b74",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
