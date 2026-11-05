@@ -58,6 +58,7 @@ import {
 } from '../../helpers/pianoRollConstants';
 import { projectPianoRollTakeNotes, type PianoRollTakeNotes } from '../../helpers/projectPianoRollTakeNotes';
 import { usePianoRollInteractions } from '../../hooks/usePianoRollInteractions';
+import { usePianoRollOpeningScroll } from '../../hooks/usePianoRollOpeningScroll';
 import { usePianoRollRenderer } from '../../hooks/usePianoRollRenderer';
 import { NotePropertyLane } from '../AutomationLane/NotePropertyLane';
 
@@ -450,6 +451,7 @@ export const PianoRoll = ({
 
     // ── Render ────────────────────────────────────────────────────────
     const visiblePitches = getVisiblePitches(scaleName, keyRoot, isFolded);
+    const openingScroll = usePianoRollOpeningScroll({ scrollRef, clipId, notes, visiblePitches, beatWidth });
     // MPE lanes the edited track's instrument actually sounds — the toolbar's
     // documented per-track truth (audit MD-2), derived from the same engine
     // registry `AutomationLane` gates its lanes on.
@@ -516,6 +518,9 @@ export const PianoRoll = ({
                     className="min-h-[70px] overflow-auto"
                     ref={scrollRef}
                     onScroll={(event) => {
+                        if (!openingScroll.isOpeningScroll(event.currentTarget)) {
+                            openingScroll.settle();
+                        }
                         const sl = (event.target as HTMLElement).scrollLeft;
                         onScrollChange?.(sl);
                         if (expressionScrollRef.current) {
@@ -582,12 +587,18 @@ export const PianoRoll = ({
                             // arrangement clip-delete shortcut here so a focused
                             // piano roll does not also delete the clip.
                             data-canvas-editor=""
-                            onMouseDown={handleMouseDown}
+                            onMouseDown={(event) => {
+                                openingScroll.settle();
+                                handleMouseDown(event);
+                            }}
                             onMouseMove={handleMouseMove}
                             onMouseUp={handleMouseUp}
                             onMouseLeave={handleMouseUp}
                             onDoubleClick={handleDoubleClick}
-                            onKeyDown={handleKeyDown}
+                            onKeyDown={(event) => {
+                                openingScroll.settle();
+                                handleKeyDown(event);
+                            }}
                             onContextMenu={handleContextMenu}
                             aria-label="Piano roll editor"
                         />
