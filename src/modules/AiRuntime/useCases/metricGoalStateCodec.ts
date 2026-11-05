@@ -8,6 +8,7 @@ import {
     type MetricGoalProof,
     type MetricGoalSource,
 } from '../models/MetricGoalAdmission';
+import { PERCEPTUAL_CONSTRAINT_IDS } from '../models/PerceptualConstraint';
 
 import { type MetricGoal, type MetricGoalState, type MetricRequestAuthority } from './metricGoalContractTypes';
 
@@ -134,6 +135,13 @@ function source(entry: unknown): entry is MetricGoalSource {
     if (entry.kind === 'request-number') {
         return keys(entry, ['kind', 'candidateId', 'token']) && text(entry.candidateId) && text(entry.token);
     }
+    if (entry.kind === 'constraint') {
+        return (
+            keys(entry, ['kind', 'constraintId', 'clause']) &&
+            oneOf(entry.constraintId, PERCEPTUAL_CONSTRAINT_IDS) &&
+            text(entry.clause)
+        );
+    }
     return (
         entry.kind === 'policy' &&
         keys(entry, ['kind', 'policyId']) &&
@@ -190,6 +198,7 @@ function authorityIdentity(entry: Record<string, unknown>): boolean {
             'configured-joint-intake',
             'admitted-workflow',
             'answer-suggestion',
+            'perceptual-constraint-reader',
         ]) &&
         (entry.callId === null || text(entry.callId)) &&
         (entry.turn === null || integer(entry.turn)) &&

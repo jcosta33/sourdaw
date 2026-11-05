@@ -1,3 +1,5 @@
+import { type PerceptualConstraintReading } from './PerceptualConstraint';
+
 /** One provider call exactly as the request text it was grounded in admitted it. */
 export type ProposalGroundingCall = {
     name: string;
@@ -49,6 +51,11 @@ export type ProposalProtectionFacts = {
         /** When present, every operation except these is protected. */
         exceptOperations?: string[];
     }>;
+    /**
+     * The perceptual constraints the chain's requests stated, as each compiled when it was admitted.
+     * A refinement keeps them, never reading an earlier request's text against the project as it is now.
+     */
+    perceptualConstraints?: PerceptualConstraintReading;
 };
 
 /** One admitted request's resolved protections and original UTF-16 clause ranges. */
