@@ -43,7 +43,7 @@ beforeEach(() => {
 });
 
 describe('projectOfflineYeastClipNotes — basic projection', () => {
-    it('calls projectMidiEvents with transformed notes (startBeat offset, duration clamp)', () => {
+    it('calls projectMidiEvents with the rack output at its absolute beat, whatever the content offset', () => {
         const projectMidiEvents = vi.fn((input: { events: readonly unknown[] }) => input.events.map((e) => e));
         projectOfflineYeastClipNotes(
             makeInput({
@@ -55,7 +55,9 @@ describe('projectOfflineYeastClipNotes — basic projection', () => {
         const callArg = projectMidiEvents.mock.calls[0]?.[0] as {
             events: Array<{ startBeat: number; duration: number }>;
         };
-        expect(callArg.events[0]!.startBeat).toBe(1); // startPpq(2) - midiOffset(1)
+        // The rack was handed the note at its audible beat, so the offset was
+        // applied before the rack and must not be subtracted again.
+        expect(callArg.events[0]!.startBeat).toBe(2);
         expect(callArg.events[0]!.duration).toBe(3); // endPpq(5) - startPpq(2)
     });
 
@@ -178,8 +180,8 @@ describe('projectOfflineYeastClipNotes — the anchored loop window on the sourc
 
         expect(result.map((note) => note.pitch)).toEqual([61]);
         const callArg = projectMidiEvents.mock.calls[0]?.[0] as { events: Array<{ startBeat: number }> };
-        // The event keeps the absolute figure (`startPpq - midiOffsetBeats`);
-        // the membership input above is what carries the source figure.
+        // The event keeps the absolute figure (`startPpq`); the membership
+        // input above is what carries the source figure.
         expect(callArg.events).toEqual([expect.objectContaining({ startBeat: 5 })]);
     });
 

@@ -133,8 +133,11 @@ export type LocalStorageKey =
     // Stores resumable local AI run metadata, receipts, leases, and cleanup ownership
     | 'sourdaw-agent-runs'
 
-    // Stores user-defined keyboard shortcuts
+    // Stores user-defined keyboard shortcuts saved before physical-key capture, read once to seed 'sourdaw-shortcut-bindings'
     | 'sourdaw-shortcuts'
+
+    // Stores user-defined keyboard shortcuts, each combo naming its physical key
+    | 'sourdaw-shortcut-bindings'
 
     // Stores if the user has dismissed the alpha notice modal
     | 'sourdaw-alpha-notice-dismissed';

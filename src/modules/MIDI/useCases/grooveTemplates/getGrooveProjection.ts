@@ -1,6 +1,6 @@
 import { isBeatInClipLoopWindow, resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
+import { loopPassNoteEndBeat, loopPassNoteOverflowBeats, loopPassNoteStartBeat } from '#/utils/loopPassNoteSegments';
 
-import { SAME_BEAT_TOLERANCE } from '../../models/SameBeatTolerance';
 import { type GrooveTemplateState } from '../../stores/grooveTemplateStore';
 
 import { applyGrooveTemplate } from './applyGrooveTemplate';
@@ -176,24 +176,36 @@ export function getGrooveProjection(state: GrooveTemplateState): GrooveProjectio
                 return createSegment(intervalStartBeat, intervalEndBeat, 0);
             }
 
-            const offsetFromIteration = intervalStartBeat - iterationStartBeat;
-            const moduloOffset = ((offsetFromIteration % loopLengthBeats) + loopLengthBeats) % loopLengthBeats;
-            // A start that float noise leaves just below a loop length is the next pass head,
-            // not a sliver at the loop end followed by the whole note again at that head.
-            const wrappedOffset = loopLengthBeats - moduloOffset <= SAME_BEAT_TOLERANCE ? 0 : moduloOffset;
-            const wrappedStartBeat = iterationStartBeat + wrappedOffset;
-            const preservedDuration = Math.min(intervalDurationBeats, loopLengthBeats);
-            const firstEndBeat = Math.min(iterationStartBeat + loopLengthBeats, wrappedStartBeat + preservedDuration);
+            // The pass segmentation every route shares (`loopPassNoteSegments`).
+            const wrappedStartBeat = loopPassNoteStartBeat(intervalStartBeat, iterationStartBeat, loopLengthBeats);
+            const firstEndBeat = loopPassNoteEndBeat(
+                wrappedStartBeat,
+                intervalDurationBeats,
+                iterationStartBeat,
+                loopLengthBeats
+            );
             const firstSegments = createSegment(wrappedStartBeat, firstEndBeat, 0);
-            const remainingDuration = preservedDuration - (firstEndBeat - wrappedStartBeat);
-            // On a non-dyadic grid the first segment's end misses the note's end by float noise,
-            // so a note that stops at or before the loop end still leaves a remainder of that size.
-            if (remainingDuration <= SAME_BEAT_TOLERANCE) {
+            const overflowBeats = loopPassNoteOverflowBeats(
+                wrappedStartBeat,
+                intervalDurationBeats,
+                iterationStartBeat,
+                loopLengthBeats
+            );
+            // Absolute events were segmented by their producer before it played
+            // them (a Yeast rack is handed each pass's tail as its own note at
+            // the head). Length that still runs past the pass end from a start
+            // inside the pass was added after that, by the rack: a live window
+            // could only strike it on the head after the head had passed, so it
+            // ends at the pass end on every route. A start the sequencer groove
+            // pulled back across the head wraps as on the synth route: its tail
+            // sounds where the note itself sits, at the head.
+            const lengthRunsPastPassEnd = eventsAreAbsolute && intervalStartBeat >= iterationStartBeat;
+            if (overflowBeats === 0 || lengthRunsPastPassEnd) {
                 return firstSegments;
             }
             const wrappedSegments = createSegment(
                 iterationStartBeat,
-                iterationStartBeat + remainingDuration,
+                iterationStartBeat + overflowBeats,
                 firstEndBeat - wrappedStartBeat
             );
             return [...wrappedSegments, ...firstSegments];

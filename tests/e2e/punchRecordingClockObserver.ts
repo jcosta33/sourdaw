@@ -16,6 +16,8 @@ type OutputPosition = {
     isRecording: boolean;
 };
 
+type ReadAttempt = { kind: 'frame'; frame: RecordingFrame } | { kind: 'unbound' } | { kind: 'unstable' };
+
 type ClockObservation = {
     recording: RecordingFrame | null;
     output: OutputPosition | null;
@@ -139,6 +141,8 @@ export async function installPunchRecordingClockWitness(page: Pick<Page, 'addIni
             stopSent: false,
             readDiagnostics: { unstableAttempts: 0, exhaustedReads: 0, recentUnstableAttempts: [] },
         };
+        const STOP_READ_DEADLINE_MS = 250;
+        const STOP_READ_MAX_ATTEMPTS = 100_000;
         host.__punchRecordingClockWitness = state;
         const recordUnstableRead = (attempt: UnstableClockRead): void => {
             const diagnostics = state.readDiagnostics;
@@ -148,57 +152,94 @@ export async function installPunchRecordingClockWitness(page: Pick<Page, 'addIni
                 diagnostics.recentUnstableAttempts.shift();
             }
         };
-        const read = (): RecordingFrame | null => {
+        const readAttempt = (): ReadAttempt => {
             if (!state.context || !state.control) {
-                return null;
+                return { kind: 'unbound' };
             }
             const control = state.control;
             const sampleRate = state.context.sampleRate;
-            for (let attempt = 0; attempt < 8; attempt++) {
-                const contextFrameBefore = Math.round(state.context.currentTime * sampleRate);
-                const before = Atomics.load(control, 0) >>> 0;
-                if ((before & 1) !== 0) {
-                    recordUnstableRead({
-                        contextFrameBefore,
-                        contextFrameAfter: null,
-                        sequenceBefore: before,
-                        sequenceAfter: null,
-                    });
-                    continue;
-                }
-                const low = Atomics.load(control, 1) >>> 0;
-                const high = Atomics.load(control, 2) >>> 0;
-                const zeroLow = Atomics.load(control, 3) >>> 0;
-                const zeroHigh = Atomics.load(control, 4) >>> 0;
-                const present = Atomics.load(control, 5);
-                const contextFrameAfter = Math.round(state.context.currentTime * sampleRate);
-                // The publication fence includes the context read: otherwise a complete
-                // quantum can pair its newer clock with a previously accepted count.
-                const after = Atomics.load(control, 0) >>> 0;
-                if (before !== after || (after & 1) !== 0 || contextFrameBefore !== contextFrameAfter) {
-                    recordUnstableRead({
-                        contextFrameBefore,
-                        contextFrameAfter,
-                        sequenceBefore: before,
-                        sequenceAfter: after,
-                    });
-                    continue;
-                }
-                return {
+            const contextFrameBefore = Math.round(state.context.currentTime * sampleRate);
+            const before = Atomics.load(control, 0) >>> 0;
+            if ((before & 1) !== 0) {
+                recordUnstableRead({
+                    contextFrameBefore,
+                    contextFrameAfter: null,
+                    sequenceBefore: before,
+                    sequenceAfter: null,
+                });
+                return { kind: 'unstable' };
+            }
+            const low = Atomics.load(control, 1) >>> 0;
+            const high = Atomics.load(control, 2) >>> 0;
+            const zeroLow = Atomics.load(control, 3) >>> 0;
+            const zeroHigh = Atomics.load(control, 4) >>> 0;
+            const present = Atomics.load(control, 5);
+            const contextFrameAfter = Math.round(state.context.currentTime * sampleRate);
+            // The publication fence includes the context read: otherwise a complete
+            // quantum can pair its newer clock with a previously accepted count.
+            const after = Atomics.load(control, 0) >>> 0;
+            if (before !== after || (after & 1) !== 0 || contextFrameBefore !== contextFrameAfter) {
+                recordUnstableRead({
+                    contextFrameBefore,
+                    contextFrameAfter,
+                    sequenceBefore: before,
+                    sequenceAfter: after,
+                });
+                return { kind: 'unstable' };
+            }
+            return {
+                kind: 'frame',
+                frame: {
                     contextFrame: contextFrameAfter,
                     sampleRate,
                     sampleZeroContextFrame: present === 1 ? zeroHigh * 0x1_0000_0000 + zeroLow : null,
                     publishedFrames: high * 0x1_0000_0000 + low,
-                };
+                },
+            };
+        };
+        const frameOf = (attempt: ReadAttempt): RecordingFrame | null =>
+            attempt.kind === 'frame' ? attempt.frame : null;
+        const read = (): RecordingFrame | null => {
+            for (let attempt = 0; attempt < 8; attempt++) {
+                const result = readAttempt();
+                if (result.kind !== 'unstable') {
+                    return frameOf(result);
+                }
             }
             // A producer may remain busy through this bounded read. Retain the
             // unavailable observation separately from a stable missing-input gap.
             state.readDiagnostics.exhaustedReads++;
             return null;
         };
-        const observe = (): ClockObservation => ({ recording: read(), output: state.readOutput?.() ?? null });
-        const event = (kind: string, extra: Partial<ClockEvent> = {}): void => {
-            state.events.push({ kind, ...observe(), ...extra });
+        // Stop is the one observation the oracle cannot do without, and the audio
+        // thread can be descheduled mid-publication for milliseconds, far longer
+        // than back-to-back attempts span. Periodic samples may skip a busy
+        // producer; Stop waits it out, bounded by time and by attempts so a frozen
+        // clock cannot hang the page.
+        const readWaitingForProducer = (): RecordingFrame | null => {
+            const deadline = performance.now() + STOP_READ_DEADLINE_MS;
+            for (let attempt = 0; attempt < STOP_READ_MAX_ATTEMPTS; attempt++) {
+                const result = readAttempt();
+                if (result.kind !== 'unstable') {
+                    return frameOf(result);
+                }
+                if (performance.now() > deadline) {
+                    break;
+                }
+            }
+            state.readDiagnostics.exhaustedReads++;
+            return null;
+        };
+        const observe = (readFrame: () => RecordingFrame | null = read): ClockObservation => ({
+            recording: readFrame(),
+            output: state.readOutput?.() ?? null,
+        });
+        const event = (
+            kind: string,
+            extra: Partial<ClockEvent> = {},
+            readFrame: () => RecordingFrame | null = read
+        ): void => {
+            state.events.push({ kind, ...observe(readFrame), ...extra });
         };
         host.__readPunchRecordingClock = observe;
         const record = (value: unknown): Record<string, unknown> | null => {
@@ -229,7 +270,11 @@ export async function installPunchRecordingClockWitness(page: Pick<Page, 'addIni
                             state.control = new Int32Array(data.sab, 0, 6);
                         }
                         if (data?.type === 'start' || data?.type === 'stop') {
-                            event(`send-worklet-${data.type}`);
+                            event(
+                                `send-worklet-${data.type}`,
+                                {},
+                                data.type === 'stop' ? readWaitingForProducer : read
+                            );
                             if (data.type === 'stop') {
                                 state.stopSent = true;
                             }
