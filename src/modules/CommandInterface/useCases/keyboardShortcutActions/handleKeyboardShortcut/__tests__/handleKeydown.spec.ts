@@ -120,6 +120,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     clearClipSelection: vi.fn(),
     selectAllClips: vi.fn(),
     selectClipWithFocus: vi.fn(),
+    prepareDuplicateClipTargetId: vi.fn(() => 'copy-1'),
     setMarqueeSelection: vi.fn(),
     getLastClipEndBeat: getLastClipEndBeatMock,
 }));
@@ -748,7 +749,7 @@ describe('handleKeydown', () => {
             expect(prevent).toBe(true);
             expect(executeUserAppAction).toHaveBeenCalledWith({
                 type: 'duplicateClipToNextBar',
-                payload: { clipId: 'clip-3' },
+                payload: { clipId: 'clip-3', targetClipId: 'copy-1' },
             });
         });
 
@@ -922,7 +923,87 @@ describe('handleKeydown', () => {
 
             handleKeydown(descriptor({ key: 'F1' }));
 
-            expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'duplicateClip', payload: { clipId: 'clip-9' } });
+            expect(executeUserAppAction).toHaveBeenCalledWith({
+                type: 'duplicateClip',
+                payload: { clipId: 'clip-9', targetClipId: 'copy-1' },
+            });
+        });
+
+        describe('selecting the copy', () => {
+            const dupDefinition = (type: 'duplicateClip' | 'duplicateClipToNextBar'): MinimalDefinition => ({
+                id: 'test.dup',
+                defaultKeys: ['F1'],
+                action: { type: 'appAction', action: { type, payload: { clipId: 'selected' } } },
+            });
+
+            /** The dispatched action lands the copy in the track store, as a committed duplicate does. */
+            function commitCopyOnDispatch(): void {
+                vi.mocked(executeUserAppAction).mockImplementationOnce((action) => {
+                    if (action.type !== 'duplicateClip' && action.type !== 'duplicateClipToNextBar') {
+                        return Promise.resolve();
+                    }
+                    const copyId = action.payload.targetClipId ?? '';
+                    trackStoreMock.value.tracks = [
+                        { id: 't1', clips: [{ id: action.payload.clipId, startBeat: 0, endBeat: 4 }] },
+                        { id: 't2', clips: [{ id: copyId, startBeat: 4, endBeat: 8 }] },
+                    ];
+                    return Promise.resolve();
+                });
+            }
+
+            it.each(['duplicateClip', 'duplicateClipToNextBar'] as const)(
+                'selects the copy a committed %s creates',
+                async (type) => {
+                    shortcutStoreMock.value.definitions = [dupDefinition(type)];
+                    clipSelectionStoreMock.value.selectedClipId = 'clip-9';
+                    clipSelectionStoreMock.value.selectedClipIds = ['clip-9'];
+                    commitCopyOnDispatch();
+
+                    handleKeydown(descriptor({ key: 'F1' }));
+
+                    await vi.waitFor(() => {
+                        expect(selectClipWithFocus).toHaveBeenCalledExactlyOnceWith('copy-1');
+                    });
+                }
+            );
+
+            it.each(['duplicateClip', 'duplicateClipToNextBar'] as const)(
+                'leaves the source selected when %s leaves no copy behind',
+                async (type) => {
+                    shortcutStoreMock.value.definitions = [dupDefinition(type)];
+                    clipSelectionStoreMock.value.selectedClipId = 'clip-9';
+                    vi.mocked(executeUserAppAction).mockResolvedValueOnce(undefined);
+
+                    handleKeydown(descriptor({ key: 'F1' }));
+
+                    await vi.waitFor(() => {
+                        expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+                    });
+                    await Promise.resolve();
+                    expect(selectClipWithFocus).not.toHaveBeenCalled();
+                }
+            );
+
+            it('chains a second press from the copy the first press selected', async () => {
+                shortcutStoreMock.value.definitions = [dupDefinition('duplicateClip')];
+                clipSelectionStoreMock.value.selectedClipId = 'clip-9';
+                vi.mocked(selectClipWithFocus).mockImplementationOnce((clipId) => {
+                    clipSelectionStoreMock.value.selectedClipId = clipId;
+                    clipSelectionStoreMock.value.selectedClipIds = [clipId];
+                });
+                commitCopyOnDispatch();
+
+                handleKeydown(descriptor({ key: 'F1' }));
+                await vi.waitFor(() => {
+                    expect(clipSelectionStoreMock.value.selectedClipId).toBe('copy-1');
+                });
+                handleKeydown(descriptor({ key: 'F1' }));
+
+                expect(executeUserAppAction).toHaveBeenLastCalledWith({
+                    type: 'duplicateClip',
+                    payload: expect.objectContaining({ clipId: 'copy-1' }),
+                });
+            });
         });
 
         it('dispatches duplicateClipToNextBar only when a clip is selected', () => {
@@ -944,7 +1025,7 @@ describe('handleKeydown', () => {
             handleKeydown(descriptor({ key: 'F1' }));
             expect(executeUserAppAction).toHaveBeenCalledWith({
                 type: 'duplicateClipToNextBar',
-                payload: { clipId: 'clip-7' },
+                payload: { clipId: 'clip-7', targetClipId: 'copy-1' },
             });
         });
 
@@ -971,7 +1052,7 @@ describe('handleKeydown', () => {
             expect(executeUserAppAction).toHaveBeenCalledTimes(1);
             expect(executeUserAppAction).toHaveBeenCalledWith({
                 type: 'duplicateClipToNextBar',
-                payload: { clipId: 'clip-b' },
+                payload: { clipId: 'clip-b', targetClipId: 'copy-1' },
             });
         });
     });

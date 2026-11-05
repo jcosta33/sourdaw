@@ -1,4 +1,5 @@
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
+import { prepareDuplicateClipTargetId, setClipSelection } from '#/modules/Arrangement/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -29,7 +30,8 @@ function collectSelectedClips(tracks: readonly Track[], selectedClipIds: readonl
  *
  * Selection span = latestEnd - earliestStart.
  * All clips are offset forward by that span.
- * Repeated invocations stack — each press adds another copy immediately after the previous.
+ * The copies become the selection once the batch commits, so each press adds the next copy
+ * immediately after the previous; a refused or failed batch leaves the selection alone.
  *
  * Each copy is one `duplicateClipAt` in a single batch, so every copy carries what a
  * single duplicate carries and one undo step removes them all.
@@ -57,9 +59,16 @@ export async function duplicateSelectedClipsForward(selectedClipIds: readonly st
         return;
     }
 
-    const actions: AppAction[] = selected.map((clip) => ({
+    // The caller names each copy so the selection can move to exactly the clips this batch creates.
+    const copyIds = selected.map(() => prepareDuplicateClipTargetId());
+    const actions: AppAction[] = selected.map((clip, index) => ({
         type: 'duplicateClipAt',
-        payload: { clipId: clip.clipId, destinationTrackId: clip.trackId, startBeat: clip.startBeat + span },
+        payload: {
+            clipId: clip.clipId,
+            destinationTrackId: clip.trackId,
+            startBeat: clip.startBeat + span,
+            targetClipId: copyIds[index],
+        },
     }));
     const result = await executeAppActionBatch(actions, {
         groupId: `duplicate-clips-forward-${crypto.randomUUID()}`,
@@ -75,4 +84,9 @@ export async function duplicateSelectedClipsForward(selectedClipIds: readonly st
     if (result.status === 'failed' || result.status === 'cancelled') {
         throw new Error(`Duplicate clips forward failed: ${result.reason}`);
     }
+    if (result.status === 'no-op' || result.status === 'ambiguous') {
+        return;
+    }
+    // The copies become the selection, so the next press chains after them.
+    setClipSelection(copyIds);
 }
