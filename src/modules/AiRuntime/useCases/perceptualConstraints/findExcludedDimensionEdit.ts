@@ -227,13 +227,6 @@ function readDeviceChainEdits(
         const facts = readDeviceFacts(action.payload.deviceId, actions, context);
         return edits(deviceTypeDimensions(facts.type), facts.trackId, facts.type ?? action.payload.deviceId);
     }
-    if (action.type === 'loadPreset') {
-        const types = [
-            ...action.payload.devices.map((device) => device.type),
-            ...action.payload.expectedBefore.devices.map((device) => device.type),
-        ];
-        return edits(chainDimensions(types), action.payload.trackId, action.payload.presetId);
-    }
     return null;
 }
 
