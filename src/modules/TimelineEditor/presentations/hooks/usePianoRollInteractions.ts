@@ -105,6 +105,8 @@ const FALLBACK_NOTE_VELOCITY = 100;
  * Read at gesture time so a preference edit reaches the next created note
  * without re-mounting the editor.
  */
+const getDefaultNoteVelocity = (): number => preferencesStore.value?.defaultVelocity ?? FALLBACK_NOTE_VELOCITY;
+
 // A frozen take redisplays a stamped row through the clip start, which misses
 // the stamped beat by float noise on non-dyadic grids.
 const isStampedCell = (
@@ -112,8 +114,6 @@ const isStampedCell = (
     stamped: { pitch: number; beat: number }
 ): boolean =>
     note.pitch === stamped.pitch && Math.abs(note.startBeat - stamped.beat) <= CLIP_LOOP_WINDOW_BEAT_TOLERANCE;
-
-const getDefaultNoteVelocity = (): number => preferencesStore.value?.defaultVelocity ?? FALLBACK_NOTE_VELOCITY;
 
 function resolveTrackIdForClip(clipId: string, defaultTrackId: string): string {
     const tracks = trackStore.value?.tracks;
@@ -795,6 +795,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                             chordType
                         );
                         if (created.length > 0) {
+                            stampedByClickRef.current = { pitch, beat };
                             const createdIds = created.map((node) => node.id);
                             pushUndoEntry(
                                 `Stamp ${chordType} chord`,
@@ -805,6 +806,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                         }
                     } else if (paintMode) {
                         const beat = cellStartAtPointer(x / beatWidth);
+                        stampedByClickRef.current = { pitch, beat };
                         if (insertFrozen(targetClipId, beat, pitch, gridSnap, getDefaultNoteVelocity())) {
                             setSelectedNoteIds(new Set());
                             return;

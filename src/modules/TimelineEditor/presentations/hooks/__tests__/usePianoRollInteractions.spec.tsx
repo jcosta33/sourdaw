@@ -1791,6 +1791,50 @@ describe('usePianoRollInteractions', () => {
                 expect(mocks.removeMidiNote).toHaveBeenCalledWith('clip-1', 'old');
             });
 
+            it('keeps the note a paint-mode first click creates', () => {
+                const args = buildArgs({ notes: [], paintMode: true });
+                const view = render(<Harness args={args} />);
+                const canvas = screen.getByLabelText('piano-roll-test-surface');
+
+                click(canvas, 1);
+                view.rerender(<Harness args={{ ...args, notes: [stampedNote()] }} />);
+                click(canvas, 2);
+                fireEvent.doubleClick(canvas, { clientX: 45, clientY: yForPitch(70), detail: 2 });
+
+                expect(mocks.addMidiNote).toHaveBeenCalledTimes(1);
+                expect(mocks.removeMidiNote).not.toHaveBeenCalled();
+            });
+
+            it('keeps the chord root a chord-mode first click creates', () => {
+                const root = makeNote('chord-root', 70, 1, 1);
+                mocks.stampChord.mockReturnValue([root, makeNote('chord-third', 74, 1, 1)]);
+                const args = buildArgs({ notes: [], chordMode: true });
+                const view = render(<Harness args={args} />);
+                const canvas = screen.getByLabelText('piano-roll-test-surface');
+
+                click(canvas, 1);
+                view.rerender(<Harness args={{ ...args, notes: [root, makeNote('chord-third', 74, 1, 1)] }} />);
+                click(canvas, 2);
+                fireEvent.doubleClick(canvas, { clientX: 45, clientY: yForPitch(70), detail: 2 });
+
+                expect(mocks.stampChord).toHaveBeenCalledTimes(1);
+                expect(mocks.removeMidiNote).not.toHaveBeenCalled();
+            });
+
+            it('deletes a same-pitch pre-existing note at a different beat than the stamped cell', () => {
+                const args = buildArgs({ notes: [makeNote('old', 70, 4, 2)] });
+                const view = render(<Harness args={args} />);
+                const canvas = screen.getByLabelText('piano-roll-test-surface');
+
+                click(canvas, 1);
+                view.rerender(<Harness args={{ ...args, notes: [makeNote('old', 70, 4, 2), stampedNote()] }} />);
+                fireEvent.mouseDown(canvas, { clientX: 200, clientY: yForPitch(70), detail: 2 });
+                fireEvent.mouseUp(canvas, { clientX: 200, clientY: yForPitch(70), detail: 2 });
+                fireEvent.doubleClick(canvas, { clientX: 200, clientY: yForPitch(70), detail: 2 });
+
+                expect(mocks.removeMidiNote).toHaveBeenCalledWith('clip-1', 'old');
+            });
+
             it('deletes a note stamped by an earlier, separate click when it is double-clicked later', () => {
                 const args = buildArgs({ notes: [] });
                 const view = render(<Harness args={args} />);
