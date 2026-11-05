@@ -1,0 +1,47 @@
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/__tests__/duplicateSelectedClipsForward.spec.ts
+  s_fec7059b7a251c::t_1bd655af0881c9 3-7,15-24,30-31,35-36,40-45,49,52-54,57,60,62,65-67,70-72,75-85,88-89,91-95,99-136,139-141
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/__tests__/duplicateSelectedClipsForwardContent.integration.spec.ts
+  s_fec7059b7a251c::t_549f5d005737e4 92-100
+  s_fec7059b7a251c::t_385dfb3faa130f 149
+  s_fec7059b7a251c::t_1976f887b8fcb8 1-91,101-148,150-156
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/duplicateSelectedClipsForward.ts
+  s_fec7059b7a251c::t_8ebcaa3daddb48 2-4,6,14-15,21,33-35,37,52-53,60-68,70-72,75-77
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts
+  s_fec7059b7a251c::t_719365fd40dd04 244
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/__tests__/duplicateSelectedClipsForwardBufferResidency.integration.spec.ts
+  s_fec7059b7a251c::t_c5b7d31f4cbfac 17
+  s_fec7059b7a251c::t_e16733a8ed92b8 144
+  s_fec7059b7a251c::t_3fd4459d442911 131-136,139-141
+  s_fec7059b7a251c::t_28b23ecddec715 174-175
+  s_fec7059b7a251c::t_9b37d283e71ee2 31
+  s_fec7059b7a251c::t_dc800a9b6983fb 153
+  s_fec7059b7a251c::t_bf98b6da342940 222-233,240-243,249,256-260
+  s_fec7059b7a251c::t_adc7a98b141dd4 210
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/__tests__/duplicateSelectedClipsForwardTakeRestore.integration.spec.ts
+  s_fec7059b7a251c::t_bdd3f2023e8773 141,145
+  s_fec7059b7a251c::t_a6306706274bf8 55-56
+  s_fec7059b7a251c::t_718b19ff1ebe10 8,10
+  s_fec7059b7a251c::t_845b12c3326f8a 164
+  s_fec7059b7a251c::t_acda41d150b3c3 152
+  s_fec7059b7a251c::t_f5613eb00f246e 1
+  s_fec7059b7a251c::t_a6dc84dcbb691a 73
+  s_fec7059b7a251c::t_5f1085fd0a9028 82,116
+  s_fec7059b7a251c::t_02170722b15d83 27-29
+  s_fec7059b7a251c::t_5a98d8e4e95ffa 209-215
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1718f063d7170baa4ccadeadec00be3cb32d3049",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
