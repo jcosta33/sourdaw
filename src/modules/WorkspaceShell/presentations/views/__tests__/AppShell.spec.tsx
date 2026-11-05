@@ -500,6 +500,11 @@ describe('AppShell', () => {
             vi.mocked(useAppEventHandlers).mockImplementation(actual.useAppEventHandlers);
         });
 
+        afterEach(() => {
+            // The factory stub is a bare vi.fn(), so a reset returns it to that stub.
+            vi.mocked(useAppEventHandlers).mockReset();
+        });
+
         it('opens Preferences on the section a dialog.openPreferences event requests', () => {
             render(<AppShell>Content</AppShell>);
             expect(screen.getByTestId('preferences-dialog')).toHaveAttribute('data-open', 'false');
