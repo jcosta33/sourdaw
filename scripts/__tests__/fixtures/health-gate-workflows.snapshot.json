@@ -986,6 +986,11 @@
             "run": "node scripts/runIsolatedUnitShard.ts install --context \"${{ steps.unit_isolation.outputs.context }}\""
           },
           {
+            "name": "Install Chromium",
+            "timeout-minutes": 2,
+            "run": "node scripts/runIsolatedUnitShard.ts browsers --context \"${{ steps.unit_isolation.outputs.context }}\""
+          },
+          {
             "name": "Run shard",
             "id": "run_shard",
             "env": {

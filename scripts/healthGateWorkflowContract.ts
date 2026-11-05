@@ -70,6 +70,7 @@ const SHARDED_BROWSER_STEPS = [
     'Upload blob report',
 ] as const;
 // The required and nightly unit shards both run in a fresh unprivileged account.
+// Only the required shards install the pinned Chromium the real-render specs launch.
 const ISOLATED_UNIT_STEPS = [
     'Checkout',
     'Prepare unit tool directory',
@@ -77,6 +78,17 @@ const ISOLATED_UNIT_STEPS = [
     'Set up Node',
     'Prepare isolated unit account',
     'Install dependencies',
+    'Run shard',
+    'Report shard failure',
+] as const;
+const REQUIRED_ISOLATED_UNIT_STEPS = [
+    'Checkout',
+    'Prepare unit tool directory',
+    'Set up pnpm',
+    'Set up Node',
+    'Prepare isolated unit account',
+    'Install dependencies',
+    'Install Chromium',
     'Run shard',
     'Report shard failure',
 ] as const;
@@ -186,7 +198,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         static: [...SETUP_NODE, ...VALIDATION_STATIC_SUITE_STEPS],
         lint: [...SETUP_NODE, 'Lint'],
         boundaries: [...SETUP_NODE, 'Validate the dependency graph'],
-        unit: ISOLATED_UNIT_STEPS,
+        unit: REQUIRED_ISOLATED_UNIT_STEPS,
         'tooling-unit': [...SETUP_NODE, 'Run script suite'],
         smoke: [...SETUP_NODE, 'Verify preinstalled browser runtime', 'Run offline smoke set'],
         build: [...SETUP_NODE, 'Build'],

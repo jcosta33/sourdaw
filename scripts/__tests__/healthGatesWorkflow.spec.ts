@@ -4680,6 +4680,23 @@ describe('health gates workflow contract', () => {
         expect(recordAt(unit, 'strategy')['fail-fast']).toBe(false);
     });
 
+    // Without the pinned build the real-render specs cold-start the image's full
+    // Chrome under shard load, which outran a 120s warm-up (run 42099824047).
+    it('installs the pinned Chromium into the required unit account between install and the shard', () => {
+        const unit = jobAt(validationWorkflow, 'unit');
+        const steps = arrayAt(unit, 'steps');
+        const browsers = stepNamed(unit, 'Install Chromium');
+        expect(stringAt(browsers, 'run')).toBe(
+            'node scripts/runIsolatedUnitShard.ts browsers --context "${{ steps.unit_isolation.outputs.context }}"'
+        );
+        expect(steps.indexOf(browsers)).toBe(steps.indexOf(stepNamed(unit, 'Install dependencies')) + 1);
+        expect(steps.indexOf(browsers)).toBe(steps.indexOf(stepNamed(unit, 'Run shard')) - 1);
+        expect(browsers['timeout-minutes']).toBe(2);
+        expect(browsers.if).toBeUndefined();
+        expect(browsers['continue-on-error']).toBeUndefined();
+        expect(browsers.env).toBeUndefined();
+    });
+
     it('fetches provenance history in static validation and the unit matrix', () => {
         expect(() => assertUnitProvenanceHistory(validationWorkflow)).not.toThrow();
 

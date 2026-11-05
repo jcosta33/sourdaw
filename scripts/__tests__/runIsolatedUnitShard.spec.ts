@@ -551,6 +551,33 @@ describe('required unit account isolation', () => {
         }
     });
 
+    it('installs the pinned Chromium as the admitted account under its own strict environment, propagating failure', () => {
+        const { ports, run } = runtimePorts();
+        run.mockReturnValue({ status: 7, stdout: '', stderr: '' });
+        const receipt = vi.spyOn(console, 'info').mockImplementation(() => {});
+        try {
+            expect(runUnitPhase(context, 'browsers', undefined, ports)).toBe(7);
+            expect(run).toHaveBeenCalledTimes(1);
+            const [file, args, options] = run.mock.calls[0] ?? [];
+            expect([file, args]).toEqual([context.pnpm, ['exec', 'playwright', 'install', 'chromium']]);
+            // The browser cache resolves from the account's private HOME; no
+            // browser path is admitted into the environment.
+            expect(options?.env).toEqual(ports.env);
+            expect(options?.env?.HOME).toBe(context.home);
+            expect(options?.env).not.toHaveProperty('PLAYWRIGHT_BROWSERS_PATH');
+            expect(receipt).toHaveBeenCalledWith(expect.stringContaining('no-new-privs=1 phase=browsers'));
+        } finally {
+            receipt.mockRestore();
+        }
+    });
+
+    it('refuses the browser install without real identity admission', () => {
+        const { ports, run } = runtimePorts();
+        ports.read = () => status.replace('NoNewPrivs:\t1', 'NoNewPrivs:\t0');
+        expect(() => runUnitPhase(context, 'browsers', undefined, ports)).toThrow();
+        expect(run).not.toHaveBeenCalled();
+    });
+
     it('forwards the explicit install store to real pinned pnpm descendants in every phase', () => {
         const invokingPnpm = process.env.npm_execpath;
         expect(invokingPnpm).toBeDefined();
