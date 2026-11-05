@@ -1,0 +1,36 @@
+src/modules/AiRuntime/useCases/agentReference/readProtectionSlots.ts
+  s_55244eb93b97d1::t_b64561ca58f9eb 142-143
+  s_55244eb93b97d1::t_e6bc1d802009ae 197
+  s_55244eb93b97d1::t_409339f766a7c5 84,89,93-97
+  s_55244eb93b97d1::t_5fea939fe34baa 156-157
+  s_55244eb93b97d1::t_1c471211e92e6a 98
+  s_55244eb93b97d1::t_e0a80929e7224c 347,349
+  s_55244eb93b97d1::t_7c76077d64a77f 202
+  s_55244eb93b97d1::t_79d626cfc32987 137
+  s_55244eb93b97d1::t_4373402e1f322f 130
+src/modules/AiRuntime/useCases/agentReference/clipProtectionReading.ts
+  s_55244eb93b97d1::t_938726e6cb1b14 139
+  s_55244eb93b97d1::t_912e8f5114ae4b 179
+  s_55244eb93b97d1::t_06fef428990403 120
+  s_55244eb93b97d1::t_6eb65e5a76bb6c 128-129
+src/modules/AiRuntime/useCases/agentReference/__tests__/readExplicitProtections.spec.ts
+  s_55244eb93b97d1::t_ff53e22172d70b 1036-1038
+src/modules/AiRuntime/useCases/agentReference/__tests__/getExplicitlyProtectedClips.spec.ts
+  s_55244eb93b97d1::t_5ab40f92b4256e 306-319
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "da57b125291d6d6a35632b537ed61f9f4efa6102",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
