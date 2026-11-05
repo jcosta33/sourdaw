@@ -1,13 +1,22 @@
 import { isBeatInClipLoopWindow, resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
-import { loopPassNoteEndBeat, loopPassNoteOverflowBeats, loopPassNoteStartBeat } from '#/utils/loopPassNoteSegments';
+import {
+    loopPassNoteEndBeat,
+    loopPassNoteOverflowBeats,
+    loopPassNoteStartBeat,
+    loopPassPushedNoteStartBeat,
+} from '#/utils/loopPassNoteSegments';
 
 import { type GrooveTemplateState } from '../../stores/grooveTemplateStore';
 
 import { applyGrooveTemplate } from './applyGrooveTemplate';
 
 type GrooveEvent = { id: string; startBeat: number; velocity: number };
-/** `beatsIntoNote` on an input event is the cut an earlier stage already made of its note (Yeast plays what the clip head left). */
-type ClipMidiEvent = GrooveEvent & { duration: number; beatsIntoNote?: number };
+/**
+ * `beatsIntoNote` on an input event is the cut an earlier stage already made of its note (Yeast plays what the clip head
+ * left). `sequencerGrooveApplied` marks an event the project groove already placed: a Yeast segment it pushes past its
+ * pass end is handed to the rack at its landing (`loopPassPushedNoteStartBeat`) and must not be pushed again.
+ */
+type ClipMidiEvent = GrooveEvent & { duration: number; beatsIntoNote?: number; sequencerGrooveApplied?: boolean };
 type ProjectCommittedGrooveInput<Event extends GrooveEvent> = {
     events: readonly Event[];
     consumerType: GrooveTemplateState['assignments'][number]['consumerType'];
@@ -50,6 +59,24 @@ type GrooveProjection = {
 };
 
 const projectionsByState = new WeakMap<GrooveTemplateState, GrooveProjection>();
+
+/**
+ * Whether the project groove carries an absolute start inside its pass to or past the pass end. Such a start was
+ * carried there after its producer played it (a rack re-timed it): the loop law puts it on the pass head, which a
+ * live window has already played by then, so it sounds on no route. The pushes a producer can foresee it hands on
+ * itself, already placed on the head (`sequencerGrooveApplied`).
+ */
+function isPushedPastPassEndAfterItsProducer(
+    producedStartBeat: number,
+    groovedStartBeat: number,
+    passStartBeat: number,
+    loopLengthBeats: number
+): boolean {
+    return (
+        producedStartBeat >= passStartBeat &&
+        loopPassPushedNoteStartBeat(groovedStartBeat, passStartBeat, loopLengthBeats) !== undefined
+    );
+}
 
 export function getGrooveProjection(state: GrooveTemplateState): GrooveProjection {
     const existing = projectionsByState.get(state);
@@ -123,11 +150,14 @@ export function getGrooveProjection(state: GrooveTemplateState): GrooveProjectio
             const absoluteStartBeat = eventsAreAbsolute
                 ? event.startBeat
                 : iterationStartBeat + relativeStartBeat + loopAdvanceBeats;
-            const [sequencerProjected = event] = projectCommittedGroove({
-                events: [{ ...event, startBeat: absoluteStartBeat }],
-                consumerType: 'sequencer',
-                consumerId: 'project',
-            });
+            const placedEvent = { ...event, startBeat: absoluteStartBeat };
+            const [sequencerProjected = event] = event.sequencerGrooveApplied
+                ? [placedEvent]
+                : projectCommittedGroove({
+                      events: [placedEvent],
+                      consumerType: 'sequencer',
+                      consumerId: 'project',
+                  });
             const intervalStartBeat = sequencerProjected.startBeat;
             const intervalDurationBeats = sequencerProjected.duration;
             const intervalEndBeat = intervalStartBeat + intervalDurationBeats;
@@ -174,6 +204,18 @@ export function getGrooveProjection(state: GrooveTemplateState): GrooveProjectio
 
             if (!loopEnabled || loopLengthBeats <= 0) {
                 return createSegment(intervalStartBeat, intervalEndBeat, 0);
+            }
+
+            if (
+                eventsAreAbsolute &&
+                isPushedPastPassEndAfterItsProducer(
+                    event.startBeat,
+                    intervalStartBeat,
+                    iterationStartBeat,
+                    loopLengthBeats
+                )
+            ) {
+                return [];
             }
 
             // The pass segmentation every route shares (`loopPassNoteSegments`).

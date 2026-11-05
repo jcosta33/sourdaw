@@ -30,10 +30,17 @@ const LOOP_PASS_BEAT_TOLERANCE = 1e-9;
 /** The instance id suffix of a note's tail struck on the pass head. */
 export const LOOP_PASS_OVERFLOW_INSTANCE_SUFFIX = ':pass-head';
 
-/** The note instance a segment was cut from: the tail's suffix removed. */
+/** The instance id suffix of an in-pass segment the project groove pushes past the pass end, struck on the pass head. */
+export const LOOP_PASS_PUSH_INSTANCE_SUFFIX = ':pass-push';
+
+const LOOP_PASS_SEGMENT_INSTANCE_SUFFIXES = [LOOP_PASS_OVERFLOW_INSTANCE_SUFFIX, LOOP_PASS_PUSH_INSTANCE_SUFFIX];
+
+/** The note instance a segment was cut from: the tail's or the push's suffix removed. */
 export function loopPassSourceInstanceId(instanceId: string): string {
-    if (instanceId.endsWith(LOOP_PASS_OVERFLOW_INSTANCE_SUFFIX)) {
-        return instanceId.slice(0, -LOOP_PASS_OVERFLOW_INSTANCE_SUFFIX.length);
+    for (const suffix of LOOP_PASS_SEGMENT_INSTANCE_SUFFIXES) {
+        if (instanceId.endsWith(suffix)) {
+            return instanceId.slice(0, -suffix.length);
+        }
     }
     return instanceId;
 }
@@ -96,4 +103,29 @@ export function loopPassNoteOverflowBeats(
         loopPassNoteEndBeat(passNoteStartBeat, durationBeats, passStartBeat, loopLengthBeats) - passNoteStartBeat;
     const overflowBeats = keptBeats - inPassBeats;
     return overflowBeats <= LOOP_PASS_BEAT_TOLERANCE ? 0 : overflowBeats;
+}
+
+/**
+ * Where an in-pass segment sounds once the project groove has moved its start
+ * to `groovedStartBeat`, when that move carries it to or past the pass end:
+ * the loop law puts what runs past the pass end on the head of the same pass,
+ * re-anchored by the loop. `undefined` when the start stays before the pass
+ * end (a start pulled back across the head wraps later in the pass, where a
+ * live window still reaches it).
+ *
+ * A Yeast rack hands its output to the project groove, so a push decided
+ * after the rack would land on a head the live windows have already played.
+ * Both routes therefore apply the project groove to such a segment before the
+ * rack and hand it on as its own note at the landing, which the window holding
+ * the head owns.
+ */
+export function loopPassPushedNoteStartBeat(
+    groovedStartBeat: number,
+    passStartBeat: number,
+    loopLengthBeats: number
+): number | undefined {
+    if (loopLengthBeats - (groovedStartBeat - passStartBeat) > LOOP_PASS_BEAT_TOLERANCE) {
+        return undefined;
+    }
+    return loopPassNoteStartBeat(groovedStartBeat, passStartBeat, loopLengthBeats);
 }

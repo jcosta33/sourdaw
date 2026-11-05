@@ -54,10 +54,14 @@ type ProjectOfflineYeastTrackNotesInput = {
     projectPitch: (input: { pitch: number; referenceBeat: number; targetBeat: number }) => number;
 };
 
-/** The source row a rack input note was cut from, and how far into that row the cut begins (absent: at its start). */
+/**
+ * The source row a rack input note was cut from, how far into that row the cut begins (absent: at its start), and
+ * whether the project groove already placed it (a push past its pass end, handed on from the pass head).
+ */
 type OfflineYeastRackInput = {
     sourceNote: OfflineYeastClipNote;
     beatsIntoNote?: number;
+    sequencerGrooveApplied: boolean;
 };
 
 type ScheduledOfflineYeastNote = {
@@ -112,6 +116,8 @@ export function projectOfflineYeastTrackNotes({
 }: ProjectOfflineYeastTrackNotesInput): ScheduledOfflineYeastNote[] {
     const iterationsByRoute = new Map<string, OfflineYeastClipIteration>();
     const rackInputsByEventId = new Map<string, OfflineYeastRackInput>();
+    const projectSequencerGroove = (event: { id: string; startBeat: number; velocity: number }) =>
+        projectMidiEvents({ events: [{ ...event, duration: 0 }], phase: 'sequencer-groove' })[0];
     const sourceNotes = iterations.flatMap((iteration, index) => {
         const routeId = `offline-yeast:${trackId}:${index}`;
         iterationsByRoute.set(routeId, iteration);
@@ -143,12 +149,13 @@ export function projectOfflineYeastTrackNotes({
         });
         // The rack is handed each pass's notes at their audible beats, cut as
         // the live window cuts them, so the bounce and playback feed it alike.
-        return segmentOfflineYeastPassNotes(iteration, groovedNotes).flatMap((passNote) => {
+        return segmentOfflineYeastPassNotes(iteration, groovedNotes, projectSequencerGroove).flatMap((passNote) => {
             const sourceNote = admittedById.get(passNote.sourceNoteId);
             if (sourceNote) {
                 rackInputsByEventId.set(`${routeId}:${passNote.id}:on`, {
                     sourceNote,
                     beatsIntoNote: passNote.beatsIntoNote > 0 ? passNote.beatsIntoNote : undefined,
+                    sequencerGrooveApplied: passNote.sequencerGrooveApplied,
                 });
             }
             return [{ ...passNote, routeId }];
@@ -183,6 +190,7 @@ export function projectOfflineYeastTrackNotes({
                         sourceRelativeBeat:
                             sourceNote === undefined ? undefined : sourceNote.startBeat - iteration.midiOffsetBeats,
                         beatsIntoNote: rackInput?.beatsIntoNote,
+                        sequencerGrooveApplied: rackInput?.sequencerGrooveApplied,
                     },
                 ],
                 clipId: iteration.clipId,

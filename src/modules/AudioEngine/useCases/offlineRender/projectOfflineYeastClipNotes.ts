@@ -21,6 +21,8 @@ type ProcessedOfflineYeastNote = {
     sourceRelativeBeat?: number;
     /** How far into its source row the rack input began: the cut the pass made before the rack (absent: none). */
     beatsIntoNote?: number;
+    /** The project groove already placed the rack input (a push past its pass end, handed on from the pass head). */
+    sequencerGrooveApplied?: boolean;
 };
 
 type ProjectOfflineYeastClipNotesInput = {
@@ -91,6 +93,7 @@ export function projectOfflineYeastClipNotes({
             startBeat: note.startPpq,
             duration: Math.max(0, note.endPpq - note.startPpq),
             beatsIntoNote: note.beatsIntoNote,
+            sequencerGrooveApplied: note.sequencerGrooveApplied,
         })),
         clipId,
         clipStartBeat,

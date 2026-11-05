@@ -1,9 +1,11 @@
 import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 import {
     LOOP_PASS_OVERFLOW_INSTANCE_SUFFIX,
+    LOOP_PASS_PUSH_INSTANCE_SUFFIX,
     loopPassNoteEndBeat,
     loopPassNoteOverflowBeats,
     loopPassProducedNoteStartBeat,
+    loopPassPushedNoteStartBeat,
 } from '#/utils/loopPassNoteSegments';
 
 type OfflineYeastPassIteration = {
@@ -24,7 +26,17 @@ type OfflineYeastGroovedNote = {
     velocity: number;
 };
 
-/** One note the rack is handed for a pass: absolute beats, and how far into its source row it begins. */
+/** The project groove's placement of one absolute note start: where it moves the start, and the velocity it gives. */
+type OfflineYeastSequencerGroove = (event: {
+    id: string;
+    startBeat: number;
+    velocity: number;
+}) => { startBeat: number; velocity: number } | undefined;
+
+/**
+ * One note the rack is handed for a pass: absolute beats, and how far into its source row it begins.
+ * `sequencerGrooveApplied` marks the segment a project-groove push placed on the pass head before the rack.
+ */
 export type OfflineYeastPassNote = {
     id: string;
     sourceNoteId: string;
@@ -33,6 +45,7 @@ export type OfflineYeastPassNote = {
     duration: number;
     velocity: number;
     beatsIntoNote: number;
+    sequencerGrooveApplied: boolean;
 };
 
 function passNote(
@@ -54,6 +67,7 @@ function passNote(
             duration: endBeat - startBeat,
             velocity: note.velocity,
             beatsIntoNote,
+            sequencerGrooveApplied: false,
         },
     ];
 }
@@ -72,6 +86,35 @@ function cutAtClipHead(
 }
 
 /**
+ * The in-pass segment as the rack is handed it: where the project groove,
+ * which follows the rack, would push its start to or past the pass end, the
+ * segment is placed on the pass head already grooved (`loopPassPushedNoteStartBeat`),
+ * as the live window must hand it to reach that head; otherwise unchanged.
+ */
+function placeProjectGroovePush(
+    iteration: OfflineYeastPassIteration,
+    note: OfflineYeastGroovedNote,
+    segment: OfflineYeastPassNote,
+    projectSequencerGroove: OfflineYeastSequencerGroove
+): OfflineYeastPassNote[] {
+    const { iterationStartBeat: passStartBeat, loopLengthBeats } = iteration;
+    const pushed = projectSequencerGroove({ id: note.id, startBeat: segment.startBeat, velocity: segment.velocity });
+    const pushedStartBeat = pushed && loopPassPushedNoteStartBeat(pushed.startBeat, passStartBeat, loopLengthBeats);
+    if (!pushed || pushedStartBeat === undefined) {
+        return [segment];
+    }
+    const pushedEndBeat = loopPassNoteEndBeat(pushedStartBeat, segment.duration, passStartBeat, loopLengthBeats);
+    return cutAtClipHead(
+        iteration,
+        { ...note, velocity: pushed.velocity },
+        `${note.id}${LOOP_PASS_PUSH_INSTANCE_SUFFIX}`,
+        pushedStartBeat,
+        pushedEndBeat,
+        segment.beatsIntoNote
+    ).map((pushedSegment) => ({ ...pushedSegment, sequencerGrooveApplied: true }));
+}
+
+/**
  * The notes one offline Yeast iteration hands the rack, segmented exactly as
  * the live window hands them (`processLiveYeastTrackBlock`), so a rack plays
  * the same input whether it is bounced or played. A row sounds at its audible
@@ -80,11 +123,13 @@ function cutAtClipHead(
  * `loopPassNoteSegments` cuts it: ending at the pass end, with what would
  * ring past it handed on as its own note struck on the pass head, because a
  * live window cannot see a note-on later in its pass and the bounce must not
- * hear what playback cannot.
+ * hear what playback cannot. For the same reason an in-pass segment the
+ * project groove pushes past the pass end is handed on from the pass head.
  */
 export function segmentOfflineYeastPassNotes(
     iteration: OfflineYeastPassIteration,
-    groovedNotes: readonly OfflineYeastGroovedNote[]
+    groovedNotes: readonly OfflineYeastGroovedNote[],
+    projectSequencerGroove: OfflineYeastSequencerGroove
 ): OfflineYeastPassNote[] {
     const { iterationStartBeat: passStartBeat, loopLengthBeats } = iteration;
     const loops = iteration.loopEnabled && loopLengthBeats > 0;
@@ -109,7 +154,9 @@ export function segmentOfflineYeastPassNotes(
             passStartBeat,
             loopLengthBeats
         );
-        const inPass = cutAtClipHead(iteration, note, note.id, passNoteStartBeat, passNoteEndBeat, 0);
+        const inPass = cutAtClipHead(iteration, note, note.id, passNoteStartBeat, passNoteEndBeat, 0).flatMap(
+            (segment) => placeProjectGroovePush(iteration, note, segment, projectSequencerGroove)
+        );
         if (overflowBeats === 0) {
             return inPass;
         }

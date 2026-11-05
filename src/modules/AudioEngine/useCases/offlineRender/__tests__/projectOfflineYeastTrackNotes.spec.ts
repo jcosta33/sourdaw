@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
-import { defaultGrooveTemplateState } from '#/modules/MIDI/stores';
+import { defaultGrooveTemplateState, type GrooveTemplateState } from '#/modules/MIDI/stores';
 import { createGrooveMidiEventProjector } from '#/modules/MIDI/useCases';
 import { createOfflineYeastMidiProcessor } from '#/modules/Yeast/useCases';
 
@@ -315,6 +315,115 @@ describe('projectOfflineYeastTrackNotes', () => {
             [3.5, 4],
             [7.5, 8],
         ]);
+    });
+
+    it('hands the rack an in-pass segment the project groove pushes past the pass end from the pass head, grooved once', () => {
+        // Slot 0 of a 1/8 groove pushes 0.25 beats later and scales velocity
+        // by 1.5. The note at 3.9 crosses the pass end at 4: its tail is
+        // struck on the head at 0 (slot 0), and its in-pass segment, also on
+        // slot 0, is pushed to 4.15, past the pass end, onto the head at 0.15.
+        // The rack is handed that push where it lands, already grooved; the
+        // groove after the rack moves only the tail. A second application
+        // would land the push at 0.4 and clamp its velocity to 127.
+        const pushGroove: GrooveTemplateState = {
+            templates: [
+                {
+                    id: 'push',
+                    name: 'Push',
+                    schemaVersion: 1,
+                    subdivision: '1/8',
+                    slots: [{ index: 0, timingOffset: 0.5, dynamicsOffset: 0.5 }],
+                    provenance: { type: 'user', sourceId: 'spec' },
+                },
+            ],
+            assignments: [{ consumerType: 'sequencer', consumerId: 'project', templateId: 'push', amount: 1 }],
+        };
+        const processYeastMidi = vi.fn<OfflineYeastMidiProcessor>((input) =>
+            input.events.map((event) => ({ ...event }))
+        );
+
+        const notes = projectOfflineYeastTrackNotes({
+            trackId: 'track-1',
+            iterations: [
+                {
+                    sourceNotes: [{ id: 'crossing', pitch: 60, startBeat: 3.9, duration: 0.5, velocity: 60 }],
+                    clipId: 'clip-1',
+                    clipStartBeat: 0,
+                    clipEndBeat: 4,
+                    iterationStartBeat: 0,
+                    loopLengthBeats: 4,
+                    midiOffsetBeats: 0,
+                    loopEnabled: true,
+                },
+            ],
+            sampleRate: 100,
+            blockStartSamples: 0,
+            blockEndSamples: 400,
+            defaultTempo: 60,
+            changes: [],
+            projectMidiEvents: createGrooveMidiEventProjector(pushGroove),
+            projectPpqEndpoints,
+            processYeastMidi,
+            projectPitch: ({ pitch }) => pitch,
+        });
+
+        const route = 'offline-yeast:track-1:0';
+        expect(
+            processYeastMidi.mock.calls[0]![0].events.map((event) => [
+                event.kind.type,
+                event.timePpq,
+                event.noteInstanceId,
+                event.kind.type === 'noteOn' ? event.kind.velocity : undefined,
+            ])
+        ).toEqual([
+            ['noteOn', expect.closeTo(0.15, 9), `${route}:crossing:pass-push`, 90],
+            ['noteOff', expect.closeTo(0.25, 9), `${route}:crossing:pass-push`, undefined],
+            ['noteOn', 0, `${route}:crossing:pass-head`, 60],
+            ['noteOff', expect.closeTo(0.4, 9), `${route}:crossing:pass-head`, undefined],
+        ]);
+        expect(notes.map((note) => [note.startBeat, note.endBeat, note.velocity])).toEqual([
+            [expect.closeTo(0.15, 9), expect.closeTo(0.25, 9), 90],
+            [0.25, expect.closeTo(0.65, 9), 90],
+        ]);
+    });
+
+    it('sounds nothing of a note the rack itself moves past the pass end, as the live window cannot', () => {
+        // A rack that delays every event by 0.15 beats moves the in-pass note
+        // at 3.9 to 4.05, past the pass end. Its pass head has been played by
+        // the time a live window gets the rack's output, so the bounce does
+        // not fold it back onto the head either.
+        const processYeastMidi = vi.fn<OfflineYeastMidiProcessor>((input) =>
+            input.events.map((event) => ({
+                ...event,
+                timePpq: (event.timePpq ?? 0) + 0.15,
+                timeSamples: event.timeSamples + 15,
+            }))
+        );
+
+        const notes = projectOfflineYeastTrackNotes({
+            trackId: 'track-1',
+            iterations: [0, 4].map((iterationStartBeat) => ({
+                sourceNotes: [{ id: 'delayed', pitch: 60, startBeat: 3.9, duration: 0.1, velocity: 100 }],
+                clipId: 'clip-1',
+                clipStartBeat: 0,
+                clipEndBeat: 8,
+                iterationStartBeat,
+                loopLengthBeats: 4,
+                midiOffsetBeats: 0,
+                loopEnabled: true,
+            })),
+            sampleRate: 100,
+            blockStartSamples: 0,
+            blockEndSamples: 800,
+            defaultTempo: 60,
+            changes: [],
+            projectMidiEvents: createGrooveMidiEventProjector(defaultGrooveTemplateState),
+            projectPpqEndpoints,
+            processYeastMidi,
+            projectPitch: ({ pitch }) => pitch,
+        });
+
+        expect(notes).toEqual([]);
     });
 
     it('anchors source-free generator notes to the active carrier clip chord', () => {

@@ -78,13 +78,17 @@ function lowerBoundEnd(entries: readonly YeastLoopPhaseEntry[], endPhaseBeat: nu
  * - a start before the pass head, re-anchored by the loop (the wrap class):
  *   starts already before the head, plus starts within one groove stage's
  *   displacement after it, which the clip groove can pull across the head
- *   (`MAX_GROOVE_STAGE_DISPLACEMENT_BEATS` bounds that displacement). Indexed
- *   at the wrapped start and at its release, which a pass never places past
- *   the pass end.
+ *   (`MAX_GROOVE_STAGE_DISPLACEMENT_BEATS` bounds that displacement), and the
+ *   rows an anchorless loop stores at or past its loop length, which every
+ *   pass re-anchors back into the loop. Indexed at the wrapped start and at
+ *   its release, which a pass never places past the pass end.
  * - a note that runs past the pass end (the crossing class, which a groove
  *   stage can push across too): its in-pass part is released on the pass end,
  *   and its tail is its own note struck on the pass head, released at the
- *   overflow. Indexed at phase 0 and at both releases.
+ *   overflow. A start within two groove stages of the pass end belongs here
+ *   too: the clip groove and then the project groove can push its in-pass
+ *   segment past the pass end, and the pass strikes it on its head, released
+ *   within one stage of it. Indexed at phase 0 and at every release.
  *
  * Every entry is a fixed offset into a pass, so the release query stays
  * unnormalized. An estimate a groove stage can move is found because both
@@ -123,12 +127,19 @@ function getYeastLoopPhaseIndex({
         const phaseBeat = positiveModulo(passRelativeStartBeat, loopLengthBeats);
         const keptBeats = Math.min(note.duration, loopLengthBeats);
         const wrapsBeforeHead = passRelativeStartBeat < MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
+        // An anchorless loop admits a row stored at or past the loop length,
+        // and every pass re-anchors it back into the loop by whole loops.
+        const storedPastLoopEnd = passRelativeStartBeat >= loopLengthBeats;
+        const reAnchorsIntoPass = wrapsBeforeHead || storedPastLoopEnd;
         // A start the groove can pull across the head lands just before the
-        // pass end and crosses it with nearly all of its length.
+        // pass end and crosses it with nearly all of its length. A start the
+        // clip groove and then the project groove can each carry one stage
+        // later is pushed past the pass end onto its head.
         const crossesPassEnd =
             (wrapsBeforeHead && passRelativeStartBeat >= 0) ||
-            phaseBeat + keptBeats > loopLengthBeats - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
-        if (!wrapsBeforeHead && !crossesPassEnd) {
+            phaseBeat + keptBeats > loopLengthBeats - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS ||
+            phaseBeat > loopLengthBeats - 2 * MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
+        if (!reAnchorsIntoPass && !crossesPassEnd) {
             continue;
         }
         // #5198 — the anchored loop window is the index's membership too: a row
@@ -146,7 +157,7 @@ function getYeastLoopPhaseIndex({
         ) {
             continue;
         }
-        if (wrapsBeforeHead) {
+        if (reAnchorsIntoPass) {
             const entry = { endPhaseBeat: Math.min(phaseBeat + note.duration, loopLengthBeats), note, phaseBeat };
             sortedEntries.push(entry);
             sortedEnds.push(entry);
@@ -158,6 +169,9 @@ function getYeastLoopPhaseIndex({
             if (wrapsBeforeHead && passRelativeStartBeat >= 0) {
                 sortedEnds.push({ endPhaseBeat: keptBeats, note, phaseBeat: 0 });
             }
+            // An in-pass segment the project groove pushes onto the head is
+            // released at most one stage in, where the push left its pass end.
+            sortedEnds.push({ endPhaseBeat: MAX_GROOVE_STAGE_DISPLACEMENT_BEATS, note, phaseBeat: 0 });
         }
     }
     sortedEntries.sort(
