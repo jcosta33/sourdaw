@@ -24,6 +24,13 @@ type PresetItemProps = {
     hideCategory?: boolean;
 };
 
+const TrackKindIcon = ({ id, kind }: { id: string; kind: SoundPreset['trackKind'] }): ReactElement =>
+    kind === 'midi' ? (
+        <Piano id={id} className="size-3 text-[var(--color-accent-lavender)] shrink-0" aria-label="MIDI track" />
+    ) : (
+        <Waves id={id} className="size-3 text-[var(--color-accent-mint)] shrink-0" aria-label="Audio track" />
+    );
+
 export const PresetItem = ({
     preset,
     selectedTrackId,
@@ -34,7 +41,10 @@ export const PresetItem = ({
     preview,
     hideCategory,
 }: PresetItemProps): ReactElement => {
-    const chainId = `${useId()}-chain`;
+    const idBase = useId();
+    const categoryId = `${idBase}-category`;
+    const kindId = `${idBase}-kind`;
+    const chainId = `${idBase}-chain`;
     const chain = preset.devices.map((data) => data.name).join(' → ');
 
     // The card's main action is a full-size button (its ::after covers the whole
@@ -61,7 +71,7 @@ export const PresetItem = ({
                 className="flex min-w-0 flex-1 cursor-pointer justify-start text-left focus-visible:outline-none after:absolute after:inset-0 after:rounded-md after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-accent-cyan/60"
                 onClick={onClick}
                 aria-label={preset.name}
-                aria-describedby={chainId}
+                aria-describedby={hideCategory ? `${kindId} ${chainId}` : `${categoryId} ${kindId} ${chainId}`}
                 title={selectedTrackId ? 'Click to load onto selected track' : 'Click to create a new track'}
             >
                 <Stack gap={1.5} className="w-full min-w-0">
@@ -71,6 +81,7 @@ export const PresetItem = ({
                         </span>
                         {!hideCategory ? (
                             <span
+                                id={categoryId}
                                 className={cn(
                                     'shrink-0 rounded px-1.5 py-[2px] text-[9px] font-semibold tracking-wide uppercase opacity-80',
                                     CATEGORY_COLORS[preset.category] || 'bg-accent text-muted-foreground'
@@ -81,17 +92,7 @@ export const PresetItem = ({
                         ) : null}
                     </Row>
                     <Row gap={1.5} className="min-w-0 opacity-60 group-hover:opacity-100 transition-opacity">
-                        {preset.trackKind === 'midi' ? (
-                            <Piano
-                                className="size-3 text-[var(--color-accent-lavender)] shrink-0"
-                                aria-label="MIDI track"
-                            />
-                        ) : (
-                            <Waves
-                                className="size-3 text-[var(--color-accent-mint)] shrink-0"
-                                aria-label="Audio track"
-                            />
-                        )}
+                        <TrackKindIcon id={kindId} kind={preset.trackKind} />
                         <span
                             id={chainId}
                             className="text-[9px] text-muted-foreground group-hover:text-foreground/80 transition-colors truncate"

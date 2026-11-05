@@ -141,11 +141,23 @@ describe('PresetItem — card click', () => {
     });
 });
 
+/**
+ * The parts of a button's description, in order. A browser reads a referenced
+ * element's aria-label, which jsdom's accessible-description computation does
+ * not, so each referenced element's label or text is resolved here.
+ */
+function describedBy(button: HTMLElement): string[] {
+    return (button.getAttribute('aria-describedby') ?? '')
+        .split(' ')
+        .map((id) => document.getElementById(id))
+        .map((part) => part?.getAttribute('aria-label') ?? part?.textContent ?? '');
+}
+
 describe('PresetItem — keyboard reachability', () => {
     it('exposes the card action as a focusable native button named for the preset', () => {
         const { onClick } = renderItem();
         const card = screen.getByRole('button', { name: 'Warm Pad' });
-        expect(card).toHaveAccessibleDescription('Fermenter → Gluten');
+        expect(describedBy(card)).toEqual(['synth', 'MIDI track', 'Fermenter → Gluten']);
         expect(card.tagName).toBe('BUTTON');
         expect(card).toHaveAttribute('type', 'button');
         expect(card.tabIndex).toBeGreaterThanOrEqual(0);
@@ -154,6 +166,14 @@ describe('PresetItem — keyboard reachability', () => {
         // jsdom does not turn Enter or Space into a click; a native button does in the browser.
         card.click();
         expect(onClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('describes an audio preset without a category badge by its track kind and chain', () => {
+        renderItem({ preset: makePreset({ trackKind: 'audio' }), hideCategory: true });
+        expect(describedBy(screen.getByRole('button', { name: 'Warm Pad' }))).toEqual([
+            'Audio track',
+            'Fermenter → Gluten',
+        ]);
     });
 
     it('keeps preview, card and favorite as separate sibling buttons, none nested', () => {
