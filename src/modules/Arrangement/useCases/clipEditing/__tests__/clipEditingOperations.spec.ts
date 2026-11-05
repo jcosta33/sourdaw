@@ -9,6 +9,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../repositories/track/updateClip', () => ({ updateClip: mocks.updateClip }));
+// The source bound has its own spec (trimClipEndSourceBound); these cases
+// cover the trim geometry alone.
+vi.mock('../limitClipEndToSource', () => ({
+    limitClipEndToSource: (_: unknown, requestedEndBeat: number) => requestedEndBeat,
+}));
 vi.mock('#/modules/Automation/useCases', () => ({ shiftClipAutomation: mocks.shiftClipAutomation }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     getNotesForClip: vi.fn(() => []),
