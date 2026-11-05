@@ -8102,6 +8102,17 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(result.rejections[0]?.reason).toContain('protected');
     });
 
+    it('refuses renaming a protected clip beside a clip named like a protection opening', () => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-alpha', name: 'Gamma' } }],
+            "Don't touch Alpha and rename Alpha to Gamma.",
+            withNamedClip(withNamedClip(createClipContext(), 'clip-alpha', 'Alpha'), 'clip-touch', 'Touch')
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('protected');
+    });
+
     it('rejects renaming a quoted literal protected clip when another clip is selected', () => {
         const result = bridge(
             [{ name: 'renameClip', arguments: { clipId: 'clip-literal-selected', name: 'Bridge Solo' } }],

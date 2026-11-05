@@ -112,10 +112,11 @@ function readSlotReference(prompt: string, slot: Slot): string {
 
 /** Blank every project object's name so a verb inside a name never reads as the next instruction. */
 function blankObjectNames(maskedText: string, prompt: string, context: ProjectContext): string {
-    return blankRanges(
-        maskedText,
-        refinementRequestReading.references(prompt, refinementRequestReading.candidates(context))
-    );
+    const starts = protectionSlots.startRanges(maskedText);
+    const references = refinementRequestReading
+        .references(prompt, refinementRequestReading.candidates(context))
+        .filter((reference) => !starts.some((start) => reference.start < start.end && reference.end > start.start));
+    return blankRanges(maskedText, references);
 }
 
 function getProtectedReferenceTexts(prompt: string, context: ProjectContext): ProtectedReferenceParse {

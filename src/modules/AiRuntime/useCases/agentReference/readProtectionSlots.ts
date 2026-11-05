@@ -113,8 +113,8 @@ function joiningAndStart(masked: string, index: number): number {
     return joining === null ? index : joining.index;
 }
 
-function collectEvents(masked: string): Event[] {
-    const starts: Event[] = startPatterns.flatMap(({ kind, pattern }) =>
+function collectStarts(masked: string): Event[] {
+    return startPatterns.flatMap(({ kind, pattern }) =>
         Array.from(masked.matchAll(pattern), (match) => ({
             index: match.index,
             end: match.index + match[0].length,
@@ -122,6 +122,15 @@ function collectEvents(masked: string): Event[] {
             cutAt: match.index,
         })).filter((start) => !opensTitleCasedPhrase(masked, start.index))
     );
+}
+
+/** The spans of the words that open a protection, so a caller blanking object names can leave them readable. */
+function readProtectionStartRanges(masked: string): Range[] {
+    return collectStarts(masked).map(({ index, end }) => ({ start: index, end }));
+}
+
+function collectEvents(masked: string): Event[] {
+    const starts = collectStarts(masked);
     const insideStart = (index: number) => starts.some((start) => index >= start.index && index < start.end);
     const cuts: Event[] = [hardBoundaryPattern, conjunctionPattern].flatMap((pattern) =>
         Array.from(masked.matchAll(pattern), (match) => ({
@@ -333,4 +342,4 @@ function readSlots(masked: string): Slot[] {
     return slots;
 }
 
-export const protectionSlots = { read: readSlots } as const;
+export const protectionSlots = { read: readSlots, startRanges: readProtectionStartRanges } as const;

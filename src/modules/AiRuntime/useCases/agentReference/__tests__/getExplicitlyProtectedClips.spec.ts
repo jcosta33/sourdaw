@@ -164,6 +164,24 @@ describe('getExplicitlyProtectedClips', () => {
         });
     });
 
+    describe('a clip named like the words that open a protection', () => {
+        const alpha = createClip('clip-alpha', 'Alpha');
+
+        it.each([
+            ["Don't touch Alpha and rename Alpha to Gamma", 'Touch'],
+            ['without touching Alpha and rename Alpha to Gamma', 'Touching'],
+            ['no changes to Alpha and rename Alpha to Gamma', 'Changes'],
+        ])('still reads the protection of %s beside a clip named %s', (prompt, name) => {
+            const sameNamed = createClip('clip-same-named', name);
+            const track = createTrack('track-same-named', 'Pair', [alpha, sameNamed]);
+
+            expect(getExplicitClipProtection(prompt, { ...context, tracks: [track] })).toEqual({
+                clips: [{ id: alpha.id, name: alpha.name }],
+                complete: true,
+            });
+        });
+    });
+
     it('reads a prohibition list ending in a dangling and as incomplete', () => {
         expect(getExplicitClipProtection('without touching Lead and', context).complete).toBe(false);
     });
