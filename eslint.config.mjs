@@ -1837,7 +1837,7 @@ const sourdawPlugin = {
                 type: 'problem',
                 docs: {
                     description:
-                        'Warn when production code writes directly to a store imported from another module stores contract.',
+                        'Report production code that writes directly to a store imported from another module stores contract.',
                 },
                 schema: [],
                 messages: {
@@ -2591,7 +2591,7 @@ export default defineConfig(
 
             // AGENTS.md L147 / L149 — sourdaw custom rules for forms/imports.
             'sourdaw/no-enum': 'error',
-            'sourdaw/no-foreign-store-write': 'warn',
+            'sourdaw/no-foreign-store-write': 'error',
             'sourdaw/no-model-layer-upward-import': 'error',
             'sourdaw/no-multiple-function-exports': 'error',
             'sourdaw/no-namespace-import': 'error',

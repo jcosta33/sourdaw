@@ -561,6 +561,13 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // call. It slices and verifies immutable Command metadata; no device
         // or AudioEngine write occurs here.
         'src/modules/AiRuntime/useCases/prepareMetricGoalPreview.ts': 5,
+        // Count provenance: new file, measured 1 — the declaration of the pure
+        // perceptual-constraint reader, which turns request text into excluded
+        // dimensions and hold goals. It holds no device or AudioEngine write.
+        'src/modules/AiRuntime/useCases/perceptualConstraints/compilePerceptualConstraints.ts': 1,
+        // Count provenance: new file, measured 3 — that reader's imported name,
+        // its module path and its one call. No device or AudioEngine write.
+        'src/modules/AiRuntime/useCases/perceptualConstraints/readRequestPerceptualConstraints.ts': 3,
         // Pending-effect continuation records keep only command-envelope types;
         // their two matches are type imports and type projections, never device IO.
         'src/modules/AiRuntime/useCases/createAgentRunPendingEffectContinuation.ts': 2,

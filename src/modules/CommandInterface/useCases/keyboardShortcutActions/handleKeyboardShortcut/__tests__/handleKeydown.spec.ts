@@ -39,6 +39,7 @@ import { setNotificationEventBus } from '#/utils/Notification/notificationEventB
 import { beginDragGesture } from '#/utils/UI/activeDragGesture';
 
 import { parseLoopStationPadCallbackId, type ShortcutAction } from '../../../../stores/shortcutStore';
+import { resolveShortcutKey } from '../../../resolveShortcutKey';
 import { getAllClipIds } from '../../../selectionHelpers/getAllClipIds';
 import { duplicateSelectedClipsForward } from '../../clipShortcuts/duplicateSelectedClipsForward';
 import { duplicateTrack } from '../../trackShortcuts/duplicateTrack';
@@ -711,6 +712,96 @@ describe('handleKeydown', () => {
             const whileArmed = handleKeydown(descriptor({ key: '1' }));
             expect(triggerPad).toHaveBeenCalledWith({ row: 0, column: 0, record: false });
             expect(whileArmed).toBe(true);
+        });
+    });
+
+    describe('shipped bindings under Alt, Shift and an armed Loop Station', () => {
+        function useShippedDefinitions(): void {
+            const realState = realShortcutStoreModule.shortcutStore.value;
+            if (!realState) {
+                throw new Error('expected the shipped shortcut definitions');
+            }
+            shortcutStoreMock.value.definitions = realState.definitions;
+            vi.mocked(parseLoopStationPadCallbackId).mockImplementation(
+                realShortcutStoreModule.parseLoopStationPadCallbackId
+            );
+        }
+
+        // The descriptor the keyboard adapter builds for a real keydown.
+        function pressed(init: { key: string; code: string; shift?: boolean; alt?: boolean }): KeyDescriptor {
+            const shift = init.shift ?? false;
+            const alt = init.alt ?? false;
+            const key = resolveShortcutKey({ key: init.key, code: init.code, shiftKey: shift, altKey: alt }, null);
+            return descriptor({ key, shift, alt });
+        }
+
+        beforeEach(useShippedDefinitions);
+        afterEach(() => {
+            vi.mocked(parseLoopStationPadCallbackId).mockImplementation(() => null);
+        });
+
+        it('runs the alt+d duplicate-to-next-bar binding from macOS Option+D, which reports ∂', () => {
+            clipSelectionStoreMock.value.selectedClipId = 'clip-3';
+
+            const prevent = handleKeydown(pressed({ key: '∂', code: 'KeyD', alt: true }));
+
+            expect(prevent).toBe(true);
+            expect(executeUserAppAction).toHaveBeenCalledWith({
+                type: 'duplicateClipToNextBar',
+                payload: { clipId: 'clip-3' },
+            });
+        });
+
+        it('records Loop Station pad r0c0 from Shift+1, which reports !', () => {
+            loopStationStoreMock.value.armed = true;
+
+            const prevent = handleKeydown(pressed({ key: '!', code: 'Digit1', shift: true }));
+
+            expect(prevent).toBe(true);
+            expect(triggerPad).toHaveBeenCalledWith({ row: 0, column: 0, record: true });
+        });
+
+        it('plays pad r1c3 on an armed R, and toggles recording on an unarmed R', () => {
+            loopStationStoreMock.value.armed = true;
+            handleKeydown(pressed({ key: 'r', code: 'KeyR' }));
+
+            expect(triggerPad).toHaveBeenCalledWith({ row: 1, column: 3, record: false });
+            expect(executeUserAppAction).not.toHaveBeenCalled();
+
+            vi.mocked(triggerPad).mockClear();
+            loopStationStoreMock.value.armed = false;
+            handleKeydown(pressed({ key: 'r', code: 'KeyR' }));
+
+            expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'toggleRecording' });
+            expect(triggerPad).not.toHaveBeenCalled();
+        });
+
+        it('records pad r3c5 on an armed Shift+N instead of adding an audio track', () => {
+            loopStationStoreMock.value.armed = true;
+
+            handleKeydown(pressed({ key: 'N', code: 'KeyN', shift: true }));
+
+            expect(triggerPad).toHaveBeenCalledWith({ row: 3, column: 5, record: true });
+            expect(executeUserAppAction).not.toHaveBeenCalled();
+        });
+
+        it('plays pad r3c3 on an armed V, and leaves an unarmed V unhandled', () => {
+            loopStationStoreMock.value.armed = true;
+            expect(handleKeydown(pressed({ key: 'v', code: 'KeyV' }))).toBe(true);
+            expect(triggerPad).toHaveBeenCalledWith({ row: 3, column: 3, record: false });
+
+            vi.mocked(triggerPad).mockClear();
+            loopStationStoreMock.value.armed = false;
+            expect(handleKeydown(pressed({ key: 'v', code: 'KeyV' }))).toBe(false);
+            expect(triggerPad).not.toHaveBeenCalled();
+        });
+
+        it('does not select the tool a digit selects when that digit is pressed with Shift', () => {
+            shortcutStoreMock.value.definitions = [];
+
+            handleKeydown(pressed({ key: '!', code: 'Digit1', shift: true }));
+
+            expect(setEditingTool).not.toHaveBeenCalled();
         });
     });
 

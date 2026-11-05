@@ -1,6 +1,7 @@
 import { render } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { currentKeyboardLayoutMap } from '#/infra/keyboardLayout/keyboardLayoutMap';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { defaultProjectStoreState, projectLoadFailureStore, projectStore } from '#/modules/Project/stores';
 import { type ActionHandler } from '#/utils/handlerContract';
@@ -518,6 +519,44 @@ describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#2
             timeline.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
 
             expect(lastIsInput()).toBe(false);
+        });
+    });
+
+    describe('key identity', () => {
+        afterEach(() => {
+            Reflect.deleteProperty(navigator, 'keyboard');
+        });
+
+        it('hands handleKeydown the physical key for a modifier-altered character', () => {
+            openSessionWithCommandHandlers();
+            render(<Host />);
+            const timeline = mount(document.createElement('div'));
+
+            dispatchKey(timeline, { key: '∂', code: 'KeyD', altKey: true });
+            dispatchKey(timeline, { key: '!', code: 'Digit1', shiftKey: true });
+
+            expect(mocks.handleKeydown.mock.calls.map(([desc]) => desc)).toMatchObject([
+                { key: 'd', alt: true, shift: false },
+                { key: '1', alt: false, shift: true },
+            ]);
+        });
+
+        it('resolves through the loaded keyboard layout map rather than the US table', async () => {
+            // AZERTY: the physical KeyQ key types `a`; Option+A reports `æ` there.
+            Object.defineProperty(navigator, 'keyboard', {
+                configurable: true,
+                value: { getLayoutMap: () => Promise.resolve(new Map([['KeyQ', 'a']])) },
+            });
+            openSessionWithCommandHandlers();
+            render(<Host />);
+            const timeline = mount(document.createElement('div'));
+            await vi.waitFor(() => {
+                expect(currentKeyboardLayoutMap()?.get('KeyQ')).toBe('a');
+            });
+
+            dispatchKey(timeline, { key: 'æ', code: 'KeyQ', altKey: true });
+
+            expect(mocks.handleKeydown.mock.calls.at(-1)?.[0]).toMatchObject({ key: 'a', alt: true });
         });
     });
 });

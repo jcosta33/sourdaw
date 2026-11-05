@@ -247,6 +247,7 @@ import { setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import { defaultProjectStoreState, projectStore } from '../../../../stores/projectStore';
 import { replaceProjectData } from '../../helpers/replaceProjectData';
 import { newProject } from '../../newProject';
+import { projectLifecycleRegistry } from '../../projectLifecycleRegistry';
 import { initProjectDirtyTracking } from '../initProjectDirtyTracking';
 
 import type {
@@ -325,11 +326,20 @@ async function withRealAutomergeStoragePort<TResult>(
     }
 }
 
+/**
+ * The module hydrate a load runs writes neither store the dirty subscription
+ * watches, and the production registration reaches every module this spec
+ * replaces with a partial double, so one stand-in participant takes the place
+ * of the modules it hydrates.
+ */
+const moduleHydrateParticipant = { module: 'ModuleHydrateStandIn', hydrateFromProjectData: vi.fn() };
+
 describe('project load dirty tracking (audit M-011)', () => {
     let stopDirtyTracking: () => void = () => {};
 
     beforeEach(() => {
         vi.clearAllMocks();
+        projectLifecycleRegistry.configure([moduleHydrateParticipant]);
         documentIdentity.epoch = 0;
         mockCompactProject.mockImplementation(async () => flushAutomergeStorageWrites());
         setArrangementEventBus(createEventBus<ArrangementEvents>());
@@ -360,6 +370,7 @@ describe('project load dirty tracking (audit M-011)', () => {
         expect(result.status).toBe('committed');
         // The load really happened — otherwise "clean" would be vacuous.
         expect(trackStore.value?.tracks.map((track) => track.name)).toContain(LOADED_TRACK_NAME);
+        expect(moduleHydrateParticipant.hydrateFromProjectData).toHaveBeenCalledOnce();
         expect(projectStore.value?.name).toBe('Opened From Disk');
         expect(projectStore.value?.dirty).toBe(false);
     });

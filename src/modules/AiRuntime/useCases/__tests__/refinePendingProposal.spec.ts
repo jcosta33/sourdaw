@@ -44,6 +44,7 @@ import { cancelPendingChatActions } from '../cancelPendingChatActions';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getAgentApprovalView } from '../getAgentApprovalView';
 import { getProjectContext } from '../getProjectContext';
+import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { readChatThreadContext } from '../readChatThreadContext';
 import { reproposePendingChatActions } from '../reproposePendingChatActions';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
@@ -270,8 +271,8 @@ function proposedIds(): string[] {
 }
 
 /** Proposes the four-command mix through the chat and returns its pending confirmation's id. */
-async function proposeTheMix(): Promise<string> {
-    await sendChatMessage(MIX_PROMPT);
+async function proposeTheMix(prompt = MIX_PROMPT): Promise<string> {
+    await sendChatMessage(prompt);
     const [pendingId] = proposedIds();
     if (pendingId === undefined) {
         throw new Error('Expected the mix to wait for approval.');
@@ -332,6 +333,7 @@ describe('refining the pending proposal', () => {
         });
         clearAiHistory();
         clearPendingActionConfirmations();
+        agentRunLifecycle.clear();
         setArrangementEventBus({ emit: () => Promise.resolve() });
         setNotificationEventBus(notificationEventBus);
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
@@ -362,6 +364,7 @@ describe('refining the pending proposal', () => {
         clearHandlerRegistry();
         clearAiHistory();
         clearPendingActionConfirmations();
+        agentRunLifecycle.clear();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         automationStore.set({ lanes: [] });
         transportStore.set(defaultTransportState);
@@ -809,6 +812,91 @@ describe('refining the pending proposal', () => {
         expect(lastAssistantMessage()?.content).toContain('omits');
         expect(getTrack('track-bass')).toMatchObject({ gain: 1 });
         expect(undoHistoryStore.value?.past ?? []).toHaveLength(0);
+    });
+
+    describe('a card holding a perceptual constraint', () => {
+        const constrainedMixPrompt = `${MIX_PROMPT.slice(0, -1)}, and keep the Lead Vocal intimate.`;
+        const reverbRefinementPrompt =
+            'Set Lead Vocal gain to 80%, pan Guitar Left 20% left and Guitar Right 20% right, mute Room Mic, and add a reverb to Lead Vocal, leaving the Drum Bus unchanged.';
+        const reverbRefinementPlan: readonly ProviderCall[] = [
+            ...REFINED_PLAN,
+            { name: 'addDevice', arguments: { trackId: 'track-lead-vocal', deviceType: 'builtin-reverb' } },
+        ];
+        const intimacyRefusal =
+            'The request says “keep the Lead Vocal intimate”, but command 5 (addDevice builtin-reverb) edits the ambience of “Lead Vocal”.';
+
+        function constraintGoals(confirmationId: string) {
+            const state = metricGoalStateCodec(
+                getPendingActionConfirmation(confirmationId)?.approvalSnapshot.metricGoalState
+            );
+            const goals = (state?.authorities ?? []).flatMap((authority) => authority.goals);
+            return goals
+                .filter((goal) => goal.source.kind === 'constraint')
+                .map(({ metricId, band, relation, targetIds, tolerance, source }) => ({
+                    metricId,
+                    band,
+                    relation,
+                    targetIds,
+                    tolerance,
+                    source,
+                }));
+        }
+
+        it('refuses a refinement into the excluded edit though its own text states no constraint', async () => {
+            let pendingId = '';
+            scriptProvider([{ calls: MIX_PLAN }, { calls: reverbRefinementPlan, refines: () => pendingId }]);
+            pendingId = await proposeTheMix(constrainedMixPrompt);
+
+            await sendChatMessage(reverbRefinementPrompt);
+
+            expect(proposedIds()).toEqual([pendingId]);
+            expect(getPendingActionConfirmation(pendingId)).toMatchObject({ status: 'proposed', supersededBy: null });
+            expect(lastAssistantMessage()?.content).toContain(intimacyRefusal);
+            expectMixUntouched();
+        });
+
+        it('replaces an unconstrained card with the same refinement', async () => {
+            let pendingId = '';
+            scriptProvider([{ calls: MIX_PLAN }, { calls: reverbRefinementPlan, refines: () => pendingId }]);
+            pendingId = await proposeTheMix();
+
+            await sendChatMessage(reverbRefinementPrompt);
+
+            const [replacementId] = proposedIds();
+            expect(getPendingActionConfirmation(replacementId ?? '')).toMatchObject({ supersedes: pendingId });
+            expect(getPendingActionConfirmation(replacementId ?? '')?.actions).toHaveLength(5);
+        });
+
+        // Three full planning turns of CPU work and no timer: about 1 s locally, past the 5 s default on a loaded CI runner.
+        it('carries its hold goals and its constraint through every refinement of the chain', async () => {
+            let pendingId = '';
+            let replacementId = '';
+            scriptProvider([
+                { calls: MIX_PLAN },
+                { calls: REFINED_PLAN, refines: () => pendingId },
+                { calls: reverbRefinementPlan, refines: () => replacementId },
+            ]);
+            pendingId = await proposeTheMix(constrainedMixPrompt);
+            const cardGoals = constraintGoals(pendingId);
+            expect(cardGoals.length).toBeGreaterThan(0);
+            expect(
+                cardGoals.every(
+                    (goal) => goal.source.kind === 'constraint' && goal.source.clause === 'keep the Lead Vocal intimate'
+                )
+            ).toBe(true);
+
+            await sendChatMessage(REFINEMENT_PROMPT);
+
+            [replacementId = ''] = proposedIds();
+            expect(getPendingActionConfirmation(replacementId)).toMatchObject({ supersedes: pendingId });
+            // The same holds, once each: the refinement neither drops nor duplicates them.
+            expect(constraintGoals(replacementId)).toEqual(cardGoals);
+
+            await sendChatMessage(reverbRefinementPrompt);
+
+            expect(proposedIds()).toEqual([replacementId]);
+            expect(lastAssistantMessage()?.content).toContain(intimacyRefusal);
+        }, 15_000);
     });
 
     it('puts a low-risk one-command refinement to the user after explicit removals', async () => {

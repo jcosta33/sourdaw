@@ -1,6 +1,7 @@
 import { toJS } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectLifecycle } from '#/app/registerProjectLifecycle';
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
 import {
@@ -249,6 +250,7 @@ describe('legacy version timeline snapshot round trip', () => {
         Container.clear();
         configureAutomergeStoragePort(null);
         registerCrdtStorageRuntime();
+        registerProjectLifecycle();
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         registerHandlerMap(getVersionControlHandlers());

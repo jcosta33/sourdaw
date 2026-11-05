@@ -58,7 +58,7 @@ export const TemplateGallery = ({
             <Grid
                 cols={2}
                 gap={2.5}
-                className="max-h-[420px] overflow-x-hidden overflow-y-auto p-1 [scrollbar-gutter:stable]"
+                className="h-[420px] content-start overflow-x-hidden overflow-y-auto p-1 [scrollbar-gutter:stable]"
             >
                 {visible.map((template) => (
                     <TemplateCard

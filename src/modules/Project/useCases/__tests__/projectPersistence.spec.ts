@@ -8,6 +8,7 @@ import { installFakeIndexedDb } from '../../__tests__/fakeIndexedDb';
 import { runProjectLoadTransaction } from '../projectPersistence/helpers/runProjectLoadTransaction';
 import { loadProject } from '../projectPersistence/loadProject';
 import { setProjectIdentityTransitionDependencies } from '../projectPersistence/projectIdentityTransitionDependencies';
+import { projectLifecycleRegistry } from '../projectPersistence/projectLifecycleRegistry';
 import { renameProject } from '../projectPersistence/saveProject/renameProject';
 import { saveProject } from '../projectPersistence/saveProject/saveProject';
 
@@ -246,6 +247,13 @@ vi.mock('../projectPersistence/fileIO/buildProjectData', () => ({
     buildProjectData: mocks.buildProjectData,
 }));
 
+/**
+ * The module reset a load runs is outside this spec's claim, and the production
+ * registration reaches every module this spec replaces with a partial double,
+ * so one stand-in participant takes the place of the modules it resets.
+ */
+const moduleResetParticipant = { module: 'ModuleResetStandIn', resetForProject: vi.fn() };
+
 describe('Project Persistence Use Cases', () => {
     let lockManager: ReturnType<typeof createControlledLockManager>;
 
@@ -256,6 +264,7 @@ describe('Project Persistence Use Cases', () => {
         emit.mockClear();
         vi.clearAllMocks();
         installFakeIndexedDb();
+        projectLifecycleRegistry.configure([moduleResetParticipant]);
         mocks.buildProjectData.mockResolvedValue({
             data: { version: 1, meta: { name: 'My Song' } } as BuiltProjectData['data'],
             missingBufferCount: 0,
