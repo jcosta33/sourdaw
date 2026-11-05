@@ -100,7 +100,7 @@ describe('PromptDialog', () => {
         expect(resolve).toHaveBeenCalledWith(null);
     });
 
-    it('auto-resolves a pending prompt to null when a second ui.prompt overlaps, and shows the new prompt', async () => {
+    it('auto-resolves a pending prompt to null when a second ui.prompt overlaps, and shows the new prompt focused and selected', async () => {
         const fire = await renderAndGetHandler();
         const firstResolve = vi.fn();
         const secondResolve = vi.fn();
@@ -108,6 +108,11 @@ describe('PromptDialog', () => {
         act(() => {
             fire(makePayload({ id: 'prompt-1', message: 'First prompt', resolve: firstResolve }));
         });
+        await waitFor(() => {
+            expect(screen.getByRole('textbox')).toHaveFocus();
+        });
+        screen.getByRole('button', { name: 'Cancel' }).focus();
+
         act(() => {
             fire(
                 makePayload({
@@ -123,6 +128,42 @@ describe('PromptDialog', () => {
         expect(secondResolve).not.toHaveBeenCalled();
         expect(screen.getByText('Second prompt')).toBeInTheDocument();
         expect(screen.queryByText('First prompt')).not.toBeInTheDocument();
-        expect(screen.getByRole('textbox')).toHaveValue('Second value');
+        const field = screen.getByRole<HTMLInputElement>('textbox');
+        expect(field).toHaveValue('Second value');
+        await waitFor(() => {
+            expect(document.activeElement).toBe(field);
+        });
+        expect(field.selectionStart).toBe(0);
+        expect(field.selectionEnd).toBe('Second value'.length);
+    });
+
+    it('focuses the field with its prefilled text selected when a prompt opens', async () => {
+        const fire = await renderAndGetHandler();
+        act(() => {
+            fire(makePayload({ initialValue: 'Old Track' }));
+        });
+
+        const field = screen.getByRole<HTMLInputElement>('textbox');
+        await waitFor(() => {
+            expect(document.activeElement).toBe(field);
+        });
+        expect(field.selectionStart).toBe(0);
+        expect(field.selectionEnd).toBe('Old Track'.length);
+    });
+
+    it('pulls focus back to the field when something outside the open dialog takes it', async () => {
+        render(<button type="button">Outside</button>);
+        const fire = await renderAndGetHandler();
+        act(() => {
+            fire(makePayload({ initialValue: 'Old Track' }));
+        });
+        const field = screen.getByRole('textbox');
+        await waitFor(() => {
+            expect(field).toHaveFocus();
+        });
+
+        screen.getByRole('button', { name: 'Outside', hidden: true }).focus();
+
+        expect(document.activeElement).toBe(field);
     });
 });

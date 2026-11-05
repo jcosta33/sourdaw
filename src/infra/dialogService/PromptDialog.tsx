@@ -4,6 +4,7 @@ import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '#/components/ui/dialog';
 import { Input } from '#/components/ui/input';
+import { type PromptPayload } from '#/utils/Notification/notificationEventBus';
 import { cn } from '#/utils/Styles/cn';
 
 import { DIALOG_SERVICE_LAYER } from './dialogServiceLayer';
@@ -20,11 +21,24 @@ import { usePromptDialog } from './usePromptDialog';
 export const PromptDialog = (): ReactElement => {
     const { pending, value, setValue, submit, cancel } = usePromptDialog();
     const inputRef = useRef<HTMLInputElement>(null);
+    // The prompt whose field last took focus. A prompt replacing an open one keeps the content
+    // mounted, so Radix's open autofocus does not run again and the replacement is focused here,
+    // where the content's focus trap is already live and records the field.
+    const focusedPromptRef = useRef<PromptPayload | null>(null);
+
+    const focusField = (prompt: PromptPayload): void => {
+        focusedPromptRef.current = prompt;
+        inputRef.current?.focus();
+        inputRef.current?.select();
+    };
 
     useEffect(() => {
-        if (pending) {
-            inputRef.current?.focus();
-            inputRef.current?.select();
+        if (pending === null) {
+            focusedPromptRef.current = null;
+            return;
+        }
+        if (focusedPromptRef.current !== null && focusedPromptRef.current !== pending) {
+            focusField(pending);
         }
     }, [pending]);
 
@@ -43,6 +57,10 @@ export const PromptDialog = (): ReactElement => {
                     role="dialog"
                     aria-modal="true"
                     aria-label={pending.title ?? pending.message}
+                    onOpenAutoFocus={(event) => {
+                        event.preventDefault();
+                        focusField(pending);
+                    }}
                     onKeyDown={(event) => {
                         if (event.key === 'Enter') {
                             if (event.target instanceof HTMLElement && event.target.tagName === 'BUTTON') {
@@ -72,7 +90,6 @@ export const PromptDialog = (): ReactElement => {
                         placeholder={pending.placeholder}
                         aria-label={pending.title ?? pending.message}
                         className="mt-3"
-                        autoFocus
                     />
                     <Row align="stretch" justify="end" gap={2} className="mt-4">
                         <Button variant="ghost" size="sm" onClick={cancel}>

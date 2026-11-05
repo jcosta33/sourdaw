@@ -57,6 +57,33 @@ const CommandOption = ({ cmd, index, activeIndex, onSelect, onHover }: CommandOp
     );
 };
 
+type CommandListboxProps = {
+    id: string;
+    results: CommandEntry[];
+    activeIndex: number;
+    onSelect: (entry: CommandEntry) => void;
+    onHover: (index: number) => void;
+};
+
+const CommandListbox = ({ id, results, activeIndex, onSelect, onHover }: CommandListboxProps): ReactElement => (
+    <div id={id} role="listbox" aria-label="Commands" className="max-h-72 overflow-y-auto bg-surface-base py-1">
+        {results.map((cmd, index) => (
+            <CommandOption
+                key={cmd.id}
+                cmd={cmd}
+                index={index}
+                activeIndex={activeIndex}
+                onSelect={() => onSelect(cmd)}
+                onHover={() => onHover(index)}
+            />
+        ))}
+
+        {results.length === 0 ? (
+            <p className="px-3 py-4 text-center text-sm text-muted-foreground">No commands found</p>
+        ) : null}
+    </div>
+);
+
 export const CommandPalette = (): ReactElement | null => {
     const commandPaletteOpen = useStore(workspaceStore)?.commandPaletteOpen ?? false;
     const [query, setQuery] = useState('');
@@ -114,7 +141,14 @@ export const CommandPalette = (): ReactElement | null => {
                 }
             }}
         >
-            <DialogContent className="max-w-md gap-0 overflow-hidden p-0" aria-describedby={undefined}>
+            <DialogContent
+                className="max-w-md gap-0 overflow-hidden p-0"
+                aria-describedby={undefined}
+                onOpenAutoFocus={(event) => {
+                    event.preventDefault();
+                    inputRef.current?.focus();
+                }}
+            >
                 <DialogTitle className="sr-only">Command Palette</DialogTitle>
                 <Row className="daw-header-band rounded-t-lg px-3">
                     <span className="text-sm text-muted-foreground mr-2">&gt;</span>
@@ -135,31 +169,16 @@ export const CommandPalette = (): ReactElement | null => {
                         placeholder="Type a command..."
                         className="h-12 border-0 bg-transparent shadow-none focus-visible:ring-0 text-base"
                         data-testid="command-palette-input"
-                        autoFocus
                     />
                 </Row>
 
-                <div
+                <CommandListbox
                     id={listboxId}
-                    role="listbox"
-                    aria-label="Commands"
-                    className="max-h-72 overflow-y-auto bg-surface-base py-1"
-                >
-                    {results.map((cmd, index) => (
-                        <CommandOption
-                            key={cmd.id}
-                            cmd={cmd}
-                            index={index}
-                            activeIndex={activeIndex}
-                            onSelect={() => execute(cmd)}
-                            onHover={() => setSelectedIndex(index)}
-                        />
-                    ))}
-
-                    {results.length === 0 ? (
-                        <p className="px-3 py-4 text-center text-sm text-muted-foreground">No commands found</p>
-                    ) : null}
-                </div>
+                    results={results}
+                    activeIndex={activeIndex}
+                    onSelect={execute}
+                    onHover={setSelectedIndex}
+                />
             </DialogContent>
         </Dialog>
     );
