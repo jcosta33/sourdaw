@@ -92,6 +92,18 @@ function configureProject(): void {
                     },
                 ],
             },
+            {
+                ...createTrack({ id: 'verb-bus', name: 'Verb Bus', kind: 'bus' }),
+                devices: [
+                    {
+                        id: 'bus-plate',
+                        name: 'Plate',
+                        type: 'builtin-reverb',
+                        bypassed: false,
+                        parameterValues: { 'rev-wet': 1 },
+                    },
+                ],
+            },
         ],
         sections: [],
     });
@@ -314,6 +326,49 @@ describe('excluded dimensions', () => {
         expect(() => compile('Add reverb but keep the vocal intimate', [addReverb])).toThrow(
             /“keep the vocal intimate”.*ambience of “Vocal”/u
         );
+    });
+
+    it.each([
+        {
+            label: 'a send from the constrained vocal',
+            prompt: 'Send the Vocal to the Verb Bus and keep the vocal intimate',
+            action: { type: 'addSend', payload: { trackId: 'vocal', busId: 'verb-bus', levelDb: -12 } },
+            reason: 'command 1 (addSend send) edits the ambience of “Vocal”',
+        },
+        {
+            label: 'a reverb wet write on the constrained vocal',
+            prompt: 'Make the Vocal wetter but keep the vocal intimate',
+            action: {
+                type: 'setDeviceParameter',
+                payload: { deviceId: 'vocal-room', paramId: 'rev-wet', value: 0.5, expectedTrackId: 'vocal' },
+            },
+            reason: 'command 1 (setDeviceParameter rev-wet) edits the ambience of “Vocal”',
+        },
+        {
+            label: 'a reverb low-cut write under the low-end constraint',
+            prompt: "Open up the Verb Bus but don't touch the low end",
+            action: setParameter('bus-plate', 'rev-lowcut', 40),
+            reason: 'command 1 (setDeviceParameter rev-lowcut) edits the low end of “Verb Bus”',
+        },
+        {
+            label: 'removing the low-end EQ',
+            prompt: "Simplify the Bass chain but don't touch the low end",
+            action: { type: 'removeDevice', payload: { deviceId: 'bass-eq' } },
+            reason: 'command 1 (removeDevice builtin-eq) edits the low end of “Bass”',
+        },
+    ] satisfies { label: string; prompt: string; action: AppAction; reason: string }[])(
+        'refuses $label',
+        ({ prompt, action, reason }) => {
+            expect(() => compile(prompt, [action])).toThrow(reason);
+        }
+    );
+
+    it('admits an ambience edit on a track outside a track-scoped constraint', () => {
+        const addReverb: AppAction = {
+            type: 'addDevice',
+            payload: { trackId: 'bass', deviceType: 'builtin-reverb', deviceId: 'bass-reverb' },
+        };
+        expect(() => compile('Add reverb to the Bass and keep the vocal intimate', [addReverb])).not.toThrow();
     });
 
     it('refuses the excluded edit where the planner previews a batch, before it renders', () => {
