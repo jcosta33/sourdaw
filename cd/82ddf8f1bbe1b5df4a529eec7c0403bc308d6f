@@ -1,0 +1,38 @@
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeGroundedLlmToolCalls.spec.ts
+  s_889d99350aa3b2::t_ffe5edfdc07af4 9081-9117,9166-9196
+  s_55244eb93b97d1::t_581e966a725ac7 9153
+  s_55244eb93b97d1::t_99adc8236f9da6 9150-9152
+  s_55244eb93b97d1::t_eb21eb8e7b4ecf 9154-9156
+  s_55244eb93b97d1::t_c65c56af1968aa 9118-9149,9157-9165
+src/modules/AiRuntime/useCases/agentReference/clipProtectionReading.ts
+  s_889d99350aa3b2::t_8e4b59041d872f 7,98-102,150
+  s_55244eb93b97d1::t_7e3caaf1c25169 103-110,154
+src/modules/AiRuntime/useCases/agentReference/readProtectionSlots.ts
+  s_889d99350aa3b2::t_cc0855977ae865 52-53,215,309
+src/modules/AiRuntime/useCases/agentReference/__tests__/getExplicitlyProtectedClips.spec.ts
+  s_55244eb93b97d1::t_f6033f57c10fdc 92-105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cd82ddf8f1bbe1b5df4a529eec7c0403bc308d6f",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_889d99350aa3b2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_889d99350aa3b2",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
