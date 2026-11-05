@@ -1,0 +1,140 @@
+src/modules/AiRuntime/useCases/agentReference/clipProtectionReading.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 38-45,65
+src/modules/Arrangement/useCases/comping/__tests__/writeTakeReKeyTransitions.spec.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 3-4,6,39-42,256-257,276,291,368,397,412,430
+src/modules/Arrangement/useCases/timeOperations/__tests__/prepareTimeOperationStateRestore.spec.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 83,1137-1163
+  s_fec7059b7a251c::t_2634802466c69d 1164-1166
+src/modules/Transport/useCases/scheduling/prepareYeastTrackNotes.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 21,87-94
+src/modules/Transport/useCases/scheduling/processLiveYeastTrackBlock.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 5-11,177-194,206-277,339-340,342
+src/utils/loopPassNoteSegments.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 1-99
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/inference.spec.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 251-254,259,264-284,298-299,301-311,314-358
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 3470-3472,4169,4177,4183-4192,4194-4198,6553-6563,6566-6568,6570-6575,6586-6595,6652-6661
+  s_fec7059b7a251c::t_4bcdc3beaa48f1 6662-6663
+src/modules/Transport/useCases/scheduling/yeastLoopPhaseIndex.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 1-225
+tests/e2e/punchRecordingClockObserver.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 19-20,144-145,155,157,161-192,197-207,214-242,273-277
+src/modules/AiRuntime/useCases/perceptualConstraints/findExcludedDimensionEdit.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 196-211,213-226,229-239,315,322-326,329-330,333-336,339,342
+src/modules/AiRuntime/validators/matchesJsonSchema.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 200-271
+src/modules/Arrangement/useCases/comping/__tests__/restoreTakesForClip.spec.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 251-287
+src/modules/Arrangement/services/collectLiveClipIds.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 1-2,4,7-13,18-19
+src/utils/Music/__tests__/MusicalScale.spec.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 27-32
+src/modules/Arrangement/services/__tests__/collectLiveClipIds.spec.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 1-31
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 193,2816
+src/modules/Transport/useCases/transportControls/__tests__/punchRecordingClockWitness.spec.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 7,16,94,96-98,112-116,162-163,186,321-369
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateAnthropicToolCalls.spec.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 759-787
+src/modules/Transport/useCases/scheduling/resolveRawClipYeastPasses.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 65-67
+src/modules/ContentBrowser/presentations/views/Sidebar/ProjectTab.tsx
+  s_fec7059b7a251c::t_8b69bb706f15f4 10,70
+src/modules/AudioEngine/useCases/offlineRender/projectOfflineYeastClipNotes.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 22-23,84-85,91,93
+docs/architecture/06-crdt-collaboration.md
+  s_fec7059b7a251c::t_8b69bb706f15f4 42
+src/modules/Arrangement/useCases/timeOperations/prepareTimeOperationStateRestore.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 6,241,244
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 530-535,1170-1172
+evidence/agent-campaign/manifest.json
+  s_fec7059b7a251c::t_8b69bb706f15f4 362,374,820
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 34,109-113,212-234,837-842,858-867,870,872-874,904-906
+src/modules/AudioEngine/useCases/offlineRender/projectOfflineYeastTrackNotes.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 1,10,57-62,114,132-133,143-155,177-178,185,205
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectOfflineYeastClipNotes.spec.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 46,58-60,183-184
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateAnthropicToolCalls.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 280-282
+src/modules/AiRuntime/AGENTS.md
+  s_fec7059b7a251c::t_8b69bb706f15f4 40-41,52
+src/modules/AiRuntime/useCases/__tests__/modelProviderProtocol.spec.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 7,584-810
+  s_fec7059b7a251c::t_8bf70d05e956d6 811
+src/modules/AiRuntime/useCases/__tests__/perceptualConstraints.spec.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 645,674-788
+  s_fec7059b7a251c::t_ff1c4652d455c0 789-790
+src/modules/AiRuntime/useCases/__tests__/toolChoiceDirectives.spec.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 339-403
+src/modules/AudioEngine/useCases/offlineRender/segmentOfflineYeastPassNotes.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 1-128
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 1330-1334
+src/modules/AiRuntime/models/ToolCallResult.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 2-10,14-16,18-23
+  s_fec7059b7a251c::t_1a24a43c81ee0e 1
+src/modules/MIDI/useCases/grooveTemplates/getGrooveProjection.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 2,179-186,188-203,208
+src/modules/TimelineEditor/presentations/views/ClipView/KneadEditor.tsx
+  s_fec7059b7a251c::t_8b69bb706f15f4 19,786
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 15,2748-2990
+  s_fec7059b7a251c::t_7fee0a908e383d 2991
+src/modules/Transport/useCases/scheduling/__tests__/processLiveYeastTrackBlock.spec.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 186-236
+src/modules/Arrangement/useCases/comping/takesWithLiveClips.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 6
+src/modules/AudioEngine/useCases/offlineRender/__tests__/projectOfflineYeastTrackNotes.spec.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 3-4,219-319,405-408,469,471,485-488,504-514,528-533,540
+src/utils/Music/MusicalScale.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 38-39,41
+src/modules/AiRuntime/models/ModelProviderProtocol.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 2,114-126,130,172
+src/modules/Command/useCases/undo.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 133-145,300-305,317-318,320,335-337,372,394-395
+src/modules/Command/useCases/__tests__/undoRedoReplayConflicts.spec.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 504,506-687
+  s_fec7059b7a251c::t_7acaf6a2b7e533 503,505
+src/modules/AiRuntime/useCases/agentReference/__tests__/getExplicitlyProtectedClips.spec.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 167-252
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 57,1842-1846,1881-1892,2253-2271,2284,2330,2359-2363,2369,2371-2373,2587-2609
+  s_fec7059b7a251c::t_f0b0c76a8142d1 2610-2611
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastContentOffset.spec.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 330,333-337,345-348,475-478,486-489,493,497-502,508-522
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/ProjectTab.spec.tsx
+  s_fec7059b7a251c::t_8b69bb706f15f4 49-50,52-59
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/hostedToolPlan.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 22-27
+src/modules/AiRuntime/useCases/__tests__/refinePendingProposal.spec.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 336,367
+release/open-source-inventory.json
+  s_fec7059b7a251c::t_8b69bb706f15f4 1216-1217
+src/modules/AiRuntime/useCases/modelProviderProtocol.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 5,23,25-30,40-57,121-124,202-204,446-475,499-500,520
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastGrooveWindowAdmission.spec.ts
+  s_fec7059b7a251c::t_8b69bb706f15f4 427,429-435,444,446,451-486,494-497,523-533,536-543,556-561,618-623
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/KneadEditor.spec.tsx
+  s_fec7059b7a251c::t_8b69bb706f15f4 1,355-363
+  s_fec7059b7a251c::t_4015d98687a59b 364-365
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7f980016f609904964bbd92b75f4abf5db862e41",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
