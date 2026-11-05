@@ -1,0 +1,22 @@
+tests/e2e/transientShaperEffect.spec.ts
+  s_0314bb17e5dee3::t_6b12247d468c9c 995-996
+  s_0314bb17e5dee3::t_4b97695f281699 1022-1024
+  s_0314bb17e5dee3::t_5e6b2d295abb3b 978-993,998-999,1043
+  s_0314bb17e5dee3::t_92d5ec2f5233b3 994
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4ceaffccb24252da8955a5a65945a82c770258b6",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
