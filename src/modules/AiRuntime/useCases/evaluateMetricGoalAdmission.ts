@@ -412,17 +412,22 @@ function criterionTargets(
     return { baseline, observed, reference, unit, failure };
 }
 
+/** The logical step a goal is judged across; an overall goal spans the whole batch from the live project. */
+export function readGoalPrefix(
+    goal: Pick<MetricGoal, 'stepId'>,
+    binding: Binding
+): Binding['prefixes'][number] | undefined {
+    if (goal.stepId === 'overall') {
+        return { stepId: 'overall', before: null, after: binding.contentHash };
+    }
+    return binding.prefixes.find((entry) => entry.stepId === goal.stepId);
+}
+
 function evaluateCriterion(
     goal: MetricGoal,
     context: ObservationContext
 ): { criterion: Criterion; failure: Failure | null } {
-    const { binding } = context;
-    let prefix: Binding['prefixes'][number] | undefined = binding.prefixes.find(
-        (entry) => entry.stepId === goal.stepId
-    );
-    if (goal.stepId === 'overall') {
-        prefix = { stepId: 'overall', before: null, after: binding.contentHash };
-    }
+    const prefix = readGoalPrefix(goal, context.binding);
     let values: {
         baseline: number[];
         observed: number[];

@@ -22,6 +22,7 @@ import { bindMetricGoalsToBatch } from './bindMetricGoalsToBatch';
 import { agentRunCancellation } from './cancelAgentRun';
 import { collectMetricGoalProof } from './collectMetricGoalProof';
 import { digestCommandBatchContent } from './digestCommandBatchContent';
+import { readGoalPrefix } from './evaluateMetricGoalAdmission';
 import { executeAnalysisMeasure } from './executeAnalysisMeasure';
 import { type MetricGoal, type MetricGoalState } from './metricGoalContractTypes';
 
@@ -44,6 +45,14 @@ type PreviewRequest = {
     scope: { kind: 'master' } | { kind: 'tracks' | 'buses'; ids: string[] };
     range: NonNullable<MetricGoal['range']>;
     metrics: NonNullable<MetricGoal['metricId']>[];
+};
+/** One prefix admission reads a goal at, and the subjects of that goal it reads there. */
+type GoalRead = { hash: string; goal: PreviewGoal; ids: readonly string[] };
+/** Subjects of one scope kind and range at one prefix, each with the metrics its goals read. */
+type ScopeGroup = {
+    kind: PreviewRequest['scope']['kind'];
+    range: PreviewGoal['range'];
+    metricsById: Map<string, Set<PreviewGoal['metricId']>>;
 };
 type PreviewRun = NonNullable<ReturnType<typeof agentRunLifecycle.get>>;
 type ProviderSnapshot = {
@@ -144,31 +153,65 @@ function scopeMembers(ids: string[], kind: PreviewRequest['scope']['kind'], cont
     });
 }
 
-function appendScopeRequests(
-    requests: PreviewRequest[],
-    members: string[],
-    kind: PreviewRequest['scope']['kind'],
-    goal: PreviewGoal,
+/**
+ * The batch prefixes admission reads a goal's figures at, and the subjects it reads there
+ * (`targetComparison` and `goalReferences` in evaluateMetricGoalAdmission): each target at its
+ * step's after (baseline and preview), at its step's before (preview) and at the whole batch
+ * (preview), and each reference target at the whole batch alone. An overall goal's step is the
+ * whole batch from the live project, so it is read at the whole batch only. A goal whose step the
+ * binding lacks (a drifted batch binds no steps) is refused as missing without a read, yet the card
+ * still shows what the whole batch measures, so it is measured there.
+ */
+function goalReads(goal: PreviewGoal, binding: Binding): GoalRead[] {
+    const prefix = readGoalPrefix(goal, binding);
+    const hashes =
+        prefix === undefined
+            ? [binding.contentHash]
+            : [prefix.after, prefix.before, binding.contentHash].filter((hash) => hash !== null);
+    return [
+        ...hashes.map((hash) => ({ hash, goal, ids: goal.targetIds })),
+        { hash: binding.contentHash, goal, ids: goal.referenceTargetIds },
+    ];
+}
+
+/**
+ * The measurements one prefix needs. Goals of one scope kind and range share their requests: their
+ * subjects are measured once, in chunks of at most `ANALYSIS_MEASURE_MAX_TARGETS`, each chunk with
+ * every metric a goal on one of its subjects reads, since admission finds a subject's figure by its
+ * target id inside any proof at that prefix and range.
+ */
+function sharedScopeRequests(
+    reads: readonly GoalRead[],
     hash: string,
-    envelope: PreviewEnvelope
-): void {
-    for (let start = 0; start < members.length; start += ANALYSIS_MEASURE_MAX_TARGETS) {
-        const slice = members.slice(start, start + ANALYSIS_MEASURE_MAX_TARGETS);
-        const scope = kind === 'master' ? { kind } : { kind, ids: slice };
-        const existing = requests.find(
-            (request) =>
-                request.hash === hash &&
-                JSON.stringify(request.scope) === JSON.stringify(scope) &&
-                JSON.stringify(request.range) === JSON.stringify(goal.range)
-        );
-        if (existing !== undefined) {
-            if (!existing.metrics.includes(goal.metricId)) {
-                existing.metrics.push(goal.metricId);
+    envelope: PreviewEnvelope,
+    context: ProjectContext
+): PreviewRequest[] {
+    const groups = new Map<string, ScopeGroup>();
+    for (const { goal, ids } of reads) {
+        for (const kind of ['master', 'tracks', 'buses'] as const) {
+            const members = scopeMembers([...ids], kind, context);
+            if (members.length === 0) {
+                continue;
             }
-        } else {
-            requests.push({ hash, envelope, scope, range: goal.range, metrics: [goal.metricId] });
+            const key = JSON.stringify([kind, goal.range]);
+            const group = groups.get(key) ?? { kind, range: goal.range, metricsById: new Map() };
+            groups.set(key, group);
+            for (const id of members) {
+                group.metricsById.set(id, (group.metricsById.get(id) ?? new Set()).add(goal.metricId));
+            }
         }
     }
+    return [...groups.values()].flatMap(({ kind, range, metricsById }) => {
+        const members = [...metricsById.keys()];
+        const requests: PreviewRequest[] = [];
+        for (let start = 0; start < members.length; start += ANALYSIS_MEASURE_MAX_TARGETS) {
+            const chunk = members.slice(start, start + ANALYSIS_MEASURE_MAX_TARGETS);
+            const metrics = [...new Set(chunk.flatMap((id) => [...(metricsById.get(id) ?? [])]))];
+            const scope = kind === 'master' ? { kind } : { kind, ids: chunk };
+            requests.push({ hash, envelope, scope, range, metrics });
+        }
+        return requests;
+    });
 }
 
 function buildPreviewRequests(
@@ -177,7 +220,10 @@ function buildPreviewRequests(
     envelope: PreviewEnvelope,
     context: ProjectContext
 ): PreviewRequest[] {
-    const goals = state.authorities.flatMap((authority) => authority.goals);
+    const reads = state.authorities
+        .flatMap((authority) => authority.goals)
+        .filter((goal) => currentPreviewGoal(goal, context))
+        .flatMap((goal) => goalReads(goal, binding));
     const requests: PreviewRequest[] = [];
     const needed = [...binding.prefixes];
     if (!needed.some((prefix) => prefix.after === binding.contentHash)) {
@@ -190,19 +236,15 @@ function buildPreviewRequests(
             offset += step.commandCount;
         }
         const count = prefix.stepId === 'overall' ? envelope.commands.length : offset;
+        const atPrefix = reads.filter((read) => read.hash === prefix.after);
+        if (atPrefix.length === 0 || requests.some((request) => request.hash === prefix.after)) {
+            continue;
+        }
         const prepared = compilePrefixEnvelope(envelope, count, prefix.after);
         if (prepared === null) {
             continue;
         }
-        for (const goal of goals) {
-            if (!currentPreviewGoal(goal, context)) {
-                continue;
-            }
-            const ids = [...new Set([...goal.targetIds, ...goal.referenceTargetIds])];
-            for (const kind of ['master', 'tracks', 'buses'] as const) {
-                appendScopeRequests(requests, scopeMembers(ids, kind, context), kind, goal, prefix.after, prepared);
-            }
-        }
+        requests.push(...sharedScopeRequests(atPrefix, prefix.after, prepared, context));
     }
     return requests;
 }
