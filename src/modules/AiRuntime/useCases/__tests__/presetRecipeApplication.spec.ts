@@ -26,14 +26,14 @@ const STATED_TRACK = 'stated-track';
 
 function readString(value: unknown, field: string): string {
     if (typeof value !== 'string') {
-        throw new Error(`expanded command field ${field} is not a string`);
+        throw new TypeError(`expanded command field ${field} is not a string`);
     }
     return value;
 }
 
 function readNumber(value: unknown, field: string): number {
     if (typeof value !== 'number') {
-        throw new Error(`expanded command field ${field} is not a number`);
+        throw new TypeError(`expanded command field ${field} is not a number`);
     }
     return value;
 }
@@ -74,17 +74,17 @@ async function applyExpansion(commands: readonly RetainedCommand[]): Promise<voi
         if (command.operation === 'addDevice') {
             const deviceId = `expanded-device-${String(minted.size)}`;
             const after = command.arguments.afterDeviceId;
-            await commit({
-                type: 'addDevice',
-                payload: {
-                    trackId: readString(command.arguments.trackId, 'trackId'),
-                    deviceType: readString(command.arguments.deviceType, 'deviceType'),
-                    deviceId,
-                    ...(after === undefined
-                        ? {}
-                        : { afterDeviceId: resolveDeviceId(readString(after, 'after'), minted) }),
-                },
-            });
+            const placement = {
+                trackId: readString(command.arguments.trackId, 'trackId'),
+                deviceType: readString(command.arguments.deviceType, 'deviceType'),
+                deviceId,
+            };
+            if (after === undefined) {
+                await commit({ type: 'addDevice', payload: placement });
+            } else {
+                const afterDeviceId = resolveDeviceId(readString(after, 'after'), minted);
+                await commit({ type: 'addDevice', payload: { ...placement, afterDeviceId } });
+            }
             minted.set(readString(command.binding, 'binding'), deviceId);
             continue;
         }
@@ -107,14 +107,10 @@ async function applyEveryStatedValue(presetId: string): Promise<void> {
     }
     for (const [index, device] of preset.devices.entries()) {
         const deviceId = `stated-device-${String(index)}`;
+        const placement = { trackId: STATED_TRACK, deviceType: device.type, deviceId };
         await commit({
             type: 'addDevice',
-            payload: {
-                trackId: STATED_TRACK,
-                deviceType: device.type,
-                deviceId,
-                ...(index === 0 ? {} : { afterDeviceId: `stated-device-${String(index - 1)}` }),
-            },
+            payload: index === 0 ? placement : { ...placement, afterDeviceId: `stated-device-${String(index - 1)}` },
         });
         for (const [paramId, value] of Object.entries(device.parameterValues)) {
             await commit({ type: 'setDeviceParameter', payload: { deviceId, paramId, value } });

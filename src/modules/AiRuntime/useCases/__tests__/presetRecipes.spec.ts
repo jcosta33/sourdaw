@@ -507,12 +507,12 @@ describe('preset recipes', () => {
             setTracks([track]);
             const chain = chainOf(factoryPreset('fx-eq-high-cut'));
 
+            const target = { recipeId: ROLE_LESS, targetId: 'source-1' };
             const data = readExpansion(
-                await expand(`loop-role-less-${String(role)}-${track.kind}`, {
-                    recipeId: ROLE_LESS,
-                    targetId: 'source-1',
-                    ...(role === null ? {} : { role }),
-                })
+                await expand(
+                    `loop-role-less-${String(role)}-${track.kind}`,
+                    role === null ? target : { ...target, role }
+                )
             );
 
             expect(data.commands).toEqual(expectedCommands(chain, null, 'source-1'));

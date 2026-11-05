@@ -1116,13 +1116,6 @@ describe('a measured preview through proposal and approval', () => {
         // The identity is persisted through the CRDT, so the revision is captured only once that write has landed.
         flushAutomergeStorageWrites();
         const revision = captureProjectRevision();
-        const recipeValues = [
-            { paramId: 'comp-threshold', value: -16 },
-            { paramId: 'comp-ratio', value: 4 },
-            { paramId: 'comp-attack', value: 25 },
-            { paramId: 'comp-release', value: 90 },
-            { paramId: 'comp-makeup', value: 4.5 },
-        ];
         scriptTurns(revision, [
             [
                 { id: 'resolve-target', name: 'project.query', arguments: { type: 'project-summary' } },

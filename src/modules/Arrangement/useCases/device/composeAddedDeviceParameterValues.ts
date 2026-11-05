@@ -8,11 +8,9 @@ export function composeAddedDeviceParameterValues(
     plugin: PluginDescriptor | undefined,
     initialInternalParameterValues?: Readonly<Record<string, number>>
 ): Record<string, number> {
-    const parameterValues: Record<string, number> = {
-        ...(initialInternalParameterValues ?? plugin?.internalParameterValues ?? {}),
-    };
-    for (const parameter of plugin?.parameters ?? []) {
-        parameterValues[parameter.id] = parameter.value;
-    }
-    return parameterValues;
+    const internalValues = initialInternalParameterValues ?? plugin?.internalParameterValues ?? {};
+    const declaredValues = Object.fromEntries(
+        (plugin?.parameters ?? []).map((parameter) => [parameter.id, parameter.value])
+    );
+    return { ...internalValues, ...declaredValues };
 }
