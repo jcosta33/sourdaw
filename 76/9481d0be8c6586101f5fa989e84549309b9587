@@ -1,0 +1,24 @@
+src/modules/TimelineEditor/presentations/views/Inspector/ClipInspector.tsx
+  s_fec7059b7a251c::t_a23372354dc566 322,326,329
+  s_fec7059b7a251c::t_3d2f274d851a20 48-59
+  s_fec7059b7a251c::t_bca28e433bb4e0 124-127
+  s_fec7059b7a251c::t_1760fe8823f345 346,350,353
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipInspector.spec.tsx
+  s_fec7059b7a251c::t_32aac45c985193 385-398
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "769481d0be8c6586101f5fa989e84549309b9587",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
