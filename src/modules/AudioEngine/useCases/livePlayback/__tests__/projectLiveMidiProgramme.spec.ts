@@ -626,6 +626,44 @@ describe('projectLiveMidiProgramme', () => {
         expect(eventsFromBeatEight(6, 2, -4)).toEqual(uncut);
     });
 
+    // The source with head and anchor a loop later, at 4, rolls occurrences 1
+    // and 2 on its passes at 8 and 12. Its head drawn back a loop to 0 (rows a
+    // loop later) puts the head's pass one ahead of the anchor's occurrence 0,
+    // so the passes from 8 must still roll 1 and 2.
+    it('rolls a clip whose head lies a pass ahead of its anchor on the anchored source occurrences', () => {
+        const eventsFromBeatEight = (startBeat: number, shiftBeats: number) => {
+            const clip = midiClip({
+                id: 'clip-1',
+                trackId: 'midi-1',
+                startBeat,
+                endBeat: 20,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 4,
+                midiOffsetBeats: 0,
+            });
+            const programme = projectProgramme({
+                stripTracks: [voicedTrack([clip])],
+                projectMidiEvents: createGrooveMidiEventProjector(),
+                probabilitySeed: 6,
+                notesByClipId: {
+                    'clip-1': [
+                        note({ id: 'n-chance', pitch: 67, startBeat: 1 + shiftBeats, duration: 0.25, probability: 50 }),
+                    ],
+                },
+                span: { startSeconds: 0, endSeconds: seconds(16) },
+            });
+            return (programme.targets[0]?.events ?? []).filter((event) => event.time >= seconds(8));
+        };
+
+        const anchored = eventsFromBeatEight(4, 0);
+        expect(anchored.filter((event) => event.isNoteOn).map((event) => event.time)).toEqual([
+            seconds(9),
+            seconds(13),
+        ]);
+        expect(eventsFromBeatEight(0, 4)).toEqual(anchored);
+    });
+
     it('strikes a Levain note on the articulation it carries, and releases it carrying none', () => {
         const clip = midiClip({ id: 'clip-1', trackId: 'midi-1' });
         const programme = projectProgramme({

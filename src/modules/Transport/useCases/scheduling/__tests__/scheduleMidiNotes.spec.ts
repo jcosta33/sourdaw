@@ -6527,6 +6527,24 @@ describe('scheduleMidiNotes plays a looping clip cut off its loop grid on the so
         return sourceRows().map((row) => ({ ...row, startBeat: row.startBeat - 4 }));
     }
 
+    /** The source with its head and anchor one loop later, over [4,20): its passes from 8 roll occurrences 1 and 2. */
+    function sourceFromBeat4(): Clip {
+        return midiClip({ startBeat: 4, endBeat: 20, loopEnabled: true, loopLength: 4, loopOriginBeat: 4 });
+    }
+
+    /**
+     * That source with its head drawn back a loop to 0 while the anchor stays
+     * at 4: the head's pass lies one pass ahead of the anchor's. Its rows sit
+     * a loop later, so each row's phase in the anchored loop is the source's.
+     */
+    function headAheadOfAnchorClip(): Clip {
+        return midiClip({ startBeat: 0, endBeat: 20, loopEnabled: true, loopLength: 4, loopOriginBeat: 4 });
+    }
+
+    function headAheadOfAnchorRows(): MidiNote[] {
+        return sourceRows().map((row) => ({ ...row, startBeat: row.startBeat + 4 }));
+    }
+
     type Voice = { pitch: number; beat: number; duration: number };
 
     /**
@@ -6617,5 +6635,30 @@ describe('scheduleMidiNotes plays a looping clip cut off its loop grid on the so
 
     it('sounds the start-trimmed clip on the Yeast rack route exactly as the untrimmed source', async () => {
         expect(await voicesFor(startTrimmedClip(), startTrimmedRows(), 'yeast')).toEqual(SOURCE_VOICES);
+    });
+
+    // A head one pass ahead of the anchor counts that pass before the anchor's
+    // occurrence 0, so the pass at 8 is the head's third but the anchor's second.
+    const SOURCE_FROM_BEAT_4_VOICES: Voice[] = [
+        ...SOURCE_VOICES.slice(0, 5),
+        { pitch: 67, beat: 13, duration: 0.25 },
+        ...SOURCE_VOICES.slice(5),
+    ];
+
+    it('pins the source anchored at 4: the chance note sounds on both passes from 8', async () => {
+        expect(await voicesFor(sourceFromBeat4(), sourceRows())).toEqual(SOURCE_FROM_BEAT_4_VOICES);
+        expect(chanceOccurrences()).toEqual([1, 2]);
+    });
+
+    it('rolls a clip whose head lies a pass ahead of its anchor on the anchored source occurrences', async () => {
+        expect(await voicesFor(headAheadOfAnchorClip(), headAheadOfAnchorRows())).toEqual(SOURCE_FROM_BEAT_4_VOICES);
+        expect(chanceOccurrences()).toEqual([1, 2]);
+    });
+
+    it('sounds a clip whose head lies a pass ahead of its anchor on the Yeast rack route as the anchored source', async () => {
+        expect(await voicesFor(sourceFromBeat4(), sourceRows(), 'yeast')).toEqual(SOURCE_FROM_BEAT_4_VOICES);
+        expect(await voicesFor(headAheadOfAnchorClip(), headAheadOfAnchorRows(), 'yeast')).toEqual(
+            SOURCE_FROM_BEAT_4_VOICES
+        );
     });
 });

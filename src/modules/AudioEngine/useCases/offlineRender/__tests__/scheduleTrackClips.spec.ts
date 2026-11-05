@@ -3874,7 +3874,13 @@ describe.each([
         // At 120 BPM and 48 kHz a beat is 24 000 frames.
         const BEAT_FRAMES = 24_000;
 
-        type LoopClipState = { startBeat: number; midiOffsetBeats: number; rowShiftBeats: number };
+        type LoopClipState = {
+            startBeat: number;
+            midiOffsetBeats: number;
+            rowShiftBeats: number;
+            endBeat?: number;
+            loopOriginBeat?: number;
+        };
 
         /**
          * Renders a loop [0, 4) anchored at 0, played to 16, in one of three states:
@@ -3883,9 +3889,16 @@ describe.each([
          * −4). Its rows: one held inside the loop (1.5–2.5), one crossing the seam
          * (3.5–4.5), and a 50% chance note at 1 whose real rolls under seed 6
          * sound occurrences 1 and 2 and drop occurrence 3. Reports every note-on
-         * and note-off at or after beat 8, in beats.
+         * and note-off at or after beat 8, in beats. A state may also move the
+         * clip's end and its loop anchor.
          */
-        async function renderFromBeatEight({ startBeat, midiOffsetBeats, rowShiftBeats }: LoopClipState) {
+        async function renderFromBeatEight({
+            startBeat,
+            midiOffsetBeats,
+            rowShiftBeats,
+            endBeat = 16,
+            loopOriginBeat = 0,
+        }: LoopClipState) {
             const arrivals: string[] = [];
             const strategy: DeviceNodeEntry['strategy'] = {
                 node: { inputNode: {} as AudioNode, outputNode: {} as AudioNode, nodes: [] },
@@ -3924,10 +3937,10 @@ describe.each([
                 {
                     ...track.clips[0]!,
                     startBeat,
-                    endBeat: 16,
+                    endBeat,
                     loopEnabled: true,
                     loopLength: 4,
-                    loopOriginBeat: 0,
+                    loopOriginBeat,
                     midiOffsetBeats,
                 },
             ];
@@ -4010,6 +4023,26 @@ describe.each([
         it('renders the start-trimmed clip exactly as the untrimmed source', async () => {
             expect(await renderFromBeatEight({ startBeat: 6, midiOffsetBeats: 2, rowShiftBeats: -4 })).toEqual(
                 await renderFromBeatEight(UNCUT)
+            );
+        });
+
+        // The source with head and anchor a loop later, at 4: its passes at 8
+        // and 12 roll occurrences 1 and 2, so the chance note sounds at both.
+        const ANCHORED_AT_FOUR: LoopClipState = {
+            startBeat: 4,
+            endBeat: 20,
+            loopOriginBeat: 4,
+            midiOffsetBeats: 0,
+            rowShiftBeats: 0,
+        };
+
+        it('renders a clip whose head lies a pass ahead of its anchor on the anchored source occurrences', async () => {
+            const anchored = await renderFromBeatEight(ANCHORED_AT_FOUR);
+            expect(anchored).toEqual(expect.arrayContaining(['on 67 @9', 'on 67 @13']));
+            // Its head drawn back a loop to 0, rows a loop later: the head's
+            // pass counts one ahead of the anchor's occurrence 0.
+            expect(await renderFromBeatEight({ ...ANCHORED_AT_FOUR, startBeat: 0, rowShiftBeats: 4 })).toEqual(
+                anchored
             );
         });
     }
