@@ -448,6 +448,35 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
         ]);
     });
 
+    it('ends at the pass end the length a rack adds past it', async () => {
+        // A rack that lengthens every note fourfold turns the 0.25-beat note
+        // at 3.5 into one running to 4.5, past the pass end. Its rack output
+        // is due at 3.5; a head re-strike of the added length would be due at
+        // the pass head, which the windows playing this pass have long
+        // passed, and the bounce, which hears the same rack output, must not
+        // sound what playback cannot. So the added length ends at the pass end.
+        vi.mocked(processYeastMidi).mockImplementation((input) =>
+            Promise.resolve(
+                input.events.map((event) =>
+                    event.durationSamples === undefined
+                        ? event
+                        : { ...event, durationSamples: event.durationSamples * 4 }
+                )
+            )
+        );
+        expect(
+            await sweepScheduledVoices({
+                clip: { endBeat: 8, loopEnabled: true, loopLength: 4 },
+                note: { startBeat: 3.5, duration: 0.25 },
+                grooveState: defaultGrooveTemplateState,
+                sweepEndBeat: 8,
+            })
+        ).toEqual([
+            { pitch: 60, beat: 3.5, durationBeats: 0.5 },
+            { pitch: 60, beat: 7.5, durationBeats: 0.5 },
+        ]);
+    });
+
     it('drops the segment a sequencer push re-anchors across the pass end behind the owning window', async () => {
         // The same note under slot-0 timingOffset +0.5: the rack is handed the
         // in-pass segment at 3.9 and the head tail at the pass head, both on
