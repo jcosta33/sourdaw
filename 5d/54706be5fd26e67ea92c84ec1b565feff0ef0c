@@ -1,0 +1,27 @@
+src/modules/Arrangement/useCases/__tests__/soundPresetLibrary.spec.ts
+  s_55244eb93b97d1::t_c2369e90018633 5,56-74
+  s_55244eb93b97d1::t_2a4835cdba8df6 75
+src/modules/Arrangement/repositories/presets/expandedPresets.ts
+  s_55244eb93b97d1::t_22537706e7e36b 1263
+  s_55244eb93b97d1::t_07123c9d0daabd 647
+  s_55244eb93b97d1::t_95cd62fee1d090 632
+  s_55244eb93b97d1::t_9536287036d7f5 827
+src/modules/AiRuntime/useCases/__tests__/presetRecipes.spec.ts
+  s_55244eb93b97d1::t_12576650f7c1bd 332-335
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5d54706be5fd26e67ea92c84ec1b565feff0ef0c",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
