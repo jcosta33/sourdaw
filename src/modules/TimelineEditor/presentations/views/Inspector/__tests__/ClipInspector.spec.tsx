@@ -190,10 +190,15 @@ vi.mock('#/utils/UI/colorPresets', () => ({
     CLIP_COLOR_PRESETS: ['#ff0000', '#00ff00', '#0000ff', ''],
 }));
 
+const arrangementMocks = vi.hoisted(() => ({
+    getClipEndLimit: vi.fn<(clipId: string) => number | null>(),
+}));
+
 vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Arrangement/useCases')>();
     return {
         ...actual,
+        getClipEndLimit: arrangementMocks.getClipEndLimit,
         trimClipStart: vi.fn(),
         trimClipEnd: vi.fn(),
         setClipFade: vi.fn(),
@@ -247,6 +252,7 @@ describe('ClipInspector', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        arrangementMocks.getClipEndLimit.mockReturnValue(null);
     });
 
     it('should render without crashing', () => {
@@ -487,6 +493,32 @@ describe('ClipInspector', () => {
             type: 'trimClipEnd',
             payload: { clipId: 'clip-1', newEndBeat: 7.75 },
         });
+    });
+
+    it('stops the Trim End slider where the clip source runs out', () => {
+        arrangementMocks.getClipEndLimit.mockReturnValue(10.5);
+        render(<ClipInspector {...defaultProps} />);
+        const slider = screen.getByLabelText('Trim clip end') as HTMLInputElement;
+
+        expect(arrangementMocks.getClipEndLimit).toHaveBeenCalledWith('clip-1');
+        expect(slider.max).toBe('10.5');
+        expect(slider.min).toBe('1');
+    });
+
+    it('keeps the Trim End slider range 256 beats past the start when the end is unlimited', () => {
+        render(<ClipInspector {...defaultProps} />);
+        const slider = screen.getByLabelText('Trim clip end') as HTMLInputElement;
+
+        expect(slider.max).toBe('256');
+    });
+
+    it('keeps the Trim End range ordered when the source ends within a beat of the clip start', () => {
+        arrangementMocks.getClipEndLimit.mockReturnValue(0.5);
+        render(<ClipInspector {...defaultProps} clip={{ ...defaultProps.clip, endBeat: 0.5 }} />);
+        const slider = screen.getByLabelText('Trim clip end') as HTMLInputElement;
+
+        expect(slider.min).toBe('0.5');
+        expect(slider.max).toBe('0.5');
     });
 
     it('dispatches no trimClipStart action when the commit lands on the current start bound', () => {

@@ -152,6 +152,9 @@ vi.mock('../../../useCases/timelineInteractions/snapToGridOrClips', () => ({
 vi.mock('../../../useCases/timelineInteractions/snapToZeroCrossingBeat', () => ({
     snapToZeroCrossing: mocks.snapToZeroCrossing,
 }));
+vi.mock('../../../useCases/clipEditing/limitClipEndToSource', () => ({
+    limitClipEndToSource: (_: unknown, requestedEndBeat: number) => requestedEndBeat,
+}));
 vi.mock('../../../useCases/timelineInteractions/setPlayheadFromClick', () => ({
     setPlayheadFromClick: mocks.setPlayheadFromClick,
 }));
