@@ -17,14 +17,6 @@ type ControllerRestore = {
     readonly pitchBendSnapshot: MidiPitchBendSnapshot | null;
 };
 
-function cloneBuckets<Row extends object>(buckets: Record<string, Row[]> | undefined): Record<string, Row[]> {
-    const cloned: Record<string, Row[]> = {};
-    for (const [clipId, rows] of Object.entries(buckets ?? {})) {
-        cloned[clipId] = rows.map((row) => ({ ...row }));
-    }
-    return cloned;
-}
-
 /** The controller buckets an inverse replays through `restoreMidiClipData`, per clip. */
 function controllerRestoresOf(action: AppAction): ControllerRestore[] {
     if (action.type === 'restoreClip') {
@@ -39,7 +31,7 @@ function controllerRestoresOf(action: AppAction): ControllerRestore[] {
     if (action.type === 'restoreTrack') {
         const { midiCcByClipId, midiPitchBendByClipId } = action.payload;
         const clipIds = new Set([...Object.keys(midiCcByClipId), ...Object.keys(midiPitchBendByClipId)]);
-        return [...clipIds].map((clipId) => ({
+        return Array.from(clipIds, (clipId) => ({
             clipId,
             controlChangeSnapshot: midiCcByClipId[clipId] ?? null,
             pitchBendSnapshot: midiPitchBendByClipId[clipId] ?? null,
@@ -58,8 +50,8 @@ function controllerRestoresOf(action: AppAction): ControllerRestore[] {
  * fails before the member being judged runs.
  */
 export function projectMidiClipDataThroughRestores(actions: readonly AppAction[]): ProjectedMidiClipData {
-    const ccByClipId = cloneBuckets(midiStore.value?.ccByClipId);
-    const pitchBendByClipId = cloneBuckets(midiStore.value?.pitchBendByClipId);
+    const restoredCcByClipId: Record<string, MidiCC[]> = {};
+    const restoredPitchBendByClipId: Record<string, MidiPitchBend[]> = {};
     for (const restore of actions.flatMap(controllerRestoresOf)) {
         const decoded = decodeMidiClipDataSnapshots({
             notesSnapshot: null,
@@ -70,15 +62,15 @@ export function projectMidiClipDataThroughRestores(actions: readonly AppAction[]
             continue;
         }
         if (decoded.controlChangeSnapshot !== null) {
-            ccByClipId[restore.clipId] = decoded.controlChangeSnapshot.map((row) => ({ ...row }));
+            restoredCcByClipId[restore.clipId] = decoded.controlChangeSnapshot;
         }
         if (decoded.pitchBendSnapshot !== null) {
-            pitchBendByClipId[restore.clipId] = decoded.pitchBendSnapshot.map((row) => ({ ...row }));
+            restoredPitchBendByClipId[restore.clipId] = decoded.pitchBendSnapshot;
         }
     }
     return {
         notesByClipId: projectMidiNotesByClipIdThroughRestores(actions),
-        ccByClipId,
-        pitchBendByClipId,
+        ccByClipId: { ...midiStore.value?.ccByClipId, ...restoredCcByClipId },
+        pitchBendByClipId: { ...midiStore.value?.pitchBendByClipId, ...restoredPitchBendByClipId },
     };
 }
