@@ -441,7 +441,16 @@ const INITIAL_DEFINITIONS: ShortcutDefinition[] = [
     ...buildLoopStationPadDefinitions(),
 ];
 
-const storage = createLocalStorage<ShortcutStoreState>('sourdaw-shortcuts');
+const storage = createLocalStorage<ShortcutStoreState>('sourdaw-shortcut-bindings');
+
+/**
+ * Bindings saved before shortcut keys were read from the physical key. They
+ * name the character a modifier produced (`alt+∂`, `shift+!`), so they are
+ * migrated once, as the seed of the current key. Bindings in the current key
+ * are never migrated: a capture such as AZERTY `shift+&` is a valid physical
+ * key that the US tables would misread as `shift+7`.
+ */
+const legacyStorage = createLocalStorage<unknown>('sourdaw-shortcuts');
 
 function createInitialShortcutStoreState(): ShortcutStoreState {
     return {
@@ -473,7 +482,7 @@ function validateStoredCustomMappings(value: unknown): Record<string, string[]> 
                 break;
             }
 
-            validKeys.push(migrateStoredShortcutCombo(key));
+            validKeys.push(key);
         }
 
         if (!hasOnlyStringKeys) {
@@ -497,8 +506,23 @@ function validateStoredShortcutStoreState(value: unknown): ShortcutStoreState {
     };
 }
 
+function readLegacyShortcutStoreState(): ShortcutStoreState | null {
+    const legacy = legacyStorage.isSupported() ? legacyStorage.get() : null;
+    if (!isRecord(legacy)) {
+        return null;
+    }
+
+    const customMappings = Object.fromEntries(
+        Object.entries(validateStoredCustomMappings(legacy.customMappings)).map(([definitionId, keys]) => [
+            definitionId,
+            keys.map(migrateStoredShortcutCombo),
+        ])
+    );
+    return { definitions: INITIAL_DEFINITIONS, customMappings };
+}
+
 export const shortcutStore = createStore<ShortcutStoreState>({
     storage,
-    initialData: createInitialShortcutStoreState(),
+    initialData: readLegacyShortcutStoreState() ?? createInitialShortcutStoreState(),
     sanitize: validateStoredShortcutStoreState,
 });

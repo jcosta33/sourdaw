@@ -10,8 +10,8 @@ import { handleKeydown, type KeyDescriptor } from '../handleKeydown';
 
 // Bindings a build before physical-key resolution captured: the produced
 // character of Option+D and Shift+1 on a US Mac. Seeded before any import
-// evaluates the store, so its first load reads them.
-const STORAGE_KEY = 'sourdaw-shortcuts';
+// evaluates the store, so its first load reads them and seeds the current key.
+const STORAGE_KEY = 'sourdaw-shortcut-bindings';
 vi.hoisted(() => {
     window.localStorage.setItem(
         'sourdaw-shortcuts',
