@@ -1,0 +1,21 @@
+src/modules/SampleLibrary/presentations/components/SampleRow.tsx
+  s_8f7ca30f876309::t_8ab26cf98daf7d 130-134,137,142,147,161,167,174-176
+src/modules/SampleLibrary/presentations/components/__tests__/SampleRow.spec.tsx
+  s_8f7ca30f876309::t_bbcffd1fa50770 175-199
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ce32d662ee968fba62107e84bc8d689e317b47b4",
+  "prompts": {},
+  "sessions": {
+    "s_8f7ca30f876309": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_8f7ca30f876309",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
