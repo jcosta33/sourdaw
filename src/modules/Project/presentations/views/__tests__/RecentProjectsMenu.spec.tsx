@@ -8,6 +8,7 @@ import { pickFiles } from '../../../useCases/fileDialog';
 import { applyImportedProjectData } from '../../../useCases/projectPersistence/fileIO/applyImportedProjectData';
 import { newProject } from '../../../useCases/projectPersistence/newProject';
 import { openProjectDirectoryFromPicker } from '../../../useCases/projectPersistence/openProjectDirectoryFromPicker';
+import { pendingProjectReplacements } from '../../../useCases/projectPersistence/pendingProjectReplacements';
 import { saveProject } from '../../../useCases/projectPersistence/saveProject/saveProject';
 import { loadRecentProject } from '../../../useCases/recentProjects/loadRecentProject';
 import { removeFromRecentProjects } from '../../../useCases/recentProjects/removeFromRecentProjects';
@@ -580,6 +581,21 @@ describe('RecentProjectsMenu', () => {
         });
     });
 
+    it('removes only the entry whose remove button is clicked and does not load it', () => {
+        // Choosing a row captures a pending replacement synchronously, before any await, so it observes the load route.
+        const captureReplacement = vi.spyOn(pendingProjectReplacements, 'capture');
+        render(<RecentProjectsMenu />);
+        openProjectMenu();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Remove Project One from recent projects' }));
+
+        expect(removeFromRecentProjects).toHaveBeenCalledTimes(1);
+        expect(removeFromRecentProjects).toHaveBeenCalledWith('proj-1');
+        expect(captureReplacement).not.toHaveBeenCalled();
+        expect(loadRecentProject).not.toHaveBeenCalled();
+        captureReplacement.mockRestore();
+    });
+
     describe('keyboard navigation', () => {
         const openWithKeyboard = async (): Promise<HTMLElement[]> => {
             render(<RecentProjectsMenu />);
@@ -618,6 +634,17 @@ describe('RecentProjectsMenu', () => {
 
             await pressAndExpectFocus('End', items[items.length - 1]);
             await pressAndExpectFocus('Home', items[0]);
+        });
+
+        it('removes a recent project with Backspace without opening it', async () => {
+            const items = await openWithKeyboard();
+            const recent = items.find((item) => item.textContent?.includes('Project Two'));
+            recent?.focus();
+
+            fireEvent.keyDown(recent ?? document.body, { key: 'Backspace' });
+
+            expect(removeFromRecentProjects).toHaveBeenCalledWith('proj-2');
+            expect(loadRecentProject).not.toHaveBeenCalled();
         });
 
         it('removes a recent project with Delete without opening it', async () => {

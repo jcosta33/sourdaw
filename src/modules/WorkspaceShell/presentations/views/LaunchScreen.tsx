@@ -1,10 +1,10 @@
 import { type ComponentProps, type ReactElement, type DragEvent, useState, useEffect, useRef } from 'react';
 
 import { LayoutTemplate, Sparkles, FolderOpen, Upload, Download, ArrowLeft, Clock } from 'lucide-react';
+import { FocusScope } from 'radix-ui/internal';
 
 import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
-import { Dialog, DialogSurface, DialogTitle } from '#/components/ui/dialog';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { pickAndImportDawProject } from '#/modules/DawInterchange/useCases';
 import { TemplateGallery } from '#/modules/Project/presentations/views';
@@ -273,12 +273,13 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
     // ── Render ──
 
     return (
-        <Dialog open>
-            <DialogSurface
+        // A Radix modal Dialog would also aria-hide the toast and confirm hosts that sit outside the shell
+        // so failures stay announced; only the Tab trap is wanted here.
+        <FocusScope.FocusScope asChild trapped loop>
+            <div
+                role="dialog"
                 aria-modal="true"
-                aria-describedby={undefined}
-                onEscapeKeyDown={(event) => event.preventDefault()}
-                onInteractOutside={(event) => event.preventDefault()}
+                aria-label="Sourdaw — start a project"
                 className={cn(
                     'fixed inset-0 z-[9999] overflow-hidden transition-[opacity,scale] duration-650 ease-in-out motion-reduce:transition-none',
                     exiting && 'pointer-events-none scale-[1.03] opacity-0 motion-reduce:scale-100'
@@ -307,7 +308,6 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                 }
                 onDrop={view === 'home' ? handleDrop : undefined}
             >
-                <DialogTitle className="sr-only">Sourdaw — start a project</DialogTitle>
                 <AmbientGlows />
 
                 <Row justify="center" className="h-full p-6">
@@ -509,8 +509,8 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
                         </Stack>
                     ) : null}
                 </Row>
-            </DialogSurface>
-        </Dialog>
+            </div>
+        </FocusScope.FocusScope>
     );
 };
 

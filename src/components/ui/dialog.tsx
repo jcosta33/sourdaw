@@ -69,12 +69,21 @@ const readFocusOpener = (): FocusOpener => {
     return { element: active, menuTriggerId: active.closest('[role="menu"]')?.getAttribute('aria-labelledby') ?? null };
 };
 
-const findFocusReturnTarget = ({ element, menuTriggerId }: FocusOpener): HTMLElement | null => {
-    if (element?.isConnected === true) {
-        return element;
+const focusReturnCandidates = ({ element, menuTriggerId }: FocusOpener): (HTMLElement | null)[] => [
+    element,
+    menuTriggerId === null ? null : document.getElementById(menuTriggerId),
+    document.querySelector<HTMLElement>(FOCUS_LANDMARK_SELECTOR),
+];
+
+/** A disabled or hidden candidate stays connected but refuses focus, so success is read back from the document. */
+const focusFirstAccepting = (candidates: (HTMLElement | null)[]): boolean => {
+    for (const candidate of candidates) {
+        candidate?.focus();
+        if (candidate !== null && document.activeElement === candidate) {
+            return true;
+        }
     }
-    const menuTrigger = menuTriggerId === null ? null : document.getElementById(menuTriggerId);
-    return menuTrigger ?? document.querySelector<HTMLElement>(FOCUS_LANDMARK_SELECTOR);
+    return false;
 };
 
 /**
@@ -82,7 +91,8 @@ const findFocusReturnTarget = ({ element, menuTriggerId }: FocusOpener): HTMLEle
  * `Dialog.Trigger` only. A dialog opened from a store flag, a shortcut or a menu item has no trigger, so
  * focus fell to <body>. Return to the element that was focused when `open` turned true (read while
  * rendering, because an `autoFocus` field inside the dialog takes focus during commit), else to the
- * trigger of the menu it lived in, else to the workspace landmark.
+ * trigger of the menu it lived in, else to the workspace landmark: the first that accepts focus wins, and if
+ * none does Radix's own restore is left alone.
  */
 function useFocusReturn({
     onCloseAutoFocus,
@@ -95,12 +105,9 @@ function useFocusReturn({
             if (event.defaultPrevented || opener === null) {
                 return;
             }
-            const target = findFocusReturnTarget(opener);
-            if (target === null) {
-                return;
+            if (focusFirstAccepting(focusReturnCandidates(opener))) {
+                event.preventDefault();
             }
-            event.preventDefault();
-            target.focus();
         },
     };
 }
@@ -142,20 +149,6 @@ export function DialogContent({
                     </DialogPrimitive.Close>
                 ) : null}
             </DialogPrimitive.Content>
-        </DialogPortal>
-    );
-}
-
-/**
- * A modal dialog surface with no chrome: Radix's focus trap, inert background and Escape handling around
- * content the caller styles and positions itself (a full-screen launch screen).
- */
-export function DialogSurface({ onCloseAutoFocus, ...props }: ComponentProps<typeof DialogPrimitive.Content>) {
-    const focusReturn = useFocusReturn({ onCloseAutoFocus });
-
-    return (
-        <DialogPortal data-slot="dialog-portal">
-            <DialogPrimitive.Content data-slot="dialog-surface" {...focusReturn} {...props} />
         </DialogPortal>
     );
 }

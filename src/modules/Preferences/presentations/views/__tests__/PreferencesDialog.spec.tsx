@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -165,23 +167,27 @@ describe('PreferencesDialog', () => {
     });
 
     it('returns focus to the control that opened it after Escape', async () => {
-        const Host = ({ open }: { open: boolean }) => (
-            <>
-                <button type="button">Open Preferences</button>
-                <PreferencesDialog open={open} onClose={vi.fn()} />
-            </>
-        );
-        const { rerender } = render(<Host open={false} />);
+        const Host = () => {
+            const [open, setOpen] = useState(false);
+            return (
+                <>
+                    <button type="button" onClick={() => setOpen(true)}>
+                        Open Preferences
+                    </button>
+                    <PreferencesDialog open={open} onClose={() => setOpen(false)} />
+                </>
+            );
+        };
+        render(<Host />);
         const opener = screen.getByRole('button', { name: 'Open Preferences' });
         opener.focus();
+        fireEvent.click(opener);
+        const dialog = await screen.findByRole('dialog');
 
-        rerender(<Host open />);
-        await waitFor(() => {
-            expect(opener).not.toHaveFocus();
-        });
-        rerender(<Host open={false} />);
+        fireEvent.keyDown(dialog, { key: 'Escape' });
 
         await waitFor(() => {
+            expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
             expect(opener).toHaveFocus();
         });
     });

@@ -78,7 +78,18 @@ describe('LaunchScreen', () => {
         first?.focus();
         fireEvent.keyDown(first ?? dialog, { key: 'Tab', shiftKey: true });
         expect(document.activeElement).toBe(last);
-        expect(screen.getByRole('button', { name: 'Behind the dialog', hidden: true })).not.toHaveFocus();
+        expect(screen.getByRole('button', { name: 'Behind the dialog' })).not.toHaveFocus();
+    });
+
+    it('leaves a toast rendered outside the launch screen exposed to assistive tech', () => {
+        render(
+            <>
+                <div role="alert">Failed to create a new project.</div>
+                <LaunchScreen exiting={false} />
+            </>
+        );
+
+        expect(screen.getByRole('alert')).toHaveTextContent('Failed to create a new project.');
     });
 
     it('should render the launch dialog with primary actions', () => {

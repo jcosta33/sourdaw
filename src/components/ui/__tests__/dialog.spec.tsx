@@ -119,4 +119,27 @@ describe('Dialog focus return', () => {
             expect(screen.getByText('Workspace')).toHaveFocus();
         });
     });
+
+    it('does not strand focus on body when the opener became disabled while the dialog was open', async () => {
+        const ui = (disabled: boolean, open: boolean) => (
+            <Harness open={open}>
+                <button type="button" disabled={disabled}>
+                    Opener
+                </button>
+            </Harness>
+        );
+        const { rerender } = render(ui(false, false));
+        screen.getByRole('button', { name: 'Opener' }).focus();
+
+        rerender(ui(false, true));
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: 'Inside' })).toHaveFocus();
+        });
+        rerender(ui(true, true));
+        rerender(ui(true, false));
+
+        await waitFor(() => {
+            expect(screen.getByText('Workspace')).toHaveFocus();
+        });
+    });
 });

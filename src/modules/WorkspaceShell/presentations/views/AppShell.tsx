@@ -531,6 +531,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         min: number;
         max: number;
         onResize: (d: number) => void;
+        onSetSize: (size: number) => void;
     };
     const renderSidePanel = (
         open: boolean,
@@ -546,6 +547,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             <DragResizeHandle
                 side={side === 'left' ? 'right' : 'left'}
                 onResize={resize.onResize}
+                onSetSize={resize.onSetSize}
                 aria-label={resize.label}
                 aria-valuenow={resize.value}
                 aria-valuemin={resize.min}
@@ -628,6 +630,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         min: 180,
         max: 500,
         onResize: (d) => setSidebarWidth((w) => clamp(w + d, 180, 500)),
+        onSetSize: (size) => setSidebarWidth(() => clamp(size, 180, 500)),
     };
     const inspectorResize: SidePanelResize = {
         label: 'Resize inspector',
@@ -635,6 +638,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         min: 200,
         max: 500,
         onResize: (d) => setInspectorWidth((w) => clamp(w + d, 200, 500)),
+        onSetSize: (size) => setInspectorWidth(() => clamp(size, 200, 500)),
     };
     const chatResize: SidePanelResize = {
         label: 'Resize chat panel',
@@ -642,6 +646,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         min: 200,
         max: 600,
         onResize: (d) => setChatWidth((w) => clamp(w + d, 200, 600)),
+        onSetSize: (size) => setChatWidth(() => clamp(size, 200, 600)),
     };
     const aiResize: SidePanelResize = {
         label: 'Resize AI panel',
@@ -649,6 +654,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         min: 200,
         max: 500,
         onResize: (d) => setAiWidth((w) => clamp(w + d, 200, 500)),
+        onSetSize: (size) => setAiWidth(() => clamp(size, 200, 500)),
     };
 
     // ─── Launch screen overlay state ───────────────────────────────────────
