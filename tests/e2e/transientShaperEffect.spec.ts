@@ -975,13 +975,28 @@ test('bounded live Chromium trace observes the active scalar bridge and dry work
     if (typeof start?.ts !== 'number' || typeof end?.ts !== 'number') throw new Error('Active trace bounds absent');
     const startTs = start.ts,
         endTs = end.ts;
-    const relevant = events.filter((event) => typeof event.ts === 'number' && event.ts >= startTs && event.ts < endTs);
-    const author = relevant.filter(
-        (event) => event.name === 'AudioWorkletProcessor::Process (author script execution)' && event.ph === 'X'
+    function interval(value: Record<string, unknown>) {
+        if (typeof value.ts !== 'number' || typeof value.dur !== 'number' || value.dur < 0)
+            throw new Error('Incomplete trace interval');
+        return { start: value.ts, end: value.ts + value.dur, duration: value.dur };
+    }
+    function nestedIn(parent: Record<string, unknown>, child: Record<string, unknown>) {
+        return (
+            child.pid === parent.pid &&
+            child.tid === parent.tid &&
+            interval(child).start >= interval(parent).start &&
+            interval(child).end <= interval(parent).end
+        );
+    }
+    const complete = (name: string) => events.filter((event) => event.name === name && event.ph === 'X');
+    const destination = complete('RealtimeAudioDestinationHandler::Render').filter(
+        (event) => typeof event.ts === 'number' && event.ts >= startTs && event.ts < endTs
     );
-    const outer = relevant.filter((event) => event.name === 'AudioWorkletProcessor::Process' && event.ph === 'X');
-    const destination = relevant.filter(
-        (event) => event.name === 'RealtimeAudioDestinationHandler::Render' && event.ph === 'X'
+    const outer = complete('AudioWorkletProcessor::Process').filter((event) =>
+        destination.some((render) => nestedIn(render, event))
+    );
+    const author = complete('AudioWorkletProcessor::Process (author script execution)').filter((event) =>
+        outer.some((frame) => nestedIn(frame, event))
     );
     const dryStart = events.find((event) => event.name === 'transient-dry-start');
     const dryEnd = events.find((event) => event.name === 'transient-dry-end');
@@ -1004,14 +1019,11 @@ test('bounded live Chromium trace observes the active scalar bridge and dry work
             event.ts < dryEndTs
     );
     expect(author.length).toBeGreaterThan(0);
-    expect(outer.length).toBe(author.length);
+    for (const frame of outer) {
+        expect(author.filter((event) => nestedIn(frame, event))).toHaveLength(1);
+    }
     expect(destination.length).toBeGreaterThan(0);
     expect(dryDestination.length).toBeGreaterThan(0);
-    function interval(value: Record<string, unknown>) {
-        if (typeof value.ts !== 'number' || typeof value.dur !== 'number' || value.dur < 0)
-            throw new Error('Incomplete trace interval');
-        return { start: value.ts, end: value.ts + value.dur, duration: value.dur };
-    }
     for (const authorEvent of author) {
         const own = interval(authorEvent);
         const parents = outer.filter(
@@ -1028,13 +1040,7 @@ test('bounded live Chromium trace observes the active scalar bridge and dry work
             throw new Error('Destination frame producer missing');
         const span = interval(event),
             budgetUs = (event.args.frames / rate) * 1e6;
-        const children = author.filter(
-            (child) =>
-                child.pid === event.pid &&
-                child.tid === event.tid &&
-                interval(child).start >= span.start &&
-                interval(child).end <= span.end
-        );
+        const children = author.filter((child) => nestedIn(event, child));
         expect(children.length).toBeGreaterThan(0);
         expect(span.duration).toBeLessThan(budgetUs);
         return {
