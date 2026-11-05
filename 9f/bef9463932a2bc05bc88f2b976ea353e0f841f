@@ -1,0 +1,33 @@
+src/components/ui/slider-gesture.ts
+  s_fec7059b7a251c::t_c72284ecea91a0 41-47
+  s_fec7059b7a251c::t_18dd4546fdaf4f 190
+  s_fec7059b7a251c::t_f8e83e704800b9 126
+  s_fec7059b7a251c::t_19d276cdccc285 79
+  s_fec7059b7a251c::t_c2ea246064d439 64-78
+  s_fec7059b7a251c::t_5435422210846b 26
+  s_fec7059b7a251c::t_bd6a6b95febf34 203,207,210-213,215-218
+  s_fec7059b7a251c::t_5da3fc0eddb0b8 214
+src/components/ui/__tests__/slider.spec.tsx
+  s_fec7059b7a251c::t_27f85351e88975 340-393
+  s_fec7059b7a251c::t_48d498cb1cfb85 87-104
+  s_fec7059b7a251c::t_3b178f212a17b8 394
+src/components/ui/slider.tsx
+  s_fec7059b7a251c::t_1193423f2f5b8e 25
+  s_fec7059b7a251c::t_22c3ea35e60dc6 56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9fbef9463932a2bc05bc88f2b976ea353e0f841f",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
