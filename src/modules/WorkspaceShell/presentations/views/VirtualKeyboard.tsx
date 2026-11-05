@@ -128,12 +128,13 @@ type BlackKeyDef = {
     leftPx: number;
 };
 
-/** Convert a white-key index within the full keyboard (0 = C-1) to its MIDI note number */
+/** The name a key announces: its pitch and octave, then its MIDI number. */
 function keyAriaLabel(midiNote: number): string {
     const pitchName = formatMidiNoteName(midiNote);
     return pitchName === null ? `MIDI ${midiNote}` : `${pitchName} (MIDI ${midiNote})`;
 }
 
+/** Convert a white-key index within the full keyboard (0 = C-1) to its MIDI note number */
 function whiteIdxToMidi(whiteIdx: number): number {
     const octave = Math.floor(whiteIdx / WHITES_PER_OCT); // 0 = C-1 octave
     const posInOct = whiteIdx % WHITES_PER_OCT;
