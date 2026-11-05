@@ -1,0 +1,25 @@
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastGrooveWindowAdmission.spec.ts
+  s_ba80576e6f5cb5::t_0e80a5ba5aa2d0 1102-1110
+src/modules/Transport/useCases/scheduling/yeastLoopPhaseIndex.ts
+  s_ba80576e6f5cb5::t_a98ed24aff5394 266-267
+  s_ba80576e6f5cb5::t_16c7cd095ff972 1-5
+  s_ba80576e6f5cb5::t_1a0ae3532e00a7 106-109
+  s_ba80576e6f5cb5::t_710e36075bd977 45-49
+  s_ba80576e6f5cb5::t_4007e43a6bb55d 190-195,198
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f91d484c48b0d597c5ac6ec1fc47ceef9a079e27",
+  "prompts": {},
+  "sessions": {
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
