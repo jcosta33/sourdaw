@@ -45,3 +45,10 @@ the rendered result; inspect the rendered viewports, rectangles, pixels and reso
    stop including color mixes, and calculate WCAG sRGB relative-luminance contrast for each pair against the stated
    threshold. Do not hardcode old token values or treat the class name as proof of legibility. Changing the red
    class back to `text-state-record` must fail at 4.098:1 on the first stop.
+7. **Every utility class is written whole in source (#6169).** Tailwind generates a utility only from a complete
+   class name it finds in a scanned file, so a class assembled at runtime (`` `border-${tone}-500/50` ``) reaches the
+   DOM with no rule behind it: the generative panel's selected genre, mood and instrument cards showed no colour from
+   `9ec79c66cf` (a direct commit; no introducing PR). A DOM class assertion passes on such a class, since jsdom
+   applies no CSS. Grep the diff for a template literal or concatenation producing a class name; each variant must
+   map to complete literal strings. A case for that component must fail when any class it renders is not written
+   whole in its source.
