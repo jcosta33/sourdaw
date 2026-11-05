@@ -1,0 +1,32 @@
+src/modules/CommandInterface/stores/shortcutStore.ts
+  s_fec7059b7a251c::t_3a7d8981130a48 509-523,526
+  s_fec7059b7a251c::t_5e96c45f664fbc 444-453
+  s_fec7059b7a251c::t_2ad70f30f0dfaf 485
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydownStoredBindings.spec.ts
+  s_fec7059b7a251c::t_0f627c58994aad 13-14
+src/modules/CommandInterface/AGENTS.md
+  s_fec7059b7a251c::t_cabed9758c7172 21
+src/infra/store/storage/LocalStorageKeys.ts
+  s_fec7059b7a251c::t_ea927d422cb573 136,139-140
+  s_fec7059b7a251c::t_31e1c2c4edc81c 141
+src/modules/CommandInterface/stores/__tests__/shortcutStoreHydration.spec.ts
+  s_fec7059b7a251c::t_b69ff4281901d3 6-11
+  s_fec7059b7a251c::t_8e1e260d629896 1
+  s_fec7059b7a251c::t_a4715abc9029fe 74-102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ee0c0e856a9a3340b8247261d112a6a787cbee0d",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
