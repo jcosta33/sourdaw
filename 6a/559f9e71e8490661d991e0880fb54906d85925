@@ -1,0 +1,238 @@
+src/modules/Arrangement/useCases/collaborationAssetTransfer.ts
+  s_0314bb17e5dee3::t_aa33c47c3fbac5 1-65
+src/app/__tests__/registerSupportingServicePorts.spec.ts
+  s_0314bb17e5dee3::t_a7b8fb6ecab2da 1-13,26-28,35-36,49-68,70-71,75-113,147,149,153-156,160-162,164,168-171,181-182
+  s_0314bb17e5dee3::t_d32f03019aca3e 186-187
+  s_0314bb17e5dee3::t_332397924f8724 29,31,72,114-122,150,157,165,172-174,183
+  s_0314bb17e5dee3::t_f25b98ecb1159f 14-25,30,32-34,37-48,69,73-74,123-146,148,151-152,158-159,163,166-167,175-180,184-185
+src/app/registerSupportingServicePorts.ts
+  s_0314bb17e5dee3::t_f17f7ae1347111 1-3,10-12,16-25,36-40,43,46-49,53
+  s_0314bb17e5dee3::t_9c5dbd45203bba 5-6,13,26-30,50
+  s_0314bb17e5dee3::t_dd11b01eb48a94 4,7-9,14-15,31-35,41-45,51-52
+src/app/App.tsx
+  s_fec7059b7a251c::t_636ba484aa2127 11,15-17,19
+src/app/__tests__/App.spec.tsx
+  s_55244eb93b97d1::t_c276887a074c01 8,14-17,55-58
+src/app/bootstrap.ts
+  s_fec7059b7a251c::t_f237727c3a45a4 252,268
+tests/e2e/audioOwnership.native.spec.ts
+  s_fec7059b7a251c::t_037ad8a58f0426 106-116,126,244,249,259
+src/app/__tests__/bootstrap.spec.ts
+  s_0314bb17e5dee3::t_fee8724d237de2 168,305,811-814,1104-1108
+  s_55244eb93b97d1::t_6531b37fa9f056 700-702,912
+  s_5daed23d139de5::t_d6478b1caf418f 699
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_0314bb17e5dee3::t_c71115facbdec3 5,73
+src/modules/Arrangement/handlers/track/__tests__/handleImportStemSet.spec.ts
+  s_0314bb17e5dee3::t_220c9fc342d4c0 34,42,90-92,94-96,98-99
+src/modules/Arrangement/handlers/track/handleImportStemSet.ts
+  s_0314bb17e5dee3::t_a6028a6bea0fe8 7,99
+src/modules/Arrangement/useCases/__tests__/importAudioClipToTrack.spec.ts
+  s_0314bb17e5dee3::t_eb7506e4e4e31a 3,19,28-37
+src/modules/Arrangement/useCases/__tests__/importAudioFile.integration.spec.ts
+  s_0314bb17e5dee3::t_a177c1705ca180 45,61
+src/modules/Arrangement/useCases/__tests__/importAudioFile.spec.ts
+  s_0314bb17e5dee3::t_698b738cdb6475 4,40-41
+src/modules/Arrangement/useCases/importAudioClipToTrack.ts
+  s_0314bb17e5dee3::t_b9346c0867061f 8-9,18,134
+src/modules/Arrangement/useCases/importAudioFile.ts
+  s_0314bb17e5dee3::t_2b2ac0eddf1a4a 9-10,18,172
+src/modules/Arrangement/useCases/index.ts
+  s_0314bb17e5dee3::t_3daa65e1448fcd 52
+src/modules/Project/useCases/projectPersistence/durableOwnership/__tests__/savedAudioCollectionRace.integration.spec.ts
+  s_0314bb17e5dee3::t_374fccc9bf20e8 229,243,264
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.audioDurability.integration.spec.ts
+  s_0314bb17e5dee3::t_2a374cde9c2f03 169,184,203
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.projectDirectory.integration.spec.ts
+  s_0314bb17e5dee3::t_7102189d605592 445-446,643-644
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWindow.integration.spec.ts
+  s_0314bb17e5dee3::t_608d845b2b064f 138-140
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerPunchHandover.spec.ts
+  s_0314bb17e5dee3::t_94e0e417c829bf 164-166
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamHandover.spec.ts
+  s_0314bb17e5dee3::t_c5b6ef901f8b81 137-139
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStall.spec.ts
+  s_0314bb17e5dee3::t_e29a590a2e642b 130-132
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClips.spec.ts
+  s_0314bb17e5dee3::t_6a9edd7e7b6c85 69-74,82-85,161,168,566-567
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClipsCompBoundaryStall.spec.ts
+  s_0314bb17e5dee3::t_c4915c928442ad 54-56
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClipsLiveSeam.spec.ts
+  s_0314bb17e5dee3::t_f8302bb05b61ac 70-72
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClipsLoopOrigin.spec.ts
+  s_0314bb17e5dee3::t_f1eced40078524 76-78
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClipsMidClipFadeOut.spec.ts
+  s_0314bb17e5dee3::t_5255bea569110d 64-66
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  s_0314bb17e5dee3::t_6e4acc0b42731d 2,784-785,795
+src/modules/MIDI/useCases/webMidiInput/midiLearnRouting.ts
+  s_0314bb17e5dee3::t_c9e49b5b51622f 1-59
+src/modules/MIDI/useCases/webMidiInput/midiMessageHandlerDependencies.ts
+  s_0314bb17e5dee3::t_74f8f8459ccb33 41
+  s_0314bb17e5dee3::t_41d569b60d39d3 39-40
+  s_0314bb17e5dee3::t_520420b2fa01e5 42-44
+  s_0314bb17e5dee3::t_55d3878ba0666c 28,45-52
+src/modules/MIDI/useCases/recordedControllerTake/__tests__/recordedControllerTake.spec.ts
+  s_55244eb93b97d1::t_31d282c3efcda5 52-57
+src/modules/MIDI/useCases/recordedControllerTake/__tests__/recordedControllerTakeConcurrentNote.spec.ts
+  s_55244eb93b97d1::t_5879d35b5da5f4 13,34,36-38
+src/modules/MIDI/useCases/recordedControllerTake/__tests__/seedBendRangeAtTakeStart.spec.ts
+  s_55244eb93b97d1::t_ebceecebf3c388 64-69
+src/modules/MIDI/useCases/recordedControllerTake/__tests__/seedWheelAtTakeStart.spec.ts
+  s_55244eb93b97d1::t_e0a9a588c34b9b 39-44
+src/modules/Arrangement/handlers/recording/__tests__/overdubControllerUndo.integration.spec.ts
+  s_0314bb17e5dee3::t_cde985bcb9e869 19,75
+src/modules/Arrangement/handlers/recording/__tests__/recordedControllerTake.integration.spec.ts
+  s_0314bb17e5dee3::t_7141b2e222a1b3 18,76-77
+src/modules/AudioEngine/useCases/offlineRender/__tests__/controllerTakeExport.integration.spec.ts
+  s_0314bb17e5dee3::t_2b935d3ba6e239 18,78-79
+src/modules/MIDI/useCases/index.ts
+  s_0314bb17e5dee3::t_0966e5c3d318b9 121
+src/modules/MIDI/useCases/recordedControllerTake/readBendRangeSeedRows.ts
+  s_0314bb17e5dee3::t_2213dab4f2f8e3 4,24
+src/modules/MIDI/useCases/recordedControllerTake/readHeldPedalRows.ts
+  s_0314bb17e5dee3::t_e2da4adf943f71 7,19
+src/modules/Transport/useCases/scheduling/__tests__/controllerTakePlayback.integration.spec.ts
+  s_0314bb17e5dee3::t_3668932dba1a8b 59,118-119
+src/modules/Transport/useCases/transportControls/__tests__/stopActiveRecordingCommit.integration.spec.ts
+  s_0314bb17e5dee3::t_2c145366f37dc7 11,72-73
+src/modules/Project/useCases/projectPersistence/fileIO/midiLearnProjection.ts
+  s_0314bb17e5dee3::t_6dc333168c10c7 1-49
+src/modules/Project/useCases/agentDiscovery/sampleDiscoverySource.ts
+  s_0314bb17e5dee3::t_af01fd52261c13 1-62
+  s_0314bb17e5dee3::t_501f601752fcd0 63-65
+src/modules/AiRuntime/useCases/__tests__/confirmAfterSave.spec.ts
+  s_0314bb17e5dee3::t_aa93d6769a3903 4,64
+src/modules/AiRuntime/useCases/__tests__/executeTransientOnsetReadAfterSave.spec.ts
+  s_0314bb17e5dee3::t_8cf1d3ec84bb01 3,87-88
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeCommittedSectionRenderRetryAfterSave.spec.ts
+  s_0314bb17e5dee3::t_6507b4ba41e7bd 3,268-269
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/finalizeRecoveredEffectsAfterSave.spec.ts
+  s_0314bb17e5dee3::t_d783899c41957d 3,202-203
+src/modules/Arrangement/useCases/freezeBounce/__tests__/admitAgentRenderReceiptAfterSave.spec.ts
+  s_0314bb17e5dee3::t_0df026e606b201 3,89-90
+src/modules/AudioRendering/useCases/__tests__/previewMeasurementRender.spec.ts
+  s_0314bb17e5dee3::t_81c34ad49c8f51 5,291-292
+src/modules/AudioRendering/useCases/__tests__/renderAgentMeasurementScopeAfterSave.spec.ts
+  s_0314bb17e5dee3::t_00bee2d53fee43 3,70-71
+src/modules/AudioRendering/useCases/__tests__/renderAgentProjectSectionsAfterSave.spec.ts
+  s_0314bb17e5dee3::t_688957ac5f963f 3,115-116
+src/modules/Levain/useCases/__tests__/levainMultiInstanceProjectRoundTrip.spec.ts
+  s_0314bb17e5dee3::t_49b74d77ea6837 36,97
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/externalPluginPendingRestore.capture.integration.spec.ts
+  s_0314bb17e5dee3::t_607ff4c73389c8 3,279-280
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/externalPluginRestoreFailure.capture.integration.spec.ts
+  s_0314bb17e5dee3::t_67d0030af3d498 3,233-234
+src/modules/Project/presentations/views/__tests__/recentMenuSwitchAfterBootRestore.integration.spec.tsx
+  s_0314bb17e5dee3::t_1a43ebb4b93565 166,316-317
+src/modules/Project/useCases/__tests__/agentDomainQueryConformance.spec.ts
+  s_0314bb17e5dee3::t_1cac78f2c9f913 4,47
+src/modules/Project/useCases/agentDiscovery/collectSampleDiscoveryEntries.ts
+  s_0314bb17e5dee3::t_76a0ab0db6dca3 4-7,54-55,59
+src/modules/Project/useCases/index.ts
+  s_0314bb17e5dee3::t_8678b03ca1e4d3 50-51
+src/modules/Project/useCases/projectPersistence/__tests__/migrateActiveProjectIdentity.integration.spec.ts
+  s_0314bb17e5dee3::t_b07b414fd9c633 77
+  s_5daed23d139de5::t_edcb6678024106 7,20,74-76
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/buildProjectData.spec.ts
+  s_0314bb17e5dee3::t_2ba39e029cc0a0 103,108,111-113,115
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.roundTrip.spec.ts
+  s_0314bb17e5dee3::t_815ad6f0ae403d 188
+  s_5daed23d139de5::t_7166b81e86234c 7,30,185-187
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.spec.ts
+  s_0314bb17e5dee3::t_51bb15154fdac4 6,13,164-167
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportSnapshotConsistency.integration.spec.ts
+  s_0314bb17e5dee3::t_c56487c89ccf00 57,241
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/midiLearnPersistence.roundTrip.spec.ts
+  s_0314bb17e5dee3::t_adb095e03680c3 4,59
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/mixStatePersistence.roundTrip.spec.ts
+  s_0314bb17e5dee3::t_afa43dca3f40ee 4,57
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/stampWriteSidePersistence.spec.ts
+  s_0314bb17e5dee3::t_6392c536b0f079 3,38-39
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/vcaFoundationLifecycle.spec.ts
+  s_0314bb17e5dee3::t_b1ed25fe827e41 3,29-30
+src/modules/Project/useCases/projectPersistence/fileIO/buildProjectData.ts
+  s_0314bb17e5dee3::t_7c592c1ab007a0 37,253
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.snapshotContinuation.integration.spec.ts
+  s_0314bb17e5dee3::t_71fd6e9234d697 59,76,90
+src/modules/ProjectVersioning/useCases/versionControl/__tests__/checkpointProjectIsolation.integration.spec.ts
+  s_0314bb17e5dee3::t_77730f34e9b853 5,267
+src/app/__tests__/getProductionCommandHandlerMaps.spec.ts
+  s_55244eb93b97d1::t_84821a69f4f07c 78
+src/modules/SampleLibrary/useCases/__tests__/getSampleLibraryHandlers.spec.ts
+  s_55244eb93b97d1::t_e5521851b07d22 1-13
+src/app/getProductionCommandHandlerMaps.ts
+  s_55244eb93b97d1::t_5b18f9a8b7d70f 29,39
+src/modules/SampleLibrary/handlers/sampleSearch/__tests__/handleSearchSamples.spec.ts
+  s_55244eb93b97d1::t_0a0495627fe592 9,18
+src/modules/SampleLibrary/handlers/sampleSearch/handleSearchSamples.ts
+  s_55244eb93b97d1::t_4ba8e4bfb93389 3-4
+src/modules/SampleLibrary/useCases/getSampleLibraryHandlers.ts
+  s_55244eb93b97d1::t_c527ce9883ca01 1-16
+src/modules/SampleLibrary/useCases/index.ts
+  s_55244eb93b97d1::t_a4b77a1b0ac81c 9
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_5daed23d139de5::t_e8f40733084437 175
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingPreRoll.spec.ts
+  s_5daed23d139de5::t_90a087b6a58634 73
+evidence/agent-campaign/manifest.json
+  s_702db6d274e177::t_4d8f0ac6db8d7a 926
+release/open-source-inventory.json
+  s_0314bb17e5dee3::t_c62950cc1d87e2 1217
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6a559f9e71e8490661d991e0880fb54906d85925",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_5daed23d139de5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_5daed23d139de5",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_702db6d274e177": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_702db6d274e177",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_d59456dc3e8c1d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_d59456dc3e8c1d",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
