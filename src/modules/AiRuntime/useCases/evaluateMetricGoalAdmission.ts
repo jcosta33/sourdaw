@@ -13,6 +13,7 @@ import { type MetricGoal, type MetricGoalState } from './metricGoalContractTypes
 import { objectiveMetricProjection } from './objectiveMetricProjection';
 import { describePerceptualConstraintFailure } from './perceptualConstraints/describePerceptualConstraintFailure';
 import { perceptualConstraintCriterionMatches } from './perceptualConstraints/perceptualConstraintInvariants';
+import { readGoalPrefix } from './readGoalPrefix';
 
 type AdmissionInput = {
     state: MetricGoalState | null | undefined;
@@ -416,13 +417,7 @@ function evaluateCriterion(
     goal: MetricGoal,
     context: ObservationContext
 ): { criterion: Criterion; failure: Failure | null } {
-    const { binding } = context;
-    let prefix: Binding['prefixes'][number] | undefined = binding.prefixes.find(
-        (entry) => entry.stepId === goal.stepId
-    );
-    if (goal.stepId === 'overall') {
-        prefix = { stepId: 'overall', before: null, after: binding.contentHash };
-    }
+    const prefix = readGoalPrefix(goal, context.binding);
     let values: {
         baseline: number[];
         observed: number[];
