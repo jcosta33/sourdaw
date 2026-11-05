@@ -386,7 +386,8 @@ describe('getProjectContext', () => {
                     ],
                     activeAlternativeId: 'alt-active',
                     alternatives: [
-                        { id: 'alt-active', name: 'Active', clips: [{ id: 'c1' }] },
+                        // Stale stored copy: the active alternative's clips are the track's own `clips`.
+                        { id: 'alt-active', name: 'Active', clips: [{ id: 'c1' }, { id: 'c-deleted' }] },
                         { id: 'alt-hidden', name: 'Hidden take', clips: [{ id: 'c-hidden' }] },
                     ],
                     devices: [

@@ -3,6 +3,7 @@ import { createHandler } from '#/utils/createHandler';
 import { type AppAction } from '#/utils/handlerContract';
 import { runAllAsyncEffects } from '#/utils/runEffects';
 
+import { getAlternativeClips } from '../../models/TrackAlternativeClips';
 import { getVcaGroupsState } from '../../stores/vcaGroupStore';
 import { captureTrackRemovalRuntimeAuthority } from '../../useCases/captureTrackRemovalRuntimeAuthority';
 import { captureTrackRemovalSnapshot } from '../../useCases/captureTrackRemovalSnapshot';
@@ -47,7 +48,7 @@ function currentStateMatches(action: RemoveTrackAction): boolean {
     }
     if (action.payload.expectedAlternativeClipIds !== undefined) {
         const currentAlternativeClipIds = currentTrack.alternatives.flatMap((alternative) =>
-            alternative.clips.map((clip) => clip.id)
+            getAlternativeClips(currentTrack, alternative).map((clip) => clip.id)
         );
         if (
             currentAlternativeClipIds.length !== action.payload.expectedAlternativeClipIds.length ||
