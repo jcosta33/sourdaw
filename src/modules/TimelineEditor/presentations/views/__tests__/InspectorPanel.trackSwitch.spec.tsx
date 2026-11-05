@@ -1,8 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { InspectorPanel } from '../InspectorPanel';
 import { TrackLevelSection } from '../Inspector/TrackLevelSection';
+import { InspectorPanel } from '../InspectorPanel';
 
 import type { Track } from '../../../models/TrackViewTypes';
 
@@ -75,6 +75,9 @@ const makeTrack = (id: string, name: string, gain: number): Track => ({
     inputId: null,
     activeAlternativeId: 'alt-1',
     alternatives: [],
+    vcaGroupId: null,
+    midiOutputTrackId: null,
+    followChordTrack: false,
 });
 
 const trackA = makeTrack('track-a', 'Track A', 0.2);
