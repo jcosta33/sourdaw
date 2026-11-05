@@ -1,5 +1,5 @@
 import { inject } from '#/infra/di/inject';
-import { type MidiNoteOnPayload } from '#/modules/WorkspaceShell/events';
+import { type MidiNoteOnPayload } from '#/modules/MIDI/events';
 
 import { GrandBouleEventBus } from '../grandBouleEventBus';
 

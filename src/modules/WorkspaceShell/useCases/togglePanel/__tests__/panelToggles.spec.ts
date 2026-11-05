@@ -12,7 +12,6 @@ import { cycleChannelStripWidth } from '../panelToggles/cycleChannelStripWidth';
 import { openInspector } from '../panelToggles/openInspector';
 import { openMixer } from '../panelToggles/openMixer';
 import { openVirtualKeyboard } from '../panelToggles/openVirtualKeyboard';
-import { setSnapValue } from '../panelToggles/setSnapValue';
 import { setTrackListWidth } from '../panelToggles/setTrackListWidth';
 import { setVirtualKeyboardOctave } from '../panelToggles/setVirtualKeyboardOctave';
 import { setVirtualKeyboardVelocity } from '../panelToggles/setVirtualKeyboardVelocity';
@@ -101,7 +100,6 @@ describe('panelToggles', () => {
                 { automationPanelOpen: true },
             ],
             ['toggleTrackList', toggleTrackList, () => toggleTrackList(), { trackListOpen: false }],
-            ['setSnapValue', setSnapValue, () => setSnapValue(0.25), { snapValue: 0.25 }],
             [
                 'cycleChannelStripWidth',
                 cycleChannelStripWidth,

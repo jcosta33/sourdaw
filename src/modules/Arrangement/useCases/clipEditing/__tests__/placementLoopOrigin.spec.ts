@@ -3,11 +3,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { midiStore } from '#/modules/MIDI/stores';
 import { projectClipMidiEvents } from '#/modules/MIDI/useCases';
 import { defaultTransportState, playheadPositionRef, transportStore } from '#/modules/Transport/stores';
-import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { isBeatInClipLoopWindow, resolveClipLoopOriginAdvance, resolveClipLoopPassGrid } from '#/utils/clipLoopOrigin';
 
 import { type Clip, createTrack } from '../../../models/Track';
 import { clipboardStore } from '../../../stores/clipboardStore';
+import { defaultTimelineEditingState, timelineEditingStore } from '../../../stores/timelineEditingStore';
 import { defaultTrackState, trackStore } from '../../../stores/trackStore';
 import { duplicateClipCore } from '../../clip/duplicateClipCore';
 import { moveClip } from '../../clip/moveClip';
@@ -169,7 +169,7 @@ describe('placement keeps a looped clip anchored (#4988)', () => {
         });
         trackStore.set(structuredClone(defaultTrackState));
         midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         transportStore.set(defaultTransportState);
         clipboardStore.set({ clipClipboard: [], noteClipboard: null });
         previousPlayhead = playheadPositionRef.current;
@@ -180,7 +180,7 @@ describe('placement keeps a looped clip anchored (#4988)', () => {
         setTimeOperationDependencies(null);
         playheadPositionRef.current = previousPlayhead;
         trackStore.set(structuredClone(defaultTrackState));
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         clipboardStore.set({ clipClipboard: [], noteClipboard: null });
     });
 
@@ -365,7 +365,7 @@ describe('placement keeps a looped clip anchored (#4988)', () => {
             loopedClip({ id: 'c-gone', name: 'Gone', startBeat: 8, endBeat: 16 }),
             loopedClip({ id: 'c-next', name: 'Next', startBeat: 16, endBeat: 24, loopOriginBeat: 16 }),
         ]);
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: true });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: true });
         const plan = planRippleDelete({ trackId: 't-keys', clipIds: ['c-gone'] });
         if (!plan) {
             throw new Error('Expected a ripple delete plan');

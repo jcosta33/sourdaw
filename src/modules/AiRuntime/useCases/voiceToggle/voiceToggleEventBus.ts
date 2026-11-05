@@ -1,6 +1,6 @@
 import { Container } from '#/infra/di/Container';
 
-import type { ToggleVoiceCommandPayload } from '#/modules/WorkspaceShell/events';
+import type { ToggleVoiceCommandPayload } from '#/modules/Command/events';
 
 type VoiceToggleEvents = {
     'voice.toggle': ToggleVoiceCommandPayload;

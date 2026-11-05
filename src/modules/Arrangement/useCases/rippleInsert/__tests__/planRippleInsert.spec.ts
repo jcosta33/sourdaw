@@ -8,13 +8,13 @@ vi.mock('../../getTrackStoreState', () => ({
 }));
 
 const mocks = vi.hoisted(() => ({
-    workspaceStoreValue: { value: null as { rippleEditing: boolean } | null },
+    timelineEditingStoreValue: { value: null as { rippleEditing: boolean } | null },
 }));
 
-vi.mock('#/modules/WorkspaceShell/stores', () => ({
-    workspaceStore: {
+vi.mock('../../../stores/timelineEditingStore', () => ({
+    timelineEditingStore: {
         get value() {
-            return mocks.workspaceStoreValue.value;
+            return mocks.timelineEditingStoreValue.value;
         },
     },
 }));
@@ -25,29 +25,29 @@ describe('planRippleInsert', () => {
     });
 
     it('should return null if ripple editing is disabled', () => {
-        mocks.workspaceStoreValue.value = { rippleEditing: false };
+        mocks.timelineEditingStoreValue.value = { rippleEditing: false };
         expect(planRippleInsert({ trackId: 't1', insertBeat: 0, insertDuration: 1 })).toBeNull();
     });
 
     it('should return null when the workspace store is empty (ripple defaults to off)', () => {
-        mocks.workspaceStoreValue.value = null;
+        mocks.timelineEditingStoreValue.value = null;
         expect(planRippleInsert({ trackId: 't1', insertBeat: 0, insertDuration: 1 })).toBeNull();
     });
 
     it('should return null when the track store is empty', () => {
-        mocks.workspaceStoreValue.value = { rippleEditing: true };
+        mocks.timelineEditingStoreValue.value = { rippleEditing: true };
         vi.mocked(getTrackStoreState).mockReturnValue(null);
         expect(planRippleInsert({ trackId: 't1', insertBeat: 0, insertDuration: 1 })).toBeNull();
     });
 
     it('should return null when the track id is unknown', () => {
-        mocks.workspaceStoreValue.value = { rippleEditing: true };
+        mocks.timelineEditingStoreValue.value = { rippleEditing: true };
         vi.mocked(getTrackStoreState).mockReturnValue({ tracks: [], selectedTrackId: null });
         expect(planRippleInsert({ trackId: 'missing', insertBeat: 0, insertDuration: 1 })).toBeNull();
     });
 
     it('should return shifted clips forward in time from insert point', () => {
-        mocks.workspaceStoreValue.value = { rippleEditing: true };
+        mocks.timelineEditingStoreValue.value = { rippleEditing: true };
         (getTrackStoreState as any).mockReturnValue({
             tracks: [
                 {
@@ -67,7 +67,7 @@ describe('planRippleInsert', () => {
     });
 
     it('should return empty shifted clips if insertion point is at end', () => {
-        mocks.workspaceStoreValue.value = { rippleEditing: true };
+        mocks.timelineEditingStoreValue.value = { rippleEditing: true };
         (getTrackStoreState as any).mockReturnValue({
             tracks: [
                 {

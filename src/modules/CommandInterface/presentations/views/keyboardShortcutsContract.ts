@@ -68,18 +68,34 @@ function preservesNativeTabTraversal(event: KeyboardEvent): boolean {
     );
 }
 
-function preservesNativeButtonActivation(event: KeyboardEvent): boolean {
-    if (
-        (event.key !== 'Enter' && event.key !== ' ') ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.altKey ||
-        event.shiftKey
-    ) {
-        return false;
-    }
-    const target = event.target;
+function isUnmodifiedActivationKey(event: KeyboardEvent): boolean {
+    return (
+        (event.key === 'Enter' || event.key === ' ') &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        !event.shiftKey
+    );
+}
+
+// Only a focused button activates natively; a key event dispatched at any
+// other button is not an activation and still reaches the shortcuts.
+function isFocusedButton(target: EventTarget | null): target is HTMLButtonElement {
     return target instanceof HTMLButtonElement && target.ownerDocument.activeElement === target;
+}
+
+function preservesNativeButtonActivation(event: KeyboardEvent, pointerFocusedButton: Element | null): boolean {
+    return isUnmodifiedActivationKey(event) && isFocusedButton(event.target) && event.target !== pointerFocusedButton;
+}
+
+// Stop returns false so Escape and Enter keep their default elsewhere, which
+// would let Enter also click a mouse-focused button after stopping transport.
+function claimsButtonActivation(event: KeyboardEvent, pointerFocusedButton: Element | null): boolean {
+    return isUnmodifiedActivationKey(event) && isFocusedButton(event.target) && event.target === pointerFocusedButton;
+}
+
+function closestButton(target: EventTarget | null): HTMLButtonElement | null {
+    return target instanceof Element ? target.closest('button') : null;
 }
 
 /**
@@ -87,8 +103,30 @@ function preservesNativeButtonActivation(event: KeyboardEvent): boolean {
  */
 export const useGlobalKeyboardShortcuts = (): void => {
     useEffect(() => {
+        // Only a button that took focus because the pointer pressed it is
+        // mouse-focused. `:focus-visible` cannot tell that from script focus,
+        // autofocus, or focus restoration, which all keep native activation.
+        let pointerPressedButton: HTMLButtonElement | null = null;
+        let pointerFocusedButton: Element | null = null;
+        const pointerdownHandler = (event: PointerEvent) => {
+            pointerPressedButton = closestButton(event.target);
+        };
+        const focusinHandler = (event: FocusEvent) => {
+            const target = event.target;
+            pointerFocusedButton = target instanceof Element && target === pointerPressedButton ? target : null;
+            pointerPressedButton = null;
+        };
+        const focusoutHandler = (event: FocusEvent) => {
+            if (event.target === pointerFocusedButton) {
+                pointerFocusedButton = null;
+            }
+        };
         const handler = (event: KeyboardEvent) => {
-            if (preservesNativeTabTraversal(event) || preservesNativeButtonActivation(event)) {
+            pointerPressedButton = null;
+            if (event.key === 'Tab') {
+                pointerFocusedButton = null;
+            }
+            if (preservesNativeTabTraversal(event) || preservesNativeButtonActivation(event, pointerFocusedButton)) {
                 return;
             }
             // A load that replaced the CRDT authority and then failed leaves the
@@ -163,7 +201,7 @@ export const useGlobalKeyboardShortcuts = (): void => {
                 keyTarget,
             });
 
-            if (shouldPreventDefault) {
+            if (shouldPreventDefault || (!isTextEntry && claimsButtonActivation(event, pointerFocusedButton))) {
                 event.preventDefault();
             }
         };
@@ -173,10 +211,16 @@ export const useGlobalKeyboardShortcuts = (): void => {
         };
 
         void loadKeyboardLayoutMap();
+        window.addEventListener('pointerdown', pointerdownHandler, true);
+        window.addEventListener('focusin', focusinHandler, true);
+        window.addEventListener('focusout', focusoutHandler, true);
         window.addEventListener('keydown', handler);
         window.addEventListener('keyup', keyupHandler);
 
         return () => {
+            window.removeEventListener('pointerdown', pointerdownHandler, true);
+            window.removeEventListener('focusin', focusinHandler, true);
+            window.removeEventListener('focusout', focusoutHandler, true);
             window.removeEventListener('keydown', handler);
             window.removeEventListener('keyup', keyupHandler);
         };

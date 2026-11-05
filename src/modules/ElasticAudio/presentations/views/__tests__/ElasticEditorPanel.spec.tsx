@@ -20,8 +20,7 @@ const mocks = vi.hoisted(() => {
         ],
         selectedTrackId: 't1',
     };
-    const workspaceStoreValue: { selectedClipId: string | null; snapValue: number } = {
-        selectedClipId: 'c1',
+    const timelineEditingValue: { snapValue: number } = {
         snapValue: 0.25,
     };
     const clipSelectionValue: { selectedClipId: string | null; selectedClipIds: string[]; marqueeSelection: null } = {
@@ -61,7 +60,7 @@ const mocks = vi.hoisted(() => {
         setDefaultAlgorithm: vi.fn(),
         getWaveformPeaks: vi.fn((..._args: unknown[]) => new Float32Array(200).fill(0.3)),
         trackStoreValue,
-        workspaceStoreValue,
+        timelineEditingValue,
         clipSelectionValue,
         elasticStoreValue,
         warpStates: new Map<
@@ -110,8 +109,8 @@ vi.mock('#/infra/store/useStore', async (importOriginal) => {
             if (marker === 'track') {
                 return mocks.trackStoreValue;
             }
-            if (marker === 'workspace') {
-                return mocks.workspaceStoreValue;
+            if (marker === 'timeline-editing') {
+                return mocks.timelineEditingValue;
             }
             if (marker === 'clip-selection') {
                 return mocks.clipSelectionValue;
@@ -132,6 +131,8 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     return {
         ...actual,
         clipSelectionStore: { __kind: 'clip-selection' },
+        timelineEditingStore: { __kind: 'timeline-editing' },
+        defaultTimelineEditingState: { snapValue: 1 },
         trackStore: {
             __kind: 'track',
             subscribe: vi.fn<TrackStoreSubscribe>((_callback) => () => {}),
@@ -162,15 +163,6 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
         commitWarpMarkerBeatDrag: (...args: unknown[]) => {
             mocks.commitWarpMarkerBeatDrag(...args);
         },
-    };
-});
-
-vi.mock('#/modules/WorkspaceShell/stores', async (importOriginal) => {
-    const actual = await importOriginal<Record<string, unknown>>();
-    return {
-        ...actual,
-        workspaceStore: { __kind: 'workspace' },
-        defaultWorkspaceState: { selectedClipId: null, snapValue: 1 },
     };
 });
 
@@ -264,7 +256,7 @@ describe('ElasticEditorPanel', () => {
             tracks: [{ id: 't1', clips: [{ id: 'c1', type: 'audio', audioBufferId: 'buf-1' }] }],
             selectedTrackId: 't1',
         };
-        mocks.workspaceStoreValue = { selectedClipId: 'c1', snapValue: 0.25 };
+        mocks.timelineEditingValue = { snapValue: 0.25 };
         mocks.clipSelectionValue = { selectedClipId: 'c1', selectedClipIds: [], marqueeSelection: null };
         mocks.elasticStoreValue = {
             openClipId: 'c1',
@@ -507,7 +499,7 @@ describe('ElasticEditorPanel', () => {
     });
 
     it('shows an empty state when no audio clip is selected', () => {
-        mocks.workspaceStoreValue = { selectedClipId: null, snapValue: 0.25 };
+        mocks.timelineEditingValue = { snapValue: 0.25 };
         mocks.clipSelectionValue = { selectedClipId: null, selectedClipIds: [], marqueeSelection: null };
         mocks.elasticStoreValue = {
             openClipId: null,
@@ -531,7 +523,7 @@ describe('ElasticEditorPanel', () => {
             tracks: [{ id: 't1', clips: [{ id: 'cmidi', type: 'midi', audioBufferId: undefined }] }],
             selectedTrackId: 't1',
         };
-        mocks.workspaceStoreValue = { selectedClipId: 'cmidi', snapValue: 0.25 };
+        mocks.timelineEditingValue = { snapValue: 0.25 };
         mocks.clipSelectionValue = { selectedClipId: 'cmidi', selectedClipIds: [], marqueeSelection: null };
         mocks.elasticStoreValue = {
             openClipId: null,

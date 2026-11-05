@@ -68,6 +68,7 @@ const registerScheduledSourceMock = vi.hoisted(() => vi.fn<(node: AudioScheduled
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     activeRecordingRef: { current: [] },
+    timelineEditingStore: { value: null },
     trackStore: { value: { tracks: [] } },
     // Pulled in transitively: the real MIDI use-case barrel below reaches
     // Levain's param bridge, whose dependency bundle destructures these off

@@ -9,9 +9,11 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import {
+    defaultTimelineEditingState,
     gainEnvelopeStore,
     sampleGainEnvelopeSeries,
     takeLaneStore,
+    timelineEditingStore,
     trackStore,
     warpStateStore,
     type Clip,
@@ -57,7 +59,6 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { productionBriefActionBatchAdmission } from '#/modules/Project/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
-import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import {
     type ConfirmPayload,
@@ -271,7 +272,7 @@ describe('audio split gain identity with production repair admission and saved h
         automationStore.set({ lanes: [] });
         midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         actionHistoryStore.set({ entries: [] });
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         const audio: Clip = {
             id: LEFT,
             trackId: 'audio-track',
