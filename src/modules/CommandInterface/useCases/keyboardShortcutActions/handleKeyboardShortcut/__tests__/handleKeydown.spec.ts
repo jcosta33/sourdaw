@@ -1456,31 +1456,49 @@ describe('handleKeydown', () => {
             shortcutStoreMock.value.definitions = realState.definitions;
         };
 
+        const appAction = (type: string) => () =>
+            expect(executeUserAppAction).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type }));
+        const called = (mock: unknown) => () => expect(mock).toHaveBeenCalledTimes(1);
+
         it.each([
-            ['transport.togglePlayback', { key: ' ' }],
-            ['transport.toggleMetronome', { key: 'm' }],
-            ['transport.toggleRecording', { key: 'r' }],
-            ['transport.toggleLoop', { key: 'l' }],
-            ['transport.panicAllNotes', { key: 'Escape', shift: true }],
-            ['editing.undo', { key: 'z', mod: true }],
-            ['editing.redo', { key: 'z', mod: true, shift: true }],
-            ['project.saveProject', { key: 's', mod: true }],
-            ['project.openExportDialog', { key: 'e', mod: true, shift: true }],
-            ['project.openPreferencesDialog', { key: ',', mod: true }],
-            ['workspace.toggleCommandPalette', { key: 'k', mod: true }],
-            ['workspace.toggleSidebar', { key: 'b', mod: true }],
-            ['workspace.toggleInspector', { key: 'i', mod: true }],
-            ['workspace.toggleMixer', { key: 'm', mod: true }],
-            ['workspace.toggleChatPanel', { key: 'j', mod: true }],
-            ['workspace.toggleTrackList', { key: 't', mod: true }],
-            ['workspace.toggleVirtualKeyboard', { key: 'k', mod: true, shift: true }],
-            ['workspace.showAutomationPanel', { key: 'a', mod: true, shift: true }],
-        ] as const)('dispatches %s from a focused note editor', (_id, keys) => {
+            ['transport.togglePlayback', { key: ' ' }, appAction('togglePlayback')],
+            ['transport.toggleMetronome', { key: 'm' }, appAction('toggleMetronome')],
+            ['transport.toggleRecording', { key: 'r' }, appAction('toggleRecording')],
+            ['transport.toggleLoop', { key: 'l' }, appAction('toggleLoop')],
+            ['transport.panicAllNotes', { key: 'Escape', shift: true }, called(panicAllNotesMock)],
+            ['editing.undo', { key: 'z', mod: true }, called(undo)],
+            ['editing.redo', { key: 'z', mod: true, shift: true }, called(redo)],
+            ['project.saveProject', { key: 's', mod: true }, appAction('saveProject')],
+            ['project.openExportDialog', { key: 'e', mod: true, shift: true }, called(openExportDialog)],
+            ['project.openPreferencesDialog', { key: ',', mod: true }, called(openPreferencesDialog)],
+            ['workspace.toggleCommandPalette', { key: 'k', mod: true }, called(toggleCommandPalette)],
+            ['workspace.toggleSidebar', { key: 'b', mod: true }, appAction('toggleSidebar')],
+            ['workspace.toggleInspector', { key: 'i', mod: true }, appAction('toggleInspector')],
+            ['workspace.toggleMixer', { key: 'm', mod: true }, called(toggleMixer)],
+            ['workspace.toggleChatPanel', { key: 'j', mod: true }, appAction('toggleChatPanel')],
+            ['workspace.toggleTrackList', { key: 't', mod: true }, called(toggleTrackList)],
+            ['workspace.toggleVirtualKeyboard', { key: 'k', mod: true, shift: true }, called(toggleVirtualKeyboard)],
+            [
+                'workspace.showAutomationPanel',
+                { key: 'a', mod: true, shift: true },
+                () => expect(showDevicePanel).toHaveBeenCalledExactlyOnceWith('automation', null),
+            ],
+        ] as const)('dispatches %s from a focused note editor', (_id, keys, expectEffect) => {
             loadShippedDefinitions();
 
             const prevent = handleKeydown(descriptor({ ...keys, keyTarget: 'noteEditor' }));
 
             expect(prevent).toBe(true);
+            expectEffect();
+        });
+
+        it('swallows a held repeat of an admitted toggle without running it again', () => {
+            loadShippedDefinitions();
+
+            const prevent = handleKeydown(descriptor({ key: ' ', repeat: true, keyTarget: 'noteEditor' }));
+
+            expect(prevent).toBe(true);
+            expect(executeUserAppAction).not.toHaveBeenCalled();
         });
 
         it.each([
