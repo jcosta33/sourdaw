@@ -86,8 +86,11 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
             );
         }
         if (selectedTrack) {
+            // Keyed by track id: every section keeps local preview and gesture state
+            // that belongs to the track it started on, so a switch must remount them.
             return (
                 <TrackInspector
+                    key={selectedTrack.id}
                     track={selectedTrack}
                     allTracks={tracks}
                     onSelectClip={selectClipWithFocus}
@@ -98,6 +101,7 @@ export const InspectorPanel = ({ style }: InspectorPanelProps): ReactElement => 
         if (masterTrack) {
             return (
                 <TrackInspector
+                    key={masterTrack.id}
                     track={masterTrack}
                     allTracks={tracks}
                     onSelectClip={selectClipWithFocus}

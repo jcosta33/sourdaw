@@ -38,7 +38,7 @@ export const TrackInspector = ({
     return (
         <Stack gap={4} className="p-3">
             <TrackHeaderSection track={track} />
-            <TrackRoleSection key={track.id} track={track} />
+            <TrackRoleSection track={track} />
             <TrackAlternativesSection track={track} />
             <TrackLevelSection track={track} />
             <TrackMidiFxSection track={track} />
