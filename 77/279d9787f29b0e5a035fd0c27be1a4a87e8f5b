@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/__tests__/metricGoalPreviewRenders.spec.ts
+  s_26fe10f5fe6f8b::t_893b4baab63d5f 393-424
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "77279d9787f29b0e5a035fd0c27be1a4a87e8f5b",
+  "prompts": {},
+  "sessions": {
+    "s_26fe10f5fe6f8b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_26fe10f5fe6f8b",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
