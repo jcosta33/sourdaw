@@ -507,6 +507,28 @@ describe('excluded dimensions', () => {
             actions: [{ type: 'addAutomationPoint', payload: { laneId: 'ghost-lane', beat: 0, value: 0.8 } }],
             reason: 'command 1 (addAutomationPoint automation) changes a track the batch does not name in a way the application cannot show leaves its ambience alone',
         },
+        {
+            label: 'a lane whose parameter id names neither the channel, a send nor a device parameter',
+            prompt: intimate,
+            actions: [
+                {
+                    type: 'addAutomationLane',
+                    payload: { trackId: 'vocal', parameterId: 'width', parameterName: 'Width', laneId: 'width-lane' },
+                },
+            ],
+            reason: 'command 1 (addAutomationLane width) changes “Vocal” in a way the application cannot show leaves its ambience alone',
+        },
+        {
+            label: 'send automation from the vocal',
+            prompt: intimate,
+            actions: [
+                {
+                    type: 'automateSendRange',
+                    payload: { trackIds: ['vocal'], busId: 'verb-bus', sectionName: 'Chorus', reductionDb: 3 },
+                },
+            ],
+            reason: 'command 1 (automateSendRange send automation) edits the ambience of “Vocal”',
+        },
     ] satisfies { label: string; prompt: string; actions: AppAction[]; reason: string }[])(
         'refuses $label',
         ({ prompt, actions, reason }) => {
@@ -535,8 +557,36 @@ describe('excluded dimensions', () => {
             ],
         ],
         ['scaling the fader lane', [{ type: 'scaleAutomation', payload: { laneId: 'vocal-gain-lane', factor: 0.5 } }]],
+        [
+            'a new pan lane and its point',
+            [
+                {
+                    type: 'addAutomationLane',
+                    payload: { trackId: 'vocal', parameterId: 'pan', parameterName: 'Pan', laneId: 'pan-lane' },
+                },
+                { type: 'addAutomationPoint', payload: { laneId: 'pan-lane', beat: 0, value: 0.5 } },
+            ],
+        ],
     ] satisfies [string, AppAction[]][])('admits %s under "keep the vocal intimate"', (_label, actions) => {
         expect(() => compile(intimate, actions, { context: lanes() })).not.toThrow();
+    });
+
+    // Read straight from the edit reader: these edits name devices and buses the store fixture does not hold.
+    it.each([
+        [
+            'a compressor added to the vocal',
+            { type: 'addDevice', payload: { trackId: 'vocal', deviceType: 'builtin-compressor' } },
+        ],
+        [
+            'moving a vocal clip',
+            { type: 'moveClip', payload: { clipId: 'vocal-clip', trackId: 'vocal', startBeat: 4 } },
+        ],
+        [
+            'a sidechain between tracks the vocal never reaches',
+            { type: 'addSidechainRoute', payload: { sourceTrackId: 'bass', targetTrackId: 'verb-bus' } },
+        ],
+    ] satisfies [string, AppAction][])('admits %s under "keep the vocal intimate"', (_label, action) => {
+        expect(readExcludedEdit(intimate, [action], getProjectContext())).toBeNull();
     });
 
     describe('the buses a scoped track sounds through', () => {
