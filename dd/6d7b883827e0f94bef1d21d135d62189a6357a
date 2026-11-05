@@ -1,0 +1,171 @@
+src/modules/AiRuntime/useCases/__tests__/perceptualConstraints.spec.ts
+  s_55244eb93b97d1::t_328e09b2528bbd 18
+  s_55244eb93b97d1::t_4ffbf441a225c7 738-762
+  s_55244eb93b97d1::t_a8c67b06a483ad 142-156
+  s_55244eb93b97d1::t_e615c9d1456bfe 256
+  s_55244eb93b97d1::t_f536015ae64ec1 439-444
+  s_55244eb93b97d1::t_4c0b1b7ba7bf6a 445-509,511,534-536,538-554,556-557,689
+  s_55244eb93b97d1::t_033568d3dd1966 510
+  s_55244eb93b97d1::t_2bb86a2c8e7722 555
+  s_55244eb93b97d1::t_2feae0323b1bef 5-6
+  s_0314bb17e5dee3::t_1775679ad5c44d 558-561,572,690
+  s_55244eb93b97d1::t_34ef5ef8441271 574,674-687
+  s_55244eb93b97d1::t_6f7b9f37ab0a18 202-208,212,218-219
+  s_55244eb93b97d1::t_227dc7584973bd 537
+  s_55244eb93b97d1::t_52066bf6c270a8 573
+  s_55244eb93b97d1::t_f457d589a04001 575
+  s_55244eb93b97d1::t_b2ad4592533735 688
+  s_55244eb93b97d1::t_e2b114521ad6e8 856
+  s_55244eb93b97d1::t_4428bb2efcfd96 157-201
+  s_55244eb93b97d1::t_bd186e3beb7e4d 594-600,603-609,611-646,659-671
+  s_55244eb93b97d1::t_ef269255a2aa86 22
+  s_55244eb93b97d1::t_eb86607753a28a 672-673
+  s_97322c2ce2e01c::t_16f3e6dd011c01 512-533,562-571,576-593
+  s_55244eb93b97d1::t_c93b3b90ae7320 380-381,386
+src/modules/AiRuntime/useCases/groundCompiledCommandBatch.ts
+  s_55244eb93b97d1::t_c32f41c6428634 470-471,478,480-486
+  s_55244eb93b97d1::t_4efeca355dbc5a 33
+  s_55244eb93b97d1::t_a0dca2c8a1e393 34
+  s_55244eb93b97d1::t_9043304fde81c5 234-244,248-249,251
+  s_55244eb93b97d1::t_e18da43b9a5b10 8
+  s_55244eb93b97d1::t_c8f5e46a35efe6 472-477,479,487
+  s_55244eb93b97d1::t_3c367174355537 376-380
+src/modules/AiRuntime/useCases/planWholeProjectVibeRun.ts
+  s_55244eb93b97d1::t_49498977d0418b 22
+src/modules/AiRuntime/useCases/planLastCommitContinuation.ts
+  s_55244eb93b97d1::t_89434837412d3c 10
+  s_55244eb93b97d1::t_b53ef5cb99bfdc 141
+  s_55244eb93b97d1::t_ae2555afe02b58 168
+src/modules/AiRuntime/useCases/perceptualConstraints/describePerceptualConstraintFailure.ts
+  s_55244eb93b97d1::t_91833345f0db9d 10
+  s_55244eb93b97d1::t_3a371df9831cad 1-2
+src/modules/AiRuntime/useCases/perceptualConstraints/compilePerceptualConstraints.ts
+  s_55244eb93b97d1::t_d771ed9dd54bda 8,12-13
+  s_55244eb93b97d1::t_6634b16d3eeea8 242-244
+  s_55244eb93b97d1::t_7c5436553dd6aa 248
+  s_55244eb93b97d1::t_eef31ef4160af9 10
+src/modules/AiRuntime/useCases/admitPerceptualGoalDecline.ts
+  s_55244eb93b97d1::t_8b3cd8558a8b5b 47
+  s_55244eb93b97d1::t_f2137e33ab4efd 21
+src/modules/AiRuntime/useCases/maskTrackReferences.ts
+  s_55244eb93b97d1::t_902e94ccc7fe10 1-23
+src/utils/Math/roundToThousandths.ts
+  s_55244eb93b97d1::t_a3c492303852a1 1-4
+src/modules/AiRuntime/useCases/perceptualConstraints/findExcludedDimensionEdit.ts
+  s_55244eb93b97d1::t_38a4291d8c96a5 84-88
+  s_55244eb93b97d1::t_3271d788a857bf 168
+  s_55244eb93b97d1::t_0d51b604a1bf60 261,263,265
+  s_55244eb93b97d1::t_af4aac1cba36a8 3
+  s_55244eb93b97d1::t_bd38cd6f10caab 55-60
+  s_55244eb93b97d1::t_d397a4a52e0892 1,7,9-17,19,34-48,117,121-153,156-167,169-176,179-201,203-214,219,230,233,240-258,260,262,264,266,269-271,275-286,341-349,384,389
+  s_55244eb93b97d1::t_cb758e68189e83 259
+  s_0314bb17e5dee3::t_eb20625f7a7491 215-218,220,267-268,385,390
+  s_55244eb93b97d1::t_af67edf530fccc 375-377,379-380,386
+  s_55244eb93b97d1::t_aca17d251dbc64 289-317,321-328,330-331
+  s_55244eb93b97d1::t_cbbcf482c99b04 318-320
+  s_55244eb93b97d1::t_18f7b5c3e9d269 112-116
+  s_55244eb93b97d1::t_ec8084446001ba 202
+  s_55244eb93b97d1::t_50abfb0a064d1c 350-361
+  s_55244eb93b97d1::t_b7ffa827dbf638 378
+src/modules/AiRuntime/useCases/canonicalRoleFamilies.ts
+  s_55244eb93b97d1::t_46617e61f86861 3
+  s_fec7059b7a251c::t_17e0b841609a21 51-58
+src/modules/AiRuntime/useCases/agentReference/proposalGroundingBasis.ts
+  s_55244eb93b97d1::t_e12307cf8ed45e 43,47-54
+  s_55244eb93b97d1::t_21aa035e9c9ec1 8
+src/modules/AiRuntime/useCases/compileAgentActionExecution.ts
+  s_55244eb93b97d1::t_7c8b21dbdc1146 87
+  s_55244eb93b97d1::t_78540cbb214e5c 95-99
+  s_55244eb93b97d1::t_e3b5908389202a 5
+  s_55244eb93b97d1::t_5dd0f0dabab478 13
+  s_55244eb93b97d1::t_257cea0d78a561 26-27
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_55244eb93b97d1::t_7172e325df620c 398
+src/modules/AiRuntime/useCases/perceptualConstraints/readRequestPerceptualConstraints.ts
+  s_55244eb93b97d1::t_c77d55fbf62217 1-19
+src/modules/AiRuntime/useCases/__tests__/refinePendingProposal.spec.ts
+  s_55244eb93b97d1::t_21da99426f1745 815-826,829,832-867,869-879,885-896,898
+  s_55244eb93b97d1::t_32c1f60f6464ea 47
+  s_55244eb93b97d1::t_65c281cd848dc1 274-275
+  s_55244eb93b97d1::t_c8f70353d9302d 827-828
+  s_55244eb93b97d1::t_de5bd2d3c2e9e6 899
+  s_55244eb93b97d1::t_c9d4e41f1e8722 830-831
+  s_55244eb93b97d1::t_30a1d5316bb865 897
+  s_55244eb93b97d1::t_7fc7faf57971ac 868
+  s_55244eb93b97d1::t_226f871eb02908 880-884
+src/modules/AiRuntime/transformers/unionPerceptualConstraintReadings.ts
+  s_55244eb93b97d1::t_f52c954df806d2 1-29
+src/modules/AiRuntime/models/ProposalGroundingBasis.ts
+  s_55244eb93b97d1::t_1be7acbf408001 1-2
+  s_55244eb93b97d1::t_f9be11f5a6feb4 54-58
+src/modules/AiRuntime/useCases/compilePreviewMeasurementProposal.ts
+  s_55244eb93b97d1::t_4beabe6960256d 157-161
+  s_55244eb93b97d1::t_b1b44f86a74b34 6
+  s_55244eb93b97d1::t_c5c3216b6e7cc7 23
+  s_55244eb93b97d1::t_3aa5d605ac1676 40-41
+src/modules/AiRuntime/useCases/perceptualConstraints/withPerceptualConstraintAuthority.ts
+  s_55244eb93b97d1::t_078d4e29655cd8 58-64,91
+  s_55244eb93b97d1::t_2a494eb7c1d06a 71
+  s_55244eb93b97d1::t_83a79ec7ce8513 65-66
+  s_55244eb93b97d1::t_dcdb879e41eb2e 67-70
+  s_55244eb93b97d1::t_7e0908ecdf733d 72-74
+  s_55244eb93b97d1::t_74d4a4166eb374 88-90
+  s_55244eb93b97d1::t_f8ff9c4db60a4e 92
+  s_55244eb93b97d1::t_d23f5c95e5a116 79
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_55244eb93b97d1::t_035f4d941b3c5f 1972
+src/modules/AiRuntime/useCases/agentRequestOrchestration/materializePromptCommandPlan.ts
+  s_55244eb93b97d1::t_be01485c67f2ab 165
+src/modules/AiRuntime/AGENTS.md
+  s_55244eb93b97d1::t_96cfa229a732ee 41
+  s_55244eb93b97d1::t_0cae83e4b9c4f6 23,31,40
+src/modules/AiRuntime/useCases/evaluateMetricGoalAdmission.ts
+  s_55244eb93b97d1::t_750f50d6e83613 530-531
+  s_55244eb93b97d1::t_6c983b1402aac3 528-529
+release/open-source-inventory.json
+  s_55244eb93b97d1::t_a44246822ba79f 1556
+  s_55244eb93b97d1::t_87e298a4885203 2743
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_55244eb93b97d1::t_71e1c0dd8be13d 568-569
+  s_55244eb93b97d1::t_1e1d97dc66d4c1 564-567,570
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dd6d7b883827e0f94bef1d21d135d62189a6357a",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_97322c2ce2e01c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_97322c2ce2e01c",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
