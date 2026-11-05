@@ -1,5 +1,4 @@
-import { workspaceStore } from '#/modules/WorkspaceShell/stores';
-
+import { timelineEditingStore } from '../../stores/timelineEditingStore';
 import { getTrackStoreState } from '../getTrackStoreState';
 
 type ClipShift = {
@@ -38,7 +37,7 @@ export function planRippleMove({
     newStartBeat,
     clipDuration,
 }: PlanRippleMoveInput): RippleMovePlan | null {
-    const rippleEnabled = workspaceStore.value?.rippleEditing ?? false;
+    const rippleEnabled = timelineEditingStore.value?.rippleEditing ?? false;
     if (!rippleEnabled) {
         return null;
     }

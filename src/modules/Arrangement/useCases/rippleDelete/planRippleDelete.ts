@@ -1,7 +1,7 @@
-import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
 import { type ClipSnapshot } from '#/utils/handlerContract';
 
+import { timelineEditingStore } from '../../stores/timelineEditingStore';
 import { type Clip } from '../../stores/trackStore';
 import { relocateAudioSourceTimeFields } from '../clip/relocateAudioSourceTimeFields';
 import { getTrackStoreState } from '../getTrackStoreState';
@@ -77,7 +77,7 @@ export function planRippleDelete(
         }
     }
     const gap = deleteEnd - deleteStart;
-    const rippleEnabled = ripple ?? workspaceStore.value?.rippleEditing ?? false;
+    const rippleEnabled = ripple ?? timelineEditingStore.value?.rippleEditing ?? false;
     const shiftedClips: RippleDeleteShift[] = [];
 
     const nextClips = track.clips.reduce<RippleDeleteClip[]>((accumulator, clip) => {

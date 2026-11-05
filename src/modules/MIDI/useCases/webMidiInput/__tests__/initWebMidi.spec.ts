@@ -74,6 +74,7 @@ vi.mock('#/infra/di/Container', () => ({
 vi.mock('#/modules/Arrangement/stores', () => ({
     persistDeviceParam: vi.fn(),
     activeRecordingRef: { current: [] },
+    timelineEditingStore: { value: null },
     getTrackEligibility: vi.fn(),
     resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
         () => ({ status: 'ineligible' })

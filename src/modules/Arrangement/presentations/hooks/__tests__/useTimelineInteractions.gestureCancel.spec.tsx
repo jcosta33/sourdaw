@@ -90,6 +90,15 @@ vi.mock('#/modules/WorkspaceShell/stores', async (importOriginal) => ({
         },
     },
 }));
+// One fixture carries both the active tool (workspace) and the
+// automation-visibility field (timeline editing), so each case seeds both.
+vi.mock('../../../stores/timelineEditingStore', () => ({
+    timelineEditingStore: {
+        get value() {
+            return mocks.workspaceStoreValue.value;
+        },
+    },
+}));
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     setWorkspaceMode: mocks.setWorkspaceMode,
 }));

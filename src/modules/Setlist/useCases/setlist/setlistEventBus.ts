@@ -1,4 +1,4 @@
-import type { MidiOutPayload } from '#/modules/WorkspaceShell/events';
+import type { MidiOutPayload } from '#/modules/MIDI/events';
 
 type SetlistEvents = {
     'midi.out': MidiOutPayload;

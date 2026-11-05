@@ -19,7 +19,6 @@ describe('defaultWorkspaceState', () => {
     it('should expose default panel dimensions', () => {
         expect(defaultWorkspaceState.sidebarWidth).toBe(224);
         expect(defaultWorkspaceState.inspectorWidth).toBe(256);
-        expect(defaultWorkspaceState.snapValue).toBe(1);
         expect(defaultWorkspaceState.virtualKeyboardOctave).toBe(4);
         expect(defaultWorkspaceState.virtualKeyboardVelocity).toBe(100);
     });

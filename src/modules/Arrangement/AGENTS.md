@@ -11,6 +11,7 @@ Public surface: `useCases/index.ts`, `stores/index.ts`, `events/index.ts`, `pres
 - **Track & Clip Aggregate:** `trackStore` maintains the hierarchical track list (audio, MIDI, bus, folder, return), device chains, and clip placements.
 - **Audibility Projection:** `deriveEffectiveAudibility` projects authoritative solo/mute states into per-track audibility maps consumed by the offline renderer and mixer UI without duplicating logic.
 - **Solo Mode:** `soloModeStore` holds the session's SIP/AFL/PFL mode beside the solo logic that reads it; live playback and offline render read it from here. `setSoloMode` is its only writer, and `syncSoloModePreference` mirrors the persisted Preferences `soloMode` into it. The store itself is memory-only.
+- **Timeline Editing State:** `timelineEditingStore` holds ripple mode, the snap grid, automation lane visibility and the inline automation sub-lanes, beside the ripple planners, the sub-lane hit test and the transient quantizer that read it. `toggleRippleEditing`, `setSnapValue` and `setAutomationSubLanes` are its writers; WorkspaceShell's toolbar and app-action entry points call them and never write the store. The store is memory-only session state.
 - **Freeze & Bounce Pipeline:** Tracks offline freeze/bounce state and invalidation staleness (`initStalenessDetection`, `cleanupUnusedFreezeFiles`).
 - **Comping & Take Management:** Multi-take slicing and comp region resolution (`resolveClipsWithComping`).
 - **Adjustment Layers & Scratch Pad:** Non-destructive bus-level effect overlays and sandbox arrangement sections.

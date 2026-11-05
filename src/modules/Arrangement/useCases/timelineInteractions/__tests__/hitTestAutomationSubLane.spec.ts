@@ -3,14 +3,19 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { type TimelineRenderModel } from '../../../models/TimelineRenderModel';
 import { hitTestAutomationSubLane } from '../hitTestAutomationSubLane';
 
-const { mockTimelineViewValue, mockTrackValue, mockWorkspaceValue, mockAutomationValue, mockBuildTimelineRenderModel } =
-    vi.hoisted(() => ({
-        mockTimelineViewValue: { value: null } as any,
-        mockTrackValue: { value: null } as any,
-        mockWorkspaceValue: { value: null } as any,
-        mockAutomationValue: { value: null } as any,
-        mockBuildTimelineRenderModel: vi.fn(),
-    }));
+const {
+    mockTimelineViewValue,
+    mockTrackValue,
+    mockTimelineEditingValue,
+    mockAutomationValue,
+    mockBuildTimelineRenderModel,
+} = vi.hoisted(() => ({
+    mockTimelineViewValue: { value: null } as any,
+    mockTrackValue: { value: null } as any,
+    mockTimelineEditingValue: { value: null } as any,
+    mockAutomationValue: { value: null } as any,
+    mockBuildTimelineRenderModel: vi.fn(),
+}));
 
 vi.mock('../../../stores/timelineViewStore', () => ({
     timelineViewStore: {
@@ -28,17 +33,13 @@ vi.mock('../../../stores/trackStore', () => ({
     },
 }));
 
-vi.mock('#/modules/WorkspaceShell/stores', async (importOriginal) => {
-    const actual = await importOriginal<any>();
-    return {
-        ...actual,
-        workspaceStore: {
-            get value() {
-                return mockWorkspaceValue.value;
-            },
+vi.mock('../../../stores/timelineEditingStore', () => ({
+    timelineEditingStore: {
+        get value() {
+            return mockTimelineEditingValue.value;
         },
-    };
-});
+    },
+}));
 
 vi.mock('#/modules/Automation/stores', async (importOriginal) => {
     const actual = await importOriginal<any>();
@@ -60,7 +61,7 @@ describe('hitTestAutomationSubLane', () => {
     beforeEach(() => {
         mockTimelineViewValue.value = null;
         mockTrackValue.value = null;
-        mockWorkspaceValue.value = null;
+        mockTimelineEditingValue.value = null;
         mockAutomationValue.value = null;
         mockBuildTimelineRenderModel.mockReset();
     });
@@ -99,7 +100,7 @@ describe('hitTestAutomationSubLane', () => {
 
         mockTimelineViewValue.value = { pixelsPerBeat: 10, scrollX: 0, scrollY: 0 };
         mockTrackValue.value = { tracks: [], selectedTrackId: null };
-        mockWorkspaceValue.value = {
+        mockTimelineEditingValue.value = {
             automationVisibility: 'overlay',
             automationSubLanes: { t1: ['gain'] },
         };
@@ -133,7 +134,7 @@ describe('hitTestAutomationSubLane', () => {
     it('returns null when automation is hidden', () => {
         mockTimelineViewValue.value = { pixelsPerBeat: 10, scrollX: 0, scrollY: 0 };
         mockTrackValue.value = { tracks: [], selectedTrackId: null };
-        mockWorkspaceValue.value = {
+        mockTimelineEditingValue.value = {
             automationVisibility: 'hidden',
             automationSubLanes: {},
         };
@@ -146,7 +147,7 @@ describe('hitTestAutomationSubLane', () => {
     it('returns null when the render model cannot be built even though automation is visible', () => {
         mockTimelineViewValue.value = { pixelsPerBeat: 10, scrollX: 0, scrollY: 0 };
         mockTrackValue.value = { tracks: [], selectedTrackId: null };
-        mockWorkspaceValue.value = {
+        mockTimelineEditingValue.value = {
             automationVisibility: 'overlay',
             automationSubLanes: { t1: ['gain'] },
         };
@@ -190,7 +191,7 @@ describe('hitTestAutomationSubLane', () => {
         mockTimelineViewValue.value = { pixelsPerBeat: 10, scrollX: 0, scrollY: 0 };
         mockTrackValue.value = { tracks: [], selectedTrackId: null };
         // Track t1 has no entry in the sub-lane map -> falls back to an empty list.
-        mockWorkspaceValue.value = {
+        mockTimelineEditingValue.value = {
             automationVisibility: 'overlay',
             automationSubLanes: {},
         };
@@ -234,7 +235,7 @@ describe('hitTestAutomationSubLane', () => {
         };
         mockTimelineViewValue.value = { pixelsPerBeat: 10, scrollX: 0, scrollY: 0 };
         mockTrackValue.value = { tracks: [], selectedTrackId: null };
-        mockWorkspaceValue.value = {
+        mockTimelineEditingValue.value = {
             automationVisibility: 'overlay',
             automationSubLanes: { t1: ['gain'] },
         };
@@ -279,7 +280,7 @@ describe('hitTestAutomationSubLane', () => {
         };
         mockTimelineViewValue.value = { pixelsPerBeat: 10, scrollX: 0, scrollY: 0 };
         mockTrackValue.value = { tracks: [], selectedTrackId: null };
-        mockWorkspaceValue.value = {
+        mockTimelineEditingValue.value = {
             automationVisibility: 'overlay',
             automationSubLanes: { t1: ['gain'] },
         };
@@ -327,7 +328,7 @@ describe('hitTestAutomationSubLane', () => {
         } satisfies TimelineRenderModel);
         mockTimelineViewValue.value = { pixelsPerBeat: 10, scrollX: 0, scrollY: 0 };
         mockTrackValue.value = { tracks: [], selectedTrackId: null };
-        mockWorkspaceValue.value = { automationVisibility: 'overlay', automationSubLanes: { t1: ['gain'] } };
+        mockTimelineEditingValue.value = { automationVisibility: 'overlay', automationSubLanes: { t1: ['gain'] } };
         mockAutomationValue.value = {
             lanes: [{ id: 'lane-1', trackId: 't1', parameterId: 'gain', points: [], objects: [] }],
         };

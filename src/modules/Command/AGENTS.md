@@ -4,7 +4,7 @@ Unified command execution dispatch kernel, undo/redo history and branching undo 
 
 ## Public Contract Surface
 
-Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `events/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 

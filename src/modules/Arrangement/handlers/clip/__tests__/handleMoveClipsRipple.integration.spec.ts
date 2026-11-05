@@ -21,7 +21,6 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import {
     type ConfirmPayload,
@@ -32,6 +31,7 @@ import {
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { defaultTimelineEditingState, timelineEditingStore } from '../../../stores/timelineEditingStore';
 import { trackStore } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 
@@ -78,7 +78,7 @@ describe('handleMoveClips ripple over a legacy misplaced clip', () => {
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: true });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: true });
         automationStore.set({ lanes: [] });
         midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         // A project saved before the placement rule: an audio clip parked on a
@@ -121,7 +121,7 @@ describe('handleMoveClips ripple over a legacy misplaced clip', () => {
         Container.clear();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         automationStore.set({ lanes: [] });
-        workspaceStore.set(defaultWorkspaceState);
+        timelineEditingStore.set(defaultTimelineEditingState);
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
