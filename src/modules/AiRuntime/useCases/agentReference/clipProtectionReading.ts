@@ -3,6 +3,7 @@ import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuot
 import { getSelectedClipReferenceIds } from '../../transformers/promptParser/selectedClipReference';
 
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
+import { blankRanges } from './blankRanges';
 import { CONNECTIVE_WORDS, CONVENTIONAL_WORDS, protectionObjectForms } from './protectionObjectForms';
 import { protectionSlots, type Range, type Slot } from './readProtectionSlots';
 import { refinementRequestReading } from './refinementRequestReading';
@@ -111,10 +112,9 @@ function readSlotReference(prompt: string, slot: Slot): string {
 
 /** Blank every project object's name so a verb inside a name never reads as the next instruction. */
 function blankObjectNames(maskedText: string, prompt: string, context: ProjectContext): string {
-    const references = refinementRequestReading.references(prompt, refinementRequestReading.candidates(context));
-    return references.reduce(
-        (blanked, { start, end }) => `${blanked.slice(0, start)}${'□'.repeat(end - start)}${blanked.slice(end)}`,
-        maskedText
+    return blankRanges(
+        maskedText,
+        refinementRequestReading.references(prompt, refinementRequestReading.candidates(context))
     );
 }
 
