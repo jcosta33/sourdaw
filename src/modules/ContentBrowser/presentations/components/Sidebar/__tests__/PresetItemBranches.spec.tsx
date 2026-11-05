@@ -140,3 +140,41 @@ describe('PresetItem — card click', () => {
         expect(onClick).toHaveBeenCalledTimes(1);
     });
 });
+
+describe('PresetItem — keyboard reachability', () => {
+    it('exposes the card action as a focusable native button named for the preset', () => {
+        const { onClick } = renderItem();
+        const card = screen.getByRole('button', { name: /warm pad/i });
+        expect(card.tagName).toBe('BUTTON');
+        expect(card).toHaveAttribute('type', 'button');
+        expect(card.tabIndex).toBeGreaterThanOrEqual(0);
+        card.focus();
+        expect(card).toHaveFocus();
+        // jsdom does not turn Enter or Space into a click; a native button does in the browser.
+        card.click();
+        expect(onClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps preview, card and favorite as separate sibling buttons, none nested', () => {
+        renderItem();
+        const buttons = screen.getAllByRole('button');
+        expect(buttons.map((button) => button.textContent?.trim() || button.getAttribute('aria-label'))).toEqual([
+            'Preview',
+            expect.stringContaining('Warm Pad'),
+            'Add to favorites',
+        ]);
+        for (const button of buttons) {
+            expect(button.querySelector('button')).toBeNull();
+        }
+    });
+
+    it('does not load the preset when the favorite star is activated', () => {
+        const { onClick, onToggleFavorite } = renderItem();
+        const star = screen.getByRole('button', { name: /add to favorites/i });
+        star.focus();
+        expect(star).toHaveFocus();
+        star.click();
+        expect(onToggleFavorite).toHaveBeenCalledWith('p1');
+        expect(onClick).not.toHaveBeenCalled();
+    });
+});

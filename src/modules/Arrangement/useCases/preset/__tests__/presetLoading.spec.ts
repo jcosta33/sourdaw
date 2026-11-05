@@ -103,6 +103,58 @@ describe('compileLoadPresetActions', () => {
         });
     });
 
+    describe('track name following the loaded preset', () => {
+        function withTrackName(name: string | undefined, kind: 'midi' | 'audio' = 'midi'): void {
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [{ id: 'track-1', kind, name, frozen: false, devices: [] }],
+            });
+        }
+
+        it.each(['Dark Pulse', 'MIDI', 'MIDI 3', 'Audio 12'])(
+            'emits a guarded rename after the load while the name %s is automatic',
+            (name) => {
+                mocks.getFactoryPresets.mockReturnValue([preset(), preset({ id: 'dark', name: 'Dark Pulse' })]);
+                withTrackName(name);
+
+                const plan = compileLoadPresetActions({ presetId: 'preset-1', trackId: 'track-1' });
+
+                expect(plan?.actions.map((action) => action.type)).toEqual(['loadPreset', 'renameTrack']);
+                expect(plan?.actions[1]).toEqual({
+                    type: 'renameTrack',
+                    payload: { trackId: 'track-1', name: 'Glass Pad', expectedName: name },
+                });
+            }
+        );
+
+        it.each(['My Lead', 'Dark Pulse', 'Audio drums'])('emits no rename after a user rename to %s', (name) => {
+            withTrackName(name);
+
+            const plan = compileLoadPresetActions({ presetId: 'preset-1', trackId: 'track-1' });
+
+            expect(plan?.actions.map((action) => action.type)).toEqual(['loadPreset']);
+        });
+
+        it('treats a preset name of another track kind as a user name', () => {
+            mocks.getFactoryPresets.mockReturnValue([
+                preset(),
+                preset({ id: 'bass', name: 'Bass Line', trackKind: 'audio' }),
+            ]);
+            withTrackName('Bass Line', 'midi');
+
+            const plan = compileLoadPresetActions({ presetId: 'preset-1', trackId: 'track-1' });
+
+            expect(plan?.actions.map((action) => action.type)).toEqual(['loadPreset']);
+        });
+
+        it('emits no rename when the name already equals the new preset name', () => {
+            withTrackName('Glass Pad');
+
+            const plan = compileLoadPresetActions({ presetId: 'preset-1', trackId: 'track-1' });
+
+            expect(plan?.actions.map((action) => action.type)).toEqual(['loadPreset']);
+        });
+    });
+
     it('compiles a new track and preset replacement as one command batch with matching planned topology', () => {
         const plan = compileLoadPresetActions({ presetId: 'preset-1' });
 

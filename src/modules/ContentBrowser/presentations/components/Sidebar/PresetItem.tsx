@@ -36,69 +36,85 @@ export const PresetItem = ({
 }: PresetItemProps): ReactElement => {
     const chain = preset.devices.map((data) => data.name).join(' → ');
 
+    // The card's main action is a full-size button (its ::after covers the whole
+    // card); preview and favorite are sibling buttons raised above that cover, so
+    // none nests inside another interactive element.
     return (
-        <Stack
-            gap={1.5}
-            className="group rounded-md px-3 py-2.5 bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 transition-colors hover:from-surface-overlay hover:border-border/40 cursor-pointer shadow-sm"
-            onClick={onClick}
+        <Row
+            gap={2}
+            align="start"
+            className="group relative rounded-md px-3 py-2.5 bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 transition-colors hover:from-surface-overlay hover:border-border/40 shadow-sm"
             onContextMenu={onContextMenu}
-            title={selectedTrackId ? 'Click to load onto selected track' : 'Click to create a new track'}
         >
-            <Row gap={2}>
-                <div className="opacity-70 group-hover:opacity-100 transition-opacity">
-                    <PreviewButton
-                        isPlaying={preview.playingId === preset.id}
-                        onPlay={() => preview.playTone(preset.id, 261.63, 0.5)}
-                        onStop={preview.stop}
-                    />
-                </div>
-                <span className="flex-1 text-[12px] font-semibold text-foreground/90 truncate drop-shadow-sm">
-                    {preset.name}
-                </span>
-                {!hideCategory ? (
-                    <span
-                        className={cn(
-                            'shrink-0 rounded px-1.5 py-[2px] text-[9px] font-semibold tracking-wide uppercase opacity-80',
-                            CATEGORY_COLORS[preset.category] || 'bg-accent text-muted-foreground'
+            <div className="relative z-10 opacity-70 group-hover:opacity-100 transition-opacity">
+                <PreviewButton
+                    isPlaying={preview.playingId === preset.id}
+                    onPlay={() => preview.playTone(preset.id, 261.63, 0.5)}
+                    onStop={preview.stop}
+                />
+            </div>
+            <Button
+                variant="bare"
+                size="bare"
+                type="button"
+                className="min-w-0 flex-1 cursor-pointer text-left focus-visible:outline-none after:absolute after:inset-0 after:rounded-md after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-accent-cyan/60"
+                onClick={onClick}
+                title={selectedTrackId ? 'Click to load onto selected track' : 'Click to create a new track'}
+            >
+                <Stack gap={1.5}>
+                    <Row gap={2}>
+                        <span className="flex-1 text-[12px] font-semibold text-foreground/90 truncate drop-shadow-sm">
+                            {preset.name}
+                        </span>
+                        {!hideCategory ? (
+                            <span
+                                className={cn(
+                                    'shrink-0 rounded px-1.5 py-[2px] text-[9px] font-semibold tracking-wide uppercase opacity-80',
+                                    CATEGORY_COLORS[preset.category] || 'bg-accent text-muted-foreground'
+                                )}
+                            >
+                                {preset.category}
+                            </span>
+                        ) : null}
+                    </Row>
+                    <Row gap={1.5} className="opacity-60 group-hover:opacity-100 transition-opacity">
+                        {preset.trackKind === 'midi' ? (
+                            <Piano
+                                className="size-3 text-[var(--color-accent-lavender)] shrink-0"
+                                aria-label="MIDI track"
+                            />
+                        ) : (
+                            <Waves
+                                className="size-3 text-[var(--color-accent-mint)] shrink-0"
+                                aria-label="Audio track"
+                            />
                         )}
-                    >
-                        {preset.category}
-                    </span>
-                ) : null}
-                <Button
-                    variant="bare"
-                    size="bare"
-                    type="button"
-                    className={cn(
-                        'size-4 flex items-center justify-center shrink-0 rounded hover:bg-accent opacity-0 group-hover:opacity-100 transition-all',
-                        favorites.has(preset.id) ? 'opacity-100 scale-100' : 'scale-95'
-                    )}
-                    onClick={(event) => {
-                        event.stopPropagation();
-                        onToggleFavorite(preset.id);
-                    }}
-                    aria-label={favorites.has(preset.id) ? 'Remove from favorites' : 'Add to favorites'}
-                >
-                    <Star
-                        className={cn(
-                            'size-3 transition-colors',
-                            favorites.has(preset.id)
-                                ? 'text-[var(--color-accent-peach)] fill-[var(--color-accent-peach)] drop-shadow-sm'
-                                : 'text-muted-foreground hover:text-foreground'
-                        )}
-                    />
-                </Button>
-            </Row>
-            <Row gap={1.5} className="pl-[26px] opacity-60 group-hover:opacity-100 transition-opacity">
-                {preset.trackKind === 'midi' ? (
-                    <Piano className="size-3 text-[var(--color-accent-lavender)] shrink-0" aria-label="MIDI track" />
-                ) : (
-                    <Waves className="size-3 text-[var(--color-accent-mint)] shrink-0" aria-label="Audio track" />
+                        <span className="text-[9px] text-muted-foreground group-hover:text-foreground/80 transition-colors truncate">
+                            {chain}
+                        </span>
+                    </Row>
+                </Stack>
+            </Button>
+            <Button
+                variant="bare"
+                size="bare"
+                type="button"
+                className={cn(
+                    'relative z-10 size-4 flex items-center justify-center shrink-0 rounded hover:bg-accent opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-all',
+                    favorites.has(preset.id) ? 'opacity-100 scale-100' : 'scale-95'
                 )}
-                <span className="text-[9px] text-muted-foreground group-hover:text-foreground/80 transition-colors truncate">
-                    {chain}
-                </span>
-            </Row>
-        </Stack>
+                onClick={() => onToggleFavorite(preset.id)}
+                aria-label={favorites.has(preset.id) ? 'Remove from favorites' : 'Add to favorites'}
+            >
+                <Star
+                    className={cn(
+                        'size-3 transition-colors',
+                        favorites.has(preset.id)
+                            ? 'text-[var(--color-accent-peach)] fill-[var(--color-accent-peach)] drop-shadow-sm'
+                            : 'text-muted-foreground hover:text-foreground'
+                    )}
+                />
+            </Button>
+        </Row>
     );
 };
