@@ -20,13 +20,17 @@ import { chatStore, clearChatMessages } from '../../stores/chatStore';
 import { clearPendingActionConfirmations } from '../../stores/pendingActionConfirmationStore';
 import { orchestratePromptChatRequest } from '../agentRequestOrchestration/orchestratePromptChatRequest';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { getProjectContext } from '../getProjectContext';
 import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
 
 import { moveTrackFader, seedSavableProject, writeProjectSave } from './projectSaveFixture';
 
 // The completion checks are the real ones over a real CRDT document and a real save write; only the
 // planner, which would ask a provider, and the Prompt Bar notice are replaced.
-const mocks = vi.hoisted(() => ({ planPromptActions: vi.fn(), notifyAiAnswer: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+    planPromptActions: vi.fn<typeof import('../planPromptActions').planPromptActions>(),
+    notifyAiAnswer: vi.fn<typeof import('../notifyAiAnswer').notifyAiAnswer>(),
+}));
 vi.mock('../planPromptActions', () => ({ planPromptActions: mocks.planPromptActions }));
 vi.mock('../notifyAiAnswer', () => ({ notifyAiAnswer: mocks.notifyAiAnswer }));
 vi.mock('../../repositories/webLlm/getActiveModelId', () => ({ getActiveModelId: () => 'fixture-model' }));
@@ -45,7 +49,7 @@ function answerAcross(write: ProjectWrite): void {
         }
         await writeProjectSave();
         return {
-            context: { tracks: [] },
+            context: getProjectContext(),
             result: {
                 actions: [],
                 rawText: PROMPT,

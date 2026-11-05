@@ -13,14 +13,19 @@ import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores
 
 import { AiProposalInvalidatedError } from '../../errors/AiProposalInvalidatedError';
 import { type PlannedIntentResult } from '../../models/IntentResult';
+import { estimateCompiledProviderRequestTokenCeiling } from '../../models/ModelProviderBudgetEstimate';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { type ProviderAttemptAdmission } from '../llmOrchestration/inference';
 import { planPromptActions } from '../planPromptActions';
 
+import { readyRequest } from './modelProviderProtocolFixture';
 import { moveTrackFader, seedSavableProject, writeProjectSave } from './projectSaveFixture';
 
 // The revision checks are the real ones over a real CRDT document and a real save write; only the
 // planner, which would ask a provider, is replaced.
-const mocks = vi.hoisted(() => ({ parse: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+    parse: vi.fn<typeof import('../parsePromptToActions').parsePromptToActions>(),
+}));
 vi.mock('../parsePromptToActions', () => ({ parsePromptToActions: mocks.parse }));
 
 type ProjectWrite = 'save' | 'edit';
@@ -41,7 +46,7 @@ function planReturning(write: ProjectWrite, result: PlannedIntentResult): void {
 }
 
 const PROPOSAL: PlannedIntentResult = {
-    actions: [{ type: 'setTrackGain', payload: { trackId: 'track-1', gain: 0.8 } }],
+    actions: [{ type: 'setTrackGain', payload: { trackId: 'track-1', gain: 0.7, expectedGain: 0.8 } }],
     rawText: 'turn track 1 down',
     requiresConfirmation: true,
     planningOutcome: { kind: 'proposal' },
@@ -54,23 +59,34 @@ const ANSWER: PlannedIntentResult = {
     planningOutcome: { kind: 'answer', text: 'Track 1 sits at unity.', evidence: [] },
 };
 
-/** The correction's own provider attempt; the admission under test reads none of its fields. */
-const CORRECTION_ATTEMPT = {
-    backend: 'cloud',
-    provider: 'openai',
-    correlationId: 'correction-attempt-1',
-    request: {},
-    estimatedTotalTokens: 128,
-    estimate: { method: 'versioned-estimate' },
-};
+/** The correction's own provider attempt, compiled as a provider would compile it. */
+function correctionAttempt(): ProviderAttemptAdmission {
+    const { request } = readyRequest({ provider: 'webllm', correlationId: 'correction-attempt-1' });
+    const estimate = estimateCompiledProviderRequestTokenCeiling(request);
+    return {
+        backend: 'webllm',
+        provider: 'webllm',
+        correlationId: request.correlationId,
+        request,
+        estimatedTotalTokens: estimate.totalTokenCeiling,
+        estimate,
+    };
+}
 
-type CorrectionInput = { onProviderAttempt: (attempt: unknown) => { status: string } };
+/** Asks the correction's own attempt admission, which planning hands the correction it runs. */
+function admitCorrectionAttempt(input: Parameters<typeof mocks.parse>[0]): string | undefined {
+    return input.onProviderAttempt?.(correctionAttempt()).status;
+}
 
+const CORRECTABLE_REASON = 'Provider action rejected: unknown target';
+
+/** A provider rejection the planner classifies as a denial, as `parsePromptToActions` names it. */
 const CORRECTABLE: PlannedIntentResult = {
     actions: [],
     rawText: 'turn track 1 down',
     requiresConfirmation: false,
-    rejectionReason: 'Provider action rejected: unknown target',
+    rejectionReason: CORRECTABLE_REASON,
+    planningOutcome: { kind: 'denied', reason: CORRECTABLE_REASON },
 };
 
 beforeEach(() => {
@@ -131,8 +147,8 @@ describe('planning across a save', () => {
     it('admits the bounded correction of a rejection the planner returned across a save', async () => {
         planReturning('save', CORRECTABLE);
         let correctionAdmission: string | undefined;
-        mocks.parse.mockImplementationOnce(async (input: CorrectionInput) => {
-            correctionAdmission = input.onProviderAttempt(CORRECTION_ATTEMPT).status;
+        mocks.parse.mockImplementationOnce(async (input) => {
+            correctionAdmission = admitCorrectionAttempt(input);
             return PROPOSAL;
         });
 
@@ -161,9 +177,9 @@ describe('planning across a save', () => {
     it('refuses the correction attempt itself once a fader moved after the correction began', async () => {
         planReturning('save', CORRECTABLE);
         let correctionAdmission: string | undefined;
-        mocks.parse.mockImplementationOnce(async (input: CorrectionInput) => {
+        mocks.parse.mockImplementationOnce(async (input) => {
             moveTrackFader('track-1', 0.25);
-            correctionAdmission = input.onProviderAttempt(CORRECTION_ATTEMPT).status;
+            correctionAdmission = admitCorrectionAttempt(input);
             return CORRECTABLE;
         });
 
