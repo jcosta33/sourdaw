@@ -247,6 +247,7 @@ import { projectNativeDeviceState } from './projectNativeDeviceState';
 import { eventBus, logger } from './registerDependencies';
 import { registerDeviceEnginePorts } from './registerDeviceEnginePorts';
 import { registerGlobalErrorHandlers } from './registerGlobalErrorHandlers';
+import { registerKernelPorts } from './registerKernelPorts';
 import { registerProjectLifecycle } from './registerProjectLifecycle';
 import { registerProjectSlotProjections } from './registerProjectSlotProjections';
 import { registerSupportingServicePorts } from './registerSupportingServicePorts';
@@ -266,6 +267,7 @@ registerProjectSlotProjections();
 registerProjectLifecycle();
 registerDeviceEnginePorts();
 registerSupportingServicePorts();
+registerKernelPorts();
 setElasticSensitivityRootIdentityCapture(captureProjectRootIdentity);
 configureCommandBatchIdempotency({ canExecute: canExecuteCommandBatch });
 setActionHistoryMetadataPort({

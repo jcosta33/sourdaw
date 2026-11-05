@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerKernelPorts } from '#/app/registerKernelPorts';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { type Clip, type Track, defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { trimClipStart } from '#/modules/Arrangement/useCases';
@@ -119,6 +120,8 @@ function midiTrack(clips: Clip[]): Track {
         followChordTrack: false,
     };
 }
+
+registerKernelPorts();
 
 describe('trimClipStart loop anchoring', () => {
     beforeEach(() => {

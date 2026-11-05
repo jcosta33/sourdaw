@@ -2,7 +2,7 @@ import { AppActionCommittedError } from '../errors/AppActionExecutionError';
 import { isActionEntry, type UndoEntry } from '../models/UndoEntry';
 
 import { executeAppActionBatch } from './executeAppActionBatch';
-import { getLegacyTrimInverseReplayFailure } from './getLegacyTrimInverseReplayFailure';
+import { getLegacyInverseReplayFailure } from './getLegacyInverseReplayFailure';
 import { normalizeLegacyLoopAnchorInverse } from './normalizeLegacyLoopAnchorInverse';
 import { runPreparedUndoReplay } from './undoReplayPreparationPort';
 
@@ -82,7 +82,7 @@ async function replayActionGroupUndo(
         ...options,
     };
     if (actions.some((action) => action.type === 'trimClipStart' && action.payload.midiOffsetBeats === undefined)) {
-        batchOptions.preExecutionValidation = () => getLegacyTrimInverseReplayFailure(actions);
+        batchOptions.preExecutionValidation = () => getLegacyInverseReplayFailure(actions, 'executeActionGroupUndo');
     }
     const result = await executeAppActionBatch(actions, batchOptions);
     if (result.status === 'conflicted' || result.status === 'cancelled') {

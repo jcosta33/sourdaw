@@ -8,7 +8,7 @@ import { undoStore } from '../stores/undoStore';
 import { executeActionGroupUndo, type UndoOutcome } from './executeActionGroupUndo';
 import { executeAppAction, type ExecuteAppActionOptions } from './executeAppAction';
 import { getCommandHandler } from './getCommandHandler';
-import { getLegacyTrimInverseReplayFailure } from './getLegacyTrimInverseReplayFailure';
+import { getLegacyInverseReplayFailure } from './getLegacyInverseReplayFailure';
 import { getProjectMutationAdmissionFailure } from './getProjectMutationAdmissionFailure';
 import { normalizeLegacyLoopAnchorInverse } from './normalizeLegacyLoopAnchorInverse';
 import { normalizeSingletonUndoGroups } from './normalizeSingletonUndoGroups';
@@ -94,7 +94,7 @@ async function applyUndo({ entry, runExecuteAppAction }: ExecuteUndoInput): Prom
             skipMacroRecording: true,
         };
         if (inverseAction.type === 'trimClipStart' && inverseAction.payload.midiOffsetBeats === undefined) {
-            options.authorizeFirstHandler = () => getLegacyTrimInverseReplayFailure([inverseAction]);
+            options.authorizeFirstHandler = () => getLegacyInverseReplayFailure([inverseAction], 'undo');
         }
         await runExecuteAppAction(inverseAction, options);
         return { status: 'undone' };

@@ -5,14 +5,19 @@
       "Arrangement",
       "AudioEngine",
       "Automation",
-      "Command",
-      "CrdtDocument",
       "ElasticAudio",
       "Knead",
       "MIDI",
       "Project",
       "Routing",
       "Transport"
+    ]
+  },
+  {
+    "type": "module-cycle",
+    "members": [
+      "Command",
+      "CrdtDocument"
     ]
   },
   {
@@ -77,21 +82,6 @@
   },
   {
     "type": "module-tier",
-    "from": "Command",
-    "to": "Arrangement"
-  },
-  {
-    "type": "module-tier",
-    "from": "Command",
-    "to": "Automation"
-  },
-  {
-    "type": "module-tier",
-    "from": "Command",
-    "to": "Transport"
-  },
-  {
-    "type": "module-tier",
     "from": "CommandInterface",
     "to": "Onboarding"
   },
@@ -99,11 +89,6 @@
     "type": "module-tier",
     "from": "CommandInterface",
     "to": "WorkspaceShell"
-  },
-  {
-    "type": "module-tier",
-    "from": "CrdtDocument",
-    "to": "Transport"
   },
   {
     "type": "module-tier",

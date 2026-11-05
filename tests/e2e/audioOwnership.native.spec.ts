@@ -1,10 +1,9 @@
 import { type BrowserContext, type Page } from '@playwright/test';
 
+import { chooseProjectDirectory } from './chosenProjectDirectory';
 import { expect, test } from './e2eTest';
 
 import type { ConfirmPayload, NotifyPayload, PromptPayload } from '../../src/utils/Notification/notificationEventBus';
-
-import { chooseProjectDirectory } from './chosenProjectDirectory';
 
 const MODULE_DOCUMENT = '/src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts';
 const PROJECT_AUDIO_STORAGE_LOCK_NAME = 'sourdaw:project-audio-storage';
@@ -108,11 +107,13 @@ async function initializeProjectWithAudio(page: Page): Promise<{ bufferId: strin
                 { registerProjectLifecycle },
                 { registerDeviceEnginePorts },
                 { registerSupportingServicePorts },
+                { registerKernelPorts },
             ] = await Promise.all([
                 import('/src/app/registerProjectSlotProjections.ts'),
                 import('/src/app/registerProjectLifecycle.ts'),
                 import('/src/app/registerDeviceEnginePorts.ts'),
                 import('/src/app/registerSupportingServicePorts.ts'),
+                import('/src/app/registerKernelPorts.ts'),
             ]);
 
             await audio.restoreCachedAudioBuffersFromIdb({ audioContext: audio.audioEngine.context });
@@ -124,6 +125,7 @@ async function initializeProjectWithAudio(page: Page): Promise<{ bufferId: strin
             registerProjectLifecycle();
             registerDeviceEnginePorts();
             registerSupportingServicePorts();
+            registerKernelPorts();
             collaboration.configureCollaborationAssetOwner({ captureOwnerId: project.getDurableProjectOwnerId });
             project.setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
             crdt.resetCrdtProjectAuthority('Native audio ownership');
@@ -242,11 +244,13 @@ async function loadSavedProjectInFreshRealm(
                     { registerProjectLifecycle },
                     { registerDeviceEnginePorts },
                     { registerSupportingServicePorts },
+                    { registerKernelPorts },
                 ] = await Promise.all([
                     import('/src/app/registerProjectSlotProjections.ts'),
                     import('/src/app/registerProjectLifecycle.ts'),
                     import('/src/app/registerDeviceEnginePorts.ts'),
                     import('/src/app/registerSupportingServicePorts.ts'),
+                    import('/src/app/registerKernelPorts.ts'),
                 ]);
 
                 arrangement.setArrangementEventBus({ emit: () => Promise.resolve() });
@@ -257,6 +261,7 @@ async function loadSavedProjectInFreshRealm(
                 registerProjectLifecycle();
                 registerDeviceEnginePorts();
                 registerSupportingServicePorts();
+                registerKernelPorts();
                 collaboration.configureCollaborationAssetOwner({ captureOwnerId: project.getDurableProjectOwnerId });
                 project.setProjectIdentityTransitionDependencies({
                     leaveCollaborationSession: () => Promise.resolve(),

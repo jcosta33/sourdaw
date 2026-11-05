@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { registerKernelPorts } from '#/app/registerKernelPorts';
 import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import {
     configureAutomergeStoragePort,
@@ -46,6 +47,8 @@ function set_tempo(tempo: number): void {
 }
 
 let unsubscribe_projection: (() => void) | null = null;
+
+registerKernelPorts();
 
 describe('branch switch projects the incoming branch transport', () => {
     beforeEach(() => {

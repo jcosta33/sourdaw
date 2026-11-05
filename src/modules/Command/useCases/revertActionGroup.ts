@@ -4,7 +4,7 @@ import { undoStore } from '../stores/undoStore';
 
 import { commitRevertedEntries } from './commitRevertedEntries';
 import { executeAppAction, type ExecuteAppActionOptions } from './executeAppAction';
-import { getLegacyTrimInverseReplayFailure } from './getLegacyTrimInverseReplayFailure';
+import { getLegacyInverseReplayFailure } from './getLegacyInverseReplayFailure';
 import { isAppActionCommittedError } from './isAppActionCommittedError';
 import { normalizeLegacyLoopAnchorInverse } from './normalizeLegacyLoopAnchorInverse';
 import { runUndoRedoExclusive } from './undoRedo';
@@ -87,7 +87,7 @@ async function revertActionGroupImpl(groupId: string): Promise<void> {
                 );
             let authorizeReplay: (() => string | null) | undefined;
             if (hasLegacyTrim) {
-                authorizeReplay = () => getLegacyTrimInverseReplayFailure(remainingInverses);
+                authorizeReplay = () => getLegacyInverseReplayFailure(remainingInverses, 'revertActionGroup');
             }
             if (await revertEntry(entry, authorizeReplay)) {
                 revertedEntries.unshift(entry);
