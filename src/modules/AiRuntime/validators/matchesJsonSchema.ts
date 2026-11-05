@@ -212,7 +212,8 @@ function locateObjectViolation(
 ): JsonSchemaViolation | null {
     const properties = isRecord(schema.properties) ? schema.properties : {};
     if (Array.isArray(schema.required)) {
-        const missing = schema.required.find((required) => typeof required !== 'string' || !(required in value));
+        const required: unknown[] = schema.required;
+        const missing = required.find((key) => typeof key !== 'string' || !(key in value));
         if (missing !== undefined) {
             return { kind: 'missing-property', path: typeof missing === 'string' ? [...path, missing] : path };
         }

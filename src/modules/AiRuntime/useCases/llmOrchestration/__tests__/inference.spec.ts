@@ -352,10 +352,12 @@ describe('generateToolPlanningOutcome', () => {
         ])('still fails the attempt on $label', async ({ strictness, answers }) => {
             replyWithQueryArguments({ type: 'object', filters: { startBeat: '4' } }, strictness);
 
+            if (answers) {
+                await expect(planLoopTurn()).rejects.toThrow('The model provider request failed.');
+                return;
+            }
             await expect(
-                answers
-                    ? planLoopTurn()
-                    : generateToolPlanningOutcome('system', 'find the lead vocal', projectQuerySchemas())
+                generateToolPlanningOutcome('system', 'find the lead vocal', projectQuerySchemas())
             ).rejects.toThrow('The model provider request failed.');
         });
     });

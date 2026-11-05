@@ -604,7 +604,10 @@ describe('tool-call schema mismatch admission', () => {
         call: { id: string; name: string; arguments: Record<string, unknown> },
         schemaMismatch?: 'fail-attempt' | 'admit-as-violation'
     ): ModelProviderEvent {
-        return { type: 'tool-call', call, ...(schemaMismatch === undefined ? {} : { schemaMismatch }) };
+        if (schemaMismatch === undefined) {
+            return { type: 'tool-call', call };
+        }
+        return { type: 'tool-call', call, schemaMismatch };
     }
 
     // Red when admission drops, coerces or loses the location of a mismatch it was told to admit.
