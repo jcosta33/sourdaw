@@ -81,12 +81,14 @@ vi.mock('#/components/ui/slider', () => ({
         value,
         onValueChange,
         onValueCommit,
+        onPointerDown,
         onPointerCancel,
         'aria-label': ariaLabel,
     }: {
         value: number[];
         onValueChange: (values: number[]) => void;
         onValueCommit: (values: number[]) => void;
+        onPointerDown?: () => void;
         onPointerCancel?: () => void;
         'aria-label'?: string;
     }) => (
@@ -97,6 +99,13 @@ vi.mock('#/components/ui/slider', () => ({
             value={value[0]}
             onChange={(event) => onValueChange([Number(event.target.value)])}
             onMouseUp={(event) => onValueCommit([Number(event.currentTarget.value)])}
+            // Radix commits a key step before it reports the change.
+            onKeyDown={(event) => {
+                const stepped = Number(event.currentTarget.value) + 1;
+                onValueCommit([stepped]);
+                onValueChange([stepped]);
+            }}
+            onPointerDown={onPointerDown}
             onPointerCancel={onPointerCancel}
         />
     ),
@@ -307,6 +316,7 @@ describe('SendsEditor', () => {
             render(<SendsEditor track={{ ...mockTrack, sends: [sendTo('bus-1')] }} />);
 
             const slider = screen.getByTestId('slider');
+            fireEvent.pointerDown(slider);
             fireEvent.change(slider, { target: { value: '40' } });
             await act(async () => {
                 fireEvent.pointerCancel(slider);
@@ -325,6 +335,7 @@ describe('SendsEditor', () => {
             mockUseTracks.mockReturnValue({ tracks: [bus('bus-1')] });
             const view = render(<SendsEditor track={{ ...mockTrack, sends: [sendTo('bus-1')] }} />);
 
+            fireEvent.pointerDown(screen.getByTestId('slider'));
             fireEvent.change(screen.getByTestId('slider'), { target: { value: '40' } });
             await act(async () => {
                 view.rerender(
@@ -337,6 +348,31 @@ describe('SendsEditor', () => {
                 expect.objectContaining({ payload: expect.objectContaining({ trackId: 'track-1' }) })
             );
             expect(screen.getByTestId('slider')).toHaveValue(String(Math.round(levelToSendPosition(0.25))));
+        });
+
+        it('commits a keyboard step as one setSend and leaves nothing to settle on unmount', async () => {
+            mockUseTracks.mockReturnValue({ tracks: [bus('bus-1')] });
+            const position = Math.round(levelToSendPosition(0.5));
+            const view = render(<SendsEditor track={{ ...mockTrack, sends: [sendTo('bus-1')] }} />);
+
+            await act(async () => {
+                fireEvent.keyDown(screen.getByTestId('slider'), { key: 'ArrowRight' });
+            });
+            await act(async () => {
+                view.unmount();
+            });
+
+            expect(mockExecuteAppAction).toHaveBeenCalledOnce();
+            expect(mockExecuteAppAction).toHaveBeenCalledWith({
+                type: 'setSend',
+                payload: {
+                    trackId: 'track-1',
+                    busId: 'bus-1',
+                    level: sendPositionToLevel(position + 1),
+                    expectedLevel: 0.5,
+                    expectedPreFader: false,
+                },
+            });
         });
 
         it('commits the PRE/POST click as one setSend that flips only the tap point', () => {

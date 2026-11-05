@@ -50,27 +50,32 @@ type SendCardProps = {
 
 /**
  * One send-level gesture: previews on the engine while it moves and commits one
- * action when it ends. A drag the pointer abandons (pointercancel, lost capture)
- * or a card unmounted mid-drag never reaches the slider's own commit, so it is
- * settled at the level it was left, as a released fader is.
+ * action when it ends. A pointer drag the browser abandons (pointercancel, lost
+ * capture) or a card unmounted mid-drag never reaches the slider's own commit,
+ * so it is settled at the level it was left, as a released fader is. Only a
+ * pointer drag can be abandoned: a keyboard step or a typed value commits in
+ * the same event as its change (Radix commits a key step before reporting it).
  */
 const useSendLevelGesture = (trackId: string, busId: string, send: SendState | undefined) => {
     const [localLevel, setLocalLevel] = useState<number | null>(null);
+    const pointerDragRef = useRef(false);
     const uncommittedLevelRef = useRef<number | null>(null);
 
-    // Every slider commit follows a change, so a gesture with nothing
-    // uncommitted was already settled and must not dispatch a second action.
     const commit = (committed: number): void => {
-        if (uncommittedLevelRef.current === null) {
-            return;
-        }
+        pointerDragRef.current = false;
         uncommittedLevelRef.current = null;
         setLocalLevel(committed);
         void commitSendEdit(compileSendLevelAction(trackId, busId, committed, send)).then(() => setLocalLevel(null));
     };
+    const beginPointerDrag = (): void => {
+        pointerDragRef.current = true;
+    };
     const settleAbandoned = (): void => {
-        if (uncommittedLevelRef.current !== null) {
-            commit(uncommittedLevelRef.current);
+        const abandonedLevel = uncommittedLevelRef.current;
+        pointerDragRef.current = false;
+        uncommittedLevelRef.current = null;
+        if (abandonedLevel !== null) {
+            commit(abandonedLevel);
         }
     };
     const settleOnUnmountRef = useRef(settleAbandoned);
@@ -80,11 +85,13 @@ const useSendLevelGesture = (trackId: string, busId: string, send: SendState | u
     useEffect(() => () => settleOnUnmountRef.current(), []);
 
     const preview = (next: number): void => {
-        uncommittedLevelRef.current = next;
+        if (pointerDragRef.current) {
+            uncommittedLevelRef.current = next;
+        }
         setLocalLevel(next);
         previewSend(trackId, busId, next, send?.preFader ?? false);
     };
-    return { level: localLevel ?? send?.level ?? 0, preview, commit, settleAbandoned };
+    return { level: localLevel ?? send?.level ?? 0, preview, commit, beginPointerDrag, settleAbandoned };
 };
 
 const SendCard = ({ track, bus, send }: SendCardProps): ReactElement => {
@@ -147,6 +154,7 @@ const SendCard = ({ track, bus, send }: SendCardProps): ReactElement => {
                             }
                             gesture.commit(sendPositionToLevel(value));
                         }}
+                        onPointerDown={gesture.beginPointerDrag}
                         onPointerCancel={gesture.settleAbandoned}
                         onLostPointerCapture={gesture.settleAbandoned}
                         max={100}

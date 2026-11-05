@@ -174,10 +174,13 @@ describe('SendsSection', () => {
         if (!(root instanceof HTMLElement)) {
             throw new Error('Missing Slider root');
         }
+        // jsdom has no pointer capture; hold it as a browser does, so a cancel
+        // releases it and Radix sees the later pointerup without capture.
+        let captured = false;
         Object.defineProperties(root, {
-            setPointerCapture: { configurable: true, value: vi.fn() },
-            releasePointerCapture: { configurable: true, value: vi.fn() },
-            hasPointerCapture: { configurable: true, value: () => true },
+            setPointerCapture: { configurable: true, value: () => (captured = true) },
+            releasePointerCapture: { configurable: true, value: () => (captured = false) },
+            hasPointerCapture: { configurable: true, value: () => captured },
         });
         vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
             x: 0,
@@ -197,9 +200,29 @@ describe('SendsSection', () => {
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
         await act(async () => {
             fireEvent.pointerCancel(root, { pointerId: 1 });
+            captured = false;
             fireEvent.lostPointerCapture(root, { pointerId: 1 });
             // A pointerup the slider still sees afterwards must not commit the gesture twice.
             fireEvent.pointerUp(root, { pointerId: 1 });
+        });
+
+        expect(mocks.executeAppAction).toHaveBeenCalledOnce();
+        const action = mocks.executeAppAction.mock.calls[0]![0];
+        expect(action).toMatchObject({ type: 'setSend', payload: { trackId: 'track-9', expectedLevel: 0.2 } });
+        expect(action.payload.level).toBeCloseTo(mocks.previewSend.mock.lastCall![2], 6);
+    });
+
+    it('commits a keyboard step on the send slider as one setSend at the stepped level', async () => {
+        mocks.tracks = [makeBus({ id: 'bus-1', name: 'Reverb' })];
+        render(
+            <SendsSection
+                track={{ ...baseTrack, id: 'track-9', sends: [{ busId: 'bus-1', level: 0.2, preFader: false }] }}
+            />
+        );
+        const thumb = screen.getByRole('slider', { name: 'Send to Reverb' });
+
+        await act(async () => {
+            fireEvent.keyDown(thumb, { key: 'ArrowRight' });
         });
 
         expect(mocks.executeAppAction).toHaveBeenCalledOnce();
