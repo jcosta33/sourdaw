@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveClipLoopPassGrid } from '#/utils/clipLoopOrigin';
+import { midiFragmentWindowEntry, resolveClipLoopPassGrid, resolveLoopedOffsetBeats } from '#/utils/clipLoopOrigin';
 
 import { type MidiCC } from '../../../models/MidiNote';
 import { getGrooveProjection } from '../../grooveTemplates/getGrooveProjection';
@@ -707,6 +707,196 @@ describe('projectClipControllerEvents', () => {
                 [6, 0, false],
                 [9, 127, false],
                 [10, 0, true],
+            ]);
+        });
+    });
+
+    describe('with a looping clip whose head is cut a loop or more past its anchor', () => {
+        type Clip = Parameters<typeof projectClipControllerEvents>[0]['clip'];
+
+        // The uncut source: loop [0, 4) of content anchored at timeline 1 and
+        // first trimmed to 3, so it plays content 2 at timeline 3. Its pass
+        // grid wraps at timeline 5, 9, 13 and 17.
+        const uncut: Clip = {
+            startBeat: 3,
+            endBeat: 19,
+            midiOffsetBeats: 2,
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 1,
+        };
+
+        /** Delete Time over `[fragmentStartBeat, cutBeat)`, or a split's right fragment when they are equal. */
+        function cutHead(clip: Clip & { type: 'midi' }, cutBeat: number, fragmentStartBeat: number): Clip {
+            return {
+                ...clip,
+                ...midiFragmentWindowEntry(clip, cutBeat, fragmentStartBeat),
+                startBeat: fragmentStartBeat,
+                endBeat: clip.endBeat - (cutBeat - fragmentStartBeat),
+            };
+        }
+
+        /** `trimClipStart`: the anchor stays, the offset wraps into the loop and the rows shift by the wrap. */
+        function trimStart(clip: Clip, rows: readonly MidiCC[], startBeat: number): { clip: Clip; rows: MidiCC[] } {
+            const rawOffsetBeats = (clip.midiOffsetBeats ?? 0) + (startBeat - clip.startBeat);
+            const midiOffsetBeats = resolveLoopedOffsetBeats({
+                offsetBeats: rawOffsetBeats,
+                loopEnabled: true,
+                clipDurationBeats: clip.endBeat - startBeat,
+                configuredLoopLengthBeats: clip.loopLength,
+            });
+            return {
+                clip: { ...clip, startBeat, midiOffsetBeats },
+                rows: rows.map((row) => ({
+                    ...row,
+                    beat: row.beat + midiOffsetBeats - rawOffsetBeats,
+                })),
+            };
+        }
+
+        /** The value each controller lane holds at `beat`, after every move the clip plays up to and on it. */
+        function inForceAt(controlChanges: readonly MidiCC[], clip: Clip, beat: number): Record<string, number> {
+            const moves = projectClipControllerEvents({
+                controlChanges,
+                clip,
+                fromBeat: clip.startBeat,
+                toBeat: clip.endBeat + 1,
+            });
+            return Object.fromEntries(
+                moves
+                    .filter((move) => move.beat <= beat)
+                    .map((move) => [`${move.channel}:${move.controller}`, move.value])
+            );
+        }
+
+        function headMoves(controlChanges: readonly MidiCC[], clip: Clip): { controller: number; value: number }[] {
+            return projectClipControllerEvents({
+                controlChanges,
+                clip,
+                fromBeat: clip.startBeat,
+                toBeat: clip.endBeat,
+            })
+                .filter((move) => move.beat === clip.startBeat)
+                .map(({ controller, value }) => ({ controller, value }));
+        }
+
+        const pressThenLift = [controller('press', 1, 127), controller('lift', 3.5, 0)];
+
+        it('begins a head excised mid-pass with the lift the previous pass left in force', () => {
+            // Delete Time over [1, 9.5): timeline 9.5 is content 0.5 of the
+            // uncut loop, after the lift at 3.5 of the pass before and before
+            // this pass's press at 1, so the pedal is up there.
+            const trimmed = cutHead({ ...uncut, type: 'midi' }, 9.5, 1);
+
+            expect(inForceAt(pressThenLift, uncut, 9.5)).toEqual({ '0:64': 0 });
+            expect(headMoves(pressThenLift, trimmed)).toEqual([{ controller: 64, value: 0 }]);
+        });
+
+        it('holds what the uncut clip holds at every beat after the cut, for a split and a start trim alike', () => {
+            const rows = [...pressThenLift, controller('expression', 2.75, 90, 11)];
+            const cutBeat = 9.5;
+            const shapes = [
+                { name: 'head excised', shiftBeats: 8.5, clip: cutHead({ ...uncut, type: 'midi' }, cutBeat, 1), rows },
+                {
+                    name: 'split right fragment',
+                    shiftBeats: 0,
+                    clip: cutHead({ ...uncut, type: 'midi' }, cutBeat, cutBeat),
+                    rows,
+                },
+                { name: 'start trimmed', shiftBeats: 0, ...trimStart(uncut, rows, cutBeat) },
+            ];
+            const uncutBeats = [9.5, 9.6, 10.3, 11.1, 12.7, 13.9, 16.35, 18.2];
+
+            for (const shape of shapes) {
+                for (const beat of uncutBeats) {
+                    expect({
+                        shape: shape.name,
+                        beat,
+                        held: inForceAt(shape.rows, shape.clip, beat - shape.shiftBeats),
+                    }).toEqual({
+                        shape: shape.name,
+                        beat,
+                        held: inForceAt(rows, uncut, beat),
+                    });
+                }
+            }
+        });
+
+        it('carries a lane whose only row lies after the cut from the pass before', () => {
+            const rows = [controller('expression', 2.75, 90, 11)];
+            const trimmed = cutHead({ ...uncut, type: 'midi' }, 9.5, 1);
+
+            expect(headMoves(rows, trimmed)).toEqual([{ controller: 11, value: 90 }]);
+        });
+
+        it('plays a row exactly on the cut once, never behind the value the pass before left', () => {
+            const rows = [controller('press-on-cut', 0.5, 127), controller('lift', 3.5, 0)];
+            const trimmed = cutHead({ ...uncut, type: 'midi' }, 9.5, 1);
+
+            expect(headMoves(rows, trimmed)).toEqual([{ controller: 64, value: 127 }]);
+        });
+
+        it('carries nothing into a head cut less than a loop past its anchor, as the source played from the anchor', () => {
+            // Timeline 2.5 lies in the first pass from the anchor at 1: no pass
+            // ended before it, so the lift at 3.5 has not yet played there.
+            const rows = [controller('lift', 3.5, 0)];
+            const anchoredAtHead: Clip = { ...uncut, startBeat: 1, midiOffsetBeats: 0 };
+            const trimmed = cutHead({ ...anchoredAtHead, type: 'midi' }, 2.5, 2.5);
+
+            expect(inForceAt(rows, anchoredAtHead, 2.5)).toEqual({});
+            expect(headMoves(rows, trimmed)).toEqual([]);
+        });
+
+        it('carries a non-dyadic loop into a head excised two passes and a fraction in', () => {
+            // Loop [0.3, 2.5) anchored at 0.7: content 0.67 sits at timeline
+            // 0.7 + 2 * 2.2 + 0.37 = 5.47, before the pass's first row at 0.9.
+            const source: Clip = {
+                startBeat: 0.7,
+                endBeat: 13.9,
+                midiOffsetBeats: 0.3,
+                loopEnabled: true,
+                loopLength: 2.2,
+                loopOriginBeat: 0.7,
+            };
+            const rows = [
+                controller('press', 0.9, 127),
+                controller('expression', 1.6, 90, 11),
+                controller('lift', 2.15, 0),
+            ];
+            const cutBeat = 0.7 + 2 * 2.2 + 0.37;
+            const trimmed = cutHead({ ...source, type: 'midi' }, cutBeat, 1.9);
+            const shiftBeats = cutBeat - 1.9;
+
+            expect(inForceAt(rows, source, cutBeat)).toEqual({ '0:64': 0, '0:11': 90 });
+            expect(headMoves(rows, trimmed)).toEqual([
+                { controller: 64, value: 0 },
+                { controller: 11, value: 90 },
+            ]);
+            for (const beat of [5.8, 6.33, 7.05, 9.41, 12.2]) {
+                expect({ beat, held: inForceAt(rows, trimmed, beat - shiftBeats) }).toEqual({
+                    beat,
+                    held: inForceAt(rows, source, beat),
+                });
+            }
+        });
+
+        it('leaves a clip that does not loop, stale anchor and all, without a carry from past its head', () => {
+            const clip: Clip = {
+                startBeat: 9.5,
+                endBeat: 13.3,
+                midiOffsetBeats: 0.5,
+                loopOriginBeat: 1,
+                loopLength: 4,
+            };
+
+            expect(headMoves(pressThenLift, clip)).toEqual([]);
+            expect(
+                placed(
+                    projectClipControllerEvents({ controlChanges: pressThenLift, clip, fromBeat: 9.5, toBeat: 13.3 })
+                )
+            ).toEqual([
+                { beat: 10, value: 127 },
+                { beat: 12.5, value: 0 },
             ]);
         });
     });
