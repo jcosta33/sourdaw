@@ -379,6 +379,36 @@ describe('useTimelineFileDrop', () => {
         expect(mocks.resolveDroppedSampleFile).not.toHaveBeenCalled();
     });
 
+    it('says nothing and places nothing when a project switch outruns an unavailable factory buffer', async () => {
+        const { result } = renderHook(() => useTimelineFileDrop({ getCanvasCoords, getBeatFromX }));
+        let settleBuffer: (result: { status: 'unavailable' }) => void = () => undefined;
+        mocks.ensureFactorySampleBuffer.mockReturnValue(
+            new Promise((resolve) => {
+                settleBuffer = resolve;
+            })
+        );
+        mocks.hitTestTrack.mockReturnValue(null);
+
+        let drop: Promise<void> = Promise.resolve();
+        await act(async () => {
+            drop = result.current.handleFileDrop(factoryKickDrop() as any);
+        });
+        await waitFor(() => {
+            expect(mocks.ensureFactorySampleBuffer).toHaveBeenCalledExactlyOnceWith({ sampleId: 'factory-kick' });
+        });
+        projectEpoch.advance();
+
+        await act(async () => {
+            settleBuffer({ status: 'unavailable' });
+            await drop;
+        });
+
+        expect(projectEpoch.latest()?.isCurrent()).toBe(false);
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
+        expect(mocks.resolveDroppedSampleFile).not.toHaveBeenCalled();
+    });
+
     // #3759 — a cached sample has no file to stage, so the drop must register
     // the cached PCM itself: the clip carries the staged hash a peer requests
     // the bytes with, and the lease is promoted once the clip commits.

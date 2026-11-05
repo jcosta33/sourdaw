@@ -44,10 +44,15 @@ const mocks = vi.hoisted(() => {
     };
     return {
         libraryStoreValue,
-        addLibraryRoot: vi.fn(),
+        // Stateful like the real writers, so a case reads roots and their
+        // status from the store rather than from the order of spy calls.
+        addLibraryRoot: vi.fn((root: TestRoot) => {
+            const state = libraryStoreValue.value;
+            if (!state.roots.some((existing) => existing.id === root.id)) {
+                libraryStoreValue.value = { ...state, roots: [...state.roots, root] };
+            }
+        }),
         addSamples: vi.fn(),
-        // Stateful like the real writer, so a case reads the root's status
-        // from the store rather than from the order of spy calls.
         updateLibraryRootStatus: vi.fn((rootId: string, status: string, fileCount?: number) => {
             const state = libraryStoreValue.value;
             libraryStoreValue.value = {
@@ -93,6 +98,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
         lru.set(id, buffer);
         return id;
     }),
+    getCachedAudioBuffer: vi.fn(({ bufferId }: { bufferId: string }) => lru.cache.get(bufferId) ?? null),
 }));
 
 vi.mock('../buildFolderTree', () => ({

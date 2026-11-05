@@ -30,7 +30,16 @@ const mocks = vi.hoisted(() => {
             cache.set(bufferId, buffer);
             return bufferId;
         }),
-        getCachedAudioBuffer: vi.fn(({ bufferId }: { bufferId: string }) => cache.get(bufferId) ?? null),
+        // Promotes on read, as the real cache does.
+        getCachedAudioBuffer: vi.fn(({ bufferId }: { bufferId: string }) => {
+            const buffer = cache.get(bufferId);
+            if (buffer === undefined) {
+                return null;
+            }
+            cache.delete(bufferId);
+            cache.set(bufferId, buffer);
+            return buffer;
+        }),
         prepareCachedAudioBuffersForReplay: vi.fn(async (ids: readonly string[]) => {
             for (const id of ids) {
                 const buffer = stored.get(id);
@@ -49,7 +58,10 @@ const mocks = vi.hoisted(() => {
                 ),
             };
         }),
-        addSamples: vi.fn(),
+        addSamples: vi.fn((records: { id: string; libraryRootId: string }[]) => {
+            const state = libraryStoreValue.value;
+            libraryStoreValue.value = { ...state, samples: [...state.samples, ...records] };
+        }),
         buildFolderTree: vi.fn(),
     };
 });
@@ -81,11 +93,14 @@ vi.mock('#/modules/FactorySynthesis/useCases', async (importOriginal) => ({
 import { renderFactorySamples } from '#/modules/FactorySynthesis/useCases';
 
 import { ensureFactorySampleBuffer } from '../ensureFactorySampleBuffer';
+import { reloadFactoryLibraryBuffers } from '../factoryLibrary/reloadFactoryLibraryBuffers';
 
 type RenderedSample = Awaited<ReturnType<typeof renderFactorySamples>>[number];
 
 // More samples than the cache holds, so a full render evicts its own first ones.
 const PACK_SIZE = 6;
+// The pack is cached in chunks of this many, yielding between them.
+const CACHE_CHUNK = 16;
 
 function createRenderedSample(index: number): RenderedSample {
     const buffer = { length: 100 + index, numberOfChannels: 1, sampleRate: 44100, duration: 1 };
@@ -175,6 +190,51 @@ describe('ensureFactorySampleBuffer', () => {
         expect(result).toEqual({ status: 'resolved', buffer: rendered[0]!.buffer });
         expect(mocks.cache.get('factory-test-0')).toBe(rendered[0]!.buffer);
         expect(mocks.cache.size).toBe(CACHE_CAPACITY);
+    });
+
+    it('never replaces a resident buffer with its re-rendered copy', async () => {
+        // An open project may hold this buffer pinned; a render must leave it be.
+        vi.mocked(renderFactorySamples).mockResolvedValueOnce(rendered.slice(0, 3));
+        const resident = storedBuffer('factory-test-2');
+        mocks.cache.set('factory-test-2', resident);
+
+        await expect(ensureFactorySampleBuffer({ sampleId: 'factory-test-1' })).resolves.toEqual({
+            status: 'resolved',
+            buffer: rendered[1]!.buffer,
+        });
+
+        expect(mocks.getCachedAudioBuffer({ bufferId: 'factory-test-2' })).toBe(resident);
+        const cachedIds = mocks.cacheAudioBuffer.mock.calls.map(([call]) => call.bufferId);
+        expect(cachedIds).toEqual(['factory-test-0', 'factory-test-1']);
+    });
+
+    it('leaves nothing behind when the user disconnects the root while the pack is cached', async () => {
+        const pack = Array.from({ length: CACHE_CHUNK + 4 }, (_, index) => createRenderedSample(index));
+        const requested = pack[CACHE_CHUNK - 1]!.id;
+        vi.mocked(renderFactorySamples).mockImplementationOnce(async () => {
+            // Runs during the yield after the first chunk is cached.
+            setTimeout(() => {
+                mocks.libraryStoreValue.value = { roots: [], samples: [] };
+            }, 0);
+            return pack;
+        });
+        mocks.libraryStoreValue.value = {
+            roots: [{ id: 'factory', status: 'ready', fileCount: pack.length }],
+            samples: [{ id: requested, libraryRootId: 'factory' }],
+        };
+
+        const [result, reloaded] = await Promise.all([
+            ensureFactorySampleBuffer({ sampleId: requested }),
+            reloadFactoryLibraryBuffers(mocks.audioContext as AudioContext),
+        ]);
+
+        expect(result).toEqual({ status: 'unavailable' });
+        expect(reloaded).toEqual([]);
+        expect(renderFactorySamples).toHaveBeenCalledTimes(1);
+        expect(mocks.cacheAudioBuffer).toHaveBeenCalledTimes(CACHE_CHUNK);
+        expect(mocks.libraryStoreValue.value.samples).toEqual([]);
+        expect(mocks.buildFolderTree).not.toHaveBeenCalled();
+        expect(mocks.libraryStoreValue.value.roots).toEqual([]);
     });
 
     it('reports the buffer unavailable and the root offline when the render fails', async () => {

@@ -1,5 +1,6 @@
-import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
+import { cacheAudioBuffer, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 
+import { findFactoryRoot } from './findFactoryRoot';
 import { type FactorySample } from './toFactorySampleRecord';
 
 const CHUNK = 16;
@@ -12,17 +13,29 @@ function yieldToEventLoop(): Promise<void> {
 }
 
 /**
+ * A resident buffer is already the sample's audio, and an open project may hold
+ * it pinned, so a render never replaces it or rewrites its stored PCM.
+ */
+function cacheUnlessResident(sample: FactorySample): void {
+    if (getCachedAudioBuffer({ bufferId: sample.id })) {
+        return;
+    }
+    cacheAudioBuffer({ buffer: sample.buffer, bufferId: sample.id });
+}
+
+/**
  * Register the synthesised buffers under their sample ids, in chunks, yielding
  * to the event loop between chunks so the main thread is not held in one
- * unbroken stretch while the whole pack is cached.
+ * unbroken stretch while the whole pack is cached. Stops when the user
+ * disconnects the factory root during a yield.
  */
 export async function cacheFactoryBuffers(samples: readonly FactorySample[]): Promise<void> {
     for (let i = 0; i < samples.length; i += CHUNK) {
-        const end = Math.min(i + CHUNK, samples.length);
-        for (let j = i; j < end; j++) {
-            cacheAudioBuffer({ buffer: samples[j]!.buffer, bufferId: samples[j]!.id });
+        if (!findFactoryRoot()) {
+            return;
         }
-        if (end < samples.length) {
+        samples.slice(i, i + CHUNK).forEach(cacheUnlessResident);
+        if (i + CHUNK < samples.length) {
             await yieldToEventLoop();
         }
     }

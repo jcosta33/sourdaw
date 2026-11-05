@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 
 import { FACTORY_LIBRARY_ROOT_ID } from '#/modules/FactorySynthesis/useCases';
@@ -817,6 +817,76 @@ describe('LibraryBrowser', () => {
             expect(mocks.preview.play).toHaveBeenCalledWith('factory-kick', restored);
         });
         expect(mocks.ensureFactorySampleBuffer).toHaveBeenCalledExactlyOnceWith({ sampleId: 'factory-kick' });
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('drops an evicted factory sample whose buffer arrives after a later preview started', async () => {
+        mocks.getCachedAudioBuffer.mockReturnValue(null);
+        const snareBuffer = { duration: 1, length: 44100, numberOfChannels: 1, sampleRate: 44100 } as AudioBuffer;
+        const kickBuffer = { duration: 2, length: 88200, numberOfChannels: 1, sampleRate: 44100 } as AudioBuffer;
+        let resolveKick: (result: { status: 'resolved'; buffer: AudioBuffer }) => void = () => undefined;
+        mocks.ensureFactorySampleBuffer.mockImplementation(({ sampleId }) =>
+            sampleId === 'factory-kick'
+                ? new Promise((resolve) => {
+                      resolveKick = resolve;
+                  })
+                : Promise.resolve({ status: 'resolved', buffer: snareBuffer })
+        );
+        const factorySample = (id: string, displayName: string) => ({
+            id,
+            libraryRootId: FACTORY_LIBRARY_ROOT_ID,
+            displayName,
+            relativePath: `Drums/${displayName}.factory`,
+            ext: 'factory',
+            folder: 'Drums',
+            sync: { exists: true, status: 'analyzed' as const, sizeBytes: 4 },
+            format: { durationSec: 1 },
+            tags: ['factory'],
+            favorite: false,
+        });
+
+        mocks.libraryState = {
+            roots: [
+                {
+                    id: FACTORY_LIBRARY_ROOT_ID,
+                    name: 'Factory Samples',
+                    provider: 'browser',
+                    rootRef: '',
+                    connectedAt: 0,
+                    status: 'ready',
+                    fileCount: 2,
+                    settings: { recursive: true },
+                },
+            ],
+            samples: [factorySample('factory-kick', 'Kick'), factorySample('factory-snare', 'Snare')],
+            folderTrees: {},
+            activeRootId: FACTORY_LIBRARY_ROOT_ID,
+            currentFolder: 'Drums',
+            searchQuery: '',
+            tagFilter: null,
+            favoritesOnly: false,
+            sortField: 'name',
+            sortDirection: 'asc',
+            scanning: false,
+            scanProgress: 0,
+        };
+
+        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
+        await waitFor(() => {
+            expect(mocks.ensureFactorySampleBuffer).toHaveBeenCalledWith({ sampleId: 'factory-kick' });
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Play Snare' }));
+        await waitFor(() => {
+            expect(mocks.preview.play).toHaveBeenCalledWith('factory-snare', snareBuffer);
+        });
+
+        await act(async () => {
+            resolveKick({ status: 'resolved', buffer: kickBuffer });
+        });
+
+        expect(mocks.preview.play).toHaveBeenCalledExactlyOnceWith('factory-snare', snareBuffer);
         expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 

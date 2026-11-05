@@ -48,6 +48,10 @@ async function renderPackFor(sampleId: string): Promise<AudioBuffer | null> {
         logger.error(new Error('Factory library render failed', { cause: error }));
         return null;
     }
+    // A root disconnected during the render leaves its samples unavailable.
+    if (!findFactoryRoot()) {
+        return null;
+    }
     const cached = getCachedAudioBuffer({ bufferId: sampleId });
     if (cached) {
         return cached;

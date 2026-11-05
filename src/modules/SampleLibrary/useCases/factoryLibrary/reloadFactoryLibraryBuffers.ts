@@ -39,6 +39,10 @@ async function reloadFactoryBuffers(ctx: AudioContext): Promise<readonly Factory
         return [];
     }
     await cacheFactoryBuffers(samples);
+    // Caching yields between chunks, so the user may have disconnected it then.
+    if (!findFactoryRoot()) {
+        return [];
+    }
     addMissingFactoryRecords(samples);
     updateLibraryRootStatus(FACTORY_LIBRARY_ROOT_ID, 'ready', samples.length);
     return samples;
