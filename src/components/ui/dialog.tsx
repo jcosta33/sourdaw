@@ -54,19 +54,33 @@ const FOCUS_LANDMARK_SELECTOR = '[data-focus-landmark]';
 
 type FocusOpener = {
     element: HTMLElement | null;
-    /** Trigger of the menu the opener lives in; that menu closes when its item opens a dialog. */
-    menuTriggerId: string | null;
+    /** Trigger of the menu or popover the opener lives in; that surface closes when its control opens a dialog. */
+    surfaceTrigger: (() => HTMLElement | null) | null;
 };
 
 /** `null` while the dialog was never opened through its `open` prop; Radix then keeps its own trigger handling. */
 const FocusOpenerContext = createContext<FocusOpener | null>(null);
 
+/** A menu names its trigger through `aria-labelledby`; a popover's trigger names the popover through `aria-controls`. */
+const readSurfaceTrigger = (element: HTMLElement): (() => HTMLElement | null) | null => {
+    const menuTriggerId = element.closest('[role="menu"]')?.getAttribute('aria-labelledby');
+    if (menuTriggerId) {
+        return () => document.getElementById(menuTriggerId);
+    }
+    const popoverId = element.closest('[role="dialog"]')?.id;
+    if (!popoverId) {
+        return null;
+    }
+    const popoverTrigger = document.querySelector<HTMLElement>(`[aria-controls="${CSS.escape(popoverId)}"]`);
+    return () => popoverTrigger;
+};
+
 const readFocusOpener = (): FocusOpener => {
     const active = document.activeElement;
     if (!(active instanceof HTMLElement) || active === document.body) {
-        return { element: null, menuTriggerId: null };
+        return { element: null, surfaceTrigger: null };
     }
-    return { element: active, menuTriggerId: active.closest('[role="menu"]')?.getAttribute('aria-labelledby') ?? null };
+    return { element: active, surfaceTrigger: readSurfaceTrigger(active) };
 };
 
 const findFocusLandmark = (): HTMLElement | null => document.querySelector<HTMLElement>(FOCUS_LANDMARK_SELECTOR);
@@ -79,9 +93,9 @@ export const focusLandmarkIfUnfocused = (): void => {
     }
 };
 
-const focusReturnCandidates = ({ element, menuTriggerId }: FocusOpener): (HTMLElement | null)[] => [
+const focusReturnCandidates = ({ element, surfaceTrigger }: FocusOpener): (HTMLElement | null)[] => [
     element,
-    menuTriggerId === null ? null : document.getElementById(menuTriggerId),
+    surfaceTrigger?.() ?? null,
     findFocusLandmark(),
 ];
 
@@ -101,7 +115,7 @@ const focusFirstAccepting = (candidates: (HTMLElement | null)[]): boolean => {
  * `Dialog.Trigger` only. A dialog opened from a store flag, a shortcut or a menu item has no trigger, so
  * focus fell to <body>. Return to the element that was focused when `open` turned true (read while
  * rendering, because the content moves focus inside as soon as it mounts), else to the
- * trigger of the menu it lived in, else to the workspace landmark: the first that accepts focus wins, and if
+ * trigger of the menu or popover it lived in, else to the workspace landmark: the first that accepts focus wins, and if
  * none does Radix's own restore is left alone.
  */
 function useFocusReturn({

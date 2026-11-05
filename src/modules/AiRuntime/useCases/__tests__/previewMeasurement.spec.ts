@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -72,8 +73,10 @@ import {
 import { advertisedAnswerCandidateId, advertisedAnswerSchema } from './answerWireFixture';
 import { readCreativeInterpretationCatalog } from './highLevelIntentWorkflowFixture';
 import { readMetricPublication } from './metricGoalWorkflowFixture';
+import { moveTrackFader, seedSavableProject, writeProjectSave } from './projectSaveFixture';
 
 registerDeviceEnginePorts();
+registerSupportingServicePorts();
 
 // Only the engine's render boundary is replaced: compilation, grounding, the isolated preview,
 // target resolution and the measurement figures are the real ones.
@@ -781,6 +784,40 @@ describe('receipt-backed retained audition through the admitted prompt caller', 
             expect(undoHistoryStore.value).toEqual(history);
         }
     );
+
+    it('keeps the measured pair audible after a save, and refuses it once a fader moves, saved or not', async () => {
+        seedSavableProject();
+        const revision = captureProjectRevision();
+        scriptMeasureThenAdoptTurns(revision, proposalOf(lowerGain(DRUMS_GAIN_ID, -6)));
+        const result = await submitAdmittedPromptRequest({
+            prompt: PROMPT,
+            source: 'prompt-bar',
+            requiresConfirmation: true,
+        });
+        if (result.status !== 'awaiting-approval') {
+            throw new Error(`Actual prompt admission failed: ${result.status}`);
+        }
+        const input = { confirmationId: result.confirmationId, targetId: 'drums' };
+        expect(resolveMeasuredPreviewAudition(input).status).toBe('available');
+
+        await writeProjectSave();
+
+        expect(captureProjectRevision()).not.toBe(revision);
+        expect(getAgentApprovalView({ confirmationId: result.confirmationId })?.freshness.status).toBe('current');
+        expect(resolveMeasuredPreviewAudition(input).status).toBe('available');
+        expect(getMeasuredPreviewAuditionView({ confirmationId: result.confirmationId }).targets[0]).toMatchObject({
+            targetId: 'drums',
+            available: true,
+        });
+
+        moveTrackFader('bass', 0.5);
+        await writeProjectSave();
+
+        expect(resolveMeasuredPreviewAudition(input)).toEqual({
+            status: 'unavailable',
+            reason: 'Measure the exact current proposal before auditioning it.',
+        });
+    });
 });
 
 describe('analysis.measure of a proposal preview', () => {

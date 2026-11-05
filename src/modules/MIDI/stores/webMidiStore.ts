@@ -18,6 +18,7 @@ export const defaultWebMidiState: WebMidiState = {
     inputs: [],
     selectedInputId: null,
     enumerationError: null,
+    accessDenied: false,
     enumerationCompleted: false,
 };
 

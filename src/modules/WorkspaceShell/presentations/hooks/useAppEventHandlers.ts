@@ -5,6 +5,7 @@ import { undo, redo } from '#/modules/Command/useCases';
 import { captureProjectTransitionAuthority, saveProject, newProject } from '#/modules/Project/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
+import { type OpenPreferencesPayload } from '../../events/WorkspaceEvents';
 import { onCommandRedo } from '../../useCases/appEventSubscribers/onCommandRedo';
 import { onCommandUndo } from '../../useCases/appEventSubscribers/onCommandUndo';
 import { onMidiImport } from '../../useCases/appEventSubscribers/onMidiImport';
@@ -15,7 +16,7 @@ import { onDialogOpenPreferences } from '../../useCases/dialogs/onDialogOpenPref
 
 type AppEventCallbacks = {
     onOpenExport: () => void;
-    onOpenPreferences: () => void;
+    onOpenPreferences: (request: OpenPreferencesPayload) => void;
 };
 
 /**
@@ -25,7 +26,7 @@ export const useAppEventHandlers = ({ onOpenExport, onOpenPreferences }: AppEven
     useEffect(() => {
         const unsubs = [
             onDialogOpenExport(() => onOpenExport()),
-            onDialogOpenPreferences(() => onOpenPreferences()),
+            onDialogOpenPreferences((request) => onOpenPreferences(request)),
             onProjectSave(() => {
                 // Fire-and-forget: saveProject notifies the user itself on failure.
                 void saveProject({ requestFolderSelection: true });

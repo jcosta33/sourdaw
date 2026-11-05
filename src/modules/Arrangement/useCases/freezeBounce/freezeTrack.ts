@@ -3,7 +3,11 @@ import { captureAutomergeStorageTransactionScope } from '#/infra/store/storage/c
 import { cacheAudioBuffer, getCompensationDelay, getDeviceChainTailSeconds } from '#/modules/AudioEngine/useCases';
 import { getAutomationLanes } from '#/modules/Automation/useCases';
 import { executeAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
-import { captureProjectRevision, captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
+import {
+    captureProjectRevision,
+    captureProjectRootIdentity,
+    projectRevisionMatchesLiveIgnoringSaveWrites,
+} from '#/modules/CrdtDocument/useCases';
 import { projectStore } from '#/modules/Project/stores';
 import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -284,7 +288,7 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
             return (
                 !abortController.signal.aborted &&
                 isCurrentFreezeTask(taskIdentity) &&
-                captureProjectRevision() === sourceRevision &&
+                projectRevisionMatchesLiveIgnoringSaveWrites(sourceRevision) &&
                 current !== undefined &&
                 valuesEqual(captureFreezeStateSnapshot(current), snapshot)
             );

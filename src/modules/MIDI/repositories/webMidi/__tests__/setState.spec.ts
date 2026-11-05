@@ -58,4 +58,30 @@ describe('setState', () => {
 
         expect(readPersistedInputId(WEB_MIDI_IDENTITY_SCHEME)).toBe('launchkey');
     });
+
+    describe('access denial', () => {
+        it('keeps a denial through writes that leave the enumeration error alone', () => {
+            setState({ enumerationError: 'Permission denied', accessDenied: true });
+
+            setState({ inputs: [] });
+
+            expect(getState().accessDenied).toBe(true);
+        });
+
+        it('clears a denial when the error is cleared without naming a cause', () => {
+            setState({ enumerationError: 'Permission denied', accessDenied: true });
+
+            setState({ enumerationError: null, enumerationCompleted: true });
+
+            expect(getState()).toMatchObject({ enumerationError: null, accessDenied: false });
+        });
+
+        it('clears a denial when a different failure replaces it', () => {
+            setState({ enumerationError: 'Permission denied', accessDenied: true });
+
+            setState({ enumerationError: 'native port closed' });
+
+            expect(getState().accessDenied).toBe(false);
+        });
+    });
 });

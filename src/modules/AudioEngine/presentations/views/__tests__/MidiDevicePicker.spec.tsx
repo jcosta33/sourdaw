@@ -124,6 +124,24 @@ describe('MidiDevicePicker', () => {
         expect(mockInitWebMidi).toHaveBeenCalledTimes(1);
     });
 
+    it('says MIDI access was not allowed and how to allow it, without suggesting a refresh', () => {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            isSupported: true,
+            enumerationError: 'Permission denied',
+            accessDenied: true,
+            inputs: [],
+            selectedInputId: null,
+        });
+
+        render(<MidiDevicePicker />);
+
+        expect(screen.getByText(/MIDI access was not allowed for this site/)).toHaveTextContent(
+            /site settings control in the address bar, then reload the page/
+        );
+        expect(screen.queryByText(/Refresh to try again/)).not.toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'MIDI access not allowed' })).toBeInTheDocument();
+    });
+
     it('should show connected badge when device is selected', async () => {
         (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
             isSupported: true,
