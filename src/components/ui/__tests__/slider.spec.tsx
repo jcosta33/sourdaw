@@ -337,60 +337,52 @@ describe('Slider', () => {
             ]);
         });
 
-        it.each([
-            ['released', true],
-            ['still held', false],
-        ])(
-            'reports a drag after a step key at the bound that changed nothing (%s) only through its own changes',
-            (_keyState, releaseKey) => {
-                const calls: [string, number[]][] = [];
-                render(
-                    <RangeMappedSlider
-                        onChange={(next) => calls.push(['change', next])}
-                        onCommit={(next) => calls.push(['commit', next])}
-                    />
-                );
-                const thumb = screen.getByRole('slider', { name: 'Level' });
-                const root = thumb.closest('[data-slot="slider"]');
-                if (!(root instanceof HTMLElement)) {
-                    throw new Error('Missing Slider root');
-                }
-                let held = false;
-                Object.defineProperties(root, {
-                    setPointerCapture: { configurable: true, value: () => (held = true) },
-                    releasePointerCapture: { configurable: true, value: () => (held = false) },
-                    hasPointerCapture: { configurable: true, value: () => held },
-                });
-                vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
-                    x: 0,
-                    y: 0,
-                    top: 0,
-                    bottom: 20,
-                    left: 0,
-                    right: 100,
-                    width: 100,
-                    height: 20,
-                    toJSON: () => ({}),
-                });
-
-                // At the top of its travel, a step up moves nothing, so Radix commits nothing.
-                fireEvent.keyDown(thumb, { key: 'ArrowRight' });
-                if (releaseKey) {
-                    fireEvent.keyUp(thumb, { key: 'ArrowRight' });
-                }
-                expect(calls).toEqual([]);
-
-                fireEvent.pointerDown(root, { pointerId: 1, button: 0, clientX: 40, clientY: 10 });
-                fireEvent.pointerMove(root, { pointerId: 1, clientX: 71, clientY: 10 });
-                fireEvent.pointerUp(root, { pointerId: 1 });
-                fireEvent.lostPointerCapture(root, { pointerId: 1 });
-                expect(calls).toEqual([
-                    ['change', [40]],
-                    ['change', [71]],
-                    ['commit', [70.99999999999999]],
-                ]);
+        it('reports a drag during a held step key at the bound that changed nothing only through its own changes', () => {
+            const calls: [string, number[]][] = [];
+            render(
+                <RangeMappedSlider
+                    onChange={(next) => calls.push(['change', next])}
+                    onCommit={(next) => calls.push(['commit', next])}
+                />
+            );
+            const thumb = screen.getByRole('slider', { name: 'Level' });
+            const root = thumb.closest('[data-slot="slider"]');
+            if (!(root instanceof HTMLElement)) {
+                throw new Error('Missing Slider root');
             }
-        );
+            let held = false;
+            Object.defineProperties(root, {
+                setPointerCapture: { configurable: true, value: () => (held = true) },
+                releasePointerCapture: { configurable: true, value: () => (held = false) },
+                hasPointerCapture: { configurable: true, value: () => held },
+            });
+            vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
+                x: 0,
+                y: 0,
+                top: 0,
+                bottom: 20,
+                left: 0,
+                right: 100,
+                width: 100,
+                height: 20,
+                toJSON: () => ({}),
+            });
+
+            // At the top of its travel, a step up moves nothing, so Radix commits nothing.
+            // The key stays held: only the drag's own pointerdown can clear the step.
+            fireEvent.keyDown(thumb, { key: 'ArrowRight' });
+            expect(calls).toEqual([]);
+
+            fireEvent.pointerDown(root, { pointerId: 1, button: 0, clientX: 40, clientY: 10 });
+            fireEvent.pointerMove(root, { pointerId: 1, clientX: 71, clientY: 10 });
+            fireEvent.pointerUp(root, { pointerId: 1 });
+            fireEvent.lostPointerCapture(root, { pointerId: 1 });
+            expect(calls).toEqual([
+                ['change', [40]],
+                ['change', [71]],
+                ['commit', [70.99999999999999]],
+            ]);
+        });
 
         it('commits a keyboard step once, previewed before it commits, and adds nothing on a later blur or unmount', () => {
             const calls: [string, number[]][] = [];

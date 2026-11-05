@@ -22,7 +22,6 @@ function Slider({
     onLostPointerCapture,
     onBlur,
     onKeyDownCapture,
-    onKeyUpCapture,
     min = 0,
     max = 100,
     step = 1,
@@ -53,7 +52,6 @@ function Slider({
         onLostPointerCapture,
         onBlur,
         onKeyDownCapture,
-        onKeyUpCapture,
     });
 
     return (
