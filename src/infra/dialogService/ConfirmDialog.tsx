@@ -21,7 +21,7 @@ export const ConfirmDialog = (): ReactElement => {
     const { pending, confirm, cancel } = useConfirmationDialog();
     const isDanger = pending?.variant === 'danger';
     const cancelRef = useRef<HTMLButtonElement>(null);
-    const { onOpenAutoFocus } = useFocusEachRequest(pending, () => {
+    const { contentRef, onOpenAutoFocus } = useFocusEachRequest(pending, () => {
         cancelRef.current?.focus();
     });
 
@@ -40,6 +40,7 @@ export const ConfirmDialog = (): ReactElement => {
                     role="dialog"
                     aria-modal="true"
                     aria-label={pending.title ?? pending.message}
+                    ref={contentRef}
                     onOpenAutoFocus={onOpenAutoFocus}
                     onKeyDown={(event) => {
                         // This dialog portals to <body> with a focused

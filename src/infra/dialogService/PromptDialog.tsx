@@ -21,7 +21,7 @@ import { usePromptDialog } from './usePromptDialog';
 export const PromptDialog = (): ReactElement => {
     const { pending, value, setValue, submit, cancel } = usePromptDialog();
     const inputRef = useRef<HTMLInputElement>(null);
-    const { onOpenAutoFocus } = useFocusEachRequest(pending, () => {
+    const { contentRef, onOpenAutoFocus } = useFocusEachRequest(pending, () => {
         inputRef.current?.focus();
         inputRef.current?.select();
     });
@@ -41,6 +41,7 @@ export const PromptDialog = (): ReactElement => {
                     role="dialog"
                     aria-modal="true"
                     aria-label={pending.title ?? pending.message}
+                    ref={contentRef}
                     onOpenAutoFocus={onOpenAutoFocus}
                     onKeyDown={(event) => {
                         if (event.key === 'Enter') {
