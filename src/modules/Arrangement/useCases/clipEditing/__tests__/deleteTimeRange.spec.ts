@@ -250,7 +250,9 @@ describe('deleteTimeRange', () => {
 
         expect(trackStore.value?.tracks[0]?.clips).toEqual([
             { ...left, endBeat: 4 },
-            { ...right, startBeat: 8, audioOffsetBeats: 3 },
+            // The head trim advances the MIDI content offset by the trimmed
+            // span, so right-note keeps sounding at 7 rather than at 9.
+            { ...right, startBeat: 8, audioOffsetBeats: 3, midiOffsetBeats: 2 },
             after,
         ]);
         expect(midiStore.value).toBe(originalMidiState);
