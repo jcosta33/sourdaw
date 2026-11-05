@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
 import {
@@ -67,6 +68,8 @@ import {
 } from './highLevelIntentWorkflowFixture';
 import { literalMetricIntakeTurn, readMetricPublication } from './metricGoalWorkflowFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+
+registerDeviceEnginePorts();
 
 const SHARED_VOCAL_FX_PROMPT = 'Move vocal delays and reverbs to shared buses while preserving balance.';
 const SHARED_VOCAL_FX_PARAPHRASE =

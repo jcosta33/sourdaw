@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack, normalizeClip } from '#/modules/Arrangement/useCases';
@@ -51,6 +52,8 @@ import {
     readMetricPublication,
     literalMetricIntakeTurn,
 } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 const audio = vi.hoisted(() => ({
     renderTrackSubgraphOffline: vi.fn(),

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
@@ -35,6 +36,8 @@ import {
     configureAiWorkflowCommandCheckpointRuntime,
     resetAiWorkflowCommandCheckpointRuntime,
 } from './aiWorkflowCommandCheckpointRuntime';
+
+registerDeviceEnginePorts();
 
 const baseCollaborationState = structuredClone(collaborationStore.value!);
 const executeSetTrackGain = vi.fn();

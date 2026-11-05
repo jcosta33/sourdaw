@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { type HostedProviderTurn } from '../../models/HostedTurnHistory';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { projectAnthropicStrictToolSchema } from '../../repositories/cloudLlm/cloudInference/projectAnthropicStrictToolSchema';
@@ -15,6 +17,8 @@ import { projectDeclarativeTransformSnapshot } from '../projectDeclarativeTransf
 import { type ScriptedTurn } from './highLevelIntentWorkflowFixture';
 import { literalMetricIntakeTurn, nonAcousticMetricIntakeTurn } from './metricGoalWorkflowFixture';
 import { eventEnvelope, finishEnvelope, readyRequest } from './modelProviderProtocolFixture';
+
+registerDeviceEnginePorts();
 
 vi.mock('../llmOrchestration/inference', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../llmOrchestration/inference')>()),

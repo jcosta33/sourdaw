@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { installTransactionalIndexedDb } from '#/infra/testing/installTransactionalIndexedDb';
 import { defaultTrackState } from '#/modules/Arrangement/stores';
@@ -13,6 +14,8 @@ import { querySemanticProject } from '#/modules/Project/useCases';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { buildAgentContext } from '../buildAgentContext';
 import { getProjectContext } from '../getProjectContext';
+
+registerDeviceEnginePorts();
 
 describe('canonical roles at the provider continuation boundary', () => {
     let database: ReturnType<typeof installTransactionalIndexedDb>;
