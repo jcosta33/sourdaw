@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectLifecycle } from '#/app/registerProjectLifecycle';
 import {
     __resetWarpStatesForTest,
     addWarpMarker,
@@ -51,6 +52,7 @@ async function roundTripLiveProject(): Promise<void> {
 
 describe('mix state save/load round-trip', () => {
     beforeEach(() => {
+        registerProjectLifecycle();
         vcaGroupStore.set({ groups: [] });
         gainEnvelopeStore.set({ envelopes: {} });
         __resetWarpStatesForTest();

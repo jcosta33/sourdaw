@@ -4,7 +4,7 @@ Tuner device panel UI and real-time pitch telemetry ingestion (detected note, ce
 
 ## Public Contract Surface
 
-Public surface: `stores/index.ts`, `presentations/views/index.ts`.
+Public surface: `useCases/index.ts` (`resetTunerForProject`, the project-switch reset the composition root registers with Project's lifecycle), `stores/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 

@@ -12,3 +12,4 @@ export { updateTransientClipKneadState } from './updateTransientClipKneadState';
 // no `export type` here (use-case types stay private).
 export { getPitchHandlers } from './getPitchHandlers';
 export { setPitchEditDependencies } from './pitch/pitchEditDependencies';
+export { resetKneadForProject } from './resetKneadForProject';

@@ -47,7 +47,7 @@ Inside `src/modules/Arrangement/`, import relatively (`../stores/trackStore`, `.
 
 ### 3. Stores are a public read contract; writes stay with the owner
 
-Foreign modules read a store by subscribing with `useStore` (`#/infra/store/useStore`) or a selector. They never call `store.set` on a foreign store (ESLint `sourdaw/no-foreign-store-write`, **warn** — canonical rule in `state-and-write-paths` rule 3); mutations go through the owning module's use cases or `executeAppAction` (`#/modules/Command/useCases`). Leaf components must not import a business store **directly** (**error** `components-no-business-store-access`).
+Foreign modules read a store by subscribing with `useStore` (`#/infra/store/useStore`) or a selector. They never call `store.set` on a foreign store (ESLint `sourdaw/no-foreign-store-write`, **error** — canonical rule in `state-and-write-paths` rule 3); mutations go through the owning module's use cases or `executeAppAction` (`#/modules/Command/useCases`). Leaf components must not import a business store **directly** (**error** `components-no-business-store-access`).
 
 **Why:** global visibility without global mutability keeps undo, CRDT, and invariants in one place.
 
