@@ -15,6 +15,7 @@ const liveMidi = vi.hoisted(() => {
     return { input, inputs: access.inputs };
 });
 
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import {
     configureAutomergeStoragePort,
@@ -71,6 +72,8 @@ import { startRecording } from '../../../useCases/recording/startRecording';
 import { stopRecording } from '../../../useCases/recording/stopRecording';
 import { takeOwnsRecordingRoot } from '../../../useCases/recording/takeOwnsRecordingRoot';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
+
+registerSupportingServicePorts();
 
 const TRACK_ID = 'track-midi';
 let disposeRecordingAdmission = (): void => {};

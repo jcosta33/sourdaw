@@ -1,10 +1,10 @@
-import { getMidiLearnState } from '#/modules/ControlSurface/useCases';
 import { isPedalControllerLift } from '#/utils/pianoPedalController';
 
 import { HELD_PEDAL_CONTROLLERS } from '../../models/MidiControllerState';
 import { createMidiCC, type MidiCC } from '../../models/MidiNote';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
 import { heldPedalState } from '../../repositories/webMidi/heldPedalState';
+import { midiLearnRouting } from '../webMidiInput/midiLearnRouting';
 import { admitsRecordedControlChange } from '../webMidiInput/recordedControlChangeAdmission';
 
 /**
@@ -16,7 +16,7 @@ import { admitsRecordedControlChange } from '../webMidiInput/recordedControlChan
  * hold its press with no lift.
  */
 export function readHeldPedalRows(): MidiCC[] {
-    const learnState = getMidiLearnState();
+    const learnState = midiLearnRouting.read('readHeldPedalRows').getMidiLearnState();
     const mpeEnabled = getMpeEnabled();
     const channels = [...heldPedalState].sort(([first], [second]) => first - second);
     return channels.flatMap(([channel, pedals]) =>

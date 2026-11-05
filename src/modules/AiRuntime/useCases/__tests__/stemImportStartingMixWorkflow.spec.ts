@@ -2,6 +2,7 @@ import { change } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -69,6 +70,7 @@ import { literalMetricIntakeTurn, readMetricPublication } from './metricGoalWork
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 
 registerDeviceEnginePorts();
+registerSupportingServicePorts();
 
 const PROMPT =
     'Import stems, align them to project tempo, name and group them, classify likely instrument roles, and create a sensible starting mix.';

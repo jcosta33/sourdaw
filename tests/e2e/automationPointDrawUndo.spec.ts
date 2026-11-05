@@ -12,7 +12,7 @@ async function addMidiTrack(page: Page): Promise<void> {
     await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add MIDI Track');
     await page.getByRole('option', { name: 'Add MIDI Track' }).click();
     await expect.poll(() => trackList.getByRole('row').count()).toBeGreaterThan(before);
-    await trackList.getByText('MIDI', { exact: true }).click();
+    await trackList.getByText('MIDI 1', { exact: true }).click();
 }
 
 async function openInspector(page: Page): Promise<void> {

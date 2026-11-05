@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -110,6 +111,8 @@ function writeKickGain(gain: number): void {
     });
     flushAutomergeStorageWrites();
 }
+
+registerSupportingServicePorts();
 
 describe('renderAgentProjectSections across a save', () => {
     beforeEach(() => {

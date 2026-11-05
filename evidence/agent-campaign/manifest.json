@@ -923,7 +923,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Project/useCases/__tests__/agentDomainQueryConformance.spec.ts",
-                    "digest": "dc662abba5007893c9e15d1ad71ff14a0424dd18d46d00822b44f4bc2a4c004a"
+                    "digest": "7fc9f145ce62db9406c11ce5f75cb96e110f871995165e7d669a4f469942548c"
                 }
             ]
         },

@@ -131,14 +131,14 @@ const INITIAL_DEFINITIONS: ShortcutDefinition[] = [
         label: 'Add MIDI Track',
         category: 'workflow',
         defaultKeys: ['n'],
-        action: { type: 'appAction', action: { type: 'addTrack', payload: { name: 'MIDI', kind: 'midi' } } },
+        action: { type: 'appAction', action: { type: 'addTrack', payload: { kind: 'midi' } } },
     },
     {
         id: 'arrangement.addAudioTrack',
         label: 'Add Audio Track',
         category: 'workflow',
         defaultKeys: ['shift+n'],
-        action: { type: 'appAction', action: { type: 'addTrack', payload: { name: 'Audio', kind: 'audio' } } },
+        action: { type: 'appAction', action: { type: 'addTrack', payload: { kind: 'audio' } } },
     },
     // ── Editing ──────────────────────────────────────────────────────────
     {

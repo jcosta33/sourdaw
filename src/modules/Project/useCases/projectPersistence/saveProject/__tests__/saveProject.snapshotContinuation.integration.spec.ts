@@ -56,6 +56,7 @@ async function openProjectWithCachedStereoClip() {
         { injectDependencies },
         { notifyUser },
         { registerProjectLifecycle },
+        { registerSupportingServicePorts },
     ] = await Promise.all([
         import('#/modules/AudioEngine/useCases'),
         import('#/modules/AudioEngine/stores'),
@@ -72,6 +73,7 @@ async function openProjectWithCachedStereoClip() {
         import('#/infra/di/testing/injectDependencies'),
         import('#/utils/Notification/notifyUser'),
         import('#/app/registerProjectLifecycle'),
+        import('#/app/registerSupportingServicePorts'),
     ]);
     injectDependencies(notifyUser, { eventBus: { emit: vi.fn(() => Promise.resolve()) } });
     const context = audioEngine.context as AudioContext & { createBuffer: typeof createAudioBuffer };
@@ -85,6 +87,7 @@ async function openProjectWithCachedStereoClip() {
     project.setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
     resetCrdtProjectAuthority('Continuation');
     registerProjectLifecycle();
+    registerSupportingServicePorts();
     resetModuleStoresToDefault();
     projectStore.set({
         ...createFreshProjectMetadata({ name: 'Continuation', loading: false, initialized: true }),

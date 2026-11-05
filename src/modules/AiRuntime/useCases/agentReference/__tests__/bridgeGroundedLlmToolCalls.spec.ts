@@ -4054,7 +4054,7 @@ describe('bridgeGroundedLlmToolCalls', () => {
         );
 
         expect(result.actions).toEqual([]);
-        expect(result.rejections[0]?.reason).toBe('Expected a safe name and one of audio, midi, or folder');
+        expect(result.rejections[0]?.reason).toBe('Expected an optional safe name and one of audio, midi, or folder');
     });
 
     it('rejects a bare anaphoric bus target after an intervening compatible track target', () => {

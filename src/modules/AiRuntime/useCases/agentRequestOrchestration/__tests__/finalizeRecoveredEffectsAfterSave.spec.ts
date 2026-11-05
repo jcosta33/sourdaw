@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import {
     configureAutomergeStoragePort,
     createAutomergeStorage,
@@ -197,6 +198,8 @@ async function commitBatchWithPendingEffect() {
     }
     return { batch, receipt: first.receipt, committedRevision: captureProjectRevision() };
 }
+
+registerSupportingServicePorts();
 
 describe('Finalizing recovered command effects after a save', () => {
     beforeEach(() => {

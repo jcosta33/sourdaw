@@ -274,12 +274,13 @@ describe('trackCommands — guarded action commands', () => {
 describe('trackCommands — declarative actions', () => {
     it('add-audio-track is a static action object with kind audio', () => {
         const cmd = trackCommands.find((c) => c.id === 'add-audio-track')!;
-        expect(cmd.action).toEqual({ type: 'addTrack', payload: { name: 'Audio', kind: 'audio' } });
+        // Nameless: the track owner numbers it per kind on each run.
+        expect(cmd.action).toEqual({ type: 'addTrack', payload: { kind: 'audio' } });
     });
 
     it('add-midi-track is a static action object with kind midi', () => {
         const cmd = trackCommands.find((c) => c.id === 'add-midi-track')!;
-        expect(cmd.action).toEqual({ type: 'addTrack', payload: { name: 'MIDI', kind: 'midi' } });
+        expect(cmd.action).toEqual({ type: 'addTrack', payload: { kind: 'midi' } });
     });
 
     it('add-folder is a static action object', () => {

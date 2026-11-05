@@ -239,6 +239,44 @@ function readRoutingEdits(action: AppAction, actions: readonly AppAction[], cont
     return edits(dimensions, action.payload.trackId, `to ${destination?.name ?? destinationId}`);
 }
 
+/** Every other track that sends into this one, in the routing as the batch leaves it. */
+function readSenderIds(trackId: string, actions: readonly AppAction[], context: ProjectContext): string[] {
+    return context.tracks
+        .filter((track) => track.id !== trackId && readRouting(track.id, actions, context).sends.includes(trackId))
+        .map((track) => track.id);
+}
+
+/**
+ * Removing a track takes its devices and its sends with it, while every track routed into its output
+ * is repointed to the output it had, so what lies past it on an output chain stays heard. The removed
+ * track owns that loss. A track sending into it loses the whole parallel copy, its output chain
+ * included, so each sender owns that one.
+ */
+function readTrackRemovalEdits(
+    action: AppAction,
+    effect: ActionEffect,
+    actions: readonly AppAction[],
+    context: ProjectContext
+): Edit[] | null {
+    if (!effect.removes?.includes('track')) {
+        return null;
+    }
+    const trackIds = new Set(context.tracks.map((track) => track.id));
+    const removedIds = proposalCommandShape
+        .touchedObjectIds(action.type, readPayload(action), context)
+        .filter((id) => trackIds.has(id));
+    return removedIds.flatMap((removedId) => {
+        const detail = `removing ${context.tracks.find((track) => track.id === removedId)?.name ?? removedId}`;
+        const sendReach = readReachedTrackIds(readRouting(removedId, actions, context).sends, actions, context);
+        const ownLoss = reachedChainDimensions(new Set([removedId, ...sendReach]), context);
+        const copyLoss = reachedChainDimensions(readReachedTrackIds([removedId], actions, context), context);
+        return [
+            ...edits(ownLoss, removedId, detail),
+            ...readSenderIds(removedId, actions, context).flatMap((senderId) => edits(copyLoss, senderId, detail)),
+        ];
+    });
+}
+
 function readParameterEdits(action: AppAction, actions: readonly AppAction[], context: ProjectContext): Edit[] | null {
     if (action.type !== 'setDeviceParameter') {
         return null;
@@ -313,6 +351,7 @@ function readActionEdits(action: AppAction, actions: readonly AppAction[], conte
         readParameterEdits(action, actions, context) ??
         readDeviceChainEdits(action, actions, context) ??
         readRoutingEdits(action, actions, context) ??
+        readTrackRemovalEdits(action, effect, actions, context) ??
         readSendEdits(action) ??
         readAutomationEdits(action, effect, actions, context) ??
         readUnclassifiedEdits(action, effect, context)
@@ -324,7 +363,11 @@ function readActionEdits(action: AppAction, actions: readonly AppAction[], conte
  * with the batch's own routing commands applied in order. A later output replaces an earlier one, and
  * a removed send no longer reaches its bus. The batch is applied and heard as one change.
  */
-function readDestinations(trackId: string, actions: readonly AppAction[], context: ProjectContext): string[] {
+function readRouting(
+    trackId: string,
+    actions: readonly AppAction[],
+    context: ProjectContext
+): { sends: string[]; outputId: string | undefined } {
     const track = context.tracks.find((candidate) => candidate.id === trackId);
     let sends = (track?.sends ?? []).map((send) => send.busId);
     let outputId = track?.outputId;
@@ -339,6 +382,11 @@ function readDestinations(trackId: string, actions: readonly AppAction[], contex
             outputId = action.payload.outputId;
         }
     }
+    return { sends, outputId };
+}
+
+function readDestinations(trackId: string, actions: readonly AppAction[], context: ProjectContext): string[] {
+    const { sends, outputId } = readRouting(trackId, actions, context);
     return outputId === undefined ? sends : [...sends, outputId];
 }
 

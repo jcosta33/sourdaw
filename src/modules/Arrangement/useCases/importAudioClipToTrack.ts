@@ -1,10 +1,11 @@
 import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
-import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { getTrackById } from '../repositories/track/getTrackById';
+
+import { collaborationAssetTransfer } from './collaborationAssetTransfer';
 
 type ImportAudioClipToTrackOptions = {
     shouldContinue: () => boolean;
@@ -14,7 +15,7 @@ type ImportAudioClipToTrackOutput = 'completed' | 'superseded';
 
 type StagedImportAsset = { hash: string; leaseId: string };
 
-type AssetTransfer = ReturnType<typeof getAssetTransfer>;
+type AssetTransfer = ReturnType<ReturnType<typeof collaborationAssetTransfer.read>['current']>;
 
 /**
  * Stage the imported file with the collaboration asset owner — session or
@@ -130,7 +131,7 @@ export async function importAudioClipToTrack(
     const lastClipEnd = Math.max(0, ...track.clips.map((context) => context.endBeat));
     const name = file.name.replace(/\.[^.]+$/, '');
 
-    const assetTransfer = getAssetTransfer();
+    const assetTransfer = collaborationAssetTransfer.read('importAudioClipToTrack').current();
     const stagedResult = await stageImportAsset(assetTransfer, file);
     if (stagedResult === 'failed') {
         discardDecodedAudioFile(bufferId);

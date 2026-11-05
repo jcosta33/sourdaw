@@ -1,26 +1,23 @@
 import { createHandler } from '#/utils/createHandler';
+import { type AppAction, type HandlerMaterializationContext } from '#/utils/handlerContract';
 
 import { reserveNextTrackColor } from '../../models/Track';
 import { addTrack } from '../../useCases/addTrack';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { publishTrackAdded } from '../../useCases/publishTrackAdded';
+import { planDefaultTrackName } from '../planDefaultTrackName';
 import { isAddTrackSessionEntry } from '../validateCreationSessionEntries';
 
-type AddTrackAction = {
-    payload: {
-        color?: string;
-        gain?: number;
-        id?: string;
-        initialAlternativeId?: string;
-        initialDeviceId?: string;
-        name: string;
-        kind: 'audio' | 'midi' | 'bus' | 'master' | 'folder';
-        parentId?: string;
-        outputId?: string;
-        select?: boolean;
-        withoutDefaultDevice?: boolean;
-    };
-};
+type AddTrackAction = Extract<AppAction, { type: 'addTrack' }>;
+
+/** The track's name: the caller's, or the kind's next default, pinned on the
+ *  action so undo, redo and replay reproduce it rather than recompute it. */
+function ensureTrackName(action: AddTrackAction, context?: HandlerMaterializationContext): string {
+    if (action.payload.name === undefined) {
+        action.payload.name = planDefaultTrackName(action.payload.kind, context);
+    }
+    return action.payload.name;
+}
 
 function ensureTrackId(action: AddTrackAction): string {
     if (action.payload.id) {
@@ -61,9 +58,10 @@ function ensureStableCreationInputs(action: AddTrackAction): string {
 // reapply-guarded inside atomic batches.
 const pendingCreatedTrackGuards = new WeakMap<object, { entityJson: string; midiByClipIdJson: string }>();
 
-function executeAddTrackAction(action: AddTrackAction) {
+function executeAddTrackAction(action: AddTrackAction, context?: HandlerMaterializationContext) {
     ensureStableCreationInputs(action);
-    const track = addTrack({ ...action.payload, suppressAddedEvent: true });
+    const name = ensureTrackName(action, context);
+    const track = addTrack({ ...action.payload, name, suppressAddedEvent: true });
     if (!track) {
         return { status: 'no-write' as const };
     }
@@ -95,19 +93,24 @@ function executeAddTrackAction(action: AddTrackAction) {
 
 export const handleAddTrack = createHandler<'addTrack'>({
     validateSessionEntry: isAddTrackSessionEntry,
-    validate: (action) => {
+    materializeCommandArguments: (action, context) => {
+        ensureTrackName(action, context);
+    },
+    validate: (action, context) => {
+        ensureTrackName(action, context);
         const trackId = ensureStableCreationInputs(action);
         const state = getTrackStoreState();
         return state !== null && !state.tracks.some((track) => track.id === trackId);
     },
     execute: executeAddTrackAction,
-    describe: (action) => {
+    describe: (action, context) => {
+        const name = ensureTrackName(action, context);
         const trackId = ensureStableCreationInputs(action);
         const state = getTrackStoreState();
         const collides = state?.tracks.some((track) => track.id === trackId) ?? true;
         if (collides) {
             return {
-                label: `Add ${action.payload.kind} track "${action.payload.name}"`,
+                label: `Add ${action.payload.kind} track "${name}"`,
                 inverseAction: null,
             };
         }
@@ -122,7 +125,7 @@ export const handleAddTrack = createHandler<'addTrack'>({
         };
         pendingCreatedTrackGuards.set(action, generatedMidiStateGuard);
         return {
-            label: `Add ${action.payload.kind} track "${action.payload.name}"`,
+            label: `Add ${action.payload.kind} track "${name}"`,
             inverseAction: {
                 type: 'discardCreatedTrack',
                 payload: { trackId, generatedMidiStateGuard },

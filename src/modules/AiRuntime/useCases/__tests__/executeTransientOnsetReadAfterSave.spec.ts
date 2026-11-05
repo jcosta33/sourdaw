@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -82,6 +83,8 @@ async function readRecheck(projectRevision: string): Promise<() => boolean> {
     }
     return input.isProjectRevisionCurrent;
 }
+
+registerSupportingServicePorts();
 
 beforeEach(() => {
     vi.clearAllMocks();
