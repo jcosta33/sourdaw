@@ -144,7 +144,8 @@ describe('PresetItem — card click', () => {
 describe('PresetItem — keyboard reachability', () => {
     it('exposes the card action as a focusable native button named for the preset', () => {
         const { onClick } = renderItem();
-        const card = screen.getByRole('button', { name: /warm pad/i });
+        const card = screen.getByRole('button', { name: 'Warm Pad' });
+        expect(card).toHaveAccessibleDescription('Fermenter → Gluten');
         expect(card.tagName).toBe('BUTTON');
         expect(card).toHaveAttribute('type', 'button');
         expect(card.tabIndex).toBeGreaterThanOrEqual(0);
@@ -158,9 +159,9 @@ describe('PresetItem — keyboard reachability', () => {
     it('keeps preview, card and favorite as separate sibling buttons, none nested', () => {
         renderItem();
         const buttons = screen.getAllByRole('button');
-        expect(buttons.map((button) => button.textContent?.trim() || button.getAttribute('aria-label'))).toEqual([
+        expect(buttons.map((button) => button.getAttribute('aria-label') ?? button.textContent?.trim())).toEqual([
             'Preview',
-            expect.stringContaining('Warm Pad'),
+            'Warm Pad',
             'Add to favorites',
         ]);
         for (const button of buttons) {

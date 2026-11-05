@@ -1,4 +1,4 @@
-import { type ReactElement, type MouseEvent } from 'react';
+import { type ReactElement, type MouseEvent, useId } from 'react';
 
 import { Star, Piano, Waves } from 'lucide-react';
 
@@ -34,6 +34,7 @@ export const PresetItem = ({
     preview,
     hideCategory,
 }: PresetItemProps): ReactElement => {
+    const chainId = `${useId()}-chain`;
     const chain = preset.devices.map((data) => data.name).join(' → ');
 
     // The card's main action is a full-size button (its ::after covers the whole
@@ -57,12 +58,14 @@ export const PresetItem = ({
                 variant="bare"
                 size="bare"
                 type="button"
-                className="min-w-0 flex-1 cursor-pointer text-left focus-visible:outline-none after:absolute after:inset-0 after:rounded-md after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-accent-cyan/60"
+                className="flex min-w-0 flex-1 cursor-pointer justify-start text-left focus-visible:outline-none after:absolute after:inset-0 after:rounded-md after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-accent-cyan/60"
                 onClick={onClick}
+                aria-label={preset.name}
+                aria-describedby={chainId}
                 title={selectedTrackId ? 'Click to load onto selected track' : 'Click to create a new track'}
             >
-                <Stack gap={1.5}>
-                    <Row gap={2}>
+                <Stack gap={1.5} className="w-full min-w-0">
+                    <Row gap={2} className="min-w-0">
                         <span className="flex-1 text-[12px] font-semibold text-foreground/90 truncate drop-shadow-sm">
                             {preset.name}
                         </span>
@@ -77,7 +80,7 @@ export const PresetItem = ({
                             </span>
                         ) : null}
                     </Row>
-                    <Row gap={1.5} className="opacity-60 group-hover:opacity-100 transition-opacity">
+                    <Row gap={1.5} className="min-w-0 opacity-60 group-hover:opacity-100 transition-opacity">
                         {preset.trackKind === 'midi' ? (
                             <Piano
                                 className="size-3 text-[var(--color-accent-lavender)] shrink-0"
@@ -89,7 +92,10 @@ export const PresetItem = ({
                                 aria-label="Audio track"
                             />
                         )}
-                        <span className="text-[9px] text-muted-foreground group-hover:text-foreground/80 transition-colors truncate">
+                        <span
+                            id={chainId}
+                            className="text-[9px] text-muted-foreground group-hover:text-foreground/80 transition-colors truncate"
+                        >
                             {chain}
                         </span>
                     </Row>
