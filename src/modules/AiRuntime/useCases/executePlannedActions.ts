@@ -4,11 +4,11 @@ import {
     generateGroupId,
     type createVerifiedBatchReceipt,
 } from '#/modules/Command/useCases';
-import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { AiProposalInvalidatedError } from '../errors/AiProposalInvalidatedError';
 
+import { approvedProjectRevision } from './approvedProjectRevision';
 import { getProjectCommitFinalizationWarning } from './getProjectCommitFinalizationWarning';
 import { getVerifiedBatchReplayDisposition } from './getVerifiedBatchReplayDisposition';
 import { notifyAiChange } from './notifyAiChange';
@@ -98,7 +98,7 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
     let finalizationEvidenceFailure: string | undefined;
 
     function shouldExecute(): boolean {
-        revisionInvalidated = captureProjectRevision() !== input.projectRevision;
+        revisionInvalidated = !approvedProjectRevision.matchesLive(input.projectRevision);
         return input.signal?.aborted !== true && !revisionInvalidated;
     }
 
@@ -159,7 +159,7 @@ export async function executePlannedActions(input: ExecutePlannedActionsInput): 
         if (input.signal?.aborted === true) {
             return { status: 'cancelled' };
         }
-        revisionInvalidated = captureProjectRevision() !== input.projectRevision;
+        revisionInvalidated = !approvedProjectRevision.matchesLive(input.projectRevision);
         if (revisionInvalidated) {
             return { status: 'invalidated', reason: new AiProposalInvalidatedError().message };
         }

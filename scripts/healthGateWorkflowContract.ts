@@ -69,7 +69,8 @@ const SHARDED_BROWSER_STEPS = [
     'Report shard failure',
     'Upload blob report',
 ] as const;
-// The required and nightly unit shards both run in a fresh unprivileged account.
+// The required and nightly unit shards both run in a fresh unprivileged account,
+// which installs the pinned Chromium the real-render specs launch.
 const ISOLATED_UNIT_STEPS = [
     'Checkout',
     'Prepare unit tool directory',
@@ -77,6 +78,7 @@ const ISOLATED_UNIT_STEPS = [
     'Set up Node',
     'Prepare isolated unit account',
     'Install dependencies',
+    'Install Chromium',
     'Run shard',
     'Report shard failure',
 ] as const;

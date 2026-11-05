@@ -1,1 +1,1 @@
-export type { SoloModePreferenceAppliedPayload } from './PreferencesEvents';
+export type { PreferencesSection, SoloModePreferenceAppliedPayload } from './PreferencesEvents';

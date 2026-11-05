@@ -1,5 +1,5 @@
-import { execFileSync } from 'node:child_process';
-import { resolve } from 'node:path';
+import { execFile } from 'node:child_process';
+import { resolve as resolvePath } from 'node:path';
 
 import { chromium, type Browser, type Page } from 'playwright';
 import { beforeAll, describe, expect, it, type TestContext } from 'vitest';
@@ -210,47 +210,159 @@ type RangeRenderResult = { control: number[]; band: number[]; device: number[] }
 
 type ComplexBin = { real: number; imaginary: number };
 
-let browserPromise: Promise<Browser | null> | null = null;
-let pagePromise: Promise<Page | null> | null = null;
-let launchFailure: string | null = null;
-let renderBrowser: { version: string; launch: 'bundled' | 'channel:chrome' } | null = null;
+type LaunchAttempt = 'bundled' | 'channel:chrome';
+
+/** What the warm-up needs from a page; Playwright's `Page` satisfies it. */
+type WarmupPage = {
+    goto(url: string): Promise<unknown>;
+    addScriptTag(script: { content: string }): Promise<unknown>;
+};
+
+/** What the warm-up needs from a browser; Playwright's `Browser` satisfies it. */
+type WarmupBrowser<P extends WarmupPage> = {
+    version(): string;
+    newPage(): Promise<P>;
+};
+
+type ChildCommand = { file: string; args: string[] };
 
 /**
- * Launch one Chromium for the whole file: the bundled Playwright browser,
- * falling back to a system Chrome. `null` means no browser is available here
- * and the render proofs must report themselves skipped.
+ * Each step's own bound. Together they stay under the 120s hook budget even
+ * when both launch attempts run, so a stalled step fails under its own name
+ * rather than as an anonymous hook timeout.
  */
-function launchOnce(): Promise<Browser | null> {
-    browserPromise ??= (async () => {
-        try {
-            const browser = await chromium.launch();
-            renderBrowser = { version: browser.version(), launch: 'bundled' };
-            return browser;
-        } catch {
-            try {
-                const browser = await chromium.launch({ channel: 'chrome' });
-                renderBrowser = { version: browser.version(), launch: 'channel:chrome' };
-                return browser;
-            } catch (error) {
-                launchFailure = error instanceof Error ? error.message : String(error);
-                return null;
+type WarmupDeadlines = {
+    launch: number;
+    newPage: number;
+    bundle: number;
+    goto: number;
+    addScriptTag: number;
+};
+
+type WarmupSteps<P extends WarmupPage> = {
+    launch: (attempt: LaunchAttempt) => Promise<WarmupBrowser<P>>;
+    bundleCommand: ChildCommand;
+    deadlines: WarmupDeadlines;
+};
+
+type RenderSetup<P extends WarmupPage> =
+    | { kind: 'ready'; page: P; browser: { version: string; launch: LaunchAttempt } }
+    | { kind: 'absent'; reason: string };
+
+const WARMUP_DEADLINES: WarmupDeadlines = {
+    launch: 40_000,
+    newPage: 10_000,
+    bundle: 15_000,
+    goto: 5_000,
+    addScriptTag: 5_000,
+};
+
+/** Playwright's own wording for a browser that is not installed here. */
+const BROWSER_ABSENT = /Executable doesn't exist at|Chromium distribution 'chrome' is not found/;
+
+let pagePromise: Promise<Page | null> | null = null;
+let launchFailure: string | null = null;
+let renderBrowser: { version: string; launch: LaunchAttempt } | null = null;
+
+function warmupStepError(step: string, detail: string): Error {
+    return new Error(`de-esser render warm-up step "${step}" ${detail}`);
+}
+
+function withinDeadline<T>(step: string, deadlineMs: number, work: Promise<T>): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expiry = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+            reject(warmupStepError(step, `did not settle within ${deadlineMs} ms`));
+        }, deadlineMs);
+    });
+    return Promise.race([work, expiry]).finally(() => {
+        clearTimeout(timer);
+    });
+}
+
+/**
+ * Run a child asynchronously so its stall cannot block the worker's timers,
+ * and kill it when its deadline passes. The callback fires only once the
+ * child has exited, so a rejection means it is gone.
+ */
+function runChildWithinDeadline(step: string, command: ChildCommand, deadlineMs: number): Promise<string> {
+    return new Promise((resolve, reject) => {
+        execFile(
+            command.file,
+            command.args,
+            // The child resolves its bare `esbuild` import from the cwd.
+            { cwd: process.cwd(), encoding: 'utf8', timeout: deadlineMs, killSignal: 'SIGKILL' },
+            (error, stdout) => {
+                if (error?.killed) {
+                    reject(warmupStepError(step, `did not settle within ${deadlineMs} ms and was killed`));
+                    return;
+                }
+                if (error) {
+                    reject(warmupStepError(step, `failed: ${error.message}`));
+                    return;
+                }
+                resolve(stdout);
             }
+        );
+    });
+}
+
+function isBrowserAbsent(error: unknown): boolean {
+    return error instanceof Error && BROWSER_ABSENT.test(error.message);
+}
+
+/**
+ * The bundled Playwright browser, falling back to a system Chrome only when
+ * the bundled one is not installed. `null` carries the reason neither is
+ * installed; any other launch failure, a stall included, fails by name.
+ */
+async function launchRenderBrowser<P extends WarmupPage>(
+    steps: WarmupSteps<P>
+): Promise<{ browser: WarmupBrowser<P>; launch: LaunchAttempt } | { absent: string }> {
+    let absent = '';
+    for (const attempt of ['bundled', 'channel:chrome'] as const) {
+        try {
+            const browser = await withinDeadline(`launch ${attempt}`, steps.deadlines.launch, steps.launch(attempt));
+            return { browser, launch: attempt };
+        } catch (error) {
+            if (!isBrowserAbsent(error)) {
+                throw error;
+            }
+            absent = error instanceof Error ? error.message : String(error);
         }
-    })();
-    return browserPromise;
+    }
+    return { absent };
+}
+
+/** Launch, open one page, bundle the factory and evaluate it there. */
+async function prepareRenderSetup<P extends WarmupPage>(steps: WarmupSteps<P>): Promise<RenderSetup<P>> {
+    const launched = await launchRenderBrowser(steps);
+    if ('absent' in launched) {
+        return { kind: 'absent', reason: launched.absent };
+    }
+    const { deadlines } = steps;
+    const page = await withinDeadline('newPage', deadlines.newPage, launched.browser.newPage());
+    const bundled: unknown = JSON.parse(await runChildWithinDeadline('bundle', steps.bundleCommand, deadlines.bundle));
+    if (typeof bundled !== 'string') {
+        throw warmupStepError('bundle', 'did not print a JSON-encoded script');
+    }
+    await withinDeadline('goto', deadlines.goto, page.goto('about:blank'));
+    await withinDeadline('addScriptTag', deadlines.addScriptTag, page.addScriptTag({ content: bundled }));
+    return { kind: 'ready', page, browser: { version: launched.browser.version(), launch: launched.launch } };
 }
 
 /**
  * Bundle the production factory and parameter applier with esbuild in a child
  * Node process — in-process esbuild refuses to run under vitest's module
- * transform — and return the IIFE script exposing both. The render therefore
- * executes the real `createDeEsser` and `applyDeEsserParams` sources with the
- * `#/` alias resolved, not a hand-copied graph.
+ * transform — whose stdout is the IIFE script exposing both, JSON-encoded.
+ * The render therefore executes the real `createDeEsser` and
+ * `applyDeEsserParams` sources with the `#/` alias resolved, not a
+ * hand-copied graph.
  */
-function bundleDeviceSources(): string {
+function bundleDeviceSourcesCommand(): ChildCommand {
     // Vitest does not hand spec modules a file:// `import.meta.url`, so paths
     // resolve from the runner's cwd: the repository root (`pnpm test:run`).
-    const fromRepositoryRoot = (...segments: string[]): string => resolve(process.cwd(), ...segments);
+    const fromRepositoryRoot = (...segments: string[]): string => resolvePath(process.cwd(), ...segments);
     const toneShapingRoot = ['src', 'modules', 'AudioEngine', 'repositories', 'devices', 'toneShaping'];
     const factoryEntry = fromRepositoryRoot(...toneShapingRoot, 'createDeEsser.ts');
     const paramsEntry = fromRepositoryRoot(...toneShapingRoot, 'applyDeEsserParams.ts');
@@ -278,13 +390,14 @@ function bundleDeviceSources(): string {
         });
         process.stdout.write(JSON.stringify(bundled.outputFiles[0].text));
     `;
-    return JSON.parse(
-        execFileSync(process.execPath, ['--input-type=module', '--eval', script, factoryEntry, paramsEntry, srcRoot], {
-            // The child resolves its bare `esbuild` import from the cwd.
-            cwd: process.cwd(),
-            encoding: 'utf8',
-        })
-    ) as string;
+    return {
+        file: process.execPath,
+        args: ['--input-type=module', '--eval', script, factoryEntry, paramsEntry, srcRoot],
+    };
+}
+
+function launchPlaywrightChromium(attempt: LaunchAttempt): Promise<Browser> {
+    return attempt === 'bundled' ? chromium.launch() : chromium.launch({ channel: 'chrome' });
 }
 
 /**
@@ -293,15 +406,17 @@ function bundleDeviceSources(): string {
  */
 function pageOnce(): Promise<Page | null> {
     pagePromise ??= (async () => {
-        const browser = await launchOnce();
-        if (!browser) {
+        const setup = await prepareRenderSetup({
+            launch: launchPlaywrightChromium,
+            bundleCommand: bundleDeviceSourcesCommand(),
+            deadlines: WARMUP_DEADLINES,
+        });
+        if (setup.kind === 'absent') {
+            launchFailure = setup.reason;
             return null;
         }
-        const page = await browser.newPage();
-        const bundled = bundleDeviceSources();
-        await page.goto('about:blank');
-        await page.addScriptTag({ content: bundled });
-        return page;
+        renderBrowser = setup.browser;
+        return setup.page;
     })();
     return pagePromise;
 }
@@ -447,13 +562,128 @@ function skipWithoutRenderProof(ctx: TestContext): void {
     );
 }
 
+// A warm-up step that never settles once outran the 120s hook (run
+// 42099824047) and reported only "Hook timed out". These drive the warm-up
+// through stand-in steps with short deadlines; each case's own 10s timeout
+// is what an unbounded step would hit instead of the named failure.
+describe('de-esser render warm-up deadlines', () => {
+    // The bundle bound leaves room for a loaded runner to start a real Node
+    // child; the stalled-child case shortens it to keep the case quick.
+    const SHORT_DEADLINES: WarmupDeadlines = { launch: 200, newPage: 200, bundle: 8_000, goto: 200, addScriptTag: 200 };
+    function stalledLaunch(): Promise<WarmupBrowser<WarmupPage>> {
+        return new Promise<WarmupBrowser<WarmupPage>>(() => {});
+    }
+    const absent = (attempt: LaunchAttempt): Promise<never> =>
+        Promise.reject(
+            new Error(
+                attempt === 'bundled'
+                    ? "browserType.launch: Executable doesn't exist at /cache/chromium_headless_shell/chrome"
+                    : "browserType.launch: Chromium distribution 'chrome' is not found at /opt/google/chrome/chrome"
+            )
+        );
+    /** The bundled browser is absent; the system Chrome attempt does what `chrome` does. */
+    function bundledAbsentThen(
+        chrome: () => Promise<WarmupBrowser<WarmupPage>>
+    ): (attempt: LaunchAttempt) => Promise<WarmupBrowser<WarmupPage>> {
+        return (attempt) => {
+            if (attempt === 'bundled') {
+                return absent(attempt);
+            }
+            return chrome();
+        };
+    }
+    const scriptCommand = (source: string): ChildCommand => ({ file: process.execPath, args: ['-e', source] });
+    const printsBundle = scriptCommand('process.stdout.write(JSON.stringify("globalThis.__bundled = true;"))');
+
+    function fakeBrowser(): { browser: WarmupBrowser<WarmupPage>; scripts: string[] } {
+        const scripts: string[] = [];
+        const page: WarmupPage = {
+            goto: async () => null,
+            addScriptTag: async ({ content }) => {
+                scripts.push(content);
+                return null;
+            },
+        };
+        return { browser: { version: () => 'fake', newPage: async () => page }, scripts };
+    }
+
+    it('fails a bundled launch that never settles by name instead of skipping', async () => {
+        const setup = prepareRenderSetup({
+            launch: stalledLaunch,
+            bundleCommand: printsBundle,
+            deadlines: SHORT_DEADLINES,
+        });
+        await expect(setup).rejects.toThrow(
+            'de-esser render warm-up step "launch bundled" did not settle within 200 ms'
+        );
+    }, 10_000);
+
+    it('fails a system Chrome launch that never settles by name once the bundled browser is absent', async () => {
+        const setup = prepareRenderSetup({
+            launch: bundledAbsentThen(stalledLaunch),
+            bundleCommand: printsBundle,
+            deadlines: SHORT_DEADLINES,
+        });
+        await expect(setup).rejects.toThrow(
+            'de-esser render warm-up step "launch channel:chrome" did not settle within 200 ms'
+        );
+    }, 10_000);
+
+    it('kills a bundle child that never exits and fails by name before the page is touched', async () => {
+        const { browser, scripts } = fakeBrowser();
+        const setup = prepareRenderSetup({
+            launch: async () => browser,
+            bundleCommand: scriptCommand('setInterval(() => {}, 1000)'),
+            deadlines: { ...SHORT_DEADLINES, bundle: 500 },
+        });
+        await expect(setup).rejects.toThrow(
+            'de-esser render warm-up step "bundle" did not settle within 500 ms and was killed'
+        );
+        expect(scripts).toEqual([]);
+    }, 10_000);
+
+    it('skips only when both launches report the browser is not installed', async () => {
+        const setup = await prepareRenderSetup({
+            launch: absent,
+            bundleCommand: printsBundle,
+            deadlines: SHORT_DEADLINES,
+        });
+        expect(setup).toEqual({
+            kind: 'absent',
+            reason: "browserType.launch: Chromium distribution 'chrome' is not found at /opt/google/chrome/chrome",
+        });
+    }, 10_000);
+
+    it('fails, rather than skips, a launch that rejects for any other reason', async () => {
+        const setup = prepareRenderSetup({
+            launch: bundledAbsentThen(() =>
+                Promise.reject(new Error('browserType.launch: Host system is missing dependencies'))
+            ),
+            bundleCommand: printsBundle,
+            deadlines: SHORT_DEADLINES,
+        });
+        await expect(setup).rejects.toThrow('Host system is missing dependencies');
+    }, 10_000);
+
+    it('evaluates the bundled script once every step settles in time', async () => {
+        const { browser, scripts } = fakeBrowser();
+        const setup = await prepareRenderSetup({
+            launch: async () => browser,
+            bundleCommand: printsBundle,
+            deadlines: SHORT_DEADLINES,
+        });
+        expect(setup).toMatchObject({ kind: 'ready', browser: { version: 'fake', launch: 'bundled' } });
+        expect(scripts).toEqual(['globalThis.__bundled = true;']);
+    }, 10_000);
+});
+
 describe('createDeEsser real OfflineAudioContext renders', () => {
     // The cold start — Chromium launch, the esbuild child bundle, page
-    // preparation — nondeterministically exceeds a test timeout under CI
-    // shard load (#4330): it hung the first render for its full 30s while
-    // its warm siblings finished in seconds. Warm it once here with a
-    // budget that covers a loaded runner, so each test's timeout describes
-    // a render, not the setup it happens to be first for.
+    // preparation — once hung the first render for its full 30s under CI
+    // shard load (#4330). Warm it once here, so each test's timeout describes
+    // a render, not the setup it happens to be first for. Every step carries
+    // its own deadline inside this budget (`WARMUP_DEADLINES`), so a stall
+    // fails under the step's name instead of as this hook's timeout.
     beforeAll(async () => {
         await pageOnce();
     }, 120_000);

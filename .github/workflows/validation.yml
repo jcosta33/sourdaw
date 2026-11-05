@@ -536,6 +536,15 @@ jobs:
       - name: Install dependencies
         run: node scripts/runIsolatedUnitShard.ts install --context "${{ steps.unit_isolation.outputs.context }}"
 
+      # Real-render specs launch Chromium from inside a loaded shard. Without
+      # the pinned Playwright build they fall back to the image's full Chrome,
+      # whose cold start exceeded a 120s warm-up under shard load (run
+      # 42099824047). The isolated account installs it into its own HOME,
+      # bounded like the Browser AI leg's install in heavy-gates.yml.
+      - name: Install Chromium
+        timeout-minutes: 2
+        run: node scripts/runIsolatedUnitShard.ts browsers --context "${{ steps.unit_isolation.outputs.context }}"
+
       # The suite is dominated by jsdom construction and module loading rather
       # than assertions, so worker count is the lever that matters. The local
       # default of two exists for the agent resource guard, not for CI.
