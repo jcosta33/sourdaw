@@ -1,0 +1,36 @@
+src/modules/Transport/useCases/transportControls/__tests__/punchRecordingClockWitness.spec.ts
+  s_ba80576e6f5cb5::t_6dc3f2a82a128e 162-163
+  s_ba80576e6f5cb5::t_afc1705d339cb1 94,96-98
+  s_ba80576e6f5cb5::t_f6375a2743c4ac 341
+  s_ba80576e6f5cb5::t_90236cdaa785eb 321-340,342-369
+  s_ba80576e6f5cb5::t_9a50a97e123aa4 186
+  s_ba80576e6f5cb5::t_d19c3b06ef540b 16
+  s_ba80576e6f5cb5::t_5fcc57a77f50a9 7
+  s_ba80576e6f5cb5::t_c0c7e721e359a0 112-116
+tests/e2e/punchRecordingClockObserver.ts
+  s_ba80576e6f5cb5::t_afcbc8aa601856 155,157,170
+  s_ba80576e6f5cb5::t_959f7ee548ac0e 161
+  s_ba80576e6f5cb5::t_4ba2499d29ec08 144-145
+  s_ba80576e6f5cb5::t_67197d54b4552f 19-20
+  s_ba80576e6f5cb5::t_bf8f76cd722c65 171,188-192,197-207,214-237,242
+  s_ba80576e6f5cb5::t_300fa1bd4e361d 162-164,167-169
+  s_ba80576e6f5cb5::t_e63d631a42bc9d 172-174,185-187
+  s_ba80576e6f5cb5::t_b602252a0d23c1 238-241
+  s_ba80576e6f5cb5::t_09c46210a219f8 165-166,175-184,273-277
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "77e9dd31e0e0d66f5d4d864e85d91e3d04a1f913",
+  "prompts": {},
+  "sessions": {
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
