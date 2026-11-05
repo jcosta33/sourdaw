@@ -94,8 +94,9 @@ describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#2
     // focus-time read, then focus it so a real focusin event is dispatched.
     function focusWithModality(element: HTMLElement, focusVisible: boolean): void {
         const nativeMatches = element.matches.bind(element);
-        element.matches = (selector: string) =>
-            selector === ':focus-visible' ? focusVisible : nativeMatches(selector);
+        vi.spyOn(element, 'matches').mockImplementation((selector: string) =>
+            selector === ':focus-visible' ? focusVisible : nativeMatches(selector)
+        );
         element.focus();
     }
 
