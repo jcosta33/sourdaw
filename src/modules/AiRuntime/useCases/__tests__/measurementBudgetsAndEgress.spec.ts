@@ -29,7 +29,7 @@ import {
 import {
     captureProjectRevision,
     createCrdtDoc,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
+    projectRevisionMatchesLiveIgnoringSaveWrites,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -144,9 +144,7 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => {
     const original = await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>();
     return {
         ...original,
-        projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(
-            original.projectRevisionMatchesLiveIgnoringCommandCheckpoint
-        ),
+        projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn(original.projectRevisionMatchesLiveIgnoringSaveWrites),
     };
 });
 
@@ -393,11 +391,11 @@ async function abortAsRendersHandBack(controller: AbortController, renders: numb
         finished += 1;
         return buffer;
     });
-    vi.mocked(projectRevisionMatchesLiveIgnoringCommandCheckpoint).mockImplementation((revision) => {
+    vi.mocked(projectRevisionMatchesLiveIgnoringSaveWrites).mockImplementation((revision) => {
         if (finished === renders) {
             controller.abort();
         }
-        return actual.projectRevisionMatchesLiveIgnoringCommandCheckpoint(revision);
+        return actual.projectRevisionMatchesLiveIgnoringSaveWrites(revision);
     });
 }
 
@@ -448,7 +446,7 @@ beforeEach(() => {
     vi.mocked(measureAgentScopeRender).mockReset();
     vi.mocked(previewVersionedCommandBatchEnvelope).mockReset();
     vi.mocked(getAudioBufferContentAddress).mockReset();
-    vi.mocked(projectRevisionMatchesLiveIgnoringCommandCheckpoint).mockReset();
+    vi.mocked(projectRevisionMatchesLiveIgnoringSaveWrites).mockReset();
     vi.mocked(generateToolPlanningOutcome).mockReset();
     vi.mocked(tryPresetMatch).mockReturnValue([]);
     vi.mocked(tryParameterizedPath).mockReturnValue([]);
