@@ -289,6 +289,11 @@ describe('automateTrackGainRange grounding', () => {
         { id: 'section-verse', name: 'Verse', startBeat: 0, endBeat: 32 },
         { id: 'section-chorus', name: 'Chorus', startBeat: 32, endBeat: 48 },
     ];
+    // "Chorus" lies inside "Chorus Two", so a request naming the longer name names that section alone.
+    const CHORUS_AND_CHORUS_TWO_SECTIONS = [
+        { id: 'section-chorus', name: 'Chorus', startBeat: 32, endBeat: 48 },
+        { id: 'section-chorus-two', name: 'Chorus Two', startBeat: 56, endBeat: 72 },
+    ];
     const SHAPE_REASON = 'Gain lift request must state only its buses, one dB figure and one whole existing section';
 
     function groundBusGainRange(
@@ -349,8 +354,49 @@ describe('automateTrackGainRange grounding', () => {
         });
     });
 
-    // The shared section reading takes any section whose name the text contains, so the lift's own
-    // shape is what holds the section to the one the request names in whole.
+    it.each([
+        { prompt: 'Lift Drum Bus by 1.5 dB in Chorus Two', arguments_: DRUM_BUS_LIFT },
+        { prompt: 'Lift Drum Bus in Chorus Two by 1.5 dB', arguments_: DRUM_BUS_LIFT },
+        { prompt: 'Lift Drum Bus and Bass Bus by 1.5 dB in Chorus Two', arguments_: NAMED_LIFT },
+        { prompt: 'Lift Drum Bus by 1.5 dB in Chorus', arguments_: { ...DRUM_BUS_LIFT, sectionName: 'Chorus' } },
+    ])('grounds "$prompt" beside a section whose name the other contains', ({ prompt, arguments_ }) => {
+        expect(groundBusGainRange(prompt, arguments_, [], CHORUS_AND_CHORUS_TWO_SECTIONS)).toEqual({
+            actions: [{ type: 'automateTrackGainRange', payload: arguments_ }],
+            rejections: [],
+        });
+    });
+
+    it.each([
+        {
+            case: 'the contained section for a request naming the longer one',
+            prompt: 'Lift Drum Bus by 1.5 dB in Chorus Two',
+            arguments_: { ...DRUM_BUS_LIFT, sectionName: 'Chorus' },
+        },
+        {
+            case: 'the longer section for a request naming the contained one',
+            prompt: 'Lift Drum Bus by 1.5 dB in Chorus',
+            arguments_: DRUM_BUS_LIFT,
+        },
+        {
+            case: 'one section for a request naming both apart',
+            prompt: 'Lift Drum Bus by 1.5 dB in Chorus and Chorus Two',
+            arguments_: DRUM_BUS_LIFT,
+        },
+    ])('refuses $case', ({ prompt, arguments_ }) => {
+        expect(groundBusGainRange(prompt, arguments_, [], CHORUS_AND_CHORUS_TWO_SECTIONS)).toEqual({
+            actions: [],
+            rejections: [
+                {
+                    index: 0,
+                    name: 'automateTrackGainRange',
+                    reason: 'Provider value sectionName does not match the user request',
+                },
+            ],
+        });
+    });
+
+    // Without a "Chorus Two" section the shared reading still takes the "Chorus" the text contains,
+    // so the lift's own shape is what holds the section to the one the request names in whole.
     it.each([
         { prompt: 'Lift Drum Bus by 1.5 dB in Chorus Two', arguments_: { ...DRUM_BUS_LIFT, sectionName: 'Chorus' } },
         { prompt: 'Lift Drum Bus in Chorus Two by 1.5 dB', arguments_: { ...DRUM_BUS_LIFT, sectionName: 'Chorus' } },
@@ -1020,6 +1066,137 @@ describe('section grounding', () => {
         ];
 
         expect(rejected.every((result) => result.actions.length === 0)).toBe(true);
+    });
+});
+
+// A section reference reads section names whole, longest first: "Chorus" inside "Chorus Two" is no
+// second section the request names.
+describe('section references beside a section whose name the other contains', () => {
+    const CHORUS = { id: 'section-chorus', name: 'Chorus', startBeat: 16, endBeat: 32 };
+    const CHORUS_TWO = { id: 'section-chorus-two', name: 'Chorus Two', startBeat: 48, endBeat: 64 };
+    const VERSE = { id: 'section-verse', name: 'Verse', startBeat: 0, endBeat: 16 };
+    const SEND_LOWER = { trackIds: ['track-lead-vocal'], busId: 'bus-hall', reductionDb: 3 };
+    const SEND_PROMPT = 'Lower send from Lead Vocal to Hall by 3 dB in Chorus Two';
+
+    function groundSectionCall(
+        call: Parameters<typeof bridgeGroundedLlmToolCalls>[0]['calls'][number],
+        prompt: string,
+        sections: readonly (typeof CHORUS)[] = [CHORUS, CHORUS_TWO, VERSE]
+    ) {
+        const leadVocal: ProjectTrack = {
+            ...createTrack({ id: 'track-lead-vocal', name: 'Lead Vocal' }),
+            sends: [{ busId: 'bus-hall', level: 0.5, levelDb: -6, preFader: false }],
+        };
+        const hall = createTrack({ id: 'bus-hall', name: 'Hall', kind: 'bus' });
+        return bridge(
+            [call],
+            prompt,
+            { ...projectContext, automationLanes: [], sections: [...sections], tracks: [leadVocal, hall, master] },
+            [],
+            sections.map(({ id, name, startBeat, endBeat }) => ({ sectionId: id, name, startBeat, endBeat }))
+        );
+    }
+
+    it.each([
+        {
+            call: { name: 'removeSection', arguments: { startBeat: 48, endBeat: 64, name: 'Chorus Two' } },
+            prompt: 'remove the section Chorus Two from beat 48 to beat 64',
+            action: { type: 'removeSection', payload: { sectionId: 'section-chorus-two' } },
+        },
+        {
+            call: {
+                name: 'renameSection',
+                arguments: { startBeat: 48, endBeat: 64, name: 'Chorus Two', newName: 'Outro' },
+            },
+            prompt: 'rename the section Chorus Two from beat 48 to beat 64 to Outro',
+            action: { type: 'renameSection', payload: { sectionId: 'section-chorus-two', name: 'Outro' } },
+        },
+        {
+            call: { name: 'automateSendRange', arguments: { ...SEND_LOWER, sectionName: 'Chorus Two' } },
+            prompt: SEND_PROMPT,
+            action: { type: 'automateSendRange', payload: { ...SEND_LOWER, sectionName: 'Chorus Two' } },
+        },
+        {
+            call: { name: 'automateSendRange', arguments: { ...SEND_LOWER, sectionName: 'Chorus' } },
+            prompt: 'Lower send from Lead Vocal to Hall by 3 dB in Chorus',
+            action: { type: 'automateSendRange', payload: { ...SEND_LOWER, sectionName: 'Chorus' } },
+        },
+    ])('grounds "$prompt" for the section it names in whole', ({ call, prompt, action }) => {
+        expect(groundSectionCall(call, prompt)).toEqual({ actions: [action], rejections: [] });
+    });
+
+    it.each([
+        {
+            case: 'the contained section for a send request naming the longer one',
+            call: { name: 'automateSendRange', arguments: { ...SEND_LOWER, sectionName: 'Chorus' } },
+            prompt: SEND_PROMPT,
+            argument: 'sectionName',
+        },
+        {
+            case: 'the contained section for a removal naming the longer one',
+            call: { name: 'removeSection', arguments: { startBeat: 16, endBeat: 32, name: 'Chorus' } },
+            prompt: 'remove the section Chorus Two from beat 16 to beat 32',
+            argument: 'name',
+        },
+        {
+            case: 'one section for a send request naming two apart',
+            call: { name: 'automateSendRange', arguments: { ...SEND_LOWER, sectionName: 'Chorus Two' } },
+            prompt: 'Lower send from Lead Vocal to Hall by 3 dB in Chorus Two or Verse',
+            argument: 'sectionName',
+        },
+        {
+            case: 'one section for a send request naming a section and the one it contains apart',
+            call: { name: 'automateSendRange', arguments: { ...SEND_LOWER, sectionName: 'Chorus Two' } },
+            prompt: 'Lower send from Lead Vocal to Hall by 3 dB in Chorus or Chorus Two',
+            argument: 'sectionName',
+        },
+    ])('refuses $case', ({ call, prompt, argument }) => {
+        expect(groundSectionCall(call, prompt)).toEqual({
+            actions: [],
+            rejections: [
+                { index: 0, name: call.name, reason: `Provider value ${argument} does not match the user request` },
+            ],
+        });
+    });
+
+    // The project holds no "Chorus Two", so the request names no section the call can take whole.
+    it('refuses a send request naming a section the project lacks', () => {
+        expect(
+            groundSectionCall(
+                { name: 'automateSendRange', arguments: { ...SEND_LOWER, sectionName: 'Chorus Two' } },
+                SEND_PROMPT,
+                [CHORUS, VERSE]
+            )
+        ).toEqual({
+            actions: [],
+            rejections: [
+                {
+                    index: 0,
+                    name: 'automateSendRange',
+                    reason: 'Provider value sectionName does not match the user request',
+                },
+            ],
+        });
+    });
+
+    // Two sections sharing one name leave the request naming neither alone.
+    it('refuses a send request naming a name two sections share', () => {
+        expect(
+            groundSectionCall(
+                { name: 'automateSendRange', arguments: { ...SEND_LOWER, sectionName: 'Chorus Two' } },
+                SEND_PROMPT,
+                [CHORUS, CHORUS_TWO, { ...CHORUS_TWO, id: 'section-chorus-two-again', startBeat: 64, endBeat: 80 }]
+            )
+        ).toEqual({
+            actions: [],
+            rejections: [
+                {
+                    index: 0,
+                    name: 'automateSendRange',
+                    reason: 'Provider value sectionName does not match the user request',
+                },
+            ],
+        });
     });
 });
 
