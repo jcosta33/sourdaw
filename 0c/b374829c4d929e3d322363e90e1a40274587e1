@@ -1,0 +1,56 @@
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/duplicateSelectedClipsForward.ts
+  s_fec7059b7a251c::t_204a72223d5725 62-64,66-71
+  s_fec7059b7a251c::t_8cf2b15a4a0a69 87-90
+  s_fec7059b7a251c::t_a7be692f517bf3 33-34
+  s_fec7059b7a251c::t_0e5b79f72596f9 2
+  s_fec7059b7a251c::t_e5c129c1c6cd4f 91
+src/modules/Arrangement/useCases/index.ts
+  s_fec7059b7a251c::t_ff8fc30d3fd65c 66
+src/modules/CommandInterface/useCases/keyboardShortcutActions/__tests__/handleKeyboardShortcut.spec.ts
+  s_fec7059b7a251c::t_adf033fe2206b2 83-84
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts
+  s_fec7059b7a251c::t_f98d67837b26eb 249
+  s_fec7059b7a251c::t_7dfad65b2e0bdc 50
+  s_fec7059b7a251c::t_199a0c8352e2b5 259
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydown.spec.ts
+  s_fec7059b7a251c::t_e23e9986cb8b70 752
+  s_fec7059b7a251c::t_81bec45b7e4af5 1028
+  s_fec7059b7a251c::t_afe93ef145c183 123
+  s_fec7059b7a251c::t_9d01fa5067d06c 926-1003,1005-1006
+  s_fec7059b7a251c::t_6b5e619b104006 1004
+  s_fec7059b7a251c::t_5fd1d51b6c56b0 1055
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/duplicateClipSelectingCopy.ts
+  s_fec7059b7a251c::t_f0d95a62575eef 1-22,24
+  s_fec7059b7a251c::t_4b45c1436fb110 23
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydownStoredBindings.spec.ts
+  s_fec7059b7a251c::t_d411ee6e087e96 109-110
+src/modules/CommandInterface/useCases/keyboardShortcutActions/clipShortcuts/__tests__/duplicateSelectedClipsForward.spec.ts
+  s_fec7059b7a251c::t_837871654e33ca 122-124
+  s_fec7059b7a251c::t_ced3b85490d24c 160-203,206
+  s_fec7059b7a251c::t_9ba067f4fa298c 91-102,125
+  s_fec7059b7a251c::t_c9b4479c279a32 7-10
+  s_fec7059b7a251c::t_7cd294a2c3b893 38-40
+  s_fec7059b7a251c::t_fad74637a79d4c 56
+  s_fec7059b7a251c::t_f924b4ccf7fb66 11-13
+  s_fec7059b7a251c::t_8e311d165f3c4e 41
+  s_fec7059b7a251c::t_d110ddbf6b48e6 57
+  s_fec7059b7a251c::t_7623da8b8d9927 204-205
+  s_fec7059b7a251c::t_8340653b2f4682 207
+  s_fec7059b7a251c::t_869312aebb6b4f 14-31,33-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0cb374829c4d929e3d322363e90e1a40274587e1",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
