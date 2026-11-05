@@ -2,6 +2,8 @@ import { createStore } from '#/infra/store/createStore';
 import { createLocalStorage } from '#/infra/store/storage/createLocalStorage';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { migrateStoredShortcutCombo } from '../models/ShortcutCombo';
+
 export type ShortcutAction = { type: 'appAction'; action: AppAction } | { type: 'callback'; id: string };
 
 export type ShortcutDefinition = {
@@ -471,7 +473,7 @@ function validateStoredCustomMappings(value: unknown): Record<string, string[]> 
                 break;
             }
 
-            validKeys.push(key);
+            validKeys.push(migrateStoredShortcutCombo(key));
         }
 
         if (!hasOnlyStringKeys) {
