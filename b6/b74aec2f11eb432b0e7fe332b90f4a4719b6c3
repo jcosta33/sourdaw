@@ -1,0 +1,65 @@
+src/utils/Music/__tests__/MusicalScale.spec.ts
+  s_fec7059b7a251c::t_72a423726d328f 5
+  s_8d7c914c5d23a3::t_4cd7373ac9018a 132-146
+src/modules/Yeast/workers/processors/ScaleQuantizer.ts
+  s_fec7059b7a251c::t_35b8ce1c3037cf 88,145
+  s_3bb122e91d89a5::t_9c8a33bea83f80 29-30,55
+src/modules/Yeast/workers/processors/Harmonizer.ts
+  s_fec7059b7a251c::t_8f7e8f48f3220a 120
+  s_3bb122e91d89a5::t_9afab99d83707a 21-22,58
+src/modules/MIDI/useCases/stepRecording/stepRecordNavigation.ts
+  s_8d7c914c5d23a3::t_ad9efeae7fdeb2 1,18,27
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx
+  s_8d7c914c5d23a3::t_640285d0567f1f 43,540
+src/utils/Music/MusicalScale.ts
+  s_8d7c914c5d23a3::t_ee3334b6f2eb45 20-26,51-52,56,88
+src/modules/MIDI/useCases/stepRecording/__tests__/stepRecordNavigationBranches.spec.ts
+  s_8d7c914c5d23a3::t_d77a3ed12ad7a7 131-137
+src/modules/TimelineEditor/presentations/helpers/__tests__/pianoRollConstants.spec.ts
+  s_8d7c914c5d23a3::t_141b0a19b7bee9 204-209
+src/modules/TimelineEditor/presentations/helpers/pianoRollConstants.ts
+  s_8d7c914c5d23a3::t_9eca1149e8047d 6,22
+  s_fec7059b7a251c::t_0a3f457253a9a2 23-26,198
+src/modules/MIDI/models/MidiEffectTypes.ts
+  s_fec7059b7a251c::t_0a3f457253a9a2 30-36
+src/modules/TimelineEditor/presentations/hooks/usePianoRollRenderer.ts
+  s_fec7059b7a251c::t_0a3f457253a9a2 68,512
+src/modules/MIDI/useCases/midiEffectPlugins/createScaleFilter.ts
+  s_fec7059b7a251c::t_0a3f457253a9a2 1,4
+src/modules/MIDI/useCases/midiEffectPlugins/__tests__/createScaleFilter.spec.ts
+  s_fec7059b7a251c::t_3d682a84f635a6 27-34
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollRenderer.spec.ts
+  s_fec7059b7a251c::t_030de434b9ea8a 161-171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b6b74aec2f11eb432b0e7fe332b90f4a4719b6c3",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_8d7c914c5d23a3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6fd7cc34-70d0-4cef-8a70-4351ac0359b0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
