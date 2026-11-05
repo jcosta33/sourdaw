@@ -1,0 +1,59 @@
+src/modules/CrdtDocument/AGENTS.md
+  s_0314bb17e5dee3::t_2e6f4fd167ba9d 24
+src/modules/CrdtDocument/useCases/crdtBranching/branchSwitchTransport.ts
+  s_0314bb17e5dee3::t_28d99371ccca6d 1-48
+src/app/registerKernelPorts.ts
+  s_55244eb93b97d1::t_ac44076835d7e9 3,5,9,21,27-28,35
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchRootIdentity.integration.spec.ts
+  s_91f8b522168bd8::t_6eccd6b2800d90 9,104-106
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchSwitchProjectIdentity.integration.spec.ts
+  s_55244eb93b97d1::t_de0260305bc7ca 4,21-22
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchSwitchStopsTransport.integration.spec.ts
+  s_55244eb93b97d1::t_208922f9ba0b19 4,102-103
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchSwitchTransportProjection.integration.spec.ts
+  s_55244eb93b97d1::t_104f83514427af 4,51-52
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchingPersistenceAdapter.spec.ts
+  s_55244eb93b97d1::t_701e8c4181dcbb 5,49-50
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/recordingTerminalRealBranches.integration.spec.ts
+  s_55244eb93b97d1::t_d8a82456a2a812 7,335-336
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/switchBranch.spec.ts
+  s_91f8b522168bd8::t_bc7ca593f08fb6 6,161-162
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/switchSanitizedPeerBranch.integration.spec.ts
+  s_55244eb93b97d1::t_147b276e246b78 5,26-27
+src/modules/CrdtDocument/useCases/index.ts
+  s_91f8b522168bd8::t_23619224087e5e 34
+src/modules/CrdtDocument/useCases/crdtBranching/switchBranch.ts
+  s_0314bb17e5dee3::t_22449033e1837a 15,59,131,166
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1177ac9ba8594f54861a060e1ee99dc804f9d0e6",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_91f8b522168bd8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ea993bb3-f8f9-4703-aa93-ef8a806d9107",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
