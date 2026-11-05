@@ -168,6 +168,7 @@ export { getLayerCount } from './adjustmentLayer/getLayerCount';
 // ── Device ────────────────────────────────────────────────────────────────────
 
 export { executeAddDeviceAction } from './device/executeAddDeviceAction';
+export { getAddedDeviceParameterValues } from './device/getAddedDeviceParameterValues';
 export { executeRemoveDeviceAction } from './device/executeRemoveDeviceAction';
 export { addMidiFx } from './device/addMidiFx';
 export { removeMidiFx } from './device/removeMidiFx';
@@ -265,9 +266,11 @@ export { syncSoloModePreference } from './soloMode/syncSoloModePreference';
 // ── Track View / Zoom ─────────────────────────────────────────────────────────
 
 export { zoomTracksVertical } from './trackZoom';
-export { initTimelineScrollClamp } from './initTimelineScrollClamp';
+export { initTimelineViewReconciliation } from './initTimelineViewReconciliation';
 export { detectVariationLaneEnabling } from './detectVariationLaneEnabling';
 export { hasVariationLanes } from './hasVariationLanes';
+export { getAlternativeClips } from './getAlternativeClips';
+export { getHeldClips } from './getHeldClips';
 export { getTimelineSurfaceMinimumHeight } from './getTimelineSurfaceMinimumHeight';
 export { scrollTimelineViewportFromWheel } from './scrollTimelineViewportFromWheel';
 export { scrollTimelineViewportHorizontallyFromWheel } from './scrollTimelineViewportHorizontallyFromWheel';

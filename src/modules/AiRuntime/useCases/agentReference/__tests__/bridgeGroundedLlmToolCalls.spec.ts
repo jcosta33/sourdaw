@@ -8072,6 +8072,73 @@ describe('bridgeGroundedLlmToolCalls', () => {
         expect(malformed.rejections[0]?.reason).toContain('incomplete or malformed');
     });
 
+    it('admits renaming the clip a bare and hands the request to and refuses the protected one', () => {
+        const context = createNamedClipSourceContext();
+        const admitted = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-lead', name: 'Bridge Solo' } }],
+            'leave Intro alone and rename Lead to Bridge Solo',
+            context
+        );
+        const refused = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-intro', name: 'Bridge Solo' } }],
+            'leave Intro alone and rename Intro to Bridge Solo',
+            context
+        );
+
+        expect(admitted.rejections).toEqual([]);
+        expect(admitted.actions).toHaveLength(1);
+        expect(refused.actions).toEqual([]);
+        expect(refused.rejections[0]?.reason).toContain('protected');
+    });
+
+    it('refuses renaming a protected clip whose name starts with an instruction verb', () => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-copy-beta', name: 'Gamma' } }],
+            "Don't touch Alpha and Copy Beta. Rename Copy Beta to Gamma.",
+            withNamedClip(withNamedClip(createClipContext(), 'clip-alpha', 'Alpha'), 'clip-copy-beta', 'Copy Beta')
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('protected');
+    });
+
+    it('refuses renaming a protected clip beside a clip named like a protection opening', () => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-alpha', name: 'Gamma' } }],
+            "Don't touch Alpha and rename Alpha to Gamma.",
+            withNamedClip(withNamedClip(createClipContext(), 'clip-alpha', 'Alpha'), 'clip-touch', 'Touch')
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('protected');
+    });
+
+    it('refuses renaming a clip when a clip name only partly overlaps the protection opening', () => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-alpha', name: 'Gamma' } }],
+            "Don't touch Alpha and rename Alpha to Gamma.",
+            withNamedClip(withNamedClip(createClipContext(), 'clip-alpha', 'Alpha'), 'clip-touch-alpha', 'Touch Alpha')
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('incomplete or malformed');
+    });
+
+    it('refuses renaming a clip when a clip name contains the protection opening', () => {
+        const result = bridge(
+            [{ name: 'renameClip', arguments: { clipId: 'clip-alpha', name: 'Gamma' } }],
+            'Do not touch Alpha and rename Alpha to Gamma.',
+            withNamedClip(
+                withNamedClip(createClipContext(), 'clip-alpha', 'Alpha'),
+                'clip-do-not-touch-alpha',
+                'Do not touch Alpha'
+            )
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.rejections[0]?.reason).toContain('incomplete or malformed');
+    });
+
     it('rejects renaming a quoted literal protected clip when another clip is selected', () => {
         const result = bridge(
             [{ name: 'renameClip', arguments: { clipId: 'clip-literal-selected', name: 'Bridge Solo' } }],
@@ -9076,6 +9143,122 @@ describe('explicit clip exclusions on the ordinary direct route', () => {
             actions: [velocityAction],
             rejections: [],
         });
+    });
+
+    describe('a clip protected with a prohibition or with leave-alone', () => {
+        const alphaCall = { name: 'setAllVelocities', arguments: { clipId: 'clip-guitar-0', velocity: 96 } };
+        const alphaAction = { type: 'setAllVelocities', payload: { clipId: 'clip-guitar-0', velocity: 96 } };
+        const betaCall = { name: 'setAllVelocities', arguments: { clipId: 'clip-guitar-1', velocity: 96 } };
+        const betaAction = { type: 'setAllVelocities', payload: { clipId: 'clip-guitar-1', velocity: 96 } };
+        const alphaRefusal = {
+            actions: [],
+            rejections: [
+                { index: 0, name: '<batch>', reason: 'Request changes "Alpha", which a protection in it leaves alone' },
+            ],
+        };
+
+        it.each([
+            'leave Alpha alone',
+            'without touching Alpha',
+            "don't touch Alpha",
+            'do not change Alpha',
+            'without changing Alpha',
+        ])('refuses an edit to Alpha when the request says: %s', (protection) => {
+            expect(
+                bridge([alphaCall], `set note velocities in Alpha to 96, ${protection}`, withGuitarObjects(['Alpha']))
+            ).toEqual(alphaRefusal);
+        });
+
+        it.each(['leave Alpha alone', 'without touching Alpha', "don't touch Alpha", 'do not change Alpha'])(
+            'edits Beta and not Alpha when the request says: %s',
+            (protection) => {
+                expect(
+                    bridge(
+                        [betaCall],
+                        `set note velocities in Beta to 96, ${protection}`,
+                        withGuitarObjects(['Alpha', 'Beta'])
+                    )
+                ).toEqual({ actions: [betaAction], rejections: [] });
+            }
+        );
+
+        it.each([
+            ["Don't touch Alpha, but rename Beta to Gamma"],
+            ['without touching Alpha, but rename Beta to Gamma'],
+            ['do not change Alpha, and rename Beta to Gamma'],
+            ['without touching Alpha; rename Beta to Gamma'],
+        ])('renames Beta beside a prohibition that ends at a separator: %s', (prompt) => {
+            expect(
+                bridge(
+                    [{ name: 'renameClip', arguments: { clipId: 'clip-guitar-1', name: 'Gamma' } }],
+                    prompt,
+                    withGuitarObjects(['Alpha', 'Beta'])
+                )
+            ).toEqual({
+                actions: [{ type: 'renameClip', payload: { clipId: 'clip-guitar-1', name: 'Gamma' } }],
+                rejections: [],
+            });
+        });
+
+        it('edits Beta when a prohibition of Alpha is followed by a velocity clause', () => {
+            expect(
+                bridge(
+                    [betaCall],
+                    'without touching Alpha, but set note velocities in Beta to 96',
+                    withGuitarObjects(['Alpha', 'Beta'])
+                )
+            ).toEqual({ actions: [betaAction], rejections: [] });
+        });
+
+        it('refuses renaming Alpha beside a prohibition of Alpha that ends at a separator', () => {
+            const result = bridge(
+                [{ name: 'renameClip', arguments: { clipId: 'clip-guitar-0', name: 'Gamma' } }],
+                'without touching Alpha, but rename Alpha to Gamma',
+                withGuitarObjects(['Alpha', 'Beta'])
+            );
+            expect(result.actions).toEqual([]);
+            expect(result.rejections[0]?.reason).toBe('Provider clip rename target is explicitly protected');
+        });
+
+        it.each([
+            ['without touching Alpha and', withGuitarObjects(['Alpha'])],
+            [
+                'without touching Alpha and Omega, but set note velocities in Beta to 96',
+                withGuitarObjects(['Alpha', 'Beta']),
+            ],
+        ])('keeps refusing a prohibition list that is dangling or names nothing: %s', (prompt, project) => {
+            expect(bridge([betaCall], `set note velocities in Beta to 96, ${prompt}`, project).actions).toEqual([]);
+        });
+
+        it('does not protect a clip through a prohibition that names its track', () => {
+            expect(
+                bridge(
+                    [alphaCall],
+                    'set note velocities in Alpha to 96, without touching Vocals',
+                    withGuitarObjects(['Alpha'])
+                )
+            ).toEqual({ actions: [alphaAction], rejections: [] });
+        });
+
+        it.each(['leave Alpha alone', 'without touching Alpha'])(
+            'ends the protection at a sentence boundary: %s',
+            (protection) => {
+                expect(
+                    bridge(
+                        [betaCall],
+                        `${protection}. Then set note velocities in Beta to 96`,
+                        withGuitarObjects(['Alpha', 'Beta'])
+                    )
+                ).toEqual({ actions: [betaAction], rejections: [] });
+                expect(
+                    bridge(
+                        [alphaCall],
+                        `${protection}. Then set note velocities in Alpha to 96`,
+                        withGuitarObjects(['Alpha', 'Beta'])
+                    )
+                ).toEqual(alphaRefusal);
+            }
+        );
     });
 
     it.each(['excluding Piano MIDI', 'excluding "Piano MIDI"'])(

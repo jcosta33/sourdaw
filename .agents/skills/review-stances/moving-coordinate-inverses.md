@@ -74,3 +74,17 @@ mutation that must fail it.
    directions, a downstream meter change and non-quarter denominators included. A correct initial mount cannot prove
    later basis changes; the flat-query and removed-subscription mutations must independently break geometry and
    freshness.
+7. **A fragment writer that re-bases a looping clip restarts its loop at the cut (#5495, a respin of #5198).**
+   #5495 re-based a looping MIDI split, Delete Time, excise or bounce fragment's notes to zero and restamped its
+   anchor at the fragment's own head. Its pins compared the fragment with
+   the anchor-free projection of its own new state, which agrees with any self-consistent rewrite, so nobody saw
+   that the fragment had started the loop over at the cut. An edit that cuts a looping clip must keep every beat's
+   sound; probe with an off-grid split and compare passes before and after. Score the source through the real
+   projection (`projectMidiClipPlayback`) on a fine grid. Record the struck notes with their probability, the
+   sounding pitches, and the controller values the track holds; the shared helper is
+   `src/modules/Arrangement/__tests__/midiClipScore.ts`. The score of the surviving clips must equal the source's
+   score, shifted by the deleted span where time closes up. Cut off the loop grid on a loop-4 clip (2, 5, 9), on a
+   start-trimmed clip, on a clip anchored before its start, on a whole-length loop with `loopLength` absent, and on
+   an unanchored looping clip, keeping a note that crosses a pass boundary and a 50 % row. Reverting the fragment
+   writer to the restamp must fail every off-grid row. A non-looping clip's re-based fragment and the audio twins are
+   controls that must stay green.

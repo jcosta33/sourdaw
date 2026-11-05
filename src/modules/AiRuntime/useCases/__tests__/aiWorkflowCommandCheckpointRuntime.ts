@@ -5,10 +5,7 @@ import {
     configureCommandBatchIdempotency,
     resetCommandBatchIdempotency,
 } from '#/modules/Command/useCases';
-import {
-    captureProjectRevision,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
-} from '#/modules/CrdtDocument/useCases';
+import { captureProjectRevision, projectRevisionMatchesLiveIgnoringSaveWrites } from '#/modules/CrdtDocument/useCases';
 
 const COMMAND_BATCH_IDEMPOTENCY_STORAGE_KEY = 'sourdaw:command-batch-idempotency:v1';
 
@@ -34,9 +31,7 @@ export function configureAiWorkflowCommandCheckpointRuntime(): void {
     installNavigatorLocksStub();
     configureCommandBatchIdempotency({ canExecute: () => true });
     commandProjectRevisionPort.setProvider(captureProjectRevision);
-    commandProjectRevisionPort.setLiveMatchIgnoringCommandCheckpoint(
-        projectRevisionMatchesLiveIgnoringCommandCheckpoint
-    );
+    commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(projectRevisionMatchesLiveIgnoringSaveWrites);
 }
 
 export function resetAiWorkflowCommandCheckpointRuntime(): void {

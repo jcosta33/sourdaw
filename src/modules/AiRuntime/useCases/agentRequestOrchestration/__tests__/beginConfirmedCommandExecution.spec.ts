@@ -50,7 +50,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({ admitAgentRenderReceipt: mock
 vi.mock('#/modules/AudioRendering/useCases', () => ({ getAgentSectionRenderArtifacts: mocks.getArtifacts }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: mocks.captureRevision,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint: mocks.revisionMatches,
+    projectRevisionMatchesLiveIgnoringSaveWrites: mocks.revisionMatches,
 }));
 vi.mock('../../../stores/chatStore', () => ({ updateChatMessage: mocks.updateMessage }));
 vi.mock('../../../stores/pendingActionConfirmationStore', () => ({
@@ -389,7 +389,7 @@ describe('beginConfirmedCommandExecution', () => {
         expect(mocks.invalidate).not.toHaveBeenCalled();
     });
 
-    it('validates approval against the confirmed revision when only the command checkpoint drifted', () => {
+    it('validates approval against the confirmed revision when only a command checkpoint or a save drifted', () => {
         mocks.captureRevision.mockReturnValueOnce('revision-with-checkpoint-drift');
         mocks.revisionMatches.mockImplementationOnce((revision) => revision === confirmation.projectRevision);
 

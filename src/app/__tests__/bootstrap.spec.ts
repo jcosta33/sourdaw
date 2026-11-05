@@ -162,11 +162,12 @@ const {
     setTrackPanMock,
     setMidiLearnDependenciesMock,
     registerCrdtStorageRuntimeMock,
+    registerProjectSlotProjectionsMock,
     captureProjectRootIdentityMock,
     setElasticSensitivityRootIdentityCaptureMock,
     captureProjectIdentityMock,
     captureProjectRevisionMock,
-    projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
+    projectRevisionMatchesLiveIgnoringSaveWritesMock,
     agentProjectInspectionSetProviderMock,
     setArrangementEventBusMock,
     setRecordingMidiAdmissionPortMock,
@@ -177,6 +178,7 @@ const {
     setNotificationEventBusMock,
     setProjectIdentityTransitionDependenciesMock,
     commandRuntimeRepairPortMock,
+    commandProjectRevisionPortMock,
     externalClientManifestPortMock,
     repairRuntimeGraphFromProjectMock,
     sessionUndoWitnessStampPortMock,
@@ -195,7 +197,7 @@ const {
     setCrumbsEventBusMock,
     initCrumbsModePushMock,
     initDeviceStateReconciliationMock,
-    initTimelineScrollClampMock,
+    initTimelineViewReconciliationMock,
     initAudioBufferCacheAccessMock,
     initInputMonitoringProjectAccessMock,
     initLevainDeviceStateProjectAccessMock,
@@ -299,20 +301,19 @@ const {
         setCrumbsEventBusMock: vi.fn(),
         initCrumbsModePushMock: vi.fn(),
         initDeviceStateReconciliationMock: vi.fn(),
-        initTimelineScrollClampMock: vi.fn(),
+        initTimelineViewReconciliationMock: vi.fn(),
         initAudioBufferCacheAccessMock: vi.fn(),
         initInputMonitoringProjectAccessMock: vi.fn(),
         initLevainDeviceStateProjectAccessMock: vi.fn(),
         initLevainDeviceStatePersistenceMock: vi.fn(),
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
+        registerProjectSlotProjectionsMock: vi.fn<() => void>(),
         captureProjectRootIdentityMock: vi.fn<() => string>(() => 'root-identity'),
         setElasticSensitivityRootIdentityCaptureMock: vi.fn(),
         captureProjectIdentityMock: vi.fn<() => string>(() => 'identity-1'),
         captureProjectRevisionMock: vi.fn<() => string>(() => 'revision-1'),
-        projectRevisionMatchesLiveIgnoringCommandCheckpointMock: vi.fn<(expectedRevision: string) => boolean>(
-            () => true
-        ),
+        projectRevisionMatchesLiveIgnoringSaveWritesMock: vi.fn<(expectedRevision: string) => boolean>(() => true),
         agentProjectInspectionSetProviderMock: vi.fn(),
         setArrangementEventBusMock: vi.fn<(eventBus: ArrangementEventBus) => void>(),
         setRecordingMidiAdmissionPortMock: vi.fn(),
@@ -327,6 +328,7 @@ const {
         },
         setNotificationEventBusMock: vi.fn<(eventBus: NotificationEventBus) => void>(),
         commandRuntimeRepairPortMock: { setProvider: vi.fn() },
+        commandProjectRevisionPortMock: { setProvider: vi.fn(), setLiveMatchIgnoringSaveWrites: vi.fn() },
         externalClientManifestPortMock: { setProvider: vi.fn() },
         repairRuntimeGraphFromProjectMock: vi.fn(() => Promise.resolve()),
         sessionUndoWitnessStampPortMock: { setProvider: vi.fn() },
@@ -413,7 +415,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     setDeviceParameter: noop,
     getArrangementHandlers: sentinelHandlers('Arrangement'),
     initStalenessDetection: noop,
-    initTimelineScrollClamp: initTimelineScrollClampMock,
+    initTimelineViewReconciliation: initTimelineViewReconciliationMock,
     setArrangementEventBus: setArrangementEventBusMock,
     setOfflineRenderDependencies: noop,
     setTimeOperationDependencies: setTimeOperationDependenciesMock,
@@ -522,7 +524,7 @@ vi.mock('#/modules/Command/useCases', () => ({
         setGuard: noop,
     },
     setActionHistoryMetadataPort: noop,
-    commandProjectRevisionPort: { setProvider: noop, setLiveMatchIgnoringCommandCheckpoint: noop },
+    commandProjectRevisionPort: commandProjectRevisionPortMock,
     commandDeviceVersionsPort: { setDeviceTypeResolver: noop, setResolver: noop },
     commandTrackDefaultsPort: { setTrackColorProvider: noop },
     commandRuntimeRepairPort: commandRuntimeRepairPortMock,
@@ -553,7 +555,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectIdentity: captureProjectIdentityMock,
     captureProjectRootIdentity: captureProjectRootIdentityMock,
     captureProjectRevision: captureProjectRevisionMock,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint: projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
+    projectRevisionMatchesLiveIgnoringSaveWrites: projectRevisionMatchesLiveIgnoringSaveWritesMock,
     createCommandPreviewWorkspace: noop,
     createCommandRecoveryWorkspace: noop,
     getCrdtDoc: noop,
@@ -800,6 +802,10 @@ vi.mock('../registerDependencies', () => ({
 
 vi.mock('../registerGlobalErrorHandlers', () => ({
     registerGlobalErrorHandlers: registerGlobalErrorHandlersMock,
+}));
+
+vi.mock('../registerProjectSlotProjections', () => ({
+    registerProjectSlotProjections: registerProjectSlotProjectionsMock,
 }));
 
 vi.mock('../composeGrandBoule', () => ({
@@ -1078,6 +1084,8 @@ describe('bootstrap', () => {
 
     it('wires project runtime validation and event buses in the composition root', () => {
         expect(registerCrdtStorageRuntimeMock).toHaveBeenCalledExactlyOnceWith();
+        expect(registerProjectSlotProjectionsMock).toHaveBeenCalledExactlyOnceWith();
+        expect(registerProjectSlotProjectionsMock).toHaveBeenCalledAfter(registerCrdtStorageRuntimeMock);
         expect(agentProjectInspectionSetProviderMock).toHaveBeenCalledExactlyOnceWith(
             captureAgentProjectInspectionState
         );
@@ -1144,6 +1152,12 @@ describe('bootstrap', () => {
     it('wires command recovery to the awaited runtime graph repair owner', () => {
         expect(commandRuntimeRepairPortMock.setProvider).toHaveBeenCalledExactlyOnceWith(
             repairRuntimeGraphFromProjectMock
+        );
+    });
+
+    it('lets command finalization tolerate a save by registering the save-insensitive revision matcher', () => {
+        expect(commandProjectRevisionPortMock.setLiveMatchIgnoringSaveWrites).toHaveBeenCalledExactlyOnceWith(
+            projectRevisionMatchesLiveIgnoringSaveWritesMock
         );
     });
 
@@ -1526,11 +1540,12 @@ describe('bootstrap', () => {
         expect(initDeviceStateReconciliationMock).toHaveBeenCalledExactlyOnceWith();
     });
 
-    it('registers the timeline scroll clamp as an explicit boot step', () => {
+    it('registers the timeline view reconciliation as an explicit boot step', () => {
         // Deleting a track or collapsing a folder shrinks the timeline's
-        // content; without this registration the scroll offset stays past the
-        // last row and leaves blank canvas until the next wheel event.
-        expect(initTimelineScrollClampMock).toHaveBeenCalledExactlyOnceWith();
+        // content, and a clip can leave the project by undo, a collaborator's
+        // delete or a project load; without this registration the scroll offset
+        // stays past the last row and the selection keeps ids of missing clips.
+        expect(initTimelineViewReconciliationMock).toHaveBeenCalledExactlyOnceWith();
     });
 
     it('wires the Crumbs mode push to the shared event bus', () => {

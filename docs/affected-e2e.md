@@ -37,17 +37,37 @@ only as compiled WASM under `public/wasm` and `src/modules/AudioEngine/wasm`, wh
 coverage as their own changed paths while `wasm:verify` rejects a Rust change without regenerated
 artifacts; other files under `crates/` stay on the product route because a spec may read them directly.
 `evidence/**` is read only by Vitest specs and scripts, and the nightly workflow never runs on a pull
-request; every other workflow shapes PR CI and keeps its own route. Generator and
+request; every other workflow shapes PR CI and keeps its own route. Root lint, format, dead-code,
+and module-boundary configuration (the dependency-cruiser rules and known-violation baselines,
+Prettier, EditorConfig, oxlint and ESLint configs and baselines, knip, and the lint-only
+`tsconfig.eslint.json`) also keeps the broad profile without a browser suite: only those tools read
+it, and the lint and boundary jobs are where it can fail. Tailwind takes class names only from
+`src/` and `index.html`, the sources `src/styles/main.css` names explicitly, so neither these files
+nor any other tooling path reaches the stylesheet. Other TypeScript projects, Vite, Playwright, and
+`.gitignore`, which filters Tailwind's scan of those sources, stay on the product route. Generator and
 build scripts reach the browser only through their outputs, which land under `src/` or `public/` and
 select browser coverage there; a harness helper the browser imports from `scripts/` is proved by the
 nightly full train. Vitest-collected spec files under `src/` likewise select no browser suite and
 keep the broad non-browser profile: the production dependency graph excludes them and no browser
 harness loads them. They are not product paths, so a feature presentation edited with its colocated
-spec can still narrow. Non-spec files under `__tests__/` stay on the product route, because a browser
-harness page may load them. Configuration, dependency, workflow, and product paths keep their own routes.
+spec can still narrow. Non-spec scripts under `__tests__/` take the test-side route below, and other
+files there stay on the product route, because a browser harness page may load them. Configuration, dependency, workflow, and product paths keep their own routes.
 The planner retains the broad validation profile for product changes, CodeQL selection, anchored
 literal filenames at the runner boundary, and the required Gate's selected-job checks. A failed
 graph or missing dependency installation must never produce an empty or silently narrowed matrix.
+
+A changed test-side module, a non-spec script under `tests/e2e/` or a non-spec file under a src
+`__tests__/` directory, selects exactly the collected specs that statically import it, directly or
+transitively: the related-test semantics of Playwright's `--only-changed` and Jest's
+`findRelatedTests`. `scripts/e2eTestSideGraph.ts` cruises `src`, `tests`, and the root Playwright
+configs without Vitest specs, and reverses that graph; the import graph is the authority, so no
+helper-to-spec table exists. A src fixture that only Vitest specs import selects no browser suite
+and keeps the broad non-browser profile. A module that product code imports keeps the product route.
+The full suite runs when the graph fails or is dirty, the module is deleted, renamed, or not a script,
+any importer chain starts at something other than a collected spec (a Playwright config, global
+setup, a production E2E spec, or a file nothing imports), a reaching spec is not collected, or any
+test file, page, or root Playwright or Vite config names the module by path rather than importing it.
+These modules leave the product path list, so owner narrowing and the coverage rule never see them.
 
 This follows the affected-task pattern of comparing Git changes with reverse dependencies described
 by [Nx](https://nx.dev/docs/features/ci-features/affected), using the already installed
@@ -106,9 +126,12 @@ decided:
 - No changed file is reachable from a worker or audio-worklet entry: a `new Worker(new URL(…))`
   target or any script imported by URL (`?worker`, `?worker&url`, `?url`). Page coverage cannot
   see those threads, and an opaque runtime edge leaves the entry set unproven.
-- Each changed file's blob at the merge-base equals the map's blob, so the map describes the code
-  being changed. A file the map does not list must exist unchanged at the map commit; no browser
-  spec then executed any of its functions.
+- The map describes the code being changed. When a changed file's blob at the merge-base differs
+  from the map's blob, `main` has drifted since the map was built, and the map's version is
+  classified against the head exactly like the pull request's own change: any change outside
+  function bodies, or an unavailable map version, keeps the full suite, and body-only drift keeps
+  the specs recorded for the file. A file the map does not list must exist at the map commit; no
+  browser spec then executed any of its functions, and the same drift rule applies to that version.
 - The merge-base and head contents parse, neither holds a build annotation comment, and their parse
   trees agree outside function bodies. Annotation comments are those compilers and bundlers act on
   (`@__PURE__`, `@__NO_SIDE_EFFECTS__`, `@vite-ignore`, `sourceURL` and `sourceMappingURL`,

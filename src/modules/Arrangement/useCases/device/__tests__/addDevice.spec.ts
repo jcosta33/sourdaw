@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { writeDeviceToProject as addDevice } from '../addDevice';
+import { getAddedDeviceParameterValues } from '../getAddedDeviceParameterValues';
 
 const mocks = vi.hoisted(() => ({
     getTrackState: vi.fn(),
@@ -190,6 +191,24 @@ describe('writeDeviceToProject', () => {
 
         expect(result?.parameterValues).toEqual({ damping: 0.3 });
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+    });
+
+    // Red when the values a recipe expansion compares against stop being the values a placed device holds.
+    it('reports exactly the parameter values it writes for a device placed with no saved internal values', () => {
+        mocks.getPlatformPlugins.mockReturnValue([
+            {
+                id: 'dutch-oven',
+                name: 'Dutch Oven',
+                internalParameterValues: { fdn_damping_version: 2 },
+                parameters: [{ id: 'damping', value: 0.3 }],
+            },
+        ]);
+
+        const result = addDevice('t1', 'dutch-oven');
+
+        expect(getAddedDeviceParameterValues('dutch-oven')).toEqual(result?.parameterValues);
+        expect(getAddedDeviceParameterValues('Dutch Oven')).toEqual(result?.parameterValues);
+        expect(getAddedDeviceParameterValues('unknown-device')).toBeNull();
     });
 
     it('uses a caller-reserved device ID for project identity', () => {

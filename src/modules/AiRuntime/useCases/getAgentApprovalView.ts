@@ -11,6 +11,7 @@ import {
 import { diffProposalCommands } from '../transformers/diffProposalCommands';
 
 import { proposalCommandShape } from './agentReference/proposalCommandShape';
+import { approvedProjectRevision } from './approvedProjectRevision';
 import { evaluateMetricGoalAdmission } from './evaluateMetricGoalAdmission';
 import { getProviderRouteView } from './getProviderRouteView';
 import { metricGoalStateCodec } from './metricGoalStateCodec';
@@ -93,6 +94,11 @@ type ApprovalPreviousProposalDiff = {
     unchangedCount: number;
 };
 
+/**
+ * `currentRevision` is the revision the proposal was checked at: while the live project still holds
+ * the approved content (a save or a command checkpoint aside) that is the approved revision, exactly
+ * as Confirm validates it; otherwise the live one.
+ */
 type ApprovalFreshness =
     | { status: 'current'; currentRevision: string | null }
     | { status: 'stale'; reason: string; currentRevision: string | null }
@@ -195,19 +201,30 @@ function getFreshness(confirmation: PendingAppActionConfirmation): ApprovalFresh
         return { status: 'settled', currentRevision };
     }
     try {
-        const validation = validateAgentRiskApproval({ approval: agentApproval, commandBatch, currentRevision });
+        // Confirm validates against the same revision, so the card never disables a Confirm the
+        // route would run, nor offers one it would refuse.
+        const checkedRevision = approvedProjectRevision.readValidationRevision(agentApproval.sourceRevision);
+        const validation = validateAgentRiskApproval({
+            approval: agentApproval,
+            commandBatch,
+            currentRevision: checkedRevision,
+        });
         const metric = evaluateMetricGoalAdmission({
             state: metricGoalStateCodec(confirmation.approvalSnapshot.metricGoalState),
             commandBatch,
-            currentRevision,
+            currentRevision: checkedRevision,
         });
         if (
             validation.status === 'valid' ||
             (!validation.stale && metric.status === 'blocked' && validation.reason === metric.reason)
         ) {
-            return { status: 'current', currentRevision };
+            return { status: 'current', currentRevision: checkedRevision };
         }
-        return { status: validation.stale ? 'stale' : 'mismatched', reason: validation.reason, currentRevision };
+        return {
+            status: validation.stale ? 'stale' : 'mismatched',
+            reason: validation.reason,
+            currentRevision: checkedRevision,
+        };
     } catch (error) {
         return { status: 'mismatched', reason: failureReason(error), currentRevision: null };
     }

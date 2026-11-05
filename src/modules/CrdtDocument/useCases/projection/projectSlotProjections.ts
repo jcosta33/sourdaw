@@ -1,129 +1,95 @@
-import { type StorageHydrateOptions } from '#/infra/store/storage/types';
-import {
-    adjustmentLayerStore,
-    gainEnvelopeStore,
-    markerStore,
-    takeLaneStore,
-    trackStore,
-    vcaGroupStore,
-    warpStateStore,
-} from '#/modules/Arrangement/stores';
-import { automationStore, modulationStore } from '#/modules/Automation/stores';
 import { commandBatchIdempotencyStore } from '#/modules/Command/stores';
-import { midiLearnStore } from '#/modules/ControlSurface/stores';
-import { cvGateStore } from '#/modules/CvGate/stores';
-import { kneadStore } from '#/modules/Knead/stores';
-import { hydrateKneadFromTrackStore } from '#/modules/Knead/useCases';
-import { chordTrackStore, grooveTemplateStore, midiStore } from '#/modules/MIDI/stores';
-import { arrangementStore, projectStore } from '#/modules/Project/stores';
-import { sidechainStore } from '#/modules/Routing/stores';
-import { hydrateSidechainRoutes } from '#/modules/Routing/useCases';
-import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
-import { yeastStore } from '#/modules/Yeast/stores';
-import { hydrateYeastCrdtProjection } from '#/modules/Yeast/useCases';
 
 import { actionHistoryStore } from '../../stores/actionHistoryStore';
 
-type HydratableStore = {
-    hydrate: (options?: StorageHydrateOptions) => void;
-};
+import { type ProjectSlotProjection, slotProjection } from './slotProjection';
 
 /**
- * One CRDT-backed root slot and the projection that reads it back into a store.
- *
- * This registry is the single derived source for the projection layer:
- * `projectCrdtToStores` iterates it, `projectChangedCrdtSlots` dispatches
- * through it, and the projection-completeness guard checks it against the
- * `createAutomergeStorage(DOC_PREFIX_ROOT, …)` call sites found in source. A
- * slot that gains a document key without gaining an entry here fails CI.
+ * The slots the kernel itself owns. They are built here, and the composition
+ * root places them in the registered order beside the domain modules' slots.
  */
-export type ProjectSlotProjection = {
-    /** Document slot key. Wire format (on disk and on the sync wire) — never rename. */
-    readonly slot: string;
-    /** The store that owns this slot's read model. */
-    readonly store: HydratableStore;
-    /** The projection pass for this slot. Reads only; never writes the document. */
-    readonly hydrate: (options?: StorageHydrateOptions) => void;
-    /**
-     * Document slots whose change must re-run this projection. Always contains
-     * `slot`; a projection rebuilt from a sibling store also lists that store's
-     * slot, so a change there still refreshes it.
-     */
-    readonly triggerSlots: readonly string[];
-    /**
-     * True when `store.hydrate()` is NOT this slot's projection entry point —
-     * the store is rebuilt from another slot's read model instead.
-     */
-    readonly derivedFromSiblingSlot: boolean;
-};
+export const kernelSlotProjections = {
+    actionHistory: slotProjection({ slot: 'actionHistory', getStore: () => actionHistoryStore }),
+    commandBatchIdempotency: slotProjection({
+        slot: 'commandBatchIdempotency',
+        getStore: () => commandBatchIdempotencyStore,
+    }),
+} as const;
 
-type SlotProjectionInput = {
-    slot: string;
-    /**
-     * Resolved on access rather than captured, so building the registry at
-     * module init never reads the imported store bindings. Reading them there
-     * would force every consumer that merely imports the CrdtDocument use
-     * cases to instantiate all eighteen store modules.
-     */
-    getStore: () => HydratableStore;
-    hydrate?: (options?: StorageHydrateOptions) => void;
-    triggerSlots?: readonly string[];
-    derivedFromSiblingSlot?: boolean;
-};
+let registeredProjections: readonly ProjectSlotProjection[] | null = null;
 
-function slotProjection(input: SlotProjectionInput): ProjectSlotProjection {
-    const { getStore, slot } = input;
-    return {
-        slot,
-        get store(): HydratableStore {
-            return getStore();
-        },
-        hydrate: input.hydrate ?? ((options) => getStore().hydrate(options)),
-        triggerSlots: input.triggerSlots ?? [slot],
-        derivedFromSiblingSlot: input.derivedFromSiblingSlot ?? false,
-    };
+function assertDistinctSlots(projections: readonly ProjectSlotProjection[]): void {
+    const seen = new Set<string>();
+    for (const { slot } of projections) {
+        if (seen.has(slot)) {
+            throw new Error(`projectSlotProjectionRegistry.configure: slot '${slot}' is registered twice`);
+        }
+        seen.add(slot);
+    }
 }
 
-/** Every project-state store backed by AutomergeStorage on the root document. */
-export const projectSlotProjections: readonly ProjectSlotProjection[] = [
-    slotProjection({ slot: 'tracks', getStore: () => trackStore }),
-    slotProjection({ slot: 'adjustmentLayers', getStore: () => adjustmentLayerStore }),
-    slotProjection({ slot: 'takeLanes', getStore: () => takeLaneStore }),
-    slotProjection({ slot: 'markers', getStore: () => markerStore }),
-    slotProjection({ slot: 'vcaGroups', getStore: () => vcaGroupStore }),
-    slotProjection({ slot: 'gainEnvelopes', getStore: () => gainEnvelopeStore }),
-    slotProjection({ slot: 'warpStates', getStore: () => warpStateStore }),
-    slotProjection({ slot: 'automation', getStore: () => automationStore }),
-    slotProjection({ slot: 'modulation', getStore: () => modulationStore }),
-    slotProjection({ slot: 'transport', getStore: () => transportStore }),
-    slotProjection({ slot: 'tempoMap', getStore: () => tempoMapStore }),
-    slotProjection({ slot: 'timeSignatureMap', getStore: () => timeSignatureMapStore }),
-    slotProjection({ slot: 'arrangements', getStore: () => arrangementStore }),
-    slotProjection({ slot: 'projectMeta', getStore: () => projectStore }),
-    slotProjection({ slot: 'cvGate', getStore: () => cvGateStore }),
-    slotProjection({ slot: 'midiLearn', getStore: () => midiLearnStore }),
-    slotProjection({ slot: 'actionHistory', getStore: () => actionHistoryStore }),
-    slotProjection({ slot: 'commandBatchIdempotency', getStore: () => commandBatchIdempotencyStore }),
-    slotProjection({ slot: 'midi', getStore: () => midiStore }),
-    slotProjection({ slot: 'chordTrack', getStore: () => chordTrackStore }),
-    slotProjection({ slot: 'grooveTemplates', getStore: () => grooveTemplateStore }),
-    slotProjection({
-        slot: 'sidechainRoutes',
-        getStore: () => sidechainStore,
-        hydrate: () => hydrateSidechainRoutes(),
-    }),
-    slotProjection({
-        slot: 'yeast',
-        getStore: () => yeastStore,
-        hydrate: () => hydrateYeastCrdtProjection(),
-    }),
-    slotProjection({
-        // Knead clip state is rebuilt from trackStore clip payloads rather than
-        // read back from its own slot, so `tracks` — not `knead` — drives it.
-        slot: 'knead',
-        getStore: () => kneadStore,
-        hydrate: () => hydrateKneadFromTrackStore(),
-        triggerSlots: ['knead', 'tracks'],
-        derivedFromSiblingSlot: true,
-    }),
-];
+function assertKernelSlotsPresent(projections: readonly ProjectSlotProjection[]): void {
+    for (const kernelProjection of Object.values(kernelSlotProjections)) {
+        if (!projections.includes(kernelProjection)) {
+            throw new Error(
+                `projectSlotProjectionRegistry.configure: kernel slot '${kernelProjection.slot}' must be registered with its built-in projection`
+            );
+        }
+    }
+}
+
+function findFirstChangedSlot(
+    current: readonly ProjectSlotProjection[],
+    next: readonly ProjectSlotProjection[]
+): string | null {
+    const length = Math.max(current.length, next.length);
+    for (let index = 0; index < length; index += 1) {
+        if (current[index] !== next[index]) {
+            return (next[index] ?? current[index])?.slot ?? null;
+        }
+    }
+    return null;
+}
+
+/**
+ * The ordered slot projection registry. The kernel cannot import the stores its
+ * root slots project into, so the composition root
+ * (`#/app/registerProjectSlotProjections`) configures it once at boot, before
+ * anything can project; the list order is the projection order.
+ */
+export const projectSlotProjectionRegistry = {
+    /**
+     * Registering the identical list again is a no-op, so a caller that cannot
+     * know whether registration already ran may repeat it. Any other change
+     * refuses: a slot listed twice, a kernel slot missing its built-in
+     * projection, or a list that differs from the registered one — a slot can
+     * never be rebound to another projection once registered.
+     */
+    configure(projections: readonly ProjectSlotProjection[]): void {
+        assertDistinctSlots(projections);
+        assertKernelSlotsPresent(projections);
+        if (registeredProjections === null) {
+            registeredProjections = [...projections];
+            return;
+        }
+        const changedSlot = findFirstChangedSlot(registeredProjections, projections);
+        if (changedSlot !== null) {
+            throw new Error(
+                `projectSlotProjectionRegistry.configure: slot '${changedSlot}' is already registered with a different projection`
+            );
+        }
+    },
+    /**
+     * The registered projections, in projection order. Projecting before
+     * registration throws rather than projecting nothing: an empty registry
+     * would silently skip every hydrate on a project load.
+     */
+    read(caller: string): readonly ProjectSlotProjection[] {
+        if (registeredProjections === null) {
+            throw new Error(
+                `${caller}: slot projections are not registered; call registerProjectSlotProjections() from #/app/registerProjectSlotProjections (bootstrap does this)`
+            );
+        }
+        return registeredProjections;
+    },
+};

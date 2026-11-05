@@ -140,10 +140,14 @@ describe('PianoRoll key rail geometry', () => {
         // G5 = pitch 79, the label from the reported defect; the others pin
         // the first row, a mid row and the last row.
         for (const [name, pitch] of [
+            ['G9', 127],
+            ['C6', 84],
             ['B5', 83],
             ['G5', 79],
             ['C4', 60],
             ['C1', 24],
+            ['A0', 21],
+            ['C-1', 0],
         ] as const) {
             expectLabelBesideRow(screen.getByText(name), pitch, visiblePitches);
         }
@@ -182,7 +186,7 @@ describe('PianoRoll key rail geometry', () => {
         fireEvent.click(screen.getByText('fold'));
 
         const folded = getVisiblePitches('major', 0, true);
-        expect(folded.length).toBeLessThan(60);
+        expect(folded.length).toBeLessThan(getVisiblePitches('major', 0, false).length);
         expect(pxOf(rail.style.height)).toBe(getPianoRollContentHeight(folded.length));
         // F#5 (pitch 78) is out of C major: no label, and G5 moved up a row.
         expect(screen.queryByText('F#5')).toBeNull();

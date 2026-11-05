@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import {
     installTransactionalIndexedDb,
@@ -600,6 +601,7 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         clearHandlerRegistry();
         registerHandlerMap(getDrumPreviewBranchHandlers({ canMutateBranchMetadata }));
         clearUndoHistory();

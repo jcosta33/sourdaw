@@ -104,13 +104,13 @@ type HookArgs = Parameters<typeof usePianoRollInteractions>[0];
 type HarnessArgs = Omit<HookArgs, 'canvasRef' | 'notes'>;
 
 // ── Geometry (chromatic scale, unfolded) ─────────────────────────────────
-// getVisiblePitches yields pitches 83 → 24 top-to-bottom, ROW_HEIGHT = 16,
+// getVisiblePitches yields pitches 127 → 0 top-to-bottom, ROW_HEIGHT = 16,
 // RULER_HEIGHT = 22. Fixture beatWidth = 40, gridSnap = 1.
 const ROW = 16;
 const RULER = 22;
 const BEAT_W = 40;
 
-const yForPitch = (pitch: number): number => RULER + (83 - pitch) * ROW + 8;
+const yForPitch = (pitch: number): number => RULER + (127 - pitch) * ROW + 8;
 
 /**
  * The production roll feeds the hook from a live store subscription, so the

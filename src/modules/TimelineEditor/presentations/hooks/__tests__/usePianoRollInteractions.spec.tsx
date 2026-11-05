@@ -160,7 +160,7 @@ type HarnessArgs = Omit<HookArgs, 'canvasRef'>;
 type Note = HookArgs['notes'][number];
 
 // ── Geometry (chromatic scale, unfolded) ─────────────────────────────────
-// getVisiblePitches yields pitches 83 → 24 top-to-bottom, ROW_HEIGHT = 16,
+// getVisiblePitches yields pitches 127 → 0 top-to-bottom, ROW_HEIGHT = 16,
 // RULER_HEIGHT = 22. Fixture beatWidth = 40, gridSnap = 1.
 const ROW = 16;
 const RULER = 22;
@@ -169,7 +169,7 @@ const BEAT_W = 40;
 const PITCH_RAIL_W = 40;
 
 /** clientY at the vertical middle of the row for a pitch. */
-const yForPitch = (pitch: number): number => RULER + (83 - pitch) * ROW + 8;
+const yForPitch = (pitch: number): number => RULER + (127 - pitch) * ROW + 8;
 
 const makeNote = (id: string, pitch: number, startBeat: number, duration: number, velocity = 100): Note => ({
     id,
@@ -546,6 +546,15 @@ describe('usePianoRollInteractions', () => {
                 expect.any(Function)
             );
             expect(setSelectedNoteIds).toHaveBeenCalledWith(new Set());
+        });
+
+        it.each([96, 127, 21, 0])('stamps a note at pitch %i, outside the old 24..83 range', (pitch) => {
+            const { canvas } = renderRoll({ notes: [] });
+
+            fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(pitch) });
+            fireEvent.mouseUp(canvas, { clientX: 45, clientY: yForPitch(pitch) });
+
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', pitch, 1, 1, PREFERRED_DEFAULT_VELOCITY);
         });
 
         it('stamps in the cell containing the pointer when the click lands in the right half of a cell', () => {
@@ -1105,6 +1114,40 @@ describe('usePianoRollInteractions', () => {
     });
 
     describe('keyboard editing', () => {
+        // `fireEvent.keyDown` returns false exactly when a handler called
+        // preventDefault, which is how the global shortcut layer learns the
+        // focused piano roll consumed the key.
+        describe('claiming consumed keys from the global shortcut layer', () => {
+            it.each([
+                ['Delete with a note selected', { key: 'Delete' }, { selectedNoteIds: new Set(['n1']) }],
+                ['Backspace with a note selected', { key: 'Backspace' }, { selectedNoteIds: new Set(['n1']) }],
+                ['Delete with nothing selected', { key: 'Delete' }, {}],
+                ['Backspace with nothing selected', { key: 'Backspace' }, {}],
+                ['cmd+A', { key: 'a', metaKey: true }, {}],
+                ['cmd+D', { key: 'd', metaKey: true }, { selectedNoteIds: new Set(['n1']) }],
+                ['ArrowRight nudge with a note selected', { key: 'ArrowRight' }, { selectedNoteIds: new Set(['n1']) }],
+                ['ArrowUp transpose with a note selected', { key: 'ArrowUp' }, { selectedNoteIds: new Set(['n1']) }],
+                ['Enter in step input', { key: 'Enter' }, { stepInput: true }],
+                ['ctrl+Space in step input', { key: ' ', ctrlKey: true }, { stepInput: true }],
+                ['velocity digit in step input', { key: '5' }, { stepInput: true }],
+            ] as const)('%s is claimed', (_name, key, overrides) => {
+                const { canvas } = renderRoll(overrides);
+
+                expect(fireEvent.keyDown(canvas, key)).toBe(false);
+            });
+
+            it.each([
+                ['cmd+Z undo', { key: 'z', metaKey: true }],
+                ['cmd+shift+Z redo', { key: 'z', metaKey: true, shiftKey: true }],
+                ['Space transport toggle', { key: ' ' }],
+                ['cmd+S save', { key: 's', metaKey: true }],
+            ] as const)('%s is left to the global layer', (_name, key) => {
+                const { canvas } = renderRoll({ selectedNoteIds: new Set(['n1']) });
+
+                expect(fireEvent.keyDown(canvas, key)).toBe(true);
+            });
+        });
+
         it('Delete removes the selected notes across clips and clears the selection', () => {
             const { canvas } = renderRoll({
                 selectedNoteIds: new Set(['n1', 'n2']),

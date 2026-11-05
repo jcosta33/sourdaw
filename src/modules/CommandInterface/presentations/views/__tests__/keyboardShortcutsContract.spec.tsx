@@ -26,7 +26,7 @@ const Host = (): null => {
     return null;
 };
 
-// Reads the `isInput` flag the contract passed on the most recent keydown.
+// Reports whether the contract classified the most recent keydown as text entry.
 // jsdom returns `undefined` (not `false`) for `HTMLElement.isContentEditable`
 // on non-editable nodes, so the contract's `... || target.isContentEditable`
 // can yield `undefined` for an ungated target; that is still "not gated".
@@ -34,7 +34,13 @@ const Host = (): null => {
 function lastIsInput(): boolean {
     const calls = mocks.handleKeydown.mock.calls;
     expect(calls.length).toBeGreaterThan(0);
-    return Boolean(calls[calls.length - 1]![0].isInput);
+    return calls[calls.length - 1]![0].keyTarget === 'textEntry';
+}
+
+function lastKeyTarget(): string {
+    const calls = mocks.handleKeydown.mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    return calls[calls.length - 1]![0].keyTarget;
 }
 
 function stubTogglePlaybackHandler(): ActionHandler {
@@ -45,7 +51,7 @@ function stubTogglePlaybackHandler(): ActionHandler {
     };
 }
 
-describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', () => {
+describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#21)', () => {
     let cleanupNodes: HTMLElement[] = [];
 
     beforeEach(() => {
@@ -143,18 +149,66 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
         expect(mocks.handleKeydown).toHaveBeenCalledTimes(1);
     });
 
-    it('gates the global shortcut (isInput=true) when Delete fires inside a [data-canvas-editor]', () => {
+    it('routes undo to the global layer while a [data-canvas-editor] has focus', () => {
         openSessionWithCommandHandlers();
         render(<Host />);
         const editor = mount(document.createElement('div'));
         editor.setAttribute('data-canvas-editor', '');
         const canvas = editor.appendChild(document.createElement('canvas'));
 
-        canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+        dispatchKey(canvas, { key: 'z', metaKey: true });
 
-        // The canvas editor owns Delete, so the contract must treat focus here
-        // like a text input and suppress the arrangement clip-delete shortcut.
-        expect(lastIsInput()).toBe(true);
+        expect(mocks.handleKeydown).toHaveBeenCalledTimes(1);
+        expect(mocks.handleKeydown.mock.calls[0]![0]).toMatchObject({ key: 'z', mod: true });
+        expect(lastKeyTarget()).toBe('noteEditor');
+    });
+
+    it('routes Space to the global layer while a [data-canvas-editor] has focus', () => {
+        openSessionWithCommandHandlers();
+        render(<Host />);
+        const editor = mount(document.createElement('div'));
+        editor.setAttribute('data-canvas-editor', '');
+        const canvas = editor.appendChild(document.createElement('canvas'));
+
+        dispatchKey(canvas, { key: ' ' });
+
+        expect(mocks.handleKeydown).toHaveBeenCalledTimes(1);
+        expect(lastKeyTarget()).toBe('noteEditor');
+    });
+
+    it('skips a key the focused canvas editor claimed with preventDefault in its React handler', () => {
+        openSessionWithCommandHandlers();
+        const claimedKeys = ['Delete', 'Enter', '5'];
+        render(
+            <>
+                <Host />
+                <div data-canvas-editor="">
+                    <canvas
+                        data-testid="claiming-canvas"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                            if (claimedKeys.includes(event.key)) {
+                                event.preventDefault();
+                            }
+                        }}
+                    />
+                </div>
+            </>
+        );
+        const canvas = document.querySelector<HTMLElement>('[data-testid="claiming-canvas"]')!;
+
+        const claimed = dispatchKey(canvas, { key: 'Delete' });
+        expect(claimed.defaultPrevented).toBe(true);
+        expect(mocks.handleKeydown).not.toHaveBeenCalled();
+
+        for (const key of ['Enter', '5']) {
+            const claimedOther = dispatchKey(canvas, { key });
+            expect(claimedOther.defaultPrevented, key).toBe(true);
+        }
+        expect(mocks.handleKeydown).not.toHaveBeenCalled();
+
+        dispatchKey(canvas, { key: 'z', metaKey: true });
+        expect(mocks.handleKeydown).toHaveBeenCalledTimes(1);
     });
 
     it('does NOT gate the global shortcut when Delete fires on an unmarked timeline surface', () => {
@@ -184,7 +238,7 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
 
     it.each(['Home', 'End', ' '])('keeps native %s navigation inside a select', (key) => {
         openSessionWithCommandHandlers();
-        mocks.handleKeydown.mockImplementation((descriptor) => !descriptor.isInput);
+        mocks.handleKeydown.mockImplementation((descriptor) => descriptor.keyTarget !== 'textEntry');
         render(<Host />);
         const select = mount(document.createElement('select'));
 
@@ -264,16 +318,46 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
             expect(event.defaultPrevented).toBe(false);
         });
 
-        it('still delegates workspace-mode Tab from the body and arrangement canvas', () => {
+        it.each([
+            ['Tab', false],
+            ['Shift+Tab', true],
+        ])('leaves %s on the focused piano-roll canvas to the note-editor policy', (_label, shiftKey) => {
+            openSessionWithCommandHandlers();
+            // handleKeydown does not admit workspace-mode Tab for a note
+            // editor, so it returns false and the default is not prevented.
+            mocks.handleKeydown.mockReturnValue(false);
+            render(<Host />);
+            const editor = mount(document.createElement('div'));
+            editor.setAttribute('data-canvas-editor', '');
+            const canvas = editor.appendChild(document.createElement('canvas'));
+            canvas.tabIndex = 0;
+            canvas.focus();
+            expect(document.activeElement).toBe(canvas);
+
+            const event = dispatchKey(canvas, { key: 'Tab', shiftKey });
+
+            expect(mocks.handleKeydown).toHaveBeenCalledExactlyOnceWith(
+                expect.objectContaining({ key: 'Tab', keyTarget: 'noteEditor' })
+            );
+            expect(event.defaultPrevented).toBe(false);
+        });
+
+        it('still delegates workspace-mode Tab from the body and a focused arrangement canvas', () => {
             openSessionWithCommandHandlers();
             mocks.handleKeydown.mockReturnValue(true);
             render(<Host />);
             const canvas = mount(document.createElement('canvas'));
+            canvas.tabIndex = 0;
+            canvas.focus();
+            expect(document.activeElement).toBe(canvas);
 
             const bodyEvent = dispatchKey(document.body, { key: 'Tab' });
             const canvasEvent = dispatchKey(canvas, { key: 'Tab' });
 
             expect(mocks.handleKeydown).toHaveBeenCalledTimes(2);
+            for (const call of mocks.handleKeydown.mock.calls) {
+                expect(call[0]).toMatchObject({ key: 'Tab', keyTarget: 'workspace' });
+            }
             expect(bodyEvent.defaultPrevented).toBe(true);
             expect(canvasEvent.defaultPrevented).toBe(true);
         });
@@ -317,7 +401,7 @@ describe('useGlobalKeyboardShortcuts — data-canvas-editor delete gate (#21)', 
             const event = dispatchKey(button, { key, metaKey: true });
 
             expect(mocks.handleKeydown).toHaveBeenCalledExactlyOnceWith(
-                expect.objectContaining({ key, mod: true, isInput: false })
+                expect.objectContaining({ key, mod: true, keyTarget: 'workspace' })
             );
             expect(event.defaultPrevented).toBe(true);
         });

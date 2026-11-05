@@ -1,5 +1,6 @@
 import { restoreAutomationLanes } from '#/modules/Automation/useCases';
 import { splitMidiNotesAtBeat } from '#/modules/MIDI/useCases';
+import { continuesLoopingMidiPhase } from '#/utils/clipLoopOrigin';
 import { type ClipStateSnapshot } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
@@ -139,6 +140,7 @@ export function splitClip(
             sourceClipId: clipId,
             newClipId: plan.rightClipId,
             splitBeat: plan.adjustedMediaSplit,
+            copiesLoopMaterial: continuesLoopingMidiPhase(plan.previous.leftClip),
             targetNoteIds: plan.targetNoteIds,
         });
     }

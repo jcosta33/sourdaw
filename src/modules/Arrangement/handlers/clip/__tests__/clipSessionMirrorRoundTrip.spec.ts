@@ -2,6 +2,7 @@ import * as Automerge from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { captureAgentProjectInspectionState } from '#/app/captureCommandBatchPreflightState';
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
 import {
@@ -1090,6 +1091,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         sessionStorage.removeItem(UNDO_SESSION_KEY);
         clearHandlerRegistry();
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
@@ -4579,8 +4581,10 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             expect(prefix?.clips.find((owner) => owner.clip.id === 'clip-b')?.clip.loopOriginBeat).toBe(
                 anchored ? 4 : undefined
             );
+            // A looping MIDI fragment carries the source's anchor, so it keeps
+            // playing the source's passes from the split on.
             expect(prefix?.clips.find((owner) => owner.clip.id === 'clip-right')?.clip.loopOriginBeat).toBe(
-                anchored ? 8 : undefined
+                anchored ? 4 : undefined
             );
             for (let cycle = 0; cycle < 2; cycle += 1) {
                 expect((await undo()).headConsumed).toBe(true);

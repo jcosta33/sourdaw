@@ -7,7 +7,7 @@
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
-        "digest": "1f6398dae1af5ecc5bc705f3fbcfe06cd22bf8dacfe160c5f189494b3c09eba1"
+        "digest": "cd52791e95faae11de5b2f352f4244a2923539bf00357bb8591a325abd3d2b09"
     },
     "census": {
         "digest": "1b87d2c386437df22d458af6f94bffdff7e27a6d42c86812cbfdc8075e82644a"
@@ -126,7 +126,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Project/useCases/__tests__/productionBrief.spec.ts",
-                    "digest": "0e12f47f55a881e87ab20de7f88b3d4177e5681767d61bd576d52b0f32e8718c"
+                    "digest": "7b65fe3797607993009b742c2c55a79c65ba4a0127abb71f11d9f7ff175350d2"
                 }
             ]
         },
@@ -138,7 +138,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Project/useCases/__tests__/semanticProjectQueries.spec.ts",
-                    "digest": "9a7be6783cca3116fe0d421a67e85431b58efd2e10bcd8277408d8609c5579a3"
+                    "digest": "6930b4836923bd5f1c451f1a7df020b998de1a350baf67bcc845e1f809a5a2fe"
                 }
             ]
         },
@@ -283,7 +283,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/CrdtDocument/useCases/__tests__/agentConcurrencyAndCompensation.spec.ts",
-                    "digest": "f03ef2a76e9f075d648a7834de808ac70390f5f755c79b9eedf4a65a824ac0b1"
+                    "digest": "5e4ae5be90c1750f6ca0d35c153ad7534d50effc9d82b330f2970ce1a6417a0c"
                 }
             ]
         },
@@ -371,7 +371,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts",
-                    "digest": "5cc185d41649136fbae9aaf85c9c4a97b079ec525eef140cd1f92ee263d99f23"
+                    "digest": "17de396b61d0618b257431bf1ec8333f150ddeb75abee5ac768746d42261d7ec"
                 }
             ]
         },
@@ -524,7 +524,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts",
-                    "digest": "5b4a12244170c96653dc2f8f0229a8542de10bee066f8dd8af19c87f7a21fd7f"
+                    "digest": "879aa1a4c333f461b33dc8a64e60e49e283a062831da0f1c5d1790fa0d9070de"
                 }
             ]
         },
@@ -644,7 +644,7 @@
                 },
                 {
                     "path": "src/modules/AudioRendering/useCases/__tests__/agentOfflineRender.spec.ts",
-                    "digest": "3c98c11234a834f907a45a76d75c6f6e95059530a4c4c6513fa99c6d21d12c51"
+                    "digest": "74f7c83ca1e5d33b0f2a9ac7b6b3841788a99f7e1fd00ed69ecd4f196a80ab81"
                 }
             ]
         },

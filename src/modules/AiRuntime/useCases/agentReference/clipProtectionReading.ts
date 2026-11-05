@@ -2,9 +2,11 @@ import { type ProjectContext } from '../../models/ProjectContext';
 import { scanPromptQuotedText } from '../../transformers/promptParser/promptQuotedText';
 import { getSelectedClipReferenceIds } from '../../transformers/promptParser/selectedClipReference';
 
+import { blankRanges } from './blankRanges';
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { CONNECTIVE_WORDS, CONVENTIONAL_WORDS, protectionObjectForms } from './protectionObjectForms';
-import { protectionSlots, type Range } from './readProtectionSlots';
+import { protectionSlots, type Range, type Slot } from './readProtectionSlots';
+import { refinementRequestReading } from './refinementRequestReading';
 import { resolveAgentReference } from './resolveAgentReference';
 
 export type ExplicitlyProtectedClip = { id: string; name: string };
@@ -95,6 +97,42 @@ function splitProtectedReferenceList(reference: string, offset: number): Referen
     return { complete: true, references };
 }
 
+/** A clause protects when a protection verb or a prohibition opens it, never a bare closer or a carve-out. */
+function opensProtectionClause(slot: Slot, maskedPrompt: string, range: Range): boolean {
+    return slot.lead === 'prohibition' || protectionClauseStartPattern.test(maskedPrompt.slice(range.start));
+}
+
+const trailingClauseSeparatorPattern = /\s*[,;]\s*(?:(?:and|but|then)\s*)?$/iu;
+
+/** A prohibition has no closing word, so its slot runs to the next clause: drop the separator that joins them. */
+function readSlotReference(prompt: string, slot: Slot): string {
+    const reference = prompt.slice(slot.start, slot.end);
+    return slot.lead === 'prohibition' ? reference.replace(trailingClauseSeparatorPattern, '') : reference;
+}
+
+type NameBlanking = { text: string; ambiguous: boolean };
+
+/**
+ * Blank every project object's name so a verb inside a name never reads as the next instruction. A name wholly
+ * inside a protection's opening words stays readable. A name that otherwise overlaps them, by containing them
+ * or by straddling them, cannot be told from the opener, so the reading is ambiguous.
+ */
+function blankObjectNames(maskedText: string, prompt: string, context: ProjectContext): NameBlanking {
+    const starts = protectionSlots.startRanges(maskedText);
+    const insideStart = (reference: Range) =>
+        starts.some((start) => reference.start >= start.start && reference.end <= start.end);
+    const overlapsStart = (reference: Range) =>
+        starts.some((start) => reference.start < start.end && reference.end > start.start);
+    const references = refinementRequestReading.references(prompt, refinementRequestReading.candidates(context));
+    return {
+        text: blankRanges(
+            maskedText,
+            references.filter((reference) => !overlapsStart(reference))
+        ),
+        ambiguous: references.some((reference) => overlapsStart(reference) && !insideStart(reference)),
+    };
+}
+
 function getProtectedReferenceTexts(prompt: string, context: ProjectContext): ProtectedReferenceParse {
     const quoteScan = scanPromptQuotedText(prompt);
     const clips = context.tracks.flatMap((track) => track.clips);
@@ -128,17 +166,19 @@ function getProtectedReferenceTexts(prompt: string, context: ProjectContext): Pr
         addReference(prompt.slice(referenceStart, referenceStart + match[1].length), referenceStart);
     }
 
-    for (const slot of protectionSlots.read(quoteScan.maskedText)) {
+    const blanking = blankObjectNames(quoteScan.maskedText, prompt, context);
+    complete &&= !blanking.ambiguous;
+    for (const slot of protectionSlots.read(blanking.text)) {
         const range = slot.completeRange;
         if (
             range === null ||
             !slot.strict ||
             completeVerbStarts.has(range.start) ||
-            !protectionClauseStartPattern.test(quoteScan.maskedText.slice(range.start))
+            !opensProtectionClause(slot, quoteScan.maskedText, range)
         ) {
             continue;
         }
-        const reference = prompt.slice(slot.start, slot.end);
+        const reference = readSlotReference(prompt, slot);
         if (
             !isAggregateControlReference(reference) &&
             resolveProtectedClipIds(reference, clips, context).length === 0

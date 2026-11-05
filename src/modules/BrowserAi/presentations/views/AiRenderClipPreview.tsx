@@ -14,7 +14,7 @@ import { GripVertical, Play, Square } from 'lucide-react';
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { isAudioBufferReferencedByUndoHistory } from '#/modules/Arrangement/useCases';
+import { getHeldClips, isAudioBufferReferencedByUndoHistory } from '#/modules/Arrangement/useCases';
 import {
     cachePreviewAudioBuffer,
     playCachedAudioBufferPreview,
@@ -48,13 +48,7 @@ function clipReferencesBuffer(bufferId: string): boolean {
         return false;
     }
     return (
-        state.tracks.some(
-            (track) =>
-                track.clips.some((clip) => clip.audioBufferId === bufferId) ||
-                track.alternatives.some((alternative) =>
-                    alternative.clips.some((clip) => clip.audioBufferId === bufferId)
-                )
-        ) ||
+        state.tracks.some((track) => getHeldClips(track).some((clip) => clip.audioBufferId === bufferId)) ||
         (state.ghostClips?.some((clip) => clip.audioBufferId === bufferId) ?? false)
     );
 }

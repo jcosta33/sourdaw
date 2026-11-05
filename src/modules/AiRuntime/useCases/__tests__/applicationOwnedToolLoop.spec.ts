@@ -834,6 +834,74 @@ describe('application-owned tool loop', () => {
         });
     });
 
+    it('passes a published filter to the owner query and hands back only what it returns', async () => {
+        vi.mocked(querySemanticProject).mockReturnValue({
+            schema: 'sourdaw.semantic-project-query',
+            schemaVersion: 1,
+            projectId: 'project-1',
+            projectSchemaVersion: 1,
+            revision: { documentIdentityEpoch: 1, mutationEpoch: 2, documents: [] },
+            revisionToken: 'revision-2',
+            queryType: 'object',
+            page: { offset: 0, limit: 20, total: 1 },
+            items: [{ id: 'track-1', kind: 'track', name: 'Lead Vocal' }],
+            nextCursor: null,
+            warnings: [],
+        });
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'filtered-query',
+                        name: 'project.query',
+                        arguments: { type: 'object', filters: { exactName: 'Lead Vocal' } },
+                    },
+                ],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-filter',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+        });
+
+        expect(querySemanticProject).toHaveBeenCalledWith({ type: 'object', filters: { exactName: 'Lead Vocal' } });
+        expect(requestTurn.mock.calls[1]?.[0].receiptContext).toContain('Lead Vocal');
+        expect(result).toMatchObject({
+            status: 'complete',
+            receipts: [{ callId: 'filtered-query', status: 'success' }],
+        });
+    });
+
+    it.each([
+        { label: 'an unknown filter key', filters: { unknownFilter: 'x' } },
+        { label: 'a wrong-typed filter value', filters: { startBeat: '4' } },
+    ])('returns $label as a recoverable invalid-arguments receipt', async ({ filters }) => {
+        const requestTurn = vi
+            .fn()
+            .mockResolvedValueOnce({
+                status: 'complete',
+                toolCalls: [{ id: 'bad-filter', name: 'project.query', arguments: { type: 'object', filters } }],
+            })
+            .mockResolvedValueOnce({ status: 'complete', toolCalls: [] });
+
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'loop-bad-filter',
+            terminalToolNames: new Set(['setTempo']),
+            requestTurn,
+        });
+
+        expect(querySemanticProject).not.toHaveBeenCalled();
+        expect(requestTurn.mock.calls[1]?.[0].receiptContext).toContain('invalid-tool-arguments');
+        expect(result).toMatchObject({
+            status: 'complete',
+            receipts: [{ callId: 'bad-filter', status: 'failure', error: { code: 'invalid-tool-arguments' } }],
+        });
+    });
+
     it.each([
         { label: 'page limit', arguments: { type: 'project-summary', page: { limit: 51 } } },
         {

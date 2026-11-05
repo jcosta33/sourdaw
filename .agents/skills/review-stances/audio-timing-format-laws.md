@@ -1,10 +1,11 @@
 # Standing probes: audio, MIDI, timing and format laws
 
-Defects where tempo projection, the frame a parameter change lands on, musical or MIDI event law, a fresh
-instance, the highest admitted rate or an encoded format disagrees with an independent reference. Split out of
-`correctness.md`; a stance matching this class carries this file instead of it. Audio source offsets and every
-source reader belong to `audio-source-time.md`. Each probe names the failure mode, the input, state or mutation
-to run, and the check that must go red. Report the concrete break or none.
+Defects where tempo projection, the frame a parameter change lands on, the instant a scheduled source starts or
+stops, musical or MIDI event law, a fresh instance, the highest admitted rate or an encoded format disagrees with
+an independent reference. Split out of `correctness.md`; a stance matching this class carries this file instead
+of it. Audio source offsets and every source reader belong to `audio-source-time.md`. Each probe names the
+failure mode, the input, state or mutation to run, and the check that must go red. Report the concrete break or
+none.
 
 ## Standing probes
 
@@ -65,3 +66,16 @@ to run, and the check that must go red. Report the concrete break or none.
 9. **Expression ordering around note release (#805).** Hold the note-on's async worker, admit pressure,
    CC74, bend, release and the next same-channel note; read the curve points and execution order; an idle
    unrelated channel stays immediate.
+10. **A boundary known in advance must not wait for the look-ahead window.** A main-thread stall longer than
+    the look-ahead lets anything a window has not yet reached fall due unscheduled and join late, mid-buffer.
+    Comp parts of one clip were keyed and gated separately, so the take after a comp boundary was scheduled
+    only when a window reached it and a stall after Play dropped its head (introduced by the unreviewed direct
+    commit `4f410257b2`). Schedule one window that reaches only the part before the boundary, jump the clock past
+    the boundary, run the next window, and assert the next part's `start(when, offset)` received its exact
+    boundary instant and region entry, not a late `now` with an elapsed offset.
+11. **A live edit must cut sources it supersedes, including ones not yet sounding.** An edit during playback
+    reaches the scheduler only as its next resolution; dedup keys that change with the edit, or omit what the
+    edit changed (a take swapped over the same region), leave the emitted source sounding under or instead of
+    the new one (same commit). Schedule, edit (comp, take swap, mute, and a part scheduled ahead), run the next
+    pass, and assert `stop` on every superseded source before its start and exactly one `start` for the new
+    content; an unchanged pass must call neither.

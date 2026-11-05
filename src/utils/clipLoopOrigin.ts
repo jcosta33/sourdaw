@@ -165,13 +165,97 @@ export function shiftLoopOriginEntry(
  * fresh basis correctly is the fragment's own start — advance zero, the loop
  * window opening at the head, exactly what the pre-anchor reading admits — so
  * an anchored source re-stamps there, and a source with no anchor keeps the
- * key absent (the entry law above).
+ * key absent (the entry law above). Only a fragment that re-bases its notes
+ * takes this entry: a looping MIDI source's fragment keeps the source's basis
+ * instead (`midiFragmentWindowEntry`).
  */
 export function restampLoopOriginEntry(
     clip: ClipLoopOriginShiftInput,
     anchoredStartBeat: number
 ): { loopOriginBeat: number } | Record<string, never> {
     return loopOriginEntry(clip.loopOriginBeat === undefined ? undefined : anchoredStartBeat);
+}
+
+type MidiFragmentSource = Readonly<{
+    type: string;
+    startBeat: number;
+    endBeat: number;
+    midiOffsetBeats?: number;
+    loopEnabled?: boolean;
+    loopLength?: number;
+    loopOriginBeat?: number;
+}>;
+
+/**
+ * Whether a cut through this clip must keep the loop phase: a looping MIDI
+ * clip plays the same loop region on every pass, so any fragment cut from it
+ * carries the whole region rather than only the rows after the cut.
+ */
+export function continuesLoopingMidiPhase(clip: Pick<MidiFragmentSource, 'type' | 'loopEnabled'>): boolean {
+    return clip.type === 'midi' && clip.loopEnabled === true;
+}
+
+/**
+ * The loop length both fragments of a looping MIDI cut store: the length the
+ * source played, written out, because a clip with no `loopLength` loops its
+ * own duration and a fragment is shorter than its source.
+ */
+export function loopingMidiLengthEntry(
+    clip: Pick<MidiFragmentSource, 'type' | 'startBeat' | 'endBeat' | 'loopEnabled' | 'loopLength'>
+): { loopLength: number } | Record<string, never> {
+    if (!continuesLoopingMidiPhase(clip)) {
+        return {};
+    }
+    const { loopLengthBeats } = projectClipLoopExpansion({
+        clipDurationBeats: clip.endBeat - clip.startBeat,
+        configuredLoopLengthBeats: clip.loopLength,
+        loopEnabled: true,
+    });
+    return { loopLength: loopLengthBeats };
+}
+
+/**
+ * The content fields of a MIDI fragment cut from `clip`: the fragment plays
+ * the source's material from the source timeline beat `cutBeat` on, with its
+ * head at `fragmentStartBeat` (the cut itself for a split, the start of the
+ * deleted span after a Delete Time).
+ *
+ * A fragment of a clip that does not loop re-bases its notes onto offset 0
+ * and re-stamps its anchor (`restampLoopOriginEntry`).
+ *
+ * A looping clip's fragment cannot re-base: the rows after the cut are not
+ * the loop, and looping them from the head restarts the loop at the cut, so
+ * every pass after a cut that falls off the loop grid plays the wrong beat.
+ * It keeps every row in the source's basis (`copiesLoopMaterial`) and becomes
+ * the source trimmed to `cutBeat` and moved to `fragmentStartBeat`: the
+ * content offset advances by the cut's timeline delta, the anchor rides the
+ * move (an unanchored source anchors at its own start, the advance-zero
+ * reading it played with, as a first trim does), and the loop length is the
+ * source's (`loopingMidiLengthEntry`). The offset is not wrapped into the
+ * loop, so the rows stay exactly the source's: every reader reads
+ * `note.startBeat - midiOffsetBeats`, which a wrap and its row shift would
+ * leave unchanged.
+ */
+export function midiFragmentWindowEntry(
+    clip: MidiFragmentSource,
+    cutBeat: number,
+    fragmentStartBeat: number
+):
+    | { midiOffsetBeats: number; loopOriginBeat: number; loopLength?: number }
+    | { midiOffsetBeats: number; loopOriginBeat?: number } {
+    if (!continuesLoopingMidiPhase(clip)) {
+        return { midiOffsetBeats: 0, ...restampLoopOriginEntry(clip, fragmentStartBeat) };
+    }
+    const sourceAnchorBeat = resolveLoopAnchoredStartBeat({
+        startBeat: clip.startBeat,
+        loopOriginBeat: clip.loopOriginBeat,
+        loopEnabled: true,
+    });
+    return {
+        midiOffsetBeats: (clip.midiOffsetBeats ?? 0) + (cutBeat - clip.startBeat),
+        ...loopingMidiLengthEntry(clip),
+        loopOriginBeat: sourceAnchorBeat + (fragmentStartBeat - cutBeat),
+    };
 }
 
 /**
@@ -245,4 +329,67 @@ export function isBeatInClipLoopWindow({
         relativeBeat >= windowFloorBeat - CLIP_LOOP_WINDOW_BEAT_TOLERANCE &&
         relativeBeat < windowFloorBeat + loopLengthBeats - CLIP_LOOP_WINDOW_BEAT_TOLERANCE
     );
+}
+
+type ClipLoopPassGridInput = ClipLoopOriginInput &
+    Readonly<{
+        endBeat: number;
+        loopLengthBeats: number;
+        /** The expansion's pass count from the clip's own head (`projectClipLoopExpansion`). */
+        iterationCount: number;
+    }>;
+
+type ClipLoopPassGrid = Readonly<{
+    /** Where pass 0 opens: the anchor's last seam at or before the head. Each later pass opens a loop after it. */
+    firstPassStartBeat: number;
+    /** How many passes reach the clip, the first and last of them partial. */
+    passCount: number;
+    /**
+     * The first pass's occurrence relative to the anchor's own pass when a
+     * leftward trim opened passes ahead of the anchor (a negative advance), zero
+     * otherwise: added to the occurrence the source start yields, it keeps the
+     * anchor's pass on the occurrence it had before the trim.
+     */
+    passesAheadOfAnchor: number;
+}>;
+
+/**
+ * The pass grid every MIDI loop reader iterates (#4988). Passes open on the
+ * seams the loop anchor laid down, not on the clip's own head, so a looping
+ * clip trimmed or cut off that grid cuts and re-strikes notes, and counts
+ * occurrences, exactly where the uncut source does. Inside a pass a row plays
+ * at `relative + advance`, its phase in the anchored loop, which the anchored
+ * window (`isBeatInClipLoopWindow`) keeps inside `[0, loopLength)`.
+ *
+ * The head's distance past its seam is the advance reduced into the loop; a
+ * remainder within `CLIP_LOOP_WINDOW_BEAT_TOLERANCE` of either seam is the seam.
+ * Without an anchor, or with the head on a seam, the grid is the expansion
+ * unchanged: passes from the head, `iterationCount` of them.
+ */
+export function resolveClipLoopPassGrid({
+    startBeat,
+    endBeat,
+    loopOriginBeat,
+    loopEnabled,
+    loopLengthBeats,
+    iterationCount,
+}: ClipLoopPassGridInput): ClipLoopPassGrid {
+    const advanceBeats = resolveClipLoopOriginAdvance({ startBeat, loopOriginBeat, loopEnabled });
+    if (advanceBeats === 0 || !(loopLengthBeats > 0)) {
+        return { firstPassStartBeat: startBeat, passCount: iterationCount, passesAheadOfAnchor: 0 };
+    }
+    const remainderBeats = ((advanceBeats % loopLengthBeats) + loopLengthBeats) % loopLengthBeats;
+    const headOnSeam =
+        remainderBeats <= CLIP_LOOP_WINDOW_BEAT_TOLERANCE ||
+        loopLengthBeats - remainderBeats <= CLIP_LOOP_WINDOW_BEAT_TOLERANCE;
+    const headPastSeamBeats = headOnSeam ? 0 : remainderBeats;
+    const passesAheadOfAnchor = advanceBeats < 0 ? Math.round((advanceBeats - headPastSeamBeats) / loopLengthBeats) : 0;
+    if (headOnSeam) {
+        return { firstPassStartBeat: startBeat, passCount: iterationCount, passesAheadOfAnchor };
+    }
+    return {
+        firstPassStartBeat: startBeat - headPastSeamBeats,
+        passCount: Math.ceil((endBeat - startBeat + headPastSeamBeats) / loopLengthBeats),
+        passesAheadOfAnchor,
+    };
 }

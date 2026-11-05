@@ -32,7 +32,7 @@ import {
     setTrackPan as setTrackPanArrangement,
     setDeviceParameter,
     initStalenessDetection,
-    initTimelineScrollClamp,
+    initTimelineViewReconciliation,
     setArrangementEventBus,
     setClipAudioAssetStager,
     setOfflineRenderDependencies,
@@ -123,7 +123,7 @@ import {
     initBranchState,
     captureProjectRootIdentity,
     captureProjectRevision,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
+    projectRevisionMatchesLiveIgnoringSaveWrites,
     inspectAgentProjectDivergence,
     createCommandPreviewWorkspace,
     createCommandRecoveryWorkspace,
@@ -254,6 +254,7 @@ import { prepareOfflineDeviceSetup, captureOfflineDeviceSetup } from './prepareO
 import { projectNativeDeviceState } from './projectNativeDeviceState';
 import { eventBus, logger } from './registerDependencies';
 import { registerGlobalErrorHandlers } from './registerGlobalErrorHandlers';
+import { registerProjectSlotProjections } from './registerProjectSlotProjections';
 
 logCapabilities();
 
@@ -266,6 +267,7 @@ logCapabilities();
 initBranchState();
 
 registerCrdtStorageRuntime();
+registerProjectSlotProjections();
 setElasticSensitivityRootIdentityCapture(captureProjectRootIdentity);
 configureCommandBatchIdempotency({ canExecute: canExecuteCommandBatch });
 setActionHistoryMetadataPort({
@@ -277,7 +279,7 @@ setActionHistoryMetadataPort({
 sessionUndoWitnessStampPort.setProvider(stampSessionUndoWitness);
 productionBriefAdmissionPort.setGuard(productionBriefActionBatchAdmission.capture);
 commandProjectRevisionPort.setProvider(captureProjectRevision);
-commandProjectRevisionPort.setLiveMatchIgnoringCommandCheckpoint(projectRevisionMatchesLiveIgnoringCommandCheckpoint);
+commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(projectRevisionMatchesLiveIgnoringSaveWrites);
 configureAudioEngineRuntime();
 commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
 // AiRuntime publishes the capability catalog and imports Project, so capability
@@ -723,7 +725,7 @@ initCrumbsModePush(eventBus);
 // this restores.
 syncCrumbsNativeInstances();
 initStalenessDetection();
-initTimelineScrollClamp();
+initTimelineViewReconciliation();
 
 // Registered for the life of the process, so deadline-evidence reading has
 // main-thread long-task coverage from startup regardless of what is mounted.

@@ -1,4 +1,4 @@
-import { isBeatInClipLoopWindow } from '#/utils/clipLoopOrigin';
+import { isBeatInClipLoopWindow, resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 
 import { SAME_BEAT_TOLERANCE } from '../../models/SameBeatTolerance';
 import { type GrooveTemplateState } from '../../stores/grooveTemplateStore';
@@ -26,7 +26,10 @@ type ProjectClipMidiEventsInput<Event extends ClipMidiEvent> = {
      * The clip's loop anchor (#4988). Playback callers carry it so the loop
      * window stays anchored to the source across start trims; absent, the
      * window admits everything below the loop length, exactly as before the
-     * anchor existed (display and legacy callers).
+     * anchor existed (display and legacy callers). Carried, it also places
+     * the loop on the anchor's pass grid (`resolveClipLoopPassGrid`):
+     * `iterationStartBeat` is then a grid seam, and each row plays its phase
+     * in the anchored loop, `relative + advance`, into the pass.
      */
     loopOriginBeat?: number;
     clipGrooveAlreadyApplied?: boolean;
@@ -85,6 +88,11 @@ export function getGrooveProjection(state: GrooveTemplateState): GrooveProjectio
         const clipProjected = clipGrooveAlreadyApplied
             ? events
             : projectCommittedGroove({ events, consumerType: 'clip', consumerId: clipId });
+        // A row's place in a grid pass is its offset-relative start plus the
+        // trim advance: its phase in the loop the anchor laid down.
+        const loopAdvanceBeats = eventsAreAbsolute
+            ? 0
+            : resolveClipLoopOriginAdvance({ startBeat: clipStartBeat, loopOriginBeat, loopEnabled });
 
         // Order law (#5198 review): the committed clip groove displaces a
         // stored start FIRST and the loop window below reads the GROOVED
@@ -112,7 +120,9 @@ export function getGrooveProjection(state: GrooveTemplateState): GrooveProjectio
             ) {
                 return [];
             }
-            const absoluteStartBeat = eventsAreAbsolute ? event.startBeat : iterationStartBeat + relativeStartBeat;
+            const absoluteStartBeat = eventsAreAbsolute
+                ? event.startBeat
+                : iterationStartBeat + relativeStartBeat + loopAdvanceBeats;
             const [sequencerProjected = event] = projectCommittedGroove({
                 events: [{ ...event, startBeat: absoluteStartBeat }],
                 consumerType: 'sequencer',

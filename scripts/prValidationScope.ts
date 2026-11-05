@@ -6,7 +6,14 @@ import { isDeepStrictEqual } from 'node:util';
 
 import { assertCollectedBrowserInventory } from './e2eCollectorInventory.ts';
 import { partitionByDuration, readSpecDurations, type SpecDurations } from './e2eShardPartition.ts';
-import { parseChangedPaths, parseChangedRecords, readCheckoutDiff } from './prValidationScopeCheckout.ts';
+import { TEST_FIXTURE_REASON, testSidePathSelection, testSideRoutes, type TestSideRoute } from './e2eTestSideRoute.ts';
+import {
+    parseChangedPaths,
+    parseChangedRecords,
+    readCheckoutDiff,
+    SELECTION_INPUTS,
+} from './prValidationScopeCheckout.ts';
+import { isRepositoryTooling } from './repositoryToolingPaths.ts';
 import { isPlaywrightCollected, isVitestCollected } from './vitestCollectionPatterns.ts';
 
 import type { AffectedSelection, RuntimeGraph } from './e2eAffectedGraph.ts';
@@ -114,60 +121,6 @@ export type ValidationPlan = {
 
 function isDocumentation(path: string): boolean {
     return path.endsWith('.md') && (path.startsWith('docs/') || path.startsWith('.agents/') || !path.includes('/'));
-}
-
-/** Per-vendor agent guidance, read by coding agents and never loaded by the product. */
-const AGENT_GUIDANCE_NAMES = new Set(['AGENTS.md', 'CLAUDE.md', 'CODEX.md', 'GEMINI.md', 'KIMI.md', 'ZCODE.md']);
-
-function isAgentGuidance(path: string): boolean {
-    return /^(?:src|tests)\//.test(path) && AGENT_GUIDANCE_NAMES.has(path.slice(path.lastIndexOf('/') + 1));
-}
-
-/**
- * Rust sources and Cargo manifests reach the browser only as compiled WASM under public/wasm and
- * src/modules/AudioEngine/wasm, which are changed paths that select browser coverage themselves;
- * the broad profile's `wasm:verify` fails a Rust change that lacks regenerated artifacts. Other files
- * under crates/ are data a Playwright spec may read directly, so they stay on the product route.
- */
-function isRustCompilerInput(path: string): boolean {
-    return (
-        /^crates\/.+\.rs$/.test(path) ||
-        /^crates\/.+\/Cargo\.toml$/.test(path) ||
-        path === 'Cargo.toml' ||
-        path === 'Cargo.lock' ||
-        path === 'rust-toolchain.toml'
-    );
-}
-
-/** The nightly workflow answers to schedule and dispatch events alone, so no pull request runs it. */
-function isNightlyWorkflow(path: string): boolean {
-    return path === '.github/workflows/nightly.yml';
-}
-
-/** Agent-campaign corpora and manifest are read by Vitest specs and scripts, never by product or Playwright code. */
-function isAgentCampaignEvidence(path: string): boolean {
-    return path.startsWith('evidence/');
-}
-
-/**
- * Repository tooling and prose never select browser execution, though they keep broad non-browser
- * validation. Generator and build scripts reach the browser only through their outputs, which land
- * under src/ or public/ and select browser coverage there. Product trees may load Markdown, so it
- * stays classified with them. Agent guidance under src/ and tests/ is the exception, because no
- * product code loads it.
- */
-function isRepositoryTooling(path: string): boolean {
-    return (
-        path.startsWith('scripts/') ||
-        path.startsWith('.agents/') ||
-        path === '.gitleaksignore' ||
-        path === '.gitleaks.toml' ||
-        isRustCompilerInput(path) ||
-        isNightlyWorkflow(path) ||
-        isAgentCampaignEvidence(path) ||
-        /^release\/[^/]+\.json$/.test(path) ||
-        (path.endsWith('.md') && (!/^(?:src|public|tests)\//.test(path) || isAgentGuidance(path)))
-    );
 }
 
 /**
@@ -366,6 +319,27 @@ function browserPathSelection(
     };
 }
 
+type PathSelection = { browser: false; reason: string } | ({ browser: true } & ReturnType<typeof browserPathSelection>);
+
+/** A unit spec or unit-only test fixture runs no browser; every other product path selects specs. */
+function pathSelection(
+    path: string,
+    available: ReadonlySet<string>,
+    selections: { affected?: AffectedSelection; coverage?: CoverageSelection; testSide?: readonly TestSideRoute[] }
+): PathSelection {
+    if (isProductUnitSpec(path)) {
+        return { browser: false, reason: 'unit test source; broad non-browser validation without browser execution' };
+    }
+    const side = selections.testSide?.find((route) => route.path === path);
+    if (side === undefined) {
+        return { browser: true, ...browserPathSelection(path, available, selections.affected, selections.coverage) };
+    }
+    if (side.kind === 'specs' && side.specs.length === 0) {
+        return { browser: false, reason: TEST_FIXTURE_REASON };
+    }
+    return { browser: true, ...testSidePathSelection(side, available, FULL_COVERAGE_REASON) };
+}
+
 function planProfile(broad: boolean, tooling: boolean): ValidationPlan['profile'] {
     if (broad) {
         return 'broad';
@@ -379,7 +353,8 @@ export function selectValidationPlan(
     durations: SpecDurations = new Map(),
     packageScriptOnly = false,
     affected?: AffectedSelection,
-    coverage?: CoverageSelection
+    coverage?: CoverageSelection,
+    testSide?: readonly TestSideRoute[]
 ): ValidationPlan {
     if (paths.length === 0) {
         throw new Error('Changed path list is empty');
@@ -417,13 +392,13 @@ export function selectValidationPlan(
             });
             continue;
         }
-        if (isProductUnitSpec(path)) {
+        const selection = pathSelection(path, available, { affected, coverage, testSide });
+        if (!selection.browser) {
             nonBrowser = true;
-            reasons.push({ path, reason: 'unit test source; broad non-browser validation without browser execution' });
+            reasons.push({ path, reason: selection.reason });
             continue;
         }
         browser = true;
-        const selection = browserPathSelection(path, available, affected, coverage);
         for (const spec of selection.specs) {
             selected.add(spec);
         }
@@ -526,27 +501,21 @@ async function affectedFromCheckout(
     packageScriptOnly: boolean;
     affected?: AffectedSelection;
     coverage?: CoverageSelection;
+    testSide?: TestSideRoute[];
 }> {
     const paths = parseChangedPaths(diff);
     const packageScriptOnly = paths.includes('package.json') && isOperationalPackageScriptChange(diff, base, head);
-    const productPaths = productPathsOf(paths, specs, packageScriptOnly);
+    const changedProductPaths = productPathsOf(paths, specs, packageScriptOnly);
     const graphInputsDirty = spawnSync(
         'git',
-        [
-            'status',
-            '--porcelain',
-            '--untracked-files=all',
-            '--',
-            'src',
-            'public',
-            'scripts/e2eSuiteOwners.json',
-            'scripts/e2eAffectedGraph.ts',
-            'scripts/e2eCoverageSelection.ts',
-            'tsconfig.json',
-        ],
+        ['status', '--porcelain', '--untracked-files=all', '--', ...SELECTION_INPUTS],
         { cwd: root, encoding: 'utf8' }
     );
     const cleanGraphInputs = graphInputsDirty.status === 0 && graphInputsDirty.stdout === '';
+    const candidates = cleanGraphInputs ? changedProductPaths : [];
+    const testSide = await testSideRoutes(root, candidates, parseChangedRecords(diff), specs);
+    // Routed test-side modules leave the product route, so neither narrowing rule sees them.
+    const productPaths = changedProductPaths.filter((path) => !testSide.some((route) => route.path === path));
     // Owner narrowing and coverage selection read one shared graph, built at most once.
     let runtime: Promise<RuntimeGraphResult> | undefined;
     const loadRuntime = async (): Promise<RuntimeGraphResult> => {
@@ -564,10 +533,11 @@ async function affectedFromCheckout(
     }
     // Without a configured map path (a local run), the coverage rule is not in play at all.
     if (productPaths.length === 0 || affected?.kind === 'narrow' || coverageMap.path === undefined) {
-        return { paths, packageScriptOnly, affected };
+        return { paths, packageScriptOnly, affected, testSide };
     }
     if (!cleanGraphInputs) {
-        return { paths, packageScriptOnly, affected, coverage: { kind: 'full', reason: 'selection inputs are dirty' } };
+        const coverage: CoverageSelection = { kind: 'full', reason: 'selection inputs are dirty' };
+        return { paths, packageScriptOnly, affected, coverage, testSide };
     }
     const product = new Set(productPaths);
     let coverage: CoverageSelection;
@@ -587,7 +557,7 @@ async function affectedFromCheckout(
         const message = error instanceof Error ? error.message : 'unknown error';
         coverage = { kind: 'full', reason: `coverage selection failed: ${message}` };
     }
-    return { paths, packageScriptOnly, affected, coverage };
+    return { paths, packageScriptOnly, affected, coverage, testSide };
 }
 
 async function main(): Promise<void> {
@@ -610,7 +580,7 @@ async function main(): Promise<void> {
     }
     const { checkout, firstParent, diff } = readCheckoutDiff(root, base, head);
     const specs = listSpecs(root);
-    const { paths, packageScriptOnly, affected, coverage } = await affectedFromCheckout(
+    const { paths, packageScriptOnly, affected, coverage, testSide } = await affectedFromCheckout(
         root,
         firstParent,
         checkout,
@@ -621,7 +591,8 @@ async function main(): Promise<void> {
     console.log(
         JSON.stringify({ eventBase: base, candidateHead: head, integrationFirstParent: firstParent, checkout })
     );
-    const plan = selectValidationPlan(paths, specs, readSpecDurations(), packageScriptOnly, affected, coverage);
+    const durations = readSpecDurations();
+    const plan = selectValidationPlan(paths, specs, durations, packageScriptOnly, affected, coverage, testSide);
     if (affected?.kind === 'full') {
         plan.reasons.push({ path: 'affected graph', reason: affected.reason });
     }
