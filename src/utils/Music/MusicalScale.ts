@@ -35,8 +35,10 @@ export const SCALE_LABELS: Record<string, string> = {
     chromatic: 'Chromatic',
 };
 
+const SCALE_LABELS_BY_NAME: ReadonlyMap<string, string> = new Map(Object.entries(SCALE_LABELS));
+
 export function getScaleLabel(scaleName: string): string {
-    return Object.hasOwn(SCALE_LABELS, scaleName) ? SCALE_LABELS[scaleName] : scaleName;
+    return SCALE_LABELS_BY_NAME.get(scaleName) ?? scaleName;
 }
 
 export const KEY_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
