@@ -156,6 +156,30 @@ function isAgentCampaignEvidence(path: string): boolean {
 }
 
 /**
+ * Root lint, format, dead-code, and module-boundary configuration is read only by those tools: no
+ * Vite build, dev server, Playwright configuration, or spec loads it, and the broad profile's lint
+ * and boundary jobs are where a change to it can fail. TypeScript project files stay on the product
+ * route, because the build reads them, except the lint-only project nothing else extends.
+ */
+const STATIC_ANALYSIS_CONFIG = new Set([
+    '.editorconfig',
+    '.oxlintrc.json',
+    '.prettierignore',
+    '.prettierrc',
+    'eslint.config.mjs',
+    'eslint.size-baseline.d.mts',
+    'eslint.size-baseline.mjs',
+    'knip.json',
+    'oxlint.craft-baseline.d.mts',
+    'oxlint.craft-baseline.mjs',
+    'tsconfig.eslint.json',
+]);
+
+function isStaticAnalysisConfig(path: string): boolean {
+    return STATIC_ANALYSIS_CONFIG.has(path) || /^\.dependency-cruiser[\w.-]*\.(?:cjs|json)$/.test(path);
+}
+
+/**
  * Repository tooling and prose never select browser execution, though they keep broad non-browser
  * validation. Generator and build scripts reach the browser only through their outputs, which land
  * under src/ or public/ and select browser coverage there. Product trees may load Markdown, so it
@@ -171,6 +195,7 @@ function isRepositoryTooling(path: string): boolean {
         isRustCompilerInput(path) ||
         isNightlyWorkflow(path) ||
         isAgentCampaignEvidence(path) ||
+        isStaticAnalysisConfig(path) ||
         /^release\/[^/]+\.json$/.test(path) ||
         (path.endsWith('.md') && (!/^(?:src|public|tests)\//.test(path) || isAgentGuidance(path)))
     );

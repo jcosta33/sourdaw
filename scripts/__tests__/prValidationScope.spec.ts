@@ -2365,6 +2365,18 @@ describe('repository tooling selects no browser suite', () => {
         '.github/workflows/nightly.yml',
         'evidence/agent-campaign/manifest.json',
         'evidence/agent-campaign/corpora/held-out.json',
+        '.dependency-cruiser.cjs',
+        '.dependency-cruiser.module-tiers.cjs',
+        '.dependency-cruiser-known-violations-module-tiers.json',
+        '.prettierignore',
+        '.prettierrc',
+        '.editorconfig',
+        '.oxlintrc.json',
+        'eslint.config.mjs',
+        'eslint.size-baseline.mjs',
+        'oxlint.craft-baseline.d.mts',
+        'knip.json',
+        'tsconfig.eslint.json',
     ])('keeps %s on broad non-browser validation', (path) => {
         const plan = selectValidationPlan([path], INVENTORY);
         expect(plan).toMatchObject(BROAD_WITHOUT_BROWSER);
@@ -2379,6 +2391,8 @@ describe('repository tooling selects no browser suite', () => {
         'Cargo.lock',
         '.github/workflows/nightly.yml',
         'evidence/agent-campaign/manifest.json',
+        '.dependency-cruiser.cjs',
+        'eslint.config.mjs',
     ])('lets the feature presentation narrow when %s changes beside it', (path) => {
         expect(productPathsOf([path, TUNER], INVENTORY, false)).toEqual([TUNER]);
     });
@@ -2396,6 +2410,16 @@ describe('repository tooling selects no browser suite', () => {
         'src/crates/foo.ts',
         'evidencex/manifest.json',
         'electron/main.ts',
+        'tsconfig.json',
+        'tsconfig.app.json',
+        'tsconfig.e2e.json',
+        'vite.config.ts',
+        'playwright.config.ts',
+        '.gitignore',
+        'src/.prettierrc',
+        'config/.oxlintrc.json',
+        '.dependency-cruiser.cjs.bak',
+        '.dependency-cruiserx/rules.cjs',
     ])('retains full browser coverage for %s', (path) => {
         const plan = selectValidationPlan([path], INVENTORY);
         expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
