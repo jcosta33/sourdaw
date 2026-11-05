@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import {
     installTransactionalIndexedDb,
@@ -152,6 +153,7 @@ describe('Command undo witness persistence stamp integration (#3331)', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         await compactProject();
         clearCrdtActionHistory();
         setActionHistoryMetadataPort({

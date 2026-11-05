@@ -1,9 +1,11 @@
-import { getMixRecipeCatalog, quantiseDeviceParameterValue } from '#/modules/Arrangement/useCases';
+import { getAddedDeviceParameterValues, getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 
 import { type ProjectContext } from '../models/ProjectContext';
 import { RECIPE_EXPANSION_MAX_COMMANDS } from '../models/RecipeExpansionLimits';
 import { type AdoptedRecipe, type RetainedCommand } from '../models/RetainedCompilation';
 
+import { chooseRecipeMidpoint } from './chooseRecipeMidpoint';
+import { isWriteHeldByAddedDevice } from './isWriteHeldByAddedDevice';
 import { type RecipeExpansionInput } from './parseRecipeExpansionInput';
 import {
     FOLDER_TARGET_WARNING,
@@ -11,6 +13,7 @@ import {
     type ResolvedTarget,
     resolveRecipeTarget,
 } from './resolveRecipeTarget';
+import { servesAnySourceScope } from './servesAnySourceScope';
 
 type MixRecipeCatalog = ReturnType<typeof getMixRecipeCatalog>;
 type MixRecipe = MixRecipeCatalog['recipes'][number];
@@ -51,9 +54,6 @@ type ChosenValues = { status: 'chosen'; values: readonly ExpandedParameterValue[
 
 type EditedCommands = { status: 'edited'; commands: readonly RetainedCommand[] } | Refusal;
 
-/** Enough significant digits for any authored window, few enough to drop float noise like 0.44999999999999996. */
-const MIDPOINT_SIGNIFICANT_DIGITS = 12;
-
 const MAX_LISTED_DEVICE_IDS = 5;
 
 function refuse(reason: string): Refusal {
@@ -89,7 +89,10 @@ function listDeviceIds(ids: readonly string[]): string {
     return `${listed} and ${String(omitted)} more`;
 }
 
-/** What a recipe may never be applied to, whatever its values: a folder, a frozen track, or another role. */
+/**
+ * What a recipe may never be applied to, whatever its values: a folder, a frozen track, or another
+ * role. A recipe naming no role serves any source track and is refused only on a bus or the master.
+ */
 function findTargetRefusal(recipe: MixRecipe, target: ResolvedTarget, role: ResolvedRole): Refusal | null {
     if (target.kind === 'folder') {
         return refuse(`recipe.expand refused target "${target.id}": ${FOLDER_TARGET_WARNING}`);
@@ -97,6 +100,14 @@ function findTargetRefusal(recipe: MixRecipe, target: ResolvedTarget, role: Reso
     if (target.frozen) {
         return refuse(
             `recipe.expand refused target "${target.id}": it is frozen, and device changes are refused while it is frozen.`
+        );
+    }
+    if (recipe.roles.length === 0) {
+        if (servesAnySourceScope(target, role)) {
+            return null;
+        }
+        return refuse(
+            `recipe "${recipe.id}" names no role, so it serves source tracks only, but target "${target.id}" is a ${target.kind} track resolving to ${role.recipeRole ?? 'no recipe role'}.`
         );
     }
     if (role.recipeRole === null) {
@@ -138,20 +149,6 @@ function findValueRefusal(recipe: MixRecipe, supplied: RecipeExpansionInput['val
 }
 
 /**
- * The value a parameter takes when none is supplied: the middle of its window, resolved onto the
- * descriptor's own legal settings so a discrete parameter never lands between two of them. An exact
- * window (a recipe published from a preset) holds one value, which is taken as stored: rounding it to
- * the midpoint's precision would move a long-precision stored value out of its own window.
- */
-function chooseMidpoint(deviceType: string, parameter: MixRecipeParameter): number {
-    if (parameter.minimum === parameter.maximum) {
-        return quantiseDeviceParameterValue({ deviceType, paramId: parameter.paramId, value: parameter.minimum });
-    }
-    const midpoint = Number(((parameter.minimum + parameter.maximum) / 2).toPrecision(MIDPOINT_SIGNIFICANT_DIGITS));
-    return quantiseDeviceParameterValue({ deviceType, paramId: parameter.paramId, value: midpoint });
-}
-
-/**
  * A supplied value was already held to its window by `findValueRefusal`. Only a midpoint is checked
  * here, because snapping it onto a legal setting can carry it out of a window narrower than the
  * gap between two settings.
@@ -172,7 +169,7 @@ function chooseValue(
     if (supplied !== undefined) {
         return { status: 'chosen', value: { ...window, value: supplied.value, source: 'supplied' } };
     }
-    const value = chooseMidpoint(context.step.deviceType, parameter);
+    const value = chooseRecipeMidpoint(context.step.deviceType, parameter);
     if (value < parameter.minimum || value > parameter.maximum) {
         return refuse(
             `${parameter.paramId} of step ${String(context.index)} has no legal setting inside its window ${describeWindow(parameter)}; supply a value.`
@@ -220,8 +217,10 @@ function toParameterCommand(
 
 /**
  * One `addDevice` for the step, then one parameter write per authored parameter on the device it
- * mints. The first insert goes after the chain's current last device; a later one goes after the
- * previous insert's device, so the recipe's order survives into the chain.
+ * mints, leaving out a write whose value that device already holds as placed: the device ends as
+ * writing it would leave it, and the value stays among the expansion's values. The first insert
+ * goes after the chain's current last device; a later one goes after the previous insert's device,
+ * so the recipe's order survives into the chain.
  */
 function expandInsertStep(
     context: StepContext,
@@ -253,7 +252,10 @@ function expandInsertStep(
         dependencyKeys: addDependencyKeys,
         ...describeProvenance(context, 'addDevice'),
     };
-    const parameterCommands = chosen.map((entry) => toParameterCommand(context, entry, `$${binding}`, [key]));
+    const held = getAddedDeviceParameterValues(context.step.deviceType);
+    const parameterCommands = chosen
+        .filter((entry) => !isWriteHeldByAddedDevice(held, entry.paramId, entry.value))
+        .map((entry) => toParameterCommand(context, entry, `$${binding}`, [key]));
     return [addCommand, ...parameterCommands];
 }
 
@@ -282,7 +284,8 @@ function expandEditStep(context: StepContext, chosen: readonly ExpandedParameter
 /**
  * Expands one recipe against one concrete track into the ordinary catalog commands a batch
  * carries: `addDevice` for each insert step and `setDeviceParameter` for every authored
- * parameter, in the recipe's order. A recipe published from a factory preset takes this same path:
+ * parameter, in the recipe's order, except a write to an inserted device that already holds its
+ * value. A recipe published from a factory preset takes this same path:
  * each of its windows holds one value, so the midpoint is the stored value, and a value that
  * cannot be written as stored leaves the window and is refused. The expansion is a pure reading of the recipe and the project
  * read model. It writes nothing, and the commands it returns reach the project only when a

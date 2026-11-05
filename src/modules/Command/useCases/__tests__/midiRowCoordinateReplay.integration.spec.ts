@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import * as storage from '#/infra/store/storage/createAutomergeStorage';
 import { installTransactionalIndexedDb } from '#/infra/testing/installTransactionalIndexedDb';
 import { defaultTrackState, trackStore, type Clip, type TrackStoreState } from '#/modules/Arrangement/stores';
@@ -276,6 +277,7 @@ describe('exact row captures through real Command history and persistence (#5695
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         await compactProject();
         clearActionHistory();
         register();

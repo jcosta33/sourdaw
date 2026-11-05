@@ -3,6 +3,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
 import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
 import {
@@ -343,6 +344,7 @@ describe('recording terminals through actual project branch transitions', () => 
         localStorage.removeItem('sourdaw-branches');
         resetCrdtProjectAuthority('recording branch ownership');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         initBranchState();
         await whenBranchStateSettled();
         clearHandlerRegistry();

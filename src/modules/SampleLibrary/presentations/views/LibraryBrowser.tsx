@@ -598,7 +598,13 @@ export const LibraryBrowser = ({ preview, selectedTrackId: _selectedTrackId }: L
                             );
                         })}
 
-                        <div ref={listRef} role="listbox" aria-label="Samples" aria-orientation="vertical">
+                        <div
+                            ref={listRef}
+                            role="listbox"
+                            aria-label="Samples"
+                            aria-orientation="vertical"
+                            className="@container"
+                        >
                             {shownFiles.map((sample, index) => (
                                 <SampleRow
                                     key={sample.id}

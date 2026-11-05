@@ -820,5 +820,71 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
             expect(mocks.undoStoreSet).toHaveBeenCalledTimes(1);
             expect(mocks.notifyUser).toHaveBeenCalledTimes(3);
         });
+
+        it('stops at a conflicted entry without stepping over it when step-over is off', async () => {
+            const older = actionEntry({
+                id: 'older-1',
+                label: 'First Action',
+                action: conflictCapableFadeReplay,
+            });
+            const conflicting = actionEntry({
+                id: 'conflict-1',
+                label: 'Cut Clip',
+                action: conflictCapableGainReplay,
+            });
+            mocks.undoStoreValue.value = { past: [], future: [conflicting, older] };
+            conflictOn('setTrackGain');
+
+            await redo({ stepOverConflicts: false });
+
+            // The same stack the default redo steps over (#2878): with step-over
+            // off only the conflicted head is attempted and reported, and the
+            // conflict-capable entry behind it is never replayed.
+            expect(mocks.executeAppAction.mock.calls.map(([action]) => action.type)).toEqual(['setTrackGain']);
+            expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+            expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
+            expect(mocks.notifyUser.mock.calls.map(([message]) => message)).toEqual([
+                'Cannot redo "Cut Clip": project state has changed',
+            ]);
+        });
+
+        it('stops at a conflicted group without stepping over it when step-over is off', async () => {
+            const older = actionEntry({
+                id: 'older-1',
+                label: 'First Action',
+                action: conflictCapableFadeReplay,
+            });
+            const first = actionEntry({
+                id: 'g-first',
+                groupId: 'group-1',
+                groupLabel: 'Grouped Edit',
+                action: conflictCapableGainReplay,
+            });
+            const second = actionEntry({
+                id: 'g-second',
+                groupId: 'group-1',
+                groupLabel: 'Grouped Edit',
+                action: { type: 'muteTrack', payload: { trackId: 'track-1', muted: true, expectedMuted: false } },
+            });
+            mocks.undoStoreValue.value = { past: [], future: [first, second, older] };
+            mocks.executeAppActionBatch.mockResolvedValue({
+                status: 'conflicted',
+                reason: 'Action conflicts with current project state: setTrackGain',
+                actions: [],
+            });
+
+            await redo({ stepOverConflicts: false });
+
+            // The default redo lands on the flagged entry behind this group; with
+            // step-over off the group is attempted once, reported, and nothing
+            // behind it is replayed.
+            expect(mocks.executeAppActionBatch).toHaveBeenCalledTimes(1);
+            expect(mocks.executeAppAction).not.toHaveBeenCalled();
+            expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+            expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
+            expect(mocks.notifyUser.mock.calls.map(([message]) => message)).toEqual([
+                'Cannot redo "Grouped Edit": project state has changed',
+            ]);
+        });
     });
 });

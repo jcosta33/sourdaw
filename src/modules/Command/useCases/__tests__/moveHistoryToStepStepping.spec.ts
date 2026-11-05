@@ -4,17 +4,17 @@ import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 
 import { AppActionConflictError } from '../../errors/AppActionExecutionError';
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
-import { undoToIndex } from '../undoToIndex';
+import { moveHistoryToStep } from '../moveHistoryToStep';
 
 import type { ActionUndoEntry, UndoEntry } from '../../models/UndoEntry';
 import type { UndoStoreState } from '../../stores/undoStore';
 
 // #2881 — the anchor-targeted history sweep must not inherit the keystroke
-// path's step-over. `undoToIndex(n)` rewinds TO row n: that row names the entry
-// the user clicked to KEEP, so when the head above it conflicts, stepping over
+// path's step-over. `moveHistoryToStep(id)` rewinds TO the step `id` names: the
+// entry the user clicked to KEEP, so when the head above it conflicts, stepping over
 // it onto "the next unit" undoes exactly the row the user targeted. The sweep
 // therefore drives the no-step variant of `undo`; only the bare keystroke entry
-// point ever steps. These specs run the REAL `undoToIndex` and the REAL
+// point ever steps. These specs run the REAL `moveHistoryToStep` and the REAL
 // `undo` (only `executeAppAction` and friends are mocked), with the production
 // Arrangement handler map registered so the step-over gate reads live
 // capability flags — proving the sweep refuses to step even onto a unit that
@@ -97,7 +97,7 @@ function conflictOn(...actionTypes: readonly string[]): void {
     });
 }
 
-describe('undoToIndex never steps over a conflicted head (#2881)', () => {
+describe('moveHistoryToStep never steps over a conflicted head (#2881)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.undoStoreValue.value = { past: [], future: [] };
@@ -126,7 +126,7 @@ describe('undoToIndex never steps over a conflicted head (#2881)', () => {
         mocks.undoStoreValue.value = { past: [keptRow, targetRow, conflictedHead], future: [] };
         conflictOn('setTrackGain');
 
-        await expect(undoToIndex(1)).resolves.toBeUndefined();
+        await expect(moveHistoryToStep('v-1')).resolves.toBeUndefined();
 
         // Exactly one inverse attempt — the conflicted head's. No step onto the
         // target row, no batch, nothing moved: every row stays applied.
@@ -146,7 +146,7 @@ describe('undoToIndex never steps over a conflicted head (#2881)', () => {
         const headRow = actionEntry({ id: 'u-1', label: 'Head Edit', inverseAction: conflictCapableGainInverse });
         mocks.undoStoreValue.value = { past: [keptRow, middleRow, headRow], future: [] };
 
-        await expect(undoToIndex(0)).resolves.toBeUndefined();
+        await expect(moveHistoryToStep('a-1')).resolves.toBeUndefined();
 
         // The sweep walked two rows down by undoing each head in turn; only the
         // row it was pointed at to keep remains applied. `future` is newest

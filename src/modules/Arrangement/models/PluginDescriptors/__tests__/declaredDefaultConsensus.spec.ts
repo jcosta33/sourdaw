@@ -700,7 +700,6 @@ const DEFAULT_SOURCES: Record<NativeDspDeviceType, DeviceDefaults> = {
                     'foldbackThreshold',
                     'bitDepth',
                     'sampleRateReduce',
-                    'breakdownDepth',
                     'filterMode',
                     'filterCutoff',
                     'filterResonance',
@@ -737,7 +736,7 @@ const DEFAULT_SOURCES: Record<NativeDspDeviceType, DeviceDefaults> = {
                 file: 'src/modules/Bacteria/models/BacteriaPatch.ts',
                 exportName: 'DEFAULT_BAND',
                 shape: 'object',
-                resolved: 31,
+                resolved: 30,
                 unresolved: [
                     'mix',
                     'inputGain',

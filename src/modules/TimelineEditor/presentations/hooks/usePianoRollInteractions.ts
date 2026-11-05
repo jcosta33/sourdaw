@@ -1517,6 +1517,14 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     };
 
     const handleKeyDown = (event: KeyboardEvent<HTMLCanvasElement>): void => {
+        // The focused piano roll owns Delete / Backspace even with nothing
+        // selected: claiming the key (preventDefault) keeps the global layer
+        // from deleting arrangement clips behind the editor. Every key this
+        // handler consumes is claimed the same way; keys it leaves alone
+        // (undo, Space, save, ...) stay with the global shortcut layer.
+        if (event.key === 'Delete' || event.key === 'Backspace') {
+            event.preventDefault();
+        }
         if ((event.key === 'Delete' || event.key === 'Backspace') && selectedNoteIds.size > 0) {
             // A9: group selected notes by owning clip for multi-clip delete
             const notesWithClip: Array<{ note: MidiNote; ownerClipId: string }> = [];
@@ -1909,6 +1917,9 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         }
 
         if (stepInput) {
+            if (event.key === 'Enter' || (event.key === ' ' && event.ctrlKey)) {
+                event.preventDefault();
+            }
             if (event.key === 'ArrowRight') {
                 event.preventDefault();
                 stepRecordAdvance();
@@ -1944,6 +1955,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             };
             const preset = velocityPresets[event.key];
             if (preset !== undefined) {
+                event.preventDefault();
                 const { noteToClip, allNotesMap } = buildNoteOwnershipMaps(notes, clipId, openedClipNotes);
                 const selectedNotesWithClip: Array<{ viewId: string; id: string; clipId: string; velocity: number }> =
                     [];

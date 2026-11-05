@@ -3,6 +3,7 @@ import 'fake-indexeddb/auto';
 import * as Automerge from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { createEventBus } from '#/infra/events/createEventBus';
@@ -174,6 +175,7 @@ describe('registered Detect Tempo is analysis only', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         clearHandlerRegistry();
         clearUndoHistory();
         transportStore.set({ ...defaultTransportState, tempo: BASE_BPM });

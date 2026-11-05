@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { normalizeTrack } from '#/modules/Arrangement/useCases';
 import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
@@ -179,6 +180,7 @@ function replaceRootWithMalformedAdjustmentLayers(): void {
 
 describe('exportProjectFile round-trip shape', () => {
     beforeEach(() => {
+        registerProjectSlotProjections();
         vi.mocked(downloadProjectFile).mockClear();
         vi.mocked(notifyUser).mockClear();
         vi.mocked(exportCachedAudioBuffers).mockClear();

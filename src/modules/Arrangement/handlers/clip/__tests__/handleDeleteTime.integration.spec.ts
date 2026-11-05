@@ -1,6 +1,7 @@
 import * as Automerge from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -300,6 +301,7 @@ describe('Delete Time take ownership through Command and CRDT', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         stopProjectionBridge = setupProjectionBridge();
         projectCrdtToStores();
         sessionStorage.removeItem('sourdaw-undo-session');
