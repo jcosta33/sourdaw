@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/__tests__/refinePendingProposal.spec.ts
+  s_b8e2b30196b5ae::t_13a9db5e592ef7 336,367
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5ce94d344cd5f16ae1df4a4442730cbd16044fc9",
+  "prompts": {},
+  "sessions": {
+    "s_b8e2b30196b5ae": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_b8e2b30196b5ae",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
