@@ -1,0 +1,19 @@
+src/modules/MixerConsole/presentations/views/Mixer/IOSection.tsx
+  s_3f562eaeb37908::t_e1794307faf919 20-26,35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "04583f7fc8962f439b29111aa6602e2b0f6634ea",
+  "prompts": {},
+  "sessions": {
+    "s_3f562eaeb37908": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_3f562eaeb37908",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
