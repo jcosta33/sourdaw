@@ -1,0 +1,27 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipSplitState.spec.ts
+  s_e63ab53b59af0a::t_ccde42a3889846 243-278
+src/modules/Arrangement/handlers/clip/splitLeftSourceMatches.ts
+  s_e63ab53b59af0a::t_47c70558cd1a4d 1-109
+src/modules/Arrangement/handlers/clip/validateClipEditSessionEntries.ts
+  s_e63ab53b59af0a::t_86e26e6011ac2a 3,25
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitLoopingMidiClipWithUndo.integration.spec.ts
+  s_e63ab53b59af0a::t_8d42f02a9dc64e 86-106,116,159-205,207-209,211-251
+src/modules/Arrangement/useCases/clipEditing/splitClipWithUndo.ts
+  s_e63ab53b59af0a::t_1f93a628cb5a7e 17-18,44-46,96,150-157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cabc0d0634cbb3bfb5184f9a2f691991eec7e4a9",
+  "prompts": {},
+  "sessions": {
+    "s_e63ab53b59af0a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_e63ab53b59af0a",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
