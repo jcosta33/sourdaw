@@ -388,6 +388,8 @@ describe('ClipInspector', () => {
 
         // Radix ends a drag back to its start value without a commit.
         fireEvent.change(slider, { target: { value: '2' } });
+        expect(slider).toHaveValue('2');
+        expect(screen.getByText('2.00 beats')).toBeInTheDocument();
         fireEvent.change(slider, { target: { value: '0.5' } });
         rerender(<ClipInspector {...defaultProps} clip={{ ...defaultProps.clip, fadeInBeats: 1 }} />);
 
