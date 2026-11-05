@@ -8,7 +8,7 @@ import {
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
 } from '../../../../models/AgentToolCatalogNames';
 import { type ToolSchema } from '../../../../models/Tools/Types';
-import { getApplicationOwnedToolSchemas } from '../../../../useCases/applicationOwnedToolLoop';
+import { getApplicationOwnedToolSchemas } from '../../../../useCases/getApplicationOwnedToolSchemas';
 import { getPlanningProviderToolSchemas } from '../../../../useCases/getPlanningProviderToolSchemas';
 import { getHostedProposalWireToolSchema } from '../../../../useCases/llmOrchestration/getHostedProposalWireToolSchema';
 import { encodeWireToolName } from '../encodeWireToolName';

@@ -15,7 +15,8 @@ import { type ProjectContext } from '../../models/ProjectContext';
 import { PROPOSAL_REFINES_MAX_LENGTH } from '../../models/ThreadContext';
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { tryCompoundFastPath, tryParameterizedPath, tryPresetMatch } from '../../transformers/promptParser/parsing';
-import { getApplicationOwnedToolSchemas, runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
+import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
+import { getApplicationOwnedToolSchemas } from '../getApplicationOwnedToolSchemas';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 

@@ -4,7 +4,8 @@ import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 
 import { generateAnthropicToolCalls } from '../../../repositories/cloudLlm/cloudInference/generateAnthropicToolCalls';
 import { generateOpenAiCompatibleToolCalls } from '../../../repositories/cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls';
-import { getApplicationOwnedToolSchemas, runApplicationOwnedToolLoop } from '../../applicationOwnedToolLoop';
+import { runApplicationOwnedToolLoop } from '../../applicationOwnedToolLoop';
+import { getApplicationOwnedToolSchemas } from '../../getApplicationOwnedToolSchemas';
 
 registerDeviceEnginePorts();
 
