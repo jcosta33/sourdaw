@@ -69,10 +69,20 @@ const readFocusOpener = (): FocusOpener => {
     return { element: active, menuTriggerId: active.closest('[role="menu"]')?.getAttribute('aria-labelledby') ?? null };
 };
 
+const findFocusLandmark = (): HTMLElement | null => document.querySelector<HTMLElement>(FOCUS_LANDMARK_SELECTOR);
+
+/** Moves focus to the workspace landmark unless it already rests on a live element. */
+export const focusLandmarkIfUnfocused = (): void => {
+    const active = document.activeElement;
+    if (active === null || active === document.body) {
+        findFocusLandmark()?.focus();
+    }
+};
+
 const focusReturnCandidates = ({ element, menuTriggerId }: FocusOpener): (HTMLElement | null)[] => [
     element,
     menuTriggerId === null ? null : document.getElementById(menuTriggerId),
-    document.querySelector<HTMLElement>(FOCUS_LANDMARK_SELECTOR),
+    findFocusLandmark(),
 ];
 
 /** A disabled or hidden candidate stays connected but refuses focus, so success is read back from the document. */

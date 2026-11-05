@@ -5,6 +5,7 @@ import { FocusScope } from 'radix-ui/internal';
 
 import { Grid, Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
+import { focusLandmarkIfUnfocused } from '#/components/ui/dialog';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { pickAndImportDawProject } from '#/modules/DawInterchange/useCases';
 import { TemplateGallery } from '#/modules/Project/presentations/views';
@@ -274,8 +275,18 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
 
     return (
         // A Radix modal Dialog would also aria-hide the toast and confirm hosts that sit outside the shell
-        // so failures stay announced; only the Tab trap is wanted here.
-        <FocusScope.FocusScope asChild trapped loop>
+        // so failures stay announced; only the Tab trap is wanted here, and not while the exit fade lets the
+        // workspace take focus. FocusScope's default unmount restore targets the element focused at mount,
+        // which on a cold start is the body, so it is replaced by landing on the workspace landmark.
+        <FocusScope.FocusScope
+            asChild
+            trapped={!exiting}
+            loop
+            onUnmountAutoFocus={(event) => {
+                event.preventDefault();
+                focusLandmarkIfUnfocused();
+            }}
+        >
             <div
                 role="dialog"
                 aria-modal="true"
