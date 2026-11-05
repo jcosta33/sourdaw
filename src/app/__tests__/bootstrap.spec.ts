@@ -696,6 +696,11 @@ vi.mock('#/modules/Routing/useCases', () => ({
     getNodeViewHandlers: sentinelHandlers('NodeView'),
 }));
 
+vi.mock('#/modules/SampleLibrary/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/SampleLibrary/useCases')>()),
+    getSampleLibraryHandlers: sentinelHandlers('SampleLibrary'),
+}));
+
 vi.mock('#/modules/SessionLauncher/useCases', () => ({
     getSessionLauncherHandlers: sentinelHandlers('SessionLauncher'),
 }));
@@ -905,6 +910,7 @@ describe('bootstrap', () => {
     // (nothing missing) and idempotent (nothing registered twice).
     const expectedRegistrationOrder = [
         'Arrangement',
+        'SampleLibrary',
         'Transport',
         'SessionLauncher',
         'Setlist',
