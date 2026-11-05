@@ -28,6 +28,9 @@ const mocks = vi.hoisted(() => {
             return bufferId;
         }),
         getCachedAudioBuffer: vi.fn(({ bufferId }: { bufferId: string }) => cache.get(bufferId) ?? null),
+        holdAudioBufferForSession: vi.fn(({ buffer, bufferId }: { buffer: AudioBuffer; bufferId: string }) => {
+            cache.set(bufferId, buffer);
+        }),
         restoreUnpinnedAudioBuffersFromIdb: vi.fn(async ({ bufferIds }: { bufferIds: readonly string[] }) => {
             const absentIds: string[] = [];
             for (const id of bufferIds) {
@@ -64,6 +67,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     cacheAudioBuffer: mocks.cacheAudioBuffer,
     getAudioContext: () => mocks.audioContext,
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
+    holdAudioBufferForSession: mocks.holdAudioBufferForSession,
     restoreUnpinnedAudioBuffersFromIdb: mocks.restoreUnpinnedAudioBuffersFromIdb,
 }));
 
@@ -212,14 +216,20 @@ describe('ensureFactorySampleBuffer', () => {
         expect(mocks.cache.has('factory-test-2')).toBe(false);
     });
 
-    it('leaves a sample unavailable, and renders nothing, when its stored audio cannot be read', async () => {
+    it('plays a render for this session, and stores none, when storage cannot be read', async () => {
+        // The failed read may have hidden a stored take the render must not overwrite.
         mocks.unreadable.add('factory-test-3');
 
         await expect(ensureFactorySampleBuffer({ sampleId: 'factory-test-3' })).resolves.toEqual({
-            status: 'unavailable',
+            status: 'resolved',
+            buffer: rendered[3]!.buffer,
         });
 
-        expect(renderFactorySamples).not.toHaveBeenCalled();
+        expect(renderFactorySamples).toHaveBeenCalledTimes(1);
+        expect(mocks.holdAudioBufferForSession).toHaveBeenCalledExactlyOnceWith({
+            buffer: rendered[3]!.buffer,
+            bufferId: 'factory-test-3',
+        });
         expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
     });
 

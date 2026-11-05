@@ -3,6 +3,7 @@ import {
     cacheAudioBuffer,
     getAudioContext,
     getCachedAudioBuffer,
+    holdAudioBufferForSession,
     restoreUnpinnedAudioBuffersFromIdb,
 } from '#/modules/AudioEngine/useCases';
 import { FACTORY_LIBRARY_ROOT_ID } from '#/modules/FactorySynthesis/useCases';
@@ -48,11 +49,26 @@ async function readStoredBuffer(sampleId: string): Promise<StoredBufferRead> {
 }
 
 /**
- * The last resort, for a sample storage holds no audio for: render the pack,
- * shared by every concurrent caller, and cache this sample alone. Every other
+ * How a rendered sample becomes resident: cached, and so stored, when storage
+ * holds nothing for it; held for this session only when storage could not be
+ * read, since a stored record the read could not see must not be overwritten.
+ */
+type RenderPublication = 'cache' | 'session-only';
+
+function publishRenderedBuffer(sampleId: string, buffer: AudioBuffer, publication: RenderPublication): void {
+    if (publication === 'session-only') {
+        holdAudioBufferForSession({ buffer, bufferId: sampleId });
+        return;
+    }
+    cacheAudioBuffer({ buffer, bufferId: sampleId });
+}
+
+/**
+ * The last resort, for a sample no stored audio was read for: render the pack,
+ * shared by every concurrent caller, and publish this sample alone. Every other
  * sample is left as it is, since a saved project may play its stored audio.
  */
-async function renderSampleBuffer(sampleId: string): Promise<AudioBuffer | null> {
+async function renderSampleBuffer(sampleId: string, publication: RenderPublication): Promise<AudioBuffer | null> {
     let samples: Awaited<ReturnType<typeof renderFactoryLibraryPack>>;
     try {
         samples = await renderFactoryLibraryPack(getAudioContext());
@@ -73,15 +89,17 @@ async function renderSampleBuffer(sampleId: string): Promise<AudioBuffer | null>
     if (!rendered) {
         return null;
     }
-    cacheAudioBuffer({ buffer: rendered.buffer, bufferId: sampleId });
+    publishRenderedBuffer(sampleId, rendered.buffer, publication);
     return rendered.buffer;
 }
 
 /**
  * Obtain a factory sample's buffer, in order: the resident cache entry, the
- * PCM stored for it in this or an earlier launch, then, only when storage
- * holds none, one render of the pack shared by every concurrent caller. A
- * sample of another root is left to its file path.
+ * PCM stored for it in this or an earlier launch, then one render of the pack
+ * shared by every concurrent caller. The render is stored only when storage
+ * holds nothing for the sample; when storage could not be read it plays this
+ * session and is never written. A sample of another root is left to its file
+ * path.
  */
 export async function ensureFactorySampleBuffer({
     sampleId,
@@ -100,9 +118,7 @@ export async function ensureFactorySampleBuffer({
     if (stored.status === 'restored') {
         return { status: 'resolved', buffer: stored.buffer };
     }
-    if (stored.status === 'unreadable') {
-        return { status: 'unavailable' };
-    }
-    const buffer = await renderSampleBuffer(sampleId);
+    const publication = stored.status === 'unreadable' ? 'session-only' : 'cache';
+    const buffer = await renderSampleBuffer(sampleId, publication);
     return buffer ? { status: 'resolved', buffer } : { status: 'unavailable' };
 }

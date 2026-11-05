@@ -42,6 +42,7 @@ export { garbageCollectCachedAudioBuffersBySize } from './garbageCollectCachedAu
 export { garbageCollectFreezeAudioBuffers } from './garbageCollectFreezeAudioBuffers';
 export { getCachedAudioBuffer } from './getCachedAudioBuffer';
 export { getCachedAudioBufferWaveformPeaks } from './getCachedAudioBufferWaveformPeaks';
+export { holdAudioBufferForSession } from './holdAudioBufferForSession';
 export { importCachedAudioBuffers } from './importCachedAudioBuffers';
 export { prepareCachedAudioBuffersFromIdb } from './prepareCachedAudioBuffersFromIdb';
 export { cachePreviewAudioBuffer } from './cachePreviewAudioBuffer';

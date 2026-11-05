@@ -25,6 +25,8 @@ type AudioRealm = {
     clearRuntime: typeof import('../audioBufferCache').clearRuntimeAudioBufferCache;
     ensure: typeof import('../../useCases/ensureCachedAudioBuffersDurable').ensureCachedAudioBuffersDurable;
     get: typeof import('../../useCases/getCachedAudioBuffer').getCachedAudioBuffer;
+    has: typeof import('../audioBufferCache').audioBufferCache.has;
+    holdForSession: typeof import('../../useCases/holdAudioBufferForSession').holdAudioBufferForSession;
     persistPrepared: typeof import('../audioBufferCache').audioBufferCache.persistPreparedBuffer;
     prepare: typeof import('../../useCases/prepareCachedAudioBuffersFromIdb').prepareCachedAudioBuffersFromIdb;
     remove: typeof import('../audioBufferCache').audioBufferCache.remove;
@@ -66,11 +68,12 @@ function cachedSample(realm: AudioRealm, id: string): number | null {
 }
 
 async function loadRealm(): Promise<AudioRealm> {
-    const [cache, store, ensure, get, prepare, restoreUnpinned, ownership] = await Promise.all([
+    const [cache, store, ensure, get, hold, prepare, restoreUnpinned, ownership] = await Promise.all([
         import('../../useCases/cacheAudioBuffer'),
         import('../audioBufferCache'),
         import('../../useCases/ensureCachedAudioBuffersDurable'),
         import('../../useCases/getCachedAudioBuffer'),
+        import('../../useCases/holdAudioBufferForSession'),
         import('../../useCases/prepareCachedAudioBuffersFromIdb'),
         import('../../useCases/restoreUnpinnedAudioBuffersFromIdb'),
         import('../durableAudioBufferOwnership'),
@@ -81,6 +84,8 @@ async function loadRealm(): Promise<AudioRealm> {
         clearRuntime: store.clearRuntimeAudioBufferCache,
         ensure: ensure.ensureCachedAudioBuffersDurable,
         get: get.getCachedAudioBuffer,
+        has: store.audioBufferCache.has,
+        holdForSession: hold.holdAudioBufferForSession,
         persistPrepared: store.audioBufferCache.persistPreparedBuffer,
         prepare: prepare.prepareCachedAudioBuffersFromIdb,
         remove: store.audioBufferCache.remove,
@@ -321,5 +326,24 @@ describe('restoring stored audio without pinning it', () => {
 
         expect(absentIds).toEqual([]);
         expect(later.get({ bufferId: 'leased-sample' })).toBeNull();
+    });
+
+    it('holds a buffer for this session without writing it over the stored record', async () => {
+        const earlier = await loadRealm();
+        await persistSample(earlier, 'held-sample', 0.25);
+        const later = await relaunch();
+        const storedRecord = structuredClone(controls.committed.get('held-sample'));
+        const storedMeta = structuredClone(controls.committedMeta.get('held-sample'));
+        controls.resetByteCounters();
+
+        later.holdForSession({ bufferId: 'held-sample', buffer: runtimeBuffer(0.75) });
+        await settleQueuedWrites();
+        await flushIndexedDbTasks();
+
+        expect(later.has('held-sample')).toBe(true);
+        expect(controls.bytesWritten()).toBe(0);
+        expect(controls.committed.get('held-sample')).toEqual(storedRecord);
+        expect(controls.committedMeta.get('held-sample')).toEqual(storedMeta);
+        expect(cachedSample(later, 'held-sample')).toBe(Math.fround(0.75));
     });
 });

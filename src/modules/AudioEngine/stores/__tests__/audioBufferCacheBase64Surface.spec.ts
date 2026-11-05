@@ -89,6 +89,7 @@ function buildInvocations(): Record<string, () => unknown> {
             return publication;
         },
         set: () => audioBufferCache.set('pcm-2', makeAudioBuffer([PCM])),
+        holdForSession: () => audioBufferCache.holdForSession('pcm-3', makeAudioBuffer([PCM])),
         remove: () => audioBufferCache.remove('pcm-2'),
         has: () => audioBufferCache.has('pcm'),
         ensureDurable: async () => {

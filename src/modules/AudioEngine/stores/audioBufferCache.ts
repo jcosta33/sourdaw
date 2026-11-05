@@ -2387,6 +2387,17 @@ export const audioBufferCache = {
         void startCachedAudioDurabilityAttempt(id, source);
     },
 
+    /**
+     * Resident for this session only: no PCM is kept to write later and
+     * nothing is written, so a record storage holds for the id is never
+     * overwritten. Evicted, the buffer is gone.
+     */
+    holdForSession(id: string, buffer: AudioBuffer): void {
+        audioCacheSet(id, buffer, undefined, true);
+        clearWaveformCachesForId(id);
+        invalidateCachedAudioDurabilitySource(id, 'external');
+    },
+
     remove(id: string): void {
         const sourceAtRemoval = rebindCachedAudioDurabilitySourceForRemoval(id);
         pinnedBufferIds.delete(id);

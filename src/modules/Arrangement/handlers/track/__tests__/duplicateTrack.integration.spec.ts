@@ -38,6 +38,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioDevices: vi.fn(() => Promise.resolve([])),
     getCachedAudioBuffer: vi.fn(),
     restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
+    holdAudioBufferForSession: vi.fn(),
     getCompensationDelay: vi.fn(),
     getDefaultBendRangeSemitones: vi.fn(),
     getDeviceChainTailSeconds: vi.fn(),
