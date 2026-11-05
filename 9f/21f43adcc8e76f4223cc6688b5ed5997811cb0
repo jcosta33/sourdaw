@@ -1,0 +1,68 @@
+src/components/ui/dialog.tsx
+  s_fec7059b7a251c::t_33096b185371fc 1
+  s_fec7059b7a251c::t_a91f611974e832 130,137
+  s_fec7059b7a251c::t_42b21823e1e08b 11,15,19,23,113
+  s_0314bb17e5dee3::t_495d2f27463315 10,12-14,16-18,20-22,24,52-71,79,97-103,106-112,114-117,120,121-124,138,144
+  s_55244eb93b97d1::t_852d385e89e810 72-81,85
+src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx
+  s_fec7059b7a251c::t_cd562d922c982e 321
+  s_fec7059b7a251c::t_a177fe5ba08684 292
+  s_0314bb17e5dee3::t_85aaf0b50d2d5a 294-307,309-320,322-326,328-329,331-332,335-388,391-395,397-469,472-522
+  s_55244eb93b97d1::t_319bf5e30caea8 8,278-289
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_fec7059b7a251c::t_be9686366bc25e 837-838
+  s_0314bb17e5dee3::t_0c56063c6e4d97 528-533,535,541,546-549,551-556,627-632,634-640,642-648,650-656,658,812,818,820-821,1045-1047,1114,1135,1141,1143-1144
+src/components/ui/__tests__/dialog.spec.tsx
+  s_0314bb17e5dee3::t_f542f5d20c6fb6 1,26-121,145
+src/modules/CommandInterface/presentations/views/__tests__/CommandPalette.spec.tsx
+  s_0314bb17e5dee3::t_24f60709052746 3,90-93,95-96,99-101
+src/modules/Project/presentations/views/RecentProjectsMenu.tsx
+  s_0314bb17e5dee3::t_0de4348811e5b0 1,19-26,31,71-74,80-81,84,166-167,172-178,181,184,193,197,199,205,208-210,213-215,218,220,223,231-233,241,243,247,250,252,255-257,260,263,266,268,272-273,275-276,289-290,299,301-302
+src/modules/Project/presentations/views/__tests__/RecentProjectsMenu.spec.tsx
+  s_0314bb17e5dee3::t_0091570a3aa463 121-125,157,163,174,191,198,205,212,219,226,233,241,252,261,277,293,312,328,349,363,378,403,417,433,458,462,480,486,499,504,520,529,548,570,583,599-638,650-661
+src/modules/Project/presentations/views/__tests__/recentMenuSwitchAfterBootRestore.integration.spec.tsx
+  s_55244eb93b97d1::t_c439ed3422c950 310-314,364,413
+src/modules/WorkspaceShell/presentations/components/__tests__/InstrumentBottomPanel.spec.tsx
+  s_0314bb17e5dee3::t_798b0089e41105 29-48
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_0314bb17e5dee3::t_4cfe215bb028a3 557,558,562,575-576
+src/modules/WorkspaceShell/presentations/views/__tests__/LaunchScreen.spec.tsx
+  s_0314bb17e5dee3::t_56e4503adb2482 61-80,144-145
+  s_55244eb93b97d1::t_c4ed5bbee36b7e 95-145
+src/modules/Preferences/presentations/views/__tests__/PreferencesDialog.spec.tsx
+  s_0314bb17e5dee3::t_99d6811d8b5932 3,168-169,182-183,186,188-189,191-193
+src/modules/WorkspaceShell/presentations/components/InstrumentBottomPanel.tsx
+  s_0314bb17e5dee3::t_682af3fce8f45e 35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9f21f43adcc8e76f4223cc6688b5ed5997811cb0",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
