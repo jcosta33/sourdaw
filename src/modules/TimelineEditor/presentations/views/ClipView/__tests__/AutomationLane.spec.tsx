@@ -77,6 +77,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     setWarpState: vi.fn(),
     getStoredWarpState: vi.fn(),
     warpStateStore: { value: { states: {} }, subscribe: vi.fn() },
+    timelineEditingStore: { value: null },
     trackStore: { value: null },
     resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
         () => ({ status: 'missing' })

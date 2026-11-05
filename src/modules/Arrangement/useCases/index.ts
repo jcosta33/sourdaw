@@ -265,6 +265,12 @@ export { toggleVariationLanes } from './toggleTrackState/toggleVariationLanes';
 export { setSoloMode } from './soloMode/setSoloMode';
 export { syncSoloModePreference } from './soloMode/syncSoloModePreference';
 
+// ── Timeline Editing ──────────────────────────────────────────────────────────
+
+export { toggleRippleEditing } from './timelineEditing/toggleRippleEditing';
+export { setSnapValue } from './timelineEditing/setSnapValue';
+export { setAutomationSubLanes } from './timelineEditing/setAutomationSubLanes';
+
 // ── Track View / Zoom ─────────────────────────────────────────────────────────
 
 export { zoomTracksVertical } from './trackZoom';

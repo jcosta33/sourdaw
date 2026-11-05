@@ -1,9 +1,5 @@
-import { workspaceStore } from '../stores/workspaceStore';
+import { toggleRippleEditing as toggleTimelineRippleEditing } from '#/modules/Arrangement/useCases';
 
 export function toggleRippleEditing(): void {
-    const state = workspaceStore.value;
-    if (!state) {
-        return;
-    }
-    workspaceStore.set({ ...state, rippleEditing: !state.rippleEditing });
+    toggleTimelineRippleEditing();
 }

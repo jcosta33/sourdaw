@@ -1,9 +1,8 @@
-import { adjustmentLayerStore, markerStore, trackStore } from '#/modules/Arrangement/stores';
+import { adjustmentLayerStore, markerStore, timelineEditingStore, trackStore } from '#/modules/Arrangement/stores';
 import { getHeldClips } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { chordTrackStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
-import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { type ProductionBriefScope } from '../models/ProductionBrief';
@@ -34,7 +33,7 @@ function captureProductionBriefActionFootprint(actions: readonly AppAction[]): P
         markers: markerStore.value,
         tracks: trackStore.value,
         timeSignatureNumerator: transportStore.value?.timeSignatureNumerator ?? 4,
-        rippleEditing: workspaceStore.value?.rippleEditing ?? false,
+        rippleEditing: timelineEditingStore.value?.rippleEditing ?? false,
     };
 }
 
