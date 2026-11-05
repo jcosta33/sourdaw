@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import * as automergeStorage from '#/infra/store/storage/createAutomergeStorage';
 import {
     countPendingAutomergeStorageWrites,
@@ -220,6 +221,7 @@ describe('authentic pre-capture trim history replay (#5696)', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         await compactProject();
         clearActionHistory();
     });

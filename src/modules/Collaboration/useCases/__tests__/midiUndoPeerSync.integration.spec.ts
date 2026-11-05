@@ -1,6 +1,7 @@
 import { change, clone, type Doc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import {
     configureAutomergeStoragePort,
     countPendingAutomergeStorageWrites,
@@ -127,6 +128,7 @@ describe('MIDI callback undo against a concurrent peer note edit (#4858)', () =>
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         clearUndoHistory();
         unsubscribe_projection = setupProjectionBridge();
     });

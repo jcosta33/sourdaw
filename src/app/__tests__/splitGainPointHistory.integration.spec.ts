@@ -67,6 +67,7 @@ import {
 } from '#/utils/Notification/notificationEventBus';
 
 import { captureAgentProjectInspectionState } from '../captureCommandBatchPreflightState';
+import { registerProjectSlotProjections } from '../registerProjectSlotProjections';
 
 const SESSION_KEY = 'sourdaw-undo-session';
 const PROJECT_ID = 'split-gain-history-project';
@@ -253,6 +254,7 @@ describe('audio split gain identity with production repair admission and saved h
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        registerProjectSlotProjections();
         sessionStorage.removeItem(SESSION_KEY);
         setNotificationEventBus(createEventBus<NotificationEvents>());
         setActionHistoryMetadataPort({
