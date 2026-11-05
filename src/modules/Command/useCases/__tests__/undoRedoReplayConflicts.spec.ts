@@ -340,6 +340,36 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
             ]);
         });
 
+        it('steps over a conflicted track rename onto a conflict-capable unit beneath it (#2881)', async () => {
+            const older = actionEntry({
+                id: 'older-1',
+                label: 'First Action',
+                inverseAction: conflictCapableFadeInverse,
+            });
+            const rename = actionEntry({
+                id: 'rename-1',
+                label: 'Rename Track',
+                inverseAction: {
+                    type: 'renameTrack',
+                    payload: { trackId: 'track-1', name: 'Live', expectedName: 'Collaborator' },
+                },
+            });
+            mocks.undoStoreValue.value = { past: [older, rename], future: [] };
+            conflictOn('renameTrack');
+
+            await expect(undo()).resolves.toEqual({ headConsumed: false });
+
+            expect(mocks.executeAppAction.mock.calls.map(([action]) => action.type)).toEqual([
+                'renameTrack',
+                'setClipFade',
+            ]);
+            expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [rename], future: [older] });
+            expect(mocks.notifyUser.mock.calls.map(([message]) => message)).toEqual([
+                'Cannot undo "Rename Track": project state has changed',
+                'Skipped "Rename Track": project state has changed; undid "First Action"',
+            ]);
+        });
+
         it('never steps onto a unit whose inverse handler is not flagged conflict-capable', async () => {
             const older = actionEntry({
                 id: 'older-1',

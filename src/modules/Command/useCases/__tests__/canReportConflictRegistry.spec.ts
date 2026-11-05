@@ -433,6 +433,15 @@ const CONFLICT_CAPABLE_FIXTURES: readonly DivergedFixture[] = [
         divergedAction: { type: 'muteTrack', payload: { trackId: 'track-live', muted: true, expectedMuted: true } },
     },
     {
+        // Live track name 'Live'; the guard expects 'Stale' (a collaborator renamed it).
+        title: 'renameTrack refuses to write against a diverged track name',
+        actionType: 'renameTrack',
+        divergedAction: {
+            type: 'renameTrack',
+            payload: { trackId: 'track-live', name: 'Renamed', expectedName: 'Stale' },
+        },
+    },
+    {
         // Live clip color '#ff0000'; the guard expects '#0000ff'.
         title: 'setClipColor refuses to write against a diverged document',
         actionType: 'setClipColor',
