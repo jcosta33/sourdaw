@@ -1,5 +1,6 @@
 /// <reference types="vitest" />
 import { readFileSync } from 'node:fs';
+import { sep } from 'node:path';
 import { env } from 'node:process';
 import { fileURLToPath, URL } from 'node:url';
 
@@ -70,6 +71,19 @@ const AUTOMERGE_STREAMING_ENTRY = fileURLToPath(
 );
 
 /**
+ * Agent lanes and their tooling state live under this checkout's own `.agents/`
+ * and mirror the repository, so a change there must not reload the app this
+ * checkout serves. The check is anchored to this checkout: the watcher matches
+ * absolute paths, and a server running inside a lane has `.agents` in every one
+ * of its own source paths.
+ */
+const AGENT_STATE_DIR = fileURLToPath(new URL('./.agents', import.meta.url));
+
+function isAgentStatePath(file: string): boolean {
+    return file === AGENT_STATE_DIR || file.startsWith(AGENT_STATE_DIR + sep);
+}
+
+/**
  * Redirects the app build's Automerge import from the base64 entry to the
  * streaming entry. Worker bundles keep base64: build workers use
  * `worker.plugins`, and their IIFE format cannot hold the entry's top-level
@@ -135,8 +149,7 @@ export default defineConfig({
     },
     server: {
         hmr: process.env.NO_HMR !== '1',
-        // Agent lanes under `.agents/` mirror the repository, so a change there must not reload the app being served.
-        watch: { ignored: ['**/.agents/**'] },
+        watch: { ignored: [isAgentStatePath] },
         headers: {
             'Cross-Origin-Opener-Policy': 'same-origin',
             'Cross-Origin-Embedder-Policy': 'require-corp',
