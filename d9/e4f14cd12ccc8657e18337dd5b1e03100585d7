@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts
+  s_4d6701e8969790::t_8c906f1168e13c 15,17-23,43,49-51,289-304,380-414,594-758
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d9e4f14cd12ccc8657e18337dd5b1e03100585d7",
+  "prompts": {},
+  "sessions": {
+    "s_4d6701e8969790": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_4d6701e8969790",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
