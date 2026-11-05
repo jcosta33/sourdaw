@@ -122,20 +122,37 @@ describe('canonical audio source window follows start trims and content slips', 
         ).toBeCloseTo(1, 12);
     });
 
-    it('slips an already-advanced fragment from its media entry instead of resetting it', () => {
-        seedClip();
-        const rightClipId = splitClip('c', 4);
-        expect(rightClipId).not.toBeNull();
-        expect(playedEntrySeconds(storedClip(rightClipId!))).toBeCloseTo(2, 12);
+    it('slips a phase-wrapped loop from its media entry instead of resetting the head', () => {
+        // Six beats past the loop anchor leave the promoted head one whole
+        // phase behind the unwrapped entry: head -1.5 s against unwrapped 0.5 s.
+        seedClip({
+            startBeat: 6,
+            endBeat: 14,
+            loopEnabled: true,
+            loopLength: 4,
+            loopOriginBeat: 0,
+            audioOffsetBeats: 1,
+        });
+        promoteSourceClock();
+        const promoted = storedClip();
+        expect(promoted.audioOffsetSeconds).toBeCloseTo(-1.5, 12);
+        expect(promoted.audioUnwrappedOffsetSeconds).toBeCloseTo(0.5, 12);
+        expect(promoted.audioLoopStartSeconds).toBeCloseTo(-2.5, 12);
+        expect(promoted.audioLoopPassEntrySeconds).toBeCloseTo(-1.5, 12);
+        expect(promoted.audioLoopPassOriginBeat).toBe(6);
 
-        expect(slipClipContent(rightClipId!, 'audio', 5)).toBe(true);
+        // q = 2 beats names media second 1, so the head moves by the 0.5 s
+        // from the old unwrapped 0.5 s to 1 s and lands at -1 s. A head reset
+        // to the bare beat conversion would land at +1 s instead.
+        expect(slipClipContent('c', 'audio', 2)).toBe(true);
 
-        const slipped = storedClip(rightClipId!);
-        expect(slipped.audioOffsetBeats).toBe(5);
-        // The new content offset names media second 2.5, so the head moves by
-        // the 0.5 s between the fragment's captured entry and its new edge.
-        expect(playedEntrySeconds(slipped)).toBeCloseTo(2.5, 12);
-        expect(slipped.audioUnwrappedOffsetSeconds).toBeCloseTo(2.5, 12);
+        const slipped = storedClip();
+        expect(slipped.audioOffsetBeats).toBe(2);
+        expect(playedEntrySeconds(slipped)).toBeCloseTo(-1, 12);
+        expect(slipped.audioUnwrappedOffsetSeconds).toBeCloseTo(1, 12);
+        expect(slipped.audioLoopStartSeconds).toBeCloseTo(-2, 12);
+        expect(slipped.audioLoopPassEntrySeconds).toBeCloseTo(-1, 12);
+        expect(slipped.audioLoopPassOriginBeat).toBe(6);
     });
 
     it('moves a tempo-promoted entry with a start trim under the edited clock', () => {
