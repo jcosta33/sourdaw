@@ -181,15 +181,6 @@ describe('getExplicitlyProtectedClips', () => {
         });
 
         it.each([
-            'Thanks, Keep Alpha alone and rename Alpha to Gamma',
-            'Please - Keep Alpha alone and rename Alpha to Gamma',
-        ])('reads an unbound protection after punctuated courtesy as incomplete: %s', (prompt) => {
-            expect(getExplicitClipProtection(prompt, { ...context, tracks: [track(['Alpha', 'Beta'])] }).complete).toBe(
-                false
-            );
-        });
-
-        it.each([
             'please',
             'can you',
             'could you',
@@ -246,6 +237,89 @@ describe('getExplicitlyProtectedClips', () => {
         it('reads a courtesy request without a protection verb as complete with no clips', () => {
             expect(
                 getExplicitClipProtection('Please rename Intro to Bridge', { ...context, tracks: [track(['Intro'])] })
+            ).toEqual({ clips: [], complete: true });
+        });
+    });
+
+    describe('a protection verb that opens a clause after a comma or dash', () => {
+        const clipsOf = (...names: string[]) => ({
+            ...context,
+            tracks: [
+                createTrack(
+                    'track-boundary',
+                    'Pair',
+                    names.map((name) => createClip(`clip-${name}`, name))
+                ),
+            ],
+        });
+
+        it.each([
+            'Thanks, Keep Alpha alone and rename Alpha to Gamma',
+            'Please - Keep Alpha alone and rename Alpha to Gamma',
+            'Alright, Keep Alpha alone and rename Alpha to Gamma',
+            'Hi there, Keep Alpha alone and rename Alpha to Gamma',
+            'Make it louder, Keep Alpha alone and rename Alpha to Gamma',
+            'Make it louder - Keep Alpha alone and rename Alpha to Gamma',
+            'Make it louder \u2014 Keep Alpha alone and rename Alpha to Gamma',
+            'Make it louder, keep Alpha alone and rename Alpha to Gamma',
+        ])('protects the clip it binds: %s', (prompt) => {
+            expect(getExplicitClipProtection(prompt, clipsOf('Alpha', 'Beta'))).toEqual({
+                clips: [{ id: 'clip-Alpha', name: 'Alpha' }],
+                complete: true,
+            });
+        });
+
+        it.each([
+            'Retain Intro alone and rename Intro to Bridge',
+            'retain Intro alone and rename Intro to Bridge',
+            'Retaining Intro alone, rename Intro to Bridge',
+        ])('reads retain as a protection verb: %s', (prompt) => {
+            expect(getExplicitClipProtection(prompt, clipsOf('Intro', 'Outro'))).toEqual({
+                clips: [{ id: 'clip-Intro', name: 'Intro' }],
+                complete: true,
+            });
+        });
+
+        it.each([
+            'Make it louder, Keep Alpha alone and rename Beta to Gamma',
+            'Keep Alpha alone and rename Beta to Gamma',
+        ])('reads a protection form around a clip named like one as incomplete: %s', (prompt) => {
+            expect(getExplicitClipProtection(prompt, clipsOf('Keep Alpha', 'Beta'))).toEqual({
+                clips: [],
+                complete: false,
+            });
+        });
+
+        it('reads a clip literally named like a protection as a name', () => {
+            expect(
+                getExplicitClipProtection('Make it louder, rename Keep Alpha to Gamma', clipsOf('Keep Alpha', 'Beta'))
+            ).toEqual({ clips: [], complete: true });
+        });
+
+        it('keeps a capitalised verb after a courtesy opener as incomplete', () => {
+            expect(
+                getExplicitClipProtection('Please Keep Alpha alone and rename Alpha to Gamma', clipsOf('Alpha', 'Beta'))
+                    .complete
+            ).toBe(false);
+        });
+
+        it.each([
+            ['Rename Vocals - Keep Them Separate to Lead', ['Vocals - Keep Them Separate', 'Pad']],
+            ['Rename Intro - Leave Me Alone to Outro', ['Intro - Leave Me Alone', 'Pad']],
+        ])('reads a dash inside a clip name as part of the name: %s', (prompt, names) => {
+            expect(getExplicitClipProtection(prompt, clipsOf(...names))).toEqual({ clips: [], complete: true });
+        });
+
+        it('keeps a comma before a clip named like a protection as ambiguous', () => {
+            expect(
+                getExplicitClipProtection('Mute Bass, Keep Alive and rename Pad to Lead', clipsOf('Keep Alive', 'Pad'))
+                    .complete
+            ).toBe(false);
+        });
+
+        it('opens nothing for a capitalised word that is no protection verb', () => {
+            expect(
+                getExplicitClipProtection('Make it louder, Rename Alpha to Gamma', clipsOf('Alpha', 'Beta'))
             ).toEqual({ clips: [], complete: true });
         });
     });

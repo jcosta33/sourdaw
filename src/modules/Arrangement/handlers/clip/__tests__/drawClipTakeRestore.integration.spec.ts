@@ -23,13 +23,13 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTake, createTakeLane, type TakeLane } from '../../../models/TakeLane';
 import { type Clip } from '../../../models/Track';
+import { defaultTimelineEditingState, timelineEditingStore } from '../../../stores/timelineEditingStore';
 
 const UNDO_SESSION_KEY = 'sourdaw-undo-session';
 
@@ -130,7 +130,7 @@ describe('drawClip take restore', () => {
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         const track = TrackDummy.create({ id: 'track-1', clips: [] });
         trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
     });
@@ -141,7 +141,7 @@ describe('drawClip take restore', () => {
         clearHandlerRegistry();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         flushAutomergeStorageWrites();
         sessionStorage.removeItem(UNDO_SESSION_KEY);
         configureAutomergeStoragePort(null);
@@ -196,7 +196,7 @@ describe('drawClip take restore', () => {
             selectedTrackId: 'track-1',
             ghostClips: [],
         });
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: true });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: true });
         flushAutomergeStorageWrites();
         const expectedFrames = [
             [0, 2, 24_000],
@@ -256,7 +256,7 @@ describe('drawClip take restore', () => {
         expect(trackStore.value?.tracks[0]?.clips.some((clip) => clip.id === 'clip-drawn')).toBe(false);
         assertAuthority();
 
-        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: false });
+        timelineEditingStore.set({ ...defaultTimelineEditingState, rippleEditing: false });
         await redo();
         assertShifted();
     });

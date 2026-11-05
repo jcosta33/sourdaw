@@ -16,6 +16,7 @@ import { type Clip } from '../../models/Track';
 import { clipDragPreviewRef, previewDirtyFlag, type ClipPreviewPosition } from '../../stores/clipDragPreviewRef';
 import { clipSelectionStore } from '../../stores/clipSelectionStore';
 import { inlineMidiNotePreviewRef } from '../../stores/inlineMidiNotePreviewRef';
+import { timelineEditingStore } from '../../stores/timelineEditingStore';
 import { timelineViewStore, zoomTimeline } from '../../stores/timelineViewStore';
 import { trackStore } from '../../stores/trackStore';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
@@ -329,7 +330,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         const tool = getActiveTool();
 
         // Sub-lane paint when automation panel is visible (any tool)
-        if (workspaceStore.value?.automationVisibility !== 'hidden') {
+        if (timelineEditingStore.value?.automationVisibility !== 'hidden') {
             if (tryPaintSubLane(x, y, autoDragRef)) {
                 return;
             }
@@ -347,7 +348,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             // Only paint when the automation lane is actually visible — otherwise
             // the tool writes points onto a hidden lane (finding #88). This mirrors
             // the sub-lane paint guard above.
-            if (workspaceStore.value?.automationVisibility !== 'hidden') {
+            if (timelineEditingStore.value?.automationVisibility !== 'hidden') {
                 handleAutomationTool(x, y, beat, getScrollY(), autoDragRef);
             }
             return;
@@ -898,7 +899,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                     endBeat: state1 + length,
                     name: `Clip ${state1}`,
                     type: drawClipType,
-                    ripple: workspaceStore.value?.rippleEditing ?? false,
+                    ripple: timelineEditingStore.value?.rippleEditing ?? false,
                 },
             });
             drawDragRef.current = null;
@@ -1003,7 +1004,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
                         );
                     }
                 } else if (dragMode === 'move') {
-                    const rippleEnabled = workspaceStore.value?.rippleEditing ?? false;
+                    const rippleEnabled = timelineEditingStore.value?.rippleEditing ?? false;
                     // Same mousedown group test that seeded the preview: a drag
                     // that began on a multi-selection member is a group gesture
                     // even when locked or stale members leave one previewed clip.

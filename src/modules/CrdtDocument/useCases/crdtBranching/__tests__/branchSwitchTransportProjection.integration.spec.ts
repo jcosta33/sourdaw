@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import {
     configureAutomergeStoragePort,
@@ -16,6 +17,8 @@ import { setupProjectionBridge } from '../../projection/setupProjectionBridge';
 import { registerCrdtStorageRuntime } from '../../registerCrdtStorageRuntime';
 import { forkProjectBranch } from '../forkProjectBranch';
 import { switchBranch } from '../switchBranch';
+
+registerDeviceEnginePorts();
 
 // The store projects the active branch's document. A tempo committed locally
 // on one branch is not the incoming branch's tempo, so switching must leave the

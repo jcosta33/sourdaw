@@ -1,9 +1,5 @@
-import { getWorkspaceState } from '../../../repositories/getWorkspaceState';
-import { updateWorkspaceState } from '../../../repositories/updateWorkspaceState';
+import { setSnapValue as setTimelineSnapValue } from '#/modules/Arrangement/useCases';
 
 export const setSnapValue = (value: number): void => {
-    if (!getWorkspaceState()) {
-        return;
-    }
-    updateWorkspaceState({ snapValue: value });
+    setTimelineSnapValue(value);
 };

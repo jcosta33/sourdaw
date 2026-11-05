@@ -94,10 +94,6 @@ vi.mock('../../../useCases/removeTrack', () => ({
     removeTrack: vi.fn(),
 }));
 
-vi.mock('../../../useCases/trackViewActions/setWorkspaceMode', () => ({
-    setWorkspaceMode: vi.fn(),
-}));
-
 vi.mock('#/modules/Preferences/stores', () => ({
     preferencesStore: {},
 }));

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 
@@ -8,6 +9,8 @@ import { automergeRepository } from '../../../repositories/automergeRepository';
 import { branchStore } from '../../../stores/branchStore';
 import { forkProjectBranch } from '../forkProjectBranch';
 import { switchBranch } from '../switchBranch';
+
+registerDeviceEnginePorts();
 
 vi.mock('../../compactProject', () => ({ compactProject: vi.fn(() => Promise.resolve()) }));
 vi.mock('../../runCrdtPersistenceOperation', () => ({

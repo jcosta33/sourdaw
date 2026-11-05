@@ -1,6 +1,7 @@
 import { Container } from '#/infra/di/Container';
 
-import type { ToggleVoiceCommandPayload, VoidPayload } from '#/modules/WorkspaceShell/events';
+import type { VoidPayload } from '#/infra/events/types';
+import type { ToggleVoiceCommandPayload } from '../events/CommandEvents';
 
 type CommandEvents = {
     'zoom.scrollToPlayhead': VoidPayload;

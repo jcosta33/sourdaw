@@ -1,6 +1,5 @@
 import { type MidiNote } from '#/modules/MIDI/stores';
 import { projectCommittedGroove } from '#/modules/MIDI/useCases';
-import { processYeastMidi } from '#/modules/Yeast/useCases';
 import {
     CLIP_LOOP_WINDOW_BEAT_TOLERANCE,
     isBeatInEnabledClipLoopWindow,
@@ -26,6 +25,8 @@ import {
 } from '../../models/TempoMap';
 import { getBarBeatAtPosition, getTimeSignatureAtBeat, type TimeSignatureChange } from '../../models/TimeSignatureMap';
 import { type TransportState } from '../../models/TransportState';
+
+import { liveMidiProcessor, type LiveMidiProcessorEvent } from './liveMidiProcessor';
 
 export type LiveYeastNote = {
     id: string;
@@ -94,8 +95,6 @@ type ProcessLiveYeastTrackBlockOutput = {
     notesByRoute: Map<string, LiveYeastNote[]>;
     generatedNotes: LiveYeastNote[];
 };
-
-type LiveYeastMidiEvent = Awaited<ReturnType<typeof processYeastMidi>>[number];
 
 type PendingLiveYeastNote = {
     indices: number[];
@@ -246,7 +245,7 @@ function ownsLiveRelease(
  * note-off it owns (`ownsLiveRelease`).
  */
 function pushLiveSegmentEvents(
-    inputEvents: LiveYeastMidiEvent[],
+    inputEvents: LiveMidiProcessorEvent[],
     { instanceId, startBeat, endBeat, velocity }: LivePassSegment,
     {
         block,
@@ -309,7 +308,8 @@ export async function processLiveYeastTrackBlock({
             .map(({ beat, tempo, curve }) => ({ beat, tempo, curve }))
             .sort((alpha, beta) => alpha.beat - beta.beat),
     };
-    const processedEvents: LiveYeastMidiEvent[] = [];
+    const processor = liveMidiProcessor.read('processLiveYeastTrackBlock');
+    const processedEvents: LiveMidiProcessorEvent[] = [];
     // The beats of a note the clip's head cut off before Yeast saw it, by note instance: the notes Yeast plays
     // from that instance begin that far into the note they came from.
     const headCutBeatsByInstance = new Map<string, number>();
@@ -334,7 +334,7 @@ export async function processLiveYeastTrackBlock({
             transport.timeSignatureNumerator,
             transport.timeSignatureDenominator
         );
-        const inputEvents: LiveYeastMidiEvent[] = [];
+        const inputEvents: LiveMidiProcessorEvent[] = [];
 
         for (const iteration of iterations) {
             for (const sourceNote of iteration.sourceNotes) {
@@ -474,7 +474,7 @@ export async function processLiveYeastTrackBlock({
             }
         }
 
-        const blockOutput = await processYeastMidi({
+        const blockOutput = await processor.processBlock({
             context,
             rackId,
             routeId: trackId,

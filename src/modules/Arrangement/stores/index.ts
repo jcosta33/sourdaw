@@ -28,6 +28,8 @@ export {
     setTimelineViewportHeight,
 } from './timelineViewStore';
 export type { TimelineViewState } from './timelineViewStore';
+export { timelineEditingStore, defaultTimelineEditingState } from './timelineEditingStore';
+export type { TimelineEditingState, AutomationVisibility } from './timelineEditingStore';
 
 export { activeRecordingRef } from './activeRecordingRef';
 export type { RecordingMidiAdmission } from './activeRecordingRef';

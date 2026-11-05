@@ -23,7 +23,6 @@ import { waitForDevices } from '#/modules/AudioEngine/useCases';
 import { createAutomationLane, restoreAutomationSnapshot } from '#/modules/Automation/useCases';
 import { addChordEvent, replaceChordTrackState, setMidiStoreState } from '#/modules/MIDI/useCases';
 import { addSidechainRoute } from '#/modules/Routing/useCases';
-import { getDefaultPadNames } from '#/modules/Toaster/useCases';
 import { timeSignatureMapStore } from '#/modules/Transport/stores';
 import {
     restoreTimelineMapSnapshot,
@@ -37,6 +36,7 @@ import { projectStore } from '../../../stores/projectStore';
 import { createFreshProjectMetadata } from '../../createFreshProjectMetadata';
 import { committedProject } from '../../projectPersistence/helpers/committedProjectAuthority';
 import { reportDeviceReadinessWhenSettled } from '../../projectTemplates/templateHelpers/reportDeviceReadinessWhenSettled';
+import { templateDeviceContent } from '../../projectTemplates/templateHelpers/templateDeviceContent';
 import { applyPreset } from '../demoUtils/applyPreset';
 import { createMidiClip } from '../demoUtils/createMidiClip';
 import { note } from '../demoUtils/note';
@@ -197,7 +197,7 @@ export async function demo5_NebulaDrift(): Promise<void> {
         },
     ];
 
-    const defaultPadNames = getDefaultPadNames();
+    const defaultPadNames = templateDeviceContent.read('createNebulaDriftDemo').defaultPadNames();
     const toasterPadTracks = Array.from({ length: 16 }, (_, index) => {
         const child = createTrack({
             name: defaultPadNames[index] ?? `Pad ${index + 1}`,

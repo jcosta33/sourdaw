@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { logger } from '#/infra/logger/appLogger';
 
 import { type AudioEngine } from '../../models/AudioEngineState';
@@ -14,6 +15,8 @@ import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from '../livePl
 import { startNativeLiveGraphSession } from '../livePlayback/startNativeLiveGraphSession';
 import { playAudioBufferPreview } from '../playAudioBufferPreview';
 import { playExclusiveAudioBufferPreview } from '../playExclusiveAudioBufferPreview';
+
+registerDeviceEnginePorts();
 
 const fixture = vi.hoisted(() => {
     const current: { engine: AudioEngine | null; startBackend: NativeStartBackend | null } = {

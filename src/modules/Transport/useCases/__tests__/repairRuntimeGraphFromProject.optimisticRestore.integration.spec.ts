@@ -2,6 +2,7 @@ import { clone } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { initInputMonitoringProjectAccess } from '#/app/initInputMonitoringProjectAccess';
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -31,6 +32,8 @@ import { getVersionControlHandlers } from '#/modules/ProjectVersioning/useCases'
 
 import { defaultTransportState, transportStore } from '../../stores/transportStore';
 import { repairRuntimeGraphFromProject } from '../repairRuntimeGraphFromProject';
+
+registerDeviceEnginePorts();
 
 const runtime = vi.hoisted(() => ({ resetPlugins: vi.fn<() => Promise<void>>() }));
 vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => ({

@@ -90,6 +90,12 @@ describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#2
         registerHandlerMap({ togglePlayback: stubTogglePlaybackHandler() });
     }
 
+    // A mouse click presses the pointer on the button, then focus follows.
+    function focusByPointer(element: HTMLElement): void {
+        element.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+        element.focus();
+    }
+
     function mount(node: HTMLElement): HTMLElement {
         document.body.appendChild(node);
         cleanupNodes.push(node);
@@ -379,7 +385,7 @@ describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#2
     });
 
     describe('native button activation', () => {
-        it.each(['Enter', ' '])('leaves unmodified %s to a focused button', (key) => {
+        it.each(['Enter', ' '])('leaves unmodified %s to a Tab-focused button', (key) => {
             openSessionWithCommandHandlers();
             mocks.handleKeydown.mockReturnValue(true);
             render(<Host />);
@@ -387,6 +393,80 @@ describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#2
             button.focus();
 
             const event = dispatchKey(button, { key });
+
+            expect(mocks.handleKeydown).not.toHaveBeenCalled();
+            expect(event.defaultPrevented).toBe(false);
+        });
+
+        it('stops claiming a pointer-focused button once Tab is pressed', () => {
+            openSessionWithCommandHandlers();
+            mocks.handleKeydown.mockReturnValue(true);
+            render(<Host />);
+            const button = mount(document.createElement('button'));
+            focusByPointer(button);
+            dispatchKey(button, { key: 'Tab' });
+            mocks.handleKeydown.mockClear();
+
+            const event = dispatchKey(button, { key: 'Enter' });
+
+            expect(mocks.handleKeydown).not.toHaveBeenCalled();
+            expect(event.defaultPrevented).toBe(false);
+        });
+
+        it.each(['Enter', ' '])('routes %s from a button the pointer pressed and focused', (key) => {
+            openSessionWithCommandHandlers();
+            mocks.handleKeydown.mockReturnValue(true);
+            render(<Host />);
+            const button = mount(document.createElement('button'));
+            focusByPointer(button);
+
+            const event = dispatchKey(button, { key });
+
+            expect(mocks.handleKeydown).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ key }));
+            expect(event.defaultPrevented).toBe(true);
+        });
+
+        it.each(['Enter', ' '])(
+            'leaves %s to a button focused by script after the pointer pressed elsewhere',
+            (key) => {
+                openSessionWithCommandHandlers();
+                mocks.handleKeydown.mockReturnValue(true);
+                render(<Host />);
+                const button = mount(document.createElement('button'));
+                const elsewhere = mount(document.createElement('div'));
+                elsewhere.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+                button.focus();
+
+                const event = dispatchKey(button, { key });
+
+                expect(mocks.handleKeydown).not.toHaveBeenCalled();
+                expect(event.defaultPrevented).toBe(false);
+            }
+        );
+
+        it('prevents the default of Enter on a pointer-focused button even when the shortcut reports false (stop)', () => {
+            openSessionWithCommandHandlers();
+            mocks.handleKeydown.mockReturnValue(false);
+            render(<Host />);
+            const button = mount(document.createElement('button'));
+            focusByPointer(button);
+
+            const event = dispatchKey(button, { key: 'Enter' });
+
+            expect(mocks.handleKeydown).toHaveBeenCalledOnce();
+            expect(event.defaultPrevented).toBe(true);
+        });
+
+        it('forgets pointer focus when the button is refocused by script', () => {
+            openSessionWithCommandHandlers();
+            mocks.handleKeydown.mockReturnValue(true);
+            render(<Host />);
+            const button = mount(document.createElement('button'));
+            focusByPointer(button);
+            button.blur();
+            button.focus();
+
+            const event = dispatchKey(button, { key: ' ' });
 
             expect(mocks.handleKeydown).not.toHaveBeenCalled();
             expect(event.defaultPrevented).toBe(false);

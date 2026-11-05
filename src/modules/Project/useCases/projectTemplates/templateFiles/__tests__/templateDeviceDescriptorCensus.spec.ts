@@ -17,6 +17,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getPluginById } from '#/modules/Arrangement/useCases';
 import { registerBuiltinFaustDSP, isFaustModule } from '#/modules/PluginHost/useCases';
 import { registerProSynthInstruments } from '#/modules/Synth/useCases';
@@ -36,6 +37,7 @@ const templateFileModules = import.meta.glob('../*.ts', { eager: true });
 
 registerBuiltinFaustDSP();
 registerProSynthInstruments();
+registerDeviceEnginePorts();
 
 type TemplateCreate = () => Promise<void>;
 

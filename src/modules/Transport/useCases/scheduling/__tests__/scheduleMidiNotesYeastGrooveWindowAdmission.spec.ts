@@ -12,12 +12,28 @@ import {
 } from '#/modules/MIDI/stores';
 import { createGrooveMidiEventProjector, projectClipMidiEvents, projectCommittedGroove } from '#/modules/MIDI/useCases';
 import { scheduleNote } from '#/modules/Synth/useCases';
+import { toasterStore } from '#/modules/Toaster/stores';
 import { processYeastMidi } from '#/modules/Yeast/useCases';
 
 import { defaultTransportState } from '../../../models/TransportState';
 import { tempoMapStore } from '../../../stores/tempoMapStore';
 import { timeSignatureMapStore } from '../../../stores/timeSignatureMapStore';
+import { kitSwing } from '../kitSwing';
+import { liveMidiProcessor } from '../liveMidiProcessor';
 import { scheduleMidiNotes } from '../scheduleMidiNotes';
+
+// The engine and Arrangement barrels are mocked whole here, so the composition
+// root's registrar cannot load; the device ports it registers are filled
+// directly, from the Yeast and Toaster barrels this spec doubles. Scheduling a
+// window never reads a rack, and the Yeast store cannot load over the mocked
+// track store, so a rack read fails the spec rather than answering.
+liveMidiProcessor.configure({
+    processBlock: processYeastMidi,
+    readRackProcessors: (rackId) => {
+        throw new Error(`scheduleMidiNotes read the rack of ${rackId}`);
+    },
+});
+kitSwing.configure({ currentSwing: (deviceId) => toasterStore.value?.[deviceId]?.kit.swing });
 
 /** Types withheld only inside tests that exercise the generic admission guard. */
 const injectedWithheldDeviceTypes = vi.hoisted(() => new Set<string>());
@@ -52,6 +68,7 @@ const registerScheduledSourceMock = vi.hoisted(() => vi.fn<(node: AudioScheduled
 
 vi.mock('#/modules/Arrangement/stores', () => ({
     activeRecordingRef: { current: [] },
+    timelineEditingStore: { value: null },
     trackStore: { value: { tracks: [] } },
     // Pulled in transitively: the real MIDI use-case barrel below reaches
     // Levain's param bridge, whose dependency bundle destructures these off

@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { activeRecordingRef, trackStore, type Track } from '#/modules/Arrangement/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { stopPlayback, togglePlayback, toggleRecording } from '#/modules/Transport/useCases';
 
 import { reconcileAutoInputMonitoring } from '../reconcileAutoInputMonitoring';
 import { syncAutoInputMonitoring } from '../syncAutoInputMonitoring';
+
+registerDeviceEnginePorts();
 
 const TRACK_ID = 'track-armed-auto';
 const INPUT_ID = 'input-1';

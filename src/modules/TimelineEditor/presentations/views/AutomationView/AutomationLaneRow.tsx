@@ -1,6 +1,7 @@
 import { type ReactElement, type MouseEvent, type KeyboardEvent, useState, useRef, useEffect } from 'react';
 
 import { useStore } from '#/infra/store/useStore';
+import { defaultTimelineEditingState, timelineEditingStore } from '#/modules/Arrangement/stores';
 import { interpolateAutomationValue } from '#/modules/Arrangement/useCases';
 import {
     addAutomationPoint,
@@ -123,7 +124,7 @@ export const AutomationLaneRow = ({
     const isDrawMode = workspace.activeTool === 'draw';
     const curveColor = lane.color ?? trackColor ?? '#a78bfa';
     const isDisabled = lane.enabled === false;
-    const snapValue = workspace.snapValue ?? 1;
+    const { snapValue } = useStore(timelineEditingStore, defaultTimelineEditingState);
 
     const viewportStartBeat = scrollX / pixelsPerBeat;
     const viewportEndBeat = viewportStartBeat + containerWidth / pixelsPerBeat;

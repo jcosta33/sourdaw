@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { type Clip, takeLaneStore, type TakeLaneStoreState, trackStore } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping, getSynthParamsForTrack } from '#/modules/Arrangement/useCases';
 import {
@@ -45,6 +46,8 @@ import { scheduleFrozenTrack } from '../scheduleFrozenTrack';
 import { scheduleMidiNotes } from '../scheduleMidiNotes';
 
 import type { SchedulerCancellation } from '../schedulerCancellation';
+
+registerDeviceEnginePorts();
 
 /** Types withheld only inside tests that exercise the generic admission guard. */
 const injectedWithheldDeviceTypes = vi.hoisted(() => new Set<string>());

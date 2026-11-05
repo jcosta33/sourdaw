@@ -18,10 +18,13 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { crumbsEngineAttachmentStore } from '#/modules/Crumbs/stores';
 
 import { type AudioGraphApplyResult } from '../../../models/AudioGraphBackend';
 import { markAttachedCrumbsInstances } from '../markAttachedCrumbsInstances';
+
+registerDeviceEnginePorts();
 
 type AppliedResult = Extract<AudioGraphApplyResult, { application: 'applied' }>;
 

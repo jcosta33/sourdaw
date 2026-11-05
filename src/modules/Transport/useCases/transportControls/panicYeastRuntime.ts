@@ -1,5 +1,6 @@
 import { getAudioContext } from '#/modules/AudioEngine/useCases';
-import { yeastPanic } from '#/modules/Yeast/useCases';
+
+import { notePanicParticipants } from './notePanicParticipants';
 
 /**
  * Transport owns teardown ordering; Yeast owns the runtime reset itself. Post
@@ -9,5 +10,5 @@ import { yeastPanic } from '#/modules/Yeast/useCases';
 export function panicYeastRuntime(): Promise<void> {
     const context = getAudioContext();
     const nowSamples = Math.round(context.currentTime * context.sampleRate);
-    return yeastPanic(nowSamples);
+    return notePanicParticipants.read('panicYeastRuntime').settleGeneratedNotes(nowSamples);
 }
