@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { commitSendEdit } from '../commitSendEdit';
+import { commitSendLevel } from '../commitSendLevel';
 import { restoreSendEngineFromProjectTruth } from '../restoreSendEngineFromProjectTruth';
 
 const mocks = vi.hoisted(() => ({
@@ -85,5 +86,83 @@ describe('commitSendEdit', () => {
         await commitSendEdit({ type: 'addSend', payload: { trackId: 'track-1', busId: 'bus-1', level: 0.25 } });
 
         expect(mocks.engineRemoveSend).toHaveBeenCalledWith('track-1', 'bus-1');
+    });
+});
+
+describe('commitSendLevel', () => {
+    const projectSends: { current: { busId: string; level: number; preFader: boolean }[] } = { current: [] };
+
+    beforeEach(() => {
+        projectSends.current = [{ busId: 'bus-1', level: 0.2, preFader: false }];
+        mocks.getTrackById.mockImplementation(() => ({ sends: projectSends.current }));
+    });
+
+    it('applies a second step only after the first lands, guarded on the level the first wrote', async () => {
+        let landFirst: () => void = () => undefined;
+        mocks.executeAppAction
+            .mockImplementationOnce(
+                () =>
+                    new Promise<void>((resolve) => {
+                        landFirst = () => {
+                            projectSends.current = [{ busId: 'bus-1', level: 0.3, preFader: false }];
+                            resolve();
+                        };
+                    })
+            )
+            .mockResolvedValueOnce(undefined);
+
+        const first = commitSendLevel('track-1', 'bus-1', 0.3);
+        const second = commitSendLevel('track-1', 'bus-1', 0.4);
+        await vi.waitFor(() => expect(mocks.executeAppAction).toHaveBeenCalledOnce());
+        landFirst();
+        await Promise.all([first, second]);
+
+        expect(mocks.executeAppAction.mock.calls.map(([action]) => action)).toEqual([
+            {
+                type: 'setSend',
+                payload: {
+                    trackId: 'track-1',
+                    busId: 'bus-1',
+                    level: 0.3,
+                    expectedLevel: 0.2,
+                    expectedPreFader: false,
+                },
+            },
+            {
+                type: 'setSend',
+                payload: {
+                    trackId: 'track-1',
+                    busId: 'bus-1',
+                    level: 0.4,
+                    expectedLevel: 0.3,
+                    expectedPreFader: false,
+                },
+            },
+        ]);
+    });
+
+    it('moves a send the first step created instead of adding it twice', async () => {
+        projectSends.current = [];
+        mocks.executeAppAction.mockImplementationOnce(async () => {
+            await Promise.resolve();
+            projectSends.current = [{ busId: 'bus-1', level: 0.3, preFader: false }];
+        });
+        mocks.executeAppAction.mockResolvedValueOnce(undefined);
+
+        await Promise.all([commitSendLevel('track-1', 'bus-1', 0.3), commitSendLevel('track-1', 'bus-1', 0.4)]);
+
+        expect(mocks.executeAppAction.mock.calls.map(([action]) => action.type)).toEqual(['addSend', 'setSend']);
+    });
+
+    it('still applies a later step when an earlier one is refused', async () => {
+        mocks.executeAppAction.mockRejectedValueOnce(new Error('conflict')).mockResolvedValueOnce(undefined);
+
+        await Promise.all([commitSendLevel('track-1', 'bus-1', 0.3), commitSendLevel('track-1', 'bus-1', 0.4)]);
+
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(2);
+        expect(mocks.executeAppAction.mock.lastCall![0]).toMatchObject({
+            type: 'setSend',
+            payload: { level: 0.4, expectedLevel: 0.2 },
+        });
     });
 });

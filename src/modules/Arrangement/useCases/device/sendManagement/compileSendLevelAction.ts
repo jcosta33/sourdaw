@@ -6,17 +6,17 @@ type SendState = { level: number; preFader: boolean };
 
 /**
  * The action one send-level gesture commits. A send that exists is moved with
- * the level and tap point the gesture started from as its guards, so undo
- * restores exactly that gesture; a track with no send there yet gets one,
- * post-fader.
+ * the level and tap point it holds before this commit as its guards, so undo
+ * restores exactly what the gesture replaced; a track with no send there yet
+ * gets one, post-fader.
  */
 export function compileSendLevelAction(
     trackId: string,
     busId: string,
     level: number,
-    startSend: SendState | undefined
+    currentSend: SendState | undefined
 ): SendLevelAction {
-    if (!startSend) {
+    if (!currentSend) {
         return { type: 'addSend', payload: { trackId, busId, level } };
     }
     return {
@@ -25,8 +25,8 @@ export function compileSendLevelAction(
             trackId,
             busId,
             level,
-            expectedLevel: startSend.level,
-            expectedPreFader: startSend.preFader,
+            expectedLevel: currentSend.level,
+            expectedPreFader: currentSend.preFader,
         },
     };
 }

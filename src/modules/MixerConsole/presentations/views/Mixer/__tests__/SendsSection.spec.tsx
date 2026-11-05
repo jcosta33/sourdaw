@@ -1,5 +1,8 @@
-import { act, render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent, type RenderResult } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import { trackStore } from '#/modules/Arrangement/stores';
+import { levelToSendPosition } from '#/utils/audioLevelLaw';
 
 import { SendsSection } from '../SendsSection';
 
@@ -72,11 +75,19 @@ const makeBus = (overrides: Partial<Track> = {}): Track => ({
     ...overrides,
 });
 
+// A level commit reads the send the project holds, so the edited track is put
+// in the project exactly as it is rendered.
+const renderInProject = (track: Track): RenderResult => {
+    trackStore.set({ tracks: [track, ...mocks.tracks], selectedTrackId: null, ghostClips: [] });
+    return render(<SendsSection track={track} />);
+};
+
 describe('SendsSection', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.executeAppAction.mockResolvedValue(undefined);
         mocks.tracks = [];
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
     });
 
     it('renders nothing when the project has no buses', () => {
@@ -104,7 +115,7 @@ describe('SendsSection', () => {
         mocks.tracks = [makeBus({ id: 'bus-1', name: 'Reverb' })];
         const track: Track = { ...baseTrack, id: 'track-9', sends: [{ busId: 'bus-1', level: 0.2, preFader: false }] };
 
-        render(<SendsSection track={track} />);
+        renderInProject(track);
 
         const slider = screen.getByRole('slider', { name: 'Send to Reverb' });
         fireEvent.doubleClick(slider);
@@ -131,7 +142,7 @@ describe('SendsSection', () => {
     it('commits addSend when the track has no send to that bus yet', async () => {
         mocks.tracks = [makeBus({ id: 'bus-1', name: 'Reverb' })];
 
-        render(<SendsSection track={{ ...baseTrack, id: 'track-9' }} />);
+        renderInProject({ ...baseTrack, id: 'track-9' });
 
         const slider = screen.getByRole('slider', { name: 'Send to Reverb' });
         fireEvent.doubleClick(slider);
@@ -152,7 +163,7 @@ describe('SendsSection', () => {
         mocks.tracks = [makeBus({ id: 'bus-1', name: 'Reverb' })];
         mocks.executeAppAction.mockRejectedValueOnce(new Error('conflict'));
 
-        render(<SendsSection track={{ ...baseTrack, id: 'track-9' }} />);
+        renderInProject({ ...baseTrack, id: 'track-9' });
 
         fireEvent.doubleClick(screen.getByRole('slider', { name: 'Send to Reverb' }));
         fireEvent.change(screen.getByDisplayValue('0'), { target: { value: '65' } });
@@ -165,11 +176,7 @@ describe('SendsSection', () => {
 
     it('settles a pointer drag the browser cancels as one commit at the level it was left', async () => {
         mocks.tracks = [makeBus({ id: 'bus-1', name: 'Reverb' })];
-        render(
-            <SendsSection
-                track={{ ...baseTrack, id: 'track-9', sends: [{ busId: 'bus-1', level: 0.2, preFader: false }] }}
-            />
-        );
+        renderInProject({ ...baseTrack, id: 'track-9', sends: [{ busId: 'bus-1', level: 0.2, preFader: false }] });
         const root = screen.getByRole('slider', { name: 'Send to Reverb' }).closest('[data-slot="slider"]');
         if (!(root instanceof HTMLElement)) {
             throw new Error('Missing Slider root');
@@ -214,11 +221,7 @@ describe('SendsSection', () => {
 
     it('commits a keyboard step on the send slider as one setSend at the stepped level', async () => {
         mocks.tracks = [makeBus({ id: 'bus-1', name: 'Reverb' })];
-        render(
-            <SendsSection
-                track={{ ...baseTrack, id: 'track-9', sends: [{ busId: 'bus-1', level: 0.2, preFader: false }] }}
-            />
-        );
+        renderInProject({ ...baseTrack, id: 'track-9', sends: [{ busId: 'bus-1', level: 0.2, preFader: false }] });
         const thumb = screen.getByRole('slider', { name: 'Send to Reverb' });
 
         await act(async () => {
@@ -229,6 +232,58 @@ describe('SendsSection', () => {
         const action = mocks.executeAppAction.mock.calls[0]![0];
         expect(action).toMatchObject({ type: 'setSend', payload: { trackId: 'track-9', expectedLevel: 0.2 } });
         expect(action.payload.level).toBeCloseTo(mocks.previewSend.mock.lastCall![2], 6);
+    });
+
+    it('commits a second keyboard step taken before the first lands, guarded on the level the first wrote', async () => {
+        mocks.tracks = [makeBus({ id: 'bus-1', name: 'Reverb' })];
+        const track: Track = { ...baseTrack, id: 'track-9', sends: [{ busId: 'bus-1', level: 0.2, preFader: false }] };
+        renderInProject(track);
+        let landFirst: () => void = () => undefined;
+        mocks.executeAppAction.mockImplementationOnce(
+            (action: { payload: { level: number } }) =>
+                new Promise<void>((resolve) => {
+                    landFirst = () => {
+                        trackStore.set({
+                            tracks: [
+                                { ...track, sends: [{ busId: 'bus-1', level: action.payload.level, preFader: false }] },
+                                ...mocks.tracks,
+                            ],
+                            selectedTrackId: null,
+                            ghostClips: [],
+                        });
+                        resolve();
+                    };
+                })
+        );
+        let landSecond: () => void = () => undefined;
+        mocks.executeAppAction.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    landSecond = resolve;
+                })
+        );
+        const thumb = screen.getByRole('slider', { name: 'Send to Reverb' });
+
+        await act(async () => {
+            fireEvent.keyDown(thumb, { key: 'ArrowRight' });
+        });
+        await act(async () => {
+            fireEvent.keyDown(thumb, { key: 'ArrowRight' });
+        });
+        expect(mocks.executeAppAction).toHaveBeenCalledOnce();
+        await act(async () => {
+            landFirst();
+        });
+
+        expect(mocks.executeAppAction).toHaveBeenCalledTimes(2);
+        const [first, second] = mocks.executeAppAction.mock.calls.map(([action]) => action);
+        expect(second).toMatchObject({ type: 'setSend', payload: { expectedLevel: first.payload.level } });
+        expect(second.payload.level).toBeGreaterThan(first.payload.level);
+        // The first step settling leaves the slider on the step still landing.
+        expect(thumb).toHaveAttribute('aria-valuenow', String(Math.round(levelToSendPosition(second.payload.level))));
+        await act(async () => {
+            landSecond();
+        });
     });
 
     it('shows POST for a post-fader send and toggles it to pre-fader on click', () => {

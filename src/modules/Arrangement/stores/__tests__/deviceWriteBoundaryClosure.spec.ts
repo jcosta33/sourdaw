@@ -913,6 +913,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // `compileSendLevelAction`. It returns a setSend/addSend action for
         // executeAppAction to commit; it reads and writes no store or device.
         'src/modules/Arrangement/useCases/device/sendManagement/compileSendLevelAction.ts': 1,
+        // Count provenance: new file entry, measured 3 — the `compileSendLevelAction`
+        // import (identifier and module path) and its call. It reads the send from
+        // the track repository and commits the compiled action through
+        // `commitSendEdit`; no store or device write.
+        'src/modules/Arrangement/useCases/device/sendManagement/commitSendLevel.ts': 3,
         // Count provenance: new file entry, measured 1 — the declaration of
         // `compileSendPreFaderAction`, which returns a setSend action; no store
         // or device write.
@@ -971,11 +976,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // delegates to `executeAddDeviceAction`; no compiler named.
         // 'src/modules/ContentBrowser/presentations/views/Sidebar/effectsTabHelpers.tsx': removed (0),
         'src/modules/MixerConsole/presentations/views/Mixer/DeviceChainSection.tsx': 2,
-        // Count provenance: new file entry, measured 4 — the named imports of
-        // `compileSendLevelAction` and `compileSendPreFaderAction` and one call
-        // each. The compiled send actions are committed through executeAppAction;
-        // the strip writes no store or device.
-        'src/modules/MixerConsole/presentations/views/Mixer/SendsSection.tsx': 4,
+        // Count provenance: new file entry, measured 2 — the `compileSendPreFaderAction`
+        // import and its call for the PRE/POST toggle; level commits go through
+        // `commitSendLevel`. The compiled send action is committed through
+        // executeAppAction; the strip writes no store or device.
+        'src/modules/MixerConsole/presentations/views/Mixer/SendsSection.tsx': 2,
         // Count provenance: new file entry, measured 2 — the `compileSendLevelAction`
         // import and its single call for a connect click. The compiled send action
         // is committed through executeAppAction; no device write.
@@ -983,11 +988,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // Count provenance: 0 in code, was 2 — the Enable Pitch Editor button
         // now dispatches through `executeAddDeviceAction`; no compiler named.
         // 'src/modules/TimelineEditor/presentations/views/ClipView/KneadEditor.tsx': removed (0),
-        // Count provenance: new file entry, measured 4 — the `compileSendLevelAction`
-        // and `compileSendPreFaderAction` imports and one call each in `SendCard`.
-        // The compiled send actions are committed through executeAppAction; no
-        // store or device write.
-        'src/modules/TimelineEditor/presentations/views/Inspector/SendsEditor.tsx': 4,
+        // Count provenance: new file entry, measured 2 — the `compileSendPreFaderAction`
+        // import and its call in `SendCard`; level commits go through
+        // `commitSendLevel`. The compiled send action is committed through
+        // executeAppAction; no store or device write.
+        'src/modules/TimelineEditor/presentations/views/Inspector/SendsEditor.tsx': 2,
         'src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx': 2,
         'src/modules/Toaster/useCases/compileToasterTrackStackActions.ts': 3,
         'src/modules/Toaster/useCases/index.ts': 2,

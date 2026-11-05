@@ -10,7 +10,7 @@ import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import {
     commitSendEdit,
-    compileSendLevelAction,
+    commitSendLevel,
     compileSendPreFaderAction,
     listSendDestinations,
 } from '#/modules/Arrangement/useCases';
@@ -60,12 +60,21 @@ const useSendLevelGesture = (trackId: string, busId: string, send: SendState | u
     const [localLevel, setLocalLevel] = useState<number | null>(null);
     const pointerDragRef = useRef(false);
     const uncommittedLevelRef = useRef<number | null>(null);
+    const latestCommitRef = useRef<Promise<void> | null>(null);
 
+    // The slider keeps showing the committed level until the last commit
+    // settles: an earlier one settling must not drop a later step's level.
     const commit = (committed: number): void => {
         pointerDragRef.current = false;
         uncommittedLevelRef.current = null;
         setLocalLevel(committed);
-        void commitSendEdit(compileSendLevelAction(trackId, busId, committed, send)).then(() => setLocalLevel(null));
+        const pending = commitSendLevel(trackId, busId, committed);
+        latestCommitRef.current = pending;
+        void pending.then(() => {
+            if (latestCommitRef.current === pending) {
+                setLocalLevel(null);
+            }
+        });
     };
     const beginPointerDrag = (): void => {
         pointerDragRef.current = true;

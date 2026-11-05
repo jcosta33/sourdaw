@@ -1,6 +1,7 @@
-import { act, render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent, type RenderResult } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { trackStore } from '#/modules/Arrangement/stores';
 import { levelToSendPosition, sendPositionToLevel } from '#/utils/audioLevelLaw';
 
 import { SendsEditor } from '../SendsEditor';
@@ -252,10 +253,20 @@ describe('SendsEditor', () => {
             preFader: false,
             ...over,
         });
+        // A level commit reads the send the project holds, so the edited track
+        // is put in the project exactly as it is rendered.
+        const renderInProject = (track: Track): RenderResult => {
+            trackStore.set({ tracks: [track], selectedTrackId: null, ghostClips: [] });
+            return render(<SendsEditor track={track} />);
+        };
+
+        beforeEach(() => {
+            trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        });
 
         it('previews a slider drag on the engine only and commits one setSend on release', async () => {
             mockUseTracks.mockReturnValue({ tracks: [bus('bus-1')] });
-            render(<SendsEditor track={{ ...mockTrack, sends: [sendTo('bus-1')] }} />);
+            renderInProject({ ...mockTrack, sends: [sendTo('bus-1')] });
 
             const slider = screen.getByTestId('slider');
             fireEvent.change(slider, { target: { value: '40' } });
@@ -313,7 +324,7 @@ describe('SendsEditor', () => {
 
         it('settles a drag the pointer abandons as one commit at the level it was left', async () => {
             mockUseTracks.mockReturnValue({ tracks: [bus('bus-1')] });
-            render(<SendsEditor track={{ ...mockTrack, sends: [sendTo('bus-1')] }} />);
+            renderInProject({ ...mockTrack, sends: [sendTo('bus-1')] });
 
             const slider = screen.getByTestId('slider');
             fireEvent.pointerDown(slider);
@@ -333,7 +344,7 @@ describe('SendsEditor', () => {
 
         it('settles a drag on the track it began on and shows the next track its own level', async () => {
             mockUseTracks.mockReturnValue({ tracks: [bus('bus-1')] });
-            const view = render(<SendsEditor track={{ ...mockTrack, sends: [sendTo('bus-1')] }} />);
+            const view = renderInProject({ ...mockTrack, sends: [sendTo('bus-1')] });
 
             fireEvent.pointerDown(screen.getByTestId('slider'));
             fireEvent.change(screen.getByTestId('slider'), { target: { value: '40' } });
@@ -353,7 +364,7 @@ describe('SendsEditor', () => {
         it('commits a keyboard step as one setSend and leaves nothing to settle on unmount', async () => {
             mockUseTracks.mockReturnValue({ tracks: [bus('bus-1')] });
             const position = Math.round(levelToSendPosition(0.5));
-            const view = render(<SendsEditor track={{ ...mockTrack, sends: [sendTo('bus-1')] }} />);
+            const view = renderInProject({ ...mockTrack, sends: [sendTo('bus-1')] });
 
             await act(async () => {
                 fireEvent.keyDown(screen.getByTestId('slider'), { key: 'ArrowRight' });
