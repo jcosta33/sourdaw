@@ -748,14 +748,14 @@ describe('excluded dimensions', () => {
                 { id: 'bus-a', name: 'Bus A', devices: [device('a-verb', 'builtin-reverb')] },
                 { id: 'low-bus', name: 'Low Bus', devices: [device('low-eq', 'builtin-eq')] },
             ]);
-            return {
-                ...context,
-                tracks: context.tracks.map((track) =>
-                    track.id === 'vocal'
-                        ? { ...track, sends: busIds.map((busId) => ({ busId, level: 0.5, preFader: false })) }
-                        : track
-                ),
-            };
+            const sends = busIds.map((busId) => ({ busId, level: 0.5, preFader: false }));
+            const tracks = context.tracks.map((track) => {
+                if (track.id !== 'vocal') {
+                    return track;
+                }
+                return { ...track, sends };
+            });
+            return { ...context, tracks };
         };
 
         it.each([
