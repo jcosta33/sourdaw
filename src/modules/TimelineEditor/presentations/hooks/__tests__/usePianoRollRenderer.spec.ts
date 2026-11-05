@@ -40,16 +40,16 @@ vi.mock('#/utils/UI/resolveToken', () => ({
 type RendererDeps = Parameters<typeof usePianoRollRenderer>[0];
 
 // ── Geometry ─────────────────────────────────────────────────────────────
-// chromatic + unfolded → 60 rows, pitches 83..24 top-to-bottom.
+// chromatic + unfolded → 128 rows, pitches 127..0 top-to-bottom.
 // The canvas covers the viewport, so its width comes from the scroll
 // container: clientWidth 400 - PITCH_RAIL_WIDTH(40) = 360 visible pixels.
-// height = 60 * 16 + RULER(22) = 982. At scrollLeft 0 the drawn slice starts
-// at beat 0, so note x = startBeat * 10, y = (83 - pitch) * 16.
+// height = 128 * 16 + RULER(22) = 2070. At scrollLeft 0 the drawn slice starts
+// at beat 0, so note x = startBeat * 10, y = (127 - pitch) * 16.
 const BEAT_W = 10;
 const VIEWPORT_W = 360;
 const PITCH_RAIL_W = 40;
 
-const rowY = (pitch: number): number => (83 - pitch) * 16;
+const rowY = (pitch: number): number => (127 - pitch) * 16;
 
 /**
  * Stand-in for the `overflow-auto` scroll container. Only `clientWidth` and
@@ -146,9 +146,9 @@ describe('usePianoRollRenderer', () => {
 
         const canvas = deps.canvasRef.current!;
         expect(canvas.width).toBe(VIEWPORT_W);
-        expect(canvas.height).toBe(982);
+        expect(canvas.height).toBe(2070);
         expect(canvas.style.width).toBe(`${VIEWPORT_W}px`);
-        expect(canvas.style.height).toBe('982px');
+        expect(canvas.style.height).toBe('2070px');
     });
 
     // Issue #2299. A backing store sized to the whole arrangement made the
@@ -290,7 +290,7 @@ describe('usePianoRollRenderer', () => {
         runTick();
         const cacheWidth = VIEWPORT_W * 2;
         const rebuilds = (): number =>
-            fillRect.mock.calls.filter((call) => call[2] === cacheWidth && call[3] === 982).length;
+            fillRect.mock.calls.filter((call) => call[2] === cacheWidth && call[3] === 2070).length;
         expect(rebuilds()).toBe(1);
 
         // Inside the cached window: 40 frames of scrolling, no rebuild.
@@ -447,7 +447,7 @@ describe('usePianoRollRenderer', () => {
 
         expect(setLineDash).toHaveBeenCalledWith([4, 3]);
         // Column fill: x = stepBeat * beatWidth, width = gridSnap * beatWidth, full note area
-        expect(fillRect).toHaveBeenCalledWith(40, 0, 10, 960);
+        expect(fillRect).toHaveBeenCalledWith(40, 0, 10, 2048);
         // Row highlight for the step pitch
         expect(fillRect).toHaveBeenCalledWith(0, rowY(60), 360, 16);
     });

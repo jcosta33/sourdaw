@@ -25,6 +25,7 @@ import {
     type AudioWaveformProgrammePart,
 } from '../models/TimelineRenderModel';
 import { getVariationLaneCount } from '../models/TimelineTrackExtent';
+import { getAlternativeClips } from '../models/TrackAlternativeClips';
 import { activeRecordingRef } from '../stores/activeRecordingRef';
 import { clipDragPreviewRef } from '../stores/clipDragPreviewRef';
 import { clipSelectionStore } from '../stores/clipSelectionStore';
@@ -391,7 +392,7 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                         ? track.alternatives.map((alt) => ({
                               id: alt.id,
                               name: alt.name,
-                              clips: alt.clips.map((clip) => {
+                              clips: getAlternativeClips(track, alt).map((clip) => {
                                   const notes = midiState?.notesByClipId[clip.id] ?? [];
                                   return {
                                       id: clip.id,
