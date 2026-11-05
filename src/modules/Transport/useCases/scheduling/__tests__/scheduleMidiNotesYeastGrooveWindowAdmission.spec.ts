@@ -448,13 +448,14 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
         ]);
     });
 
-    it('ends at the pass end the length a rack adds past it', async () => {
+    it('sounds only the in-pass part of the length a rack adds past the pass end', async () => {
         // A rack that lengthens every note fourfold turns the 0.25-beat note
-        // at 3.5 into one running to 4.5, past the pass end. Its rack output
-        // is due at 3.5; a head re-strike of the added length would be due at
-        // the pass head, which the windows playing this pass have long
-        // passed, and the bounce, which hears the same rack output, must not
-        // sound what playback cannot. So the added length ends at the pass end.
+        // at 3.5 into one running to 4.5, past the pass end. A head re-strike
+        // of the added length would be due at the pass head, which the windows
+        // playing this pass have long passed: the projection ends it at the
+        // pass end, and the clock floor would drop a stale head segment
+        // anyway, so this pins the live output only. The bounce, which has no
+        // clock floor, pins the cut itself (projectOfflineYeastTrackNotes).
         function lengthenFourfold<Event extends { durationSamples?: number }>(event: Event): Event {
             if (event.durationSamples === undefined) {
                 return event;
