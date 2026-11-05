@@ -12,20 +12,22 @@ export type ClipPlacement = {
 };
 
 type AudibleNoteWindow = {
-    /** First stored note start (clip-relative beats) that plays. */
+    /** Start of the span playback renders, in stored (clip-relative) note beats. */
     startBeat: number;
-    /** First stored note start past the window; a note starting here is silent. */
+    /** End of that span; nothing at or past it sounds. */
     endBeat: number;
     /** Span of one pass: the clip's visual length, or the loop length while looping. */
     windowLengthBeats: number;
 };
 
 /**
- * The span of stored note starts that playback admits for a clip. Scheduling
- * admits a note by its start alone (`isBeatInClipLoopWindow`, on
- * `note.startBeat - midiOffsetBeats`): a note starting inside the window plays
- * to its full length even past the end, a note starting at or past the end is
- * silent. A loop anchor carries the floor back by the trim advance.
+ * The span of stored-note time one pass of a clip renders: from the clip's
+ * MIDI offset, carried back by a loop anchor's trim advance, for the clip's
+ * length or its loop length while looping. Playback cuts every note to the
+ * pass, so a note crossing the end sounds only up to it and a note starting at
+ * or past the end is silent. Below the start the anchor decides
+ * (`isBeatInClipLoopWindow`): without one, a note starting earlier still sounds
+ * from the start on; with one, a note starting below it is dropped whole.
  *
  * Returns `undefined` for a clip without a finite positive length (an unplaced
  * clip), which has no window to draw or convert against.

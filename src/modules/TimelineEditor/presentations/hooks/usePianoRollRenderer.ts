@@ -370,6 +370,10 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                 // Ghost notes + secondary open clips + active notes + overlays
                 ctx.save();
                 ctx.translate(0, getPianoRollRowTop(0));
+                // The primary clip's silent span is a background: other open
+                // clips' notes sit at their own beats and play by their own
+                // spans, so no note layer is painted over.
+                drawSilentRegions(ctx, resolvePrimaryClipWindow(tracks, cId), bw, view, noteAreaHeight);
                 if (ghost && tracks) {
                     drawGhostNotes(ctx, pitchToRow, bw, midiState?.notesByClipId ?? null, tracks, tId, cId, view);
                 }
@@ -400,7 +404,6 @@ export const usePianoRollRenderer = (deps: RendererDeps): (() => void) => {
                     view,
                     deps.dragPreviewRef.current
                 );
-                drawSilentRegions(ctx, resolvePrimaryClipWindow(tracks, cId), bw, view, noteAreaHeight);
                 if (si) {
                     drawStepCursor(ctx, pitchToRow, sb, sp, bw, gs, view, noteAreaHeight);
                 }
