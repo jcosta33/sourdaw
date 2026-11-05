@@ -1,0 +1,21 @@
+src/infra/dialogService/PromptDialog.tsx
+  s_930949da2594a7::t_106203ddd09dc3 1,7,24-43,62
+src/infra/dialogService/__tests__/PromptDialog.spec.tsx
+  s_930949da2594a7::t_d20d7be12d0278 103,111-115,131-151
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1ebe28174d4a5f5cb3090c0e812f9975eb640851",
+  "prompts": {},
+  "sessions": {
+    "s_930949da2594a7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_930949da2594a7",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
