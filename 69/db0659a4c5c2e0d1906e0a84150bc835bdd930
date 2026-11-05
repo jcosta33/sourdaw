@@ -1,0 +1,119 @@
+AGENTS.md
+  s_0314bb17e5dee3::t_065731e8568373 553
+docs/affected-e2e.md
+  s_0314bb17e5dee3::t_ebeaa07c996caf 40-47
+evidence/agent-campaign/manifest.json
+  s_0314bb17e5dee3::t_cd035c3cab432e 129,141
+release/open-source-inventory.json
+  s_0314bb17e5dee3::t_b8c1f52c46ec59 1217
+scripts/__tests__/prValidationScope.spec.ts
+  s_0314bb17e5dee3::t_29f770e5332353 2368-2381,2396-2397,2415-2426
+scripts/prValidationScope.ts
+  s_0314bb17e5dee3::t_2d25ce5da47384 16
+scripts/repositoryToolingPaths.ts
+  s_0314bb17e5dee3::t_abfa890f8a4aa3 1-79
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_0314bb17e5dee3::t_19aa0103be9fdb 389-390
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_0314bb17e5dee3::t_c06e5b946bd818 8-13,262-264
+src/modules/Arrangement/AGENTS.md
+  s_0314bb17e5dee3::t_30aea8d2d54784 25
+src/modules/Arrangement/handlers/clip/__tests__/handleGlueClips.integration.spec.ts
+  s_0314bb17e5dee3::t_4f5563b6331191 515-569,572-575,577-581
+src/modules/Arrangement/handlers/track/__tests__/handleRemoveTrack.spec.ts
+  s_0314bb17e5dee3::t_4dcc3f7496420e 229-253
+src/modules/Arrangement/handlers/track/handleRemoveTrack.ts
+  s_0314bb17e5dee3::t_bde6d373167a48 6,51
+src/modules/Arrangement/models/TrackAlternativeClips.ts
+  s_0314bb17e5dee3::t_11470e76b1a010 1-33
+src/modules/Arrangement/models/__tests__/TrackAlternativeClips.spec.ts
+  s_0314bb17e5dee3::t_c1e428c41af092 1-49
+src/modules/Arrangement/useCases/__tests__/buildTimelineRenderModel.spec.ts
+  s_0314bb17e5dee3::t_fab54a383b0095 13,1174-1225
+src/modules/Arrangement/useCases/__tests__/duplicateTrack.spec.ts
+  s_0314bb17e5dee3::t_a1c8339fa7d1e3 376,446-475,485,610,720,723,725,782
+src/modules/Arrangement/useCases/buildTimelineRenderModel.ts
+  s_0314bb17e5dee3::t_ce593d026ab9f8 28,395
+src/modules/Arrangement/useCases/clipEditing/__tests__/deleteTimeRange.spec.ts
+  s_0314bb17e5dee3::t_e8bcfdda3b2cea 253-255
+src/modules/Arrangement/useCases/clipEditing/__tests__/executeSelectedTimeRangeDeletion.spec.ts
+  s_0314bb17e5dee3::t_e71e9171a8ea35 4,7,318-341,805-863
+src/modules/Arrangement/useCases/clipEditing/__tests__/glueClips.integration.spec.ts
+  s_0314bb17e5dee3::t_fd2863b8aeb5d2 11,144-196,252
+src/modules/Arrangement/useCases/clipEditing/__tests__/selectedTimeRangeDeletionLoopOrigin.spec.ts
+  s_0314bb17e5dee3::t_7927a5c1981cce 14,26-29,295-302,308-313,320,322-368,406-409
+src/modules/Arrangement/useCases/clipEditing/__tests__/selectedTimeRangeHeadExciseWithUndo.integration.spec.ts
+  s_0314bb17e5dee3::t_a8cb6d10a5268a 1-268
+src/modules/Arrangement/useCases/clipEditing/executeSelectedTimeRangeDeletion.ts
+  s_0314bb17e5dee3::t_ee6a755713b662 403,420-439,795-801,812,822
+src/modules/Arrangement/useCases/clipEditing/getClipIdCensus.ts
+  s_0314bb17e5dee3::t_50aae692675a5e 29-32
+src/modules/Arrangement/useCases/clipEditing/hasClipGlueDependencies.ts
+  s_0314bb17e5dee3::t_46bfaffe1e7bf0 3,34
+src/modules/Arrangement/useCases/duplicateTrack.ts
+  s_0314bb17e5dee3::t_174301dbf82f24 8,59
+src/modules/Arrangement/useCases/getAlternativeClips.ts
+  s_0314bb17e5dee3::t_3557c9ae811e4e 1-14
+src/modules/Arrangement/useCases/getHeldClips.ts
+  s_0314bb17e5dee3::t_5707b91c82de04 1-14
+src/modules/Arrangement/useCases/index.ts
+  s_0314bb17e5dee3::t_19504dc8a5a873 272-273
+src/modules/BrowserAi/presentations/views/AiRenderClipPreview.tsx
+  s_0314bb17e5dee3::t_22490ce61a76d0 17,51
+src/modules/BrowserAi/presentations/views/__tests__/AiRenderClipPreview.spec.tsx
+  s_0314bb17e5dee3::t_22370e0ed2c88e 2-5,9-26,153-198
+src/modules/Project/useCases/__tests__/productionBrief.spec.ts
+  s_0314bb17e5dee3::t_17e2e2fe5cdbba 864-1017
+src/modules/Project/useCases/__tests__/semanticProjectQueries.spec.ts
+  s_0314bb17e5dee3::t_d856b17d74417c 212-251
+src/modules/Project/useCases/doesProductionBriefAllowActionBatch.ts
+  s_0314bb17e5dee3::t_ab6f167c481598 2,87,354,528,548
+src/modules/Project/useCases/semanticProjectIndex.ts
+  s_0314bb17e5dee3::t_a0fbf7834c1902 2,171-185
+src/modules/SampleLibrary/presentations/components/SampleRow.tsx
+  s_0314bb17e5dee3::t_adde165a6a792c 134,175-176,183,201,219,227
+src/modules/SampleLibrary/presentations/components/__tests__/SampleRow.spec.tsx
+  s_0314bb17e5dee3::t_1fce1b7c420668 23-33,197-255
+src/modules/TimelineEditor/presentations/helpers/__tests__/editPianoRollTakeNote.integration.spec.tsx
+  s_0314bb17e5dee3::t_ea797dcd9df943 540,603
+src/modules/TimelineEditor/presentations/helpers/__tests__/pianoRollConstants.spec.ts
+  s_0314bb17e5dee3::t_cd58fd71f26c9b 9-10,32,34-41,59-61,73,75-76
+src/modules/TimelineEditor/presentations/helpers/__tests__/pianoRollOpeningScroll.spec.ts
+  s_0314bb17e5dee3::t_74f783a44da070 7,26-32
+src/modules/TimelineEditor/presentations/helpers/pianoRollConstants.ts
+  s_0314bb17e5dee3::t_e343e246236590 23-26,195
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.noteIdentityUndo.spec.tsx
+  s_0314bb17e5dee3::t_ff9177d0680853 107,113
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx
+  s_0314bb17e5dee3::t_b8274e29f92f12 163,172,551-559
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollRenderer.spec.ts
+  s_0314bb17e5dee3::t_492378022a7c48 43,46-47,52,149,151,293,450
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollKeyRailGeometry.spec.tsx
+  s_0314bb17e5dee3::t_4d0f5534e3ff0f 143-144,149-150,189
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollOpeningScroll.spec.tsx
+  s_0314bb17e5dee3::t_de85566f5c1380 5,92-97
+src/modules/TimelineEditor/presentations/views/Inspector/TrackAlternativesSection.tsx
+  s_0314bb17e5dee3::t_7e1de376766773 10,67-69
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackAlternativesSection.spec.tsx
+  s_0314bb17e5dee3::t_b8d70944e8ccf3 9,15-16,26-42,139-159
+src/utils/Music/MusicalScale.ts
+  s_0314bb17e5dee3::t_9afc3d22366104 83-102
+src/utils/Music/__tests__/MusicalScale.spec.ts
+  s_0314bb17e5dee3::t_f99061eacc45d3 51-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "69db0659a4c5c2e0d1906e0a84150bc835bdd930",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
