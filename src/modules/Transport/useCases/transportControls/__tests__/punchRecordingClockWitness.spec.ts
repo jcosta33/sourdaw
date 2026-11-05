@@ -4,6 +4,7 @@ import {
     captureFrameDrift,
     installPunchRecordingClockWitness,
     RECORDING_RENDER_QUANTUM_FRAMES,
+    stopClockEvent,
 } from '../../../../../../tests/e2e/punchRecordingClockObserver';
 
 import type { Page } from '@playwright/test';
@@ -12,6 +13,7 @@ const SAMPLE_ZERO = 240_000;
 const SAMPLE_RATE = 48_000;
 const INITIAL_FRAMES = 1280;
 const nativeAtomics = Atomics;
+const stopOutput = { gestureBeat: 0, playheadBeat: 0, wrapCount: 0, isRecording: true };
 
 class TestPort {
     sent: unknown[] = [];
@@ -89,8 +91,11 @@ async function installFixture() {
     let onClockRead: (() => void) | null = null;
     let clockReads = 0;
 
-    function publishBlock(): void {
+    function beginPublication(): void {
         nativeAtomics.add(control, 0, 1);
+    }
+
+    function finishPublication(): void {
         if (capturedFrames === 0) {
             nativeAtomics.store(control, 3, SAMPLE_ZERO);
             nativeAtomics.store(control, 5, 1);
@@ -102,6 +107,11 @@ async function installFixture() {
         nativeAtomics.store(control, 1, capturedFrames);
         nativeAtomics.add(control, 0, 1);
         contextFrame = SAMPLE_ZERO + capturedFrames;
+    }
+
+    function publishBlock(): void {
+        beginPublication();
+        finishPublication();
     }
 
     for (let block = 0; block < INITIAL_FRAMES / 128; block++) {
@@ -149,6 +159,8 @@ async function installFixture() {
         pcm,
         port: node.port,
         publishBlock,
+        beginPublication,
+        finishPublication,
         afterPayloadRead: () => payloadRead,
         clockReads: () => clockReads,
         setClockRead(action: () => void) {
@@ -171,6 +183,7 @@ describe('installed punch capture clock observer', () => {
     afterEach(() => {
         vi.clearAllTimers();
         vi.useRealTimers();
+        vi.restoreAllMocks();
         vi.unstubAllGlobals();
     });
 
@@ -304,5 +317,54 @@ describe('installed punch capture clock observer', () => {
         ]);
         expect(fixture.port.sent).toEqual([expect.objectContaining({ type: 'init' }), { type: 'stop' }]);
         fixture.expectCompletePcm();
+    });
+
+    it('waits out a producer that stays mid-publication when Stop is sent', async () => {
+        const fixture = await installFixture();
+        const busyAttempts = 40;
+        const readsAtStart = fixture.clockReads();
+        fixture.beginPublication();
+        fixture.setClockRead(() => {
+            if (fixture.clockReads() - readsAtStart === busyAttempts) {
+                fixture.finishPublication();
+            }
+        });
+        fixture.port.postMessage({ type: 'stop' });
+        const events = witnessField('events');
+        if (!Array.isArray(events)) {
+            throw new TypeError('The witness retained no events');
+        }
+        const stop = stopClockEvent({
+            admission: { baseLatencySeconds: 0, outputLatencySeconds: 0, trackCompensationSeconds: 0 },
+            firstFrame: null,
+            samples: [],
+            events: events.map((entry) => ({ ...entry, output: stopOutput })),
+            readDiagnostics: { unstableAttempts: 0, exhaustedReads: 0, recentUnstableAttempts: [] },
+        });
+        expect(stop.recording).toEqual({
+            contextFrame: SAMPLE_ZERO + INITIAL_FRAMES + 128,
+            sampleRate: SAMPLE_RATE,
+            publishedFrames: INITIAL_FRAMES + 128,
+            sampleZeroContextFrame: SAMPLE_ZERO,
+        });
+        expect(witnessField('readDiagnostics')).toMatchObject({ exhaustedReads: 0 });
+        expect(fixture.port.sent).toEqual([expect.objectContaining({ type: 'init' }), { type: 'stop' }]);
+    });
+
+    it('gives up on a producer that never finishes publishing and still sends Stop', async () => {
+        const fixture = await installFixture();
+        let now = 0;
+        vi.spyOn(performance, 'now').mockImplementation(() => now);
+        fixture.beginPublication();
+        fixture.setClockRead(() => {
+            now += 10;
+        });
+        fixture.port.postMessage({ type: 'stop' });
+        expect(witnessField('events')).toEqual([
+            expect.objectContaining({ kind: 'send-worklet-stop', recording: null }),
+        ]);
+        expect(witnessField('readDiagnostics')).toMatchObject({ exhaustedReads: 1 });
+        expect(fixture.clockReads()).toBeLessThan(100);
+        expect(fixture.port.sent).toEqual([expect.objectContaining({ type: 'init' }), { type: 'stop' }]);
     });
 });
