@@ -358,14 +358,10 @@ export const ValueField = ({
          * deliberately and hands the capture back rather than dropping the
          * gesture on the floor; this is the same courtesy for the keyboard.
          *
-         * There is a second reason not to let these escape, latent rather than
-         * live. `keyboardShortcutsContract.ts` classifies a target as an input by
-         * tag name, `contentEditable` or `[data-canvas-editor]`, and a
-         * `role="spinbutton"` div matches none of the three — so every key on
-         * this field reaches the global shortcut layer, and this `preventDefault`
-         * is the only barrier between an arrow here and whatever the app might
-         * later bind an arrow to. No arrow shortcut is registered today; the day
-         * one is, the classifier is where that gets fixed, not here.
+         * It also claims the key: `keyboardShortcutsContract.ts` skips a keydown
+         * whose default a focused control already prevented, and a
+         * `role="spinbutton"` div is not a text input, so this `preventDefault`
+         * is what keeps an arrow here from reaching any global arrow shortcut.
          */
         event.preventDefault();
         if (readOnly || draggingRef.current) {
