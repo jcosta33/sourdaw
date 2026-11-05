@@ -49,6 +49,6 @@ the rendered result; inspect the rendered viewports, rectangles, pixels and reso
    class name it finds in a scanned file, so a class assembled at runtime (`` `border-${tone}-500/50` ``) reaches the
    DOM with no rule behind it: the generative panel's selected genre, mood and instrument cards showed no colour from
    `9ec79c66cf` (a direct commit; no introducing PR). A DOM class assertion passes on such a class, since jsdom
-   applies no CSS. Grep the diff for a template literal or concatenation producing a class name; each variant must
-   map to complete literal strings. A case for that component must fail when any class it renders is not written
-   whole in its source.
+   applies no CSS. Grep the diff for a template literal or concatenation producing a class name, conditional or not;
+   each variant must map to complete literal strings. A case for a component whose classes vary by state must fail
+   when any class a state adds is not written whole in its source; the grep alone covers unconditional strings.
