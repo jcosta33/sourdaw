@@ -1,0 +1,20 @@
+src/modules/AudioEngine/repositories/devices/toneShaping/__tests__/createDeEsser.spec.ts
+  s_0314bb17e5dee3::t_37edbf5c064c0c 306,333,342,348,409,413,565-663
+  s_0314bb17e5dee3::t_5bc4199a3c9641 1-2,213-262,265-305,307-312,315-317,319-323,325-329,331,334-341,343-347,349-351,357-360,362,365,393-400,410-412,414-415,418-419,664-679,682-686
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1b2b4f43f8f6712456d125d95f52f9fb0b613ed0",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
