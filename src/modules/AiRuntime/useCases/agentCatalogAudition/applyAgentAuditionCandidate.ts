@@ -8,7 +8,7 @@ import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
 import { getAudioBufferContentAddress } from '#/utils/agentRenderReceipt';
 
 import { type AgentAuditionReceipt, type AgentAuditionRejectionReason } from './auditionAgentCatalogCandidate';
-import { readCatalogCandidateBuffer } from './decodeCatalogCandidateFile';
+import { readCatalogCandidateBuffer } from './readCatalogCandidateBuffer';
 
 /**
  * Place auditioned audio on the timeline.

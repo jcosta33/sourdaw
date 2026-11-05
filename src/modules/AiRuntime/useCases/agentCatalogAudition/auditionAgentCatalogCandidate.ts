@@ -2,7 +2,7 @@ import { analyzeAgentAuditionBuffer } from '#/modules/AudioAnalysis/useCases';
 import { resolveAgentCatalogCandidate } from '#/modules/SampleLibrary/useCases';
 import { getAudioBufferContentAddress } from '#/utils/agentRenderReceipt';
 
-import { readCatalogCandidateBuffer } from './decodeCatalogCandidateFile';
+import { readCatalogCandidateBuffer } from './readCatalogCandidateBuffer';
 
 /**
  * Hear one catalog candidate without touching the project.
