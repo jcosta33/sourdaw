@@ -11,8 +11,10 @@ import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/
 import {
     clearUndoHistory,
     compileVersionedCommandBatchEnvelope,
+    configureCommandBatchIdempotency,
     migrateLegacyAppActionToVersionedCommandEnvelope,
     resetActionReplayAuthority,
+    resetCommandBatchIdempotency,
     serializeVersionedCommandEnvelope,
     setActionHistoryMetadataPort,
 } from '#/modules/Command/useCases';
@@ -431,9 +433,26 @@ describe('Direct commit after a save', () => {
         agentProjectRepairStateStore.set(null);
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         projectStore.set(defaultProjectStoreState);
+        resetCommandBatchIdempotency();
+        localStorage.removeItem('sourdaw:command-batch-idempotency:v1');
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
+
+    /**
+     * This tab is the collaboration host when Command admits the durable batch and has handed the
+     * role off by the time the batch would run, so Command cancels it for lost authority before it
+     * ever asks whether the project changed.
+     */
+    function loseHostRoleAfterAdmission(): void {
+        let hostChecks = 0;
+        configureCommandBatchIdempotency({
+            canExecute: () => {
+                hostChecks += 1;
+                return hostChecks === 1;
+            },
+        });
+    }
 
     /** Runs the batch the way a direct commit does: bound to its approval, against the revision it was planned at. */
     function commitPlanned(planned: ReturnType<typeof planVocalsColor>) {
@@ -465,6 +484,30 @@ describe('Direct commit after a save', () => {
 
     it('refuses a batch planned before a track was renamed, saved or not', async () => {
         const planned = planVocalsColor();
+
+        renameDrums();
+        await writeSave();
+
+        await expect(commitPlanned(planned)).resolves.toEqual({
+            status: 'invalidated',
+            reason: 'The project changed after this proposal was created. Review and submit the command again.',
+        });
+        expect(vocalsColor()).toBe(DEFAULT_TRACK_COLOR);
+    });
+
+    it('reports a batch cancelled for lost host authority after a save as cancelled, not as a project change', async () => {
+        const planned = planVocalsColor();
+        loseHostRoleAfterAdmission();
+
+        await writeSave();
+
+        await expect(commitPlanned(planned)).resolves.toEqual({ status: 'cancelled' });
+        expect(vocalsColor()).toBe(DEFAULT_TRACK_COLOR);
+    });
+
+    it('reports a batch cancelled for lost host authority after a rename and a save as invalidated', async () => {
+        const planned = planVocalsColor();
+        loseHostRoleAfterAdmission();
 
         renameDrums();
         await writeSave();
