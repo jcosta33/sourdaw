@@ -1,0 +1,118 @@
+src/modules/CommandInterface/models/ShortcutCombo.ts
+  s_fec7059b7a251c::t_61c10ea720bcd7 3-51
+  s_0314bb17e5dee3::t_4cbd71db4cba67 1-2,52-88
+src/modules/CommandInterface/models/UsPhysicalKeyLayout.ts
+  s_fec7059b7a251c::t_899b0c105ac2bc 1-29
+src/infra/keyboardLayout/keyboardLayoutMap.ts
+  s_fec7059b7a251c::t_d2ecf14b71d5e6 1-35
+src/modules/CommandInterface/useCases/resolveShortcutKey.ts
+  s_fec7059b7a251c::t_1b45326e4b3c13 1-29
+src/modules/CommandInterface/models/LoopStationPadShortcut.ts
+  s_fec7059b7a251c::t_16e2d0fe70f551 1-12
+src/types/keyboard-map.d.ts
+  s_fec7059b7a251c::t_0271e7cd68e08b 1-17
+src/modules/CommandInterface/useCases/formatShortcutCombo.ts
+  s_fec7059b7a251c::t_cb439a2f69b108 1-33
+src/modules/CommandInterface/useCases/shortcutComboFromKeyPress.ts
+  s_fec7059b7a251c::t_c0bb57d2cdf23d 1-35
+  s_fec7059b7a251c::t_7aaff4a51eea88 36-38
+  s_fec7059b7a251c::t_e27f9b4aae2187 39-41
+src/modules/CommandInterface/useCases/__tests__/resolveShortcutKey.spec.ts
+  s_fec7059b7a251c::t_fedf8b055d0e59 1-46
+src/modules/CommandInterface/useCases/findShortcutConflicts.ts
+  s_fec7059b7a251c::t_46d5ba0a6d52c1 1-4,9-15,17-22
+  s_0314bb17e5dee3::t_fd4b1ede7169f8 5-8,16
+src/modules/CommandInterface/useCases/setShortcutMapping.ts
+  s_fec7059b7a251c::t_f7f718cab4f9c0 1,4-5,7,24-28,33
+  s_0314bb17e5dee3::t_831ebc865836c3 8-12
+src/infra/AGENTS.md
+  s_fec7059b7a251c::t_ea60d6ab3aa1f2 13
+src/modules/CommandInterface/AGENTS.md
+  s_fec7059b7a251c::t_ec10d3acec609e 19
+  s_0314bb17e5dee3::t_e2fa1fec7a9519 12,20
+  s_fec7059b7a251c::t_cabed9758c7172 21
+src/modules/CommandInterface/presentations/views/__tests__/keyboardShortcutsContract.spec.tsx
+  s_fec7059b7a251c::t_2248368132fbae 4,524-561
+src/modules/CommandInterface/presentations/views/keyboardShortcutsContract.ts
+  s_fec7059b7a251c::t_3df4c0b5f229d3 3,14,158,175
+src/modules/CommandInterface/useCases/__tests__/findShortcutConflicts.spec.ts
+  s_fec7059b7a251c::t_f469c3b582a3ba 1-36,45-56,57,59-63
+  s_0314bb17e5dee3::t_caac34d7b231bc 37-44,58
+src/modules/CommandInterface/useCases/__tests__/formatShortcutCombo.spec.ts
+  s_fec7059b7a251c::t_4e9ad6db042c64 10,12-16
+src/modules/CommandInterface/useCases/__tests__/setShortcutMapping.spec.ts
+  s_fec7059b7a251c::t_345ffef37b09cc 58-97,99-103,114-125
+  s_0314bb17e5dee3::t_35f2e9e9f1e5f3 98,104-113
+src/modules/CommandInterface/useCases/index.ts
+  s_fec7059b7a251c::t_d3beef7ef107d8 5-7
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydown.spec.ts
+  s_fec7059b7a251c::t_d76a8912d7f3e5 42,718-807
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts
+  s_fec7059b7a251c::t_2befb8db7c6fda 39-46,156-161,171-180,184-200,616-618,646-654,665-670
+src/modules/Preferences/presentations/views/ShortcutsSection.tsx
+  s_fec7059b7a251c::t_82718126ea3fc5 10,13-20,48,50-53,55-64,66-76,78,81-82,106-107,111,114,116-117,124,169
+  s_8c6882565a4b45::t_20bd2db9a06768 97-100,103,115,118-122,127
+src/modules/Preferences/presentations/views/__tests__/ShortcutsSection.spec.tsx
+  s_fec7059b7a251c::t_75da6b822a179e 1-2,4-5,7,9-10,23-31,34-55,65-70,80-81,83-87,90-91,93-115,118,126-132,143-147,168-175,177-179
+  s_0314bb17e5dee3::t_7e22e0612b42f8 32-33,148-159,164-167
+  s_8c6882565a4b45::t_322c11b1982d0c 56-62,119-124,133-142,160-163,176
+src/modules/WorkspaceShell/presentations/views/ShortcutHelp.tsx
+  s_fec7059b7a251c::t_9b0753b7c3c707 5
+src/modules/WorkspaceShell/presentations/views/__tests__/ShortcutHelp.spec.tsx
+  s_fec7059b7a251c::t_f65364c695548b 74-81
+src/modules/CommandInterface/models/UsModifiedCharacterLayout.ts
+  s_fec7059b7a251c::t_15b7c172370b33 1-21
+  s_fec7059b7a251c::t_48908c1a73ff44 22-24
+  s_0314bb17e5dee3::t_0ff48ef79a00e1 25-30
+src/modules/CommandInterface/models/__tests__/ShortcutCombo.spec.ts
+  s_0314bb17e5dee3::t_0501b88eb43d79 1-34
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydownStoredBindings.spec.ts
+  s_0314bb17e5dee3::t_47fff059a72361 1-12,15-80,83-87,91-168
+  s_0314bb17e5dee3::t_023e5eaf638ff0 88-90
+  s_fec7059b7a251c::t_d834768e9fbb49 81-82
+  s_fec7059b7a251c::t_0f627c58994aad 13-14
+src/modules/CommandInterface/stores/shortcutStore.ts
+  s_0314bb17e5dee3::t_d9af5c4ceea98c 5-6
+  s_fec7059b7a251c::t_3a7d8981130a48 509-523,526
+  s_fec7059b7a251c::t_5e96c45f664fbc 444-453
+  s_fec7059b7a251c::t_2ad70f30f0dfaf 485
+src/infra/store/storage/LocalStorageKeys.ts
+  s_fec7059b7a251c::t_ea927d422cb573 136,139-140
+  s_fec7059b7a251c::t_31e1c2c4edc81c 141
+src/modules/CommandInterface/stores/__tests__/shortcutStoreHydration.spec.ts
+  s_fec7059b7a251c::t_b69ff4281901d3 6-11
+  s_fec7059b7a251c::t_8e1e260d629896 1
+  s_fec7059b7a251c::t_a4715abc9029fe 74-102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ee7d6db60393701dfe64a94c091df500988e0d0e",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_8c6882565a4b45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_8c6882565a4b45",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
