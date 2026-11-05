@@ -215,7 +215,7 @@ async function addMidiTrack(page: Page): Promise<void> {
     await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add MIDI Track');
     await page.getByRole('option', { name: 'Add MIDI Track' }).click();
     await expect.poll(() => list.getByRole('row').count()).toBeGreaterThan(before);
-    await list.getByText('MIDI', { exact: true }).click();
+    await list.getByText('MIDI 1', { exact: true }).click();
 }
 
 async function midiLaneY(page: Page): Promise<number> {
@@ -632,7 +632,7 @@ test.describe('Offline project smoke', () => {
             let reopened = await openSavedProjectInFreshPage(page, 'Smoke Persistence');
             try {
                 await expect(reopened.page.getByTestId('project-name')).toHaveText('Smoke Persistence');
-                await expect(trackList(reopened.page).getByText('MIDI', { exact: true })).toBeVisible();
+                await expect(trackList(reopened.page).getByText('MIDI 1', { exact: true })).toBeVisible();
                 await reopened.assertOffline();
 
                 // A restored handle lapses its grant between sessions; the user's click must be
@@ -692,7 +692,7 @@ test.describe('Offline project smoke', () => {
             await renameProject(page, 'Smoke Undo Persistence');
 
             await addMidiTrack(page);
-            const midiTrack = trackList(page).getByText('MIDI', { exact: true });
+            const midiTrack = trackList(page).getByText('MIDI 1', { exact: true });
             await expect(midiTrack).toBeVisible();
 
             const undo = page.getByRole('button', { name: 'Undo', exact: true });
@@ -710,7 +710,7 @@ test.describe('Offline project smoke', () => {
             const reopened = await openSavedProjectInFreshPage(page, 'Smoke Undo Persistence');
             try {
                 await expect(reopened.page.getByTestId('project-name')).toHaveText('Smoke Undo Persistence');
-                await expect(trackList(reopened.page).getByText('MIDI', { exact: true })).toHaveCount(0);
+                await expect(trackList(reopened.page).getByText('MIDI 1', { exact: true })).toHaveCount(0);
                 await expect(reopened.page.getByText('Add your first track')).toBeVisible();
                 await reopened.assertOffline();
             } finally {

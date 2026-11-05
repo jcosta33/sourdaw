@@ -2,6 +2,7 @@ import { change, init, load } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { registerKernelPorts } from '#/app/registerKernelPorts';
 import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 
@@ -21,6 +22,8 @@ vi.mock('../../runCrdtPersistenceOperation', () => ({
 type PeerBranchDocument = {
     actionHistory?: unknown;
 };
+
+registerKernelPorts();
 
 describe('switchBranch sanitized peer branch integration', () => {
     beforeEach(() => {

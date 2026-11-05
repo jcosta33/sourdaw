@@ -436,9 +436,10 @@ function admitCall(input: {
         return reject(`${CREATIVE_AUTHORITY_REASON_PREFIX} cannot admit the unknown command ${input.call.name}`);
     }
     // Read-only is the interpretation that the request asked for nothing to change, so it admits no
-    // command that declares a write of any kind rather than a narrower set of them.
+    // command that declares a write of any kind rather than a narrower set of them. A brief request
+    // writes only the brief, which `brief.compile` composes outside this admission.
     if (
-        input.authority.mode === 'read-only' &&
+        (input.authority.mode === 'read-only' || input.authority.mode === 'brief') &&
         (effect.dimensions.length > 0 || (effect.creates ?? []).length > 0 || (effect.removes ?? []).length > 0)
     ) {
         return reject(`${CREATIVE_AUTHORITY_REASON_PREFIX} is read-only and admits no writing command`);

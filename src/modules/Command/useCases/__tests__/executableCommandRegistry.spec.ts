@@ -83,7 +83,11 @@ const EXPECTED_COMMANDS = [
         'addTrack',
         'Create a new track in the session.',
         {
-            name: { type: 'string', description: 'Display name (e.g. "Kick", "Vocals", "Synth Pad")' },
+            name: {
+                type: 'string',
+                description:
+                    'Display name (e.g. "Kick", "Vocals", "Synth Pad"). Omit it to name the track by its kind and the next free number.',
+            },
             kind: { type: 'string', enum: ['audio', 'midi', 'folder'], description: 'Track type' },
             binding: {
                 type: 'string',
@@ -91,7 +95,7 @@ const EXPECTED_COMMANDS = [
                 description: 'Optional plan-local name. Later calls may target this newly created track as $<binding>.',
             },
         },
-        ['name', 'kind'],
+        ['kind'],
         'bounded-reversible',
         false
     ),

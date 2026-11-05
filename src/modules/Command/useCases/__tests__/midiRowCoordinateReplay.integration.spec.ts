@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
+import { registerKernelPorts } from '#/app/registerKernelPorts';
 import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import * as storage from '#/infra/store/storage/createAutomergeStorage';
 import { installTransactionalIndexedDb } from '#/infra/testing/installTransactionalIndexedDb';
@@ -52,6 +53,8 @@ vi.mock('../macro/recording/recordAction', async (importOriginal) => {
     const original = await importOriginal<typeof import('../macro/recording/recordAction')>();
     return { recordAction: vi.fn(original.recordAction) };
 });
+
+registerKernelPorts();
 
 const SESSION_KEY = 'sourdaw-undo-session';
 const PROJECT_ID = 'exact-midi-row-replay';

@@ -568,6 +568,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // Count provenance: new file, measured 3 — that reader's imported name,
         // its module path and its one call. No device or AudioEngine write.
         'src/modules/AiRuntime/useCases/perceptualConstraints/readRequestPerceptualConstraints.ts': 3,
+        // Count provenance: new file entry, measured 3 — the perceptual-constraint
+        // reader's imported name, its module path and its one call, which reads the
+        // request's protective clauses as brief hard constraints. No device or
+        // AudioEngine write.
+        'src/modules/AiRuntime/useCases/executeBriefCompile.ts': 3,
         // Pending-effect continuation records keep only command-envelope types;
         // their two matches are type imports and type projections, never device IO.
         'src/modules/AiRuntime/useCases/createAgentRunPendingEffectContinuation.ts': 2,

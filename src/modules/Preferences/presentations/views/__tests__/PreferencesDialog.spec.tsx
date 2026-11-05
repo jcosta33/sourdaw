@@ -54,6 +54,22 @@ describe('PreferencesDialog', () => {
         vi.clearAllMocks();
     });
 
+    it('opens on the requested section each time it opens, and keeps the last one when none is requested', () => {
+        const { rerender } = render(<PreferencesDialog open={false} onClose={vi.fn()} requestedSection="audio" />);
+        expect(screen.queryByTestId('audio-device-picker')).not.toBeInTheDocument();
+
+        rerender(<PreferencesDialog open={true} onClose={vi.fn()} requestedSection="audio" />);
+        expect(screen.getByTestId('audio-device-picker')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'General' }));
+        expect(screen.queryByTestId('audio-device-picker')).not.toBeInTheDocument();
+
+        rerender(<PreferencesDialog open={false} onClose={vi.fn()} />);
+        rerender(<PreferencesDialog open={true} onClose={vi.fn()} />);
+        expect(screen.queryByTestId('audio-device-picker')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Change solo mode' })).toBeInTheDocument();
+    });
+
     it('preserves the dialog shell and navigation layout contracts', () => {
         render(<PreferencesDialog open={true} onClose={vi.fn()} />);
 

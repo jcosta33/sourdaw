@@ -118,7 +118,7 @@ import {
     initBranchState,
     captureProjectRootIdentity,
     captureProjectRevision,
-    projectRevisionMatchesLiveIgnoringSaveWrites,
+    settledProjectRevisionMatchesLiveIgnoringSaveWrites,
     inspectAgentProjectDivergence,
     createCommandPreviewWorkspace,
     createCommandRecoveryWorkspace,
@@ -247,8 +247,10 @@ import { projectNativeDeviceState } from './projectNativeDeviceState';
 import { eventBus, logger } from './registerDependencies';
 import { registerDeviceEnginePorts } from './registerDeviceEnginePorts';
 import { registerGlobalErrorHandlers } from './registerGlobalErrorHandlers';
+import { registerKernelPorts } from './registerKernelPorts';
 import { registerProjectLifecycle } from './registerProjectLifecycle';
 import { registerProjectSlotProjections } from './registerProjectSlotProjections';
+import { registerSupportingServicePorts } from './registerSupportingServicePorts';
 
 logCapabilities();
 
@@ -264,6 +266,8 @@ registerCrdtStorageRuntime();
 registerProjectSlotProjections();
 registerProjectLifecycle();
 registerDeviceEnginePorts();
+registerSupportingServicePorts();
+registerKernelPorts();
 setElasticSensitivityRootIdentityCapture(captureProjectRootIdentity);
 configureCommandBatchIdempotency({ canExecute: canExecuteCommandBatch });
 setActionHistoryMetadataPort({
@@ -275,7 +279,7 @@ setActionHistoryMetadataPort({
 sessionUndoWitnessStampPort.setProvider(stampSessionUndoWitness);
 productionBriefAdmissionPort.setGuard(productionBriefActionBatchAdmission.capture);
 commandProjectRevisionPort.setProvider(captureProjectRevision);
-commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(projectRevisionMatchesLiveIgnoringSaveWrites);
+commandProjectRevisionPort.setLiveMatchIgnoringSaveWrites(settledProjectRevisionMatchesLiveIgnoringSaveWrites);
 configureAudioEngineRuntime();
 commandBatchPreflightPort.setProvider(captureCommandBatchPreflightState);
 // AiRuntime publishes the capability catalog and imports Project, so capability

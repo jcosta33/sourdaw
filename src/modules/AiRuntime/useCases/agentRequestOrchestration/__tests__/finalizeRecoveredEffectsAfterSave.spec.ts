@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import {
     configureAutomergeStoragePort,
     createAutomergeStorage,
@@ -147,14 +148,24 @@ async function writeSave(): Promise<void> {
     flushAutomergeStorageWrites();
 }
 
-function writeKickName(name: string): void {
+function setKickName(name: string): void {
     const tracks = trackStore.value?.tracks ?? [];
     trackStore.set({
         tracks: tracks.map((track) => ({ ...track, name })),
         selectedTrackId: 'track-kick',
         ghostClips: [],
     });
+}
+
+function writeKickName(name: string): void {
+    setKickName(name);
     flushAutomergeStorageWrites();
+}
+
+/** A rename whose document write still waits on its animation frame, as in a background window. */
+function renameKickBeforeItsFrame(name: string): void {
+    vi.stubGlobal('requestAnimationFrame', () => 0);
+    setKickName(name);
 }
 
 async function commitBatchWithPendingEffect() {
@@ -198,6 +209,8 @@ async function commitBatchWithPendingEffect() {
     return { batch, receipt: first.receipt, committedRevision: captureProjectRevision() };
 }
 
+registerSupportingServicePorts();
+
 describe('Finalizing recovered command effects after a save', () => {
     beforeEach(() => {
         configureAiWorkflowCommandPreflightFixture();
@@ -217,6 +230,8 @@ describe('Finalizing recovered command effects after a save', () => {
     });
 
     afterEach(() => {
+        flushAutomergeStorageWrites();
+        vi.unstubAllGlobals();
         resetAiWorkflowCommandPreflightFixture();
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -248,6 +263,26 @@ describe('Finalizing recovered command effects after a save', () => {
 
         writeKickName('Kick 2');
         await writeSave();
+
+        await expect(
+            finalizeRecoveredCommandBatchEffects({
+                authority: batch.authority,
+                serialized: batch.serialized,
+                pendingReceipt: receipt,
+                expectedProjectRevision: committedRevision,
+            })
+        ).resolves.toEqual({
+            status: 'failed',
+            disposition: 'manual-repair',
+            reason: 'The project changed before external-effect finalization',
+        });
+    });
+
+    it('refuses to finalize after a content edit that has not reached the document yet', async () => {
+        const { batch, receipt, committedRevision } = await commitBatchWithPendingEffect();
+
+        renameKickBeforeItsFrame('Kick 2');
+        expect(captureProjectRevision()).toBe(committedRevision);
 
         await expect(
             finalizeRecoveredCommandBatchEffects({

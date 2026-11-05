@@ -118,6 +118,7 @@ export { resolveMidiNoteArticulationId } from './resolveMidiNoteArticulationId';
 // velocity calibration device modules own.
 export { articulationIdResolvers } from './articulationIdResolvers';
 export { velocityCalibration } from './webMidiInput/velocityCalibration';
+export { midiLearnRouting } from './webMidiInput/midiLearnRouting';
 
 // ── MIDI Note CRUD ────────────────────────────────────────────────────────────
 export { addMidiNote } from './midiNoteCrud/addMidiNote';

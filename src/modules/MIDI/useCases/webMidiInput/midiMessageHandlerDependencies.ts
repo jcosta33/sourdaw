@@ -8,11 +8,6 @@ import {
     soundsNativeNotes,
 } from '#/modules/AudioEngine/useCases';
 import {
-    completeMidiLearn,
-    getMidiLearnState,
-    handleMidiMessage as applyMidiMappings,
-} from '#/modules/ControlSurface/useCases';
-import {
     getDrumKitDefByIndex,
     getSynthParamsFromDevices,
     scheduleDrumKitNote,
@@ -30,6 +25,7 @@ import { bufferRecordedMidiPitchBend } from '../recordedControllerTake/bufferRec
 import { stepRecordNoteOff } from '../stepRecording/stepRecordNoteOff';
 import { stepRecordNoteOn } from '../stepRecording/stepRecordNoteOn';
 
+import { midiLearnRouting } from './midiLearnRouting';
 import { panicLiveNotes } from './panicLiveNotes';
 
 function getTrackStoreState(): TrackStoreState | null {
@@ -38,6 +34,20 @@ function getTrackStoreState(): TrackStoreState | null {
 
 function getTransportStoreValue() {
     return transportStore.value;
+}
+
+const MIDI_LEARN_CALLER = 'midiMessageHandlerDependencies';
+
+function getMidiLearnState() {
+    return midiLearnRouting.read(MIDI_LEARN_CALLER).getMidiLearnState();
+}
+
+function completeMidiLearn(channel: number, cc: number): void {
+    midiLearnRouting.read(MIDI_LEARN_CALLER).completeMidiLearn(channel, cc);
+}
+
+function applyMidiMappings(channel: number, cc: number, value: number, normalized?: number): void {
+    midiLearnRouting.read(MIDI_LEARN_CALLER).applyMidiMappings(channel, cc, value, normalized);
 }
 
 function getSynthParamsForTrack(trackId: string): ReturnType<typeof getSynthParamsFromDevices> {

@@ -6,6 +6,7 @@ export { rememberLibraryAssetMapping } from './rememberLibraryAssetMapping';
 export { resolveMappedLibraryAssetCandidate } from './resolveMappedLibraryAssetCandidate';
 export { restoreLibrary } from './restoreLibrary';
 export { searchSamples } from './searchSamples';
+export { getSampleLibraryHandlers } from './getSampleLibraryHandlers';
 export { findSimilarSamples } from './findSimilarSamples';
 export { projectSpatialMap } from './projectSpatialMap';
 export { seedFactoryLibrary } from './seedFactoryLibrary';

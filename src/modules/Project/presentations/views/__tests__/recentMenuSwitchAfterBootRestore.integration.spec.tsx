@@ -163,6 +163,7 @@ vi.mock('../TemplateChooser', () => ({
     TemplateChooser: () => null,
 }));
 
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { normalizeTrack } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
@@ -311,6 +312,8 @@ async function bootRestoreBlankProjectB(): Promise<void> {
 const openProjectMenu = (): void => {
     fireEvent.pointerDown(screen.getByLabelText(/Project menu/i), { pointerId: 1, button: 0 });
 };
+
+registerSupportingServicePorts();
 
 describe('recent-menu switch after a fresh renderer restored the blank project (#2898)', () => {
     let idbControls: ReturnType<typeof installFakeIndexedDb> | undefined;

@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import {
     installTransactionalIndexedDb,
@@ -274,6 +275,8 @@ function expectNoAutomaticReplacement(instanceId: string): void {
 function serializedDeviceChunk(snapshot: PersistedSnapshot): string | undefined {
     return snapshot.arrangement?.tracks?.[0]?.devices?.[0]?.externalStateChunk;
 }
+
+registerSupportingServicePorts();
 
 describe('external plugin capture while saved-state restore is pending (issue 3693)', () => {
     beforeAll(async () => {

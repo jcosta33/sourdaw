@@ -258,4 +258,20 @@ describe('ConfirmDialog', () => {
         const dialogPanel = screen.getByText('Danger message').closest('div');
         expect(dialogPanel?.className).toContain('border-[var(--color-state-danger)]/40');
     });
+
+    it('pulls focus back to Cancel when something outside the open dialog takes it', async () => {
+        render(<button type="button">Outside</button>);
+        const fire = await renderAndGetHandler();
+        act(() => {
+            fire(makePayload({ variant: 'danger', confirmLabel: 'Delete' }));
+        });
+        const cancelButton = screen.getByRole('button', { name: 'Cancel' });
+        await waitFor(() => {
+            expect(cancelButton).toHaveFocus();
+        });
+
+        screen.getByRole('button', { name: 'Outside', hidden: true }).focus();
+
+        expect(document.activeElement).toBe(cancelButton);
+    });
 });

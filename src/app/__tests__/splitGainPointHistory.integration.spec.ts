@@ -57,7 +57,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
-import { productionBriefActionBatchAdmission } from '#/modules/Project/useCases';
+import { getProjectHandlers, productionBriefActionBatchAdmission } from '#/modules/Project/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import {
@@ -124,6 +124,7 @@ function registerHandlers(deferSessionRestore = false) {
             getAutomationHandlers(),
             getDrumPreviewBranchHandlers({ canMutateBranchMetadata: () => false }),
             getMidiNoteTransformHandlers(),
+            getProjectHandlers(),
             getTransportHandlers(),
             getYeastHandlers(),
         ],

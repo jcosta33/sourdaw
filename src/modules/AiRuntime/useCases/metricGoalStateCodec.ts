@@ -79,7 +79,7 @@ function creative(entry: unknown): entry is CreativeRequestAuthority {
         !text(entry.requestDigest) ||
         !text(entry.revision) ||
         !selection(entry.selection) ||
-        !oneOf(entry.mode, ['edit', 'create', 'read-only']) ||
+        !oneOf(entry.mode, ['edit', 'create', 'read-only', 'brief']) ||
         !oneOf(entry.uncertainty, ['none', 'artistic']) ||
         !Array.isArray(entry.targets) ||
         !strings(entry.editDimensions) ||

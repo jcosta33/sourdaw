@@ -1,4 +1,4 @@
-import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
+import { getExecutableAppActionEffect, parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { digest } from '#/utils/canonicalDigest';
 
 import { getCreativeSelectionSnapshot } from '../../models/CreativeInterpretation';
@@ -9,6 +9,18 @@ import { type MetricGoal, type MetricGoalState, type MetricRequestAuthority } fr
 import { PERCEPTUAL_CONSTRAINT_INVARIANTS } from './perceptualConstraintInvariants';
 
 type CommandBatch = { serialized: string; authority: Parameters<typeof parseVersionedCommandBatchEnvelope>[1] };
+
+/** Command declares a protection-only write for an operation that moves no audio, now or conditionally. */
+function changesNoSound(operation: string): boolean {
+    const effect = getExecutableAppActionEffect(operation);
+    return (
+        effect !== null &&
+        effect.dimensions.every((dimension) => dimension === 'protection') &&
+        (effect.conditional ?? []).length === 0 &&
+        (effect.creates ?? []).length === 0 &&
+        (effect.removes ?? []).length === 0
+    );
+}
 
 /** The whole arrangement, the extent the answer catalog's own `arrangement` range reads. */
 function readArrangementRange(context: ProjectContext): MetricGoal['range'] {
@@ -98,6 +110,11 @@ export function withPerceptualConstraintAuthority(input: {
         throw new TypeError(parsed.reason);
     }
     const envelope = parsed.envelope;
+    // A batch that changes no sound has no metric a hold could see move: the production brief records
+    // the constraint as intent instead, and a hold would only ask for a measurement of nothing.
+    if (envelope.commands.every((command) => changesNoSound(command.operation))) {
+        return input.state;
+    }
     const requestDigest = digest(input.prompt.trim());
     const authorityId = `perceptual-constraints-${digest({ requestDigest, reading: input.reading })}`;
     const authority: MetricRequestAuthority = {

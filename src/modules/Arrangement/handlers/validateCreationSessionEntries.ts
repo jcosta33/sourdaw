@@ -28,7 +28,9 @@ export function isAddTrackSessionEntry(entry: HandlerSessionActionEntry): boolea
         return false;
     }
     const trackId = entry.action.payload.id;
+    // A recorded creation carries the name it was given; replay never names it again.
     return (
+        typeof entry.action.payload.name === 'string' &&
         typeof trackId === 'string' &&
         trackId.length > 0 &&
         entry.inverseAction.payload.trackId === trackId &&

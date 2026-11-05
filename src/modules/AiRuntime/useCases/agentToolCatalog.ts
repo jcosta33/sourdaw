@@ -1,7 +1,12 @@
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { getAgentMeasurementMetricIds } from '#/modules/AudioAnalysis/useCases';
 import { getDeclarativeTransformDocumentSchema } from '#/modules/Command/useCases';
-import { getProjectProtocolContracts, getSemanticProjectQueryFiltersSchema } from '#/modules/Project/useCases';
+import {
+    getCanonicalTrackRoleOptions,
+    getProductionBriefUpdateLimits,
+    getProjectProtocolContracts,
+    getSemanticProjectQueryFiltersSchema,
+} from '#/modules/Project/useCases';
 import { MIDI_TRANSFORM_MAX_NOTES } from '#/utils/midiNoteBatchLimits';
 
 import {
@@ -15,6 +20,7 @@ import {
     ANALYSIS_MEASURE_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
     ANSWER_RESPOND_TOOL_NAME,
+    BRIEF_COMPILE_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     COMMAND_HISTORY_TOOL_NAME,
@@ -58,6 +64,7 @@ export {
     ANALYSIS_MEASURE_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
     ANSWER_RESPOND_TOOL_NAME,
+    BRIEF_COMPILE_TOOL_NAME,
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
     COMMAND_HISTORY_TOOL_NAME,
@@ -515,5 +522,53 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
         getAnalysisCompareReferenceSchema(),
         getRecipeDiscoverySchema(),
         getRecipeExpansionSchema(),
+        getBriefCompileSchema(),
     ];
+}
+
+function getBriefCompileSchema(): ToolSchema {
+    const limits = getProductionBriefUpdateLimits();
+    const statement = { type: 'string', minLength: 1, maxLength: limits.statementMaxLength };
+    const entries = (properties: Record<string, unknown>, required: string[]) => ({
+        type: 'array',
+        maxItems: limits.entriesPerFieldPerUpdate,
+        items: { type: 'object', properties, required, additionalProperties: false },
+    });
+    return tool(
+        BRIEF_COMPILE_TOOL_NAME,
+        "Compose the next revision of the project's production brief from a whole-project request: its vision, named references, preferences, section goals and roles for tracks that have none. Call it only after the creative interpretation admitted mode brief. The application records the request's protective clauses as hard constraints itself, keeps every lock and decision unchanged, never replaces a role already set, and refuses ids the project does not hold. This is a preview: nothing is written until the user confirms. Propose its callId alone in command.batch.propose compiledCallIds, with an empty commands list.",
+        {
+            vision: { type: 'string', minLength: 1, maxLength: limits.visionMaxLength },
+            references: entries(
+                {
+                    label: {
+                        type: 'string',
+                        minLength: 1,
+                        maxLength: limits.referenceLabelMaxLength,
+                        description: 'A record, artist or sound in words; never a link.',
+                    },
+                },
+                ['label']
+            ),
+            preferences: entries(
+                {
+                    trackId: { type: 'string', minLength: 1, maxLength: 256 },
+                    sectionId: { type: 'string', minLength: 1, maxLength: 256 },
+                    statement,
+                },
+                ['statement']
+            ),
+            sectionGoals: entries({ sectionId: { type: 'string', minLength: 1, maxLength: 256 }, statement }, [
+                'sectionId',
+                'statement',
+            ]),
+            trackRoles: entries(
+                {
+                    trackId: { type: 'string', minLength: 1, maxLength: 256 },
+                    role: { type: 'string', enum: getCanonicalTrackRoleOptions().filter((role) => role !== 'unknown') },
+                },
+                ['trackId', 'role']
+            ),
+        }
+    );
 }

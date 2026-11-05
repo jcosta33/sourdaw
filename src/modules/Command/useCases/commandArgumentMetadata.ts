@@ -8,6 +8,7 @@ import {
 
 import { collectCommandIdReferences } from './collectCommandIdReferences';
 import { isDerivedSourceSupportPath } from './isDerivedSourceSupportPath';
+import { isRecordedIntentPath } from './isRecordedIntentPath';
 
 type CommandArgumentMetadata = {
     objectReferences: CommandObjectReference[];
@@ -132,13 +133,11 @@ export function compileCommandArgumentMetadata(
     }
     // Source preservation is derived support. Its owner still validates every
     // value; these captures do not expand the musician's requested scope.
+    const describesObjects = (path: string) =>
+        !isDerivedSourceSupportPath(operation, path) && !isRecordedIntentPath(operation, path);
     return {
-        objectReferences: metadata.objectReferences.filter(
-            (reference) => !isDerivedSourceSupportPath(operation, reference.argument)
-        ),
-        parameterUnits: metadata.parameterUnits.filter(
-            (parameter) => !isDerivedSourceSupportPath(operation, parameter.argument)
-        ),
-        time: metadata.time.filter((time) => !isDerivedSourceSupportPath(operation, time.argument)),
+        objectReferences: metadata.objectReferences.filter((reference) => describesObjects(reference.argument)),
+        parameterUnits: metadata.parameterUnits.filter((parameter) => describesObjects(parameter.argument)),
+        time: metadata.time.filter((time) => describesObjects(time.argument)),
     };
 }

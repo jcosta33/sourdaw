@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { trackStore } from '../../stores/trackStore';
+import { collaborationAssetTransfer } from '../collaborationAssetTransfer';
 import { importAudioFile } from '../importAudioFile';
 
 const mocks = vi.hoisted(() => ({
@@ -16,11 +17,6 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
     decodeAudioFile: mocks.decodeAudioFile,
     discardDecodedAudioFile: mocks.discardDecodedAudioFile,
-}));
-
-vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Collaboration/useCases')>()),
-    getAssetTransfer: mocks.getAssetTransfer,
 }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
@@ -40,6 +36,8 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
         },
     },
 }));
+
+collaborationAssetTransfer.configure({ current: mocks.getAssetTransfer, isSessionActive: () => false });
 
 function createStagedTransfer() {
     return {

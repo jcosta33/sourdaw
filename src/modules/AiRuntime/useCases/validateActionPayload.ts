@@ -347,7 +347,8 @@ const validators = {
         param.stems.length >= 2 &&
         param.stems.length <= 32 &&
         param.stems.every(isStemImportAssignment),
-    addTrack: (param): param is PayloadOf<'addTrack'> => isObj(param) && isString(param.name) && isString(param.kind),
+    addTrack: (param): param is PayloadOf<'addTrack'> =>
+        isObj(param) && (param.name === undefined || isString(param.name)) && isString(param.kind),
     removeTrack: (param): param is PayloadOf<'removeTrack'> =>
         isObj(param) &&
         hasOnlyKeys(param, [
@@ -492,6 +493,14 @@ const validators = {
         isObj(param) &&
         isInRange(param.numerator, 1, 32) &&
         (param.denominator === 2 || param.denominator === 4 || param.denominator === 8 || param.denominator === 16),
+    // Only the application composes a brief write (`brief.compile`), and the Project handler reads
+    // the whole brief again before writing, so this checks the envelope it arrives in.
+    setProductionBrief: (param): param is PayloadOf<'setProductionBrief'> =>
+        isObj(param) &&
+        hasExactKeys(param, ['expectedRevision', 'brief']) &&
+        Number.isInteger(param.expectedRevision) &&
+        isNonNegativeNumber(param.expectedRevision) &&
+        isObj(param.brief),
     setPlayback: (param): param is PayloadOf<'setPlayback'> =>
         isObj(param) && hasExactKeys(param, ['playing']) && typeof param.playing === 'boolean',
     // `setMasterGain`'s `gain` is the same linear-amplitude fraction as

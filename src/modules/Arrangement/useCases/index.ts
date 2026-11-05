@@ -8,6 +8,7 @@ export { addTrackWithDeferredAddedEvent } from './addTrackWithDeferredAddedEvent
 export { setArrangementEventBus } from './arrangementEventBus';
 export { createTrack } from './createTrack';
 export { normalizeTrack } from './normalizeTrack';
+export { nextDefaultTrackName } from './nextDefaultTrackName';
 export { removeTrack } from './removeTrack';
 export { renameTrack } from './renameTrack';
 export { reserveNextTrackColorForCommand } from './reserveNextTrackColorForCommand';
@@ -49,6 +50,8 @@ export { rearmInputMonitoring } from './rearmInputMonitoring';
 export { exportMidiClip } from './exportMidiClip';
 export { importMidiFile } from './importMidiFile';
 export { importAudioFile } from './importAudioFile';
+export { collaborationAssetTransfer } from './collaborationAssetTransfer';
+export { getLegacyTrimInverseReplayFailure } from './getLegacyTrimInverseReplayFailure';
 
 export { setTrackGain } from './setTrackGainPan/setTrackGain';
 export { clampTrackGain } from './setTrackGainPan/clampTrackGain';

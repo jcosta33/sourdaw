@@ -7,10 +7,10 @@
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
-        "digest": "cd52791e95faae11de5b2f352f4244a2923539bf00357bb8591a325abd3d2b09"
+        "digest": "a39bd0b5d50b5638c389fa32fbc9f4e42a6639e3a8dea6efe0d54c8d9d674ad9"
     },
     "census": {
-        "digest": "1b87d2c386437df22d458af6f94bffdff7e27a6d42c86812cbfdc8075e82644a"
+        "digest": "bfb87fb03f6b3327febae2cba50e58b4074531085dfff3587f10508a002cb217"
     },
     "environment": ["package.json", "pnpm-lock.yaml", "Cargo.lock", "tsconfig.json", "vite.config.ts"],
     "tasks": [
@@ -175,7 +175,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandRegistryCompleteness.spec.ts",
-                    "digest": "914c5080e9c825d6fc9dee93044aba0ca5ad304995b13babe7e8558523028566"
+                    "digest": "66ae271d6206f12ff23ad2859c4fab76c3bb0dfa861bcf01cd225be2b18c7602"
                 }
             ]
         },
@@ -187,7 +187,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/agentCommandCoverage.spec.ts",
-                    "digest": "5fda9f12f5f6c460a03da80d7d8fc1bce57a3a60b55f16a709409e5e6ecae265"
+                    "digest": "d762ecc6a847a564e8de1cc4bbbc8970ff231499ba1c3fffd94897fa7d42d3f0"
                 }
             ]
         },
@@ -371,7 +371,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts",
-                    "digest": "8d21908a9e184580e4c95cbe7df1b63510921e8f5b8ad059770e028d7f67dbd8"
+                    "digest": "99e13c7ce85029a56da01b6d4b314803fb7111a236922fd36cbb24524b98477c"
                 }
             ]
         },
@@ -524,7 +524,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts",
-                    "digest": "16d217b85fc47efd41e0478473743711cf794c72ecac6e2fb4d31c5d8d224e25"
+                    "digest": "bcb021f22b878acf0c4b6da939d15c40c989d13ba82dd2c95fa5fbc8b163fee6"
                 }
             ]
         },
@@ -536,7 +536,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts",
-                    "digest": "2c8774a148a65afc67b5d28ab2ea07eabfa363d1fd2fa9d9b91cf72a2f58d284"
+                    "digest": "7b41f3063ea6029c91b4e4c820c96b7f930bdb17e619a69be2be2c45c3d199f2"
                 }
             ]
         },
@@ -644,7 +644,7 @@
                 },
                 {
                     "path": "src/modules/AudioRendering/useCases/__tests__/agentOfflineRender.spec.ts",
-                    "digest": "74f7c83ca1e5d33b0f2a9ac7b6b3841788a99f7e1fd00ed69ecd4f196a80ab81"
+                    "digest": "c8807b20b8ccc6b262fc94deb9ea3417dfb7c52c758b63a62a17df84b764680c"
                 }
             ]
         },
@@ -923,7 +923,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Project/useCases/__tests__/agentDomainQueryConformance.spec.ts",
-                    "digest": "dc662abba5007893c9e15d1ad71ff14a0424dd18d46d00822b44f4bc2a4c004a"
+                    "digest": "7fc9f145ce62db9406c11ce5f75cb96e110f871995165e7d669a4f469942548c"
                 }
             ]
         },

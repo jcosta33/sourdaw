@@ -42,7 +42,7 @@ test.describe('Status bar', () => {
     test('adding a MIDI track shows Last action and lists it in undo history', async ({ page }) => {
         const status = page.getByRole('contentinfo', { name: 'Application status' });
         const toggle = page.getByRole('button', { name: 'Toggle undo history panel', exact: true });
-        const lastAction = 'Add midi track "MIDI"';
+        const lastAction = 'Add midi track "MIDI 1"';
 
         await expect(toggle).toHaveText('0 undos');
         await expect(status.getByText(/^Last: /)).toHaveCount(0);

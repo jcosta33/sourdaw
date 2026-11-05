@@ -165,11 +165,13 @@ const {
     registerProjectSlotProjectionsMock,
     registerProjectLifecycleMock,
     registerDeviceEnginePortsMock,
+    registerSupportingServicePortsMock,
+    registerKernelPortsMock,
     captureProjectRootIdentityMock,
     setElasticSensitivityRootIdentityCaptureMock,
     captureProjectIdentityMock,
     captureProjectRevisionMock,
-    projectRevisionMatchesLiveIgnoringSaveWritesMock,
+    settledProjectRevisionMatchesLiveIgnoringSaveWritesMock,
     agentProjectInspectionSetProviderMock,
     setArrangementEventBusMock,
     setRecordingMidiAdmissionPortMock,
@@ -301,11 +303,15 @@ const {
         registerProjectSlotProjectionsMock: vi.fn<() => void>(),
         registerProjectLifecycleMock: vi.fn<() => void>(),
         registerDeviceEnginePortsMock: vi.fn<() => void>(),
+        registerSupportingServicePortsMock: vi.fn<() => void>(),
+        registerKernelPortsMock: vi.fn<() => void>(),
         captureProjectRootIdentityMock: vi.fn<() => string>(() => 'root-identity'),
         setElasticSensitivityRootIdentityCaptureMock: vi.fn(),
         captureProjectIdentityMock: vi.fn<() => string>(() => 'identity-1'),
         captureProjectRevisionMock: vi.fn<() => string>(() => 'revision-1'),
-        projectRevisionMatchesLiveIgnoringSaveWritesMock: vi.fn<(expectedRevision: string) => boolean>(() => true),
+        settledProjectRevisionMatchesLiveIgnoringSaveWritesMock: vi.fn<(expectedRevision: string) => boolean>(
+            () => true
+        ),
         agentProjectInspectionSetProviderMock: vi.fn(),
         setArrangementEventBusMock: vi.fn<(eventBus: ArrangementEventBus) => void>(),
         setRecordingMidiAdmissionPortMock: vi.fn(),
@@ -544,7 +550,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectIdentity: captureProjectIdentityMock,
     captureProjectRootIdentity: captureProjectRootIdentityMock,
     captureProjectRevision: captureProjectRevisionMock,
-    projectRevisionMatchesLiveIgnoringSaveWrites: projectRevisionMatchesLiveIgnoringSaveWritesMock,
+    settledProjectRevisionMatchesLiveIgnoringSaveWrites: settledProjectRevisionMatchesLiveIgnoringSaveWritesMock,
     createCommandPreviewWorkspace: noop,
     createCommandRecoveryWorkspace: noop,
     getCrdtDoc: noop,
@@ -694,6 +700,10 @@ vi.mock('#/modules/Routing/useCases', () => ({
     getNodeViewHandlers: sentinelHandlers('NodeView'),
 }));
 
+vi.mock('#/modules/SampleLibrary/useCases', () => ({
+    getSampleLibraryHandlers: sentinelHandlers('SampleLibrary'),
+}));
+
 vi.mock('#/modules/SessionLauncher/useCases', () => ({
     getSessionLauncherHandlers: sentinelHandlers('SessionLauncher'),
 }));
@@ -802,6 +812,14 @@ vi.mock('../registerDeviceEnginePorts', () => ({
     registerDeviceEnginePorts: registerDeviceEnginePortsMock,
 }));
 
+vi.mock('../registerSupportingServicePorts', () => ({
+    registerSupportingServicePorts: registerSupportingServicePortsMock,
+}));
+
+vi.mock('../registerKernelPorts', () => ({
+    registerKernelPorts: registerKernelPortsMock,
+}));
+
 vi.mock('../composeGrandBoule', () => ({
     composeGrandBoule: composeGrandBouleMock,
 }));
@@ -899,6 +917,7 @@ describe('bootstrap', () => {
     // (nothing missing) and idempotent (nothing registered twice).
     const expectedRegistrationOrder = [
         'Arrangement',
+        'SampleLibrary',
         'Transport',
         'SessionLauncher',
         'Setlist',
@@ -1090,6 +1109,16 @@ describe('bootstrap', () => {
         expect(registerDeviceEnginePortsMock).toHaveBeenCalledExactlyOnceWith();
         expect(registerDeviceEnginePortsMock).toHaveBeenCalledAfter(registerProjectLifecycleMock);
         expect(registerDeviceEnginePortsMock).toHaveBeenCalledBefore(setProjectIdentityTransitionDependenciesMock);
+        // Beside the device ports, before an import, a save or playback can
+        // reach a supporting module through a port.
+        expect(registerSupportingServicePortsMock).toHaveBeenCalledExactlyOnceWith();
+        expect(registerSupportingServicePortsMock).toHaveBeenCalledAfter(registerDeviceEnginePortsMock);
+        expect(registerSupportingServicePortsMock).toHaveBeenCalledBefore(setProjectIdentityTransitionDependenciesMock);
+        // Beside the supporting ports, before an undo, a macro replay or a
+        // branch switch can reach a core domain through a kernel port.
+        expect(registerKernelPortsMock).toHaveBeenCalledExactlyOnceWith();
+        expect(registerKernelPortsMock).toHaveBeenCalledAfter(registerSupportingServicePortsMock);
+        expect(registerKernelPortsMock).toHaveBeenCalledBefore(setProjectIdentityTransitionDependenciesMock);
         expect(agentProjectInspectionSetProviderMock).toHaveBeenCalledExactlyOnceWith(
             captureAgentProjectInspectionState
         );
@@ -1159,9 +1188,9 @@ describe('bootstrap', () => {
         );
     });
 
-    it('lets command finalization tolerate a save by registering the save-insensitive revision matcher', () => {
+    it('lets command finalization tolerate a save, but not an unflushed edit, by registering the settling save-insensitive revision matcher', () => {
         expect(commandProjectRevisionPortMock.setLiveMatchIgnoringSaveWrites).toHaveBeenCalledExactlyOnceWith(
-            projectRevisionMatchesLiveIgnoringSaveWritesMock
+            settledProjectRevisionMatchesLiveIgnoringSaveWritesMock
         );
     });
 

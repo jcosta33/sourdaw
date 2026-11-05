@@ -153,7 +153,7 @@ function trackRow(page: Page): Locator {
     return page
         .getByRole('grid', { name: 'Track list', exact: true })
         .locator('[role="row"][draggable="true"]')
-        .filter({ has: page.getByText('Audio', { exact: true }) });
+        .filter({ has: page.getByText('Audio 1', { exact: true }) });
 }
 
 async function palette(page: Page, label: string): Promise<void> {
@@ -208,7 +208,7 @@ async function readSnapshot(page: Page): Promise<Snapshot> {
                 tempoMap?: NonNullable<typeof tempoMapStore.value>;
             }>('root');
             const project = projectStore.value;
-            const track = trackStore.value?.tracks.find((entry) => entry.name === 'Audio');
+            const track = trackStore.value?.tracks.find((entry) => entry.name === 'Audio 1');
             const rawTrack = document?.tracks?.tracks.find((entry) => entry.id === track?.id);
             if (!document || !project?.initialized || project.loading || !project.projectId || !track || !rawTrack) {
                 throw new Error('The actual audio project has not hydrated');
@@ -360,7 +360,7 @@ async function canvasPoint(
     clip: SourceClip,
     beat: number
 ): Promise<{ x: number; y: number; pixelsPerBeat: number }> {
-    const header = await trackRow(page).getByRole('button', { name: 'Mute Audio', exact: true }).boundingBox();
+    const header = await trackRow(page).getByRole('button', { name: 'Mute Audio 1', exact: true }).boundingBox();
     const canvas = await page.getByLabel('Timeline editor surface').boundingBox();
     const view = await page.evaluate(async () => {
         const { timelineViewStore } = await import('/src/modules/Arrangement/stores/timelineViewStore.ts');

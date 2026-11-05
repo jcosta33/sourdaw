@@ -1,10 +1,10 @@
-import { libraryStore } from '#/modules/SampleLibrary/stores';
-import { searchAgentCatalog } from '#/modules/SampleLibrary/useCases';
-
 import { AGENT_DISCOVERY_SAMPLE_QUERY_LIMIT } from '../../models/AgentDiscoveryQuery';
 import { type DiscoveryCandidate } from '../../services/agentDiscovery/discoveryCandidates';
 
-type CatalogCandidate = Extract<ReturnType<typeof searchAgentCatalog>, { status: 'results' }>['items'][number];
+import { sampleDiscoverySource } from './sampleDiscoverySource';
+
+type CatalogSearchResult = ReturnType<ReturnType<typeof sampleDiscoverySource.read>['searchCatalog']>;
+type CatalogCandidate = Extract<CatalogSearchResult, { status: 'results' }>['items'][number];
 
 export type SampleDiscoveryCollection =
     | { status: 'entries'; candidates: DiscoveryCandidate[]; warnings: string[] }
@@ -51,11 +51,12 @@ function toSampleCandidate(candidate: CatalogCandidate): DiscoveryCandidate {
  * and matched nothing.
  */
 export function collectSampleDiscoveryEntries(text: string): SampleDiscoveryCollection {
-    const roots = libraryStore.value?.roots ?? [];
+    const source = sampleDiscoverySource.read('collectSampleDiscoveryEntries');
+    const roots = source.readLibrary()?.roots ?? [];
     if (!roots.some((root) => root.status === 'ready')) {
         return { status: 'catalog-not-indexed' };
     }
-    const result = searchAgentCatalog({ text, limit: AGENT_DISCOVERY_SAMPLE_QUERY_LIMIT });
+    const result = source.searchCatalog({ text, limit: AGENT_DISCOVERY_SAMPLE_QUERY_LIMIT });
     if (result.status === 'rejected') {
         return { status: 'query-rejected' };
     }

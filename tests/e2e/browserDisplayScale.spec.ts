@@ -574,7 +574,7 @@ test('failed initial App graph recovers in the same child document and preserves
         return frame
             .getByRole('grid', { name: 'Track list', exact: true })
             .locator('[role="row"][draggable="true"]')
-            .filter({ has: frame.getByText('Audio', { exact: true }) });
+            .filter({ has: frame.getByText('Audio 1', { exact: true }) });
     }
     await command('Add Audio Track');
     for (const kind of ['Audio', 'MIDI'] as const) {
@@ -616,7 +616,7 @@ test('failed initial App graph recovers in the same child document and preserves
         const { trackStore }: typeof import('../../src/modules/Arrangement/stores') = await import(arrangementPath);
         const { automationStore }: typeof import('../../src/modules/Automation/stores') = await import(automationPath);
         const { executeAppAction }: typeof import('../../src/modules/Command/useCases') = await import(commandPath);
-        const track = trackStore.value?.tracks.find((entry) => entry.name === 'Audio');
+        const track = trackStore.value?.tracks.find((entry) => entry.name === 'Audio 1');
         if (!track) throw new Error('Actual audio owner is absent');
         await executeAppAction({
             type: 'addAutomationLane',

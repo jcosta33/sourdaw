@@ -4,6 +4,7 @@ import { registerProjectSlotProjections } from '#/app/registerProjectSlotProject
 import { trackStore } from '#/modules/Arrangement/stores';
 import { normalizeTrack } from '#/modules/Arrangement/useCases';
 import { exportCachedAudioBuffers } from '#/modules/AudioEngine/useCases';
+import { midiLearnStore } from '#/modules/ControlSurface/stores';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
     agentProjectInspectionPort,
@@ -26,6 +27,7 @@ import { saveProject } from '../../saveProject/saveProject';
 import { buildProjectData } from '../buildProjectData';
 import { exportProjectFile } from '../exportProjectFile';
 import { hydrateProjectMidi } from '../hydrateProjectMidi';
+import { midiLearnProjection } from '../midiLearnProjection';
 
 // Heavy / side-effecting boundaries — stubbed so the export runs deterministically
 // against the real stores we seed below. vi.mock is hoisted above these imports.
@@ -179,6 +181,10 @@ function replaceRootWithMalformedAdjustmentLayers(): void {
         },
     });
 }
+
+// The composition root's MIDI learn projection over the live store: the
+// registrar itself cannot load while whole module barrels are mocked.
+midiLearnProjection.configure({ readMidiLearn: () => midiLearnStore.value });
 
 describe('exportProjectFile round-trip shape', () => {
     beforeEach(() => {

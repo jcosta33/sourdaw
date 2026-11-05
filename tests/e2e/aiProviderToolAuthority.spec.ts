@@ -126,7 +126,7 @@ async function addAudioTrack(page: Page, name: string): Promise<void> {
     await palette.getByRole('option', { name: /Add Audio Track/i }).click();
     await expect(arms).toHaveCount(before + 1);
     const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
-    const nameButton = inspector.getByRole('button', { name: 'Audio', exact: true });
+    const nameButton = inspector.getByRole('button', { name: 'Audio 1', exact: true });
     await expect(nameButton).toBeVisible();
     await nameButton.click();
     const rename = inspector.getByRole('textbox').first();

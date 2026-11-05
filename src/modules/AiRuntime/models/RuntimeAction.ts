@@ -24,6 +24,7 @@ export const RUNTIME_ACTION_TYPES = [
     'setTrackColor',
     'setTempo',
     'setTimeSignature',
+    'setProductionBrief',
     'setPlayback',
     'togglePlayback',
     'stopPlayback',
@@ -359,7 +360,7 @@ export const RUNTIME_ACTION_OVERRIDE_PAYLOAD_KEYS = {
 
 export const RUNTIME_ACTION_OVERRIDE_REQUIRED_PAYLOAD_KEYS = {
     importStemSet: ['selectionId', 'groupName', 'stems'],
-    addTrack: ['name', 'kind'],
+    addTrack: ['kind'],
     muteTrack: ['trackId', 'muted'],
     setTrackGain: ['trackId'],
     setTrackPan: ['trackId', 'pan'],

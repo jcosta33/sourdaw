@@ -2,6 +2,7 @@ import { clone as cloneDoc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { registerKernelPorts } from '#/app/registerKernelPorts';
 import { configureAutomergeStoragePort, createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 
@@ -44,6 +45,8 @@ function configureRealStorageAdapter(): void {
         },
     });
 }
+
+registerKernelPorts();
 
 describe('CRDT branch persistence adapter interleavings', () => {
     let nextAnimationFrameId = 0;

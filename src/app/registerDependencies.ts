@@ -22,6 +22,7 @@ import {
     type PromptPayload,
     type ZoomToSelectionPayload,
     type ImportMidiPayload,
+    type OpenPreferencesPayload,
 } from '#/modules/WorkspaceShell/events';
 import { type YeastNotesOffPayload } from '#/modules/Yeast/events';
 
@@ -39,7 +40,7 @@ export type AppEvents = {
 
     // Dialog triggers
     'dialog.openExport': VoidPayload;
-    'dialog.openPreferences': VoidPayload;
+    'dialog.openPreferences': OpenPreferencesPayload;
 
     // Project actions
     'project.save': VoidPayload;

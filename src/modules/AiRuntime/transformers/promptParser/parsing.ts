@@ -265,8 +265,8 @@ export function tryCompoundFastPath(text: string, context: ProjectContext): Runt
         }
         const actions: RuntimeAction[] = [];
         for (let index = 0; index < count; index++) {
-            const name = names[index] ?? `${kind.charAt(0).toUpperCase() + kind.slice(1)} ${index + 1}`;
-            actions.push({ type: 'addTrack', payload: { name, kind } });
+            const name = names[index];
+            actions.push({ type: 'addTrack', payload: name === undefined ? { kind } : { name, kind } });
         }
         return actions;
     }

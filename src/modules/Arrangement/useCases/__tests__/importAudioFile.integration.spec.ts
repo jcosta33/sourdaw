@@ -42,6 +42,7 @@ import { TrackDummy } from '../../__tests__/TrackDummy';
 import { type Track } from '../../models/Track';
 import { trackStore, type TrackStoreState } from '../../stores/trackStore';
 import { ArrangementEventBus, setArrangementEventBus } from '../arrangementEventBus';
+import { collaborationAssetTransfer } from '../collaborationAssetTransfer';
 import { getArrangementHandlers } from '../getArrangementHandlers';
 import { importAudioFile } from '../importAudioFile';
 
@@ -57,10 +58,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     discardDecodedAudioFile: mocks.discardDecodedAudioFile,
 }));
 
-vi.mock('#/modules/Collaboration/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/Collaboration/useCases')>()),
-    getAssetTransfer: mocks.getAssetTransfer,
-}));
+collaborationAssetTransfer.configure({ current: mocks.getAssetTransfer, isSessionActive: () => false });
 
 type NotificationEvents = {
     'ui.notify': NotifyPayload;

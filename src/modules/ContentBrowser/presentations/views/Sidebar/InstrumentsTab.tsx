@@ -208,7 +208,7 @@ export const InstrumentsTab = ({
     };
 
     const handleAddBlankMidiTrack = () => {
-        void executeUserAppAction({ type: 'addTrack', payload: { name: 'MIDI', kind: 'midi' } });
+        void executeUserAppAction({ type: 'addTrack', payload: { kind: 'midi' } });
     };
 
     const handleAddFermenterTrack = () => {

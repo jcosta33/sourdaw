@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { registerKernelPorts } from '#/app/registerKernelPorts';
 import { registerProjectSlotProjections } from '#/app/registerProjectSlotProjections';
 import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
 import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
@@ -330,6 +331,8 @@ async function heldStop(): Promise<{ stopping: Promise<void>; identity: string }
     expect(commits()).toHaveLength(0);
     return { stopping, identity };
 }
+
+registerKernelPorts();
 
 describe('recording terminals through actual project branch transitions', () => {
     let unsubscribeProjection: (() => void) | null = null;

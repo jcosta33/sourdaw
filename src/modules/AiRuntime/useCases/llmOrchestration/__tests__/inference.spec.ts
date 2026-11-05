@@ -30,6 +30,7 @@ import {
     AGENT_DEVICE_MANIFEST_TOOL_NAME,
     ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
+    BRIEF_COMPILE_TOOL_NAME,
     getAgentToolCatalogSchemas,
     PROJECT_DISCOVERY_TOOL_NAME,
     RECIPE_DISCOVERY_TOOL_NAME,
@@ -1946,12 +1947,15 @@ describe('generateToolPlanningOutcome', () => {
         const schemas = getPlanningProviderToolSchemas();
 
         // The list production sends must carry exactly the planning contract plus every workflow action tool, and this holds across catalog growth.
-        // The reference comparison is the one contract tool offered only while the user has a reference loaded, and none is loaded here.
+        // The reference comparison is offered only while the user has a reference loaded, and none is
+        // loaded here; the brief only to a hosted chat request that asks for it, which this is not.
         expect(new Set(schemas.map((tool) => tool.function.name))).toEqual(
             new Set([
                 ...planningContract
                     .map((tool) => tool.function.name)
-                    .filter((name) => name !== ANALYSIS_COMPARE_REFERENCE_TOOL_NAME),
+                    .filter(
+                        (name) => name !== ANALYSIS_COMPARE_REFERENCE_TOOL_NAME && name !== BRIEF_COMPILE_TOOL_NAME
+                    ),
                 ...WORKFLOW_ACTION_TOOL_NAMES,
             ])
         );

@@ -19,13 +19,15 @@ export function registerProductionCommandHandlers(
     }
     hydrateUndoStoreFromSession(
         [
-            ...registrations.map((registration) => ({
-                actionType: registration.actionType,
-                operationVersion: registration.operationVersion,
-                role: 'forward' as const,
-                validateArguments: registration.runtimeSchema.validate,
-                validateEntry: registration.sessionEntryValidator,
-            })),
+            ...registrations
+                .filter((registration) => registration.sessionReplay === 'forward')
+                .map((registration) => ({
+                    actionType: registration.actionType,
+                    operationVersion: registration.operationVersion,
+                    role: 'forward' as const,
+                    validateArguments: registration.runtimeSchema.validate,
+                    validateEntry: registration.sessionEntryValidator,
+                })),
             ...getInternalUndoSessionReplayContracts(),
         ],
         deferSessionRestore

@@ -51,11 +51,12 @@ vi.mock('#/modules/AudioEngine/useCases', () => {
 // with several tracks names each track's parts in `byTrack`.
 vi.mock('#/modules/Arrangement/useCases', () => ({
     resolveClipsWithComping: (trackId: string) => resolvedParts.byTrack[trackId] ?? resolvedParts.value,
+    collaborationAssetTransfer: {
+        read: () => ({ isSessionActive: () => false, current: () => null }),
+    },
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 vi.mock('../scheduleFrozenTrack', () => ({ scheduleFrozenTrack: vi.fn(() => false) }));
-vi.mock('#/modules/Collaboration/stores', () => ({ collaborationStore: { value: null } }));
-vi.mock('#/modules/Collaboration/useCases', () => ({ getAssetTransfer: vi.fn(() => null) }));
 // `TempoMap` is real: with an empty map the timeline runs at the default
 // 120 BPM, 2 beats a second. Every case plays from beat 8 with the clock at
 // 4 s, so beat b is due at 4 + (b - 8) / 2 seconds.

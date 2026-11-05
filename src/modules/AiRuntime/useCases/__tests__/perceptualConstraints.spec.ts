@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { type renderTrackSubgraphOffline } from '#/modules/AudioEngine/useCases';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
@@ -25,8 +26,10 @@ import { prepareMetricGoalPreview } from '../prepareMetricGoalPreview';
 import { validateAgentRiskApproval } from '../validateAgentRiskApproval';
 
 import { configureMetricGoalProject, metricGoalAudioBuffer, resetMetricGoalProject } from './metricGoalWorkflowFixture';
+import { moveTrackFader, seedSavableProject, writeProjectSave } from './projectSaveFixture';
 
 registerDeviceEnginePorts();
+registerSupportingServicePorts();
 
 const audio = vi.hoisted(() => ({
     renderTrackSubgraphOffline: vi.fn(),
@@ -674,6 +677,111 @@ describe('excluded dimensions', () => {
         });
     });
 
+    describe('removing a track', () => {
+        const lowEnd = "Clean up the mix but don't touch the low end of the Bass";
+        const routed = () =>
+            contextWithRouting(
+                {
+                    vocal: { sends: ['return-a'], outputId: 'bus-a' },
+                    bass: { outputId: 'low-bus' },
+                    'hop-bus': { outputId: 'verb-bus-b' },
+                },
+                [
+                    { id: 'bus-a', name: 'Bus A', devices: [device('a-verb', 'builtin-reverb')] },
+                    { id: 'return-a', name: 'Return A', devices: [device('r-verb', 'builtin-reverb')] },
+                    { id: 'hop-bus', name: 'Hop Bus', devices: [] },
+                    { id: 'verb-bus-b', name: 'Verb Bus B', devices: [device('b-verb', 'builtin-reverb')] },
+                    { id: 'low-bus', name: 'Low Bus', devices: [device('low-eq', 'builtin-eq')] },
+                    { id: 'stray-verb', name: 'Stray Verb', devices: [device('s-verb', 'builtin-reverb')] },
+                    { id: 'eq-only', name: 'EQ Only', devices: [] },
+                ]
+            );
+        const remove = (trackId: string): AppAction => ({ type: 'removeTrack', payload: { trackId } });
+        const removeFrom = (context: ProjectContext, trackId: string) =>
+            readExcludedEdit(intimate, [remove(trackId)], context);
+
+        it.each([
+            { label: 'the bus the vocal outputs to', trackId: 'bus-a', name: 'Bus A' },
+            { label: 'the return the vocal sends to', trackId: 'return-a', name: 'Return A' },
+        ])('refuses removing $label', ({ trackId, name }) => {
+            expect(removeFrom(routed(), trackId)).toContain(
+                `command 1 (removeTrack removing ${name}) edits the ambience of “${name}”`
+            );
+        });
+
+        it('admits removing a device-less bus on the vocal output chain, which hands its output on', () => {
+            const context = contextWithRouting(
+                { vocal: { sends: [], outputId: 'hop-bus' }, 'hop-bus': { sends: [], outputId: 'verb-bus-b' } },
+                [
+                    { id: 'hop-bus', name: 'Hop Bus', devices: [] },
+                    { id: 'verb-bus-b', name: 'Verb Bus B', devices: [device('b-verb', 'builtin-reverb')] },
+                ]
+            );
+            expect(removeFrom(context, 'hop-bus')).toBeNull();
+        });
+
+        it('refuses removing a device-less bus on the vocal output chain whose own send reaches a reverb', () => {
+            const context = contextWithRouting(
+                { vocal: { sends: [], outputId: 'bus-a' }, 'bus-a': { sends: ['verb-bus-b'] } },
+                [
+                    { id: 'bus-a', name: 'Bus A', devices: [] },
+                    { id: 'verb-bus-b', name: 'Verb Bus B', devices: [device('b-verb', 'builtin-reverb')] },
+                ]
+            );
+            expect(removeFrom(context, 'bus-a')).toContain(
+                'command 1 (removeTrack removing Bus A) edits the ambience of “Bus A”'
+            );
+        });
+
+        it('refuses removing a device-less return the vocal sends to whose output reaches a reverb', () => {
+            const context = contextWithRouting(
+                {
+                    vocal: { sends: ['hop-return'], outputId: 'master' },
+                    'hop-return': { sends: [], outputId: 'verb-bus-b' },
+                },
+                [
+                    { id: 'hop-return', name: 'Hop Return', devices: [] },
+                    { id: 'verb-bus-b', name: 'Verb Bus B', devices: [device('b-verb', 'builtin-reverb')] },
+                ]
+            );
+            expect(removeFrom(context, 'hop-return')).toContain(
+                'command 1 (removeTrack removing Hop Return) edits the ambience of “Vocal”'
+            );
+        });
+
+        it('charges a send copy lost with a bus to the sender, not to a vocal routed through the bus', () => {
+            const context = contextWithRouting(
+                {
+                    vocal: { sends: [], outputId: 'bus-a' },
+                    'bus-a': { sends: [], outputId: 'verb-bus-b' },
+                    bass: { sends: ['bus-a'] },
+                },
+                [
+                    { id: 'bus-a', name: 'Bus A', devices: [] },
+                    { id: 'verb-bus-b', name: 'Verb Bus B', devices: [device('b-verb', 'builtin-reverb')] },
+                ]
+            );
+            expect(removeFrom(context, 'bus-a')).toBeNull();
+        });
+
+        it('refuses removing the bus a bass outputs to under the low-end constraint', () => {
+            expect(readExcludedEdit(lowEnd, [remove('low-bus')], routed())).toContain(
+                'command 1 (removeTrack removing Low Bus) edits the low end of “Low Bus”'
+            );
+        });
+
+        it('admits removing a reverb bus the vocal does not reach', () => {
+            expect(removeFrom(routed(), 'stray-verb')).toBeNull();
+        });
+
+        it('admits removing a bus the vocal reaches when nothing it reaches shapes space', () => {
+            const context = contextWithRouting({ vocal: { outputId: 'eq-only' } }, [
+                { id: 'eq-only', name: 'EQ Only', devices: [] },
+            ]);
+            expect(removeFrom(context, 'eq-only')).toBeNull();
+        });
+    });
+
     describe('the routing a batch leaves behind', () => {
         const lowEnd = "Clean up the mix but don't touch the low end of the Vocal";
         const routed = () =>
@@ -934,6 +1042,55 @@ describe('measured invariants before approval', () => {
         const compiled = compile(prompt, [setParameter('bass-eq', 'eq-high-gain', 0.1)]);
         const { evaluation } = await measureBeforeApproval(prompt, compiled);
         expect(evaluation).toMatchObject({ status: 'verified' });
+    });
+});
+
+describe('a metric-goal preview of a batch compiled before a save', () => {
+    const prompt = 'Lower the Vocal Trim and keep the vocal intimate';
+
+    /** The preview a card asks for, run after the project moved past the revision the batch was compiled at. */
+    function previewCompiledBatch(compiled: ReturnType<typeof compile>) {
+        const state = metricGoalStateCodec(compiled.metricGoalState);
+        if (state === null) {
+            throw new Error('The compiled batch carries no metric goal state.');
+        }
+        return prepareMetricGoalPreview({
+            state,
+            commandBatch: compiled.commandBatch,
+            context: getProjectContext(),
+            prompt,
+            runId: RUN_ID,
+        });
+    }
+
+    it('renders and proves a batch the project was saved after, before any render started', async () => {
+        seedSavableProject();
+        const compiledAt = captureProjectRevision();
+        const compiled = compile(prompt, [setParameter('vocal-trim', 'gain-level', -0.2)]);
+
+        await writeProjectSave();
+
+        expect(captureProjectRevision()).not.toBe(compiledAt);
+        const refreshed = await previewCompiledBatch(compiled);
+        expect(audio.renderTrackSubgraphOffline.mock.calls.map(([input]) => input.targetTrackId)).toEqual([
+            'vocal',
+            'vocal',
+        ]);
+        expect(refreshed.receipts).toHaveLength(1);
+        expect(refreshed.state.proofs).not.toHaveLength(0);
+    });
+
+    it('refuses before rendering a batch compiled before another track’s fader moved and the project was saved', async () => {
+        seedSavableProject();
+        const compiled = compile(prompt, [setParameter('vocal-trim', 'gain-level', -0.2)]);
+
+        moveTrackFader('bass', 0.5);
+        await writeProjectSave();
+
+        await expect(previewCompiledBatch(compiled)).rejects.toThrow(
+            'The project, provider configuration or run changed while metric proof was being refreshed.'
+        );
+        expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
     });
 });
 
