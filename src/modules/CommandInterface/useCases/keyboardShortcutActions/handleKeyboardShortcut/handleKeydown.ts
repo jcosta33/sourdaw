@@ -47,6 +47,7 @@ import {
 import { getAllClipIds } from '../../selectionHelpers/getAllClipIds';
 import { goToNextMarker } from '../../selectionHelpers/goToNextMarker';
 import { goToPreviousMarker } from '../../selectionHelpers/goToPreviousMarker';
+import { duplicateClipSelectingCopy } from '../clipShortcuts/duplicateClipSelectingCopy';
 import { duplicateSelectedClipsForward } from '../clipShortcuts/duplicateSelectedClipsForward';
 import { duplicateTrack } from '../trackShortcuts/duplicateTrack';
 
@@ -245,7 +246,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                 } else {
                     const selectedClipId = clipSelectionStore.value?.selectedClipId;
                     if (selectedClipId) {
-                        void executeUserAppAction({ type: 'duplicateClip', payload: { clipId: selectedClipId } });
+                        void duplicateClipSelectingCopy('duplicateClip', selectedClipId);
                     }
                 }
                 return true;
@@ -255,7 +256,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                 const selectedClipIds = clipSelectionStore.value?.selectedClipIds ?? [];
                 const selectedClipId = clipSelectionStore.value?.selectedClipId;
                 if (selectedClipId && selectedClipIds.length <= 1) {
-                    void executeUserAppAction({ type: 'duplicateClipToNextBar', payload: { clipId: selectedClipId } });
+                    void duplicateClipSelectingCopy('duplicateClipToNextBar', selectedClipId);
                 }
                 return true;
             }
