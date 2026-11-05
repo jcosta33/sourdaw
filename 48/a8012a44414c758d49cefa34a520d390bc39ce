@@ -1,0 +1,75 @@
+src/modules/Arrangement/useCases/clipEditing/audioClipSourceEndBeat.ts
+  s_fec7059b7a251c::t_620deaf323350b 1-24,26-42
+  s_fec7059b7a251c::t_d669f98b3b8cba 25
+src/modules/Arrangement/handlers/clip/__tests__/handleTrimClipEndExactReplay.spec.ts
+  s_fec7059b7a251c::t_ee4ede889deebf 1-4,5-6,7-18,22-47,49-67,81,85-86,92-95,98,102,104-105
+  s_fec7059b7a251c::t_c72662c97e1897 88-91
+  s_fec7059b7a251c::t_b7a5c1e729fbc6 99-101
+  s_fec7059b7a251c::t_946f55cd7a53a4 1-87,92-98,102-105
+src/modules/Arrangement/presentations/hooks/useTimelineInteractions.ts
+  s_fec7059b7a251c::t_4ecf9234819eca 678
+  s_fec7059b7a251c::t_4d50e7333232e3 679-680
+  s_fec7059b7a251c::t_a1c5dedcd9d23d 27
+  s_fec7059b7a251c::t_df89055ce65f3b 670-672,674-675
+  s_fec7059b7a251c::t_177b673e378e87 677
+src/modules/Arrangement/useCases/clipEditing/__tests__/limitClipEndToSource.spec.ts
+  s_fec7059b7a251c::t_36cc321080ed02 1-2,4,6,8-17,18,20,22-43,44-48,50-69,70-72,75,80,82-85,93,96,102-106,107,113,121-149,151-154,156-166,168-171,172,174-176
+  s_fec7059b7a251c::t_4dbd58f106bb83 178-179
+  s_fec7059b7a251c::t_b7a5c1e729fbc6 118-120
+  s_fec7059b7a251c::t_244d8bf5edd735 3-116,121,150-178
+  s_fec7059b7a251c::t_97784456c54d6d 117
+src/modules/Arrangement/useCases/clipEditing/limitClipEndToSource.ts
+  s_fec7059b7a251c::t_3776bc72862834 1-10,20-25,27-38
+  s_fec7059b7a251c::t_6da86243dbc794 11-19
+  s_fec7059b7a251c::t_6b898fe84028c3 26
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx
+  s_fec7059b7a251c::t_3d1ca4ab235114 25,84,143-146,1488-1551
+  s_fec7059b7a251c::t_bcb93663845d7e 1552-1605,1607-1609
+  s_fec7059b7a251c::t_cde216791a5638 1606
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.gestureCancel.spec.tsx
+  s_fec7059b7a251c::t_ef5ed7368cd009 155-157
+src/modules/Arrangement/useCases/clipEditing/__tests__/audioClipSourceEndBeat.spec.ts
+  s_fec7059b7a251c::t_6bfa2ac636a626 1-51
+src/modules/Arrangement/handlers/clip/handleTrimClipEnd.ts
+  s_fec7059b7a251c::t_1e9f0790d8185c 11,22-25
+src/modules/Arrangement/useCases/clipEditing/trimClipEnd.ts
+  s_fec7059b7a251c::t_1e9f0790d8185c 27
+src/modules/Arrangement/useCases/clipEditing/getClipEndLimit.ts
+  s_fec7059b7a251c::t_7b5dbbde990c40 1-20
+src/modules/Arrangement/useCases/index.ts
+  s_fec7059b7a251c::t_6b898fe84028c3 93
+src/modules/TimelineEditor/presentations/views/Inspector/ClipInspector.tsx
+  s_fec7059b7a251c::t_fcc5af8b34091a 100-101
+  s_fec7059b7a251c::t_6b898fe84028c3 13-19,270-271
+src/modules/Arrangement/useCases/clipEditing/__tests__/getClipEndLimit.spec.ts
+  s_fec7059b7a251c::t_499179fab0b925 1-95
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipInspector.spec.tsx
+  s_fec7059b7a251c::t_57c45e955ed574 193-196,201,255,498-522
+  s_fec7059b7a251c::t_9433864fa9e020 523
+release/open-source-inventory.json
+  s_fec7059b7a251c::t_71b7028864dab0 1217
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "48a8012a44414c758d49cefa34a520d390bc39ce",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
