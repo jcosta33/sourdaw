@@ -826,13 +826,14 @@ describe('LibraryBrowser', () => {
         const snareBuffer = { duration: 1, length: 44100, numberOfChannels: 1, sampleRate: 44100 } as AudioBuffer;
         const kickBuffer = { duration: 2, length: 88200, numberOfChannels: 1, sampleRate: 44100 } as AudioBuffer;
         let resolveKick: (result: { status: 'resolved'; buffer: AudioBuffer }) => void = () => undefined;
-        mocks.ensureFactorySampleBuffer.mockImplementation(({ sampleId }) =>
-            sampleId === 'factory-kick'
-                ? new Promise((resolve) => {
-                      resolveKick = resolve;
-                  })
-                : Promise.resolve({ status: 'resolved', buffer: snareBuffer })
-        );
+        mocks.ensureFactorySampleBuffer.mockImplementation(({ sampleId }) => {
+            if (sampleId !== 'factory-kick') {
+                return Promise.resolve({ status: 'resolved', buffer: snareBuffer });
+            }
+            return new Promise((resolve) => {
+                resolveKick = resolve;
+            });
+        });
         const factorySample = (id: string, displayName: string) => ({
             id,
             libraryRootId: FACTORY_LIBRARY_ROOT_ID,
