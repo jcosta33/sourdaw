@@ -26,6 +26,7 @@ import { getProjectHandlers } from '#/modules/Project/useCases';
 import { getVersionControlHandlers } from '#/modules/ProjectVersioning/useCases';
 import { getPunchRecordingHandlers } from '#/modules/PunchRecording/useCases';
 import { getNodeViewHandlers } from '#/modules/Routing/useCases';
+import { getSampleLibraryHandlers } from '#/modules/SampleLibrary/useCases';
 import { getSessionLauncherHandlers } from '#/modules/SessionLauncher/useCases';
 import { getSetlistHandlers } from '#/modules/Setlist/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
@@ -35,6 +36,7 @@ import { getYeastHandlers } from '#/modules/Yeast/useCases';
 export function getProductionCommandHandlerMaps(input: { canMutateBranchMetadata: () => boolean }) {
     return [
         getArrangementHandlers(),
+        getSampleLibraryHandlers(),
         getTransportHandlers(),
         getSessionLauncherHandlers(),
         getSetlistHandlers(),

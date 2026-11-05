@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -263,6 +264,8 @@ function projectionWithIncompleteVerse(incomplete: boolean) {
         receipt: '- **renderProjectSections**: section-verse',
     };
 }
+
+registerSupportingServicePorts();
 
 describe('Retry renders after a save', () => {
     beforeEach(() => {

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { captureOfflineDeviceSetup, prepareOfflineDeviceSetup } from '#/app/prepareOfflineDeviceSetup';
 import { projectNativeDeviceState } from '#/app/projectNativeDeviceState';
+import { registerSupportingServicePorts } from '#/app/registerSupportingServicePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -286,6 +287,8 @@ function installAppYeastRacks(): void {
 function installAppPpqProjection(): void {
     configureOfflinePpqEndpointProjection({ project: projectPpqEndpoints, resolveTempoAtBeat });
 }
+
+registerSupportingServicePorts();
 
 beforeEach(() => {
     installAppPpqProjection();

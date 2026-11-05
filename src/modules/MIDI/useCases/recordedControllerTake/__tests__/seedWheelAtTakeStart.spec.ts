@@ -32,14 +32,16 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     resolveEligibleClipWriteTarget: vi.fn(),
 }));
 
-vi.mock('#/modules/ControlSurface/useCases', () => ({
-    getMidiLearnState: () => null,
-}));
-
 vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
     getTargetTrackId: () => mocks.targetTrackId.value,
 }));
 
+const { midiLearnRouting } = await import('../../webMidiInput/midiLearnRouting');
+midiLearnRouting.configure({
+    getMidiLearnState: () => null,
+    completeMidiLearn: vi.fn(),
+    applyMidiMappings: vi.fn(),
+});
 const { midiStore } = await import('../../../stores/midiStore');
 const { admitPitchBend } = await import('../../../repositories/webMidi/admitPitchBend');
 const { channelControllerState } = await import('../../../repositories/webMidi/channelControllerState');

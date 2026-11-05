@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { collaborationAssetTransfer } from '../collaborationAssetTransfer';
 import * as subject from '../importAudioClipToTrack';
 
 const mocks = vi.hoisted(() => {
@@ -15,7 +16,7 @@ const mocks = vi.hoisted(() => {
         transport,
         stageLocalAsset: vi.fn<(blob: Blob, name: string) => Promise<{ hash: string; leaseId: string }>>(),
         releaseStagedAsset: vi.fn<(leaseId: string) => void>(),
-        promoteStagedAsset: vi.fn<(leaseId: string) => void>(),
+        promoteStagedAsset: vi.fn<(leaseId: string) => boolean>(),
     };
 });
 
@@ -24,18 +25,16 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     discardDecodedAudioFile: mocks.discardDecodedAudioFile,
 }));
 
-vi.mock('#/modules/Collaboration/useCases', () => ({
-    getAssetTransfer: () => {
-        if (!mocks.stageLocalAsset) {
-            return null;
-        }
-        return {
-            stageLocalAsset: mocks.stageLocalAsset,
-            releaseStagedAsset: mocks.releaseStagedAsset,
-            promoteStagedAsset: mocks.promoteStagedAsset,
-        };
-    },
-}));
+collaborationAssetTransfer.configure({
+    current: () => ({
+        stageLocalAsset: mocks.stageLocalAsset,
+        releaseStagedAsset: mocks.releaseStagedAsset,
+        promoteStagedAsset: mocks.promoteStagedAsset,
+        promoteDurableStagedAsset: vi.fn(),
+        requestAsset: vi.fn(),
+    }),
+    isSessionActive: () => false,
+});
 
 vi.mock('#/modules/Transport/stores', () => ({
     DEFAULT_TEMPO_BPM: 120,

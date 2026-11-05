@@ -172,6 +172,7 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         canApplyTempoAudioSources: actual.canApplyTempoAudioSources,
         prepareTempoAudioSources: actual.prepareTempoAudioSources,
         acceptsExternalPluginAutomationParameter: vi.fn(),
+        collaborationAssetTransfer: { read: () => ({ isSessionActive: () => false, current: () => null }) },
         removeClip: vi.fn(),
         setClipAudioAssetStager: vi.fn(),
         stageAudioBufferAsset: vi.fn(),

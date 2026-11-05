@@ -135,6 +135,9 @@ vi.mock('#/modules/Automation/useCases', () => ({
     isRecordingAutomation: vi.fn(() => false),
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    collaborationAssetTransfer: {
+        read: () => ({ isSessionActive: () => false, current: () => null }),
+    },
     getTrackStoreState: () => trackStoreState.value,
     takeOwnsRecordingRoot: vi.fn(() => true),
     admitRecordingCaptureClock: vi.fn(),
@@ -249,8 +252,6 @@ vi.mock('#/modules/Yeast/useCases', () => ({
     getYeastSchedulingLookahead: () => ({ earlyBeats: 0, lateBeats: 0 }),
 }));
 vi.mock('#/modules/Yeast/stores', () => ({ readYeastRack: () => ({ processors: [] }) }));
-vi.mock('#/modules/Collaboration/stores', () => ({ collaborationStore: { value: null } }));
-vi.mock('#/modules/Collaboration/useCases', () => ({ getAssetTransfer: () => null }));
 vi.mock('../../ensureTrackStrips', () => ({ ensureTrackStrips: vi.fn() }));
 vi.mock('../../transportControls/stopActiveRecording', () => ({ stopActiveRecording: () => Promise.resolve() }));
 // scheduleMetronome and resetMetronomeBeat run for real: the seam anchor is

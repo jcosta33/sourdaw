@@ -47,6 +47,8 @@ export { parseAgentDiscoveryInput } from './parseAgentDiscoveryInput';
 export { agentCapabilityDiscoveryPort } from './agentCapabilityDiscoveryPort';
 export { projectOriginalMediaPort } from './projectPersistence/projectOriginalMediaPort';
 export { rackProcessorReader } from './projectPersistence/fileIO/rackProcessorReader';
+export { midiLearnProjection } from './projectPersistence/fileIO/midiLearnProjection';
+export { sampleDiscoverySource } from './agentDiscovery/sampleDiscoverySource';
 export { templateArpeggiatorAuthoring } from './projectTemplates/templateHelpers/templateArpeggiatorAuthoring';
 export { templateDeviceContent } from './projectTemplates/templateHelpers/templateDeviceContent';
 export { storedDrumVoices } from './storedDrumVoices';

@@ -1,8 +1,7 @@
-import { getMidiLearnState } from '#/modules/ControlSurface/useCases';
-
 import { CC_RPN_MSB } from '../../models/MidiControllerState';
 import { type MidiCC } from '../../models/MidiNote';
 import { getMpeEnabled } from '../../repositories/webMidi/getMpeEnabled';
+import { midiLearnRouting } from '../webMidiInput/midiLearnRouting';
 import { admitsRecordedControlChange } from '../webMidiInput/recordedControlChangeAdmission';
 
 import { readLiveRegisteredStateRows } from './readLiveRegisteredStateRows';
@@ -22,7 +21,7 @@ import { readLiveRegisteredStateRows } from './readLiveRegisteredStateRows';
  * or an MPE member channel.
  */
 export function readBendRangeSeedRows(): MidiCC[] {
-    const learnState = getMidiLearnState();
+    const learnState = midiLearnRouting.read('readBendRangeSeedRows').getMidiLearnState();
     const mpeEnabled = getMpeEnabled();
     return readLiveRegisteredStateRows().filter(({ channel }) =>
         admitsRecordedControlChange({
