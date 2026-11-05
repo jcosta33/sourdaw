@@ -382,6 +382,20 @@ describe('ClipInspector', () => {
         expect(commandMocks.executeUserAppAction).not.toHaveBeenCalled();
     });
 
+    it('follows the stored fade after a drag that returned to its start and committed nothing', () => {
+        const { rerender } = render(<ClipInspector {...defaultProps} />);
+        const slider = screen.getByLabelText('Fade in duration');
+
+        // Radix ends a drag back to its start value without a commit.
+        fireEvent.change(slider, { target: { value: '2' } });
+        fireEvent.change(slider, { target: { value: '0.5' } });
+        rerender(<ClipInspector {...defaultProps} clip={{ ...defaultProps.clip, fadeInBeats: 1 }} />);
+
+        expect(screen.getByLabelText('Fade in duration')).toHaveValue('1');
+        expect(screen.getByText('1.00 beats')).toBeInTheDocument();
+        expect(commandMocks.executeUserAppAction).not.toHaveBeenCalled();
+    });
+
     it('should render Gain section', () => {
         render(<ClipInspector {...defaultProps} />);
         expect(screen.getByText('Gain')).toBeInTheDocument();

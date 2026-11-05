@@ -45,6 +45,18 @@ function parseGainDbText(text: string): number | null {
 
 const EMPTY_METER_MAP = { changes: [] };
 
+/** An uncommitted fade drag, with the stored fade it moved away from. */
+type FadeDrag = { from: number; value: number };
+
+/**
+ * A drag shows only while the clip still holds the fade it started from. Radix
+ * commits nothing for a drag that ends where it began, so its value outlives the
+ * gesture, and an undo or collaborator edit after it must show through.
+ */
+function shownFade(drag: FadeDrag | null, stored: number): number {
+    return drag !== null && drag.from === stored ? drag.value : stored;
+}
+
 type ClipInspectorProps = {
     clip: Clip;
     trackId: string;
@@ -109,8 +121,10 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
     // drag holds local thumb state and the commit dispatches once, guarded on
     // the fades the gesture started from (the store does not move mid-drag).
     const isAudioClip = clip.type === 'audio';
-    const [fadeInDrag, setFadeInDrag] = useState<number | null>(null);
-    const [fadeOutDrag, setFadeOutDrag] = useState<number | null>(null);
+    const [fadeInDrag, setFadeInDrag] = useState<FadeDrag | null>(null);
+    const [fadeOutDrag, setFadeOutDrag] = useState<FadeDrag | null>(null);
+    const shownFadeIn = shownFade(fadeInDrag, clip.fadeInBeats);
+    const shownFadeOut = shownFade(fadeOutDrag, clip.fadeOutBeats);
 
     const commitFade = (fadeInBeats: number, fadeOutBeats: number): void => {
         setFadeInDrag(null);
@@ -305,14 +319,14 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                                 <ControlHeader
                                     className="mb-1"
                                     label="Fade In"
-                                    value={`${(fadeInDrag ?? clip.fadeInBeats).toFixed(2)} beats`}
+                                    value={`${shownFadeIn.toFixed(2)} beats`}
                                     valueClassName="text-foreground"
                                 />
                                 <Slider
-                                    value={[fadeInDrag ?? clip.fadeInBeats]}
+                                    value={[shownFadeIn]}
                                     onValueChange={([value]) => {
                                         if (value !== undefined) {
-                                            setFadeInDrag(value);
+                                            setFadeInDrag({ from: clip.fadeInBeats, value });
                                         }
                                     }}
                                     onValueCommit={([value]) => {
@@ -329,14 +343,14 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                                 <ControlHeader
                                     className="mb-1"
                                     label="Fade Out"
-                                    value={`${(fadeOutDrag ?? clip.fadeOutBeats).toFixed(2)} beats`}
+                                    value={`${shownFadeOut.toFixed(2)} beats`}
                                     valueClassName="text-foreground"
                                 />
                                 <Slider
-                                    value={[fadeOutDrag ?? clip.fadeOutBeats]}
+                                    value={[shownFadeOut]}
                                     onValueChange={([value]) => {
                                         if (value !== undefined) {
-                                            setFadeOutDrag(value);
+                                            setFadeOutDrag({ from: clip.fadeOutBeats, value });
                                         }
                                     }}
                                     onValueCommit={([value]) => {
