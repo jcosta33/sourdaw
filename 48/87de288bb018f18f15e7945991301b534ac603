@@ -1,0 +1,19 @@
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheUnpinnedRestore.spec.ts
+  s_1d4588d31724fa::t_0a7fcc057722e5 349-380
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4887de288bb018f18f15e7945991301b534ac603",
+  "prompts": {},
+  "sessions": {
+    "s_1d4588d31724fa": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_1d4588d31724fa",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
