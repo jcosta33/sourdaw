@@ -1,0 +1,24 @@
+src/modules/AiRuntime/AGENTS.md
+  s_55244eb93b97d1::t_125b19d4e11905 41
+src/modules/AiRuntime/useCases/__tests__/perceptualConstraints.spec.ts
+  s_55244eb93b97d1::t_f44bae9e8b79c5 747-750
+  s_55244eb93b97d1::t_125b19d4e11905 746,751,755,759-787
+src/modules/AiRuntime/useCases/perceptualConstraints/findExcludedDimensionEdit.ts
+  s_55244eb93b97d1::t_125b19d4e11905 204-209,222-223,226,234
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1e208f36b350607cfcc7afe92bbd7e269e5b1d10",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
