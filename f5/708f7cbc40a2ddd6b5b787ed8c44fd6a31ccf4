@@ -1,0 +1,440 @@
+.dependency-cruiser-known-violations-module-tiers.json
+  h_beb54bf43b47b7 18
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 129
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1214,1216-1217
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  h_beb54bf43b47b7 40
+src/app/__tests__/registerDeviceEnginePorts.spec.ts
+  h_beb54bf43b47b7 13-30,34,36-45,48-65,72,99-139,214-361,363,367-377,384-394,423-485
+src/app/__tests__/splitGainPointHistory.integration.spec.ts
+  h_beb54bf43b47b7 12,16,275
+src/app/registerDependencies.ts
+  h_beb54bf43b47b7 2,10,12-17
+src/app/registerDeviceEnginePorts.ts
+  h_beb54bf43b47b7 2-8,16-35,41-51,76-112,118-123,130-140
+src/infra/events/types.ts
+  h_beb54bf43b47b7 3-5
+src/modules/AiRuntime/AGENTS.md
+  h_beb54bf43b47b7 15,40
+src/modules/AiRuntime/useCases/__tests__/describePlannedAction.spec.ts
+  h_beb54bf43b47b7 16
+src/modules/AiRuntime/useCases/__tests__/measuredPreviewAudition.spec.ts
+  h_beb54bf43b47b7 189-190
+src/modules/AiRuntime/useCases/agentCatalogAudition/__tests__/agentCatalogAudition.spec.ts
+  h_beb54bf43b47b7 21,39,99-100,107-115,139,384-482
+src/modules/AiRuntime/useCases/agentCatalogAudition/applyAgentAuditionCandidate.ts
+  h_beb54bf43b47b7 2,11,26-29,85-91,106,130,142-145,150-151,154-159,186-187,207,262-263,270,274
+src/modules/AiRuntime/useCases/agentCatalogAudition/auditionAgentCatalogCandidate.ts
+  h_beb54bf43b47b7 5,10,12-13,54
+src/modules/AiRuntime/useCases/agentCatalogAudition/readCatalogCandidateBuffer.ts
+  h_beb54bf43b47b7 1-19
+src/modules/AiRuntime/useCases/agentReference/__tests__/getExplicitlyProtectedClips.spec.ts
+  h_beb54bf43b47b7 244-326
+src/modules/AiRuntime/useCases/agentReference/__tests__/readExplicitProtections.spec.ts
+  h_beb54bf43b47b7 1034-1044
+src/modules/AiRuntime/useCases/agentReference/clipProtectionReading.ts
+  h_beb54bf43b47b7 8,22,25,31-34,120,128-129,139,167,179
+src/modules/AiRuntime/useCases/agentReference/readProtectionSlots.ts
+  h_beb54bf43b47b7 6-7,82,84-98,130,137,142-143,156-157,197,202,347,349
+src/modules/AiRuntime/useCases/compilePlannedActionCommandBatch.ts
+  h_beb54bf43b47b7 1,267
+src/modules/AiRuntime/useCases/voiceToggle/voiceToggleEventBus.ts
+  h_beb54bf43b47b7 3
+src/modules/Arrangement/AGENTS.md
+  h_beb54bf43b47b7 14
+src/modules/Arrangement/handlers/__tests__/validateCreationSessionEntries.spec.ts
+  h_beb54bf43b47b7 21-25,218-250
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  h_beb54bf43b47b7 83,467,553,601,642,844,863,1108,1128,2464,2543,2608,2634,2711,2799,2846,3040,3104,3220,3327,3371,3440,3529,3577,3664,3703,3752,3859,3908,3966,3994,4011,4016,4025,4032,4092,4274,4379,4819,4895,4939,5035,5119,5171,5205,5554,5750,5957,6814,7197,7315,7402,7907,9108,9198,9332,9420,9634,9660,9724,9764,9838,9894,10076,10208,10269,10372,10429,10496
+src/modules/Arrangement/handlers/clip/__tests__/commandMetadataSourceAdmission.integration.spec.ts
+  h_beb54bf43b47b7 75,174,244,255,262,280
+src/modules/Arrangement/handlers/clip/__tests__/drawClipTakeRestore.integration.spec.ts
+  h_beb54bf43b47b7 32,133,144,199,259
+src/modules/Arrangement/handlers/clip/__tests__/handleDiscardDuplicatedClip.spec.ts
+  h_beb54bf43b47b7 10-14,119-169
+src/modules/Arrangement/handlers/clip/__tests__/handleDuplicateClip.integration.spec.ts
+  h_beb54bf43b47b7 10,24,26,44-60,86-87,354-433
+src/modules/Arrangement/handlers/clip/__tests__/handleDuplicateClipAt.integration.spec.ts
+  h_beb54bf43b47b7 1-264
+src/modules/Arrangement/handlers/clip/__tests__/handleDuplicateClipAt.spec.ts
+  h_beb54bf43b47b7 11,21-23,90,96,100-122
+src/modules/Arrangement/handlers/clip/__tests__/handleMoveClipsRipple.integration.spec.ts
+  h_beb54bf43b47b7 34,81,124
+src/modules/Arrangement/handlers/clip/__tests__/handleRemoveClip.spec.ts
+  h_beb54bf43b47b7 49,69,120,145,156
+src/modules/Arrangement/handlers/clip/__tests__/stampCreatedClipStateGuard.spec.ts
+  h_beb54bf43b47b7 1-100
+src/modules/Arrangement/handlers/clip/handleDiscardDuplicatedClip.ts
+  h_beb54bf43b47b7 11-12,44,71-77,84-87
+src/modules/Arrangement/handlers/clip/handleDuplicateClip.ts
+  h_beb54bf43b47b7 10-11,111
+src/modules/Arrangement/handlers/clip/handleDuplicateClipAt.ts
+  h_beb54bf43b47b7 2,11,15-18,36-39,114,128
+src/modules/Arrangement/handlers/clip/handleDuplicateClipToNextBar.ts
+  h_beb54bf43b47b7 9-10,77
+src/modules/Arrangement/handlers/clip/handleRemoveClip.ts
+  h_beb54bf43b47b7 24,436
+src/modules/Arrangement/handlers/clip/stampCreatedClipStateGuard.ts
+  h_beb54bf43b47b7 1-81
+src/modules/Arrangement/handlers/isGeneratedMidiStateCurrent.ts
+  h_beb54bf43b47b7 3,5,25-30,197,214
+src/modules/Arrangement/handlers/projectClipThroughPriorBatchActions.ts
+  h_beb54bf43b47b7 50-51,86,126-131,134-135,138-139,143-155,175
+src/modules/Arrangement/handlers/recording/__tests__/overdubControllerUndo.integration.spec.ts
+  h_beb54bf43b47b7 18,73-74
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.gestureCancel.spec.tsx
+  h_beb54bf43b47b7 93-101
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.selectionDrag.spec.tsx
+  h_beb54bf43b47b7 86-88,116-124
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx
+  h_beb54bf43b47b7 181-189
+src/modules/Arrangement/presentations/hooks/useTimelineInteractions.ts
+  h_beb54bf43b47b7 19,333,351,902,1007
+src/modules/Arrangement/presentations/views/__tests__/TrackContextMenu.spec.tsx
+  h_beb54bf43b47b7 5,58-59
+src/modules/Arrangement/stores/__tests__/timelineEditingStore.spec.ts
+  h_beb54bf43b47b7 1-15
+src/modules/Arrangement/stores/index.ts
+  h_beb54bf43b47b7 31-32
+src/modules/Arrangement/stores/timelineEditingStore.ts
+  h_beb54bf43b47b7 1-29
+src/modules/Arrangement/useCases/clipEditing/__tests__/placementLoopOrigin.spec.ts
+  h_beb54bf43b47b7 10,172,183,368
+src/modules/Arrangement/useCases/index.ts
+  h_beb54bf43b47b7 269-274
+src/modules/Arrangement/useCases/rippleDelete/__tests__/planRippleDelete.spec.ts
+  h_beb54bf43b47b7 7,14-15,23,50,66,78,99,162,179,203
+src/modules/Arrangement/useCases/rippleDelete/planRippleDelete.ts
+  h_beb54bf43b47b7 4,80
+src/modules/Arrangement/useCases/rippleInsert/__tests__/planRippleInsert.spec.ts
+  h_beb54bf43b47b7 11,14-15,17,28,33,38,44,50,70
+src/modules/Arrangement/useCases/rippleInsert/planRippleInsert.ts
+  h_beb54bf43b47b7 1,29
+src/modules/Arrangement/useCases/rippleMove/__tests__/planRippleMove.spec.ts
+  h_beb54bf43b47b7 4,8-9,16-17,43,50,79,88
+src/modules/Arrangement/useCases/rippleMove/planRippleMove.ts
+  h_beb54bf43b47b7 1,40
+src/modules/Arrangement/useCases/timelineEditing/__tests__/setAutomationSubLanes.spec.ts
+  h_beb54bf43b47b7 1-16,19-32
+src/modules/Arrangement/useCases/timelineEditing/__tests__/setSnapValue.spec.ts
+  h_beb54bf43b47b7 1-30
+src/modules/Arrangement/useCases/timelineEditing/__tests__/toggleRippleEditing.spec.ts
+  h_beb54bf43b47b7 1-32
+src/modules/Arrangement/useCases/timelineEditing/setAutomationSubLanes.ts
+  h_beb54bf43b47b7 1-15
+src/modules/Arrangement/useCases/timelineEditing/setSnapValue.ts
+  h_beb54bf43b47b7 1,3-8
+src/modules/Arrangement/useCases/timelineEditing/toggleRippleEditing.ts
+  h_beb54bf43b47b7 1-9
+src/modules/Arrangement/useCases/timelineInteractions/__tests__/hitTestAutomationSubLane.spec.ts
+  h_beb54bf43b47b7 6-18,36-39,41-42,64,103,137,150,194,238,283,331
+src/modules/Arrangement/useCases/timelineInteractions/hitTestAutomationSubLane.ts
+  h_beb54bf43b47b7 4,23-24,30
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/recordingCapturePlacement.integration.spec.ts
+  h_beb54bf43b47b7 3,64-65
+src/modules/AudioEngine/useCases/__tests__/exclusiveAudioBufferAudition.spec.ts
+  h_beb54bf43b47b7 3,19-20
+src/modules/AudioEngine/useCases/audioRecorder/__tests__/reconcileAutoInputMonitoring.stopGesture.integration.spec.ts
+  h_beb54bf43b47b7 3,11-12
+src/modules/AudioEngine/useCases/index.ts
+  h_beb54bf43b47b7 146-150
+src/modules/AudioEngine/useCases/livePlayback/__tests__/markAttachedCrumbsInstances.spec.ts
+  h_beb54bf43b47b7 21,27-28
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveMidiWriter.spec.ts
+  h_beb54bf43b47b7 21-22,47-48
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveMidiProgramme.spec.ts
+  h_beb54bf43b47b7 22,78-79
+src/modules/AudioEngine/useCases/livePlayback/__tests__/readAttachedEngineInstanceIds.spec.ts
+  h_beb54bf43b47b7 15,26-27
+src/modules/AudioEngine/useCases/livePlayback/captureNativeGrinderNeuralPatch.ts
+  h_beb54bf43b47b7 3-4,8
+src/modules/AudioEngine/useCases/livePlayback/engineAttachmentTracking.ts
+  h_beb54bf43b47b7 1-59
+src/modules/AudioEngine/useCases/livePlayback/markAttachedCrumbsInstances.ts
+  h_beb54bf43b47b7 25-26,28-34
+src/modules/AudioEngine/useCases/livePlayback/neuralModelContent.ts
+  h_beb54bf43b47b7 1-45
+src/modules/AudioEngine/useCases/livePlayback/readAttachedEngineInstanceIds.ts
+  h_beb54bf43b47b7 19,23-24
+src/modules/AudioEngine/useCases/offlineRender/OfflineRenderSource.ts
+  h_beb54bf43b47b7 17-45,65
+src/modules/AudioEngine/useCases/offlineRender/captureOfflineRenderProjectSource.ts
+  h_beb54bf43b47b7 8,41-42
+src/modules/Automation/useCases/modulation/__tests__/applyModulationToEngineSteppedQuantisation.spec.ts
+  h_beb54bf43b47b7 42
+src/modules/Command/AGENTS.md
+  h_beb54bf43b47b7 7
+src/modules/Command/events/CommandEvents.ts
+  h_beb54bf43b47b7 1-2
+src/modules/Command/events/index.ts
+  h_beb54bf43b47b7 1-4
+src/modules/Command/useCases/commandEventBus.ts
+  h_beb54bf43b47b7 3-4
+src/modules/CommandInterface/presentations/views/__tests__/keyboardShortcutsContract.spec.tsx
+  h_beb54bf43b47b7 93-98,388,401-474
+src/modules/CommandInterface/presentations/views/keyboardShortcutsContract.ts
+  h_beb54bf43b47b7 71-83,87-100,106-123,125-129,204,214-216,221-223
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchSwitchProjectIdentity.integration.spec.ts
+  h_beb54bf43b47b7 3,13-14
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchSwitchStopsTransport.integration.spec.ts
+  h_beb54bf43b47b7 3,17-18
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchSwitchTransportProjection.integration.spec.ts
+  h_beb54bf43b47b7 3,21-22
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/branchingPersistenceAdapter.spec.ts
+  h_beb54bf43b47b7 4,13-14
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/recordingTerminalRealBranches.integration.spec.ts
+  h_beb54bf43b47b7 6,59-60
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/switchSanitizedPeerBranch.integration.spec.ts
+  h_beb54bf43b47b7 4,15-16
+src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx
+  h_beb54bf43b47b7 12,14,100,270
+src/modules/ElasticAudio/presentations/views/__tests__/ElasticEditorPanel.spec.tsx
+  h_beb54bf43b47b7 23,63,112-113,134-135,259,502,526
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/quantizeTransients.spec.ts
+  h_beb54bf43b47b7 9,29-33,66
+src/modules/ElasticAudio/useCases/elasticAudio/quantizeTransients.ts
+  h_beb54bf43b47b7 1,40,58
+src/modules/GrandBoule/presentations/views/__tests__/GrandBoulePanelMidiSubscription.spec.tsx
+  h_beb54bf43b47b7 56-58
+src/modules/GrandBoule/useCases/grandBouleEventBus.ts
+  h_beb54bf43b47b7 4
+src/modules/GrandBoule/useCases/midiEventSubscribers/onMidiNoteOff.ts
+  h_beb54bf43b47b7 2
+src/modules/GrandBoule/useCases/midiEventSubscribers/onMidiNoteOn.ts
+  h_beb54bf43b47b7 2
+src/modules/GrandBoule/useCases/midiEventSubscribers/onMidiPedalCc.ts
+  h_beb54bf43b47b7 2
+src/modules/Grinder/presentations/views/__tests__/GrinderDisclosure.integration.spec.tsx
+  h_beb54bf43b47b7 4,24-25
+src/modules/Grinder/useCases/__tests__/setGrinderPanelUiLevel.spec.ts
+  h_beb54bf43b47b7 4,34-35
+src/modules/MIDI/AGENTS.md
+  h_beb54bf43b47b7 7
+src/modules/MIDI/events/MidiEvents.ts
+  h_beb54bf43b47b7 1-19
+src/modules/MIDI/events/index.ts
+  h_beb54bf43b47b7 3-4
+src/modules/MIDI/useCases/__tests__/resolveMidiNoteArticulationId.spec.ts
+  h_beb54bf43b47b7 3-4,7-8
+src/modules/MIDI/useCases/__tests__/serializeMidiStateForClips.spec.ts
+  h_beb54bf43b47b7 76-112
+src/modules/MIDI/useCases/articulationIdResolvers.ts
+  h_beb54bf43b47b7 1-62
+src/modules/MIDI/useCases/index.ts
+  h_beb54bf43b47b7 117-120
+src/modules/MIDI/useCases/midiClipData/__tests__/projectMidiClipDataThroughRestores.spec.ts
+  h_beb54bf43b47b7 1-116
+src/modules/MIDI/useCases/midiClipData/projectMidiClipDataThroughRestores.ts
+  h_beb54bf43b47b7 1-76
+src/modules/MIDI/useCases/midiNoteTransforms/projectMidiNotesByClipIdThroughRestores.ts
+  h_beb54bf43b47b7 50-57
+src/modules/MIDI/useCases/resolveMidiNoteArticulationId.ts
+  h_beb54bf43b47b7 1,12-16,22,25-26
+src/modules/MIDI/useCases/serializeMidiStateForClips.ts
+  h_beb54bf43b47b7 1-2,5-26,29,32,42-43,46-47
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOn.spec.ts
+  h_beb54bf43b47b7 77-88
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  h_beb54bf43b47b7 77
+src/modules/MIDI/useCases/webMidiInput/__tests__/stopHeldMidiNote.integration.spec.ts
+  h_beb54bf43b47b7 3,61-62
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  h_beb54bf43b47b7 32,444-446
+src/modules/MIDI/useCases/webMidiInput/setWebMidiRuntimeEventBus.ts
+  h_beb54bf43b47b7 3-13,19
+src/modules/MIDI/useCases/webMidiInput/velocityCalibration.ts
+  h_beb54bf43b47b7 1-46
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  h_beb54bf43b47b7 284-286
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/projectSessionPluginRetirement.integration.spec.ts
+  h_beb54bf43b47b7 47-50
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  h_beb54bf43b47b7 40-42
+src/modules/Project/useCases/__tests__/canonicalTrackRoles.spec.ts
+  h_beb54bf43b47b7 3,12-13
+src/modules/Project/useCases/__tests__/productionBrief.spec.ts
+  h_beb54bf43b47b7 3,122,136
+src/modules/Project/useCases/__tests__/repairProjectData.recording.integration.spec.ts
+  h_beb54bf43b47b7 3,26-27
+src/modules/Project/useCases/demoProjects/nebulaDrift/createNebulaDriftDemo.ts
+  h_beb54bf43b47b7 39,200
+src/modules/Project/useCases/doesProductionBriefAllowActionBatch.ts
+  h_beb54bf43b47b7 1,36
+src/modules/Project/useCases/getCanonicalTrackRole.ts
+  h_beb54bf43b47b7 13-14,388
+src/modules/Project/useCases/index.ts
+  h_beb54bf43b47b7 49-52
+src/modules/Project/useCases/projectPersistence/__tests__/nativeTimelineMaterialRetirement.integration.spec.ts
+  h_beb54bf43b47b7 18
+src/modules/Project/useCases/projectPersistence/__tests__/projectSessionQuiescer.spec.ts
+  h_beb54bf43b47b7 10,20,73
+src/modules/Project/useCases/projectPersistence/__tests__/quiesceProjectSession.spec.ts
+  h_beb54bf43b47b7 9,26
+src/modules/Project/useCases/projectPersistence/durableOwnership/__tests__/savedAudioCollectionRace.integration.spec.ts
+  h_beb54bf43b47b7 228,241,261
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  h_beb54bf43b47b7 3,27-28
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/buildProjectData.spec.ts
+  h_beb54bf43b47b7 103-104,107-111
+src/modules/Project/useCases/projectPersistence/fileIO/buildProjectData.ts
+  h_beb54bf43b47b7 38,236
+src/modules/Project/useCases/projectPersistence/fileIO/rackProcessorReader.ts
+  h_beb54bf43b47b7 1-49
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/resetCrdtProjectWithTransportStopped.recording.integration.spec.ts
+  h_beb54bf43b47b7 3,38-39
+src/modules/Project/useCases/projectPersistence/projectSessionQuiescer.ts
+  h_beb54bf43b47b7 4,44,105
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.audioDurability.integration.spec.ts
+  h_beb54bf43b47b7 168,182,200
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.projectDirectory.integration.spec.ts
+  h_beb54bf43b47b7 443-444,639-640
+src/modules/Project/useCases/projectTemplates/templateFiles/__tests__/stringOrchestra.spec.ts
+  h_beb54bf43b47b7 3,20-21
+src/modules/Project/useCases/projectTemplates/templateFiles/__tests__/templateDeviceDescriptorCensus.spec.ts
+  h_beb54bf43b47b7 20,40
+src/modules/Project/useCases/projectTemplates/templateFiles/stringOrchestra.ts
+  h_beb54bf43b47b7 8,54,60
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/configureYeastArpeggiator.spec.ts
+  h_beb54bf43b47b7 16-17,20-28
+src/modules/Project/useCases/projectTemplates/templateHelpers/configureYeastArpeggiator.ts
+  h_beb54bf43b47b7 1,35-36,38,41-44,46
+src/modules/Project/useCases/projectTemplates/templateHelpers/templateArpeggiatorAuthoring.ts
+  h_beb54bf43b47b7 1-57
+src/modules/Project/useCases/projectTemplates/templateHelpers/templateDeviceContent.ts
+  h_beb54bf43b47b7 1-54
+src/modules/Project/useCases/storedDrumVoices.ts
+  h_beb54bf43b47b7 1-50
+src/modules/SampleLibrary/AGENTS.md
+  h_beb54bf43b47b7 15
+src/modules/SampleLibrary/useCases/__tests__/resolveAgentCatalogCandidate.spec.ts
+  h_beb54bf43b47b7 9,12,59,133-178,196,219
+src/modules/SampleLibrary/useCases/resolveAgentCatalogCandidate.ts
+  h_beb54bf43b47b7 12,16-18,23-25,28-31,40,53-72,81-82,89
+src/modules/Setlist/useCases/setlist/__tests__/setSetlistEventBus.spec.ts
+  h_beb54bf43b47b7 5
+src/modules/Setlist/useCases/setlist/setlistEventBus.ts
+  h_beb54bf43b47b7 1
+src/modules/TimelineEditor/presentations/helpers/__tests__/audibleNoteWindow.spec.ts
+  h_beb54bf43b47b7 1-48
+src/modules/TimelineEditor/presentations/helpers/audibleNoteWindow.ts
+  h_beb54bf43b47b7 1-52
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollRenderer.spec.ts
+  h_beb54bf43b47b7 12-22,435-559
+src/modules/TimelineEditor/presentations/hooks/usePianoRollInteractions.ts
+  h_beb54bf43b47b7 54,135,159,161-162
+src/modules/TimelineEditor/presentations/hooks/usePianoRollRenderer.ts
+  h_beb54bf43b47b7 64,373-376,832-903
+src/modules/TimelineEditor/presentations/views/AutomationView/AutomationLaneRow.tsx
+  h_beb54bf43b47b7 4,127
+src/modules/TimelineEditor/presentations/views/AutomationView/__tests__/AutomationLaneRow.spec.tsx
+  h_beb54bf43b47b7 30-37,39,41-42,121-134,144,195
+src/modules/TimelineEditor/presentations/views/AutomationView/__tests__/AutomationLaneRowPlayheadReadout.spec.tsx
+  h_beb54bf43b47b7 20-26,28-30,35-43,48-53
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/AutomationLane.spec.tsx
+  h_beb54bf43b47b7 80
+src/modules/Transport/useCases/__tests__/repairRuntimeGraphFromProject.autoMonitoring.spec.ts
+  h_beb54bf43b47b7 3,11-12
+src/modules/Transport/useCases/__tests__/repairRuntimeGraphFromProject.optimisticRestore.integration.spec.ts
+  h_beb54bf43b47b7 5,36-37
+src/modules/Transport/useCases/__tests__/repairRuntimeGraphFromProject.spec.ts
+  h_beb54bf43b47b7 3,9-10
+src/modules/Transport/useCases/index.ts
+  h_beb54bf43b47b7 11-15
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWindow.integration.spec.ts
+  h_beb54bf43b47b7 5-7,14-15,17,24-33
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWitnessInputs.integration.spec.ts
+  h_beb54bf43b47b7 5,56-57
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchPausePlayCommand.integration.spec.ts
+  h_beb54bf43b47b7 6,60-61
+src/modules/Transport/useCases/playheadScheduler/prepareInitialBrowserPlayback.ts
+  h_beb54bf43b47b7 11,58-61,95,111
+src/modules/Transport/useCases/repairRuntimeGraphFromProject.ts
+  h_beb54bf43b47b7 3,46
+src/modules/Transport/useCases/scheduling/__tests__/processLiveYeastTrackBlock.spec.ts
+  h_beb54bf43b47b7 4,8,11-18
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  h_beb54bf43b47b7 3,50-51
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesChannelBend.spec.ts
+  h_beb54bf43b47b7 3,24-25
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastContentOffset.spec.ts
+  h_beb54bf43b47b7 15,21-22,25-37
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastGrooveWindowAdmission.spec.ts
+  h_beb54bf43b47b7 15,21-22,25-37,71
+src/modules/Transport/useCases/scheduling/kitSwing.ts
+  h_beb54bf43b47b7 1-45
+src/modules/Transport/useCases/scheduling/liveMidiProcessor.ts
+  h_beb54bf43b47b7 1-102
+src/modules/Transport/useCases/scheduling/processLiveYeastTrackBlock.ts
+  h_beb54bf43b47b7 29-30,248,311-312,337,477
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  h_beb54bf43b47b7 69,937
+src/modules/Transport/useCases/transportControls/__tests__/panicAllNotes.spec.ts
+  h_beb54bf43b47b7 33-39
+src/modules/Transport/useCases/transportControls/__tests__/pausePlayback.spec.ts
+  h_beb54bf43b47b7 4,14,18-22
+src/modules/Transport/useCases/transportControls/__tests__/pauseStart.spec.ts
+  h_beb54bf43b47b7 3-4,13-14
+src/modules/Transport/useCases/transportControls/__tests__/seekPlayhead.spec.ts
+  h_beb54bf43b47b7 4,15,19-23
+src/modules/Transport/useCases/transportControls/__tests__/stopPlayback.spec.ts
+  h_beb54bf43b47b7 5,15,19-23
+src/modules/Transport/useCases/transportControls/__tests__/transportControl.spec.ts
+  h_beb54bf43b47b7 3-4,9-10
+src/modules/Transport/useCases/transportControls/notePanicParticipants.ts
+  h_beb54bf43b47b7 1-66
+src/modules/Transport/useCases/transportControls/panicAllNotes.ts
+  h_beb54bf43b47b7 4,27-28,34-36
+src/modules/Transport/useCases/transportControls/panicYeastRuntime.ts
+  h_beb54bf43b47b7 2-3,13
+src/modules/WorkspaceShell/presentations/views/TransportBar.tsx
+  h_beb54bf43b47b7 13-19,90
+src/modules/WorkspaceShell/presentations/views/__tests__/midiPermissionRecovery.integration.spec.tsx
+  h_beb54bf43b47b7 6
+src/modules/WorkspaceShell/useCases/__tests__/automationSubLanes.spec.ts
+  h_beb54bf43b47b7 8-20,22-23,28-29,32,35,41,45,49,53,57
+src/modules/WorkspaceShell/useCases/__tests__/rippleEditing.spec.ts
+  h_beb54bf43b47b7 5-7,9-10,16,19-20
+src/modules/WorkspaceShell/useCases/automationSubLanes/__tests__/automationLanes.spec.ts
+  h_beb54bf43b47b7 8,12-17,28,36,44
+src/modules/WorkspaceShell/useCases/automationSubLanes/__tests__/helpers.spec.ts
+  h_beb54bf43b47b7 3-4,6-8,15,18,21
+src/modules/WorkspaceShell/useCases/automationSubLanes/__tests__/removeAutomationSubLane.spec.ts
+  h_beb54bf43b47b7 3-5,7-16,23,27,31,35,40,43-44,48
+src/modules/WorkspaceShell/useCases/automationSubLanes/__tests__/swapAutomationSubLaneParam.spec.ts
+  h_beb54bf43b47b7 3-5,7-16,23,27,31,36,45,50,53-54,58
+src/modules/WorkspaceShell/useCases/automationSubLanes/addAutomationSubLane.ts
+  h_beb54bf43b47b7 1,6
+src/modules/WorkspaceShell/useCases/automationSubLanes/helpers.ts
+  h_beb54bf43b47b7 1,4
+src/modules/WorkspaceShell/useCases/automationSubLanes/removeAutomationSubLane.ts
+  h_beb54bf43b47b7 1,6
+src/modules/WorkspaceShell/useCases/automationSubLanes/swapAutomationSubLaneParam.ts
+  h_beb54bf43b47b7 1,6
+src/modules/WorkspaceShell/useCases/rippleEditing.ts
+  h_beb54bf43b47b7 1,4
+src/modules/WorkspaceShell/useCases/togglePanel/panelToggles/__tests__/setSnapValue.spec.ts
+  h_beb54bf43b47b7 6,9-10,18,21
+src/modules/WorkspaceShell/useCases/togglePanel/panelToggles/setSnapValue.ts
+  h_beb54bf43b47b7 1,4
+src/modules/WorkspaceShell/useCases/workspaceEventBus.ts
+  h_beb54bf43b47b7 3-5
+src/modules/WorkspaceShell/useCases/workspaceQueries/helpers.ts
+  h_beb54bf43b47b7 8
+tests/e2e/audioOwnership.native.spec.ts
+  h_beb54bf43b47b7 106-111,120,234-238,241,250
+tests/e2e/nativeButtonKeyboardActivation.spec.ts
+  h_beb54bf43b47b7 85-145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f5708f7cbc40a2ddd6b5b787ed8c44fd6a31ccf4",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
