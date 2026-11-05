@@ -41,8 +41,10 @@ request; every other workflow shapes PR CI and keeps its own route. Root lint, f
 and module-boundary configuration (the dependency-cruiser rules and known-violation baselines,
 Prettier, EditorConfig, oxlint and ESLint configs and baselines, knip, and the lint-only
 `tsconfig.eslint.json`) also keeps the broad profile without a browser suite: only those tools read
-it, and the lint and boundary jobs are where it can fail. Other TypeScript projects, Vite, Playwright,
-and `.gitignore`, which Tailwind's source detection reads, stay on the product route. Generator and
+it, and the lint and boundary jobs are where it can fail. Tailwind takes class names only from
+`src/` and `index.html`, the sources `src/styles/main.css` names explicitly, so neither these files
+nor any other tooling path reaches the stylesheet. Other TypeScript projects, Vite, Playwright, and
+`.gitignore`, which filters Tailwind's scan of those sources, stay on the product route. Generator and
 build scripts reach the browser only through their outputs, which land under `src/` or `public/` and
 select browser coverage there; a harness helper the browser imports from `scripts/` is proved by the
 nightly full train. Vitest-collected spec files under `src/` likewise select no browser suite and

@@ -2374,6 +2374,8 @@ describe('repository tooling selects no browser suite', () => {
         '.oxlintrc.json',
         'eslint.config.mjs',
         'eslint.size-baseline.mjs',
+        'eslint.size-baseline.d.mts',
+        'oxlint.craft-baseline.mjs',
         'oxlint.craft-baseline.d.mts',
         'knip.json',
         'tsconfig.eslint.json',
@@ -2420,6 +2422,8 @@ describe('repository tooling selects no browser suite', () => {
         'config/.oxlintrc.json',
         '.dependency-cruiser.cjs.bak',
         '.dependency-cruiserx/rules.cjs',
+        'src/.dependency-cruiser.cjs',
+        'config/.dependency-cruiser-known-violations.json',
     ])('retains full browser coverage for %s', (path) => {
         const plan = selectValidationPlan([path], INVENTORY);
         expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });

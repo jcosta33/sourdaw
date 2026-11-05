@@ -33,8 +33,9 @@ function isAgentCampaignEvidence(path: string): boolean {
 
 /**
  * Root lint, format, dead-code, and module-boundary configuration is read only by those tools: no
- * Vite build, dev server, Playwright configuration, or spec loads it, and the broad profile's lint
- * and boundary jobs are where a change to it can fail. TypeScript project files stay on the product
+ * Vite build, dev server, Playwright configuration, or spec loads it, Tailwind scans only the
+ * sources src/styles/main.css names, and the broad profile's lint and boundary jobs are where a
+ * change to it can fail. TypeScript project files stay on the product
  * route, because the build reads them, except the lint-only project nothing else extends.
  */
 const STATIC_ANALYSIS_CONFIG = new Set([
