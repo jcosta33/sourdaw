@@ -171,10 +171,12 @@ const guardedPayloadContractCases = [
             trackId: 'track-1',
             busId: 'bus-1',
             level: 1,
+            preFader: true,
             expectedLevel: 0,
             expectedPreFader: false,
         },
         invalidPayloads: [
+            { trackId: 'track-1', busId: 'bus-1', level: 0.5, preFader: 'yes' },
             { trackId: '', busId: 'bus-1', level: 0.5 },
             { trackId: 'track-1', busId: '', level: 0.5 },
             { trackId: 'track-1', busId: 'track-1', level: 0.5 },

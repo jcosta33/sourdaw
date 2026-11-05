@@ -35,7 +35,7 @@ export function removeSend(
     // The store update only removes the send from project truth — the live send
     // GainNode stays wired into the bus, so audio keeps summing to it after the
     // UI shows the send gone (and the stale path replicates to peers). Disconnect
-    // it through the engine, mirroring setSend / toggleSendPreFader which also
+    // it through the engine, mirroring setSend, which also
     // pair the store write with the engine pass-through.
     let runtimeEffectFinalized = false;
     function finalizeRuntimeEffect(): void {

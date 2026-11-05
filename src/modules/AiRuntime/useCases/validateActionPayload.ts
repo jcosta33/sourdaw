@@ -1038,7 +1038,16 @@ const validators = {
     createFolder: 'unchecked',
     setSend: (param): param is PayloadOf<'setSend'> =>
         isObj(param) &&
-        hasOnlyKeys(param, ['trackId', 'busId', 'level', 'levelDb', 'deltaDb', 'expectedLevel', 'expectedPreFader']) &&
+        hasOnlyKeys(param, [
+            'trackId',
+            'busId',
+            'level',
+            'levelDb',
+            'deltaDb',
+            'preFader',
+            'expectedLevel',
+            'expectedPreFader',
+        ]) &&
         Object.hasOwn(param, 'trackId') &&
         Object.hasOwn(param, 'busId') &&
         isNonEmptyString(param.trackId) &&
@@ -1050,6 +1059,7 @@ const validators = {
             isInRange(value, SEND_LEVEL_LAW.floorDb, SEND_LEVEL_LAW.ceilingDb)
         ) &&
         isOptionalOwn(param, 'deltaDb', isLevelDelta) &&
+        isOptionalOwn(param, 'preFader', (value): value is boolean => typeof value === 'boolean') &&
         isOptionalOwn(param, 'expectedLevel', (value): value is number => isInRange(value, 0, 1)) &&
         isOptionalOwn(param, 'expectedPreFader', (value): value is boolean => typeof value === 'boolean'),
     addSend: (param): param is PayloadOf<'addSend'> =>

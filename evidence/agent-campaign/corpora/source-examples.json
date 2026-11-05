@@ -28,8 +28,8 @@
             "id": "EX-02",
             "disposition": "recovered",
             "spec": "src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts",
-            "actionTypes": ["automateTrackGainRange"],
-            "risk": ["authority-sensitive"]
+            "actionTypes": ["addDevice", "setDeviceParameter", "automateTrackGainRange"],
+            "risk": ["bounded-reversible", "bounded-reversible", "authority-sensitive"]
         },
         {
             "id": "EX-03",

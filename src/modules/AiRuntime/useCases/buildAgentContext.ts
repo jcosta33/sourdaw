@@ -63,7 +63,6 @@ const LOCAL_CAPABILITY_KIND = {
     midiOverlapTransformCapability: 'project',
     sharedVocalFxBusesCapability: 'project',
     syncopatedArpeggioCapability: 'project',
-    wholeProjectVibeMixCapability: 'project',
     creativeInterpretationCatalog: 'creative',
 } as const satisfies Record<keyof LlmActionCapabilityData, 'request' | 'project' | 'creative'>;
 

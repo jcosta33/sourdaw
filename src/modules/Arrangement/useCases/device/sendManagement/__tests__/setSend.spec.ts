@@ -92,8 +92,8 @@ describe('setSend', () => {
             sends: [{ busId: 'bus1', level: 0.1, preFader: true }],
         });
 
-        // Try to change level, passing false for preFader but it should stay true
-        setSend('t1', 'bus1', 0.8, false);
+        // An omitted tap point keeps the stored one
+        setSend('t1', 'bus1', 0.8);
 
         const updateCall = mocks.updateTrack.mock.calls[0];
         if (!updateCall) {
@@ -105,6 +105,26 @@ describe('setSend', () => {
         });
 
         expect(mocks.engineSetSend).toHaveBeenCalledWith('t1', 'bus1', 0.8, true);
+    });
+
+    it('moves an existing send to the explicitly requested tap point', () => {
+        mocks.getTrackById.mockReturnValue({
+            id: 't1',
+            kind: 'audio',
+            sends: [{ busId: 'bus1', level: 0.1, preFader: true }],
+        });
+
+        setSend('t1', 'bus1', 0.1, false);
+
+        const updateCall = mocks.updateTrack.mock.calls[0];
+        if (!updateCall) {
+            throw new Error('expected updateTrack to have been called');
+        }
+        const updater = updateCall[1];
+        expect(updater({ sends: [{ busId: 'bus1', level: 0.1, preFader: true }] })).toEqual({
+            sends: [{ busId: 'bus1', level: 0.1, preFader: false }],
+        });
+        expect(mocks.engineSetSend).toHaveBeenCalledWith('t1', 'bus1', 0.1, false);
     });
 
     it('rejects dormant VCA send creation before project or engine work', () => {

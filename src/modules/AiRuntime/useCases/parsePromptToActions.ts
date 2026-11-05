@@ -73,7 +73,6 @@ import { getMidiOverlapTransformPromptScope } from './agentReference/getMidiOver
 import { getSharedVocalFxBusesPromptScope } from './agentReference/getSharedVocalFxBusesPromptScope';
 import { getSidechainRoutingPromptScope } from './agentReference/getSidechainRoutingPromptScope';
 import { getSyncopatedArpeggioPromptScope } from './agentReference/getSyncopatedArpeggioPromptScope';
-import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
 import { proposalCommandShape } from './agentReference/proposalCommandShape';
 import { proposalProtection } from './agentReference/proposalProtection';
 import { readExplicitProtections } from './agentReference/readExplicitProtections';
@@ -819,14 +818,7 @@ const planPromptIntent = inject({ logger })(
                     : getSyncopatedArpeggioPromptScope(context, projectRevision);
                 const syncopatedArpeggioCapability =
                     syncopatedArpeggioScope?.status === 'request' ? syncopatedArpeggioScope.capability : undefined;
-                const wholeProjectVibeMixScope = readonly
-                    ? null
-                    : getWholeProjectVibeMixScope(context, projectRevision);
-                const wholeProjectVibeMixCapability = wholeProjectVibeMixScope?.capability;
-                const workflowMetricScopes = prepareWorkflowMetricScopes({
-                    sidechain: sidechainRoutingScope,
-                    wholeProject: wholeProjectVibeMixScope,
-                });
+                const workflowMetricScopes = prepareWorkflowMetricScopes({ sidechain: sidechainRoutingScope });
                 const creativeCatalog = readonly
                     ? undefined
                     : prepareCreativeInterpretationCatalog({
@@ -903,7 +895,6 @@ const planPromptIntent = inject({ logger })(
                                       sharedVocalFxBusesCapability,
                                       stemImportCapability: stemImportScope?.capability,
                                       syncopatedArpeggioCapability,
-                                      wholeProjectVibeMixCapability,
                                   },
                         validationFailures: agentRun?.errors.map((error) => ({ code: error.code })),
                         rejectionEvidence: correction?.rejectionEvidence,

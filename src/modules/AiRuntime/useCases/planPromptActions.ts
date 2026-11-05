@@ -17,7 +17,6 @@ import { admitBoundedAgentCorrection } from './admitBoundedAgentCorrection';
 import { normalizeAgentFailure } from './agentErrorAndSaga';
 import { createStemImportPromptScope } from './agentReference/createStemImportPromptScope';
 import { preparedStemImportCleanup } from './agentReference/discardPreparedStemImportResources';
-import { getWholeProjectVibeMixScope } from './agentReference/getWholeProjectVibeMixScope';
 import { prepareStemImport } from './agentReference/prepareStemImport';
 import { preparedStemImportResources } from './agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from './agentRunLifecycle';
@@ -376,16 +375,6 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
     }
     if (stemImportScope && !result.actions.some((action) => action.type === 'importStemSet')) {
         await discardStemImportScope();
-    }
-
-    const wholeProjectVibeMixScope =
-        input.profile === 'readonly-answer' ? undefined : getWholeProjectVibeMixScope(context, projectRevision);
-    const wholeProjectVibeMixAction = result.actions.find((action) => action.type === 'automateTrackGainRange');
-    if (wholeProjectVibeMixScope && wholeProjectVibeMixAction) {
-        result.wholeProjectVibeMixPlan = {
-            ...wholeProjectVibeMixScope.plan,
-            commandBatch: [wholeProjectVibeMixAction],
-        };
     }
 
     if (input.signal?.aborted !== true && result.actions.length > 0 && captureProjectRevision() !== projectRevision) {

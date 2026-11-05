@@ -94,7 +94,6 @@ export const sizeBaselineFiles = [
     'src/modules/AiRuntime/useCases/agentReference/getMidiOverlapTransformPromptScope.ts',
     'src/modules/AiRuntime/useCases/agentReference/getSharedVocalFxBusesPromptScope.ts',
     'src/modules/AiRuntime/useCases/agentReference/getSidechainRoutingPromptScope.ts',
-    'src/modules/AiRuntime/useCases/agentReference/getWholeProjectVibeMixScope.ts',
     'src/modules/AiRuntime/useCases/agentReference/isAgentReferenceCapabilityCandidate.ts',
     'src/modules/AiRuntime/useCases/agentReference/prepareStemImport.ts',
     'src/modules/AiRuntime/useCases/agentReference/registerPreparedStemImportResources.ts',

@@ -11,7 +11,6 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { type ProjectContext } from '../models/ProjectContext';
 import { type ProposalProtectionFacts } from '../models/ProposalGroundingBasis';
-import { type WholeProjectVibeMixPlan } from '../models/WholeProjectVibeMixPlan';
 import { type WorkflowCapabilityId } from '../models/WorkflowCapability';
 import { PROPOSAL_DECIBEL_FORMAT } from '../transformers/proposalDecibelFormat';
 import { unionProtectedObjects } from '../transformers/unionProtectedObjects';
@@ -24,7 +23,6 @@ type DescribePendingActionConfirmationInput = {
     actions: readonly AppAction[];
     context: ProjectContext;
     prompt: string;
-    wholeProjectVibeMixPlan?: WholeProjectVibeMixPlan;
     workflowCapabilityId?: WorkflowCapabilityId;
     /** Objects a refinement's chain protects beyond those this request's own text protects. */
     inheritedProtectedUnchanged?: ReadonlyArray<{ id: string; name: string }>;
@@ -134,20 +132,6 @@ function describeDeviceParameterAction(
     }
     const deviceName = device.name ?? device.type;
     return `Set "${owner.name}" (${owner.id}) device "${deviceName}" (${device.id}, ${device.type}) parameter "${parameter.name}" (${parameter.id}) from ${formatParameterValue(previousValue, parameter.unit)} to ${formatParameterValue(action.payload.value, parameter.unit)}`;
-}
-
-function describeWholeProjectVibeMixPlan(plan: WholeProjectVibeMixPlan): string {
-    let previous = 'none';
-    if (plan.sectionMap.previous) {
-        previous = `"${plan.sectionMap.previous.name}" (${plan.sectionMap.previous.id})`;
-    }
-    let next = 'none';
-    if (plan.sectionMap.next) {
-        next = `"${plan.sectionMap.next.name}" (${plan.sectionMap.next.id})`;
-    }
-    const roles = plan.trackRoles.map((track) => `- ${track.role}: "${track.trackName}" (${track.trackId})`).join('\n');
-    const decisions = plan.acceptedDecisions.map((decision) => `- ${decision}`).join('\n');
-    return `Whole-project plan (schema ${String(plan.schemaVersion)}, revision ${plan.baseRevision}):\n\nProduction vision: ${plan.productionVision}\n\nSection map: target "${plan.sectionMap.target.name}" (${plan.sectionMap.target.id}) beats ${String(plan.sectionMap.target.startBeat)}–${String(plan.sectionMap.target.endBeat)}; previous ${previous}; next ${next}.\n\nTrack roles:\n${roles}\n\nDynamic trajectory: preserve before beat ${String(plan.dynamicTrajectory.startBeat)}, lift impact buses by ${String(plan.dynamicTrajectory.gainDb)} dB through beat ${String(plan.dynamicTrajectory.endBeat)}, then restore current gain.\n\nMix strategy: routing ${plan.strategy.routing}; devices ${plan.strategy.devices}; automation ${plan.strategy.automation}\n\nAccepted decisions:\n${decisions}`;
 }
 
 function describeExactAction(action: AppAction, actions: readonly AppAction[], context: ProjectContext): string {
@@ -309,7 +293,6 @@ export function describePendingActionConfirmation({
     actions,
     context,
     prompt,
-    wholeProjectVibeMixPlan,
     workflowCapabilityId,
     inheritedProtectedUnchanged = [],
     requestProtectionFacts,
@@ -345,7 +328,6 @@ export function describePendingActionConfirmation({
                 actions,
                 context,
                 prompt,
-                wholeProjectVibeMixPlan,
                 workflowCapabilityId,
             }),
         inheritedProtectedUnchanged
@@ -357,10 +339,6 @@ export function describePendingActionConfirmation({
     const affectedSummary = affectedIds.join(', ');
     const riskReason = risk.reason ? ` — ${risk.reason}` : '';
     const protectedLine = protectedSummary ? `\n\nProtected unchanged: ${protectedSummary}` : '';
-    let planSummary = '';
-    if (wholeProjectVibeMixPlan) {
-        planSummary = `${describeWholeProjectVibeMixPlan(wholeProjectVibeMixPlan)}\n\n`;
-    }
-    const content = `${planSummary}This prompt requires confirmation before execution.\n\nRisk: ${risk.level}${riskReason}\n\nIntended changes:\n${intendedChanges}\n\nAffected IDs: ${affectedSummary}${protectedLine}`;
+    const content = `This prompt requires confirmation before execution.\n\nRisk: ${risk.level}${riskReason}\n\nIntended changes:\n${intendedChanges}\n\nAffected IDs: ${affectedSummary}${protectedLine}`;
     return { actionLabels, affectedIds, risk, protectedUnchanged, content };
 }
