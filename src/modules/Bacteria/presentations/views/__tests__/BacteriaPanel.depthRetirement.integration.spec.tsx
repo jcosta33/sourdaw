@@ -155,8 +155,14 @@ describe('Bacteria Breakdown Depth retirement', () => {
         await openShape();
 
         expect(await screen.findByRole('slider', { name: 'Drive' })).toBeVisible();
+        expect(screen.getByRole('slider', { name: 'Asym' })).toBeVisible();
         expect(screen.getByRole('button', { name: 'breakdown' })).toHaveAttribute('aria-pressed', 'true');
-        expect(screen.queryByRole('slider', { name: 'Depth' })).not.toBeInTheDocument();
+
+        // The retired control wrote `breakdownDepth` and rendered beside Drive
+        // and Asym. Its knob label was "Depth" while the descriptor labels the
+        // parameter "Breakdown", so bind both names: a probe for either literal
+        // alone passes when the control returns under the other.
+        expect(screen.queryByRole('slider', { name: /breakdown|depth/i })).not.toBeInTheDocument();
 
         expect(getBacteriaState(DEVICE_ID).patch.bands[0]).toMatchObject({
             distortionMode: 'breakdown',
@@ -198,7 +204,7 @@ describe('Bacteria Breakdown Depth retirement', () => {
         expect(screen.getByRole('slider', { name: 'Rate div' })).toBeVisible();
         fireEvent.click(breakdown);
         await waitFor(() => expect(breakdown).toHaveAttribute('aria-pressed', 'true'));
-        expect(screen.queryByRole('slider', { name: 'Depth' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('slider', { name: /breakdown|depth/i })).not.toBeInTheDocument();
         await waitFor(() => expectLegacyValues(rawParameterValues()));
     });
 
