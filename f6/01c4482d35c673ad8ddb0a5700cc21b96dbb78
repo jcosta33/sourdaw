@@ -1,0 +1,25 @@
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_fec7059b7a251c::t_364ca9dea01716 500-501
+  s_fec7059b7a251c::t_acbf1d3acc65e7 507
+  s_fec7059b7a251c::t_accd113121c39d 34
+  s_fec7059b7a251c::t_6bd70ce692ef36 487-499,502-506,508-517,519-524
+  s_fec7059b7a251c::t_65d9225b357df0 518
+  s_fec7059b7a251c::t_69eb3d06852ef0 133-137
+  s_fec7059b7a251c::t_0c0123be63a1dd 484-486
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f601c4482d35c673ad8ddb0a5700cc21b96dbb78",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
