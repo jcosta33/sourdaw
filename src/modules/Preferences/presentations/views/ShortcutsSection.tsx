@@ -94,9 +94,13 @@ const FALLBACK_STATE: ShortcutStoreState = {
 export const ShortcutsSection = (): ReactElement => {
     const state = useStore<ShortcutStoreState>(shortcutStore, FALLBACK_STATE);
     const [editingId, setEditingId] = useState<string | null>(null);
+    // A captured combo that another command holds waits on the reassignment
+    // prompt. The capture stays open until that answer is applied, and stops
+    // listening meanwhile so the prompt's own keys reach it.
+    const [assigning, setAssigning] = useState(false);
 
     useEffect(() => {
-        if (!editingId) {
+        if (!editingId || assigning) {
             return undefined;
         }
         // Capture phase on window, ahead of the global shortcut listener and the
@@ -107,16 +111,20 @@ export const ShortcutsSection = (): ReactElement => {
             if (CAPTURE_IGNORED_KEYS.includes(event.key)) {
                 return;
             }
-            setEditingId(null);
             if (isCaptureCancel(event)) {
+                setEditingId(null);
                 return;
             }
-            void assignShortcut(editingId, shortcutComboFromKeyPress(event, currentKeyboardLayoutMap()));
+            setAssigning(true);
+            void assignShortcut(editingId, shortcutComboFromKeyPress(event, currentKeyboardLayoutMap())).finally(() => {
+                setAssigning(false);
+                setEditingId(null);
+            });
         };
         void loadKeyboardLayoutMap();
         window.addEventListener('keydown', handleKey, true);
         return () => window.removeEventListener('keydown', handleKey, true);
-    }, [editingId]);
+    }, [editingId, assigning]);
 
     // Group definitions by category and sort stably within each.
     const grouped = new Map<ShortcutDefinition['category'], ShortcutDefinition[]>();

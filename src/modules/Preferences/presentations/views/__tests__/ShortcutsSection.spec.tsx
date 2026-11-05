@@ -53,6 +53,13 @@ function startCapture(label: string): void {
     expect(screen.getByText(/Press the desired key combination/)).toBeInTheDocument();
 }
 
+/** The capture closes only once its binding decision has been applied. */
+async function captureEnded(): Promise<void> {
+    await vi.waitFor(() => {
+        expect(screen.queryByText(/Press the desired key combination/)).not.toBeInTheDocument();
+    });
+}
+
 describe('ShortcutsSection', () => {
     beforeEach(() => {
         vi.mocked(confirmUser).mockReset();
@@ -109,7 +116,12 @@ describe('ShortcutsSection', () => {
     });
 
     it('asks before taking a key another command holds, and moves it on confirm', async () => {
-        vi.mocked(confirmUser).mockResolvedValue(true);
+        let answer: (reassign: boolean) => void = () => undefined;
+        vi.mocked(confirmUser).mockReturnValue(
+            new Promise((resolve) => {
+                answer = resolve;
+            })
+        );
         render(<ShortcutsSection />);
         startCapture('Toggle Metronome');
 
@@ -118,11 +130,16 @@ describe('ShortcutsSection', () => {
         expect(confirmUser).toHaveBeenCalledWith(
             expect.objectContaining({ message: 'L is assigned to Toggle Loop. Reassign it to Toggle Metronome?' })
         );
-        await vi.waitFor(() => {
-            expect(shortcutStore.value?.customMappings).toStrictEqual({
-                'transport.toggleMetronome': ['l'],
-                'transport.toggleLoop': [],
-            });
+        // The capture stays open on the pending prompt and no longer binds keys.
+        fireEvent.keyDown(window, { key: 'Enter', code: 'Enter' });
+        expect(screen.getByText(/Press the desired key combination/)).toBeInTheDocument();
+        expect(confirmUser).toHaveBeenCalledTimes(1);
+
+        answer(true);
+        await captureEnded();
+        expect(shortcutStore.value?.customMappings).toStrictEqual({
+            'transport.toggleMetronome': ['l'],
+            'transport.toggleLoop': [],
         });
         expect(bindingButton('Toggle Metronome')).toHaveTextContent('L');
         expect(bindingButton('Toggle Loop')).toHaveTextContent('Unassigned');
@@ -140,11 +157,10 @@ describe('ShortcutsSection', () => {
                 message: '⌘ C is assigned to Copy. Reassign it to Loop Station: Play row 1 col 1?',
             })
         );
-        await vi.waitFor(() => {
-            expect(shortcutStore.value?.customMappings).toStrictEqual({
-                'loopStation.pad.r0c0.play': ['mod+c'],
-                'editing.copyClip': [],
-            });
+        await captureEnded();
+        expect(shortcutStore.value?.customMappings).toStrictEqual({
+            'loopStation.pad.r0c0.play': ['mod+c'],
+            'editing.copyClip': [],
         });
         expect(bindingButton('Copy')).toHaveTextContent('Unassigned');
     });
@@ -157,8 +173,7 @@ describe('ShortcutsSection', () => {
         fireEvent.keyDown(window, { key: 'l', code: 'KeyL' });
 
         expect(confirmUser).toHaveBeenCalledTimes(1);
-        // The section's continuation was queued on this promise before ours.
-        await vi.mocked(confirmUser).mock.results[0]?.value;
+        await captureEnded();
         expect(shortcutStore.value?.customMappings).toStrictEqual({});
         expect(bindingButton('Toggle Metronome')).toHaveTextContent('M');
         expect(bindingButton('Toggle Loop')).toHaveTextContent('L');
