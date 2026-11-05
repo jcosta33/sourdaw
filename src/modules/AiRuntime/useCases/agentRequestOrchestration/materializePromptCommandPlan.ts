@@ -162,6 +162,7 @@ export function materializePromptCommandPlan(input: MaterializePromptCommandPlan
             projectRevision: input.projectRevision,
             requiresConfirmation: input.result.requiresConfirmation,
             metricGoalState: input.result.metricGoalState,
+            recordedConstraints: input.result.protectionFacts?.perceptualConstraints,
             schedulePosition: input.result.batchSchedule?.position,
             runId: input.runId,
             mode,

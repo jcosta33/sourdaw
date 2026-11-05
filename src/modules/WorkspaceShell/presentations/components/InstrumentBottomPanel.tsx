@@ -32,6 +32,7 @@ export const InstrumentBottomPanel = ({
     <>
         <DragResizeHandle
             side="top"
+            aria-label={`Resize ${label} panel`}
             onResize={(data) => onResize((h) => Math.max(INSTRUMENT_PANEL_MIN_HEIGHT, h + data))}
         />
         <div

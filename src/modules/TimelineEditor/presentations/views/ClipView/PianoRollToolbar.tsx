@@ -9,6 +9,7 @@ import { DawControlStrip } from '#/components/daw/DawControlStrip';
 import { Button } from '#/components/ui/button';
 import { Slider } from '#/components/ui/slider';
 import { CHORD_TYPE_KEYS } from '#/modules/MIDI/useCases';
+import { getScaleLabel } from '#/utils/Music/MusicalScale';
 import { cn } from '#/utils/Styles/cn';
 
 import { MPE_EXPRESSION_LANES, type MpeExpressionLane } from '../../helpers/mpeAvailability';
@@ -190,7 +191,7 @@ export const PianoRollToolbar = ({
         >
             {Object.keys(SCALES).map((key) => (
                 <option key={key} value={key}>
-                    {key}
+                    {getScaleLabel(key)}
                 </option>
             ))}
         </DawCompactSelect>

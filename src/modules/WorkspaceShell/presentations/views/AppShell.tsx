@@ -525,17 +525,35 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // both sides of the main content. Prior to this helper, each panel was
     // rendered twice (~80 lines of near-identical JSX) with only the handle
     // side and the border direction differing.
+    type SidePanelResize = {
+        label: string;
+        value: number;
+        min: number;
+        max: number;
+        onResize: (d: number) => void;
+        onSetSize: (size: number) => void;
+    };
     const renderSidePanel = (
         open: boolean,
         placement: 'left' | 'right',
         side: 'left' | 'right',
         panel: ReactNode,
-        onResize: (d: number) => void
+        resize: SidePanelResize
     ): ReactNode => {
         if (!open || placement !== side) {
             return null;
         }
-        const handle = <DragResizeHandle side={side === 'left' ? 'right' : 'left'} onResize={onResize} />;
+        const handle = (
+            <DragResizeHandle
+                side={side === 'left' ? 'right' : 'left'}
+                onResize={resize.onResize}
+                onSetSize={resize.onSetSize}
+                aria-label={resize.label}
+                aria-valuenow={resize.value}
+                aria-valuemin={resize.min}
+                aria-valuemax={resize.max}
+            />
+        );
         return side === 'left' ? (
             <>
                 {panel}
@@ -606,10 +624,38 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             <GenerativeAiPanel />
         </div>
     );
-    const onSidebarResize = (d: number): void => setSidebarWidth((w) => clamp(w + d, 180, 500));
-    const onInspectorResize = (d: number): void => setInspectorWidth((w) => clamp(w + d, 200, 500));
-    const onChatResize = (d: number): void => setChatWidth((w) => clamp(w + d, 200, 600));
-    const onAiResize = (d: number): void => setAiWidth((w) => clamp(w + d, 200, 500));
+    const sidebarResize: SidePanelResize = {
+        label: 'Resize sidebar',
+        value: displayedSidebarWidth,
+        min: 180,
+        max: 500,
+        onResize: (d) => setSidebarWidth((w) => clamp(w + d, 180, 500)),
+        onSetSize: (size) => setSidebarWidth(() => clamp(size, 180, 500)),
+    };
+    const inspectorResize: SidePanelResize = {
+        label: 'Resize inspector',
+        value: displayedInspectorWidth,
+        min: 200,
+        max: 500,
+        onResize: (d) => setInspectorWidth((w) => clamp(w + d, 200, 500)),
+        onSetSize: (size) => setInspectorWidth(() => clamp(size, 200, 500)),
+    };
+    const chatResize: SidePanelResize = {
+        label: 'Resize chat panel',
+        value: displayedChatWidth,
+        min: 200,
+        max: 600,
+        onResize: (d) => setChatWidth((w) => clamp(w + d, 200, 600)),
+        onSetSize: (size) => setChatWidth(() => clamp(size, 200, 600)),
+    };
+    const aiResize: SidePanelResize = {
+        label: 'Resize AI panel',
+        value: displayedAiWidth,
+        min: 200,
+        max: 500,
+        onResize: (d) => setAiWidth((w) => clamp(w + d, 200, 500)),
+        onSetSize: (size) => setAiWidth(() => clamp(size, 200, 500)),
+    };
 
     // ─── Launch screen overlay state ───────────────────────────────────────
     // We start hidden (loading:true is the default). New-user loading completion
@@ -763,16 +809,16 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 {/* ─── Main horizontal layout ─── */}
                 <Row align="stretch" grow className="overflow-hidden">
                     {/* Left dynamically placed panels */}
-                    {renderSidePanel(sidebarOpen, prefs.panelPlacementSidebar, 'left', sidebarNode, onSidebarResize)}
+                    {renderSidePanel(sidebarOpen, prefs.panelPlacementSidebar, 'left', sidebarNode, sidebarResize)}
                     {renderSidePanel(
                         inspectorOpen,
                         prefs.panelPlacementInspector,
                         'left',
                         inspectorNode,
-                        onInspectorResize
+                        inspectorResize
                     )}
-                    {renderSidePanel(chatPanelOpen, prefs.panelPlacementChat, 'left', chatNode, onChatResize)}
-                    {renderSidePanel(aiPanelOpen, prefs.panelPlacementAi, 'left', aiNode('left'), onAiResize)}
+                    {renderSidePanel(chatPanelOpen, prefs.panelPlacementChat, 'left', chatNode, chatResize)}
+                    {renderSidePanel(aiPanelOpen, prefs.panelPlacementAi, 'left', aiNode('left'), aiResize)}
 
                     {/* Center: vertical split — arrangement over the bottom panels.
                         The arrangement takes what the panels leave, down to its
@@ -788,6 +834,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                         {/* Main arrangement area */}
                         <main
                             id="main-content"
+                            tabIndex={-1}
+                            data-focus-landmark=""
                             className="contain-content flex-1 min-h-0 overflow-hidden"
                             style={{ minHeight: arrangementMinimumHeight }}
                         >
@@ -994,6 +1042,9 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                             <>
                                 <DragResizeHandle
                                     side="top"
+                                    aria-label={
+                                        activeBottomTab === 'editor' ? 'Resize editor panel' : 'Resize mixer panel'
+                                    }
                                     onResize={(d) => {
                                         if (activeBottomTab === 'editor') {
                                             setEditorHeight((h) => Math.max(EDITOR_MIN_HEIGHT, h + d));
@@ -1060,6 +1111,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                             <>
                                 <DragResizeHandle
                                     side="top"
+                                    aria-label="Resize virtual keyboard"
                                     onResize={(d) => {
                                         const next = Math.max(
                                             VIRTUAL_KEYBOARD_MIN_HEIGHT,
@@ -1080,16 +1132,16 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                     </Stack>
 
                     {/* Right dynamically placed panels */}
-                    {renderSidePanel(sidebarOpen, prefs.panelPlacementSidebar, 'right', sidebarNode, onSidebarResize)}
+                    {renderSidePanel(sidebarOpen, prefs.panelPlacementSidebar, 'right', sidebarNode, sidebarResize)}
                     {renderSidePanel(
                         inspectorOpen,
                         prefs.panelPlacementInspector,
                         'right',
                         inspectorNode,
-                        onInspectorResize
+                        inspectorResize
                     )}
-                    {renderSidePanel(chatPanelOpen, prefs.panelPlacementChat, 'right', chatNode, onChatResize)}
-                    {renderSidePanel(aiPanelOpen, prefs.panelPlacementAi, 'right', aiNode('right'), onAiResize)}
+                    {renderSidePanel(chatPanelOpen, prefs.panelPlacementChat, 'right', chatNode, chatResize)}
+                    {renderSidePanel(aiPanelOpen, prefs.panelPlacementAi, 'right', aiNode('right'), aiResize)}
                 </Row>
 
                 <StatusBar />

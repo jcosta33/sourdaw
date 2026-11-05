@@ -5,6 +5,7 @@ import {
     type ProposalGroundingSource,
     type ProposalProtectionFacts,
 } from '../../models/ProposalGroundingBasis';
+import { unionPerceptualConstraintReadings } from '../../transformers/unionPerceptualConstraintReadings';
 import { unionProtectedObjects } from '../../transformers/unionProtectedObjects';
 
 import { proposalCommandShape } from './proposalCommandShape';
@@ -39,10 +40,18 @@ function unionProtectedControls(...groups: ReadonlyArray<readonly ProtectedContr
 
 /** Immutable restrictions outlive any command-aligned grounding witness a card can carry. */
 export function unionProposalProtectionFacts(...groups: readonly ProposalProtectionFacts[]): ProposalProtectionFacts {
-    return {
+    const facts: ProposalProtectionFacts = {
         protectedUnchanged: unionProtectedObjects(...groups.map((group) => group.protectedUnchanged)),
         protectedControls: unionProtectedControls(...groups.map((group) => group.protectedControls)),
     };
+    // Facts that never recorded a perceptual constraint stay exactly as they were before the record existed.
+    const readings = groups.flatMap((group) =>
+        group.perceptualConstraints === undefined ? [] : [group.perceptualConstraints]
+    );
+    if (readings.length > 0) {
+        facts.perceptualConstraints = unionPerceptualConstraintReadings(...readings);
+    }
+    return facts;
 }
 
 type GroundedCall = { name: string; arguments: Readonly<Record<string, unknown>> };

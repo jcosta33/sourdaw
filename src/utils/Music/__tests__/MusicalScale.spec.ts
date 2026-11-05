@@ -1,6 +1,30 @@
 import { describe, it, expect } from 'vitest';
 
-import { SCALE_PATTERNS, SCALE_NAMES, KEY_NAMES, quantizeCentsToScale, quantizeMidiNoteToScale } from '../MusicalScale';
+import {
+    getScaleLabel,
+    SCALE_LABELS,
+    SCALE_PATTERNS,
+    SCALE_NAMES,
+    KEY_NAMES,
+    quantizeCentsToScale,
+    quantizeMidiNoteToScale,
+} from '../MusicalScale';
+
+describe('scale labels', () => {
+    it('labels every pattern with words, never its identifier', () => {
+        expect(Object.keys(SCALE_LABELS).sort()).toEqual(Object.keys(SCALE_PATTERNS).sort());
+        expect(getScaleLabel('harmonicMinor')).toBe('Harmonic Minor');
+        expect(getScaleLabel('melodicMinor')).toBe('Melodic Minor');
+        expect(getScaleLabel('pentatonicMajor')).toBe('Pentatonic Major');
+        expect(getScaleLabel('pentatonicMinor')).toBe('Pentatonic Minor');
+        expect(getScaleLabel('wholeTone')).toBe('Whole Tone');
+        expect(getScaleLabel('major')).toBe('Major');
+    });
+
+    it('falls back to the identifier for an unknown scale', () => {
+        expect(getScaleLabel('custom')).toBe('custom');
+    });
+});
 
 describe('scale data', () => {
     it('should expose every pattern name via SCALE_NAMES', () => {

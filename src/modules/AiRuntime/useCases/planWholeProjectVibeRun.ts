@@ -19,7 +19,7 @@ import {
     type VibeRunUnplannedRole,
 } from '../models/VibeRunPlan';
 
-import { CANONICAL_ROLE_OPTIONS, CANONICAL_ROLE_TO_RECIPE_ROLE } from './canonicalRoleFamilies';
+import { resolveRoleFamily } from './canonicalRoleFamilies';
 import { countRecipeExpansionCommands } from './countRecipeExpansionCommands';
 
 type MixRecipeCatalog = ReturnType<typeof getMixRecipeCatalog>;
@@ -44,11 +44,6 @@ type PlannableTarget = {
 };
 
 type SectionBaseline = { status: 'none' } | { status: 'conflict' } | { status: 'found'; baseline: VibeRunBaseline };
-
-function resolveRoleFamily(track: ProjectContextTrack): SemanticCommandListRoleFamily | null {
-    const role = CANONICAL_ROLE_OPTIONS.find((candidate) => candidate === track.canonicalRole?.role) ?? 'unknown';
-    return CANONICAL_ROLE_TO_RECIPE_ROLE[role];
-}
 
 function orderSections(sections: readonly ProjectContextSection[]): VibeRunSectionScope[] {
     return sections

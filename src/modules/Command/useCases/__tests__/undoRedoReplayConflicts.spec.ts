@@ -340,6 +340,38 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
             ]);
         });
 
+        it('steps over a conflicted fade onto a track rename beneath it, undoing the rename (#2881)', async () => {
+            const rename = actionEntry({
+                id: 'rename-1',
+                label: 'Rename Track',
+                inverseAction: {
+                    type: 'renameTrack',
+                    payload: { trackId: 'track-1', name: 'Live', expectedName: 'Collaborator' },
+                },
+            });
+            const conflictingFade = actionEntry({
+                id: 'fade-1',
+                label: 'Fade Clip',
+                inverseAction: conflictCapableFadeInverse,
+            });
+            mocks.undoStoreValue.value = { past: [rename, conflictingFade], future: [] };
+            conflictOn('setClipFade');
+
+            await expect(undo()).resolves.toEqual({ headConsumed: false });
+
+            // The step gate reads the entry beneath the head, so the rename's
+            // renameTrack inverse must be flagged for the step to be admitted.
+            expect(mocks.executeAppAction.mock.calls.map(([action]) => action.type)).toEqual([
+                'setClipFade',
+                'renameTrack',
+            ]);
+            expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [conflictingFade], future: [rename] });
+            expect(mocks.notifyUser.mock.calls.map(([message]) => message)).toEqual([
+                'Cannot undo "Fade Clip": project state has changed',
+                'Skipped "Fade Clip": project state has changed; undid "Rename Track"',
+            ]);
+        });
+
         it('never steps onto a unit whose inverse handler is not flagged conflict-capable', async () => {
             const older = actionEntry({
                 id: 'older-1',

@@ -315,8 +315,6 @@ const CHAIN_PRESET_EXCLUSIONS: Readonly<Record<string, string>> = {
     'factory-faust-1176-drum-smash': NO_DESCRIPTOR,
     'factory-faust-zita-huge-hall': NO_DESCRIPTOR,
     'factory-faust-tape-space-echo': NO_DESCRIPTOR,
-    'fx-lofi-vinyl': UNWRITABLE_VALUE,
-    'fx-lofi-retro-radio': UNWRITABLE_VALUE,
     'fx-chain-guitar-clean': OVERSIZE,
     'fx-chain-drum-punch': OVERSIZE,
 };
@@ -334,6 +332,10 @@ const DESCRIBED_PRESET_RECIPES: readonly (readonly [string, string, readonly str
     ['factory-faust-zita-vocal-plate', 'preset:factory-faust-zita-vocal-plate:bright', ['vocal']],
     ['factory-faust-tape-slapback', 'preset:factory-faust-tape-slapback:vintage', ['vocal', 'guitar']],
     ['fx-chain-master-bus', 'preset:fx-chain-master-bus:glued', ['bus', 'master']],
+    ['fx-lofi-vinyl', 'preset:fx-lofi-vinyl:lo-fi', []],
+    ['fx-lofi-vinyl', 'preset:fx-lofi-vinyl:vintage', []],
+    ['fx-lofi-retro-radio', 'preset:fx-lofi-retro-radio:lo-fi', []],
+    ['fx-lofi-retro-radio', 'preset:fx-lofi-retro-radio:vintage', []],
 ];
 
 describe('preset recipes', () => {

@@ -250,6 +250,8 @@ describe('executePresetLoad undo on an empty project', () => {
         await executePresetLoad(plan);
         flushAutomergeStorageWrites();
         expect(storeTracks()[0]?.devices.map((device) => device.id)).toEqual(plan.deviceIds);
+        expect(storeTracks()[0]?.name).toBe('Crystal Arp');
+        expect(undoUnitCount()).toBe(2);
 
         await undo();
         flushAutomergeStorageWrites();
@@ -258,5 +260,39 @@ describe('executePresetLoad undo on an empty project', () => {
         expect(storeTracks().map((track) => track.id)).toEqual([created.id]);
         expect(storeTracks()[0]?.devices.map((device) => device.id)).toEqual(originalDeviceIds);
         expect(documentTracks()[0]?.devices.map((device) => device.id)).toEqual(originalDeviceIds);
+        expect(storeTracks()[0]?.name).toBe('MIDI');
+        expect(documentTracks()[0]?.name).toBe('MIDI');
+    });
+
+    it('renames a preset-named track with each preset loaded onto it, and never a user-named one', async () => {
+        const firstPlan = compilePresetOnNewTrack('fermenter-default');
+        await executePresetLoad(firstPlan);
+        flushAutomergeStorageWrites();
+        const [created] = storeTracks();
+        if (!created) {
+            throw new Error('Expected the preset track');
+        }
+        const firstName = created.name;
+
+        const secondPlan = compileLoadPresetActions({ presetId: 'synth-arp-crystal', trackId: created.id });
+        if (!secondPlan) {
+            throw new Error('Expected the second preset to compile onto the preset track');
+        }
+        await executePresetLoad(secondPlan);
+        flushAutomergeStorageWrites();
+        expect(storeTracks()[0]?.name).toBe('Crystal Arp');
+
+        await executeUserAppAction({ type: 'renameTrack', payload: { trackId: created.id, name: 'My Lead' } });
+        flushAutomergeStorageWrites();
+        const thirdPlan = compileLoadPresetActions({ presetId: 'fermenter-default', trackId: created.id });
+        if (!thirdPlan) {
+            throw new Error('Expected the third preset to compile onto the renamed track');
+        }
+        await executePresetLoad(thirdPlan);
+        flushAutomergeStorageWrites();
+
+        expect(firstName).not.toBe('Crystal Arp');
+        expect(storeTracks()[0]?.name).toBe('My Lead');
+        expect(storeTracks()[0]?.devices.map((device) => device.id)).toEqual(thirdPlan.deviceIds);
     });
 });

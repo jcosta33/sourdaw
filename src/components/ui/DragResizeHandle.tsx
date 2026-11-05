@@ -22,6 +22,11 @@ export type DragResizeHandleProps = {
     'aria-valuenow'?: number;
     'aria-valuemin'?: number;
     'aria-valuemax'?: number;
+    /**
+     * Sets the size outright. Home and End use it when given: a delta from `aria-valuenow` is wrong for a
+     * panel whose shown size differs from its stored one.
+     */
+    onSetSize?: (size: number) => void;
     step?: number;
     tabIndex?: number;
     onMouseDown?: (event: MouseEvent<HTMLDivElement>) => void;
@@ -46,6 +51,13 @@ const isVertical = (direction?: 'horizontal' | 'vertical', side?: 'left' | 'righ
         return true;
     }
     return side === 'left' || side === 'right';
+};
+
+const homeEndBound = (key: string, min: number | undefined, max: number | undefined): number | undefined => {
+    if (key === 'Home') {
+        return min;
+    }
+    return key === 'End' ? max : undefined;
 };
 
 const computeKeyboardDelta = ({
@@ -287,6 +299,7 @@ export const DragResizeHandle = ({
     'aria-valuenow': ariaValueNow,
     'aria-valuemin': ariaValueMin,
     'aria-valuemax': ariaValueMax,
+    onSetSize,
     step = 10,
     tabIndex = 0,
     onMouseDown,
@@ -306,6 +319,13 @@ export const DragResizeHandle = ({
     });
 
     const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+        const bound = homeEndBound(event.key, ariaValueMin, ariaValueMax);
+        if (onSetSize !== undefined && bound !== undefined) {
+            event.preventDefault();
+            onSetSize(bound);
+            onResizeEnd?.();
+            return;
+        }
         const delta = computeKeyboardDelta({
             key: event.key,
             vertical,
