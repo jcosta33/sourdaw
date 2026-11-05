@@ -1,0 +1,58 @@
+src/modules/GrandBoule/useCases/midiEventSubscribers/onMidiNoteOff.ts
+  s_0314bb17e5dee3::t_55c3563317a037 2
+src/app/registerDependencies.ts
+  s_0314bb17e5dee3::t_55c3563317a037 2,10,12-17
+src/modules/MIDI/events/MidiEvents.ts
+  s_0314bb17e5dee3::t_7e79ec7420075e 1-19
+src/modules/AiRuntime/useCases/voiceToggle/voiceToggleEventBus.ts
+  s_0314bb17e5dee3::t_55c3563317a037 3
+src/modules/GrandBoule/presentations/views/__tests__/GrandBoulePanelMidiSubscription.spec.tsx
+  s_0314bb17e5dee3::t_55c3563317a037 56-58
+src/modules/Command/events/index.ts
+  s_0314bb17e5dee3::t_7e79ec7420075e 1-4
+src/modules/Setlist/useCases/setlist/__tests__/setSetlistEventBus.spec.ts
+  s_0314bb17e5dee3::t_55c3563317a037 5
+src/modules/WorkspaceShell/presentations/views/__tests__/midiPermissionRecovery.integration.spec.tsx
+  s_0314bb17e5dee3::t_7da8fc4b8fbcfa 6
+src/modules/Setlist/useCases/setlist/setlistEventBus.ts
+  s_0314bb17e5dee3::t_55c3563317a037 1
+src/modules/MIDI/events/index.ts
+  s_0314bb17e5dee3::t_7e79ec7420075e 3-4
+src/modules/MIDI/useCases/webMidiInput/setWebMidiRuntimeEventBus.ts
+  s_0314bb17e5dee3::t_ffcc58b2c01872 3
+src/modules/Command/events/CommandEvents.ts
+  s_0314bb17e5dee3::t_7e79ec7420075e 1-2
+src/modules/WorkspaceShell/useCases/workspaceEventBus.ts
+  s_0314bb17e5dee3::t_55c3563317a037 3-5
+src/modules/GrandBoule/useCases/grandBouleEventBus.ts
+  s_0314bb17e5dee3::t_55c3563317a037 4
+src/modules/GrandBoule/useCases/midiEventSubscribers/onMidiNoteOn.ts
+  s_0314bb17e5dee3::t_55c3563317a037 2
+src/modules/MIDI/AGENTS.md
+  s_0314bb17e5dee3::t_9d8d3aad55fb11 7
+src/modules/GrandBoule/useCases/midiEventSubscribers/onMidiPedalCc.ts
+  s_0314bb17e5dee3::t_55c3563317a037 2
+src/modules/Command/AGENTS.md
+  s_0314bb17e5dee3::t_9d8d3aad55fb11 7
+src/modules/Command/useCases/commandEventBus.ts
+  s_0314bb17e5dee3::t_ffcc58b2c01872 3
+  s_0314bb17e5dee3::t_55c3563317a037 4
+src/infra/events/types.ts
+  s_0314bb17e5dee3::t_55c3563317a037 3-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f8a3d8c1f54d0705dc40e9d195060fce01714799",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
