@@ -865,6 +865,7 @@ describe('refining the pending proposal', () => {
             expect(getPendingActionConfirmation(replacementId ?? '')?.actions).toHaveLength(5);
         });
 
+        // Three full planning turns of CPU work and no timer: about 1 s locally, past the 5 s default on a loaded CI runner.
         it('carries its hold goals and its constraint through every refinement of the chain', async () => {
             let pendingId = '';
             let replacementId = '';
@@ -876,7 +877,11 @@ describe('refining the pending proposal', () => {
             pendingId = await proposeTheMix(constrainedMixPrompt);
             const cardGoals = constraintGoals(pendingId);
             expect(cardGoals.length).toBeGreaterThan(0);
-            expect(cardGoals.every((goal) => goal.source.clause === 'keep the Lead Vocal intimate')).toBe(true);
+            expect(
+                cardGoals.every(
+                    (goal) => goal.source.kind === 'constraint' && goal.source.clause === 'keep the Lead Vocal intimate'
+                )
+            ).toBe(true);
 
             await sendChatMessage(REFINEMENT_PROMPT);
 
@@ -889,7 +894,7 @@ describe('refining the pending proposal', () => {
 
             expect(proposedIds()).toEqual([replacementId]);
             expect(lastAssistantMessage()?.content).toContain(intimacyRefusal);
-        });
+        }, 15_000);
     });
 
     it('puts a low-risk one-command refinement to the user after explicit removals', async () => {
