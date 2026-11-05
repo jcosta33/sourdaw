@@ -2,6 +2,7 @@
 // Re-exports only from files within this folder. See docs/architecture/03-typescript-module.md §3.3.
 
 export { initBrowserAi, KOKORO_MODEL_ENTRY } from './initBrowserAi';
+export { midiNoteEditSource } from './midiNoteEditSource';
 export { downloadModel } from './downloadModel';
 export { downloadDdspInstrument } from './downloadDdspInstrument';
 export { removeModel } from './removeModel';
