@@ -1,0 +1,31 @@
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/SignalFlowSection.spec.tsx
+  s_fec7059b7a251c::t_4fa89b046b34cc 1-2,25-29,32,37,42,47,54,63,70-79,81
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackInspector.spec.tsx
+  s_fec7059b7a251c::t_4fa89b046b34cc 160-161,175-176,202-203,217-218,232-233,247-248,276-277
+src/modules/TimelineEditor/presentations/views/__tests__/InspectorPanel.trackSwitch.spec.tsx
+  s_fec7059b7a251c::t_fa27159e01c13a 4,45,47-60,100,103,163-177
+  s_fec7059b7a251c::t_2f418123397b78 178
+src/modules/TimelineEditor/presentations/views/InspectorPanel.tsx
+  s_fec7059b7a251c::t_fa27159e01c13a 59
+  s_fec7059b7a251c::t_4fa89b046b34cc 1,92,100-101,113-114
+src/modules/TimelineEditor/presentations/views/Inspector/SignalFlowSection.tsx
+  s_fec7059b7a251c::t_4fa89b046b34cc 1,11-14,16,26
+src/modules/TimelineEditor/presentations/views/Inspector/TrackInspector.tsx
+  s_fec7059b7a251c::t_4fa89b046b34cc 30-31,39-40,59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1cdd7e9f7413d996453aa792ddcde8863b6c3f98",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
