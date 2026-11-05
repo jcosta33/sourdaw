@@ -78,7 +78,8 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     getToolForKeyPress: vi.fn(() => null),
 }));
 
-vi.mock('#/modules/Arrangement/stores', () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     readMusicalRangeInputs: vi.fn(() => []),
     trackStore: { value: { selectedTrackId: null, tracks: [] } },
     resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
