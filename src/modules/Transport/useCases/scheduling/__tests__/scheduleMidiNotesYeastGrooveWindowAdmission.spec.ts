@@ -424,15 +424,15 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
         ).toEqual([]);
     });
 
-    it('drops the release a duration wrap re-anchors a full loop behind the owning window', async () => {
+    it('strikes the part of a note past its pass end on the head of the same pass, from the window holding the head', async () => {
         // #4910 admission — content 3.9 with a 0.5-beat duration in a 4-beat
-        // loop crosses the iteration end at 4, and the projection re-anchors
-        // the release to the iteration head: beat 0, a full loop length
-        // behind the window that owns the note at 3.9. No groove is involved
-        // — the duration wrap alone produces the segment — and scheduling it
-        // computes a start ~1.94 s behind the audio clock, which Web Audio
-        // clamps to an immediate fire: a spurious second attack on every
-        // pass. Only the in-window heads may sound.
+        // loop crosses the pass end at 4. The pass releases it there and
+        // strikes the remaining 0.4 beats on its own head, as the synth route
+        // does. The rack must be handed that tail as its own note: wrapped
+        // onto the head after the rack, it was due a full loop behind the
+        // window that owns the note at 3.9 — a start ~1.94 s behind the audio
+        // clock, which Web Audio clamps to an immediate fire. As its own
+        // note-on it is owned by the window holding the head and sounds there.
         expect(
             await sweepScheduledVoices({
                 clip: { endBeat: 8, loopEnabled: true, loopLength: 4 },
@@ -441,18 +441,21 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
                 sweepEndBeat: 8,
             })
         ).toEqual([
+            { pitch: 60, beat: 0, durationBeats: 0.4 },
             { pitch: 60, beat: 3.9, durationBeats: 0.1 },
+            { pitch: 60, beat: 4, durationBeats: 0.4 },
             { pitch: 60, beat: 7.9, durationBeats: 0.1 },
         ]);
     });
 
-    it('drops the segment a groove displacement re-anchors across the iteration seam', async () => {
-        // The same note with slot-0 timingOffset +0.5 displaces its projected
-        // start to 4.15, across the iteration end; the projection wraps it to
-        // the iteration head at 0.15 — 3.75 beats behind the window that owns
-        // the note at 3.9. Every pass would fire that stale start
-        // immediately, so the widened admission bound drops it and no voice
-        // sounds from either pass.
+    it('drops the segment a sequencer push re-anchors across the pass end behind the owning window', async () => {
+        // The same note under slot-0 timingOffset +0.5: the rack is handed the
+        // in-pass segment at 3.9 and the head tail at the pass head, both on
+        // slot 0. The groove pushes the in-pass segment to 4.15, across the
+        // pass end, and the projection re-anchors it to the pass head at 0.15
+        // — 3.75 beats behind the window that owns it at 3.9. Every pass
+        // would fire that stale start immediately, so it drops; the head tail,
+        // pushed 0.25 inside its own pass, sounds there.
         expect(
             await sweepScheduledVoices({
                 clip: { endBeat: 8, loopEnabled: true, loopLength: 4 },
@@ -460,7 +463,10 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
                 grooveState: sequencerGrooveState({ index: 0, timingOffset: 0.5 }),
                 sweepEndBeat: 8,
             })
-        ).toEqual([]);
+        ).toEqual([
+            { pitch: 60, beat: 0.25, durationBeats: 0.4 },
+            { pitch: 60, beat: 4.25, durationBeats: 0.4 },
+        ]);
     });
 
     it('schedules a looped note the groove displaces across an iteration head where the twin re-anchors it', async () => {
@@ -486,27 +492,27 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
         ]);
     });
 
-    // #4924 round two — the grace bound above keeps a wrap tail only while it
-    // lands more than one groove stage behind the owning window, but a duration
-    // tail is re-anchored to the iteration head at its note's own loop phase —
-    // arbitrarily close behind it. The clock, not a window grace, decides
-    // staleness: these cases run a single window with `clockBeat` at the window
-    // start (the wrap tick where the scheduler sits at the position it
-    // re-opened), so a voice's read position is its landing minus the clock —
-    // 0 reads "due exactly now", a negative read is a start in the past that
-    // Web Audio clamps to an immediate fire.
-    describe('when a duration tail is re-anchored behind the audio clock', () => {
+    // #4924 round two — a duration tail sounds on the pass head, at its note's
+    // own loop phase behind the window that owns the note: arbitrarily close
+    // behind it. Wrapped onto the head after the rack, that window scheduled
+    // it behind the clock. The tail is its own note-on at the head now, owned
+    // by the window holding the head, never by the window holding its note.
+    // These cases run a single window with `clockBeat` at the window start
+    // (the wrap tick where the scheduler sits at the position it re-opened),
+    // so a voice's read position is its landing minus the clock — 0 reads
+    // "due exactly now", a negative read is a start in the past that Web Audio
+    // clamps to an immediate fire.
+    describe('when the window owning a note opens after its pass head', () => {
         const loopedClip = { endBeat: 8, loopEnabled: true, loopLength: 4 };
 
-        it('drops the stale tail at loop phase 0.1 and still voices the on-time segment', async () => {
-            // A 4.05-beat note at phase 0.1 rings 0.1 beats past its iteration;
-            // the projection re-anchors that tail to the iteration head: start
-            // 0, just 0.1 beats behind the window that owns the note at 0.1 —
-            // inside the 0.25 grace, so the landed bound voiced it — yet behind
-            // the clock at 0.1. Its time computes to 0.05 s before the audio
-            // clock, which clamps it to an immediate fire: a flam on the true
-            // onset, every pass. The clock at the window start decides instead:
-            // the tail drops and the on-time head sounds at the clock.
+        it('leaves the head tail at loop phase 0.1 to the head window and voices the on-time segment', async () => {
+            // A 4.05-beat note at phase 0.1 keeps one loop of its length and
+            // runs 0.1 beats past its pass end; the pass strikes that tail on
+            // its head at 0, just 0.1 beats behind the window that owns the
+            // note at 0.1 and behind the clock there. Scheduled from this
+            // window it computes 0.05 s before the audio clock, which clamps it
+            // to an immediate fire: a flam on the true onset, every pass. Only
+            // the on-time segment, released at the pass end, sounds here.
             expect(
                 await voicesInSingleWindow({
                     fromBeat: 0.1,
@@ -519,12 +525,12 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
             ).toEqual([{ pitch: 60, beat: 0, durationBeats: 3.9 }]);
         });
 
-        it('drops the same stale tail at loop phase 0.25 where the grace bound ends exactly', async () => {
-            // The phase where the landed grace bound ended: the re-anchored
-            // tail at 0 sits exactly at `fromBeat − 0.25`, which the strict `<`
-            // admitted, while the clock at 0.25 makes it a 0.125 s past start.
-            // Same flam, and the same clock bound drops it while the on-time
-            // head sounds at the clock.
+        it('leaves the same head tail at loop phase 0.25 to the head window, one groove stage behind', async () => {
+            // The phase where the landed grace bound ended: the head tail at 0
+            // sits exactly at `fromBeat − 0.25`, one groove stage behind, which
+            // the strict `<` admitted, while the clock at 0.25 makes it a
+            // 0.125 s past start. Same flam, so this window voices only the
+            // on-time segment at the clock.
             expect(
                 await voicesInSingleWindow({
                     fromBeat: 0.25,
@@ -581,11 +587,12 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
             expect(voices[0]?.durationBeats).toBeCloseTo(0.5, 9);
         });
 
-        it('still drops a duration tail re-anchored behind the window start', async () => {
-            // The note at phase 0.1 wraps a 0.15-beat tail to the iteration
-            // head at 0, behind the window start the scheduler continues
-            // from: stale content no on-time window would have voiced either.
-            // Only the head owned at the window start sounds, late.
+        it('voices no head tail behind the window start', async () => {
+            // The note at phase 0.1 strikes its 0.1-beat tail on the pass head
+            // at 0, behind the window start the scheduler continues from:
+            // the window holding the head owned it, and this one must not
+            // fire it again. Only the segment owned at the window start
+            // sounds, late.
             const voices = await voicesInSingleWindow({
                 fromBeat: 0.1,
                 toBeat: 0.3,

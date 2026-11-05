@@ -214,6 +214,63 @@ describe('projectOfflineYeastTrackNotes', () => {
         );
     });
 
+    it('hands the rack a note crossing the pass end as its in-pass segment and its own pass-head note', () => {
+        // The live window's list for the same pass (processLiveYeastTrackBlock):
+        // loop 4, pass [4, 8), the note at 3.5 released on the pass end and
+        // its last half beat struck on the pass head as a distinct instance
+        // that plays the source row, half a beat into it.
+        const expression = { pressure: [{ offsetBeats: 0.25, value: 90 }] };
+        const processYeastMidi = vi.fn<OfflineYeastMidiProcessor>((input) =>
+            input.events.map((event) => ({ ...event, timePpq: event.timePpq ?? event.timeSamples / 100 }))
+        );
+
+        const notes = projectOfflineYeastTrackNotes({
+            trackId: 'track-1',
+            iterations: [
+                {
+                    sourceNotes: [
+                        { id: 'crossing', pitch: 60, startBeat: 3.5, duration: 1, velocity: 100, expression },
+                    ],
+                    clipId: 'clip-1',
+                    clipStartBeat: 0,
+                    clipEndBeat: 16,
+                    iterationStartBeat: 4,
+                    loopLengthBeats: 4,
+                    midiOffsetBeats: 0,
+                    loopEnabled: true,
+                },
+            ],
+            sampleRate: 100,
+            blockStartSamples: 0,
+            blockEndSamples: 1_600,
+            defaultTempo: 60,
+            changes: [],
+            projectMidiEvents: (input) => input.events,
+            projectPpqEndpoints,
+            processYeastMidi,
+            projectPitch: ({ pitch }) => pitch,
+        });
+
+        const route = 'offline-yeast:track-1:0';
+        expect(
+            processYeastMidi.mock.calls[0]![0].events.map((event) => [
+                event.kind.type,
+                event.timePpq,
+                event.noteInstanceId,
+            ])
+        ).toEqual([
+            ['noteOn', 7.5, `${route}:crossing`],
+            ['noteOff', 8, `${route}:crossing`],
+            ['noteOn', 4, `${route}:crossing:pass-head`],
+            ['noteOff', 4.5, `${route}:crossing:pass-head`],
+        ]);
+        expect(notes).toEqual([
+            expect.objectContaining({ pitch: 60, startBeat: 7.5, endBeat: 8, expression }),
+            expect.objectContaining({ pitch: 60, startBeat: 4, endBeat: 4.5, beatsIntoNote: 0.5, expression }),
+        ]);
+        expect(notes[0]?.beatsIntoNote).toBeUndefined();
+    });
+
     it('anchors source-free generator notes to the active carrier clip chord', () => {
         const projectPitch = vi.fn(
             ({ pitch }: { pitch: number; referenceBeat: number; targetBeat: number }) => pitch + 1
@@ -299,10 +356,10 @@ describe('projectOfflineYeastTrackNotes — the anchored loop window on routed r
      * A clip trimmed across its anchor — start 2, anchor 4, loop 4 — so the
      * anchored window reads [2, 6) in stored-figure coordinates: the row at
      * relative 3 is in-region material and the row at relative 6.5 sits past
-     * the region end, audible at 8.5 and 12.5 only because the pass mapping
-     * places it there. The anchored clip's passes open on the anchor's seams;
-     * the two that reach the in-region row are 4 and 8 (the seam-0 pass places
-     * it at 1, before the head, and this stub projector cuts nothing). The
+     * the region end, a loop's phase 2.5 into each pass only because the pass
+     * re-anchors a start past its end. The anchored clip's passes open on the
+     * anchor's seams; the two that reach the in-region row are 4 and 8 (the
+     * seam-0 pass places it at 1, before the clip head, which cuts it). The
      * unanchored control's passes open on its own head, 2 and 6.
      */
     function projectTrimmedClipRows(loopOriginBeat: number | undefined, passStartBeats: readonly number[]) {
@@ -363,9 +420,9 @@ describe('projectOfflineYeastTrackNotes — the anchored loop window on routed r
 
         expect(notes.map((note) => [note.pitch, note.startBeat])).toEqual([
             [61, 5],
-            [72, 8.5],
+            [72, 4.5],
             [61, 9],
-            [72, 12.5],
+            [72, 8.5],
         ]);
     });
 
@@ -379,7 +436,10 @@ describe('projectOfflineYeastTrackNotes — the anchored loop window on routed r
      * here while the live twin voiced it; membership on the source figure
      * keeps one clip rendering as one clip.
      */
-    function projectGrooveDisplacedBoundaryRow(loopOriginBeat: number | undefined, iterationStartBeat: number) {
+    function projectGrooveDisplacedBoundaryRow(
+        loopOriginBeat: number | undefined,
+        iterationStartBeats: readonly number[]
+    ) {
         function projectMidiEvents<Event extends ProjectableEvent>(
             input: Parameters<OfflineMidiEventProjector>[0]
         ): readonly Event[] {
@@ -395,19 +455,17 @@ describe('projectOfflineYeastTrackNotes — the anchored loop window on routed r
         );
         return projectOfflineYeastTrackNotes({
             trackId: 'track-1',
-            iterations: [
-                {
-                    sourceNotes: [{ id: 'boundary', pitch: 61, startBeat: 3.9, duration: 0.25, velocity: 100 }],
-                    clipId: 'clip-1',
-                    clipStartBeat: 2,
-                    clipEndBeat: 10,
-                    iterationStartBeat,
-                    loopLengthBeats: 4,
-                    midiOffsetBeats: 2,
-                    loopEnabled: true,
-                    loopOriginBeat,
-                },
-            ],
+            iterations: iterationStartBeats.map((iterationStartBeat) => ({
+                sourceNotes: [{ id: 'boundary', pitch: 61, startBeat: 3.9, duration: 0.25, velocity: 100 }],
+                clipId: 'clip-1',
+                clipStartBeat: 2,
+                clipEndBeat: 10,
+                iterationStartBeat,
+                loopLengthBeats: 4,
+                midiOffsetBeats: 2,
+                loopEnabled: true,
+                loopOriginBeat,
+            })),
             sampleRate: 100,
             blockStartSamples: 0,
             blockEndSamples: 400_000,
@@ -421,18 +479,19 @@ describe('projectOfflineYeastTrackNotes — the anchored loop window on routed r
     }
 
     it('voices a groove-displaced boundary row whose routed figure sits past the ceiling', () => {
-        // On the anchor's grid the row sits 3.9 into the first pass, which
-        // opens on the seam 0 (its relative 1.9 plus the advance 2), and the
-        // groove's quarter beat routes it to 4.15; this stub projector neither
-        // wraps nor cuts, so that placement reads straight off the pass.
-        const notes = projectGrooveDisplacedBoundaryRow(0, 0);
+        // On the anchor's grid the row sits 3.9 into each pass (its relative
+        // 1.9 plus the advance 2), and the groove's quarter beat routes it
+        // 4.15 in, past the pass end, so each pass re-anchors it to 0.15 in:
+        // the seam-0 pass places it before the clip head, which cuts it, and
+        // the seam-4 pass sounds it at 4.15, as the live window does.
+        const notes = projectGrooveDisplacedBoundaryRow(0, [0, 4]);
 
         expect(notes.map((note) => [note.pitch, note.startBeat])).toEqual([[61, 4.15]]);
     });
 
     it('control: voices the same displaced row when the clip carries no anchor', () => {
         // The clip-head pass at 2 places it unwrapped: 2 + 3.9 + 0.25 − 2 = 4.15.
-        const notes = projectGrooveDisplacedBoundaryRow(undefined, 2);
+        const notes = projectGrooveDisplacedBoundaryRow(undefined, [2]);
 
         expect(notes.map((note) => [note.pitch, note.startBeat])).toEqual([[61, 4.15]]);
     });
