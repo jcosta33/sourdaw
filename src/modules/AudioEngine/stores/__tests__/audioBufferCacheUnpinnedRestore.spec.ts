@@ -346,4 +346,36 @@ describe('restoring stored audio without pinning it', () => {
         expect(controls.committedMeta.get('held-sample')).toEqual(storedMeta);
         expect(cachedSample(later, 'held-sample')).toBe(Math.fround(0.75));
     });
+
+    it('drops the PCM of a failed write once a buffer is held for this session in its place', async () => {
+        const realm = await loadRealm();
+        controls.failRequestsFrom(BUFFER_STORE);
+        realm.cache({ bufferId: 'held-sample', buffer: runtimeBuffer(0.25) });
+        await settleQueuedWrites();
+        controls.allowRequests();
+        expect(controls.committed.has('held-sample')).toBe(false);
+
+        realm.holdForSession({ bufferId: 'held-sample', buffer: runtimeBuffer(0.75) });
+        controls.resetByteCounters();
+        // The failed write's retry would store the PCM the hold replaced.
+        const receipt = await realm.ensure(['held-sample']);
+        if (receipt.status === 'durable') {
+            receipt.release();
+        }
+        await settleQueuedWrites();
+
+        expect(receipt.status).toBe('failed');
+        expect(controls.bytesWritten()).toBe(0);
+        expect(controls.committed.has('held-sample')).toBe(false);
+        expect(cachedSample(realm, 'held-sample')).toBe(Math.fround(0.75));
+
+        evictUnprotected(realm);
+        await settleQueuedWrites();
+        expect(cachedSample(realm, 'held-sample')).toBeNull();
+        const { absentIds, release } = await realm.restoreUnpinned({ bufferIds: ['held-sample'] });
+        release();
+
+        expect(absentIds).toEqual([]);
+        expect(realm.get({ bufferId: 'held-sample' })).toBeNull();
+    });
 });
