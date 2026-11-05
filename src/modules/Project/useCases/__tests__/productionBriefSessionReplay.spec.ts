@@ -14,7 +14,12 @@ import {
     undo,
 } from '#/modules/Command/useCases';
 import { type AppAction } from '#/utils/handlerContract';
-import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { createDefaultProductionBrief, isProductionBrief, type ProductionBrief } from '../../models/ProductionBrief';
 import { defaultProjectStoreState, projectStore } from '../../stores/projectStore';
@@ -35,6 +40,11 @@ type StoredEntry = {
 };
 type StoredSession = { past: StoredEntry[]; future: StoredEntry[] };
 type BriefAction = Extract<AppAction, { type: 'setProductionBrief' }>;
+type NotificationEvents = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
+};
 
 function registerHandlers(): void {
     registerProductionCommandHandlers(getProductionCommandHandlerMaps({ canMutateBranchMetadata: () => true }));
@@ -128,11 +138,11 @@ describe('production brief undo across a session restore', () => {
         clearHandlerRegistry();
         registerHandlers();
         setArrangementEventBus(createEventBus());
-        setNotificationEventBus(createEventBus());
+        setNotificationEventBus(createEventBus<NotificationEvents>());
         setTrackStoreState({
             ...structuredClone(defaultTrackState),
             tracks: [
-                createTrack({ id: GAIN_TRACK_ID, name: 'Pad', kind: 'audio', gain: 0.8 }),
+                { ...createTrack({ id: GAIN_TRACK_ID, name: 'Pad', kind: 'audio' }), gain: 0.8 },
                 createTrack({ id: ROLE_TRACK_ID, name: 'Low end', kind: 'midi' }),
             ],
         });
