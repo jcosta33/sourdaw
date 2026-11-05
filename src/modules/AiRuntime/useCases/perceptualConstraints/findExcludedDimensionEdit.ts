@@ -193,14 +193,44 @@ function readAutomationEdits(
     return edits(dimensions, automated.trackId, automated.parameterId);
 }
 
-/** A track routed into a bus takes on that bus's processing: its space, or its spectral shaping. */
-function readOutputEdits(action: AppAction, context: ProjectContext): Edit[] | null {
+/** Every dimension the devices on these tracks shape, as the project holds them. */
+function reachedChainDimensions(trackIds: ReadonlySet<string>, context: ProjectContext): PerceptualExcludedDimension[] {
+    const deviceTypes = context.tracks
+        .filter((track) => trackIds.has(track.id))
+        .flatMap((track) => track.devices.map((device) => device.type));
+    return chainDimensions(deviceTypes);
+}
+
+/** An output a later output on the same track replaces never survives the batch, so it edits nothing. */
+function isSupersededOutput(action: AppAction, actions: readonly AppAction[]): boolean {
     if (action.type !== 'setTrackOutput') {
+        return false;
+    }
+    return actions
+        .slice(actions.indexOf(action) + 1)
+        .some((later) => later.type === 'setTrackOutput' && later.payload.trackId === action.payload.trackId);
+}
+
+/**
+ * A track routed into a bus takes on the processing of everything that bus reaches, bus to bus: its
+ * space, or its spectral shaping. A send adds a processed parallel copy, so it is always space and
+ * also reshapes the low end when a reached track holds a spectral device.
+ */
+function readRoutingEdits(action: AppAction, actions: readonly AppAction[], context: ProjectContext): Edit[] | null {
+    if (action.type !== 'setTrackOutput' && action.type !== 'addSend') {
         return null;
     }
-    const destination = context.tracks.find((track) => track.id === action.payload.outputId);
-    const dimensions = chainDimensions((destination?.devices ?? []).map((device) => device.type));
-    return edits(dimensions, action.payload.trackId, `to ${destination?.name ?? action.payload.outputId}`);
+    if (isSupersededOutput(action, actions)) {
+        return [];
+    }
+    const destinationId = action.type === 'setTrackOutput' ? action.payload.outputId : action.payload.busId;
+    const dimensions = reachedChainDimensions(readReachedTrackIds([destinationId], actions, context), context);
+    if (action.type === 'addSend') {
+        const lowEnd = dimensions.filter((dimension) => dimension === 'low-frequency-band');
+        return edits(['ambience', ...lowEnd], action.payload.trackId, 'send');
+    }
+    const destination = context.tracks.find((track) => track.id === destinationId);
+    return edits(dimensions, action.payload.trackId, `to ${destination?.name ?? destinationId}`);
 }
 
 function readParameterEdits(action: AppAction, actions: readonly AppAction[], context: ProjectContext): Edit[] | null {
@@ -231,7 +261,7 @@ function readDeviceChainEdits(
 }
 
 function readSendEdits(action: AppAction): Edit[] | null {
-    if (action.type === 'addSend' || action.type === 'setSend' || action.type === 'removeSend') {
+    if (action.type === 'setSend' || action.type === 'removeSend') {
         return edits(['ambience'], action.payload.trackId, 'send');
     }
     if (action.type === 'automateSendRange' || action.type === 'automateSendRanges') {
@@ -279,29 +309,34 @@ function readActionEdits(action: AppAction, actions: readonly AppAction[], conte
     return (
         readParameterEdits(action, actions, context) ??
         readDeviceChainEdits(action, actions, context) ??
+        readRoutingEdits(action, actions, context) ??
         readSendEdits(action) ??
-        readOutputEdits(action, context) ??
         readAutomationEdits(action, effect, actions, context) ??
         readUnclassifiedEdits(action, effect, context)
     );
 }
 
-/** Where a track's signal goes: its sends and its output, in the project and as the batch adds them. */
+/**
+ * Where a track's signal goes once the batch has run: its sends and output as the project holds them,
+ * with the batch's own routing commands applied in order. A later output replaces an earlier one, and
+ * a removed send no longer reaches its bus. The batch is applied and heard as one change.
+ */
 function readDestinations(trackId: string, actions: readonly AppAction[], context: ProjectContext): string[] {
     const track = context.tracks.find((candidate) => candidate.id === trackId);
-    const destinations = [...(track?.sends ?? []).map((send) => send.busId)];
-    if (track?.outputId !== undefined) {
-        destinations.push(track.outputId);
-    }
+    let sends = (track?.sends ?? []).map((send) => send.busId);
+    let outputId = track?.outputId;
     for (const action of actions) {
         if (action.type === 'addSend' && action.payload.trackId === trackId) {
-            destinations.push(action.payload.busId);
+            sends.push(action.payload.busId);
+        }
+        if (action.type === 'removeSend' && action.payload.trackId === trackId) {
+            sends = sends.filter((busId) => busId !== action.payload.busId);
         }
         if (action.type === 'setTrackOutput' && action.payload.trackId === trackId) {
-            destinations.push(action.payload.outputId);
+            outputId = action.payload.outputId;
         }
     }
-    return destinations;
+    return outputId === undefined ? sends : [...sends, outputId];
 }
 
 /**
