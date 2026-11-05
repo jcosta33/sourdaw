@@ -1,0 +1,41 @@
+docs/architecture/06-crdt-collaboration.md
+  s_55244eb93b97d1::t_4d8db0e17d961a 42
+evidence/agent-campaign/manifest.json
+  s_0314bb17e5dee3::t_553c721e92211c 250,374,527,599,671,683,695,707,719,820,914,926
+src/modules/AiRuntime/AGENTS.md
+  s_55244eb93b97d1::t_7a101b3431126f 40
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  s_55244eb93b97d1::t_7b61344d3cd5d4 196,2819
+src/modules/AiRuntime/useCases/agentReference/__tests__/getExplicitlyProtectedClips.spec.ts
+  s_55244eb93b97d1::t_198d9c6585cf5f 167-252
+src/modules/AiRuntime/useCases/agentReference/clipProtectionReading.ts
+  s_55244eb93b97d1::t_4991f0b14ab88b 38-45,65
+src/modules/Command/useCases/__tests__/undoRedoReplayConflicts.spec.ts
+  s_55244eb93b97d1::t_3ea69eb9962b87 503-687
+src/modules/Command/useCases/undo.ts
+  s_55244eb93b97d1::t_00777c21becc6a 133-145,300-305,317-318,320,335-337,372,394-395
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a4f9712e24e8663015f145f92c50dd326336c138",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
