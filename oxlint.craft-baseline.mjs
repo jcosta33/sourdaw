@@ -94,7 +94,6 @@ export const craftBaselineFiles = {
         'src/modules/AiRuntime/useCases/agentReference/batchLocalBindingProducers.ts',
         'src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts',
         'src/modules/AiRuntime/useCases/agentReference/getApplicationProtectedObjects.ts',
-        'src/modules/AiRuntime/useCases/agentReference/getWholeProjectVibeMixScope.ts',
         'src/modules/AiRuntime/useCases/agentReference/materializeBatchLocalActionIdentities.ts',
         'src/modules/AiRuntime/useCases/agentReference/registerPreparedStemImportResources.ts',
         'src/modules/AiRuntime/useCases/agentReference/resolveCompleteClipReference.ts',

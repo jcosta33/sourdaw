@@ -129,7 +129,7 @@ describe('automationRangeStrategy', () => {
         });
     });
 
-    it('automateTrackGainRange lifts exact impact buses over one existing section', () => {
+    it('automateTrackGainRange lifts exact buses over one existing section', () => {
         expect(
             bridgeAutomationRangeToolCall({
                 call: {

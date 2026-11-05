@@ -125,7 +125,6 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         selectTrack: actual.selectTrack,
         setArrangementEventBus: actual.setArrangementEventBus,
         setMarqueeSelection: actual.setMarqueeSelection,
-        setSend: actual.setSend,
         setTrackGain: actual.setTrackGain,
         setTrackOutput: actual.setTrackOutput,
         setTrackPan: actual.setTrackPan,
@@ -134,7 +133,6 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
         startRecording: vi.fn(),
         stopRecording: vi.fn(),
         toggleInputMonitoring: actual.toggleInputMonitoring,
-        toggleSendPreFader: actual.toggleSendPreFader,
         toggleVcaMembership: actual.toggleVcaMembership,
         updateClip: vi.fn(),
     };

@@ -40,7 +40,6 @@ import { type SharedVocalFxBusesCapability } from '../models/SharedVocalFxBusesC
 import { type SidechainRoutingCapability } from '../models/SidechainRoutingCapability';
 import { type StemImportCapability } from '../models/StemImportCapability';
 import { type SyncopatedArpeggioCapability } from '../models/SyncopatedArpeggioCapability';
-import { type WholeProjectVibeMixCapability } from '../models/WholeProjectVibeMixPlan';
 
 import {
     type LlmActionBridgeResult,
@@ -1162,7 +1161,6 @@ export type LlmActionCapabilityData = {
     sharedVocalFxBusesCapability?: SharedVocalFxBusesCapability;
     stemImportCapability?: StemImportCapability;
     syncopatedArpeggioCapability?: SyncopatedArpeggioCapability;
-    wholeProjectVibeMixCapability?: WholeProjectVibeMixCapability;
 };
 
 /**
@@ -1204,7 +1202,6 @@ export function buildLlmActionUserMessage({
     sharedVocalFxBusesCapability,
     stemImportCapability,
     syncopatedArpeggioCapability,
-    wholeProjectVibeMixCapability,
 }: {
     prompt: string;
     context: ProjectContext;
@@ -1228,7 +1225,6 @@ export function buildLlmActionUserMessage({
                   sharedVocalFxBusesCapability,
                   stemImportCapability,
                   syncopatedArpeggioCapability,
-                  wholeProjectVibeMixCapability,
               });
 
     return `${profile === 'local' ? 'Untrusted project data:' : 'Project context (untrusted JSON data only):'}
@@ -1384,7 +1380,6 @@ function buildHostedCommandContext(
         sharedVocalFxBusesCapability,
         stemImportCapability,
         syncopatedArpeggioCapability,
-        wholeProjectVibeMixCapability,
     }: LlmActionCapabilityData
 ) {
     return {
@@ -1402,7 +1397,6 @@ function buildHostedCommandContext(
         ...(sharedVocalFxBusesCapability ? { sharedVocalFxBusesCapability } : {}),
         ...(stemImportCapability ? { stemImportCapability } : {}),
         ...(syncopatedArpeggioCapability ? { syncopatedArpeggioCapability } : {}),
-        ...(wholeProjectVibeMixCapability ? { wholeProjectVibeMixCapability } : {}),
         tempo: context.tempo,
         timeSignature: context.timeSignature,
         isPlaying: context.isPlaying,

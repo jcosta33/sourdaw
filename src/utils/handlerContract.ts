@@ -2017,6 +2017,8 @@ export type AppAction =
               levelDb?: number;
               /** Change relative to the send's live level, in decibels. */
               deltaDb?: number;
+              /** New tap point; omitted keeps the send's current one. */
+              preFader?: boolean;
               expectedLevel?: number;
               expectedPreFader?: boolean;
           };
