@@ -1,0 +1,27 @@
+src/modules/Transport/models/__tests__/MusicalPositionFormat.spec.ts
+  s_730795a6b8b392::t_891f7497039f56 7
+src/modules/Transport/useCases/transportQueries/formatMusicalLength.ts
+  s_730795a6b8b392::t_878a20876f32d9 1
+src/modules/Transport/useCases/transportQueries/formatMusicalLengthParts.ts
+  s_730795a6b8b392::t_b0088616af4d46 1
+src/modules/Transport/useCases/transportQueries/formatMusicalPosition.ts
+  s_730795a6b8b392::t_bfc7a9c722d84b 1
+src/modules/Transport/useCases/transportQueries/measureMusicalLength.ts
+  s_730795a6b8b392::t_bd3b34f68811fd 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bfcb4ef9d3789520aaea67408181ab1c2cfa222e",
+  "prompts": {},
+  "sessions": {
+    "s_730795a6b8b392": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_730795a6b8b392",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
