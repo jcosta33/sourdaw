@@ -14,7 +14,7 @@ import { type ProjectContext } from '../../models/ProjectContext';
 import { PROPOSAL_REFINES_MAX_LENGTH } from '../../models/ThreadContext';
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { tryCompoundFastPath, tryParameterizedPath, tryPresetMatch } from '../../transformers/promptParser/parsing';
-import { APPLICATION_OWNED_TOOL_SCHEMAS, runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
+import { getApplicationOwnedToolSchemas, runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 
@@ -524,7 +524,7 @@ describe('application-owned tool loop', () => {
     );
 
     it('publishes the compact catalog and rejects unavailable tools before local execution', async () => {
-        const schemas = APPLICATION_OWNED_TOOL_SCHEMAS;
+        const schemas = getApplicationOwnedToolSchemas();
         expect(schemas.map((schema) => schema.function.name)).toEqual(
             expect.arrayContaining(['project.query', 'agent.catalog.discover', 'command.batch.propose'])
         );
@@ -2322,8 +2322,8 @@ describe('project discovery tool', () => {
 
     it('offers the semantic query types alone and answers discovery through its own tool', () => {
         const contracts = getProjectProtocolContracts();
-        const querySchema = APPLICATION_OWNED_TOOL_SCHEMAS.find((schema) => schema.function.name === 'project.query');
-        const discoverySchema = APPLICATION_OWNED_TOOL_SCHEMAS.find(
+        const querySchema = getApplicationOwnedToolSchemas().find((schema) => schema.function.name === 'project.query');
+        const discoverySchema = getApplicationOwnedToolSchemas().find(
             (schema) => schema.function.name === 'project.discover'
         );
 

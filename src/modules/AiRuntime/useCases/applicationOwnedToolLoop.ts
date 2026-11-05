@@ -1984,7 +1984,18 @@ function toolChoiceRefusal(
     return null;
 }
 
-export const APPLICATION_OWNED_TOOL_SCHEMAS: readonly ToolSchema[] = getAgentToolCatalogSchemas();
+let applicationOwnedToolSchemas: readonly ToolSchema[] | null = null;
+
+/**
+ * The tool schemas the application-owned loop offers, built on first use and
+ * kept. Not built when this module loads: the catalog reads the factory preset
+ * library, which may hold presets the composition root registers only after
+ * every module has loaded.
+ */
+export function getApplicationOwnedToolSchemas(): readonly ToolSchema[] {
+    applicationOwnedToolSchemas ??= getAgentToolCatalogSchemas();
+    return applicationOwnedToolSchemas;
+}
 
 export async function runApplicationOwnedToolLoop(
     input: RunApplicationOwnedToolLoopInput

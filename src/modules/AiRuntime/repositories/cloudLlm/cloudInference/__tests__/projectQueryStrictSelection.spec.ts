@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type ToolSchema } from '../../../../models/ToolDefinitions';
-import { APPLICATION_OWNED_TOOL_SCHEMAS } from '../../../../useCases/applicationOwnedToolLoop';
+import { getApplicationOwnedToolSchemas } from '../../../../useCases/applicationOwnedToolLoop';
 import { projectAnthropicStrictToolSchema } from '../projectAnthropicStrictToolSchema';
 import { projectOpenAiStrictToolSchema } from '../projectOpenAiStrictToolSchema';
 import { selectAnthropicStrictTools } from '../selectAnthropicStrictTools';
@@ -73,7 +73,7 @@ function strictNames(schemas: readonly ToolSchema[]): string[] {
 }
 
 describe('project.query filters under strict tool schemas', () => {
-    const published = APPLICATION_OWNED_TOOL_SCHEMAS.map(projectAnthropicStrictToolSchema);
+    const published = getApplicationOwnedToolSchemas().map(projectAnthropicStrictToolSchema);
 
     it('sends project.query non-strict on Anthropic because its optional parameters alone pass the cap', () => {
         const projectQuery = findTool(published, 'project.query');
@@ -102,7 +102,7 @@ describe('project.query filters under strict tool schemas', () => {
     });
 
     it('keeps every published filter on the OpenAI strict projection', () => {
-        const projected = projectOpenAiStrictToolSchema(findTool(APPLICATION_OWNED_TOOL_SCHEMAS, 'project.query'));
+        const projected = projectOpenAiStrictToolSchema(findTool(getApplicationOwnedToolSchemas(), 'project.query'));
         const filters = readFilters(projected);
         const properties = isRecord(filters.properties) ? filters.properties : {};
         const required = Array.isArray(filters.required) ? filters.required : [];
