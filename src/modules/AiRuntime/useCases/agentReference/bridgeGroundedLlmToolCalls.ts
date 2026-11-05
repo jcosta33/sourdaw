@@ -4145,6 +4145,27 @@ function groundSourceSetLiftShape(
     return null;
 }
 
+/**
+ * A grounded source set in the order the request names its members, never the order the provider
+ * listed them: the set reading checks membership only, so the provider's order would otherwise
+ * become the command's.
+ */
+function orderByRequestMention(ids: unknown, prompt: string, context: ProjectContext): unknown {
+    if (!Array.isArray(ids)) {
+        return ids;
+    }
+    const firstMention = (id: unknown): number => {
+        const track = context.tracks.find((candidate) => candidate.id === id);
+        const positions = (track ? [track.id, track.name] : [])
+            .map((reference) =>
+                new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(reference)}(?![\\p{L}\\p{N}])`, 'iu').exec(prompt)
+            )
+            .flatMap((match) => (match === null ? [] : [match.index]));
+        return positions.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...positions);
+    };
+    return ids.toSorted((left, right) => firstMention(left) - firstMention(right));
+}
+
 function resolveAgentReferenceArray({
     assertedIds,
     capability,
@@ -5219,6 +5240,8 @@ function groundToolCall({
         if (sourceSetRejection !== null) {
             return rejection(index, call.name, sourceSetRejection);
         }
+        const argument = groundingRules.targetRules[0]!.argument;
+        groundedArguments[argument] = orderByRequestMention(groundedArguments[argument], prompt, context);
     }
 
     return { ...call, arguments: groundedArguments };

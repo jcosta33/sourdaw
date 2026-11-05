@@ -692,7 +692,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts",
-                    "digest": "17f1a08eae312ee75422164956ce681a5adfb82f05a8d5f5812e3bdb2922cc69"
+                    "digest": "62f45fcfab469296a33bcab9de623cf0766368d60398a90020fcbf3fe487cc74"
                 }
             ]
         },
