@@ -53,7 +53,7 @@ vi.mock('../../../stores/pendingActionConfirmationStore', () => ({
 vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     captureProjectRevision: mocks.revision,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint: mocks.revisionMatchesLive,
+    projectRevisionMatchesLiveIgnoringSaveWrites: mocks.revisionMatchesLive,
     settlePendingProjectWritesAndCaptureRevision: mocks.settlePendingWrites,
 }));
 vi.mock('../admitCommittedSectionRenderRetry', () => ({ admitCommittedSectionRenderRetry: mocks.admitRetry }));
@@ -229,7 +229,7 @@ describe('resolveConfirmationAdmission', () => {
         });
     });
 
-    it('admits when only the command checkpoint changed the strict project revision', async () => {
+    it('admits when only a command checkpoint or a save changed the strict project revision', async () => {
         const confirmation = createConfirmation({ commandBatch: createBatch() });
         mocks.getConfirmation.mockReturnValue(confirmation);
         mocks.revision.mockReturnValue('revision-with-command-checkpoint');

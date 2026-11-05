@@ -52,7 +52,7 @@ function projectDocumentWithoutCommandCheckpointOrSaveWrites(
  * live slots. A save between capture and check is then no project change, while every other
  * `projectMeta` field (name, key, scale, tuning, brief, identity), the live slots themselves and the
  * active arrangement's id and name still count. For a reader that only asks "is this still the same
- * project content"; command admission keeps the stricter check.
+ * project content", which includes whether a pending proposal still matches what was approved.
  */
 export function projectRevisionMatchesLiveIgnoringSaveWrites(expectedRevision: string): boolean {
     return rootRevisionMatching.matchesLiveWithin(

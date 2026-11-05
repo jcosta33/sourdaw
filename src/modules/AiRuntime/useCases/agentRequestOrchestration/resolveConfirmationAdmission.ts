@@ -2,10 +2,7 @@ import {
     getVersionedCommandBatchIdempotentReplay,
     refreshVersionedCommandBatchForApproval,
 } from '#/modules/Command/useCases';
-import {
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
-    settlePendingProjectWritesAndCaptureRevision,
-} from '#/modules/CrdtDocument/useCases';
+import { settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
 
 import { type ChatActionConfirmationStatus } from '../../models/Chat';
 import { chatStore, updateChatMessage } from '../../stores/chatStore';
@@ -16,6 +13,7 @@ import {
 } from '../../stores/pendingActionConfirmationStore';
 import { hasExactAgentCommandBatchAuthority } from '../../validators/hasExactAgentCommandBatchAuthority';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { approvedProjectRevision } from '../approvedProjectRevision';
 import { bindMetricGoalsToBatch } from '../bindMetricGoalsToBatch';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
@@ -264,10 +262,7 @@ async function resolveConfirmationAdmission(input: {
             };
         }
     }
-    if (
-        !hasPriorVerifiedBatchReceipt &&
-        !projectRevisionMatchesLiveIgnoringCommandCheckpoint(confirmation.projectRevision)
-    ) {
+    if (!hasPriorVerifiedBatchReceipt && !approvedProjectRevision.matchesLive(confirmation.projectRevision)) {
         const commandBatch = confirmation.approvalSnapshot.commandBatch;
         if (!commandBatch) {
             return {
