@@ -400,14 +400,12 @@ function contentBeatsConsumed(clip: Clip, timelineBeats: number): number {
     return timelineBeats * consumedStretchFactor(clip);
 }
 
+/** The audio anchor law for a cut at `endBeat` (MIDI clips take the MIDI laws below). */
 function selectedRangeRightLoopOriginEntry(clip: Clip, endBeat: number) {
     if (clip.type === 'audio' && clip.audioOffsetSeconds !== undefined) {
         return {};
     }
     const timelineDelta = endBeat - clip.startBeat;
-    if (clip.type === 'midi') {
-        return shiftLoopOriginEntry(clip, timelineDelta);
-    }
     return shiftLoopOriginEntry(clip, timelineDelta - contentBeatsConsumed(clip, timelineDelta));
 }
 
@@ -417,6 +415,26 @@ function selectedRangeRightContentEntry(clip: Clip, endBeat: number) {
         return midiFragmentWindowEntry(clip, endBeat, endBeat);
     }
     return { midiOffsetBeats: 0, ...selectedRangeRightLoopOriginEntry(clip, endBeat) };
+}
+
+/**
+ * The content fields of a clip whose head the range removes: a start trim to
+ * `endBeat` in place, so everything after the range plays where it did. A MIDI
+ * clip keeps its notes and advances its content offset by the trimmed span. A
+ * looping one also keeps the source's loop length and anchor
+ * (`midiFragmentWindowEntry` with the fragment's head on the cut), so its
+ * passes stay on the source's grid. One that does not loop keeps its anchor
+ * untouched, as `trimClipStart` does; that fragment law re-bases notes, which
+ * a trim does not. An audio clip takes the audio anchor law.
+ */
+function selectedRangeHeadTrimContentEntry(clip: Clip, endBeat: number) {
+    if (continuesLoopingMidiPhase(clip)) {
+        return midiFragmentWindowEntry(clip, endBeat, endBeat);
+    }
+    if (clip.type === 'midi') {
+        return { midiOffsetBeats: (clip.midiOffsetBeats ?? 0) + (endBeat - clip.startBeat) };
+    }
+    return selectedRangeRightLoopOriginEntry(clip, endBeat);
 }
 
 function sourceContentBeatAt(clip: Clip, beat: number): number {
@@ -774,11 +792,13 @@ function planTrack(
             if (!source) {
                 return null;
             }
-            // The anchor treatment follows the basis the trim creates
-            // (#4988). The MIDI side keeps its notes and content offset —
-            // a whole-clip relocation by (endBeat − startBeat) — so the
-            // anchor rides that delta. The audio side's offset advances by
-            // the stretched media delta the excised span consumed
+            // Without ripple, removing the head is a start trim in place:
+            // content after the range never moves (#4988). The MIDI side
+            // advances its content offset by the trimmed span and keeps its
+            // notes; a looping clip also keeps the source's loop length and
+            // anchor, so its passes, seam tails and probability rolls after
+            // the range are the uncut clip's. The audio side's offset advances
+            // by the stretched media delta the excised span consumed
             // (`contentBeatsConsumed`), so its anchor shifts by
             // `timelineDelta - contentDelta` — zero at stretch 1, the same
             // law `prepareClipSplit`'s `fragmentLoopOriginEntry` applies to
@@ -789,10 +809,9 @@ function planTrack(
             // unshifted, a stretched trim displaces the region by
             // `timelineDelta * (stretch - 1)` source beats; shifting by the
             // raw span alone slid it under the unstretched regression
-            // (#5198). Unanchored clips keep the key absent.
+            // (#5198). Unanchored audio clips keep the key absent.
             const timelineDelta = operation.endBeat - clip.startBeat;
             const contentDelta = contentBeatsConsumed(clip, timelineDelta);
-            const trimLoopOriginEntry = selectedRangeRightLoopOriginEntry(clip, operation.endBeat);
             finalClips.push({
                 ...clip,
                 startBeat: operation.endBeat,
@@ -800,7 +819,7 @@ function planTrack(
                 // head inside the deleted range is content the clip no longer
                 // plays.
                 audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + contentDelta,
-                ...trimLoopOriginEntry,
+                ...selectedRangeHeadTrimContentEntry(clip, operation.endBeat),
                 ...source,
             });
             changed = true;

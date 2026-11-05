@@ -2,7 +2,7 @@
  * Opening a clip scrolls the roll onto its notes once. jsdom has no layout, so
  * the scroll container's client size is stubbed; the scroll itself is the real
  * `scrollTop` the component assigns. Expected values restate the roll's
- * geometry: a 22px ruler then 16px rows, row 0 = pitch 83, viewport 300px
+ * geometry: a 22px ruler then 16px rows, row 0 = pitch 127, viewport 300px
  * tall, so a span centred at y is scrolled to y - (300 + 22) / 2.
  */
 import { render, fireEvent, act } from '@testing-library/react';
@@ -89,12 +89,12 @@ const props = {
     onSelectedNoteIdsChange: vi.fn(),
 };
 
-// C3..E3 = rows 35..31, span 518..598, centre 558.
-const C3_E3_SCROLL_TOP = 558 - 161;
-// Middle C (row 23) centre 398.
-const MIDDLE_C_SCROLL_TOP = 398 - 161;
-// A4 (pitch 69), row 14, span 246..262.
-const A4_SCROLL_TOP = 254 - 161;
+// C3..E3 = rows 79..75, span 1222..1302, centre 1262.
+const C3_E3_SCROLL_TOP = 1262 - 161;
+// Middle C (row 67) centre 1102.
+const MIDDLE_C_SCROLL_TOP = 1102 - 161;
+// A4 (pitch 69), row 58, span 950..966.
+const A4_SCROLL_TOP = 958 - 161;
 
 const scroller = (container: HTMLElement): HTMLElement => {
     const element = container.querySelector('canvas')?.parentElement?.parentElement;
