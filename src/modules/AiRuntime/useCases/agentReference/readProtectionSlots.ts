@@ -20,6 +20,8 @@ const startPatterns: ReadonlyArray<{ kind: StartKind; pattern: RegExp }> = [
     },
 ];
 const instructionPattern = new RegExp(String.raw`\b${INSTRUCTION_VERBS}\b`, 'giu');
+const instructionStartPattern = new RegExp(String.raw`^\s+${INSTRUCTION_VERBS}\b`, 'iu');
+const joiningAndPattern = /\band\s+$/iu;
 const conjunctionPattern = /\b(?:then|but|so|because)\b/giu;
 const hardBoundaryPattern = /[;:\n]|[.!?](?=\s|$)/gu;
 
@@ -41,7 +43,13 @@ const OPENS_WITH_PROTECTION_VERB = new RegExp(String.raw`^\s*${PROTECTION_VERB}\
 const LAST_WITH = /\bwith\s+(?![\s\S]*\bwith\s)/iu;
 
 type StartKind = 'verb' | 'prohibition' | 'carve-out';
-type Event = { index: number; end: number; kind: StartKind | 'cut' | 'instruction' };
+type Event = {
+    index: number;
+    end: number;
+    kind: StartKind | 'cut' | 'instruction';
+    /** Where the text before the event ends: a bare `and` that joins it to the clause before belongs to the cut. */
+    cutAt: number;
+};
 type Piece = {
     start: number;
     end: number;
@@ -99,12 +107,19 @@ function opensInstruction(masked: string, index: number): boolean {
     );
 }
 
+/** The index of the `and` that joins an instruction starting at `index` to the clause before it, else `index`. */
+function joiningAndStart(masked: string, index: number): number {
+    const joining = joiningAndPattern.exec(masked.slice(0, index));
+    return joining === null ? index : joining.index;
+}
+
 function collectEvents(masked: string): Event[] {
     const starts: Event[] = startPatterns.flatMap(({ kind, pattern }) =>
         Array.from(masked.matchAll(pattern), (match) => ({
             index: match.index,
             end: match.index + match[0].length,
             kind,
+            cutAt: match.index,
         })).filter((start) => !opensTitleCasedPhrase(masked, start.index))
     );
     const insideStart = (index: number) => starts.some((start) => index >= start.index && index < start.end);
@@ -113,12 +128,17 @@ function collectEvents(masked: string): Event[] {
             index: match.index,
             end: match.index + match[0].length,
             kind: 'cut' as const,
+            cutAt:
+                match[0].toLowerCase() === 'then' && instructionStartPattern.test(masked.slice(match.index + 4))
+                    ? joiningAndStart(masked, match.index)
+                    : match.index,
         })).filter((cut) => !insideStart(cut.index))
     );
     const instructions: Event[] = Array.from(masked.matchAll(instructionPattern), (match) => ({
         index: match.index,
         end: match.index + match[0].length,
         kind: 'instruction' as const,
+        cutAt: joiningAndStart(masked, match.index),
     })).filter((cut) => !insideStart(cut.index) && opensInstruction(masked, cut.index));
     return [...starts, ...cuts, ...instructions].toSorted(
         (left, right) => left.index - right.index || right.end - left.end
@@ -165,7 +185,7 @@ function splitPieces(masked: string): Piece[] {
             memberSeparators.push({ start: event.index, end: event.end });
             continue;
         }
-        pieces.push({ start: cursor, end: event.index, lead, memberSeparators });
+        pieces.push({ start: cursor, end: Math.max(cursor, event.cutAt), lead, memberSeparators });
         memberSeparators = [];
         if (event.kind === 'cut' || event.kind === 'instruction') {
             cursor = event.end;

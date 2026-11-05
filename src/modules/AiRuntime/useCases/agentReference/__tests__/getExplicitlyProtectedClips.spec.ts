@@ -99,6 +99,60 @@ describe('getExplicitlyProtectedClips', () => {
         });
     });
 
+    describe('a protection joined to the next instruction by a bare and', () => {
+        const alpha = createClip('clip-alpha', 'Alpha');
+        const beta = createClip('clip-beta', 'Beta');
+        const moveBeta = createClip('clip-move-beta', 'Move Beta');
+        const alphaBeta = { ...context, tracks: [createTrack('track-pair', 'Pair', [alpha, beta])] };
+        const alphaMoveBeta = { ...context, tracks: [createTrack('track-move', 'Pair', [alpha, moveBeta])] };
+        const alphaOnly = [{ id: alpha.id, name: alpha.name }];
+
+        it.each([
+            'leave Alpha alone and rename Beta',
+            'leave Alpha alone, and rename Beta',
+            'leave Alpha alone and then rename Beta',
+            'leave Alpha alone then rename Beta',
+            'without touching Alpha and rename Beta to Gamma',
+            'without touching Alpha and then rename Beta',
+            'without touching Alpha then rename Beta',
+            "Don't touch Alpha and rename Beta to Gamma",
+            'leave Alpha alone, but rename Beta to Gamma',
+            "Don't touch Alpha, but rename Beta to Gamma",
+        ])('ends the protection before the next instruction and reads it complete: %s', (prompt) => {
+            expect(getExplicitClipProtection(prompt, alphaBeta)).toEqual({ clips: alphaOnly, complete: true });
+        });
+
+        it.each([
+            'leave Alpha and Beta alone',
+            'leave Alpha and Beta alone and rename Gamma',
+            'without touching Alpha and Beta',
+            'without touching Alpha and Beta and rename Gamma',
+        ])('still protects every member of a list: %s', (prompt) => {
+            expect(getExplicitClipProtection(prompt, alphaBeta)).toEqual({
+                clips: [alpha, beta].map(({ id, name }) => ({ id, name })),
+                complete: true,
+            });
+        });
+
+        it.each(['leave Alpha alone and', 'without touching Alpha and', 'without touching Alpha and then'])(
+            'keeps a dangling and incomplete: %s',
+            (prompt) => {
+                expect(getExplicitClipProtection(prompt, alphaBeta).complete).toBe(false);
+            }
+        );
+
+        it('does not cut a clip name that starts with an instruction verb', () => {
+            expect(getExplicitClipProtection('leave Alpha and Move Beta alone', alphaMoveBeta)).toEqual({
+                clips: [alpha, moveBeta].map(({ id, name }) => ({ id, name })),
+                complete: true,
+            });
+        });
+
+        it('keeps a word outside the instruction verbs after and as incomplete', () => {
+            expect(getExplicitClipProtection('leave Alpha alone and Beta', alphaBeta).complete).toBe(false);
+        });
+    });
+
     it('reads a prohibition list ending in a dangling and as incomplete', () => {
         expect(getExplicitClipProtection('without touching Lead and', context).complete).toBe(false);
     });
