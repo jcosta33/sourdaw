@@ -305,6 +305,28 @@ describe('AC-003 a question about what to change answers with a recipe-backed su
         expect(confirmations()).toEqual([]);
     });
 
+    // Red when a recipe naming no role is offered as a change, though the offer must state the role it serves.
+    it('offers no suggestion for a recipe that names no role, on the track it was asked about', async () => {
+        const roleLess = 'preset:fx-eq-high-cut:warm';
+        const discovery: ToolCallResult = {
+            id: 'recipe',
+            name: 'recipe.discover',
+            arguments: { descriptors: ['warm'], targetId: VOCAL_ID, limit: 8 },
+        };
+
+        const answer = await askForWarmth([
+            [discovery],
+            [respond([{ kind: 'recipe', callId: 'recipe', recipeId: roleLess }])],
+        ]);
+
+        expect(answer.error).toBeUndefined();
+        expect(answer.content).toContain('Factory preset');
+        expect(answer.answerSuggestion).toBeUndefined();
+        expect(answer.content).not.toContain('Propose this');
+        expect(await proposeAnswerSuggestion(answer.id)).toBe('unavailable');
+        expect(confirmations()).toEqual([]);
+    });
+
     it('offers no suggestion when discovery named no target', async () => {
         const answer = await askForWarmth([[discover(null)], [respond([RECIPE_STATEMENT])]]);
 
