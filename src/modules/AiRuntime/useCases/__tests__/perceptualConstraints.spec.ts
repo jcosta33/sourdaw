@@ -742,8 +742,23 @@ describe('excluded dimensions', () => {
                 ]
             );
             expect(removeFrom(context, 'hop-return')).toContain(
-                'command 1 (removeTrack removing Hop Return) edits the ambience of “Hop Return”'
+                'command 1 (removeTrack removing Hop Return) edits the ambience of “Vocal”'
             );
+        });
+
+        it('charges a send copy lost with a bus to the sender, not to a vocal routed through the bus', () => {
+            const context = contextWithRouting(
+                {
+                    vocal: { sends: [], outputId: 'bus-a' },
+                    'bus-a': { sends: [], outputId: 'verb-bus-b' },
+                    bass: { sends: ['bus-a'] },
+                },
+                [
+                    { id: 'bus-a', name: 'Bus A', devices: [] },
+                    { id: 'verb-bus-b', name: 'Verb Bus B', devices: [device('b-verb', 'builtin-reverb')] },
+                ]
+            );
+            expect(removeFrom(context, 'bus-a')).toBeNull();
         });
 
         it('refuses removing the bus a bass outputs to under the low-end constraint', () => {

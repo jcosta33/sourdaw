@@ -239,27 +239,18 @@ function readRoutingEdits(action: AppAction, actions: readonly AppAction[], cont
     return edits(dimensions, action.payload.trackId, `to ${destination?.name ?? destinationId}`);
 }
 
-/** Whether any other track sends into this one, in the routing as the batch leaves it. */
-function isSentInto(trackId: string, actions: readonly AppAction[], context: ProjectContext): boolean {
-    return context.tracks.some(
-        (track) => track.id !== trackId && readRouting(track.id, actions, context).sends.includes(trackId)
-    );
-}
-
-/** The tracks whose devices a deletion takes from what the scoped tracks sound through. */
-function readCutTrackIds(removedId: string, actions: readonly AppAction[], context: ProjectContext): Set<string> {
-    if (isSentInto(removedId, actions, context)) {
-        return readReachedTrackIds([removedId], actions, context);
-    }
-    const sendReach = readReachedTrackIds(readRouting(removedId, actions, context).sends, actions, context);
-    return new Set([removedId, ...sendReach]);
+/** Every other track that sends into this one, in the routing as the batch leaves it. */
+function readSenderIds(trackId: string, actions: readonly AppAction[], context: ProjectContext): string[] {
+    return context.tracks
+        .filter((track) => track.id !== trackId && readRouting(track.id, actions, context).sends.includes(trackId))
+        .map((track) => track.id);
 }
 
 /**
  * Removing a track takes its devices and its sends with it, while every track routed into its output
- * is repointed to the output it had, so what lies past it on an output chain stays heard. A track
- * sending into it loses the whole parallel copy, its output chain included. The removed track owns the
- * edit, so a constraint holds it exactly when its scope reaches that track.
+ * is repointed to the output it had, so what lies past it on an output chain stays heard. The removed
+ * track owns that loss. A track sending into it loses the whole parallel copy, its output chain
+ * included, so each sender owns that one.
  */
 function readTrackRemovalEdits(
     action: AppAction,
@@ -275,9 +266,14 @@ function readTrackRemovalEdits(
         .touchedObjectIds(action.type, readPayload(action), context)
         .filter((id) => trackIds.has(id));
     return removedIds.flatMap((removedId) => {
-        const cut = readCutTrackIds(removedId, actions, context);
-        const name = context.tracks.find((track) => track.id === removedId)?.name ?? removedId;
-        return edits(reachedChainDimensions(cut, context), removedId, `removing ${name}`);
+        const detail = `removing ${context.tracks.find((track) => track.id === removedId)?.name ?? removedId}`;
+        const sendReach = readReachedTrackIds(readRouting(removedId, actions, context).sends, actions, context);
+        const ownLoss = reachedChainDimensions(new Set([removedId, ...sendReach]), context);
+        const copyLoss = reachedChainDimensions(readReachedTrackIds([removedId], actions, context), context);
+        return [
+            ...edits(ownLoss, removedId, detail),
+            ...readSenderIds(removedId, actions, context).flatMap((senderId) => edits(copyLoss, senderId, detail)),
+        ];
     });
 }
 
