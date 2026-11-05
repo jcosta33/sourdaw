@@ -1499,8 +1499,13 @@ describe('handleKeydown', () => {
             ['seek to start', { key: 'Home' }],
             ['marker navigation', { key: ']' }],
             ['tool letter', { key: 'd' }],
+            ['editing.deleteSelection (Delete)', { key: 'Delete' }],
+            ['editing.deleteSelection (Backspace)', { key: 'Backspace' }],
+            ['view.toggleWorkspaceMode (Tab)', { key: 'Tab' }],
+            ['view.toggleWorkspaceMode (Shift+Tab)', { key: 'Tab', shift: true }],
         ] as const)('does not fire %s from a focused note editor', (_id, keys) => {
             loadShippedDefinitions();
+            trackStoreMock.value.tracks = [{ id: 't1', clips: [{ id: 'clip-1', startBeat: 0, endBeat: 4 }] }];
             clipSelectionStoreMock.value = {
                 selectedClipId: 'clip-1',
                 selectedClipIds: ['clip-1'],
@@ -1510,6 +1515,8 @@ describe('handleKeydown', () => {
             const prevent = handleKeydown(descriptor({ ...keys, keyTarget: 'noteEditor' }));
 
             expect(prevent).toBe(false);
+            expect(clearClipSelection).not.toHaveBeenCalled();
+            expect(toggleWorkspaceMode).not.toHaveBeenCalled();
             expect(executeUserAppAction).not.toHaveBeenCalled();
             expect(stopPlaybackMock).not.toHaveBeenCalled();
             expect(selectAllClips).not.toHaveBeenCalled();
@@ -1522,14 +1529,29 @@ describe('handleKeydown', () => {
 
         it('does not arm the AI leader chord from a focused note editor', () => {
             loadShippedDefinitions();
+            clipSelectionStoreMock.value.selectedClipId = 'clip-1';
 
             handleKeydown(descriptor({ key: 'g' }));
             expect(handleKeydown(descriptor({ key: 'b' }))).toBe(true);
+            expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+            vi.mocked(executeUserAppAction).mockClear();
 
             handleKeydown(descriptor({ key: 'g', keyTarget: 'noteEditor' }));
             const followUp = handleKeydown(descriptor({ key: 'b' }));
 
             expect(followUp).toBe(false);
+            expect(executeUserAppAction).not.toHaveBeenCalled();
+        });
+
+        it('does not resolve an armed AI leader chord from a focused note editor', () => {
+            loadShippedDefinitions();
+            clipSelectionStoreMock.value.selectedClipId = 'clip-1';
+
+            handleKeydown(descriptor({ key: 'g' }));
+            const chord = handleKeydown(descriptor({ key: 'b', keyTarget: 'noteEditor' }));
+
+            expect(chord).toBe(false);
+            expect(executeUserAppAction).not.toHaveBeenCalled();
         });
     });
 });

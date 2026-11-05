@@ -178,7 +178,7 @@ describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#2
 
     it('skips a key the focused canvas editor claimed with preventDefault in its React handler', () => {
         openSessionWithCommandHandlers();
-        const claimedKeys = ['Delete'];
+        const claimedKeys = ['Delete', 'Enter', '5'];
         render(
             <>
                 <Host />
@@ -199,6 +199,12 @@ describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#2
 
         const claimed = dispatchKey(canvas, { key: 'Delete' });
         expect(claimed.defaultPrevented).toBe(true);
+        expect(mocks.handleKeydown).not.toHaveBeenCalled();
+
+        for (const key of ['Enter', '5']) {
+            const claimedOther = dispatchKey(canvas, { key });
+            expect(claimedOther.defaultPrevented, key).toBe(true);
+        }
         expect(mocks.handleKeydown).not.toHaveBeenCalled();
 
         dispatchKey(canvas, { key: 'z', metaKey: true });
@@ -315,7 +321,28 @@ describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#2
         it.each([
             ['Tab', false],
             ['Shift+Tab', true],
-        ])('leaves %s on the focused piano-roll canvas for native traversal', (_label, shiftKey) => {
+        ])('leaves %s on the focused piano-roll canvas to the note-editor policy', (_label, shiftKey) => {
+            openSessionWithCommandHandlers();
+            // handleKeydown does not admit workspace-mode Tab for a note
+            // editor, so it returns false and the default is not prevented.
+            mocks.handleKeydown.mockReturnValue(false);
+            render(<Host />);
+            const editor = mount(document.createElement('div'));
+            editor.setAttribute('data-canvas-editor', '');
+            const canvas = editor.appendChild(document.createElement('canvas'));
+            canvas.tabIndex = 0;
+            canvas.focus();
+            expect(document.activeElement).toBe(canvas);
+
+            const event = dispatchKey(canvas, { key: 'Tab', shiftKey });
+
+            expect(mocks.handleKeydown).toHaveBeenCalledExactlyOnceWith(
+                expect.objectContaining({ key: 'Tab', keyTarget: 'noteEditor' })
+            );
+            expect(event.defaultPrevented).toBe(false);
+        });
+
+        it('still delegates workspace-mode Tab from the body and a focused arrangement canvas', () => {
             openSessionWithCommandHandlers();
             mocks.handleKeydown.mockReturnValue(true);
             render(<Host />);
@@ -324,22 +351,13 @@ describe('useGlobalKeyboardShortcuts — canvas editors claim their own keys (#2
             canvas.focus();
             expect(document.activeElement).toBe(canvas);
 
-            const event = dispatchKey(canvas, { key: 'Tab', shiftKey });
-
-            expect(mocks.handleKeydown).not.toHaveBeenCalled();
-            expect(event.defaultPrevented).toBe(false);
-        });
-
-        it('still delegates workspace-mode Tab from the body and arrangement canvas', () => {
-            openSessionWithCommandHandlers();
-            mocks.handleKeydown.mockReturnValue(true);
-            render(<Host />);
-            const canvas = mount(document.createElement('canvas'));
-
             const bodyEvent = dispatchKey(document.body, { key: 'Tab' });
             const canvasEvent = dispatchKey(canvas, { key: 'Tab' });
 
             expect(mocks.handleKeydown).toHaveBeenCalledTimes(2);
+            for (const call of mocks.handleKeydown.mock.calls) {
+                expect(call[0]).toMatchObject({ key: 'Tab', keyTarget: 'workspace' });
+            }
             expect(bodyEvent.defaultPrevented).toBe(true);
             expect(canvasEvent.defaultPrevented).toBe(true);
         });
