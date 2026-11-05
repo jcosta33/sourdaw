@@ -371,7 +371,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts",
-                    "digest": "17de396b61d0618b257431bf1ec8333f150ddeb75abee5ac768746d42261d7ec"
+                    "digest": "dcf006acd16f79ec20a55ece794422ba82429ae08381ceaa40a59550750444f6"
                 }
             ]
         },
@@ -524,7 +524,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts",
-                    "digest": "879aa1a4c333f461b33dc8a64e60e49e283a062831da0f1c5d1790fa0d9070de"
+                    "digest": "ade223e68e816d89c87e73c71f989d6bf2cd690dea93dce9432d1d4bc4c572ff"
                 }
             ]
         },
@@ -596,7 +596,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/PluginHost/useCases/__tests__/agentDeviceManifest.spec.ts",
-                    "digest": "514433acc9c28719b03d1019fe66865e8b984d1f3ad243f21ad76fe26f356c5f"
+                    "digest": "2efb7230e8a418b60e3d1cc7fc858fd63c046386b58504e9184bc99286292992"
                 }
             ]
         },
@@ -817,7 +817,7 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts",
-                    "digest": "1da002873c1d3a9b26c849291768268726d3b689e87937039e8c21d87a3fc3cf"
+                    "digest": "836b2b95fb8dcf1479f7427f00cb9345cd3a562bae06c5eae3b805296eee50b1"
                 }
             ]
         },
@@ -923,7 +923,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Project/useCases/__tests__/agentDomainQueryConformance.spec.ts",
-                    "digest": "f7e984288ea8d61187112c7fe9387a20ecaa61550ca25a098e7291f5ef614418"
+                    "digest": "dc662abba5007893c9e15d1ad71ff14a0424dd18d46d00822b44f4bc2a4c004a"
                 }
             ]
         },
