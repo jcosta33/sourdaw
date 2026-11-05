@@ -1,6 +1,11 @@
 import { batchStoreUpdates } from '#/infra/store/createStore';
 import { getAudioSourcePositionSeconds, resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
-import { restampLoopOriginEntry, shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
+import {
+    continuesLoopingMidiPhase,
+    loopingMidiLengthEntry,
+    midiFragmentWindowEntry,
+    shiftLoopOriginEntry,
+} from '#/utils/clipLoopOrigin';
 import { hasExactAudioSourceFields } from '#/utils/hasExactAudioSourceFields';
 
 import { type Clip, type Track } from '../../models/Track';
@@ -130,6 +135,7 @@ type PlannedLocalState = {
             newClipId: string;
             splitBeat: number;
             discardBeforeBeat?: number;
+            copiesLoopMaterial?: true;
         }[];
         removeClipIds: readonly string[];
     };
@@ -394,18 +400,23 @@ function contentBeatsConsumed(clip: Clip, timelineBeats: number): number {
     return timelineBeats * consumedStretchFactor(clip);
 }
 
-function selectedRangeRightLoopOriginEntry(clip: Clip, endBeat: number, mode: 'split' | 'trim') {
+function selectedRangeRightLoopOriginEntry(clip: Clip, endBeat: number) {
     if (clip.type === 'audio' && clip.audioOffsetSeconds !== undefined) {
         return {};
     }
     const timelineDelta = endBeat - clip.startBeat;
     if (clip.type === 'midi') {
-        if (mode === 'split') {
-            return restampLoopOriginEntry(clip, endBeat);
-        }
         return shiftLoopOriginEntry(clip, timelineDelta);
     }
     return shiftLoopOriginEntry(clip, timelineDelta - contentBeatsConsumed(clip, timelineDelta));
+}
+
+/** The spanning fragment's content fields: the MIDI fragment law, or the audio anchor law above. */
+function selectedRangeRightContentEntry(clip: Clip, endBeat: number) {
+    if (clip.type === 'midi') {
+        return midiFragmentWindowEntry(clip, endBeat, endBeat);
+    }
+    return { midiOffsetBeats: 0, ...selectedRangeRightLoopOriginEntry(clip, endBeat) };
 }
 
 function sourceContentBeatAt(clip: Clip, beat: number): number {
@@ -652,6 +663,7 @@ function planTrack(
         newClipId: string;
         splitBeat: number;
         discardBeforeBeat?: number;
+        copiesLoopMaterial?: true;
     }>,
     removeClipIds: string[],
     spanningClips: SpanningClipRecord[]
@@ -682,14 +694,15 @@ function planTrack(
                 ...clip,
                 endBeat: operation.startBeat,
                 name: `${clip.name} (L)`,
+                ...loopingMidiLengthEntry(clip),
                 ...leftSource,
             };
-            // The fragment anchor follows the basis it creates (#4988). The
-            // MIDI fragment re-bases its notes by −splitBeat under
-            // midiOffsetBeats 0 — a fresh coordinate basis the source anchor
-            // has no meaning in, whose carried advance would open the window
-            // behind the head and silence the survivors — so it re-stamps to
-            // its own start, key absent for an unanchored source. The audio
+            // The fragment anchor follows the basis it creates (#4988). A
+            // MIDI fragment takes the MIDI fragment law
+            // (`midiFragmentWindowEntry`): one that does not loop re-bases
+            // its notes and re-stamps its anchor, and a looping one keeps
+            // the whole loop in the source's basis with the anchor carried,
+            // so its passes are the source's. The audio
             // fragment keeps source-coordinate offsets, advanced by the
             // stretched media delta the cut consumed (`contentBeatsConsumed`),
             // so its anchor shifts by `timelineDelta - contentDelta` — zero at
@@ -704,7 +717,6 @@ function planTrack(
             // live state, so writing the shifted key is safe.
             const timelineDelta = operation.endBeat - clip.startBeat;
             const contentDelta = contentBeatsConsumed(clip, timelineDelta);
-            const rightLoopOriginEntry = selectedRangeRightLoopOriginEntry(clip, operation.endBeat, 'split');
             const rightClip: Clip = {
                 ...clip,
                 id: identity.targetClipId,
@@ -714,12 +726,18 @@ function planTrack(
                 // span is timeline beats times the ratio, the same conversion
                 // the ordinary split and the warp cut below use.
                 audioOffsetBeats: (clip.audioOffsetBeats ?? 0) + contentDelta,
-                midiOffsetBeats: 0,
-                ...rightLoopOriginEntry,
+                ...selectedRangeRightContentEntry(clip, operation.endBeat),
                 ...rightSource,
             };
             finalClips.push(leftClip, rightClip);
-            if (clip.type === 'midi') {
+            if (continuesLoopingMidiPhase(clip)) {
+                splits.push({
+                    sourceClipId: clip.id,
+                    newClipId: identity.targetClipId,
+                    splitBeat: operation.endBeat - clip.startBeat + (clip.midiOffsetBeats ?? 0),
+                    copiesLoopMaterial: true,
+                });
+            } else if (clip.type === 'midi') {
                 splits.push({
                     sourceClipId: clip.id,
                     newClipId: identity.targetClipId,
@@ -747,7 +765,7 @@ function planTrack(
             if (!source) {
                 return null;
             }
-            finalClips.push({ ...clip, endBeat: operation.startBeat, ...source });
+            finalClips.push({ ...clip, endBeat: operation.startBeat, ...loopingMidiLengthEntry(clip), ...source });
             changed = true;
             continue;
         }
@@ -774,7 +792,7 @@ function planTrack(
             // (#5198). Unanchored clips keep the key absent.
             const timelineDelta = operation.endBeat - clip.startBeat;
             const contentDelta = contentBeatsConsumed(clip, timelineDelta);
-            const trimLoopOriginEntry = selectedRangeRightLoopOriginEntry(clip, operation.endBeat, 'trim');
+            const trimLoopOriginEntry = selectedRangeRightLoopOriginEntry(clip, operation.endBeat);
             finalClips.push({
                 ...clip,
                 startBeat: operation.endBeat,
@@ -822,6 +840,7 @@ function prepareLocalState(
         newClipId: string;
         splitBeat: number;
         discardBeforeBeat?: number;
+        copiesLoopMaterial?: true;
     }> = [];
     const removeClipIds: string[] = [];
     const spanningClips: SpanningClipRecord[] = [];

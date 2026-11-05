@@ -49,6 +49,8 @@ type Piece = {
     memberSeparators: Range[];
 };
 export type Slot = {
+    /** What opened the clause: a protection verb, a prohibition ("without touching"), a carve-out, or nothing. */
+    lead: StartKind | null;
     start: number;
     end: number;
     /** The whole clause, only when no unread text follows its closer. */
@@ -210,7 +212,7 @@ function findCloser(masked: string, from: number, end: number, pattern: RegExp, 
 }
 
 /** The reference a piece protects, and whether a closing word shows it is read as a closed protection. */
-function readSlot(masked: string, piece: Piece): Slot | null {
+function readSlot(masked: string, piece: Piece): Omit<Slot, 'lead'> | null {
     const { lead } = piece;
     if (lead === null) {
         const closer = findCloser(masked, piece.start, piece.end, headlessCloserPattern, HEADLESS);
@@ -304,7 +306,7 @@ function readSlots(masked: string): Slot[] {
         }
         const isCarveOut = piece.lead?.kind === 'carve-out';
         const otherwise = readsOtherwise(masked, pieces, index);
-        slots.push({ ...slot, exempts: isCarveOut && previousProtects, otherwise });
+        slots.push({ ...slot, lead: piece.lead?.kind ?? null, exempts: isCarveOut && previousProtects, otherwise });
         previousProtects = piece.lead?.kind === 'verb' || piece.lead?.kind === 'prohibition';
     }
     return slots;

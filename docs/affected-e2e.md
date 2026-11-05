@@ -126,9 +126,12 @@ decided:
 - No changed file is reachable from a worker or audio-worklet entry: a `new Worker(new URL(…))`
   target or any script imported by URL (`?worker`, `?worker&url`, `?url`). Page coverage cannot
   see those threads, and an opaque runtime edge leaves the entry set unproven.
-- Each changed file's blob at the merge-base equals the map's blob, so the map describes the code
-  being changed. A file the map does not list must exist unchanged at the map commit; no browser
-  spec then executed any of its functions.
+- The map describes the code being changed. When a changed file's blob at the merge-base differs
+  from the map's blob, `main` has drifted since the map was built, and the map's version is
+  classified against the head exactly like the pull request's own change: any change outside
+  function bodies, or an unavailable map version, keeps the full suite, and body-only drift keeps
+  the specs recorded for the file. A file the map does not list must exist at the map commit; no
+  browser spec then executed any of its functions, and the same drift rule applies to that version.
 - The merge-base and head contents parse, neither holds a build annotation comment, and their parse
   trees agree outside function bodies. Annotation comments are those compilers and bundlers act on
   (`@__PURE__`, `@__NO_SIDE_EFFECTS__`, `@vite-ignore`, `sourceURL` and `sourceMappingURL`,

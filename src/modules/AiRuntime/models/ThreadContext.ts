@@ -15,7 +15,7 @@ export const THREAD_CONTEXT_MAX_TURNS = 16;
  * reserve: the local budget never charges a text more than a token a byte, so a section at this cap
  * still fits however identifier-dense it is.
  */
-export const THREAD_CONTEXT_MAX_BYTES = { hosted: 16_384, local: 5_632 } as const;
+export const THREAD_CONTEXT_MAX_BYTES = { hosted: 16_384, local: 5_120 } as const;
 
 /**
  * One command of a proposal or commit, as the thread states it: its name, the label the approval
