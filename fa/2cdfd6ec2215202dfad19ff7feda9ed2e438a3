@@ -1,0 +1,34 @@
+src/utils/__tests__/noteNames.spec.ts
+  s_fec7059b7a251c::t_0b67ff09b19071 3,9-30
+  s_fec7059b7a251c::t_4e51012918d07f 31
+src/modules/WorkspaceShell/presentations/views/__tests__/VirtualKeyboard.spec.tsx
+  s_fec7059b7a251c::t_aa11c0578c26e2 660,670,682
+  s_fec7059b7a251c::t_c9970a4d8e7158 331,454,489,615,628,641,705
+  s_fec7059b7a251c::t_5489b63df4753d 650-656
+src/modules/WorkspaceShell/presentations/views/VirtualKeyboard.tsx
+  s_fec7059b7a251c::t_dc9fd4878a6c79 945
+  s_fec7059b7a251c::t_8f49c8e5c4b614 902
+  s_fec7059b7a251c::t_d1bea783780654 47
+  s_fec7059b7a251c::t_2a3af353de7a25 132-136
+src/utils/noteNames.ts
+  s_fec7059b7a251c::t_aad4999257761f 4-15
+tests/e2e/virtualKeyboardGlide.spec.ts
+  s_fec7059b7a251c::t_1172538e1f0f7b 33
+  s_fec7059b7a251c::t_9e22e3367969e4 41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fa2cdfd6ec2215202dfad19ff7feda9ed2e438a3",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
