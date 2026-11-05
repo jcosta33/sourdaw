@@ -3683,6 +3683,12 @@ type ActionHandlerCommon<Action extends AppAction> = {
     isNoop?: (action: Action) => boolean;
     /** Owner-provided relationship validation for a persisted forward/inverse/redo entry. */
     validateSessionEntry?: (entry: HandlerSessionActionEntry) => boolean;
+    /**
+     * Called with a persisted entry this handler's forward action begins, once the undo session has
+     * restored it and `validateSessionEntry` has accepted it, so the owner can re-establish replay
+     * state that lives only in memory and so did not survive serialization.
+     */
+    restoreSessionEntry?: (entry: HandlerSessionActionEntry) => void;
     /** False when transaction abort fully rolls back the write and no pre-commit external effect can run. */
     requiresAbortCompensation?: boolean;
     /** Runtime handlers execute outside Automerge and cannot join project-mutation batches. */
