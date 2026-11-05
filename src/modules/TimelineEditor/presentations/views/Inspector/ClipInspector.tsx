@@ -10,7 +10,13 @@ import { Button } from '#/components/ui/button';
 import { Separator } from '#/components/ui/separator';
 import { Slider } from '#/components/ui/slider';
 import { useStore } from '#/infra/store/useStore';
-import { setClipFade, setClipColor, renameClip, setClipFollowAction } from '#/modules/Arrangement/useCases';
+import {
+    getClipEndLimit,
+    setClipFade,
+    setClipColor,
+    renameClip,
+    setClipFollowAction,
+} from '#/modules/Arrangement/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { defaultTransportState, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 import { formatMusicalLength, formatMusicalPosition } from '#/modules/Transport/useCases';
@@ -90,6 +96,8 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
             payload: { clipId: clip.id, newStartBeat: beat },
         });
     };
+
+    const trimEndMaxBeat = Math.min(clip.startBeat + 256, getClipEndLimit(clip.id) ?? Number.POSITIVE_INFINITY);
 
     const commitTrimEnd = (beat: number): void => {
         setTrimEndDrag(null);
@@ -259,8 +267,8 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                                     commitTrimEnd(value);
                                 }
                             }}
-                            min={clip.startBeat + 1}
-                            max={clip.startBeat + 256}
+                            min={Math.min(clip.startBeat + 1, trimEndMaxBeat)}
+                            max={trimEndMaxBeat}
                             step={0.25}
                             aria-label="Trim clip end"
                         />

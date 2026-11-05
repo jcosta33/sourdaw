@@ -23,7 +23,7 @@ export function limitClipEndToSource(
     requestedEndBeat: number,
     timeline: TempoTimeline = liveTempoTimeline
 ): number {
-    if (requestedEndBeat <= clip.endBeat || clip.type !== 'audio' || clip.audioBufferId === undefined) {
+    if (requestedEndBeat <= clip.endBeat || clip.audioBufferId === undefined) {
         return requestedEndBeat;
     }
     const buffer = getCachedAudioBuffer({ bufferId: clip.audioBufferId });

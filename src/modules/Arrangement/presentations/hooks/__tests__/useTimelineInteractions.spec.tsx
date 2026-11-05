@@ -1549,6 +1549,64 @@ describe('useTimelineInteractions', () => {
         }
     });
 
+    it('keeps a zero-crossing snap past the source end within the source', () => {
+        const oldTransport = transportStore.value;
+        const oldMap = tempoMapStore.value;
+        transportStore.set({ ...defaultTransportState, tempo: 60 });
+        tempoMapStore.set({ changes: [] });
+        // A 6 s source entered at its start: at 60 BPM it runs out on beat 6.
+        mocks.getCachedAudioBuffer.mockImplementation(({ bufferId }: { bufferId: string }) =>
+            bufferId === 'buffer-1' ? { length: 6 * 48_000, sampleRate: 48_000 } : null
+        );
+        mocks.preferencesStoreValue.value = { snapToZeroCrossing: true };
+        // The nearest crossing to beat 5.5 lies past the source end.
+        mocks.snapToZeroCrossing.mockReturnValue(6.5);
+        mocks.trackStoreValue.value = {
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [
+                        {
+                            id: 'c1',
+                            type: 'audio',
+                            audioBufferId: 'buffer-1',
+                            startBeat: 0,
+                            endBeat: 4,
+                            audioOffsetSeconds: 0,
+                        },
+                    ],
+                },
+            ],
+        };
+        mocks.hitTestClip.mockReturnValue({ clipId: 'c1', trackId: 't1' });
+        mocks.hitTestClipEdge.mockReturnValue({ edge: 'right' });
+        mocks.beginClipDrag.mockReturnValue({
+            clipId: 'c1',
+            sourceTrackId: 't1',
+            startBeat: 0,
+            endBeat: 4,
+            offsetBeat: 0,
+            mode: 'stretch',
+        });
+        const { result } = renderHook(() => useTimelineInteractions(canvasRef as any));
+        try {
+            act(() => {
+                result.current.handleMouseDown({ button: 0, clientX: 400, clientY: 20 } as any);
+            });
+            // x=550 at 100 px/beat asks for beat 5.5, inside the source.
+            act(() => {
+                result.current.handleMouseMove({ clientX: 550, clientY: 20 } as any);
+            });
+
+            expect(clipDragPreviewRef.current?.positions.get('c1')?.endBeat).toBeCloseTo(6, 9);
+        } finally {
+            transportStore.set(oldTransport);
+            tempoMapStore.set(oldMap);
+            mocks.getCachedAudioBuffer.mockImplementation(() => null);
+            mocks.preferencesStoreValue.value = {};
+        }
+    });
+
     it('skips selected ids that have no preview original during a multi-clip move', () => {
         mocks.trackStoreValue.value = {
             tracks: [
