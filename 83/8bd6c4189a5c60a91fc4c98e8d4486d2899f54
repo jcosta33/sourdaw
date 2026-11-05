@@ -1,0 +1,81 @@
+src/modules/Arrangement/handlers/track/__tests__/trackStateUndo.integration.spec.ts
+  s_fec7059b7a251c::t_6d7a7057f1210b 67
+src/modules/Crumbs/useCases/__tests__/crumbsParameterPersistence.integration.spec.ts
+  s_fec7059b7a251c::t_16c2297e8195a6 81
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  s_fec7059b7a251c::t_c394a0b1bd4939 70
+src/modules/AiRuntime/useCases/agentReference/__tests__/preparedStemImportResourceCleanup.spec.ts
+  s_fec7059b7a251c::t_a57106e8ea647d 60
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_fec7059b7a251c::t_93d90745d95ff3 101
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  s_fec7059b7a251c::t_57b8ec5a7721e3 342
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  s_fec7059b7a251c::t_9a18f71944f460 192
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.roundTrip.spec.ts
+  s_fec7059b7a251c::t_c6c5e841e7a580 85
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_fec7059b7a251c::t_961805a3a53b9b 144
+src/modules/Proof/presentations/views/__tests__/ProofPanel.spec.tsx
+  s_fec7059b7a251c::t_9849633f594e9c 69
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_fec7059b7a251c::t_ca2f62969d268b 90
+src/modules/ProofChamber/presentations/views/__tests__/proofChamberPresetUndo.integration.spec.tsx
+  s_fec7059b7a251c::t_67420ee5413440 74
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  s_fec7059b7a251c::t_570ecf244d3e6a 189
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  s_fec7059b7a251c::t_3823b9a9b23e2a 114
+src/modules/Project/useCases/projectTemplates/templateHelpers/__tests__/finalizeTemplate.spec.ts
+  s_fec7059b7a251c::t_8513cc5cf36765 61
+src/modules/Bacteria/useCases/bacteriaParamBridge/__tests__/chooseBacteriaBodyUndo.integration.spec.ts
+  s_fec7059b7a251c::t_24dd46e316058e 79
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_fec7059b7a251c::t_46b3d48ae7cfa9 354
+src/modules/Arrangement/handlers/track/__tests__/duplicateTrack.integration.spec.ts
+  s_fec7059b7a251c::t_ddeefc4d0f830e 41
+src/modules/AudioRendering/presentations/views/__tests__/exportStreamingMemory.spec.tsx
+  s_fec7059b7a251c::t_5e72e482bac160 626
+src/modules/Gluten/useCases/glutenParamBridge/__tests__/glutenParameterUndo.integration.spec.ts
+  s_fec7059b7a251c::t_ed2fb8e2859ebe 73
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_fec7059b7a251c::t_56588c283f6e6f 81
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_fec7059b7a251c::t_c1b4095f9f6e7c 162
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheBase64Surface.spec.ts
+  s_fec7059b7a251c::t_4fb568ca963efd 92
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  s_fec7059b7a251c::t_5c03fe0bbc5844 181
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_fec7059b7a251c::t_f2e2e195910173 66
+src/modules/AudioEngine/stores/__tests__/audioBufferCacheUnpinnedRestore.spec.ts
+  s_fec7059b7a251c::t_11eaef1672aa4d 28-29,71,76,87-88,330-348
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_fec7059b7a251c::t_8bef189dfd7fb5 2390-2400
+src/modules/AudioEngine/useCases/holdAudioBufferForSession.ts
+  s_fec7059b7a251c::t_79b4855e042fc4 1-16
+src/modules/AudioEngine/useCases/index.ts
+  s_fec7059b7a251c::t_30efc31a1b670e 45
+src/modules/SampleLibrary/AGENTS.md
+  s_fec7059b7a251c::t_d90dbf3159b002 23
+src/modules/SampleLibrary/useCases/__tests__/ensureFactorySampleBuffer.spec.ts
+  s_fec7059b7a251c::t_b380a68dbc81c6 31-33,70,219-220,224-225,228-232
+src/modules/SampleLibrary/useCases/ensureFactorySampleBuffer.ts
+  s_fec7059b7a251c::t_5c93c5007b835f 6,52-68,71,92,98-102,121-122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "838bd6c4189a5c60a91fc4c98e8d4486d2899f54",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
