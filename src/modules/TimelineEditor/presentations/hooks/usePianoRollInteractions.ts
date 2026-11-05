@@ -46,6 +46,7 @@ import {
 } from '#/modules/MIDI/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { getTransportState } from '#/modules/Transport/useCases';
+import { CLIP_LOOP_WINDOW_BEAT_TOLERANCE } from '#/utils/clipLoopOrigin';
 import { clampMidiData7 } from '#/utils/midiData';
 import { quantizeMidiNoteToScale } from '#/utils/Music/MusicalScale';
 import { valuesEqual } from '#/utils/structuralEquality';
@@ -105,6 +106,14 @@ const FALLBACK_NOTE_VELOCITY = 100;
  * without re-mounting the editor.
  */
 const getDefaultNoteVelocity = (): number => preferencesStore.value?.defaultVelocity ?? FALLBACK_NOTE_VELOCITY;
+
+// A frozen take redisplays a stamped row through the clip start, which misses
+// the stamped beat by float noise on non-dyadic grids.
+const isStampedCell = (
+    note: Pick<MidiNote, 'pitch' | 'startBeat'>,
+    stamped: { pitch: number; beat: number }
+): boolean =>
+    note.pitch === stamped.pitch && Math.abs(note.startBeat - stamped.beat) <= CLIP_LOOP_WINDOW_BEAT_TOLERANCE;
 
 function resolveTrackIdForClip(clipId: string, defaultTrackId: string): string {
     const tracks = trackStore.value?.tracks;
@@ -377,6 +386,12 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     // grid cell; we stash the intended pitch/beat here so the mouse-up handler
     // can commit a stamp when no meaningful drag occurred.
     const pendingStampRef = useRef<{ pitch: number; beat: number } | null>(null);
+    // The cell the current click sequence stamped. A double-click on empty grid
+    // lands its second click on that fresh note; the dblclick must not delete
+    // it. Matched by cell, not id, because a frozen-take stamp is inserted
+    // asynchronously and has no id here. The cell was empty when the sequence
+    // began, so no earlier note can share it.
+    const stampedByClickRef = useRef<{ pitch: number; beat: number } | null>(null);
 
     const [ctxMenu, setCtxMenu] = useState<PianoRollMenu>(null);
     const [hoverCursor, setHoverCursor] = useState<string>('crosshair');
@@ -640,6 +655,9 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         hoverIntentRef.current?.release();
         hoverIntentRef.current = null;
         hoverNoteIdRef.current = null;
+        if (event.detail < 2) {
+            stampedByClickRef.current = null;
+        }
 
         const canvas = canvasRef.current;
         if (!canvas) {
@@ -777,6 +795,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                             chordType
                         );
                         if (created.length > 0) {
+                            stampedByClickRef.current = { pitch, beat };
                             const createdIds = created.map((node) => node.id);
                             pushUndoEntry(
                                 `Stamp ${chordType} chord`,
@@ -787,6 +806,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                         }
                     } else if (paintMode) {
                         const beat = cellStartAtPointer(x / beatWidth);
+                        stampedByClickRef.current = { pitch, beat };
                         if (insertFrozen(targetClipId, beat, pitch, gridSnap, getDefaultNoteVelocity())) {
                             setSelectedNoteIds(new Set());
                             return;
@@ -1140,6 +1160,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                         () => appendNotesToClip(targetClipId, [note])
                     );
                 }
+                stampedByClickRef.current = pendingStamp;
                 setSelectedNoteIds(new Set());
             } else if (!event.shiftKey) {
                 // Alt-drag (explicit select) with no movement clears selection, matching
@@ -1492,6 +1513,11 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         }
         const hit = hitTest(x, rawY - getPianoRollRowTop(0));
         if (hit) {
+            const stamped = stampedByClickRef.current;
+            stampedByClickRef.current = null;
+            if (stamped && isStampedCell(hit.note, stamped)) {
+                return;
+            }
             if (editFrozen(hit.note.id, null)) {
                 return;
             }
