@@ -46,7 +46,7 @@ describe('GenerativeParamGrids', () => {
             within(screen.getByTestId(testId)).getByRole('button', { name: label });
         const labels = within(screen.getByTestId(testId))
             .getAllByRole('button')
-            .map((button) => button.textContent ?? '');
+            .map((button) => button.textContent);
         expect(labels.length).toBeGreaterThan(0);
 
         for (const label of labels) {
