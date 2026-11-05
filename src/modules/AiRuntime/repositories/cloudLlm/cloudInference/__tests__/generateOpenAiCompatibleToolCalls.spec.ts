@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { isHostedAiHttpStatusError } from '../../../../errors/HostedAiHttpStatusError';
 import { HostedToolCallingProtocolError } from '../../../../errors/HostedToolCallingProtocolError';
 import { ToolPlanningRejectedError } from '../../../../errors/ToolPlanningRejectedError';
@@ -9,6 +11,8 @@ import { getHostedProposalWireToolSchema } from '../../../../useCases/llmOrchest
 import { type OpenAiCompatibleCloudRuntime } from '../../cloudSession';
 import { generateOpenAiCompatibleToolCalls } from '../generateOpenAiCompatibleToolCalls';
 import { AUTO_TOOL_CHOICE, type HostedToolChoiceDirective } from '../hostedToolPlan';
+
+registerDeviceEnginePorts();
 
 const runtime: OpenAiCompatibleCloudRuntime = {
     provider: 'openai-compatible',

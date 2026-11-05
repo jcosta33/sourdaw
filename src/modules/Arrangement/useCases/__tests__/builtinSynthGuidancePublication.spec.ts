@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { BUILTIN_PLUGINS } from '../../models/DeviceParameter';
 import { getAgentBuiltinDeviceFactoryManifest } from '../getAgentBuiltinDeviceFactoryManifest';
+
+registerDeviceEnginePorts();
 
 const SYNTH_FAMILY_IDS = [
     'builtin-synth',

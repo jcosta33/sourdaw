@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { asAudioNode, createMockAudioNode } from '#/helpers/__tests__/audioContext.mock';
 import { type Device, type Track, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack, getArrangementHandlers, compileReorderDevicesAction } from '#/modules/Arrangement/useCases';
@@ -20,6 +21,8 @@ import type {
 } from '../../../models/AudioGraphBackend';
 import type { RuntimeGraphDeltaNode } from '../../../models/RuntimeGraphDelta';
 import type { ReadLiveMidiProgrammeInput } from '../readLiveMidiProgramme';
+
+registerDeviceEnginePorts();
 
 const mocks = vi.hoisted(() => ({
     strip: undefined as Pick<TrackChannelStrip, 'trackId' | 'deviceNodes'> | undefined,

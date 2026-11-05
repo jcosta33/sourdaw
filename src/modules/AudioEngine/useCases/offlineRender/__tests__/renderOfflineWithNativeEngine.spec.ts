@@ -8,6 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { type Clip, type Device, type Track } from '#/modules/Arrangement/stores';
 import { automationStore } from '#/modules/Automation/stores';
 
@@ -24,6 +25,8 @@ import { type NativeGraphWireCommand } from '../../../repositories/nativeGraph/s
 import { offlineDeviceParameterLawState } from '../../../repositories/offlineScheduler/offlineDeviceParameterLawState';
 import { getCompensationDelay } from '../../latencyCompensation/compensation/getCompensationDelay';
 import { renderOfflineWithNativeEngine } from '../renderOfflineWithNativeEngine';
+
+registerDeviceEnginePorts();
 
 class StubAudioBuffer {
     readonly length: number;

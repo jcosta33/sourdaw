@@ -6,6 +6,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { change, clone, Counter, toJS } from '@automerge/automerge';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
 import {
     configureAutomergeStoragePort,
@@ -101,6 +102,8 @@ import { readChatThreadContext } from '../useCases/readChatThreadContext';
 import { sendChatMessage } from '../useCases/sendChatMessage';
 
 import { completeAcceptanceResults, createAcceptanceFixtureLifetime } from './acceptanceFixtureLifetime';
+
+registerDeviceEnginePorts();
 
 type PlannedChatRequest = Awaited<ReturnType<typeof planPromptActions>>['result'];
 

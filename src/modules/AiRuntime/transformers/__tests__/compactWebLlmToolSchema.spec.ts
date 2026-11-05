@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { ANALYSIS_MEASURE_MAX_TARGETS } from '../../models/AnalysisMeasureLimits';
 import { createAnswerInterpretationToolSchema } from '../../models/AnswerInterpretation';
 import { COMMAND_BATCH_DECLINE_MAX_QUESTIONS } from '../../models/CommandBatchDecline';
@@ -12,6 +14,8 @@ import { prepareAnswerInterpretationCatalog } from '../../useCases/prepareAnswer
 import { prepareCreativeInterpretationCatalog } from '../../useCases/prepareCreativeInterpretationCatalog';
 import { matchesJsonSchema } from '../../validators/matchesJsonSchema';
 import { compactWebLlmToolSchema } from '../compactWebLlmToolSchema';
+
+registerDeviceEnginePorts();
 
 function jointInterpretationSchema(): ToolSchema {
     const context = getProjectContext();

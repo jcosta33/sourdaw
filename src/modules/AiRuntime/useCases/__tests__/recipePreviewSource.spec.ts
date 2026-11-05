@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 
@@ -10,6 +11,8 @@ import { executeAnalysisMeasure } from '../executeAnalysisMeasure';
 import { executeRecipeExpansion } from '../executeRecipeExpansion';
 import { getProjectContext } from '../getProjectContext';
 import { parseAnalysisMeasureArguments } from '../parseAnalysisMeasureArguments';
+
+registerDeviceEnginePorts();
 
 const scope = { kind: 'master' };
 const range = { startBeat: 0, endBeat: 8 };

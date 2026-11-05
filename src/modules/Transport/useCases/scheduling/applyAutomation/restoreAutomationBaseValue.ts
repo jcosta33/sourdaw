@@ -11,12 +11,13 @@ import {
     updateDeviceParam,
 } from '#/modules/AudioEngine/useCases';
 import { getSendAutomationBusId } from '#/modules/Automation/useCases';
-import { applyFermenterRuntimeParam } from '#/modules/Fermenter/useCases';
 import {
     getDeviceAutomationParameterId,
     resolveDeviceAutomationTargetIndex,
     UNRESOLVED_DEVICE_AUTOMATION_TARGET,
 } from '#/utils/automationDeviceTarget';
+
+import { deviceRuntimeParameterWriters } from './deviceRuntimeParameterWriters';
 
 type RestoreTargetDevice = {
     id: string;
@@ -157,8 +158,9 @@ export function restoreAutomationBaseValue({ lane, track, landTime }: RestoreAut
         // `device.parameterValues` is deliberately left alone: rounding project
         // truth is the failure this whole change is drawn to avoid.
         const delivered = quantiseDeviceParameterValue({ deviceType: device.type, paramId, value: baseValue });
-        if (device.type === 'fermenter') {
-            applyFermenterRuntimeParam({ deviceId: device.id, paramId, value: delivered });
+        const runtimeWriter = deviceRuntimeParameterWriters.read('restoreAutomationBaseValue', device.type);
+        if (runtimeWriter !== null) {
+            runtimeWriter.write({ deviceId: device.id, paramId, value: delivered });
             return;
         }
         updateDeviceParam(targetOwner.trackId, targetOwner.deviceId, paramId, delivered);

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { querySemanticProject } from '#/modules/Project/useCases';
 
 import { AUTO_TOOL_CHOICE } from '../../repositories/cloudLlm/cloudInference/hostedToolPlan';
@@ -8,6 +9,8 @@ import {
     type ApplicationOwnedToolLoopInterpretationAdmission,
     runApplicationOwnedToolLoop,
 } from '../applicationOwnedToolLoop';
+
+registerDeviceEnginePorts();
 
 vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),

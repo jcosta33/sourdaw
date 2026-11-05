@@ -1,8 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { generateAnthropicToolCalls } from '../../../repositories/cloudLlm/cloudInference/generateAnthropicToolCalls';
 import { generateOpenAiCompatibleToolCalls } from '../../../repositories/cloudLlm/cloudInference/generateOpenAiCompatibleToolCalls';
 import { getApplicationOwnedToolSchemas, runApplicationOwnedToolLoop } from '../../applicationOwnedToolLoop';
+
+registerDeviceEnginePorts();
 
 type MockTransportInput = {
     body: string;

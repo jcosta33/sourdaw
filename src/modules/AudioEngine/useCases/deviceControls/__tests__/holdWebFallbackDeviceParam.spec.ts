@@ -11,6 +11,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { clampDeviceParamWrite, trackStore, type Device, type Track } from '#/modules/Arrangement/stores';
 
 import { audioEngine } from '../../../repositories/createWebAudioEngine';
@@ -19,6 +20,8 @@ import { captureDeviceParameterRuntimeWriteAuthority } from '../captureDevicePar
 import { captureDeviceParameterRuntimeWriteReceipt } from '../captureDeviceParameterRuntimeWriteReceipt';
 import { holdWebFallbackDeviceParam } from '../holdWebFallbackDeviceParam';
 import { updateDeviceParam } from '../updateDeviceParam';
+
+registerDeviceEnginePorts();
 
 vi.mock('../../../repositories/createWebAudioEngine', () => ({
     audioEngine: {

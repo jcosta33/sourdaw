@@ -12,6 +12,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { type Device, type DeviceStateChunk } from '#/modules/Arrangement/stores';
 import {
     grinderNeuralLibraryStore,
@@ -21,6 +22,8 @@ import {
 
 import { setAudioDeviceRuntimeSink } from '../../../engine/audioDeviceRuntimeSink';
 import { projectDeviceForNativeBody } from '../projectDeviceForNativeBody';
+
+registerDeviceEnginePorts();
 
 function createDevice(overrides: Partial<Device> & { id: string }): Device {
     return { name: overrides.id, type: 'knead', bypassed: false, parameterValues: {}, ...overrides };

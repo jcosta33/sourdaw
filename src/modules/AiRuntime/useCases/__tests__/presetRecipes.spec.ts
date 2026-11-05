@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
 import {
     getAddedDeviceParameterValues,
@@ -22,6 +23,8 @@ import { executeRecipeExpansion } from '../executeRecipeExpansion';
 import { getProjectContext } from '../getProjectContext';
 
 import { createTrack } from './trackFixture';
+
+registerDeviceEnginePorts();
 
 vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),

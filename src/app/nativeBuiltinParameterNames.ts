@@ -27,8 +27,8 @@ type EngineParameterName = (input: { paramId: string }) => string | null;
  * Ordered to match `NATIVE_DSP_DEVICE_TYPES` so the tables read as one list.
  */
 const NATIVE_BUILTIN_PARAMETER_NAMES: Record<NativeDspDeviceType, EngineParameterName | null> = {
-    // Its mapper lives in Fermenter, and Fermenter imports no AudioEngine use
-    // case, so the body table reads that mapper directly.
+    // Its whole body vocabulary reaches the body table through
+    // `nativeBodyVocabularyRegistry`, registered by `registerDeviceEnginePorts`.
     fermenter: null,
     // Kit and pad control writes carry the engine's own names already; the body
     // table maps its `parameterValues` ids through `ToasterKitParamNames.ts`.

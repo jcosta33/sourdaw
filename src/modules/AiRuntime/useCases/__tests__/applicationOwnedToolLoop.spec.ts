@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     deleteUserPreset,
     getAgentBuiltinDeviceFactoryManifest,
@@ -19,6 +20,8 @@ import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 
 import { readCreativeInterpretationCatalog } from './highLevelIntentWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 const { mockBridgeGroundedLlmToolCalls, mockLogger } = vi.hoisted(() => ({
     mockBridgeGroundedLlmToolCalls: vi.fn(),

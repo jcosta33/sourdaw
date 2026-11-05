@@ -1,10 +1,10 @@
-import { getFermenterFactoryPresets } from '#/modules/Fermenter/useCases';
 import { isDesktopRuntime } from '#/utils/desktopRuntime';
 
 import { isDeviceSupportedOnCurrentPlatform } from '../models/DeviceParameter';
 import { type SoundPreset } from '../models/SoundPreset';
 import { FACTORY_PRESETS } from '../repositories/presets/factoryPresets';
 
+import { deviceFactoryPresetSources } from './deviceFactoryPresetSources';
 import { SIDEBAR_INSTRUMENT_PRESETS } from './preset/sidebarInstrumentPresets';
 
 export type GetFactoryPresetsOutput = SoundPreset[];
@@ -35,9 +35,11 @@ export function getFactoryPresets(): GetFactoryPresetsOutput {
             // FACTORY_PRESETS already contains the drum-kit presets; spreading
             // them again here doubled the four factory-drumkit-* entries — and
             // their ids — in the preset browser (audit M-020).
-            presets: [...FACTORY_PRESETS, ...getFermenterFactoryPresets(), ...SIDEBAR_INSTRUMENT_PRESETS].filter(
-                isPresetCompatible
-            ),
+            presets: [
+                ...FACTORY_PRESETS,
+                ...deviceFactoryPresetSources.read('getFactoryPresets').flatMap((source) => source.presets()),
+                ...SIDEBAR_INSTRUMENT_PRESETS,
+            ].filter(isPresetCompatible),
             platformKey: key,
         };
     }

@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { getStableContractFingerprint } from '../../models/GetStableContractFingerprint';
 import { getAgentPresetDiscoveryManifest } from '../getAgentPresetDiscoveryManifest';
 import { getUserPresets } from '../preset/presetStorage/getUserPresets';
 import { userPresetStorage } from '../preset/presetStorage/helpers';
 import { saveUserPreset } from '../preset/presetStorage/saveUserPreset';
+
+registerDeviceEnginePorts();
 
 describe('getAgentPresetDiscoveryManifest', () => {
     beforeEach(() => {

@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { isHostedAiHttpStatusError } from '../../../../errors/HostedAiHttpStatusError';
 import {
     COMMAND_BATCH_DECLINE_TOOL_NAME,
@@ -12,6 +14,8 @@ import { getHostedProposalWireToolSchema } from '../../../../useCases/llmOrchest
 import { encodeWireToolName } from '../encodeWireToolName';
 import { generateAnthropicToolCalls } from '../generateAnthropicToolCalls';
 import { AUTO_TOOL_CHOICE, type HostedToolChoiceDirective } from '../hostedToolPlan';
+
+registerDeviceEnginePorts();
 
 const requestProvider = vi.hoisted(() => vi.fn());
 
