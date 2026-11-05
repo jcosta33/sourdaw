@@ -1,0 +1,31 @@
+src/modules/AiRuntime/useCases/perceptualConstraints/findExcludedDimensionEdit.ts
+  s_55244eb93b97d1::t_af67edf530fccc 370-378,384
+  s_55244eb93b97d1::t_2f719fb827af0c 235
+  s_55244eb93b97d1::t_aca17d251dbc64 296-324,328-335,337-338
+  s_55244eb93b97d1::t_cbbcf482c99b04 325-327
+  s_55244eb93b97d1::t_18f7b5c3e9d269 112-116
+  s_55244eb93b97d1::t_ec8084446001ba 202
+src/modules/AiRuntime/AGENTS.md
+  s_55244eb93b97d1::t_96cfa229a732ee 40
+src/modules/AiRuntime/useCases/__tests__/perceptualConstraints.spec.ts
+  s_55244eb93b97d1::t_4428bb2efcfd96 157-201
+  s_55244eb93b97d1::t_bd186e3beb7e4d 542-604
+  s_55244eb93b97d1::t_ef269255a2aa86 22
+  s_55244eb93b97d1::t_eb86607753a28a 605-606
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ad2c0fe741abd91727c6fd29e38ca8106d8901c0",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
