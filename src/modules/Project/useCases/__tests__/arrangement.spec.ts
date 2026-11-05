@@ -62,7 +62,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     garbageCollectFreezeAudioBuffers: vi.fn(),
     getAudioContext: vi.fn(() => ({})),
     getCachedAudioBuffer: vi.fn(),
-    prepareCachedAudioBuffersForReplay: vi.fn(),
+    restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
     getCompensationDelay: vi.fn(),
     getCurrentTime: vi.fn(),
     getDefaultBendRangeSemitones: vi.fn(),

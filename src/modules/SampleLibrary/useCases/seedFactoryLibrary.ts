@@ -52,6 +52,11 @@ async function seedFactoryRecords(ctx: AudioContext): Promise<void> {
     const samples = await renderFactorySamples(ctx);
     ensureFactoryRoot(samples.length);
     await cacheFactoryBuffers(samples);
+    // Caching yields, so the user may have disconnected the new root meanwhile:
+    // then nothing is listed or persisted, and the seed is left to retry.
+    if (!findFactoryRoot()) {
+        return;
+    }
 
     addSamples(samples.map(toFactorySampleRecord));
     buildFolderTree(FACTORY_LIBRARY_ROOT_ID);

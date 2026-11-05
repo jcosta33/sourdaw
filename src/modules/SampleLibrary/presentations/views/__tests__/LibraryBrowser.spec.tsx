@@ -49,6 +49,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     cacheAudioBuffer: vi.fn(),
     getAudioContext: vi.fn(),
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
+    restoreUnpinnedAudioBuffersFromIdb: vi.fn(),
 }));
 
 vi.mock('#/infra/store/useStore', () => ({

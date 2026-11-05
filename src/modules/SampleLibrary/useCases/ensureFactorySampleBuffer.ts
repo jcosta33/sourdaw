@@ -3,14 +3,14 @@ import {
     cacheAudioBuffer,
     getAudioContext,
     getCachedAudioBuffer,
-    prepareCachedAudioBuffersForReplay,
+    restoreUnpinnedAudioBuffersFromIdb,
 } from '#/modules/AudioEngine/useCases';
 import { FACTORY_LIBRARY_ROOT_ID } from '#/modules/FactorySynthesis/useCases';
 
 import { libraryStore } from '../stores/libraryStore';
 
 import { findFactoryRoot } from './factoryLibrary/findFactoryRoot';
-import { reloadFactoryLibraryBuffers } from './factoryLibrary/reloadFactoryLibraryBuffers';
+import { renderFactoryLibraryPack } from './factoryLibrary/renderFactoryLibraryPack';
 
 type EnsureFactorySampleBufferInput = {
     sampleId: string;
@@ -27,23 +27,35 @@ function isFactorySample(sampleId: string): boolean {
     );
 }
 
+type StoredBufferRead = { status: 'restored'; buffer: AudioBuffer } | { status: 'absent' } | { status: 'unreadable' };
+
 /**
- * Read the buffer back from the PCM stored when it was cached this session.
- * Pin-neutral, unlike the project-load restore, which replaces the pinned set.
+ * Read the buffer back from the PCM stored for it, this session or an earlier
+ * one, without pinning it. Only a sample storage holds nothing for is absent:
+ * stored audio that cannot be read now is still the sample's audio.
  */
-async function restoreStoredBuffer(sampleId: string): Promise<AudioBuffer | null> {
-    const release = await prepareCachedAudioBuffersForReplay([sampleId]);
+async function readStoredBuffer(sampleId: string): Promise<StoredBufferRead> {
+    const { absentIds, release } = await restoreUnpinnedAudioBuffersFromIdb({ bufferIds: [sampleId] });
     try {
-        return getCachedAudioBuffer({ bufferId: sampleId });
+        const buffer = getCachedAudioBuffer({ bufferId: sampleId });
+        if (buffer) {
+            return { status: 'restored', buffer };
+        }
+        return absentIds.includes(sampleId) ? { status: 'absent' } : { status: 'unreadable' };
     } finally {
         release();
     }
 }
 
-async function renderPackFor(sampleId: string): Promise<AudioBuffer | null> {
-    let samples: Awaited<ReturnType<typeof reloadFactoryLibraryBuffers>>;
+/**
+ * The last resort, for a sample storage holds no audio for: render the pack,
+ * shared by every concurrent caller, and cache this sample alone. Every other
+ * sample is left as it is, since a saved project may play its stored audio.
+ */
+async function renderSampleBuffer(sampleId: string): Promise<AudioBuffer | null> {
+    let samples: Awaited<ReturnType<typeof renderFactoryLibraryPack>>;
     try {
-        samples = await reloadFactoryLibraryBuffers(getAudioContext());
+        samples = await renderFactoryLibraryPack(getAudioContext());
     } catch (error) {
         logger.error(new Error('Factory library render failed', { cause: error }));
         return null;
@@ -52,12 +64,11 @@ async function renderPackFor(sampleId: string): Promise<AudioBuffer | null> {
     if (!findFactoryRoot()) {
         return null;
     }
+    // A concurrent caller for the same sample may have cached it already.
     const cached = getCachedAudioBuffer({ bufferId: sampleId });
     if (cached) {
         return cached;
     }
-    // The pack outgrows the buffer cache, so caching it in order can evict the
-    // very sample asked for; cache that one again so it is resident.
     const rendered = samples.find((sample) => sample.id === sampleId);
     if (!rendered) {
         return null;
@@ -68,8 +79,9 @@ async function renderPackFor(sampleId: string): Promise<AudioBuffer | null> {
 
 /**
  * Obtain a factory sample's buffer, in order: the resident cache entry, the
- * PCM stored when it was cached, then one render of the pack shared by every
- * concurrent caller. A sample of another root is left to its file path.
+ * PCM stored for it in this or an earlier launch, then, only when storage
+ * holds none, one render of the pack shared by every concurrent caller. A
+ * sample of another root is left to its file path.
  */
 export async function ensureFactorySampleBuffer({
     sampleId,
@@ -84,6 +96,13 @@ export async function ensureFactorySampleBuffer({
     if (!findFactoryRoot()) {
         return { status: 'unavailable' };
     }
-    const buffer = (await restoreStoredBuffer(sampleId)) ?? (await renderPackFor(sampleId));
+    const stored = await readStoredBuffer(sampleId);
+    if (stored.status === 'restored') {
+        return { status: 'resolved', buffer: stored.buffer };
+    }
+    if (stored.status === 'unreadable') {
+        return { status: 'unavailable' };
+    }
+    const buffer = await renderSampleBuffer(sampleId);
     return buffer ? { status: 'resolved', buffer } : { status: 'unavailable' };
 }

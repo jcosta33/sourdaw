@@ -1,4 +1,8 @@
-import { cacheAudioBuffer, getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
+import {
+    cacheAudioBuffer,
+    getCachedAudioBuffer,
+    restoreUnpinnedAudioBuffersFromIdb,
+} from '#/modules/AudioEngine/useCases';
 
 import { findFactoryRoot } from './findFactoryRoot';
 import { type FactorySample } from './toFactorySampleRecord';
@@ -13,28 +17,42 @@ function yieldToEventLoop(): Promise<void> {
 }
 
 /**
- * A resident buffer is already the sample's audio, and an open project may hold
- * it pinned, so a render never replaces it or rewrites its stored PCM.
+ * Cache the rendered buffers storage holds no audio for. A sample with stored
+ * PCM keeps it, because a saved project may play that audio and a render of
+ * another build can differ from it; a resident buffer is already the sample's
+ * audio and an open project may hold it pinned.
  */
-function cacheUnlessResident(sample: FactorySample): void {
-    if (getCachedAudioBuffer({ bufferId: sample.id })) {
-        return;
+async function cacheChunkWithoutStoredAudio(chunk: readonly FactorySample[]): Promise<void> {
+    const { absentIds, release } = await restoreUnpinnedAudioBuffersFromIdb({
+        bufferIds: chunk.map((sample) => sample.id),
+    });
+    try {
+        if (!findFactoryRoot()) {
+            return;
+        }
+        const absent = new Set(absentIds);
+        for (const sample of chunk) {
+            if (absent.has(sample.id) && !getCachedAudioBuffer({ bufferId: sample.id })) {
+                cacheAudioBuffer({ buffer: sample.buffer, bufferId: sample.id });
+            }
+        }
+    } finally {
+        release();
     }
-    cacheAudioBuffer({ buffer: sample.buffer, bufferId: sample.id });
 }
 
 /**
- * Register the synthesised buffers under their sample ids, in chunks, yielding
- * to the event loop between chunks so the main thread is not held in one
- * unbroken stretch while the whole pack is cached. Stops when the user
- * disconnects the factory root during a yield.
+ * Register the synthesised buffers that have no stored audio under their
+ * sample ids, in chunks, yielding to the event loop between chunks so the main
+ * thread is not held in one unbroken stretch. Stops when the user disconnects
+ * the factory root meanwhile.
  */
 export async function cacheFactoryBuffers(samples: readonly FactorySample[]): Promise<void> {
     for (let i = 0; i < samples.length; i += CHUNK) {
         if (!findFactoryRoot()) {
             return;
         }
-        samples.slice(i, i + CHUNK).forEach(cacheUnlessResident);
+        await cacheChunkWithoutStoredAudio(samples.slice(i, i + CHUNK));
         if (i + CHUNK < samples.length) {
             await yieldToEventLoop();
         }

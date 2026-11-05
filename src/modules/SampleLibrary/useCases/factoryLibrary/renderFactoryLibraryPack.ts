@@ -3,7 +3,6 @@ import { FACTORY_LIBRARY_ROOT_ID, renderFactorySamples } from '#/modules/Factory
 import { addSamples, libraryStore, updateLibraryRootStatus } from '../../stores/libraryStore';
 import { buildFolderTree } from '../buildFolderTree';
 
-import { cacheFactoryBuffers } from './cacheFactoryBuffers';
 import { findFactoryRoot } from './findFactoryRoot';
 import { type FactorySample, toFactorySampleRecord } from './toFactorySampleRecord';
 
@@ -22,7 +21,7 @@ function addMissingFactoryRecords(samples: readonly FactorySample[]): void {
     buildFolderTree(FACTORY_LIBRARY_ROOT_ID);
 }
 
-async function reloadFactoryBuffers(ctx: AudioContext): Promise<readonly FactorySample[]> {
+async function renderFactoryPack(ctx: AudioContext): Promise<readonly FactorySample[]> {
     if (!findFactoryRoot()) {
         return [];
     }
@@ -38,33 +37,29 @@ async function reloadFactoryBuffers(ctx: AudioContext): Promise<readonly Factory
     if (!findFactoryRoot()) {
         return [];
     }
-    await cacheFactoryBuffers(samples);
-    // Caching yields between chunks, so the user may have disconnected it then.
-    if (!findFactoryRoot()) {
-        return [];
-    }
     addMissingFactoryRecords(samples);
     updateLibraryRootStatus(FACTORY_LIBRARY_ROOT_ID, 'ready', samples.length);
     return samples;
 }
 
 // Every caller that arrives while a render runs joins it.
-let pendingReload: Promise<readonly FactorySample[]> | undefined;
+let pendingRender: Promise<readonly FactorySample[]> | undefined;
 
 /**
- * Render the factory pack again and cache every buffer under its sample id:
- * the explicit repair (Rescan), and the last resort for a buffer whose stored
- * PCM is gone. The root shows scanning meanwhile, ready with its file count
- * after, and offline if the render fails. Resolves with the rendered samples,
- * or none when the factory root is not connected.
+ * Render the factory pack again and list any sample the library lacks. Caching
+ * is the caller's: Rescan caches the samples with no stored audio, and a
+ * sample whose buffer no source holds caches only itself. The root shows
+ * scanning meanwhile, ready with its file count after, and offline if the
+ * render fails. Resolves with the rendered samples, or none when the factory
+ * root is not connected.
  */
-export function reloadFactoryLibraryBuffers(ctx: AudioContext): Promise<readonly FactorySample[]> {
-    if (pendingReload) {
-        return pendingReload;
+export function renderFactoryLibraryPack(ctx: AudioContext): Promise<readonly FactorySample[]> {
+    if (pendingRender) {
+        return pendingRender;
     }
-    const reload = reloadFactoryBuffers(ctx).finally(() => {
-        pendingReload = undefined;
+    const render = renderFactoryPack(ctx).finally(() => {
+        pendingRender = undefined;
     });
-    pendingReload = reload;
-    return reload;
+    pendingRender = render;
+    return render;
 }

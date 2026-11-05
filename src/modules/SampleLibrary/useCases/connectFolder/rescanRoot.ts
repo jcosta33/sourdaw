@@ -3,7 +3,7 @@ import { getAudioContext } from '#/modules/AudioEngine/useCases';
 import { FACTORY_LIBRARY_ROOT_ID } from '#/modules/FactorySynthesis/useCases';
 
 import { libraryStore, updateLibraryRootStatus } from '../../stores/libraryStore';
-import { reloadFactoryLibraryBuffers } from '../factoryLibrary/reloadFactoryLibraryBuffers';
+import { rescanFactoryLibrary } from '../factoryLibrary/rescanFactoryLibrary';
 
 import { scanBrowserDirectory } from './scanBrowserDirectory';
 import { scanNativeDirectory } from './scanNativeDirectory';
@@ -26,11 +26,11 @@ export async function rescanRoot(rootId: string): Promise<void> {
         return;
     }
 
-    // The factory root has no files to traverse: its rescan renders and caches
-    // its synthesised buffers again, and settles its own status either way.
+    // The factory root has no files to traverse: its rescan renders the pack
+    // again, caches the samples with no stored audio, and settles its own status.
     if (root.id === FACTORY_LIBRARY_ROOT_ID) {
         try {
-            await reloadFactoryLibraryBuffers(getAudioContext());
+            await rescanFactoryLibrary(getAudioContext());
         } catch (error) {
             logger.error(new Error('Factory library reload failed', { cause: error }));
         }

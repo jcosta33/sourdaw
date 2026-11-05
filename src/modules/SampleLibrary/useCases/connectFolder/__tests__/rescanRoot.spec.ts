@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => {
         scanBrowserDirectory: vi.fn(),
         scanNativeDirectory: vi.fn(),
         updateLibraryRootStatus: vi.fn(),
-        reloadFactoryLibraryBuffers: vi.fn(async (): Promise<readonly unknown[]> => []),
+        rescanFactoryLibrary: vi.fn(async (): Promise<void> => undefined),
         loggerError: vi.fn(),
         audioContext: {},
         storeValue,
@@ -23,8 +23,8 @@ vi.mock('../../../stores/libraryStore', () => ({
     updateLibraryRootStatus: mocks.updateLibraryRootStatus,
 }));
 
-vi.mock('../../factoryLibrary/reloadFactoryLibraryBuffers', () => ({
-    reloadFactoryLibraryBuffers: mocks.reloadFactoryLibraryBuffers,
+vi.mock('../../factoryLibrary/rescanFactoryLibrary', () => ({
+    rescanFactoryLibrary: mocks.rescanFactoryLibrary,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({ getAudioContext: () => mocks.audioContext }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: mocks.loggerError } }));
@@ -88,14 +88,14 @@ describe('rescanRoot', () => {
 
         await rescanRoot('factory');
 
-        expect(mocks.reloadFactoryLibraryBuffers).toHaveBeenCalledExactlyOnceWith(mocks.audioContext);
+        expect(mocks.rescanFactoryLibrary).toHaveBeenCalledExactlyOnceWith(mocks.audioContext);
         expect(mocks.scanBrowserDirectory).not.toHaveBeenCalled();
         expect(mocks.scanNativeDirectory).not.toHaveBeenCalled();
     });
 
     it('logs a failed factory reload rather than rejecting the rescan', async () => {
         const renderError = new Error('render-timed-out');
-        mocks.reloadFactoryLibraryBuffers.mockRejectedValueOnce(renderError);
+        mocks.rescanFactoryLibrary.mockRejectedValueOnce(renderError);
         seedRoots([{ id: 'factory', provider: 'browser' }]);
 
         await expect(rescanRoot('factory')).resolves.toBeUndefined();
