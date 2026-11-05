@@ -59,108 +59,109 @@ const commitSendEdit = (
     })();
 };
 
+type SendCardProps = {
+    track: Track;
+    bus: Track;
+    send: Track['sends'][number] | undefined;
+};
+
+const SendCard = ({ track, bus, send }: SendCardProps): ReactElement => {
+    const [localLevel, setLocalLevel] = useState<number | null>(null);
+    const level = localLevel ?? send?.level ?? 0;
+    const isPreFader = send?.preFader ?? false;
+
+    const togglePreFader = (): void => {
+        if (!send) {
+            return;
+        }
+        commitSendEdit(compileSendPreFaderAction(track.id, bus.id, send), track.id, bus.id, () => undefined);
+    };
+
+    return (
+        <SurfaceCard className="w-full p-3">
+            <Stack gap={2} className="w-full">
+                <ControlHeader
+                    className="w-full"
+                    label={bus.name}
+                    labelClassName="max-w-[50%] truncate font-medium text-foreground"
+                    value={
+                        <Row gap={1.5}>
+                            <span className="text-[10px] font-mono text-muted-foreground w-8 text-right">
+                                {formatSendLevel(level)}
+                            </span>
+                            <Button
+                                variant="bare"
+                                size="bare"
+                                type="button"
+                                className="shrink-0"
+                                onClick={togglePreFader}
+                                aria-label={`Toggle send to ${bus.name} ${isPreFader ? 'post' : 'pre'}-fader`}
+                                title={isPreFader ? 'Pre-fader (click for post)' : 'Post-fader (click for pre)'}
+                            >
+                                <DawMicroBadge
+                                    tone={isPreFader ? 'peach' : 'muted'}
+                                    className={cn('transition-colors', !isPreFader && 'hover:text-foreground')}
+                                >
+                                    {isPreFader ? 'PRE' : 'POST'}
+                                </DawMicroBadge>
+                            </Button>
+                        </Row>
+                    }
+                    valueClassName="font-normal"
+                    title={bus.name}
+                />
+                <Row justify="center" className="w-full px-1">
+                    <Slider
+                        value={[Math.round(levelToSendPosition(level))]}
+                        onValueChange={([value]) => {
+                            if (value === undefined) {
+                                return;
+                            }
+                            const next = sendPositionToLevel(value);
+                            setLocalLevel(next);
+                            previewSend(track.id, bus.id, next, send?.preFader ?? false);
+                        }}
+                        onValueCommit={([value]) => {
+                            if (value === undefined) {
+                                return;
+                            }
+                            const committed = sendPositionToLevel(value);
+                            setLocalLevel(committed);
+                            commitSendEdit(
+                                compileSendLevelAction(track.id, bus.id, committed, send),
+                                track.id,
+                                bus.id,
+                                () => setLocalLevel(null)
+                            );
+                        }}
+                        max={100}
+                        step={1}
+                        aria-label={`Send to ${bus.name}`}
+                        className="w-full"
+                    />
+                </Row>
+            </Stack>
+        </SurfaceCard>
+    );
+};
+
 export const SendsEditor = ({ track }: SendsEditorProps): ReactElement => {
     const { tracks: allTracks } = useTracks();
-    const [localLevels, setLocalLevels] = useState<Record<string, number>>({});
     const buses = listSendDestinations(track.id, allTracks);
-
-    const clearLocalLevel = (busId: string): void => {
-        setLocalLevels((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== busId)));
-    };
 
     return (
         <div>
             <DawHeaderBand compact className="mb-2 rounded-sm" title="Sends" />
             {buses.length > 0 ? (
                 <div className="grid grid-cols-1 @md:grid-cols-2 gap-2">
-                    {buses.map((bus) => {
-                        const send = track.sends.find((state) => state.busId === bus.id);
-                        const level = localLevels[bus.id] ?? send?.level ?? 0;
-                        const isPreFader = send?.preFader ?? false;
-                        return (
-                            <SurfaceCard key={bus.id} className="w-full p-3">
-                                <Stack gap={2} className="w-full">
-                                    <ControlHeader
-                                        className="w-full"
-                                        label={bus.name}
-                                        labelClassName="max-w-[50%] truncate font-medium text-foreground"
-                                        value={
-                                            <Row gap={1.5}>
-                                                <span className="text-[10px] font-mono text-muted-foreground w-8 text-right">
-                                                    {formatSendLevel(level)}
-                                                </span>
-                                                <Button
-                                                    variant="bare"
-                                                    size="bare"
-                                                    type="button"
-                                                    className="shrink-0"
-                                                    onClick={() => {
-                                                        if (!send) {
-                                                            return;
-                                                        }
-                                                        commitSendEdit(
-                                                            compileSendPreFaderAction(track.id, bus.id, send),
-                                                            track.id,
-                                                            bus.id,
-                                                            () => undefined
-                                                        );
-                                                    }}
-                                                    aria-label={`Toggle send to ${bus.name} ${isPreFader ? 'post' : 'pre'}-fader`}
-                                                    title={
-                                                        isPreFader
-                                                            ? 'Pre-fader (click for post)'
-                                                            : 'Post-fader (click for pre)'
-                                                    }
-                                                >
-                                                    <DawMicroBadge
-                                                        tone={isPreFader ? 'peach' : 'muted'}
-                                                        className={cn(
-                                                            'transition-colors',
-                                                            !isPreFader && 'hover:text-foreground'
-                                                        )}
-                                                    >
-                                                        {isPreFader ? 'PRE' : 'POST'}
-                                                    </DawMicroBadge>
-                                                </Button>
-                                            </Row>
-                                        }
-                                        valueClassName="font-normal"
-                                        title={bus.name}
-                                    />
-                                    <Row justify="center" className="w-full px-1">
-                                        <Slider
-                                            value={[Math.round(levelToSendPosition(level))]}
-                                            onValueChange={([value]) => {
-                                                if (value === undefined) {
-                                                    return;
-                                                }
-                                                const next = sendPositionToLevel(value);
-                                                setLocalLevels((current) => ({ ...current, [bus.id]: next }));
-                                                previewSend(track.id, bus.id, next, send?.preFader ?? false);
-                                            }}
-                                            onValueCommit={([value]) => {
-                                                if (value === undefined) {
-                                                    return;
-                                                }
-                                                const committed = sendPositionToLevel(value);
-                                                setLocalLevels((current) => ({ ...current, [bus.id]: committed }));
-                                                commitSendEdit(
-                                                    compileSendLevelAction(track.id, bus.id, committed, send),
-                                                    track.id,
-                                                    bus.id,
-                                                    () => clearLocalLevel(bus.id)
-                                                );
-                                            }}
-                                            max={100}
-                                            step={1}
-                                            aria-label={`Send to ${bus.name}`}
-                                            className="w-full"
-                                        />
-                                    </Row>
-                                </Stack>
-                            </SurfaceCard>
-                        );
-                    })}
+                    {buses.map((bus) => (
+                        <SendCard
+                            key={bus.id}
+                            track={track}
+                            bus={bus}
+                            send={track.sends.find((state) => state.busId === bus.id)}
+                        />
+                    ))}
                 </div>
             ) : (
                 <DawEmptyState

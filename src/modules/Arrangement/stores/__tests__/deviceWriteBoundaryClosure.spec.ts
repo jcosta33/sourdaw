@@ -903,11 +903,20 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // one compile call in the dispatch door. The compiled action commits
         // through `executeAppAction`; the file holds no store or engine write.
         'src/modules/Arrangement/useCases/device/executeAddDeviceAction.ts': 3,
-        // Count provenance: was 6, measured 4 — the `compileAddDeviceAction`
-        // re-export left the barrel with the dispatch-door rewire (#2980);
-        // the compileReorderDevicesAction and compileLoadPresetActions
-        // re-exports remain (identifier + module path each).
-        'src/modules/Arrangement/useCases/index.ts': 4,
+        // Count provenance: was 4, measured 8 — the compileReorderDevicesAction and
+        // compileLoadPresetActions re-exports remain (identifier + module path
+        // each), and the compileSendLevelAction and compileSendPreFaderAction
+        // re-exports add an identifier and a module path apiece. The send
+        // builders return a send action; the barrel writes nothing.
+        'src/modules/Arrangement/useCases/index.ts': 8,
+        // Count provenance: new file entry, measured 1 — the declaration of
+        // `compileSendLevelAction`. It returns a setSend/addSend action for
+        // executeAppAction to commit; it reads and writes no store or device.
+        'src/modules/Arrangement/useCases/device/sendManagement/compileSendLevelAction.ts': 1,
+        // Count provenance: new file entry, measured 1 — the declaration of
+        // `compileSendPreFaderAction`, which returns a setSend action; no store
+        // or device write.
+        'src/modules/Arrangement/useCases/device/sendManagement/compileSendPreFaderAction.ts': 1,
         'src/modules/Arrangement/useCases/preset/compileLoadPresetActions.ts': 1,
         'src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts': 3,
         // AudioEngine: compileRuntimeDeviceControl / compileRuntimeGraphDelta /
@@ -962,9 +971,23 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // delegates to `executeAddDeviceAction`; no compiler named.
         // 'src/modules/ContentBrowser/presentations/views/Sidebar/effectsTabHelpers.tsx': removed (0),
         'src/modules/MixerConsole/presentations/views/Mixer/DeviceChainSection.tsx': 2,
+        // Count provenance: new file entry, measured 4 — the named imports of
+        // `compileSendLevelAction` and `compileSendPreFaderAction` and one call
+        // each. The compiled send actions are committed through executeAppAction;
+        // the strip writes no store or device.
+        'src/modules/MixerConsole/presentations/views/Mixer/SendsSection.tsx': 4,
+        // Count provenance: new file entry, measured 2 — the `compileSendLevelAction`
+        // import and its single call for a connect click. The compiled send action
+        // is committed through executeAppAction; no device write.
+        'src/modules/Routing/presentations/views/RoutingMatrix.tsx': 2,
         // Count provenance: 0 in code, was 2 — the Enable Pitch Editor button
         // now dispatches through `executeAddDeviceAction`; no compiler named.
         // 'src/modules/TimelineEditor/presentations/views/ClipView/KneadEditor.tsx': removed (0),
+        // Count provenance: new file entry, measured 4 — the `compileSendLevelAction`
+        // and `compileSendPreFaderAction` imports and one call each in `SendCard`.
+        // The compiled send actions are committed through executeAppAction; no
+        // store or device write.
+        'src/modules/TimelineEditor/presentations/views/Inspector/SendsEditor.tsx': 4,
         'src/modules/TimelineEditor/presentations/views/Inspector/TrackDevicesSection.tsx': 2,
         'src/modules/Toaster/useCases/compileToasterTrackStackActions.ts': 3,
         'src/modules/Toaster/useCases/index.ts': 2,

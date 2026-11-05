@@ -13,7 +13,10 @@ type SendDestinationTrack = {
  * send would close a routing loop — `setSend` refuses both. A bus the track
  * already sends to stays listed so that send can still be lowered or removed.
  */
-export function listSendDestinations<T extends SendDestinationTrack>(trackId: string, tracks: readonly T[]): T[] {
+export function listSendDestinations<Destination extends SendDestinationTrack>(
+    trackId: string,
+    tracks: readonly Destination[]
+): Destination[] {
     const sidechainRoutes = getAllSidechainRoutes();
     const existingBusIds = new Set(tracks.find((track) => track.id === trackId)?.sends?.map((send) => send.busId));
     return tracks.filter(
