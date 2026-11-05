@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/__tests__/measuredPreviewAudition.spec.ts
+  s_0314bb17e5dee3::t_132d1fa07f96db 189-190
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f71acffe985678accd54b2dbd37d20d91dc1a791",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
