@@ -1,0 +1,19 @@
+scripts/__tests__/tailwindSourceScope.spec.ts
+  s_3bb122e91d89a5::t_33f32706535888 1,8-18,21-22,26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "be5684196ec4d719db1983f4fff80c0115e9584b",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
