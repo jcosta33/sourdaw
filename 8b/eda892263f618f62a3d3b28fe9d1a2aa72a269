@@ -1,0 +1,80 @@
+src/modules/Project/useCases/projectPersistence/fileIO/midiLearnProjection.ts
+  s_0314bb17e5dee3::t_6dc333168c10c7 1-49
+src/modules/Project/useCases/agentDiscovery/sampleDiscoverySource.ts
+  s_0314bb17e5dee3::t_af01fd52261c13 1-62
+  s_0314bb17e5dee3::t_501f601752fcd0 63-65
+src/app/__tests__/registerSupportingServicePorts.spec.ts
+  s_0314bb17e5dee3::t_f25b98ecb1159f 14-25,30,32-34,37-48,69,73-74,123-146,148,151-152,158-159,163,166-167,175-180,184-185
+src/app/registerSupportingServicePorts.ts
+  s_0314bb17e5dee3::t_dd11b01eb48a94 4,7-9,14-15,31-35,41-45,51-52
+src/modules/AiRuntime/useCases/__tests__/confirmAfterSave.spec.ts
+  s_0314bb17e5dee3::t_aa93d6769a3903 4,64
+src/modules/AiRuntime/useCases/__tests__/executeTransientOnsetReadAfterSave.spec.ts
+  s_0314bb17e5dee3::t_8cf1d3ec84bb01 3,87-88
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/executeCommittedSectionRenderRetryAfterSave.spec.ts
+  s_0314bb17e5dee3::t_6507b4ba41e7bd 3,268-269
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/finalizeRecoveredEffectsAfterSave.spec.ts
+  s_0314bb17e5dee3::t_d783899c41957d 3,202-203
+src/modules/Arrangement/useCases/freezeBounce/__tests__/admitAgentRenderReceiptAfterSave.spec.ts
+  s_0314bb17e5dee3::t_0df026e606b201 3,89-90
+src/modules/AudioRendering/useCases/__tests__/previewMeasurementRender.spec.ts
+  s_0314bb17e5dee3::t_81c34ad49c8f51 5,291-292
+src/modules/AudioRendering/useCases/__tests__/renderAgentMeasurementScopeAfterSave.spec.ts
+  s_0314bb17e5dee3::t_00bee2d53fee43 3,70-71
+src/modules/AudioRendering/useCases/__tests__/renderAgentProjectSectionsAfterSave.spec.ts
+  s_0314bb17e5dee3::t_688957ac5f963f 3,115-116
+src/modules/Levain/useCases/__tests__/levainMultiInstanceProjectRoundTrip.spec.ts
+  s_0314bb17e5dee3::t_49b74d77ea6837 36,97
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/externalPluginPendingRestore.capture.integration.spec.ts
+  s_0314bb17e5dee3::t_607ff4c73389c8 3,279-280
+src/modules/PluginHost/useCases/pluginLifecycle/__tests__/externalPluginRestoreFailure.capture.integration.spec.ts
+  s_0314bb17e5dee3::t_67d0030af3d498 3,233-234
+src/modules/Project/presentations/views/__tests__/recentMenuSwitchAfterBootRestore.integration.spec.tsx
+  s_0314bb17e5dee3::t_1a43ebb4b93565 166,316-317
+src/modules/Project/useCases/__tests__/agentDomainQueryConformance.spec.ts
+  s_0314bb17e5dee3::t_1cac78f2c9f913 4,47
+src/modules/Project/useCases/agentDiscovery/collectSampleDiscoveryEntries.ts
+  s_0314bb17e5dee3::t_76a0ab0db6dca3 4-7,54-55,59
+src/modules/Project/useCases/index.ts
+  s_0314bb17e5dee3::t_8678b03ca1e4d3 50-51
+src/modules/Project/useCases/projectPersistence/__tests__/migrateActiveProjectIdentity.integration.spec.ts
+  s_0314bb17e5dee3::t_b07b414fd9c633 3,73-74
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/buildProjectData.spec.ts
+  s_0314bb17e5dee3::t_2ba39e029cc0a0 103,108,111-113,115
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.roundTrip.spec.ts
+  s_0314bb17e5dee3::t_815ad6f0ae403d 4,184-185
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportProjectFile.spec.ts
+  s_0314bb17e5dee3::t_51bb15154fdac4 6,13,164-167
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/exportSnapshotConsistency.integration.spec.ts
+  s_0314bb17e5dee3::t_c56487c89ccf00 57,241
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/midiLearnPersistence.roundTrip.spec.ts
+  s_0314bb17e5dee3::t_adb095e03680c3 4,59
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/mixStatePersistence.roundTrip.spec.ts
+  s_0314bb17e5dee3::t_afa43dca3f40ee 4,57
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/stampWriteSidePersistence.spec.ts
+  s_0314bb17e5dee3::t_6392c536b0f079 3,38-39
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/vcaFoundationLifecycle.spec.ts
+  s_0314bb17e5dee3::t_b1ed25fe827e41 3,29-30
+src/modules/Project/useCases/projectPersistence/fileIO/buildProjectData.ts
+  s_0314bb17e5dee3::t_7c592c1ab007a0 37,253
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.snapshotContinuation.integration.spec.ts
+  s_0314bb17e5dee3::t_71fd6e9234d697 59,76,90
+src/modules/ProjectVersioning/useCases/versionControl/__tests__/checkpointProjectIsolation.integration.spec.ts
+  s_0314bb17e5dee3::t_77730f34e9b853 5,267
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8beda892263f618f62a3d3b28fe9d1a2aa72a269",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
