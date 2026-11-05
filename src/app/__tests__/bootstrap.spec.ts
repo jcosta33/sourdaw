@@ -166,6 +166,7 @@ const {
     registerProjectLifecycleMock,
     registerDeviceEnginePortsMock,
     registerSupportingServicePortsMock,
+    registerKernelPortsMock,
     captureProjectRootIdentityMock,
     setElasticSensitivityRootIdentityCaptureMock,
     captureProjectIdentityMock,
@@ -303,6 +304,7 @@ const {
         registerProjectLifecycleMock: vi.fn<() => void>(),
         registerDeviceEnginePortsMock: vi.fn<() => void>(),
         registerSupportingServicePortsMock: vi.fn<() => void>(),
+        registerKernelPortsMock: vi.fn<() => void>(),
         captureProjectRootIdentityMock: vi.fn<() => string>(() => 'root-identity'),
         setElasticSensitivityRootIdentityCaptureMock: vi.fn(),
         captureProjectIdentityMock: vi.fn<() => string>(() => 'identity-1'),
@@ -812,6 +814,10 @@ vi.mock('../registerSupportingServicePorts', () => ({
     registerSupportingServicePorts: registerSupportingServicePortsMock,
 }));
 
+vi.mock('../registerKernelPorts', () => ({
+    registerKernelPorts: registerKernelPortsMock,
+}));
+
 vi.mock('../composeGrandBoule', () => ({
     composeGrandBoule: composeGrandBouleMock,
 }));
@@ -1106,6 +1112,11 @@ describe('bootstrap', () => {
         expect(registerSupportingServicePortsMock).toHaveBeenCalledExactlyOnceWith();
         expect(registerSupportingServicePortsMock).toHaveBeenCalledAfter(registerDeviceEnginePortsMock);
         expect(registerSupportingServicePortsMock).toHaveBeenCalledBefore(setProjectIdentityTransitionDependenciesMock);
+        // Beside the supporting ports, before an undo, a macro replay or a
+        // branch switch can reach a core domain through a kernel port.
+        expect(registerKernelPortsMock).toHaveBeenCalledExactlyOnceWith();
+        expect(registerKernelPortsMock).toHaveBeenCalledAfter(registerSupportingServicePortsMock);
+        expect(registerKernelPortsMock).toHaveBeenCalledBefore(setProjectIdentityTransitionDependenciesMock);
         expect(agentProjectInspectionSetProviderMock).toHaveBeenCalledExactlyOnceWith(
             captureAgentProjectInspectionState
         );

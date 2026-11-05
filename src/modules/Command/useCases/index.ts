@@ -100,6 +100,7 @@ export { getUndoTreeHandlers } from './getUndoTreeHandlers';
 
 export { startMacroRecording } from './macro/recording/startMacroRecording';
 export { stopMacroRecording } from './macro/recording/stopMacroRecording';
+export { macroCoreReads } from './macro/macroCoreReads';
 
 export { undo } from './undo';
 export { readUndoEntryForInverse } from './readUndoEntryForInverse';

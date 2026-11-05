@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { registerKernelPorts } from '#/app/registerKernelPorts';
 import * as storageWrites from '#/infra/store/storage/createAutomergeStorage';
 import { automationStore } from '#/modules/Automation/stores';
 import { addAutomationLane } from '#/modules/Automation/useCases';
@@ -7,6 +8,8 @@ import { addAutomationLane } from '#/modules/Automation/useCases';
 import { type Macro } from '../../../models/Macro';
 import { macroStore } from '../../../stores/macroStore';
 import { playMacro } from '../playback';
+
+registerKernelPorts();
 
 const STORAGE_KEY = 'sourdaw:macros';
 

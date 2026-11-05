@@ -1,10 +1,11 @@
-import { readTempoMapEditTargets } from '#/modules/Transport/stores';
 import { type AppAction } from '#/utils/handlerContract';
 import { type TempoMapEdit, type TempoMapRow, type TempoMapRowPlan } from '#/utils/tempoMapRowPlan';
 
 import { AppActionConflictError } from '../../errors/AppActionExecutionError';
 import { executeAppAction, type ExecuteAppActionOptions } from '../executeAppAction';
 import { getCommandHandler } from '../getCommandHandler';
+
+import { macroCoreReads } from './macroCoreReads';
 
 type MapAction = Extract<AppAction, { type: 'editTempoMap' | 'restoreTempoMapEdit' }>;
 type Intent = { edit: TempoMapEdit; destination: readonly TempoMapRow[] };
@@ -82,7 +83,9 @@ export async function replayTempoMapMacroAction(
                     if (canonical.payload.rowPlan) {
                         observation.rows = canonical.payload.rowPlan.after;
                     } else if (getCommandHandler(canonical)?.isNoop?.(canonical)) {
-                        observation.rows = readTempoMapEditTargets(canonical.payload.edit);
+                        observation.rows = macroCoreReads
+                            .read('replayTempoMapMacroAction')
+                            .readTempoMapEditTargets(canonical.payload.edit);
                     }
                 }
             },

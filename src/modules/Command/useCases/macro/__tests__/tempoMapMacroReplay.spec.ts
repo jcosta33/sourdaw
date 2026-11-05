@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerKernelPorts } from '#/app/registerKernelPorts';
 import { tempoMapStore } from '#/modules/Transport/stores';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import { type AppAction } from '#/utils/handlerContract';
@@ -10,6 +11,8 @@ import { replayTempoMapMacroAction } from '../tempoMapMacroReplay';
 
 const { execute } = vi.hoisted(() => ({ execute: vi.fn<typeof import('../../executeAppAction').executeAppAction>() }));
 vi.mock('../../executeAppAction', () => ({ executeAppAction: execute }));
+
+registerKernelPorts();
 
 type Restore = Extract<AppAction, { type: 'restoreTempoMapEdit' }>;
 const promotion: Restore['payload']['audioSourcePromotion'] = {
