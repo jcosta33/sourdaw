@@ -1,4 +1,4 @@
-import { isBeatAdmittedByAnchoredClipLoopWindow } from '#/utils/clipLoopOrigin';
+import { isBeatAdmittedByAnchoredClipLoopWindow, resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 
 import { type OfflineMidiEventProjector } from '../../repositories/offlineScheduler/offlineMidiEventProjectorState';
 import { type OfflinePpqEndpointProjector } from '../../repositories/offlineScheduler/offlinePpqEndpointProjectorState';
@@ -72,9 +72,20 @@ type ScheduledOfflineYeastNote = {
     clipGain: number;
 };
 
+/**
+ * Where an iteration starts sounding: its pass start, except that a looping
+ * clip's first pass on the anchor's grid can open before the clip head does.
+ */
+function iterationOpeningBeat(iteration: OfflineYeastClipIteration): number {
+    if (!iteration.loopEnabled) {
+        return iteration.iterationStartBeat;
+    }
+    return Math.max(iteration.iterationStartBeat, iteration.clipStartBeat);
+}
+
 function containsBeat(iteration: OfflineYeastClipIteration, beat: number): boolean {
     return (
-        iteration.iterationStartBeat <= beat &&
+        iterationOpeningBeat(iteration) <= beat &&
         beat < Math.min(iteration.iterationStartBeat + iteration.loopLengthBeats, iteration.clipEndBeat)
     );
 }
@@ -114,6 +125,15 @@ export function projectOfflineYeastTrackNotes({
         for (const note of admittedNotes) {
             sourceNotesByEventId.set(`${routeId}:${note.id}:on`, note);
         }
+        // The iteration opens on the anchor's pass grid, where a row sounds at
+        // its offset-relative start plus the trim advance.
+        const contentZeroBeat =
+            iteration.iterationStartBeat +
+            resolveClipLoopOriginAdvance({
+                startBeat: iteration.clipStartBeat,
+                loopOriginBeat: iteration.loopOriginBeat,
+                loopEnabled: iteration.loopEnabled,
+            });
         return projectMidiEvents({
             events: admittedNotes,
             clipId: iteration.clipId,
@@ -126,7 +146,7 @@ export function projectOfflineYeastTrackNotes({
             phase: 'clip-groove',
         }).map((note) => ({
             ...note,
-            startBeat: iteration.iterationStartBeat + note.startBeat,
+            startBeat: contentZeroBeat + note.startBeat,
             routeId,
         }));
     });

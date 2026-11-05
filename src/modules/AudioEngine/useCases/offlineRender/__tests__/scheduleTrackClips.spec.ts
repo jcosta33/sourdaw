@@ -10,6 +10,7 @@ import {
     createGrooveMidiEventProjector,
     projectChannelBend,
     projectClipControllerEvents,
+    shouldPlayMidiEvent,
 } from '#/modules/MIDI/useCases';
 import {
     beatAtSecondsFromAnchor,
@@ -3856,6 +3857,196 @@ describe('scheduleTrackClips — the anchored loop window through the real proje
         ]);
     });
 });
+
+describe.each([
+    { route: 'direct', yeastRouted: false },
+    { route: 'Yeast', yeastRouted: true },
+])(
+    'scheduleTrackClips renders a looping clip cut off its loop grid on the source passes, $route route',
+    ({ yeastRouted }) => {
+        beforeEach(() => {
+            vi.clearAllMocks();
+            mocks.getDrumKitDefByIndex.mockReturnValue(null);
+            mocks.getSynthParamsFromDevices.mockReturnValue(null);
+            mocks.resolveDrumKit.mockReturnValue(null);
+        });
+
+        // At 120 BPM and 48 kHz a beat is 24 000 frames.
+        const BEAT_FRAMES = 24_000;
+
+        type LoopClipState = {
+            startBeat: number;
+            midiOffsetBeats: number;
+            rowShiftBeats: number;
+            endBeat?: number;
+            loopOriginBeat?: number;
+        };
+
+        /**
+         * Renders a loop [0, 4) anchored at 0, played to 16, in one of three states:
+         * uncut; the right fragment of a split at 6 (the source trimmed to 6, rows
+         * untouched); or start-trimmed to 6 (offset wrapped to 2, rows ridden by
+         * −4). Its rows: one held inside the loop (1.5–2.5), one crossing the seam
+         * (3.5–4.5), and a 50% chance note at 1 whose real rolls under seed 6
+         * sound occurrences 1 and 2 and drop occurrence 3. Reports every note-on
+         * and note-off at or after beat 8, in beats. A state may also move the
+         * clip's end and its loop anchor.
+         */
+        async function renderFromBeatEight({
+            startBeat,
+            midiOffsetBeats,
+            rowShiftBeats,
+            endBeat = 16,
+            loopOriginBeat = 0,
+        }: LoopClipState) {
+            const arrivals: string[] = [];
+            const strategy: DeviceNodeEntry['strategy'] = {
+                node: { inputNode: {} as AudioNode, outputNode: {} as AudioNode, nodes: [] },
+                acceptsNotes: true,
+                setParam: () => {},
+                resolveOfflineAutomation: () => null,
+            };
+            const noteAt = (kind: string, noteOrPad: number, sampleFrame: number | undefined) => {
+                const beat = (sampleFrame ?? 0) / BEAT_FRAMES;
+                if (beat >= 8) {
+                    arrivals.push(`${kind} ${noteOrPad} @${beat}`);
+                }
+            };
+            const entry: DeviceNodeEntry = {
+                deviceId: 'inst-1',
+                deviceType: 'grand-boule',
+                contributesAudio: true,
+                node: strategy.node,
+                strategy,
+                instrumentControls: {
+                    noteOn: ({ noteOrPad, sampleFrame }) => noteAt('on', noteOrPad, sampleFrame),
+                    noteOff: ({ noteOrPad, sampleFrame }) => noteAt('off', noteOrPad, sampleFrame),
+                },
+            };
+            const track = makeMidiTrack();
+            if (yeastRouted) {
+                track.devices.push({
+                    id: 'yeast-1',
+                    name: 'Yeast',
+                    type: 'yeast',
+                    bypassed: false,
+                    parameterValues: {},
+                });
+            }
+            track.clips = [
+                {
+                    ...track.clips[0]!,
+                    startBeat,
+                    endBeat,
+                    loopEnabled: true,
+                    loopLength: 4,
+                    loopOriginBeat,
+                    midiOffsetBeats,
+                },
+            ];
+            const midi = makeMidi();
+            midi.probabilitySeed = 6;
+            midi.notesByClipId['clip-1'] = [
+                { id: 'n-held', pitch: 60, startBeat: 1.5 + rowShiftBeats, duration: 1, velocity: 100 },
+                { id: 'n-seam', pitch: 64, startBeat: 3.5 + rowShiftBeats, duration: 1, velocity: 100 },
+                {
+                    id: 'n-chance',
+                    pitch: 67,
+                    startBeat: 1 + rowShiftBeats,
+                    duration: 0.25,
+                    velocity: 100,
+                    probability: 50,
+                },
+            ];
+            const events: PendingWorkletEvent[] = [];
+            const offlineCtx = makeOfflineCtx();
+
+            await scheduleTrackClips({
+                offlineCtx,
+                track,
+                midi,
+                trackInputNode: {} as GainNode,
+                trackGainNode: {} as GainNode,
+                trackPanNode: {} as StereoPannerNode,
+                destination: {} as AudioNode,
+                durationSeconds: 60,
+                defaultTempo: 120,
+                changes: [],
+                projections: {
+                    projectMidiEvents: createGrooveMidiEventProjector(),
+                    projectPpqEndpoints,
+                    processYeastMidi,
+                    resolveTempoAtBeat: ({ defaultTempo: tempo }) => tempo,
+                    selectMidiEventProbability: shouldPlayMidiEvent,
+                    projectChordPitch: mocks.projectChordPitch,
+                    evaluateAutomationValue: mocks.evaluateAutomationValue,
+                },
+                pendingWorkletEvents: events,
+                allTracks: [track],
+                deviceEntriesByTrack: new Map([[track.id, [entry]]]),
+            });
+
+            schedulePendingSuspends(offlineCtx, events, 60);
+            return arrivals.toSorted();
+        }
+
+        const UNCUT: LoopClipState = { startBeat: 0, midiOffsetBeats: 0, rowShiftBeats: 0 };
+
+        it('pins the uncut source: the seam note re-strikes on each pass head and the chance note sounds at 9 only', async () => {
+            expect(await renderFromBeatEight(UNCUT)).toEqual(
+                [
+                    'off 64 @8',
+                    'on 64 @8',
+                    'off 64 @8.5',
+                    'on 67 @9',
+                    'off 67 @9.25',
+                    'on 60 @9.5',
+                    'off 60 @10.5',
+                    'on 64 @11.5',
+                    'off 64 @12',
+                    'on 64 @12',
+                    'off 64 @12.5',
+                    'on 60 @13.5',
+                    'off 60 @14.5',
+                    'on 64 @15.5',
+                    'off 64 @16',
+                ].toSorted()
+            );
+        });
+
+        it('renders the split right fragment exactly as the uncut source', async () => {
+            expect(await renderFromBeatEight({ startBeat: 6, midiOffsetBeats: 6, rowShiftBeats: 0 })).toEqual(
+                await renderFromBeatEight(UNCUT)
+            );
+        });
+
+        it('renders the start-trimmed clip exactly as the untrimmed source', async () => {
+            expect(await renderFromBeatEight({ startBeat: 6, midiOffsetBeats: 2, rowShiftBeats: -4 })).toEqual(
+                await renderFromBeatEight(UNCUT)
+            );
+        });
+
+        // The source with head and anchor a loop later, at 4: its passes at 8
+        // and 12 roll occurrences 1 and 2, so the chance note sounds at both.
+        const ANCHORED_AT_FOUR: LoopClipState = {
+            startBeat: 4,
+            endBeat: 20,
+            loopOriginBeat: 4,
+            midiOffsetBeats: 0,
+            rowShiftBeats: 0,
+        };
+
+        it('renders a clip whose head lies a pass ahead of its anchor on the anchored source occurrences', async () => {
+            const anchored = await renderFromBeatEight(ANCHORED_AT_FOUR);
+            expect(anchored).toEqual(expect.arrayContaining(['on 67 @9', 'on 67 @13']));
+            // Its head drawn back a loop to 0, rows a loop later: the head's
+            // pass counts one ahead of the anchor's occurrence 0.
+            expect(await renderFromBeatEight({ ...ANCHORED_AT_FOUR, startBeat: 0, rowShiftBeats: 4 })).toEqual(
+                anchored
+            );
+        });
+    }
+);
 
 describe('scheduleTrackClips — export cancellation is caller-owned', () => {
     beforeEach(() => {

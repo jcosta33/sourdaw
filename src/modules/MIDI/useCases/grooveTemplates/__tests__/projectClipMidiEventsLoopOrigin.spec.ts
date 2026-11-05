@@ -59,11 +59,12 @@ describe('projectClipMidiEvents with a loop anchor', () => {
 
     it('keeps the 4.5 note out of every pass after a one-beat start trim', () => {
         // Trim by one beat: the clip now starts at 1 and its head enters the
-        // source at 1. The head note wraps to the pass tail (phase 3) and the
-        // 4.5 note stays outside the loop region.
+        // source at 1. Passes still open on the anchor's seams (0, 4, 8), so
+        // the head note sounds at the seam 4 and the 4.5 note stays outside
+        // the loop region.
         const projected = projectPass({
             clipStartBeat: 1,
-            iterationStartBeat: 1,
+            iterationStartBeat: 4,
             midiOffsetBeats: 1,
             loopOriginBeat: 0,
             events: [IN_LOOP_NOTE, PAST_LOOP_NOTE],
@@ -81,7 +82,7 @@ describe('projectClipMidiEvents with a loop anchor', () => {
         ];
         const projected = projectPass({
             clipStartBeat: 5,
-            iterationStartBeat: 5,
+            iterationStartBeat: 8,
             midiOffsetBeats: 1,
             loopOriginBeat: 0,
             events: shifted,
@@ -90,24 +91,40 @@ describe('projectClipMidiEvents with a loop anchor', () => {
     });
 
     it('keeps every pass of the arrangement in the same occurrence', () => {
-        // The second pass projects the same notes at the same pass phases as
-        // the first: the trim moves the entry, never the loop's content.
-        const firstPass = projectPass({
-            clipStartBeat: 1,
-            iterationStartBeat: 1,
-            midiOffsetBeats: 1,
+        // Every pass projects the same notes at the same pass phases: the trim
+        // moves the entry, never the loop's content. The first grid pass opens
+        // at the seam 0, before the trimmed head at 1, which cuts the head note
+        // there; the next passes open on the seams 4 and 8.
+        const passAt = (iterationStartBeat: number) =>
+            projectPass({
+                clipStartBeat: 1,
+                iterationStartBeat,
+                midiOffsetBeats: 1,
+                loopOriginBeat: 0,
+                events: [IN_LOOP_NOTE],
+            });
+        expect(passAt(0)).toEqual([]);
+        expect(passAt(4)).toEqual([{ id: 'head', startBeat: 4 }]);
+        expect(passAt(8)).toEqual([{ id: 'head', startBeat: 8 }]);
+    });
+
+    it('plays a row the pass seam the trimmed head sits past would wrap, at its source beat', () => {
+        // A head two beats past the anchor sits half a pass into the grid: the
+        // row at source 1.5 (one beat long) sounds whole at 5.5 on the seam-4
+        // pass, never cut at 6 and re-struck as a clip-head pass would.
+        const projected = projectClipMidiEvents({
+            events: [{ id: 'held', startBeat: 1.5, duration: 1, velocity: 80 }],
+            clipId: 'clip-4988',
+            clipStartBeat: 2,
+            clipEndBeat: 18,
+            iterationStartBeat: 4,
+            loopLengthBeats: 4,
+            midiOffsetBeats: 2,
+            loopEnabled: true,
             loopOriginBeat: 0,
-            events: [IN_LOOP_NOTE],
-        });
-        const secondPass = projectPass({
-            clipStartBeat: 1,
-            iterationStartBeat: 5,
-            midiOffsetBeats: 1,
-            loopOriginBeat: 0,
-            events: [IN_LOOP_NOTE],
-        });
-        expect(firstPass).toEqual([{ id: 'head', startBeat: 4 }]);
-        expect(secondPass).toEqual([{ id: 'head', startBeat: 8 }]);
+            clipGrooveAlreadyApplied: true,
+        }).map((event) => ({ startBeat: event.startBeat, duration: event.duration }));
+        expect(projected).toEqual([{ startBeat: 5.5, duration: 1 }]);
     });
 });
 

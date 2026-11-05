@@ -32,7 +32,7 @@ import {
 } from '#/modules/MIDI/useCases';
 import { scheduleDrumKitNote, scheduleKitNote, scheduleNote } from '#/modules/Synth/useCases';
 import { toasterStore } from '#/modules/Toaster/stores';
-import { isBeatInClipLoopWindow } from '#/utils/clipLoopOrigin';
+import { isBeatInClipLoopWindow, resolveClipLoopPassGrid } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import {
     isBypassedNoteReceiver,
@@ -868,6 +868,16 @@ export async function scheduleMidiNotes(
                 loopEnabled: clip.loopEnabled ?? false,
             });
             const loopLen = loopProjection.loopLengthBeats;
+            // A frozen take repeats on its own grid; every other looping clip
+            // passes on the seams its loop anchor laid down.
+            const loopPassGrid = resolveClipLoopPassGrid({
+                startBeat: clip.startBeat,
+                endBeat: clip.endBeat,
+                loopOriginBeat: clip.loopOriginBeat,
+                loopEnabled: !frozenSource && (clip.loopEnabled ?? false),
+                loopLengthBeats: loopLen,
+                iterationCount: loopProjection.iterationCount,
+            });
             const frozenRepeats = frozenSource
                 ? frozenMidiTakeRepeats(
                       frozenSource,
@@ -880,19 +890,20 @@ export async function scheduleMidiNotes(
             const scheduledIterationRange = frozenSource
                 ? { startIndex: firstFrozenRepeatIndex, endIndex: firstFrozenRepeatIndex + frozenRepeats.length }
                 : getScheduledIterationRange({
-                      clipStartBeat: clip.startBeat,
+                      clipStartBeat: loopPassGrid.firstPassStartBeat,
                       fromBeat,
-                      iterationCount: loopProjection.iterationCount,
+                      iterationCount: loopPassGrid.passCount,
                       loopEnabled: clip.loopEnabled ?? false,
                       loopLengthBeats: loopLen,
                       toBeat,
                   });
-            const sourceOccurrenceOffset = getSourceOccurrenceOffset({
-                sourceStartBeat: clip.sourceStartBeat,
-                segmentStartBeat: clip.startBeat,
-                loopLength: loopLen,
-                loopEnabled: clip.loopEnabled ?? false,
-            });
+            const sourceOccurrenceOffset =
+                getSourceOccurrenceOffset({
+                    sourceStartBeat: clip.sourceStartBeat,
+                    segmentStartBeat: clip.startBeat,
+                    loopLength: loopLen,
+                    loopEnabled: clip.loopEnabled ?? false,
+                }) + loopPassGrid.passesAheadOfAnchor;
             const strip = ensureTrackStrip(track.id);
             const ctx = getAudioContext();
             const sr = ctx.sampleRate;
@@ -1014,7 +1025,9 @@ export async function scheduleMidiNotes(
                 if (frozenSource && !frozenRepeat) {
                     throw new Error('Invalid frozen MIDI take repeat');
                 }
-                const iterationStart = frozenRepeat ? frozenRepeat.startBeat : clip.startBeat + iter * loopLen;
+                const iterationStart = frozenRepeat
+                    ? frozenRepeat.startBeat
+                    : loopPassGrid.firstPassStartBeat + iter * loopLen;
                 const yeastRouteId = `live-yeast:${track.id}:${clip.id}:${absoluteOccurrenceIndex}`;
                 let iterNotes: readonly (LiveYeastNote &
                     Pick<ScheduledMidiNote, 'expression'> & { recordedOwnBendBeat?: number })[];

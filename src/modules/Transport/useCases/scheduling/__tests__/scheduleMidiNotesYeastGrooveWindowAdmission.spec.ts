@@ -703,7 +703,8 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
             // the exclusive ceiling. The live chain must voice the first at
             // its displaced pass placement (wrapped onto beat 4) and never
             // voice the second; the offline projection over the whole stored
-            // set must emit exactly the same single event.
+            // set must emit exactly the same single event — on the pass the
+            // anchor's grid opens at the seam 4, half a loop past the head.
             const voices = await sweepSynthVoices(clipGrooveState());
             expect(voices).toEqual([{ pitch: 60, beat: 4, durationBeats: 0.25 }]);
 
@@ -713,7 +714,7 @@ describe('scheduleMidiNotes — Yeast note vs the sequencer groove at the schedu
                     clipId: 'clip-1',
                     clipStartBeat: 2,
                     clipEndBeat: 10,
-                    iterationStartBeat: 2,
+                    iterationStartBeat: 4,
                     loopLengthBeats: 4,
                     midiOffsetBeats: 3,
                     loopEnabled: true,

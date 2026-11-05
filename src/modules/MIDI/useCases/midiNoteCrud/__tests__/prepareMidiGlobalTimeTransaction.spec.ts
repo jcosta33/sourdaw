@@ -222,6 +222,75 @@ describe('prepareMidiGlobalTimeTransaction', () => {
         expect(mocks.state.value).toBe(preparedState);
     });
 
+    it('copies every row of a looping source onto the new clip and leaves the source unchanged', () => {
+        const sourceNotes = [
+            { id: 'head', pitch: 60, startBeat: 0.5, duration: 1, velocity: 90, probability: 50 },
+            { id: 'tail', pitch: 64, startBeat: 3, duration: 0.5, velocity: 90 },
+        ];
+        const sourceCc = [{ id: 'source-cc', controller: 64, value: 127, beat: 1, channel: 0 }];
+        const sourceBend = [{ id: 'source-pb', value: 1024, beat: 2, channel: 0 }];
+        const preparedState = state({
+            notesByClipId: { source: sourceNotes },
+            ccByClipId: { source: sourceCc },
+            pitchBendByClipId: { source: sourceBend },
+        });
+        mocks.state.value = preparedState;
+
+        const transaction = prepareMidiGlobalTimeTransaction({
+            operation: {
+                type: 'delete',
+                startBeat: 2,
+                endBeat: 5,
+                splits: [{ sourceClipId: 'source', newClipId: 'right', splitBeat: 5, copiesLoopMaterial: true }],
+                removeClipIds: [],
+            },
+            owners: [owner('track-1', true, [clip('source', 0, 8, 0)])],
+        });
+
+        expect(transaction.status).toBe('ready');
+        expect(transaction.replayPlan.notes.map((note) => [note.role, note.sourceNoteId])).toEqual([
+            ['split-right', 'head'],
+            ['split-right', 'tail'],
+        ]);
+        expect(transaction.apply()).toBe(true);
+        const appliedState = requireState();
+        expect(appliedState.notesByClipId.source).toBe(sourceNotes);
+        expect(appliedState.ccByClipId.source).toBe(sourceCc);
+        expect(appliedState.pitchBendByClipId.source).toBe(sourceBend);
+        expect(appliedState.notesByClipId.right).toEqual(
+            sourceNotes.map((note, index) => ({ ...note, id: transaction.replayPlan.notes[index]?.targetNoteId }))
+        );
+        expect(appliedState.ccByClipId.right).toEqual([
+            { id: 'cc-split:right:0', controller: 64, value: 127, beat: 1, channel: 0 },
+        ]);
+        expect(
+            appliedState.pitchBendByClipId.right?.map(({ value, beat, channel }) => ({ value, beat, channel }))
+        ).toEqual([{ value: 1024, beat: 2, channel: 0 }]);
+        expect(transaction.revert()).toBe(true);
+        expect(mocks.state.value).toBe(preparedState);
+    });
+
+    it.each([
+        { name: 'a false copy flag', extra: { copiesLoopMaterial: false } },
+        { name: 'a copy beside a discard', extra: { discardBeforeBeat: 2 } },
+        { name: 'a copy beside retained windows', extra: { retainOnSourceWindows: [{ start: 0, end: 1 }] } },
+        { name: 'a copy at a negative beat', extra: { splitBeat: -1 } },
+    ])('still rejects $name', ({ extra }) => {
+        mocks.state.value = state({
+            notesByClipId: { source: [{ id: 'note', pitch: 60, startBeat: 1, duration: 1, velocity: 90 }] },
+        });
+        const split = { sourceClipId: 'source', newClipId: 'right', splitBeat: 5, copiesLoopMaterial: true as const };
+        Object.assign(split, extra);
+
+        const transaction = prepareMidiGlobalTimeTransaction({
+            operation: { type: 'delete', startBeat: 2, endBeat: 5, splits: [split], removeClipIds: [] },
+            owners: [owner('track-1', true, [clip('source', 0, 8, 0)])],
+        });
+
+        expect(transaction.status).toBe('rejected');
+        expect(mocks.set).not.toHaveBeenCalled();
+    });
+
     it('performs the insert shift before the duplicate copy', () => {
         const preparedState = state({
             notesByClipId: {
