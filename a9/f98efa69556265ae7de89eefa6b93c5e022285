@@ -1,0 +1,70 @@
+.agents/skills/review-stances/audio-timing-format-laws.md
+  h_beb54bf43b47b7 3-8,69-81
+AGENTS.md
+  h_beb54bf43b47b7 551
+docs/affected-e2e.md
+  h_beb54bf43b47b7 46-47,52-64
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1216-1217
+scripts/__tests__/e2eTestSideGraph.spec.ts
+  h_beb54bf43b47b7 1-218
+scripts/__tests__/prValidationScope.spec.ts
+  h_beb54bf43b47b7 23,2504-2657
+scripts/e2eAffectedGraph.ts
+  h_beb54bf43b47b7 2,6,560-566,568
+scripts/e2eFileGraph.ts
+  h_beb54bf43b47b7 1-76
+scripts/e2eTestSideGraph.ts
+  h_beb54bf43b47b7 1-219
+scripts/e2eTestSideRoute.ts
+  h_beb54bf43b47b7 1-71
+scripts/prValidationScope.ts
+  h_beb54bf43b47b7 9-15,375-395,409-410,448-449,451,557,561,564,568-571,589,592-593,613,636,647-648
+scripts/prValidationScopeCheckout.ts
+  h_beb54bf43b47b7 5-21,85
+src/app/__tests__/bootstrap.spec.ts
+  h_beb54bf43b47b7 198,302,416,1529,1531-1534
+src/app/bootstrap.ts
+  h_beb54bf43b47b7 35,726
+src/modules/Arrangement/AGENTS.md
+  h_beb54bf43b47b7 25
+src/modules/Arrangement/useCases/__tests__/initClipSelectionReconciliation.spec.ts
+  h_beb54bf43b47b7 1-239
+src/modules/Arrangement/useCases/__tests__/initTimelineViewReconciliation.spec.ts
+  h_beb54bf43b47b7 1-41
+src/modules/Arrangement/useCases/index.ts
+  h_beb54bf43b47b7 268
+src/modules/Arrangement/useCases/initClipSelectionReconciliation.ts
+  h_beb54bf43b47b7 1-69
+src/modules/Arrangement/useCases/initTimelineViewReconciliation.ts
+  h_beb54bf43b47b7 1-15
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/recordingCapturePlacement.integration.spec.ts
+  h_beb54bf43b47b7 77,137-138,693,695-701,703-722
+src/modules/Transport/models/SourceWithFade.ts
+  h_beb54bf43b47b7 1-6
+src/modules/Transport/useCases/playheadScheduler/__tests__/schedulerSession.spec.ts
+  h_beb54bf43b47b7 3-4
+src/modules/Transport/useCases/playheadScheduler/cutSource.ts
+  h_beb54bf43b47b7 1-21
+src/modules/Transport/useCases/playheadScheduler/schedulerSession.ts
+  h_beb54bf43b47b7 1-2,4,39,48
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClips.spec.ts
+  h_beb54bf43b47b7 505-509,511,513
+src/modules/Transport/useCases/scheduling/__tests__/scheduleAudioClipsCompBoundaryStall.spec.ts
+  h_beb54bf43b47b7 1-517
+src/modules/Transport/useCases/scheduling/scheduleAudioClips.ts
+  h_beb54bf43b47b7 28,31-33,65-613,676-681,712-729,731-761,764-765,768-769,771-775,778,782,784,806-808
+src/modules/Transport/useCases/scheduling/scheduleFrozenTrack.ts
+  h_beb54bf43b47b7 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a9f98efa69556265ae7de89eefa6b93c5e022285",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
