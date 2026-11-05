@@ -141,9 +141,7 @@ vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => {
     const original = await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>();
     return {
         ...original,
-        projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn(
-            original.projectRevisionMatchesLiveIgnoringSaveWrites
-        ),
+        projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn(original.projectRevisionMatchesLiveIgnoringSaveWrites),
     };
 });
 

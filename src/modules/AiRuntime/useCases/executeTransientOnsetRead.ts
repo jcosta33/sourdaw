@@ -119,8 +119,7 @@ async function readEntry(input: {
             clipId: parsed.clipId,
             sensitivity: parsed.sensitivity,
             projectId,
-            isProjectRevisionCurrent: () =>
-                projectRevisionMatchesLiveIgnoringSaveWrites(session.input.projectRevision),
+            isProjectRevisionCurrent: () => projectRevisionMatchesLiveIgnoringSaveWrites(session.input.projectRevision),
             maxSourceSeconds: Math.min(limits.measurementMeasuredSeconds, MAX_SOURCE_SECONDS),
             maxChannelSamples: MAX_CHANNEL_SAMPLES,
             timeoutMs: Math.min(limits.measurementWallClockMs, MAX_ANALYSIS_MS),
