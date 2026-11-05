@@ -58,6 +58,29 @@ describe('LaunchScreen', () => {
         mocks.pickAndImportDawProject.mockResolvedValue(true);
     });
 
+    it('keeps Tab and Shift+Tab inside the dialog while the app behind it has focusable controls', async () => {
+        render(
+            <>
+                <button type="button">Behind the dialog</button>
+                <LaunchScreen exiting={false} />
+            </>
+        );
+        const dialog = screen.getByRole('dialog', { name: /Sourdaw — start a project/ });
+        const tabbables = Array.from(dialog.querySelectorAll<HTMLElement>('button:not([disabled])'));
+        const first = tabbables[0];
+        const last = tabbables[tabbables.length - 1];
+        expect(first).toBeDefined();
+
+        last?.focus();
+        fireEvent.keyDown(last ?? dialog, { key: 'Tab' });
+        expect(document.activeElement).toBe(first);
+
+        first?.focus();
+        fireEvent.keyDown(first ?? dialog, { key: 'Tab', shiftKey: true });
+        expect(document.activeElement).toBe(last);
+        expect(screen.getByRole('button', { name: 'Behind the dialog', hidden: true })).not.toHaveFocus();
+    });
+
     it('should render the launch dialog with primary actions', () => {
         render(<LaunchScreen exiting={false} />);
         expect(screen.getByRole('dialog', { name: /Sourdaw — start a project/ })).toBeInTheDocument();

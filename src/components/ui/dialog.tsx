@@ -1,4 +1,4 @@
-import { type ComponentProps } from 'react';
+import { type ComponentProps, createContext, useContext, useState } from 'react';
 
 import { XIcon } from 'lucide-react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
@@ -7,7 +7,21 @@ import { Button } from '#/components/ui/button';
 import { cn } from '#/utils/Styles/cn';
 
 export function Dialog({ ...props }: ComponentProps<typeof DialogPrimitive.Root>) {
-    return <DialogPrimitive.Root data-slot="dialog" {...props} />;
+    const [wasOpen, setWasOpen] = useState(false);
+    const [opener, setOpener] = useState<FocusOpener | null>(null);
+    const isOpen = props.open === true;
+    if (isOpen !== wasOpen) {
+        setWasOpen(isOpen);
+        if (isOpen) {
+            setOpener(readFocusOpener());
+        }
+    }
+
+    return (
+        <FocusOpenerContext value={opener}>
+            <DialogPrimitive.Root data-slot="dialog" {...props} />
+        </FocusOpenerContext>
+    );
 }
 
 export function DialogTrigger({ ...props }: ComponentProps<typeof DialogPrimitive.Trigger>) {
@@ -35,22 +49,82 @@ export function DialogOverlay({ className, ...props }: ComponentProps<typeof Dia
     );
 }
 
+/** Marks the element focus falls back to when a dialog's opener no longer exists. */
+const FOCUS_LANDMARK_SELECTOR = '[data-focus-landmark]';
+
+type FocusOpener = {
+    element: HTMLElement | null;
+    /** Trigger of the menu the opener lives in; that menu closes when its item opens a dialog. */
+    menuTriggerId: string | null;
+};
+
+/** `null` while the dialog was never opened through its `open` prop; Radix then keeps its own trigger handling. */
+const FocusOpenerContext = createContext<FocusOpener | null>(null);
+
+const readFocusOpener = (): FocusOpener => {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement) || active === document.body) {
+        return { element: null, menuTriggerId: null };
+    }
+    return { element: active, menuTriggerId: active.closest('[role="menu"]')?.getAttribute('aria-labelledby') ?? null };
+};
+
+const findFocusReturnTarget = ({ element, menuTriggerId }: FocusOpener): HTMLElement | null => {
+    if (element?.isConnected === true) {
+        return element;
+    }
+    const menuTrigger = menuTriggerId === null ? null : document.getElementById(menuTriggerId);
+    return menuTrigger ?? document.querySelector<HTMLElement>(FOCUS_LANDMARK_SELECTOR);
+};
+
+/**
+ * Radix's modal dialog answers `onCloseAutoFocus` by cancelling FocusScope's own restore and focusing
+ * `Dialog.Trigger` only. A dialog opened from a store flag, a shortcut or a menu item has no trigger, so
+ * focus fell to <body>. Return to the element that was focused when `open` turned true (read while
+ * rendering, because an `autoFocus` field inside the dialog takes focus during commit), else to the
+ * trigger of the menu it lived in, else to the workspace landmark.
+ */
+function useFocusReturn({
+    onCloseAutoFocus,
+}: Pick<ComponentProps<typeof DialogPrimitive.Content>, 'onCloseAutoFocus'>) {
+    const opener = useContext(FocusOpenerContext);
+
+    return {
+        onCloseAutoFocus: (event: Event) => {
+            onCloseAutoFocus?.(event);
+            if (event.defaultPrevented || opener === null) {
+                return;
+            }
+            const target = findFocusReturnTarget(opener);
+            if (target === null) {
+                return;
+            }
+            event.preventDefault();
+            target.focus();
+        },
+    };
+}
+
 export function DialogContent({
     className,
     children,
     overlayClassName,
     showCloseButton = true,
+    onCloseAutoFocus,
     ...props
 }: ComponentProps<typeof DialogPrimitive.Content> & {
     /** Classes for the scrim, which has to share a raised layer with its content. */
     overlayClassName?: string;
     showCloseButton?: boolean;
 }) {
+    const focusReturn = useFocusReturn({ onCloseAutoFocus });
+
     return (
         <DialogPortal data-slot="dialog-portal">
             <DialogOverlay className={overlayClassName} />
             <DialogPrimitive.Content
                 data-slot="dialog-content"
+                {...focusReturn}
                 className={cn(
                     'fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-md border border-black/40 border-t-[var(--color-light-edge)] bg-surface-dialog p-6 shadow-elevation-modal duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg',
                     className
@@ -68,6 +142,20 @@ export function DialogContent({
                     </DialogPrimitive.Close>
                 ) : null}
             </DialogPrimitive.Content>
+        </DialogPortal>
+    );
+}
+
+/**
+ * A modal dialog surface with no chrome: Radix's focus trap, inert background and Escape handling around
+ * content the caller styles and positions itself (a full-screen launch screen).
+ */
+export function DialogSurface({ onCloseAutoFocus, ...props }: ComponentProps<typeof DialogPrimitive.Content>) {
+    const focusReturn = useFocusReturn({ onCloseAutoFocus });
+
+    return (
+        <DialogPortal data-slot="dialog-portal">
+            <DialogPrimitive.Content data-slot="dialog-surface" {...focusReturn} {...props} />
         </DialogPortal>
     );
 }

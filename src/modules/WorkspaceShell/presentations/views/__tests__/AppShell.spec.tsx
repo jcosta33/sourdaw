@@ -513,6 +513,28 @@ describe('AppShell', () => {
         expect(screen.queryByTestId('sidebar')).not.toBeInTheDocument();
     });
 
+    it('names each side-panel resize separator and exposes its orientation and width', () => {
+        workspaceState = createWorkspaceState({
+            sidebarOpen: true,
+            inspectorOpen: true,
+            sidebarWidth: 260,
+            inspectorWidth: 300,
+        });
+        vi.mocked(useWorkspaceState).mockImplementation(() => workspaceState);
+
+        render(<AppShell>Content</AppShell>);
+
+        const sidebarHandle = screen.getByRole('separator', { name: 'Resize sidebar' });
+        expect(sidebarHandle).toHaveAttribute('aria-orientation', 'vertical');
+        expect(sidebarHandle).toHaveAttribute('aria-valuemin', '180');
+        expect(sidebarHandle).toHaveAttribute('aria-valuemax', '500');
+        expect(sidebarHandle).toHaveAttribute('aria-valuenow');
+        expect(screen.getByRole('separator', { name: 'Resize inspector' })).toHaveAttribute(
+            'aria-orientation',
+            'vertical'
+        );
+    });
+
     it('should have correct layout structure', () => {
         render(<AppShell>Content</AppShell>);
         const shell = screen.getByTestId('app-shell');

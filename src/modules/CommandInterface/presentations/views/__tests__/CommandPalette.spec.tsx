@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { CommandPalette } from '../CommandPalette';
@@ -58,6 +58,31 @@ describe('CommandPalette', () => {
 
         expect(option1).toHaveAttribute('id', `command-palette-option-${secondCommand.id}`);
         expect(option1).toHaveAttribute('aria-selected', 'false');
+    });
+
+    it('returns focus to the control that had it when the palette closes', async () => {
+        vi.mocked(useStore).mockReturnValue({ commandPaletteOpen: false });
+        const ui = () => (
+            <>
+                <button type="button">Undo</button>
+                <CommandPalette />
+            </>
+        );
+        const { rerender } = render(ui());
+        screen.getByRole('button', { name: 'Undo' }).focus();
+
+        vi.mocked(useStore).mockReturnValue({ commandPaletteOpen: true });
+        rerender(ui());
+        await waitFor(() => {
+            expect(screen.getByRole('combobox')).toHaveFocus();
+        });
+
+        vi.mocked(useStore).mockReturnValue({ commandPaletteOpen: false });
+        rerender(ui());
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: 'Undo' })).toHaveFocus();
+        });
     });
 
     it('advances selection and updates aria-activedescendant on ArrowDown keydown', () => {
