@@ -1,0 +1,38 @@
+src/modules/AudioEngine/useCases/engineAccess/setControlRoomMonitoring.ts
+  s_0314bb17e5dee3::t_474e1e3b094cec 1-12
+src/modules/WorkspaceShell/presentations/hooks/useAppInitialization.ts
+  s_0314bb17e5dee3::t_474e1e3b094cec 13
+src/modules/ControlRoom/AGENTS.md
+  s_0314bb17e5dee3::t_1bf3700ac41ecd 17
+src/modules/AudioEngine/repositories/__tests__/controlRoomMonitoringListeningPath.spec.ts
+  s_0314bb17e5dee3::t_783536f2be472a 4,277-284
+src/modules/ControlRoom/useCases/controlRoom/__tests__/syncControlRoomMonitoring.spec.ts
+  s_0314bb17e5dee3::t_8df447971b4c24 1-59
+src/modules/ControlRoom/useCases/index.ts
+  s_0314bb17e5dee3::t_474e1e3b094cec 4
+src/modules/AudioEngine/useCases/index.ts
+  s_0314bb17e5dee3::t_474e1e3b094cec 116
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useAppInitialization.spec.ts
+  s_0314bb17e5dee3::t_783536f2be472a 45-46
+  s_0314bb17e5dee3::t_ce774fb792c8df 47
+src/modules/AudioEngine/useCases/engineAccess/__tests__/setControlRoomMonitoring.spec.ts
+  s_0314bb17e5dee3::t_8df447971b4c24 1-19
+src/modules/ControlRoom/useCases/controlRoom/syncControlRoomMonitoring.ts
+  s_0314bb17e5dee3::t_474e1e3b094cec 1-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "034853d5ebd02d4ccb5e6c6d2266d93b1b8bdc85",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
