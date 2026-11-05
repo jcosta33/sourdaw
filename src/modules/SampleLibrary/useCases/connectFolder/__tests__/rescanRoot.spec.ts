@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => {
         scanBrowserDirectory: vi.fn(),
         scanNativeDirectory: vi.fn(),
         updateLibraryRootStatus: vi.fn(),
-        reloadFactoryLibraryBuffers: vi.fn(async () => {}),
+        reloadFactoryLibraryBuffers: vi.fn(async (): Promise<readonly unknown[]> => []),
         loggerError: vi.fn(),
         audioContext: {},
         storeValue,

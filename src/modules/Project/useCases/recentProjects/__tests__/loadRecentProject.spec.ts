@@ -86,6 +86,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     garbageCollectCachedAudioBuffersBySize: vi.fn(),
     garbageCollectFreezeAudioBuffers: vi.fn(),
     getCachedAudioBuffer: vi.fn(),
+    prepareCachedAudioBuffersForReplay: vi.fn(),
     getDeviceChainTailSeconds: vi.fn(),
     getEngineState: vi.fn(),
     getRuntimeGraphRevision: vi.fn(),

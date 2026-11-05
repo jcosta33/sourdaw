@@ -12,7 +12,6 @@ import { addLibraryRoot, addSamples, libraryStore, updateLibraryRootStatus } fro
 import { buildFolderTree } from './buildFolderTree';
 import { cacheFactoryBuffers } from './factoryLibrary/cacheFactoryBuffers';
 import { findFactoryRoot } from './factoryLibrary/findFactoryRoot';
-import { reloadFactoryLibraryBuffers } from './factoryLibrary/reloadFactoryLibraryBuffers';
 import { toFactorySampleRecord } from './factoryLibrary/toFactorySampleRecord';
 
 function ensureFactoryRoot(fileCount: number): void {
@@ -67,9 +66,20 @@ async function seedFactoryRecords(ctx: AudioContext): Promise<void> {
 }
 
 /**
- * Make the factory library playable for this session. The flag records that
- * the library was seeded once: without it, seed it; with it, re-render the
- * buffers of the restored root, or leave a root the user disconnected gone.
+ * Later launches: restoreLibrary brings the handle-less factory root back
+ * offline, but it has no filesystem to lose. Its availability is its records
+ * plus PCM that ensureFactorySampleBuffer obtains on demand, so it is ready.
+ */
+function markRestoredFactoryRootReady(): void {
+    const recordCount =
+        libraryStore.value?.samples.filter((sample) => sample.libraryRootId === FACTORY_LIBRARY_ROOT_ID).length ?? 0;
+    updateLibraryRootStatus(FACTORY_LIBRARY_ROOT_ID, 'ready', recordCount);
+}
+
+/**
+ * Run after restoreLibrary. The flag records that the library was seeded once:
+ * without it, seed it; with it, mark the restored root ready, or leave a root
+ * the user disconnected gone.
  */
 export async function seedFactoryLibrary(ctx: AudioContext): Promise<void> {
     if (!hasSeededFactoryLibrary()) {
@@ -79,5 +89,5 @@ export async function seedFactoryLibrary(ctx: AudioContext): Promise<void> {
     if (!findFactoryRoot()) {
         return;
     }
-    await reloadFactoryLibraryBuffers(ctx);
+    markRestoredFactoryRootReady();
 }

@@ -20,6 +20,13 @@ type LibraryBrowserMocks = {
     projectSpatialMap: ReturnType<typeof vi.fn>;
     readNativeLibrarySampleFile: ReturnType<typeof vi.fn>;
     getCachedAudioBuffer: Mock<(input: { bufferId: string }) => AudioBuffer | null>;
+    ensureFactorySampleBuffer: Mock<
+        (input: {
+            sampleId: string;
+        }) => Promise<
+            { status: 'resolved'; buffer: AudioBuffer } | { status: 'unavailable' } | { status: 'not-factory' }
+        >
+    >;
 };
 
 const mocks = vi.hoisted((): LibraryBrowserMocks => ({
@@ -35,9 +42,12 @@ const mocks = vi.hoisted((): LibraryBrowserMocks => ({
     projectSpatialMap: vi.fn(),
     readNativeLibrarySampleFile: vi.fn(),
     getCachedAudioBuffer: vi.fn<(input: { bufferId: string }) => AudioBuffer | null>(),
+    ensureFactorySampleBuffer: vi.fn(),
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    cacheAudioBuffer: vi.fn(),
+    getAudioContext: vi.fn(),
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
 }));
 
@@ -55,6 +65,10 @@ vi.mock('../../../useCases/isNativeSampleLibraryRuntimeAvailable', () => ({
 
 vi.mock('../../../useCases/readNativeLibrarySampleFile', () => ({
     readNativeLibrarySampleFile: mocks.readNativeLibrarySampleFile,
+}));
+
+vi.mock('../../../useCases/ensureFactorySampleBuffer', () => ({
+    ensureFactorySampleBuffer: mocks.ensureFactorySampleBuffer,
 }));
 
 vi.mock('../../../useCases/projectSpatialMap', () => ({
@@ -128,6 +142,8 @@ describe('LibraryBrowser', () => {
         mocks.isNativeSampleLibraryRuntimeAvailable.mockReturnValue(false);
         mocks.preview.playingId = null;
         mocks.getCachedAudioBuffer.mockReset();
+        mocks.ensureFactorySampleBuffer.mockReset();
+        mocks.ensureFactorySampleBuffer.mockResolvedValue({ status: 'unavailable' });
         mocks.preview.play.mockReset();
         embeddingStore.set({ embeddings: new Map(), modelStatus: 'idle' });
         setSearchQuery('');
@@ -693,7 +709,7 @@ describe('LibraryBrowser', () => {
         expect(mocks.preview.play).not.toHaveBeenCalled();
     });
 
-    it('warns when factory sample buffer is missing from cache', async () => {
+    it('warns when no source can supply an evicted factory sample buffer', async () => {
         mocks.getCachedAudioBuffer.mockReturnValue(null);
 
         mocks.libraryState = {
@@ -745,7 +761,63 @@ describe('LibraryBrowser', () => {
                 'warning'
             );
         });
+        expect(mocks.ensureFactorySampleBuffer).toHaveBeenCalledExactlyOnceWith({ sampleId: 'factory-kick' });
         expect(mocks.preview.play).not.toHaveBeenCalled();
+    });
+
+    it('plays an evicted factory sample once the library obtains its buffer', async () => {
+        mocks.getCachedAudioBuffer.mockReturnValue(null);
+        const restored = { duration: 1, length: 44100, numberOfChannels: 1, sampleRate: 44100 } as AudioBuffer;
+        mocks.ensureFactorySampleBuffer.mockResolvedValue({ status: 'resolved', buffer: restored });
+
+        mocks.libraryState = {
+            roots: [
+                {
+                    id: FACTORY_LIBRARY_ROOT_ID,
+                    name: 'Factory Samples',
+                    provider: 'browser',
+                    rootRef: '',
+                    connectedAt: 0,
+                    status: 'ready',
+                    fileCount: 1,
+                    settings: { recursive: true },
+                },
+            ],
+            samples: [
+                {
+                    id: 'factory-kick',
+                    libraryRootId: FACTORY_LIBRARY_ROOT_ID,
+                    displayName: 'Kick',
+                    relativePath: 'Drums/Kick.factory',
+                    ext: 'factory',
+                    folder: 'Drums',
+                    sync: { exists: true, status: 'analyzed', sizeBytes: 4 },
+                    format: { durationSec: 1 },
+                    tags: ['factory'],
+                    favorite: false,
+                },
+            ],
+            folderTrees: {},
+            activeRootId: FACTORY_LIBRARY_ROOT_ID,
+            currentFolder: 'Drums',
+            searchQuery: '',
+            tagFilter: null,
+            favoritesOnly: false,
+            sortField: 'name',
+            sortDirection: 'asc',
+            scanning: false,
+            scanProgress: 0,
+        };
+
+        render(<LibraryBrowser preview={mocks.preview} selectedTrackId={null} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Play Kick' }));
+
+        await waitFor(() => {
+            expect(mocks.preview.play).toHaveBeenCalledWith('factory-kick', restored);
+        });
+        expect(mocks.ensureFactorySampleBuffer).toHaveBeenCalledExactlyOnceWith({ sampleId: 'factory-kick' });
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 
     it('tells the user similarity analysis is unavailable for a sample without an embedding', () => {

@@ -20,7 +20,7 @@ Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/ind
 - **File System Access Permissions**: In browser environments, folder handles require explicit user permission queries via `requestPermission` and handle restoration.
 - **Non-Blocking Indexing**: Background scanning and tag extraction must not block the main UI thread or audio deadlines.
 - **Dual Runtime Detection**: Check native filesystem availability before calling desktop file scanning routines.
-- **Factory Samples Reload Each Launch**: The factory root is a handle-less `browser` shim whose buffers are synthesised, so `restoreLibrary` brings it back offline. `seedFactoryLibrary` re-renders and re-caches its buffers on every launch, and its Rescan does the same. The seed flag means "seeded once": flag set and root absent means the user disconnected it, so it is never recreated.
+- **Factory Samples Load On Demand**: The factory root is a handle-less `browser` shim with synthesised buffers, so its availability is its records plus PCM, not a filesystem. After `restoreLibrary`, `seedFactoryLibrary` marks a restored factory root ready without rendering. Every reader of a factory sample's buffer goes through `ensureFactorySampleBuffer`: the resident cache entry, then PCM stored this session, then one render of the pack shared by concurrent callers; only when all fail is the buffer unavailable. Rescan on the factory root re-renders and re-caches the pack. The seed flag means "seeded once": flag set and root absent means the user disconnected it, so it is never recreated.
 
 ## Verification
 

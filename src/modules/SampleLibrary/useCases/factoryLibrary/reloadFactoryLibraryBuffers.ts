@@ -22,9 +22,9 @@ function addMissingFactoryRecords(samples: readonly FactorySample[]): void {
     buildFolderTree(FACTORY_LIBRARY_ROOT_ID);
 }
 
-async function reloadFactoryBuffers(ctx: AudioContext): Promise<void> {
+async function reloadFactoryBuffers(ctx: AudioContext): Promise<readonly FactorySample[]> {
     if (!findFactoryRoot()) {
-        return;
+        return [];
     }
     updateLibraryRootStatus(FACTORY_LIBRARY_ROOT_ID, 'scanning');
     let samples: FactorySample[];
@@ -36,23 +36,25 @@ async function reloadFactoryBuffers(ctx: AudioContext): Promise<void> {
     }
     // The user may have disconnected the root while it rendered.
     if (!findFactoryRoot()) {
-        return;
+        return [];
     }
     await cacheFactoryBuffers(samples);
     addMissingFactoryRecords(samples);
     updateLibraryRootStatus(FACTORY_LIBRARY_ROOT_ID, 'ready', samples.length);
+    return samples;
 }
 
-// A rescan pressed while the launch reload renders joins that render.
-let pendingReload: Promise<void> | undefined;
+// Every caller that arrives while a render runs joins it.
+let pendingReload: Promise<readonly FactorySample[]> | undefined;
 
 /**
- * Factory buffers are synthesised, not stored with the library, so
- * restoreLibrary brings the factory root back offline and without them. Render
- * and cache them again: the root shows scanning meanwhile, ready with its file
- * count after, and offline if the render fails.
+ * Render the factory pack again and cache every buffer under its sample id:
+ * the explicit repair (Rescan), and the last resort for a buffer whose stored
+ * PCM is gone. The root shows scanning meanwhile, ready with its file count
+ * after, and offline if the render fails. Resolves with the rendered samples,
+ * or none when the factory root is not connected.
  */
-export function reloadFactoryLibraryBuffers(ctx: AudioContext): Promise<void> {
+export function reloadFactoryLibraryBuffers(ctx: AudioContext): Promise<readonly FactorySample[]> {
     if (pendingReload) {
         return pendingReload;
     }

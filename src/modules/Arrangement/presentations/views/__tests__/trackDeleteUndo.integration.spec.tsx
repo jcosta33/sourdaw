@@ -177,6 +177,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     getAudioContext: vi.fn(() => ({ currentTime: 0, sampleRate: 48000 })),
     getAudioDevices: vi.fn(() => Promise.resolve([])),
     getCachedAudioBuffer: vi.fn(),
+    prepareCachedAudioBuffersForReplay: vi.fn(),
     getCompensationDelay: vi.fn(() => 0),
     getDeviceChainTailSeconds: vi.fn(() => 0),
     getMasterAnalyser: vi.fn(() => null),
