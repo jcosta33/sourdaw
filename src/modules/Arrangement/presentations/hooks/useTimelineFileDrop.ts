@@ -4,7 +4,11 @@ import { decodeAudioFile, discardDecodedAudioFile, getCachedAudioBuffer } from '
 import { getAssetTransfer } from '#/modules/Collaboration/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
-import { rememberLibraryAssetMapping, resolveDroppedSampleFile } from '#/modules/SampleLibrary/useCases';
+import {
+    ensureFactorySampleBuffer,
+    rememberLibraryAssetMapping,
+    resolveDroppedSampleFile,
+} from '#/modules/SampleLibrary/useCases';
 import { isAudioFile } from '#/utils/audioFileExtensions';
 import { AI_RENDER_DRAG_MIME_TYPE, PLUGIN_DRAG_MIME_TYPE, SAMPLE_DRAG_MIME_TYPE } from '#/utils/dragMimeTypes';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -293,7 +297,21 @@ export const useTimelineFileDrop = ({
                 // Resolve the buffer id straight from the cache before attempting
                 // any file access or decode.
                 const candidateBufferId = sample.audioBufferId ?? sample.id;
-                const cachedBuffer = getCachedAudioBuffer({ bufferId: candidateBufferId });
+                let cachedBuffer = getCachedAudioBuffer({ bufferId: candidateBufferId });
+                if (!cachedBuffer) {
+                    // A factory sample's buffer may be evicted or not yet loaded
+                    // this session; the library obtains it from storage or a render.
+                    const factoryBuffer = await ensureFactorySampleBuffer({ sampleId: candidateBufferId });
+                    if (factoryBuffer.status === 'unavailable') {
+                        if (authority.isCurrent()) {
+                            notifyUser(`Could not access "${sample.name}" — audio buffer is not available.`, 'error');
+                        }
+                        return;
+                    }
+                    if (factoryBuffer.status === 'resolved') {
+                        cachedBuffer = factoryBuffer.buffer;
+                    }
+                }
                 if (cachedBuffer) {
                     audioBufferId = candidateBufferId;
                     durationBeats = Math.max(

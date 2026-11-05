@@ -54,7 +54,7 @@ const engine = vi.hoisted(() => ({
     cancelExport: vi.fn(),
 }));
 const transport = vi.hoisted(() => ({ readSecondsAtBeat: vi.fn() }));
-const crdt = vi.hoisted(() => ({ projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn() }));
+const crdt = vi.hoisted(() => ({ projectRevisionMatchesLiveIgnoringSaveWrites: vi.fn() }));
 const backend = vi.hoisted(() => ({
     chain: { value: [] as ('cloud' | 'webllm')[] },
     getCloudProviderInfo: vi.fn(),
@@ -76,7 +76,7 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
 }));
 vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint: crdt.projectRevisionMatchesLiveIgnoringCommandCheckpoint,
+    projectRevisionMatchesLiveIgnoringSaveWrites: crdt.projectRevisionMatchesLiveIgnoringSaveWrites,
 }));
 vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({
     getBackendChain: () => backend.chain.value,
@@ -255,7 +255,7 @@ beforeEach(() => {
     engine.isExportActive.mockReset().mockReturnValue(false);
     engine.cancelExport.mockReset();
     transport.readSecondsAtBeat.mockReset().mockImplementation(({ beat }: { beat: number }) => beat * 0.5);
-    crdt.projectRevisionMatchesLiveIgnoringCommandCheckpoint.mockReset().mockReturnValue(true);
+    crdt.projectRevisionMatchesLiveIgnoringSaveWrites.mockReset().mockReturnValue(true);
     backend.chain.value = [];
     backend.getCloudProviderInfo.mockReset();
     backend.generateCloudToolCalls.mockReset();

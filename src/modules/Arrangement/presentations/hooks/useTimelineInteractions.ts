@@ -24,6 +24,7 @@ import { prepareDuplicateClipTargetId } from '../../useCases/clip/prepareDuplica
 import { relocateAudioSourceTimeFields } from '../../useCases/clip/relocateAudioSourceTimeFields';
 import { audioClipSlipOffsetBeats } from '../../useCases/clipEditing/audioClipSlipOffsetBeats';
 import { audioClipStartTrimState } from '../../useCases/clipEditing/audioClipStartTrimState';
+import { limitClipEndToSource } from '../../useCases/clipEditing/limitClipEndToSource';
 import { prepareAudioClipStartTrim } from '../../useCases/clipEditing/prepareAudioClipStartTrim';
 import { toggleInlineEditing } from '../../useCases/clipEditing/toggleInlineEditing';
 import { clearClipSelection } from '../../useCases/clipSelection/clearClipSelection';
@@ -666,15 +667,16 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         }
         if (dragState.mode === 'stretch') {
             let newEnd = Math.max(dragState.startBeat + 0.25, snapToGrid(rawBeat));
+            const trimmedClip = trackStore.value?.tracks
+                .flatMap((track) => track.clips)
+                .find((clip) => clip.id === dragState.clipId);
 
-            if (preferencesStore.value?.snapToZeroCrossing) {
-                const state = trackStore.value;
-                const clip = state?.tracks
-                    .flatMap((time) => time.clips)
-                    .find((context) => context.id === dragState.clipId);
-                if (clip && clip.type === 'audio') {
-                    newEnd = snapToZeroCrossing(clip, newEnd);
-                }
+            if (preferencesStore.value?.snapToZeroCrossing && trimmedClip?.type === 'audio') {
+                newEnd = snapToZeroCrossing(trimmedClip, newEnd);
+            }
+            // The edge stops at the end of the clip's source, and the commit writes the end previewed.
+            if (trimmedClip) {
+                newEnd = limitClipEndToSource(trimmedClip, newEnd);
             }
 
             const preview = clipDragPreviewRef.current;

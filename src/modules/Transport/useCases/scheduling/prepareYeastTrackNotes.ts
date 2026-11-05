@@ -5,7 +5,7 @@ import {
     selectMidiNotesForRecordingPass,
 } from '#/modules/MIDI/stores';
 import { projectCommittedGroove, shouldPlayMidiEvent } from '#/modules/MIDI/useCases';
-import { isBeatAdmittedByAnchoredClipLoopWindow, resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
+import { isBeatInEnabledClipLoopWindow, resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
 import { lowerBoundMidiNoteEnd, lowerBoundMidiNoteStart } from '../../services/midiNoteBounds';
@@ -100,15 +100,14 @@ function selectYeastNotesForSchedulerWindow({
             loopEnabled,
         });
     }
-    // #5198 — the anchored loop window owns admission on the row's stored
-    // figure, the same relative beat the synth path's selector and per-note
-    // test read: a row past the trimmed region end is a content-window
-    // candidate here (its audible beat sits inside the scheduler window) and
-    // must never reach the rack's ownership. An unanchored clip admits
-    // without the test, byte-identically to the pre-anchor selector.
+    // #5198 — the loop window owns admission on the row's stored figure, the
+    // same relative beat the synth path's selector and per-note test read: a
+    // row past the trimmed region end, or stored at or past an anchorless
+    // loop's length, is a content-window candidate here (its audible beat sits
+    // inside the scheduler window) and must never reach the rack's ownership.
     return Array.from(candidates)
         .filter((note) =>
-            isBeatAdmittedByAnchoredClipLoopWindow({
+            isBeatInEnabledClipLoopWindow({
                 relativeBeat: note.startBeat - midiOffsetBeats,
                 startBeat: clipStartBeat,
                 loopOriginBeat,

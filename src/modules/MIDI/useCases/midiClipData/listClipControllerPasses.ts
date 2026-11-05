@@ -2,6 +2,7 @@ import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 
 import { SAME_BEAT_TOLERANCE } from '../../models/SameBeatTolerance';
+import { type MidiClipPriorPass } from '../../services/projectMidiClipWindow';
 
 export type ControllerProjectionClip = {
     startBeat: number;
@@ -24,6 +25,11 @@ export type ClipControllerPass = {
     visibleEndBeat: number;
     /** Set on the last window of the last pass only: the clip end, where a closing-line row plays. */
     closingLineBeat: number | undefined;
+    /**
+     * Set on the clip's first window only, when its head lies a whole loop or more past the loop anchor: the
+     * pass before the head, whose values the uncut loop holds at the head.
+     */
+    priorPass?: MidiClipPriorPass;
 };
 
 type IterationRange = { startIndex: number; endIndex: number };
@@ -105,6 +111,11 @@ export function listClipControllerPasses(
     const regionStartBeat = midiOffsetBeats - loopAdvanceBeats;
     const regionEntryBeats =
         ((loopAdvanceBeats % expansion.loopLengthBeats) + expansion.loopLengthBeats) % expansion.loopLengthBeats;
+    // A head cut a whole loop or more past the anchor (a Delete Time over the
+    // head, a split's right fragment, a deep start trim) opens on material the
+    // loop already ran through, so the clip begins with what that pass left;
+    // a head inside the anchor's own first pass had no pass before it.
+    const headFollowsAPass = loopAdvanceBeats >= expansion.loopLengthBeats - SAME_BEAT_TOLERANCE;
     const passes: ClipControllerPass[] = [];
 
     for (let iteration = startIndex; iteration < endIndex; iteration++) {
@@ -116,12 +127,19 @@ export function listClipControllerPasses(
         // The closing line belongs to the pass's last segment: the wrapped
         // head window when the pass reaches it, the entry window otherwise.
         const hasWrappedSegment = regionEntryBeats > 0 && passSpanBeats > headSegmentEndBeats;
-        passes.push({
+        const entryWindow: ClipControllerPass = {
             beatOffset: iterationStartBeat - (regionStartBeat + regionEntryBeats),
             visibleStartBeat: regionStartBeat + regionEntryBeats,
             visibleEndBeat: regionStartBeat + regionEntryBeats + headSegmentEndBeats,
             closingLineBeat: isClosingPass && !hasWrappedSegment ? clip.endBeat : undefined,
-        });
+        };
+        if (iteration === 0 && headFollowsAPass) {
+            entryWindow.priorPass = {
+                endBeat: regionStartBeat + expansion.loopLengthBeats,
+                beatOffset: entryWindow.beatOffset - expansion.loopLengthBeats,
+            };
+        }
+        passes.push(entryWindow);
         if (hasWrappedSegment) {
             passes.push({
                 beatOffset: iterationStartBeat + headSegmentEndBeats - regionStartBeat,

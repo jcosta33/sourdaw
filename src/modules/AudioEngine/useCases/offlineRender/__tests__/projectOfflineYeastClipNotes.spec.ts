@@ -196,8 +196,29 @@ describe('projectOfflineYeastClipNotes — the anchored loop window on the sourc
         expect(notes.map((note) => note.pitch)).toEqual([61]);
     });
 
-    it('control: keeps every routed note when the clip carries no anchor', () => {
+    it('drops the source row stored past the loop length when the clip carries no anchor', () => {
+        // An anchorless loop plays [0, loopLength) of its stored rows, as the
+        // synth route's window does: source figure 6.5 reads past loop 4.
         const { result } = projectRoutedNotes(undefined);
+
+        expect(result.map((note) => note.pitch)).toEqual([61]);
+    });
+
+    it('keeps every routed note when the clip loop is off', () => {
+        const result = projectOfflineYeastClipNotes(
+            makeInput({
+                notes: [
+                    makeNote({ id: 'in-region', pitch: 61, startPpq: 5, endPpq: 5.25, sourceRelativeBeat: 3 }),
+                    makeNote({ id: 'past-loop', pitch: 72, startPpq: 8.5, endPpq: 8.75, sourceRelativeBeat: 6.5 }),
+                ],
+                clipStartBeat: 2,
+                iterationStartBeat: 2,
+                loopLengthBeats: 4,
+                loopEnabled: false,
+                loopOriginBeat: undefined,
+                projectMidiEvents: vi.fn((input: { events: readonly unknown[] }) => input.events),
+            })
+        );
 
         expect(result.map((note) => note.pitch).sort((left, right) => left - right)).toEqual([61, 72]);
     });

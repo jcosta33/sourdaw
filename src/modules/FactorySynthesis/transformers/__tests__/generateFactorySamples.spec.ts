@@ -21,6 +21,27 @@ describe('generateFactorySamples', () => {
         expect(ids.size).toBe(samples.length);
     });
 
+    it('renders identical samples on every run, because each launch re-renders the pack under the same ids', () => {
+        const first = generateFactorySamples();
+        const second = generateFactorySamples();
+
+        const differing = first
+            .filter((sample, index) => {
+                const again = second[index]!;
+                return (
+                    again.id !== sample.id ||
+                    again.channels.length !== sample.channels.length ||
+                    again.channels.some((channel, channelIndex) => {
+                        const original = sample.channels[channelIndex]!;
+                        return channel.length !== original.length || channel.some((value, i) => value !== original[i]);
+                    })
+                );
+            })
+            .map((sample) => sample.id);
+        expect(second).toHaveLength(first.length);
+        expect(differing).toEqual([]);
+    });
+
     it('fills each sample with non-silent audio data', () => {
         const samples = generateFactorySamples();
         for (const sample of samples) {

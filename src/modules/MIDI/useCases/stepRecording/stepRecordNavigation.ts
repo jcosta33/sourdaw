@@ -1,4 +1,4 @@
-import { SCALE_PATTERNS } from '#/utils/Music/MusicalScale';
+import { getScalePattern } from '#/utils/Music/MusicalScale';
 
 type StepRecordPitchDirection = 'up' | 'down';
 
@@ -15,7 +15,7 @@ export function getNextStepRecordPitch({
     keyRoot,
     scaleName,
 }: GetNextStepRecordPitchInput): number {
-    const chromaticPattern = SCALE_PATTERNS.chromatic;
+    const chromaticPattern = getScalePattern('chromatic');
     if (!chromaticPattern) {
         if (direction === 'up') {
             return currentPitch + 1;
@@ -24,7 +24,7 @@ export function getNextStepRecordPitch({
         return currentPitch - 1;
     }
 
-    const pattern = SCALE_PATTERNS[scaleName] ?? chromaticPattern;
+    const pattern = getScalePattern(scaleName) ?? chromaticPattern;
     const root = keyRoot;
 
     if (pattern.length > 0 && pattern.length < 12) {

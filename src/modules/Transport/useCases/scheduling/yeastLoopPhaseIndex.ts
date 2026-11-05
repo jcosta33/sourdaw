@@ -1,4 +1,8 @@
-import { isBeatAdmittedByAnchoredClipLoopWindow, resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
+import {
+    CLIP_LOOP_WINDOW_BEAT_TOLERANCE,
+    isBeatInEnabledClipLoopWindow,
+    resolveClipLoopOriginAdvance,
+} from '#/utils/clipLoopOrigin';
 
 import { MAX_GROOVE_STAGE_DISPLACEMENT_BEATS } from '../../services/midiSchedulerWindowGeometry';
 
@@ -37,6 +41,11 @@ type AddYeastLoopPhaseCandidatesInput = YeastLoopPhaseIndexInput & {
 // MIDI writes replace note arrays rather than mutating them, so array identity
 // invalidates this cache whenever project truth changes.
 const yeastLoopPhaseIndexes = new WeakMap<readonly ScheduledMidiNote[], YeastLoopPhaseIndex>();
+
+// A full groove stage lands an event exactly one stage from its entry, where
+// the groove arithmetic and the window bounds round independently. Admitting
+// more is safe: candidates are a set, and each window posts only what it owns.
+const PHASE_QUERY_SLACK_BEATS = MAX_GROOVE_STAGE_DISPLACEMENT_BEATS + CLIP_LOOP_WINDOW_BEAT_TOLERANCE;
 
 function positiveModulo(value: number, divisor: number): number {
     return ((value % divisor) + divisor) % divisor;
@@ -84,11 +93,20 @@ function lowerBoundEnd(entries: readonly YeastLoopPhaseEntry[], endPhaseBeat: nu
  * - a note that runs past the pass end (the crossing class, which a groove
  *   stage can push across too): its in-pass part is released on the pass end,
  *   and its tail is its own note struck on the pass head, released at the
- *   overflow. Indexed at phase 0 and at both releases.
+ *   overflow. A start within two groove stages of the pass end belongs here
+ *   too: the clip groove and then the project groove can push its in-pass
+ *   segment past the pass end, and the pass strikes it on its head, released
+ *   within one stage of it. So does a start within two stages after the head:
+ *   the two grooves can pull it back across the head, onto the last stage of
+ *   the pass, and its tail is struck on the head. Indexed at phase 0, at the
+ *   last stage of the pass for a pulled-back start, and at every release,
+ *   including a tail's release the two grooves pull up to two stages early.
  *
  * Every entry is a fixed offset into a pass, so the release query stays
- * unnormalized. An estimate a groove stage can move is found because both
- * queries carry that stage's slack.
+ * unnormalized. Coverage rule: every start or release a groove can leave lies
+ * within one stage of an entry, and both queries carry one stage of slack plus
+ * a same-beat tolerance (`PHASE_QUERY_SLACK_BEATS`), so an entry exactly one
+ * stage away, where full groove displacements land, is never lost to rounding.
  */
 function getYeastLoopPhaseIndex({
     notes,
@@ -123,20 +141,27 @@ function getYeastLoopPhaseIndex({
         const phaseBeat = positiveModulo(passRelativeStartBeat, loopLengthBeats);
         const keptBeats = Math.min(note.duration, loopLengthBeats);
         const wrapsBeforeHead = passRelativeStartBeat < MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
-        // A start the groove can pull across the head lands just before the
-        // pass end and crosses it with nearly all of its length.
+        // A start inside the pass that the clip groove and then the project
+        // groove can each carry one stage earlier is pulled back across the
+        // head: it lands within one stage of the pass end and crosses it with
+        // nearly all of its length.
+        const pulledAcrossHead =
+            passRelativeStartBeat >= 0 && passRelativeStartBeat < 2 * MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
+        // A start the clip groove and then the project groove can each carry
+        // one stage later is pushed past the pass end onto its head.
         const crossesPassEnd =
-            (wrapsBeforeHead && passRelativeStartBeat >= 0) ||
-            phaseBeat + keptBeats > loopLengthBeats - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
+            pulledAcrossHead ||
+            phaseBeat + keptBeats > loopLengthBeats - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS ||
+            phaseBeat > loopLengthBeats - 2 * MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
         if (!wrapsBeforeHead && !crossesPassEnd) {
             continue;
         }
-        // #5198 — the anchored loop window is the index's membership too: a row
-        // past the trimmed region end never sounds on any pass, so it must not
-        // enter the index the looped windows read. An unanchored clip keeps the
-        // pre-anchor index — the admission helper admits without a test there.
+        // #5198 — the loop window is the index's membership too: a row past
+        // the trimmed region end, or stored at or past an anchorless loop's
+        // length, never sounds on any pass, so it must not enter the index the
+        // looped windows read.
         if (
-            !isBeatAdmittedByAnchoredClipLoopWindow({
+            !isBeatInEnabledClipLoopWindow({
                 relativeBeat: relativeStartBeat,
                 startBeat: clipStartBeat,
                 loopOriginBeat,
@@ -152,12 +177,59 @@ function getYeastLoopPhaseIndex({
             sortedEnds.push(entry);
         }
         if (crossesPassEnd) {
-            const headTail = { endPhaseBeat: Math.max(0, phaseBeat + keptBeats - loopLengthBeats), note, phaseBeat: 0 };
+            const headTailReleaseBeat = phaseBeat + keptBeats - loopLengthBeats;
+            const headTail = { endPhaseBeat: Math.max(0, headTailReleaseBeat), note, phaseBeat: 0 };
             sortedEntries.push(headTail);
             sortedEnds.push(headTail, { endPhaseBeat: loopLengthBeats, note, phaseBeat });
-            if (wrapsBeforeHead && passRelativeStartBeat >= 0) {
-                sortedEnds.push({ endPhaseBeat: keptBeats, note, phaseBeat: 0 });
+            // The clip groove moves the tail's release by up to a stage either
+            // way. The project groove then leaves a pushed tail in its pass
+            // (grooved after the rack, released where the clip groove left
+            // it), but places a tail it pulls back across the head before the
+            // rack, onto the pass end, and the rest is struck on the head
+            // again: released up to a stage earlier still. So the release
+            // runs from two stages before the uncut one to a stage after it:
+            // the entry at the uncut release reaches the upper two stages and
+            // a second one a stage before it the lowest. A tail no longer than
+            // a stage needs none: a release the pull leaves on the head is
+            // within a stage of the uncut one, and a pull that leaves nothing
+            // on the head ends the placed piece within a stage of the pass end.
+            if (headTailReleaseBeat > MAX_GROOVE_STAGE_DISPLACEMENT_BEATS) {
+                sortedEnds.push({
+                    endPhaseBeat: headTailReleaseBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS,
+                    note,
+                    phaseBeat: 0,
+                });
             }
+            if (pulledAcrossHead) {
+                // The project groove is placed before the rack only on a
+                // segment it moves out of its pass: one starting within a
+                // stage after the head, pulled back by at most a stage, so it
+                // lands within one stage before the pass end, and one start
+                // entry a stage before the pass end reaches every landing. (An
+                // in-pass segment the clip groove re-anchored near the pass end
+                // stays in its pass under the project groove's pull; the rack
+                // is handed it at its re-anchored start, which the wrap class
+                // indexes, and the groove moves it after the rack. Its tail
+                // struck on the head can still be pulled back across the head,
+                // which the entry below reaches.)
+                sortedEntries.push({
+                    endPhaseBeat: loopLengthBeats,
+                    note,
+                    phaseBeat: loopLengthBeats - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS,
+                });
+                // The tail struck on the head is released where the kept
+                // length runs out after the start the two grooves left:
+                // `kept + start − pull`, a pull of up to two stages, so one
+                // release entry a stage short of `kept + start` reaches it.
+                sortedEnds.push({
+                    endPhaseBeat: keptBeats + passRelativeStartBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS,
+                    note,
+                    phaseBeat: 0,
+                });
+            }
+            // An in-pass segment the project groove pushes onto the head is
+            // released at most one stage in, where the push left its pass end.
+            sortedEnds.push({ endPhaseBeat: MAX_GROOVE_STAGE_DISPLACEMENT_BEATS, note, phaseBeat: 0 });
         }
     }
     sortedEntries.sort(
@@ -191,8 +263,8 @@ export function addYeastLoopPhaseCandidates({
 }: AddYeastLoopPhaseCandidatesInput): void {
     const { loopLengthBeats } = indexInput;
     const loopIndex = getYeastLoopPhaseIndex(indexInput);
-    const phaseStartBeat = fromBeat - iterationStartBeat - MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
-    const phaseEndBeat = toBeat - iterationStartBeat + MAX_GROOVE_STAGE_DISPLACEMENT_BEATS;
+    const phaseStartBeat = fromBeat - iterationStartBeat - PHASE_QUERY_SLACK_BEATS;
+    const phaseEndBeat = toBeat - iterationStartBeat + PHASE_QUERY_SLACK_BEATS;
     const phaseWidthBeats = phaseEndBeat - phaseStartBeat;
     if (phaseWidthBeats >= loopLengthBeats) {
         for (const { note } of loopIndex.sortedEntries) {

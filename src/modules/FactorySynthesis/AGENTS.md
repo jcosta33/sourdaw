@@ -19,7 +19,7 @@ Public surface: `useCases/index.ts`.
 - Workers may import only `models/` and `transformers/` (`workers-no-module-runtime-imports`); keep generators out of `useCases/` and `services/` imports out of the worker entry.
 - Register the worker's `onmessage` synchronously at module top level, with no top-level await: Chromium drops messages posted to a module worker while its top-level evaluation is suspended, and builds emit workers as IIFE.
 - No in-process fallback: a failed or timed-out render rejects, and the seed retries on the next launch.
-- Sample ids, order, lengths, channel counts, sample rate, and samples are persisted project references; generators must keep them stable. `factory-fx-impact-glitch-stutter` alone uses `Math.random`.
+- Sample ids, order, lengths, channel counts, sample rate, and samples are persisted project references; generators must keep them stable. SampleLibrary re-renders the pack on every launch and re-caches each buffer under its id, so a generator that varies between runs rewrites the audio behind saved clips; use a seeded generator, never `Math.random`.
 - Deterministic seeding: procedural generator logic must produce identical sample buffers across runs given the same seed parameters.
 
 ## Verification

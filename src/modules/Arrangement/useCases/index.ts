@@ -91,6 +91,7 @@ export { getGrooveOffsetAtBeat } from './groove/applyGrooveTemplate';
 export { deleteTimeRange } from './clipEditing/deleteTimeRange';
 export { glueClips } from './clipEditing/glueClips';
 export { getGlueEligibleClipPairs } from './clipEditing/getGlueEligibleClipPairs';
+export { getClipEndLimit } from './clipEditing/getClipEndLimit';
 export { slipClipContent } from './clipEditing/slipClipContent';
 
 export { setClipLoop } from './clipLoop/setClipLoop';
