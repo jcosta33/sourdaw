@@ -314,6 +314,74 @@ describe('ClipInspector', () => {
         expect(screen.getByText('Fades')).toBeInTheDocument();
     });
 
+    it('offers fades and the gain envelope on an audio clip', () => {
+        render(<ClipInspector {...defaultProps} />);
+        expect(screen.getByLabelText('Fade in duration')).toBeInTheDocument();
+        expect(screen.getByLabelText('Fade out duration')).toBeInTheDocument();
+        expect(screen.getByTestId('gain-envelope-section')).toBeInTheDocument();
+    });
+
+    it('offers no fades or gain envelope on a MIDI clip, which plays neither, but keeps clip gain', () => {
+        render(<ClipInspector {...defaultProps} clip={{ ...defaultProps.clip, type: 'midi' }} />);
+        expect(screen.queryByText('Fades')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('Fade in duration')).not.toBeInTheDocument();
+        expect(screen.queryByLabelText('Fade out duration')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('gain-envelope-section')).not.toBeInTheDocument();
+        expect(screen.getByLabelText('Clip gain value')).toBeInTheDocument();
+    });
+
+    it('commits one guarded setClipFade per fade-in gesture and none while dragging', () => {
+        render(<ClipInspector {...defaultProps} />);
+        const slider = screen.getByLabelText('Fade in duration');
+
+        fireEvent.change(slider, { target: { value: '1' } });
+        fireEvent.change(slider, { target: { value: '1.5' } });
+        expect(commandMocks.executeUserAppAction).not.toHaveBeenCalled();
+        fireEvent.blur(slider, { target: { value: '1.5' } });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'setClipFade',
+            payload: {
+                clipId: 'clip-1',
+                fadeInBeats: 1.5,
+                fadeOutBeats: 0.5,
+                expectedFadeInBeats: 0.5,
+                expectedFadeOutBeats: 0.5,
+            },
+        });
+    });
+
+    it('commits one guarded setClipFade per fade-out gesture', () => {
+        render(<ClipInspector {...defaultProps} />);
+        const slider = screen.getByLabelText('Fade out duration');
+
+        fireEvent.change(slider, { target: { value: '2' } });
+        fireEvent.blur(slider, { target: { value: '2' } });
+
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledTimes(1);
+        expect(commandMocks.executeUserAppAction).toHaveBeenCalledWith({
+            type: 'setClipFade',
+            payload: {
+                clipId: 'clip-1',
+                fadeInBeats: 0.5,
+                fadeOutBeats: 2,
+                expectedFadeInBeats: 0.5,
+                expectedFadeOutBeats: 0.5,
+            },
+        });
+    });
+
+    it('dispatches no fade action when the gesture ends where it started', () => {
+        render(<ClipInspector {...defaultProps} />);
+        const slider = screen.getByLabelText('Fade in duration');
+
+        fireEvent.change(slider, { target: { value: '0.5' } });
+        fireEvent.blur(slider, { target: { value: '0.5' } });
+
+        expect(commandMocks.executeUserAppAction).not.toHaveBeenCalled();
+    });
+
     it('should render Gain section', () => {
         render(<ClipInspector {...defaultProps} />);
         expect(screen.getByText('Gain')).toBeInTheDocument();

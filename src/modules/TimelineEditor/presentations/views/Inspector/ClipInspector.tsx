@@ -10,13 +10,7 @@ import { Button } from '#/components/ui/button';
 import { Separator } from '#/components/ui/separator';
 import { Slider } from '#/components/ui/slider';
 import { useStore } from '#/infra/store/useStore';
-import {
-    getClipEndLimit,
-    setClipFade,
-    setClipColor,
-    renameClip,
-    setClipFollowAction,
-} from '#/modules/Arrangement/useCases';
+import { getClipEndLimit, setClipColor, renameClip, setClipFollowAction } from '#/modules/Arrangement/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { defaultTransportState, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 import { formatMusicalLength, formatMusicalPosition } from '#/modules/Transport/useCases';
@@ -108,6 +102,35 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
             type: 'trimClipEnd',
             payload: { clipId: clip.id, newEndBeat: beat },
         });
+    };
+
+    // MIDI playback reads neither fades nor a gain envelope, so only audio
+    // clips offer them. A fade edit is one undoable action per gesture: the
+    // drag holds local thumb state and the commit dispatches once, guarded on
+    // the fades the gesture started from (the store does not move mid-drag).
+    const isAudioClip = clip.type === 'audio';
+    const [fadeInDrag, setFadeInDrag] = useState<number | null>(null);
+    const [fadeOutDrag, setFadeOutDrag] = useState<number | null>(null);
+
+    const commitFade = (fadeInBeats: number, fadeOutBeats: number): void => {
+        try {
+            if (fadeInBeats === clip.fadeInBeats && fadeOutBeats === clip.fadeOutBeats) {
+                return;
+            }
+            void executeUserAppAction({
+                type: 'setClipFade',
+                payload: {
+                    clipId: clip.id,
+                    fadeInBeats,
+                    fadeOutBeats,
+                    expectedFadeInBeats: clip.fadeInBeats,
+                    expectedFadeOutBeats: clip.fadeOutBeats,
+                },
+            });
+        } finally {
+            setFadeInDrag(null);
+            setFadeOutDrag(null);
+        }
     };
 
     // Clip gain edits are one undoable action per gesture. The drag never
@@ -275,50 +298,64 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                     </div>
                 </Stack>
             </section>
-            <Separator />
-            <section>
-                <DawHeaderBand compact className="mb-2 rounded-sm" title="Fades" />
-                <Stack gap={2}>
-                    <div>
-                        <ControlHeader
-                            className="mb-1"
-                            label="Fade In"
-                            value={`${clip.fadeInBeats.toFixed(2)} beats`}
-                            valueClassName="text-foreground"
-                        />
-                        <Slider
-                            value={[clip.fadeInBeats]}
-                            onValueChange={([value]) => {
-                                if (value !== undefined) {
-                                    setClipFade(clip.id, value, clip.fadeOutBeats);
-                                }
-                            }}
-                            max={duration / 2}
-                            step={0.25}
-                            aria-label="Fade in duration"
-                        />
-                    </div>
-                    <div>
-                        <ControlHeader
-                            className="mb-1"
-                            label="Fade Out"
-                            value={`${clip.fadeOutBeats.toFixed(2)} beats`}
-                            valueClassName="text-foreground"
-                        />
-                        <Slider
-                            value={[clip.fadeOutBeats]}
-                            onValueChange={([value]) => {
-                                if (value !== undefined) {
-                                    setClipFade(clip.id, clip.fadeInBeats, value);
-                                }
-                            }}
-                            max={duration / 2}
-                            step={0.25}
-                            aria-label="Fade out duration"
-                        />
-                    </div>
-                </Stack>
-            </section>
+            {isAudioClip ? (
+                <>
+                    <Separator />
+                    <section>
+                        <DawHeaderBand compact className="mb-2 rounded-sm" title="Fades" />
+                        <Stack gap={2}>
+                            <div>
+                                <ControlHeader
+                                    className="mb-1"
+                                    label="Fade In"
+                                    value={`${(fadeInDrag ?? clip.fadeInBeats).toFixed(2)} beats`}
+                                    valueClassName="text-foreground"
+                                />
+                                <Slider
+                                    value={[fadeInDrag ?? clip.fadeInBeats]}
+                                    onValueChange={([value]) => {
+                                        if (value !== undefined) {
+                                            setFadeInDrag(value);
+                                        }
+                                    }}
+                                    onValueCommit={([value]) => {
+                                        if (value !== undefined) {
+                                            commitFade(value, clip.fadeOutBeats);
+                                        }
+                                    }}
+                                    max={duration / 2}
+                                    step={0.25}
+                                    aria-label="Fade in duration"
+                                />
+                            </div>
+                            <div>
+                                <ControlHeader
+                                    className="mb-1"
+                                    label="Fade Out"
+                                    value={`${(fadeOutDrag ?? clip.fadeOutBeats).toFixed(2)} beats`}
+                                    valueClassName="text-foreground"
+                                />
+                                <Slider
+                                    value={[fadeOutDrag ?? clip.fadeOutBeats]}
+                                    onValueChange={([value]) => {
+                                        if (value !== undefined) {
+                                            setFadeOutDrag(value);
+                                        }
+                                    }}
+                                    onValueCommit={([value]) => {
+                                        if (value !== undefined) {
+                                            commitFade(clip.fadeInBeats, value);
+                                        }
+                                    }}
+                                    max={duration / 2}
+                                    step={0.25}
+                                    aria-label="Fade out duration"
+                                />
+                            </div>
+                        </Stack>
+                    </section>
+                </>
+            ) : null}
             <Separator />
             <section>
                 <DawHeaderBand compact className="mb-2 rounded-sm" title="Gain" />
@@ -372,8 +409,12 @@ export const ClipInspector = ({ clip, trackId, onBack }: ClipInspectorProps): Re
                     </Row>
                 </div>
             </section>
-            <Separator />
-            <ClipGainEnvelopeSection clipId={clip.id} duration={duration} />
+            {isAudioClip ? (
+                <>
+                    <Separator />
+                    <ClipGainEnvelopeSection clipId={clip.id} duration={duration} />
+                </>
+            ) : null}
             <Separator />
             <section>
                 <DawHeaderBand compact className="mb-2 rounded-sm" title="Color" />
