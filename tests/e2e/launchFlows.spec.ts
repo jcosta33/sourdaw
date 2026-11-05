@@ -1,6 +1,18 @@
+import { type Locator } from '@playwright/test';
+
 import { chooseProjectDirectory } from './chosenProjectDirectory';
 import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+
+type Box = { x: number; y: number; width: number; height: number };
+
+const boxOf = async (locator: Locator, name: string): Promise<Box> => {
+    const box = await locator.boundingBox();
+    if (box === null) {
+        throw new Error(`${name} has no bounding box`);
+    }
+    return box;
+};
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -36,25 +48,22 @@ test.describe('Launch Screen & Project Entry', () => {
             await expect(back_button).toBeVisible();
             await expect(card).toBeVisible();
 
-            const back_box = await back_button.boundingBox();
-            const chips_box = await chip_group.boundingBox();
-            const all_card_box = await card.boundingBox();
-            expect(back_box).not.toBeNull();
-            expect(chips_box).not.toBeNull();
-            expect(all_card_box).not.toBeNull();
+            const back_box = await boxOf(back_button, 'Back button');
+            const chips_box = await boxOf(chip_group, 'Template category group');
+            const all_card_box = await boxOf(card, 'Cinematic card');
 
             for (const name of ['Music', 'Demos', 'Podcast', 'Film']) {
                 await page.getByRole('radio', { name, exact: true }).click();
                 await expect(page.getByRole('radio', { name, exact: true })).toBeChecked();
-                const back_now = await back_button.boundingBox();
-                const chips_now = await chip_group.boundingBox();
-                expect(Math.abs((back_now?.y ?? -1000) - (back_box?.y ?? 0))).toBeLessThanOrEqual(1);
-                expect(Math.abs((chips_now?.y ?? -1000) - (chips_box?.y ?? 0))).toBeLessThanOrEqual(1);
+                const back_now = await boxOf(back_button, 'Back button');
+                const chips_now = await boxOf(chip_group, 'Template category group');
+                expect(Math.abs(back_now.y - back_box.y)).toBeLessThanOrEqual(1);
+                expect(Math.abs(chips_now.y - chips_box.y)).toBeLessThanOrEqual(1);
             }
 
             await expect(card).toBeVisible();
-            const film_card_box = await card.boundingBox();
-            expect(Math.abs((film_card_box?.height ?? -1000) - (all_card_box?.height ?? 0))).toBeLessThanOrEqual(1);
+            const film_card_box = await boxOf(card, 'Cinematic card');
+            expect(Math.abs(film_card_box.height - all_card_box.height)).toBeLessThanOrEqual(1);
         });
 
         test('Can load a template from the grid and enter the workspace', async ({ page }) => {
