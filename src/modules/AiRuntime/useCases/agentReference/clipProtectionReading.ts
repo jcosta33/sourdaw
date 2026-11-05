@@ -115,7 +115,7 @@ function blankObjectNames(maskedText: string, prompt: string, context: ProjectCo
     const starts = protectionSlots.startRanges(maskedText);
     const references = refinementRequestReading
         .references(prompt, refinementRequestReading.candidates(context))
-        .filter((reference) => !starts.some((start) => reference.start < start.end && reference.end > start.start));
+        .filter((reference) => !starts.some((start) => reference.start >= start.start && reference.end <= start.end));
     return blankRanges(maskedText, references);
 }
 

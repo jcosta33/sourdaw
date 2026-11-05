@@ -180,6 +180,31 @@ describe('getExplicitlyProtectedClips', () => {
                 complete: true,
             });
         });
+
+        it.each([
+            ["Don't touch keep me and rename Beta to Gamma", 'keep me', 'Beta'],
+            ['leave Alpha alone and rename Alpha to Gamma', 'Leave', 'Alpha'],
+        ])('blanks a start inside a clip name: %s', (prompt, name, other) => {
+            const named = createClip('clip-named', name);
+            const rest = createClip('clip-rest', other);
+            const track = createTrack('track-named', 'Pair', [named, rest]);
+            const result = getExplicitClipProtection(prompt, { ...context, tracks: [track] });
+
+            expect(result.complete).toBe(true);
+            expect(result.clips.map(({ name: protectedName }) => protectedName)).toEqual(
+                prompt.startsWith('leave') ? [other] : [name]
+            );
+        });
+    });
+
+    it('reads a carve-out word inside a clip name as incomplete, never as a protected clip', () => {
+        const named = createClip('clip-named', 'except me');
+        const track = createTrack('track-named', 'Pair', [named, createClip('clip-beta', 'Beta')]);
+
+        expect(
+            getExplicitClipProtection("Don't touch except me and rename Beta to Gamma", { ...context, tracks: [track] })
+                .complete
+        ).toBe(false);
     });
 
     it('reads a prohibition list ending in a dangling and as incomplete', () => {
