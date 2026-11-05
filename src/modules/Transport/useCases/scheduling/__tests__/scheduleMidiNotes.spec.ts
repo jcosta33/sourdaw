@@ -6547,15 +6547,29 @@ describe('scheduleMidiNotes plays a looping clip cut off its loop grid on the so
 
     type Voice = { pitch: number; beat: number; duration: number };
 
+    /** Scheduler window edges cutting [8, 16) into widths repeating `widths`, the last cut at 16. */
+    function windowEdges(widths: readonly number[]): number[] {
+        const edges = [8];
+        for (let index = 0; edges.at(-1)! < 16; index++) {
+            edges.push(Math.min(16, edges.at(-1)! + widths[index % widths.length]!));
+        }
+        return edges;
+    }
+
+    const HALF_BEAT_WINDOWS = windowEdges([0.5]);
+
     /**
      * Every note-on the span [8, 16) strikes, in beats (the clock reads beat 0
-     * at 0 s, 120 BPM). The synth route sweeps it in half-beat scheduler
-     * windows, as playback does: a window that narrow reads the loop
-     * selector's phase index rather than taking every row as a candidate. The
-     * Yeast rack's blocks follow the scheduler windows, so that route
-     * schedules the span as two one-loop windows.
+     * at 0 s, 120 BPM), swept window by window between `edges`. Half-beat
+     * windows sweep it as playback does: a window that narrow reads the loop
+     * selectors' phase indexes rather than taking every row as a candidate.
      */
-    async function voicesFor(clip: Clip, rows: MidiNote[], route: 'synth' | 'yeast' = 'synth'): Promise<Voice[]> {
+    async function voicesFor(
+        clip: Clip,
+        rows: MidiNote[],
+        route: 'synth' | 'yeast' = 'synth',
+        edges: readonly number[] = HALF_BEAT_WINDOWS
+    ): Promise<Voice[]> {
         vi.mocked(scheduleNote).mockClear();
         shouldPlayProbability.mockClear();
         const devices = route === 'yeast' ? [{ id: 'yeast-rack', type: 'yeast' }] : [];
@@ -6566,13 +6580,16 @@ describe('scheduleMidiNotes plays a looping clip cut off its loop grid on the so
             ccByClipId: {},
             pitchBendByClipId: {},
         };
-        if (route === 'yeast') {
-            await scheduleMidiNotes(8, 12, 0, new Set<string>(), [], defaultTransportState, 120);
-            await scheduleMidiNotes(12, 16, 0, new Set<string>(), [], defaultTransportState, 120);
-        } else {
-            for (let fromBeat = 8; fromBeat < 16; fromBeat += 0.5) {
-                await scheduleMidiNotes(fromBeat, fromBeat + 0.5, 0, new Set<string>(), [], defaultTransportState, 120);
-            }
+        for (let index = 1; index < edges.length; index++) {
+            await scheduleMidiNotes(
+                edges[index - 1]!,
+                edges[index]!,
+                0,
+                new Set<string>(),
+                [],
+                defaultTransportState,
+                120
+            );
         }
         return vi
             .mocked(scheduleNote)
@@ -6627,6 +6644,18 @@ describe('scheduleMidiNotes plays a looping clip cut off its loop grid on the so
     // chance roll happens earlier, once per pass, as the rack's input is prepared.
     it('pins the uncut source on the Yeast rack route', async () => {
         expect(await voicesFor(uncutClip(), sourceRows(), 'yeast')).toEqual(SOURCE_VOICES);
+    });
+
+    // Live playback cuts the timeline into look-ahead windows of whatever
+    // width the clock delivers; the notes a loop sounds cannot depend on where
+    // those cuts fall, on either side of the seam or the pass head.
+    it.each([
+        { partition: 'one-loop windows', widths: [4] },
+        { partition: 'irregular windows straddling the seams', widths: [0.3, 0.7, 0.13] },
+    ])('sounds the uncut source on both routes alike under $partition', async ({ widths }) => {
+        const edges = windowEdges(widths);
+        expect(await voicesFor(uncutClip(), sourceRows(), 'synth', edges)).toEqual(SOURCE_VOICES);
+        expect(await voicesFor(uncutClip(), sourceRows(), 'yeast', edges)).toEqual(SOURCE_VOICES);
     });
 
     it('sounds the split fragment on the Yeast rack route exactly as the uncut source', async () => {
