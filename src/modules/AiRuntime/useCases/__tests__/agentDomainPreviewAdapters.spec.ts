@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getCachedAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
@@ -26,6 +27,8 @@ import {
     resetAiWorkflowCommandCheckpointRuntime,
 } from './aiWorkflowCommandCheckpointRuntime';
 import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),

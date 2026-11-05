@@ -25,6 +25,8 @@ const malformedPreset = {
 vi.resetModules();
 window.localStorage.clear();
 window.localStorage.setItem(storageKey, stringify([malformedPreset]));
+const { registerDeviceEnginePorts } = await import('#/app/registerDeviceEnginePorts');
+registerDeviceEnginePorts();
 const { runApplicationOwnedToolLoop } = await import('../applicationOwnedToolLoop');
 
 describe('application-owned tool loop persisted preset discovery', () => {

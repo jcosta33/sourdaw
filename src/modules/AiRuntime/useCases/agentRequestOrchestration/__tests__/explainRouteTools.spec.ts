@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
 import {
     configureAutomergeStoragePort,
@@ -64,6 +65,8 @@ import { submitAdmittedPromptRequest } from '../../submitAdmittedPromptRequest';
 import * as execution from '../executeImmediatePromptCommand';
 import * as preview from '../executePromptCommandPreview';
 import * as materialization from '../materializePromptCommandPlan';
+
+registerDeviceEnginePorts();
 
 const boundary = vi.hoisted(() => ({ render: vi.fn(), masterRender: vi.fn(), cloud: vi.fn() }));
 vi.mock('#/modules/AudioEngine/useCases', async (original) => ({

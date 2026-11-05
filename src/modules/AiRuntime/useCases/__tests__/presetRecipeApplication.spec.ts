@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore } from '#/modules/Arrangement/stores';
 import {
@@ -20,6 +21,8 @@ import {
 import { type RetainedCommand } from '../../models/RetainedCompilation';
 import { expandMixRecipe } from '../expandMixRecipe';
 import { getProjectContext } from '../getProjectContext';
+
+registerDeviceEnginePorts();
 
 const EXPANDED_TRACK = 'expanded-track';
 const STATED_TRACK = 'stated-track';

@@ -11,7 +11,6 @@
       "CrdtDocument",
       "Crumbs",
       "ElasticAudio",
-      "Fermenter",
       "GrandBoule",
       "Grinder",
       "Knead",
@@ -35,11 +34,6 @@
     "type": "module-tier",
     "from": "Arrangement",
     "to": "Collaboration"
-  },
-  {
-    "type": "module-tier",
-    "from": "Arrangement",
-    "to": "Fermenter"
   },
   {
     "type": "module-tier",
@@ -85,11 +79,6 @@
     "type": "module-tier",
     "from": "AudioEngine",
     "to": "ElasticAudio"
-  },
-  {
-    "type": "module-tier",
-    "from": "AudioEngine",
-    "to": "Fermenter"
   },
   {
     "type": "module-tier",
@@ -255,11 +244,6 @@
     "type": "module-tier",
     "from": "Transport",
     "to": "Crumbs"
-  },
-  {
-    "type": "module-tier",
-    "from": "Transport",
-    "to": "Fermenter"
   },
   {
     "type": "module-tier",

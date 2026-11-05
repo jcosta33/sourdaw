@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getPlatformPlugins, getPluginById, isReverbDeviceType } from '#/modules/Arrangement/useCases';
 import { getDeviceChainTailSeconds } from '#/modules/AudioEngine/useCases';
 import { queryAgentDiscovery } from '#/modules/Project/useCases';
@@ -9,6 +10,8 @@ import { type ProjectContext, type ProjectContextTrack } from '../../models/Proj
 import { bridgeLlmToolCalls } from '../../transformers/llmActionBridge';
 import { getBackingVocalPlatePromptScope } from '../agentReference/getBackingVocalPlatePromptScope';
 import { getProjectContext } from '../getProjectContext';
+
+registerDeviceEnginePorts();
 
 function receiptItems(domain: 'device' | 'preset', character: string) {
     const result = queryAgentDiscovery({ domain, filters: { text: character }, page: { limit: 50 } });

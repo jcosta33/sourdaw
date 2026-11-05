@@ -12,6 +12,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { trackStore, type Device, type Track } from '#/modules/Arrangement/stores';
 
 import { audioEngine } from '../../../repositories/createWebAudioEngine';
@@ -19,6 +20,8 @@ import { isDeviceCarriedByNativeSession } from '../../livePlayback/isDeviceCarri
 import { sendNativeDeviceParameters } from '../../livePlayback/sendNativeDeviceParameters';
 import { sendNativeGrinderNeuralPatch } from '../../livePlayback/sendNativeGrinderNeuralPatch';
 import { updateDevicePatch } from '../updateDevicePatch';
+
+registerDeviceEnginePorts();
 
 vi.mock('../../../repositories/createWebAudioEngine', () => ({
     audioEngine: {

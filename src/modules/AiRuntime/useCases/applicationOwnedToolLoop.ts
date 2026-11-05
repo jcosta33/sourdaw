@@ -2002,8 +2002,6 @@ function toolChoiceRefusal(
     return null;
 }
 
-export const APPLICATION_OWNED_TOOL_SCHEMAS: readonly ToolSchema[] = getAgentToolCatalogSchemas();
-
 export async function runApplicationOwnedToolLoop(
     input: RunApplicationOwnedToolLoopInput
 ): Promise<ApplicationOwnedToolLoopOutcome> {

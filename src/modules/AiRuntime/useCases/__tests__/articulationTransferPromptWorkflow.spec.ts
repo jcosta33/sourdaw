@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -44,6 +45,8 @@ import {
 import { landProjectEdit } from './landProjectEdit';
 import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+
+registerDeviceEnginePorts();
 
 const PROMPT = 'Copy chorus-one articulation to chorus two without copying pitches or velocities.';
 const PARAPHRASE =

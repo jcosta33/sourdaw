@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
@@ -31,6 +32,8 @@ import { prepareAnswerInterpretationCatalog } from '../prepareAnswerInterpretati
 
 import { advertisedAnswerIntake, advertisedAnswerCandidateId } from './answerWireFixture';
 import { decodeReceiptContext, isRecord, readReceiptSummary } from './receiptContextFixture';
+
+registerDeviceEnginePorts();
 
 const READ = 'analysis.detectTransients';
 

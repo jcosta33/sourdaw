@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getExecutableAppActionToolSchemas } from '#/modules/Command/useCases';
 
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME } from '../agentToolCatalog';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
+
+registerDeviceEnginePorts();
 
 type GetAgentToolCatalogEntries = typeof import('../getAgentToolCatalogEntries').getAgentToolCatalogEntries;
 

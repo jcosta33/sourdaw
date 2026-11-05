@@ -17,6 +17,13 @@ export const SCALE_PATTERNS: Record<string, number[]> = {
 
 export const SCALE_NAMES = Object.keys(SCALE_PATTERNS);
 
+const SCALE_PATTERNS_BY_NAME: ReadonlyMap<string, readonly number[]> = new Map(Object.entries(SCALE_PATTERNS));
+
+/** Scale names come from stored data, so read through a Map: a plain-object read resolves `__proto__` or `toString` to an Object.prototype member. */
+export function getScalePattern(scaleName: string): readonly number[] | undefined {
+    return SCALE_PATTERNS_BY_NAME.get(scaleName);
+}
+
 /** Display names for the `SCALE_PATTERNS` identifiers; option values stay the identifiers. */
 export const SCALE_LABELS: Record<string, string> = {
     major: 'Major',
@@ -35,14 +42,18 @@ export const SCALE_LABELS: Record<string, string> = {
     chromatic: 'Chromatic',
 };
 
+const SCALE_LABELS_BY_NAME: ReadonlyMap<string, string> = new Map(Object.entries(SCALE_LABELS));
+
 export function getScaleLabel(scaleName: string): string {
-    return SCALE_LABELS[scaleName] ?? scaleName;
+    return SCALE_LABELS_BY_NAME.get(scaleName) ?? scaleName;
 }
+
+const CHROMATIC_PATTERN: readonly number[] = SCALE_PATTERNS.chromatic!;
 
 export const KEY_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 export function quantizeCentsToScale(cents: number, root: number, scaleName: string): number {
-    const pattern = SCALE_PATTERNS[scaleName] ?? SCALE_PATTERNS.chromatic!;
+    const pattern = getScalePattern(scaleName) ?? CHROMATIC_PATTERN;
     const pc = (((Math.round(cents / 100) - root) % 12) + 12) % 12;
 
     if (pattern.includes(pc)) {
@@ -74,7 +85,7 @@ export function quantizeCentsToScale(cents: number, root: number, scaleName: str
 }
 
 export function quantizeMidiNoteToScale(note: number, root: number, scaleName: string): number {
-    const pattern = SCALE_PATTERNS[scaleName] ?? SCALE_PATTERNS.chromatic!;
+    const pattern = getScalePattern(scaleName) ?? CHROMATIC_PATTERN;
     const pc = (((note - root) % 12) + 12) % 12;
 
     if (pattern.includes(pc)) {

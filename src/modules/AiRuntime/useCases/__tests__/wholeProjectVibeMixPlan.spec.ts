@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -63,6 +64,8 @@ import { advertisedAnswerSchema } from './answerWireFixture';
 import { type ScriptedTurn } from './highLevelIntentWorkflowFixture';
 import { landProjectEdit } from './landProjectEdit';
 import { literalMetricIntakeTurn, readMetricPublication } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 const PROMPT =
     'Make the second chorus hit harder without changing any lead-vocal state, the tempo map, or the master chain.';

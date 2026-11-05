@@ -3,6 +3,7 @@ import { createRef, type ReactElement, useState } from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { Container } from '#/infra/di/Container';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { useStore } from '#/infra/store/useStore';
@@ -37,6 +38,8 @@ import { agentRunLifecycle } from '../../useCases/agentRunLifecycle';
 import { confirmPendingChatActions } from '../../useCases/confirmPendingChatActions';
 import { sendChatMessage } from '../../useCases/sendChatMessage';
 import { ChatComposer } from '../components/ChatComposer';
+
+registerDeviceEnginePorts();
 
 const providerPlanning = vi.hoisted(() => vi.fn());
 

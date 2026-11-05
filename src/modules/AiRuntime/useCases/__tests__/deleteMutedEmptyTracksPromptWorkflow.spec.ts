@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { captureCommandBatchPreflightState } from '#/app/captureCommandBatchPreflightState';
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore, vcaGroupStore, type Track } from '#/modules/Arrangement/stores';
 import { getArrangementHandlers, runtimeGraphTopology, setArrangementEventBus } from '#/modules/Arrangement/useCases';
@@ -44,6 +45,8 @@ import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
 
 import { landProjectEdit } from './landProjectEdit';
 import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 const PROMPT = 'Delete all muted empty tracks, but preserve buses and groups.';
 

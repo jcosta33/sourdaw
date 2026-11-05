@@ -7,7 +7,13 @@ import { TooltipProvider } from '#/components/ui/tooltip';
 import { WorkspaceAppBoundary, WorkspaceProjectLoadingFallback } from '#/modules/WorkspaceShell/presentations/views';
 
 import { queryClient } from './queryClient';
+import { registerDeviceEnginePorts } from './registerDeviceEnginePorts';
 import { router } from './router';
+
+// `main.tsx` loads this module and `bootstrap` independently, and the preset
+// browser reads factory presets while it renders, so the device ports must be
+// in place before the first render whichever of the two evaluates first.
+registerDeviceEnginePorts();
 
 export const App = (): ReactElement => {
     return (

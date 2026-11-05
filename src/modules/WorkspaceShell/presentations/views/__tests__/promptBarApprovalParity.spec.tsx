@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { act, fireEvent, render, cleanup, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -36,6 +37,8 @@ import {
 
 import { AgentWorkspace } from '../AgentWorkspace';
 import { PromptBar } from '../PromptBar';
+
+registerDeviceEnginePorts();
 
 const handlers = getArrangementHandlers();
 

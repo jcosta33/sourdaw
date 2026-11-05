@@ -25,6 +25,13 @@ type MidiClipWindow = {
      * loop seam or a cut and the closing line belongs to whatever plays next: the row is dropped.
      */
     closingLineBeat?: number;
+    /**
+     * Set when the loop played a whole pass before this window's start, so the window opens mid-loop on
+     * material the previous pass already ran through: the content beat that pass ended on (the loop region
+     * end). A controller lane no row before the window start sets begins with the value its last row before
+     * that end left, as continuous looping holds it. Pitch-bend lanes do not read it.
+     */
+    priorPassEndBeat?: number;
 };
 
 type ProjectMidiClipWindowInput<TPitchBend extends MidiPitchBend> = {
@@ -105,30 +112,51 @@ type CarriedRow<TRow> = { row: TRow; sourceIndex: number };
 
 type ProjectedControllerRows<TRow> = {
     /**
-     * The source rows whose values each lane carries onto the window start, at their own beats, with their
-     * index in the source rows, in the order their lanes first appear; `placeOnWindowStart` puts them there.
+     * The source rows whose values each lane carries onto the window start, at their own beats, in the order
+     * continuous playback played them (`inPlaybackOrder`); `placeOnWindowStart` puts them there.
      */
-    carried: CarriedRow<TRow>[];
+    carried: TRow[];
     /** The rows inside the window, rebased, in source order, up to (not on) its closing line. */
     visible: TRow[];
     /** The rows on the closing line, placed at `closingLineBeat`; none when the window has no closing line of its own. */
     closing: TRow[];
 };
 
+type ControllerRowLaneRules<TRow> = {
+    laneKey: (row: TRow) => string;
+    closingLineBeat: number | undefined;
+    /** Where the pass before the window ended, when one did (`MidiClipWindow.priorPassEndBeat`). */
+    priorPassEndBeat: number | undefined;
+    /** A row before the window that this refuses is left behind. */
+    carriesIntoWindow: (row: TRow) => boolean;
+};
+
+/** Keeps the lane's latest row by beat; at one beat the later source row is the one the player ends on. */
+function keepLatestRow<TRow extends ControllerRow>(
+    latest: Map<string, CarriedRow<TRow>>,
+    key: string,
+    candidate: CarriedRow<TRow>
+): void {
+    const current = latest.get(key);
+    if (!current || current.row.beat <= candidate.row.beat) {
+        latest.set(key, candidate);
+    }
+}
+
 /**
  * The rows inside the window, and the rows each lane carries onto its start: every lane whose value in force
  * at the window start was set by an earlier row begins with that value at the window start, unless the lane
- * has a row there already, so a pedal or bend held into the window keeps sounding. A row before the window
- * that `carriesIntoWindow` refuses is left behind.
+ * has a row there already, so a pedal or bend held into the window keeps sounding. When a whole pass played
+ * before the window, a lane no earlier row sets begins with the value that pass ended on instead: its last
+ * row from the window start up to (not on) the pass's closing line, which an inner seam drops.
  */
 function projectVisibleControllerRows<TRow extends ControllerRow>(
     rows: readonly TRow[],
-    laneKey: (row: TRow) => string,
     window: MidiClipWindow,
-    closingLineBeat: number | undefined,
-    carriesIntoWindow: (row: TRow) => boolean = () => true
+    { laneKey, closingLineBeat, priorPassEndBeat, carriesIntoWindow }: ControllerRowLaneRules<TRow>
 ): ProjectedControllerRows<TRow> {
     const inForceAtStart = new Map<string, CarriedRow<TRow>>();
+    const inForceAtPriorPassEnd = new Map<string, CarriedRow<TRow>>();
     const lanesStartingAtWindow = new Set<string>();
     const visible: TRow[] = [];
     const closing: TRow[] = [];
@@ -138,14 +166,17 @@ function projectVisibleControllerRows<TRow extends ControllerRow>(
             continue;
         }
         if (row.beat < window.visibleStartBeat) {
-            if (!carriesIntoWindow(row)) {
-                continue;
-            }
-            const current = inForceAtStart.get(laneKey(row));
-            if (!current || current.row.beat <= row.beat) {
-                inForceAtStart.set(laneKey(row), { row, sourceIndex });
+            if (carriesIntoWindow(row)) {
+                keepLatestRow(inForceAtStart, laneKey(row), { row, sourceIndex });
             }
             continue;
+        }
+        if (
+            priorPassEndBeat !== undefined &&
+            row.beat < priorPassEndBeat - SAME_BEAT_TOLERANCE &&
+            carriesIntoWindow(row)
+        ) {
+            keepLatestRow(inForceAtPriorPassEnd, laneKey(row), { row, sourceIndex });
         }
         if (isAtOrPastVisibleEnd(row.beat, window)) {
             if (closingLineBeat !== undefined && isOnClosingLine(row.beat, window)) {
@@ -159,7 +190,14 @@ function projectVisibleControllerRows<TRow extends ControllerRow>(
         visible.push({ ...row, beat: row.beat + window.beatOffset });
     }
 
-    const carried = [...inForceAtStart].flatMap(([key, carry]) => (lanesStartingAtWindow.has(key) ? [] : [carry]));
+    const carriedFromThisPass = [...inForceAtStart].flatMap(([key, carry]) =>
+        lanesStartingAtWindow.has(key) ? [] : [carry]
+    );
+    const carriedFromPriorPass = [...inForceAtPriorPassEnd].flatMap(([key, carry]) =>
+        inForceAtStart.has(key) || lanesStartingAtWindow.has(key) ? [] : [carry]
+    );
+    // The pass before played its rows before any row of this pass ahead of the window, so they go first.
+    const carried = [...inPlaybackOrder(carriedFromPriorPass), ...inPlaybackOrder(carriedFromThisPass)];
 
     return { carried, visible, closing };
 }
@@ -169,12 +207,13 @@ function placeOnWindowStart<TRow extends ControllerRow>(rows: readonly TRow[], w
 }
 
 /**
- * The bends carried onto one window start all play on it, and the player reads the last that reaches a note,
- * so they keep the order they were recorded in: the later of a drawn row and a recorded wheel of one channel
- * stays the one in force for that channel's notes. Rows on one beat keep their source order, which is how the
- * player breaks the tie on the untrimmed clip (an MPE switch writes its rows on one beat).
+ * The rows carried onto one window start all play on it, and the player ends on the last of them, so they keep
+ * the order continuous playback played them in: a controller is one value per instrument whatever channel its
+ * row names, and the later of a drawn bend row and a recorded wheel of one channel stays the one in force for
+ * that channel's notes. Rows on one beat keep their source order, which is how the player breaks the tie on
+ * the untrimmed clip (an MPE switch writes its rows on one beat).
  */
-function orderByRecordedBeat<TRow extends ControllerRow>(carried: readonly CarriedRow<TRow>[]): TRow[] {
+function inPlaybackOrder<TRow extends ControllerRow>(carried: readonly CarriedRow<TRow>[]): TRow[] {
     return carried
         .toSorted((left, right) => left.row.beat - right.row.beat || left.sourceIndex - right.sourceIndex)
         .map(({ row }) => row);
@@ -209,24 +248,22 @@ export function projectMidiClipWindow<TPitchBend extends MidiPitchBend>({
     closingControlChanges: MidiCC[];
     pitchBends: TPitchBend[];
 } {
-    const controllers = projectVisibleControllerRows(
-        controlChanges,
-        (row) => `${row.channel}:${row.controller}`,
-        window,
-        window.closingLineBeat,
-        (row) => carriesRegisteredParameterLanes || !isRegisteredParameterController(row.controller)
-    );
-    const bends = projectVisibleControllerRows(pitchBends, pitchBendLaneKey, window, undefined);
+    const controllers = projectVisibleControllerRows(controlChanges, window, {
+        laneKey: (row) => `${row.channel}:${row.controller}`,
+        closingLineBeat: window.closingLineBeat,
+        priorPassEndBeat: window.priorPassEndBeat,
+        carriesIntoWindow: (row) => carriesRegisteredParameterLanes || !isRegisteredParameterController(row.controller),
+    });
+    const bends = projectVisibleControllerRows(pitchBends, window, {
+        laneKey: pitchBendLaneKey,
+        closingLineBeat: undefined,
+        priorPassEndBeat: undefined,
+        carriesIntoWindow: () => true,
+    });
     return {
         notes: notes.flatMap((note) => projectVisibleNote(note, window, locatesOwnBend) ?? []),
-        controlChanges: [
-            ...placeOnWindowStart(
-                controllers.carried.map(({ row }) => row),
-                window
-            ),
-            ...controllers.visible,
-        ],
+        controlChanges: [...placeOnWindowStart(controllers.carried, window), ...controllers.visible],
         closingControlChanges: controllers.closing.filter(playsOnClosingLine),
-        pitchBends: [...placeOnWindowStart(orderByRecordedBeat(bends.carried), window), ...bends.visible],
+        pitchBends: [...placeOnWindowStart(bends.carried, window), ...bends.visible],
     };
 }

@@ -201,3 +201,9 @@ describe('piano roll vertical geometry law', () => {
         expect(getPianoRollRowAtY(getPianoRollContentHeight(TOTAL_ROWS), TOTAL_ROWS)).toBeNull();
     });
 });
+
+describe('getVisiblePitches — Object.prototype scale names', () => {
+    it.each(['__proto__', 'constructor', 'toString'])('%s folds as chromatic instead of throwing', (scaleType) => {
+        expect(getVisiblePitches(scaleType, 0, true)).toEqual(getVisiblePitches('chromatic', 0, true));
+    });
+});

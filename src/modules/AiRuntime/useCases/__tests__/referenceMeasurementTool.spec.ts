@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import {
@@ -43,6 +44,8 @@ import { executeReferenceMeasurement } from '../executeReferenceMeasurement';
 import { getAgentToolCatalogEntries } from '../getAgentToolCatalogEntries';
 import { getPlanningProviderToolSchemas } from '../getPlanningProviderToolSchemas';
 import { generateToolPlanningOutcome, type ProviderAttemptAdmission } from '../llmOrchestration/inference';
+
+registerDeviceEnginePorts();
 
 const engine = vi.hoisted(() => ({
     renderOffline: vi.fn(),

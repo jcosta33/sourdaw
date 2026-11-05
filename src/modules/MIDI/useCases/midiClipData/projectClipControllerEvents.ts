@@ -49,8 +49,13 @@ function ownsMove(move: ProjectedClipControllerMove, fromBeat: number, toBeat: n
  * window per pass. Every window and the clip start begin from the value in
  * force at the span's head — the carry rule glue, export and split already
  * use — and a move is placed exactly where a note at that content beat is:
- * iteration start plus the beat past `midiOffsetBeats`. No groove applies to
- * a controller.
+ * iteration start plus the beat past `midiOffsetBeats`. A clip whose head was
+ * cut a whole loop or more past its anchor (a Delete Time over the head, a
+ * split's right fragment, a deep start trim) opens on a pass the uncut loop
+ * entered from the one before it, so a lane no row before the head sets begins
+ * with the value that pass ended on, wrap-around included: the clip holds at
+ * every beat what the uncut loop holds there. No groove applies to a
+ * controller.
  *
  * The window is half-open like the note scheduler's, so a move is owned by one
  * window and a scheduler stepping `[a, b)`, `[b, c)` — or wrapping at a loop seam —

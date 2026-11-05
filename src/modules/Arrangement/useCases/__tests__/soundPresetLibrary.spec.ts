@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getFermenterFactoryPresets } from '#/modules/Fermenter/useCases';
 
 import { getPluginById } from '../../models/DeviceParameter';
 import { getFactoryPresets } from '../soundPresetLibrary';
+
+registerDeviceEnginePorts();
 
 describe('soundPresetLibrary', () => {
     it('should export getFactoryPresets', () => {
@@ -90,6 +93,9 @@ describe('getFactoryPresets platform cache', () => {
 
     it('rebuilds the cache with native-only presets when the runtime switches to desktop', async () => {
         const { getFactoryPresets: freshGetFactoryPresets } = await import('../soundPresetLibrary');
+        const { registerDeviceEnginePorts: registerFreshDeviceEnginePorts } =
+            await import('#/app/registerDeviceEnginePorts');
+        registerFreshDeviceEnginePorts();
 
         // Web platform (no desktop bridge): builds and caches the web catalogue.
         const webPresets = freshGetFactoryPresets();

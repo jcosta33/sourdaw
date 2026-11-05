@@ -130,6 +130,19 @@ function takeCandidate(past: readonly UndoEntry[]): UndoCandidate | null {
     return { head: past[unit.last]!, entries: past.slice(unit.first), below: past.slice(0, unit.first) };
 }
 
+/** `past` with every fully inert unit at its top removed. Undoing one writes
+ *  nothing, so dropping it costs the user no undo; partially inert units stay. */
+function dropInertTopUnits(past: readonly UndoEntry[]): readonly UndoEntry[] {
+    let remaining = past;
+    for (;;) {
+        const top = takeCandidate(remaining);
+        if (!top || !isInertUndoUnit(top.entries)) {
+            return remaining;
+        }
+        remaining = top.below;
+    }
+}
+
 /** One member of a step target: an action entry whose inverse resolves to a
  *  handler that declares `canReportConflict`. */
 function isStepOverCapableMember(entry: UndoEntry): boolean {
@@ -284,9 +297,12 @@ type StepOverInput = {
 
 /**
  * One conflicted unit no longer wedges the whole history behind it (#2881): a
- * single step onto the unit directly beneath is attempted, gated by
- * `canStepOverConflictOnto`, and nothing further. One keystroke touches at most
- * two units (the conflicted head attempted, one step target undone) and emits at
+ * single step onto the first unit beneath that is not fully inert is attempted,
+ * gated by `canStepOverConflictOnto`, and nothing further. Fully inert units
+ * between the two are no step target — undoing one writes nothing — so they are
+ * dropped exactly as the head purge drops them, and stay dropped whether or not
+ * the step that follows is admitted. One keystroke touches at most two real
+ * units (the conflicted head attempted, one step target undone) and emits at
  * most two notifications (the conflict message plus the skip summary) — never an
  * unbounded scan. The conflicted unit stays at the head of `past`, retryable, so
  * `headConsumed` stays `false` and history sweeps still stop on it.
@@ -298,9 +314,10 @@ async function stepOverConflictedHeadOrSettle({
     retained,
     beneath,
 }: StepOverInput): Promise<UndoResult> {
-    const next = takeCandidate(beneath);
+    const beneathPastInert = dropInertTopUnits(beneath);
+    const next = takeCandidate(beneathPastInert);
     if (!next || !canStepOverConflictOnto(next)) {
-        return settleWithoutUndo({ initialPast, headId, retainedPast: [...beneath, ...retained] });
+        return settleWithoutUndo({ initialPast, headId, retainedPast: [...beneathPastInert, ...retained] });
     }
 
     const outcome = await undoCandidate(next);
@@ -315,8 +332,9 @@ async function stepOverConflictedHeadOrSettle({
         });
     }
     if (outcome.status === 'inert') {
-        // Unreachable — the gate admits only members carrying an inverse — but
-        // dropping an inert unit here matches the scan's own inert purge.
+        // Unreachable — fully inert units beneath were dropped above, and the
+        // gate admits only members carrying an inverse — but dropping an inert
+        // unit here matches the scan's own inert purge.
         return settleWithoutUndo({ initialPast, headId, retainedPast: [...next.below, ...retained] });
     }
 
@@ -347,18 +365,11 @@ async function undoImpl(stepOverConflicts: boolean): Promise<UndoResult> {
 
     const initialPast: readonly UndoEntry[] = initial.past;
     const headId = initialPast[initialPast.length - 1]!.id;
-    let past: readonly UndoEntry[] = initialPast;
 
     // Drop fully inert head units before anything can refuse (#2881): undoing
     // one writes nothing, and a dead row left above a blocked undo would hide
     // the real head's label from the notification that reports it.
-    while (past.length > 0) {
-        const inertHead = takeCandidate(past);
-        if (!inertHead || !isInertUndoUnit(inertHead.entries)) {
-            break;
-        }
-        past = inertHead.below;
-    }
+    let past = dropInertTopUnits(initialPast);
 
     // While project mutation admission fails, every inverse would refuse on
     // admission alone before any handler runs, so attempting one — or stepping
@@ -380,7 +391,8 @@ async function undoImpl(stepOverConflicts: boolean): Promise<UndoResult> {
     // A conflict no longer wedges everything beneath it (#2881) — for the
     // keystroke entry point. The conflicted unit stays retained at the head of
     // `past` — retryable, with `headConsumed: false` — and undo attempts
-    // exactly one unit beneath it, and only when every member's inverse
+    // exactly one unit beneath it, passing and dropping any fully inert units
+    // in between, and only when every member's inverse
     // resolves to a handler that declares `canReportConflict`: a handler whose
     // `execute` can genuinely refuse to write against a diverged document.
     // Handlers routed through `toHandlerExecutionResult` and callback entries

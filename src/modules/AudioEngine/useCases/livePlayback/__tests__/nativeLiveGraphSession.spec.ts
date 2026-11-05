@@ -17,6 +17,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { trackStore, type Device, type Track } from '#/modules/Arrangement/stores';
 import { readAttachedCrumbsInstanceIds } from '#/modules/Crumbs/stores';
 import { markCrumbsEngineAttached, retractEveryCrumbsEngineAttachment } from '#/modules/Crumbs/useCases';
@@ -58,6 +59,8 @@ import {
 } from '../startNativeLiveGraphSession';
 import { stopNativeLiveGraphSession } from '../stopNativeLiveGraphSession';
 import { updateNativeLiveGraphSessionTransportMaps } from '../updateNativeLiveGraphSessionTransportMaps';
+
+registerDeviceEnginePorts();
 
 const mocks = vi.hoisted(() => ({
     /** What `probeNativeGraphTransport` answers. The whole of the runtime gate. */

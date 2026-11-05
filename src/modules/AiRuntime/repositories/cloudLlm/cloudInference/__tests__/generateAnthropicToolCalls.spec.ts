@@ -1,17 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
+
 import { isHostedAiHttpStatusError } from '../../../../errors/HostedAiHttpStatusError';
 import {
     COMMAND_BATCH_DECLINE_TOOL_NAME,
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
 } from '../../../../models/AgentToolCatalogNames';
 import { type ToolSchema } from '../../../../models/Tools/Types';
-import { APPLICATION_OWNED_TOOL_SCHEMAS } from '../../../../useCases/applicationOwnedToolLoop';
+import { getApplicationOwnedToolSchemas } from '../../../../useCases/getApplicationOwnedToolSchemas';
 import { getPlanningProviderToolSchemas } from '../../../../useCases/getPlanningProviderToolSchemas';
 import { getHostedProposalWireToolSchema } from '../../../../useCases/llmOrchestration/getHostedProposalWireToolSchema';
 import { encodeWireToolName } from '../encodeWireToolName';
 import { generateAnthropicToolCalls } from '../generateAnthropicToolCalls';
 import { AUTO_TOOL_CHOICE, type HostedToolChoiceDirective } from '../hostedToolPlan';
+
+registerDeviceEnginePorts();
 
 const requestProvider = vi.hoisted(() => vi.fn());
 
@@ -725,7 +729,7 @@ describe('generateAnthropicToolCalls', () => {
 
         it.each([
             ['getPlanningProviderToolSchemas()', getPlanningProviderToolSchemas()],
-            ['APPLICATION_OWNED_TOOL_SCHEMAS', APPLICATION_OWNED_TOOL_SCHEMAS],
+            ['getApplicationOwnedToolSchemas()', getApplicationOwnedToolSchemas()],
         ])('keeps the strict subset of %s within the documented complexity caps', async (_label, toolSchemas) => {
             const body = await captureRequestBody(toolSchemas);
             const strictTools = body.tools.filter((wireTool) => wireTool.strict === true);

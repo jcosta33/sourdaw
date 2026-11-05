@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
 import {
@@ -37,6 +38,8 @@ import {
 } from '#/utils/Notification/notificationEventBus';
 
 import { executePresetLoad } from '../executePresetLoad';
+
+registerDeviceEnginePorts();
 
 // The Web Audio graph is the boundary: these specs observe project truth and
 // history, so the live strip a preset load initializes is reported as built.

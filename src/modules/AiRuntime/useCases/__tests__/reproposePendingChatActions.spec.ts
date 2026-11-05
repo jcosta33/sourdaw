@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
@@ -12,6 +13,8 @@ import {
 import { reproposePendingChatActions } from '../reproposePendingChatActions';
 
 import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 const ORIGINAL_REVISION = 'revision-original';
 const CURRENT_REVISION = 'revision-current';

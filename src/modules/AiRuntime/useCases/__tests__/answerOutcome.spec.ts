@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { projectStore, defaultProjectStoreState } from '#/modules/Project/stores';
 
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
@@ -20,6 +21,8 @@ import { parsePromptToActions } from '../parsePromptToActions';
 import { prepareAnswerInterpretationCatalog } from '../prepareAnswerInterpretationCatalog';
 
 import { answerIntakeFromTools, structuralAnswerArguments } from './answerWireFixture';
+
+registerDeviceEnginePorts();
 
 /**
  * AC-001 (#4381): a question ends the run in an `answer` outcome. The planner reaches it only

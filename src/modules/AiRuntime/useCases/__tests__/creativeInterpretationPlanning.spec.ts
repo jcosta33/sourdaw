@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { querySemanticProject } from '#/modules/Project/useCases';
@@ -18,6 +19,8 @@ import { prepareCreativeInterpretationCatalog } from '../prepareCreativeInterpre
 
 import { readCreativeInterpretationCatalog, selectCreativeInterpretationCall } from './highLevelIntentWorkflowFixture';
 import { literalMetricIntakeTurn, readMetricPublication } from './metricGoalWorkflowFixture';
+
+registerDeviceEnginePorts();
 
 vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),

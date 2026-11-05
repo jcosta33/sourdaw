@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { registerDeviceEnginePorts } from '#/app/registerDeviceEnginePorts';
 import { getAgentBuiltinDeviceFactoryManifest, getPluginById } from '#/modules/Arrangement/useCases';
 
 import { DEVICE_MANIFEST_PARAMETER_PAGE_LIMIT } from '../../models/DeviceManifestPageLimits';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
+
+registerDeviceEnginePorts();
 
 const MAX_RECEIPT_BYTES_PER_CALL = 16_384;
 
