@@ -7,7 +7,6 @@ import {
 import { markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
 import {
     createTrack,
-    getAddedDeviceParameterValues,
     getArrangementHandlers,
     reserveNextTrackColorForCommand,
     setArrangementEventBus,
@@ -120,12 +119,6 @@ const DEVICE_NAMES: Readonly<Record<string, string>> = {
     [DRUMS_TRIM_ID]: 'Drums Trim',
     [BASS_GAIN_ID]: 'Bass Gain',
 };
-
-/** The recipe values an expansion writes: an added compressor already holds the rest. */
-function compressorWrites(values: readonly { paramId: string; value: number }[]) {
-    const held = getAddedDeviceParameterValues('builtin-compressor');
-    return values.filter(({ paramId, value }) => !(held !== null && Object.is(held[paramId], value)));
-}
 
 function gainDevice(id: string): Track['devices'][number] {
     return {
@@ -1087,12 +1080,12 @@ describe('a measured preview through proposal and approval', () => {
         const expandedValues =
             typeof expansion === 'object' && expansion !== null && 'values' in expansion ? expansion.values : null;
         expect(expandedValues).toMatchObject(recipeValues);
+        // A placed Compressor already holds ratio 4 and release 100, so only the other three are written.
         expect(planned.actions).toMatchObject([
             { type: 'addDevice', payload: { trackId: 'drums', deviceType: 'builtin-compressor' } },
-            ...compressorWrites(recipeValues).map(({ paramId, value }) => ({
-                type: 'setDeviceParameter',
-                payload: { paramId, value },
-            })),
+            { type: 'setDeviceParameter', payload: { paramId: 'comp-threshold', value: -18 } },
+            { type: 'setDeviceParameter', payload: { paramId: 'comp-attack', value: 30 } },
+            { type: 'setDeviceParameter', payload: { paramId: 'comp-makeup', value: 4.5 } },
         ]);
 
         const confirmationId = persistForApproval(planned, revision);
@@ -1102,7 +1095,7 @@ describe('a measured preview through proposal and approval', () => {
         ]);
         expect(view?.recipes).toHaveLength(1);
         expect(planned.adoptedRecipes ?? []).toEqual([]);
-        expect(planned.actions).toHaveLength(1 + compressorWrites(recipeValues).length);
+        expect(planned.actions).toHaveLength(4);
         const [target] = view?.measuredPreview?.targets ?? [];
         const loudness = target?.metrics.find((metric) => metric.metricId === 'integratedLoudness');
         expect(target?.targetId).toBe('drums');
@@ -1166,14 +1159,15 @@ describe('a measured preview through proposal and approval', () => {
                 ['resolve-target', 'discover-1', 'expand-1'].map((callId) => ({ callId, status: 'success' }))
             )
         );
+        // A placed Compressor already holds ratio 4, so only the other four are written.
         expect(planned.actions).toMatchObject([
             { type: 'addDevice', payload: { trackId: 'drums', deviceType: 'builtin-compressor' } },
-            ...compressorWrites(recipeValues).map(({ paramId, value }) => ({
-                type: 'setDeviceParameter',
-                payload: { paramId, value },
-            })),
+            { type: 'setDeviceParameter', payload: { paramId: 'comp-threshold', value: -16 } },
+            { type: 'setDeviceParameter', payload: { paramId: 'comp-attack', value: 25 } },
+            { type: 'setDeviceParameter', payload: { paramId: 'comp-release', value: 90 } },
+            { type: 'setDeviceParameter', payload: { paramId: 'comp-makeup', value: 4.5 } },
         ]);
-        expect(planned.actions).toHaveLength(1 + compressorWrites(recipeValues).length);
+        expect(planned.actions).toHaveLength(5);
         expect(planned.measuredPreview).toBeUndefined();
     });
 

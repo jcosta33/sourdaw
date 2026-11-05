@@ -1,11 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
-import {
-    getAddedDeviceParameterValues,
-    getArrangementHandlers,
-    getMixRecipeCatalog,
-} from '#/modules/Arrangement/useCases';
+import { getArrangementHandlers, getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { getCanonicalTrackRoleOptions, querySemanticProject } from '#/modules/Project/useCases';
@@ -754,17 +750,93 @@ describe('recipe.expand', () => {
         projectStore.set(structuredClone(defaultProjectStoreState));
     });
 
+    // The last column is the writes each expansion keeps. A placed Compressor starts at threshold -20,
+    // ratio 4, attack 10, release 100, knee 6 and makeup 0, and a placed Noise Gate at threshold -40,
+    // attack 0.001, hold 0.01 and release 0.1 (their declared defaults), so a midpoint equal to one of
+    // those is not rewritten.
     it.each([
-        ['vocal', 'vocal-controlled', 'builtin-compressor', [-20, 4, 8.5, 90]],
-        ['drums', 'drums-controlled-gate', 'faust-noise-gate', [-42.5, 0.0051, 0.06, 0.15]],
-        ['bass', 'bass-controlled', 'builtin-compressor', [-20, 5, 14, 120]],
-        ['guitar', 'guitar-controlled', 'builtin-compressor', [-18, 4, 10, 90]],
-        ['keys', 'keys-controlled', 'builtin-compressor', [-18, 4, 10, 90]],
-        ['bus', 'bus-controlled', 'builtin-compressor', [-14, 2.5, 25, 200, 8]],
-        ['master', 'master-controlled', 'builtin-compressor', [-10, 2.5, 27.5, 200, 8]],
+        [
+            'vocal',
+            'vocal-controlled',
+            'builtin-compressor',
+            [-20, 4, 8.5, 90],
+            [
+                ['comp-attack', 8.5],
+                ['comp-release', 90],
+            ],
+        ],
+        [
+            'drums',
+            'drums-controlled-gate',
+            'faust-noise-gate',
+            [-42.5, 0.0051, 0.06, 0.15],
+            [
+                ['threshold', -42.5],
+                ['attack', 0.0051],
+                ['hold', 0.06],
+                ['release', 0.15],
+            ],
+        ],
+        [
+            'bass',
+            'bass-controlled',
+            'builtin-compressor',
+            [-20, 5, 14, 120],
+            [
+                ['comp-ratio', 5],
+                ['comp-attack', 14],
+                ['comp-release', 120],
+            ],
+        ],
+        [
+            'guitar',
+            'guitar-controlled',
+            'builtin-compressor',
+            [-18, 4, 10, 90],
+            [
+                ['comp-threshold', -18],
+                ['comp-release', 90],
+            ],
+        ],
+        [
+            'keys',
+            'keys-controlled',
+            'builtin-compressor',
+            [-18, 4, 10, 90],
+            [
+                ['comp-threshold', -18],
+                ['comp-release', 90],
+            ],
+        ],
+        [
+            'bus',
+            'bus-controlled',
+            'builtin-compressor',
+            [-14, 2.5, 25, 200, 8],
+            [
+                ['comp-threshold', -14],
+                ['comp-ratio', 2.5],
+                ['comp-attack', 25],
+                ['comp-release', 200],
+                ['comp-knee', 8],
+            ],
+        ],
+        [
+            'master',
+            'master-controlled',
+            'builtin-compressor',
+            [-10, 2.5, 27.5, 200, 8],
+            [
+                ['comp-threshold', -10],
+                ['comp-ratio', 2.5],
+                ['comp-attack', 27.5],
+                ['comp-release', 200],
+                ['comp-knee', 8],
+            ],
+        ],
     ] as const)(
         'expands %s controlled into ordinary commands with exact midpoints and revision provenance',
-        async (role, recipeId, deviceType, midpoints) => {
+        async (role, recipeId, deviceType, midpoints, writes) => {
             setTracks([
                 createTrack({ id: 'controlled-target', name: 'Controlled Target' }),
                 createTrack({ id: 'unrelated-target', name: 'Unrelated Target' }),
@@ -783,17 +855,13 @@ describe('recipe.expand', () => {
                 name: 'addDevice',
                 arguments: { trackId: 'controlled-target', deviceType, binding: 'recipe-1-0' },
             });
-            // The added device already holds its initial values, so a midpoint equal to one is not rewritten.
-            const held = getAddedDeviceParameterValues(deviceType);
-            const written = data.values.filter(
-                (entry) => !(held !== null && Object.is(held[entry.paramId], entry.value))
-            );
+            expect(data.commands).toHaveLength(1 + writes.length);
             expect(data.commands.slice(1).map((command) => command.name)).toEqual(
-                written.map(() => 'setDeviceParameter')
+                writes.map(() => 'setDeviceParameter')
             );
             expect(
                 data.commands.slice(1).map((command) => [command.arguments.paramId, command.arguments.value])
-            ).toEqual(written.map((entry) => [entry.paramId, entry.value]));
+            ).toEqual(writes);
             expect(data.values.map((entry) => entry.value)).toEqual(midpoints);
             expect(data.values.every((entry) => entry.source === 'midpoint')).toBe(true);
             expect(data.values.every((entry) => entry.value >= entry.minimum && entry.value <= entry.maximum)).toBe(
@@ -811,8 +879,8 @@ describe('recipe.expand', () => {
             const suppliedWrite = suppliedData.commands.find(
                 (command) => command.arguments.paramId === data.values[0]!.paramId
             );
-            const minimumHeld = held !== null && Object.is(held[data.values[0]!.paramId], data.values[0]!.minimum);
-            expect(suppliedWrite?.arguments.value).toBe(minimumHeld ? undefined : data.values[0]!.minimum);
+            // No first-window minimum equals the placed device's default, so the supplied value is written.
+            expect(suppliedWrite?.arguments.value).toBe(data.values[0]!.minimum);
 
             const refused = await runRecipeExpansion(`loop-controlled-refusal-${role}`, {
                 recipeId,

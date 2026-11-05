@@ -561,9 +561,8 @@ describe('preset recipes', () => {
                 );
             });
 
-            expect(
-                Object.fromEntries(undiscovered.map((preset) => [preset.id, CHAIN_PRESET_EXCLUSIONS[preset.id]]))
-            ).toEqual(CHAIN_PRESET_EXCLUSIONS);
+            // Compared as id sets: an undiscovered preset the table does not list must fail here.
+            expect(undiscovered.map((preset) => preset.id).sort()).toEqual(Object.keys(CHAIN_PRESET_EXCLUSIONS).sort());
             for (const preset of undiscovered) {
                 const reason = CHAIN_PRESET_EXCLUSIONS[preset.id];
                 const published = publishedFrom(preset.id);
