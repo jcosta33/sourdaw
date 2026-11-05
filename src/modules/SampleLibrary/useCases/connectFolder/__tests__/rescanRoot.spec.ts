@@ -6,6 +6,9 @@ const mocks = vi.hoisted(() => {
         scanBrowserDirectory: vi.fn(),
         scanNativeDirectory: vi.fn(),
         updateLibraryRootStatus: vi.fn(),
+        reloadFactoryLibraryBuffers: vi.fn(async () => {}),
+        loggerError: vi.fn(),
+        audioContext: {},
         storeValue,
     };
 });
@@ -19,6 +22,12 @@ vi.mock('../../../stores/libraryStore', () => ({
     },
     updateLibraryRootStatus: mocks.updateLibraryRootStatus,
 }));
+
+vi.mock('../../factoryLibrary/reloadFactoryLibraryBuffers', () => ({
+    reloadFactoryLibraryBuffers: mocks.reloadFactoryLibraryBuffers,
+}));
+vi.mock('#/modules/AudioEngine/useCases', () => ({ getAudioContext: () => mocks.audioContext }));
+vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: mocks.loggerError } }));
 
 import { rescanRoot } from '../rescanRoot';
 
@@ -70,6 +79,30 @@ describe('rescanRoot', () => {
         expect(mocks.updateLibraryRootStatus).toHaveBeenCalledWith('r1', 'scanning');
         expect(mocks.scanBrowserDirectory).toHaveBeenCalledTimes(1);
         expect(mocks.scanNativeDirectory).not.toHaveBeenCalled();
+    });
+
+    it('re-renders the handle-less factory root instead of leaving it untouched', async () => {
+        // Restored after a relaunch, the factory root is an offline browser
+        // shim with no handle; its rescan reloads the synthesised buffers.
+        seedRoots([{ id: 'factory', provider: 'browser' }]);
+
+        await rescanRoot('factory');
+
+        expect(mocks.reloadFactoryLibraryBuffers).toHaveBeenCalledExactlyOnceWith(mocks.audioContext);
+        expect(mocks.scanBrowserDirectory).not.toHaveBeenCalled();
+        expect(mocks.scanNativeDirectory).not.toHaveBeenCalled();
+    });
+
+    it('logs a failed factory reload rather than rejecting the rescan', async () => {
+        const renderError = new Error('render-timed-out');
+        mocks.reloadFactoryLibraryBuffers.mockRejectedValueOnce(renderError);
+        seedRoots([{ id: 'factory', provider: 'browser' }]);
+
+        await expect(rescanRoot('factory')).resolves.toBeUndefined();
+
+        expect(mocks.loggerError).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({ message: 'Factory library reload failed', cause: renderError })
+        );
     });
 
     it('scans a native root and marks it scanning', async () => {

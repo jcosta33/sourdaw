@@ -1,4 +1,9 @@
+import { logger } from '#/infra/logger/appLogger';
+import { getAudioContext } from '#/modules/AudioEngine/useCases';
+import { FACTORY_LIBRARY_ROOT_ID } from '#/modules/FactorySynthesis/useCases';
+
 import { libraryStore, updateLibraryRootStatus } from '../../stores/libraryStore';
+import { reloadFactoryLibraryBuffers } from '../factoryLibrary/reloadFactoryLibraryBuffers';
 
 import { scanBrowserDirectory } from './scanBrowserDirectory';
 import { scanNativeDirectory } from './scanNativeDirectory';
@@ -18,6 +23,17 @@ export async function rescanRoot(rootId: string): Promise<void> {
 
     const root = state.roots.find((r) => r.id === rootId);
     if (!root) {
+        return;
+    }
+
+    // The factory root has no files to traverse: its rescan renders and caches
+    // its synthesised buffers again, and settles its own status either way.
+    if (root.id === FACTORY_LIBRARY_ROOT_ID) {
+        try {
+            await reloadFactoryLibraryBuffers(getAudioContext());
+        } catch (error) {
+            logger.error(new Error('Factory library reload failed', { cause: error }));
+        }
         return;
     }
 

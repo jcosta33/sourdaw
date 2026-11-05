@@ -1,70 +1,22 @@
-import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 import {
     FACTORY_LIBRARY_ROOT_ID,
     FACTORY_SEED_FLAG_KEY,
     renderFactorySamples,
 } from '#/modules/FactorySynthesis/useCases';
 
-import { type LibraryRoot, type SampleAnalysis, type SampleRecord, toBpm } from '../models/LibraryTypes';
+import { type LibraryRoot } from '../models/LibraryTypes';
 import { persistLibraryRoots } from '../repositories/libraryPersistence/persistLibraryRoots';
 import { persistSamples } from '../repositories/libraryPersistence/persistSamples';
-import { addLibraryRoot, addSamples, libraryStore } from '../stores/libraryStore';
+import { addLibraryRoot, addSamples, libraryStore, updateLibraryRootStatus } from '../stores/libraryStore';
 
 import { buildFolderTree } from './buildFolderTree';
+import { cacheFactoryBuffers } from './factoryLibrary/cacheFactoryBuffers';
+import { findFactoryRoot } from './factoryLibrary/findFactoryRoot';
+import { reloadFactoryLibraryBuffers } from './factoryLibrary/reloadFactoryLibraryBuffers';
+import { toFactorySampleRecord } from './factoryLibrary/toFactorySampleRecord';
 
-type FactorySample = Awaited<ReturnType<typeof renderFactorySamples>>[number];
-
-function getCategoryFolder(sample: FactorySample): string {
-    const primary = sample.tags[0] ?? sample.category;
-    const parts = sample.id.split('-');
-    if (parts.length >= 3) {
-        return `${sample.category}/${parts[1]}-${parts[2]}`.replaceAll(/[^a-zA-Z0-9/-]/g, '');
-    }
-    return `${sample.category}/${primary}`;
-}
-
-function toFactoryAnalysis(sample: FactorySample): SampleAnalysis | undefined {
-    if (sample.bpm === undefined) {
-        return undefined;
-    }
-    const bpm = toBpm(sample.bpm);
-    // A factory sample with an absurd declared BPM carries no analysis rather
-    // than a junk value (the brand constructor is the only gate to a Bpm).
-    return bpm === undefined ? undefined : { bpm };
-}
-
-function toSampleRecord(sample: FactorySample): SampleRecord {
-    const folder = getCategoryFolder(sample);
-    const relativePath = `${folder}/${sample.name}.factory`;
-    return {
-        id: sample.id,
-        libraryRootId: FACTORY_LIBRARY_ROOT_ID,
-        relativePath,
-        displayName: sample.name,
-        ext: 'factory',
-        folder,
-        sync: {
-            exists: true,
-            mtimeMs: 0,
-            sizeBytes: sample.buffer.length * sample.buffer.numberOfChannels * 4,
-            status: 'analyzed',
-        },
-        format: {
-            durationSec: sample.buffer.duration,
-            sampleRate: sample.buffer.sampleRate,
-            channels: sample.buffer.numberOfChannels,
-            bitDepth: 32,
-        },
-        analysis: toFactoryAnalysis(sample),
-        tags: [...sample.tags, 'factory'],
-        favorite: false,
-    };
-}
-
-function ensureFactoryRoot(): void {
-    const state = libraryStore.value;
-    const existing = state?.roots.find((r) => r.id === FACTORY_LIBRARY_ROOT_ID);
-    if (existing) {
+function ensureFactoryRoot(fileCount: number): void {
+    if (findFactoryRoot()) {
         return;
     }
     const root: LibraryRoot = {
@@ -77,53 +29,55 @@ function ensureFactoryRoot(): void {
         rootRef: '',
         connectedAt: Date.now(),
         status: 'ready',
-        fileCount: 0,
+        fileCount,
         settings: { recursive: true },
     };
     // Only auto-focus the factory root when nothing else is focused. Seeding
     // runs after restoreLibrary, so unconditionally activating here would re-wipe
     // a restored session's focus back to 'Factory Samples'.
-    addLibraryRoot(root, { activate: !state?.activeRootId });
+    addLibraryRoot(root, { activate: !libraryStore.value?.activeRootId });
 }
 
-/** Yield to the event loop so the main thread can paint between seed phases. */
-function yieldToEventLoop(): Promise<void> {
-    return new Promise((resolve) => {
-        setTimeout(resolve, 0);
-    });
+function hasSeededFactoryLibrary(): boolean {
+    return typeof localStorage !== 'undefined' && localStorage.getItem(FACTORY_SEED_FLAG_KEY) !== null;
 }
 
-export async function seedFactoryLibrary(ctx: AudioContext): Promise<void> {
-    if (typeof localStorage !== 'undefined' && localStorage.getItem(FACTORY_SEED_FLAG_KEY) !== null) {
-        return;
+function markFactoryLibrarySeeded(): void {
+    if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(FACTORY_SEED_FLAG_KEY, String(Date.now()));
     }
+}
 
+/** First launch: create the factory root and its records, then persist them once. */
+async function seedFactoryRecords(ctx: AudioContext): Promise<void> {
     const samples = await renderFactorySamples(ctx);
-    ensureFactoryRoot();
+    ensureFactoryRoot(samples.length);
+    await cacheFactoryBuffers(samples);
 
-    const records = samples.map(toSampleRecord);
-
-    // Register the synthesised buffers in chunks, yielding to the event loop
-    // between chunks so the first-launch seed does not hold the main thread in
-    // one unbroken stretch while hundreds of buffers are cached.
-    const CHUNK = 16;
-    for (let i = 0; i < samples.length; i += CHUNK) {
-        const end = Math.min(i + CHUNK, samples.length);
-        for (let j = i; j < end; j++) {
-            cacheAudioBuffer({ buffer: samples[j]!.buffer, bufferId: samples[j]!.id });
-        }
-        if (end < samples.length) {
-            await yieldToEventLoop();
-        }
-    }
-
-    addSamples(records);
+    addSamples(samples.map(toFactorySampleRecord));
     buildFolderTree(FACTORY_LIBRARY_ROOT_ID);
+    // A root that already existed (the flag was cleared, not the library) may
+    // have been restored offline; its buffers are cached now.
+    updateLibraryRootStatus(FACTORY_LIBRARY_ROOT_ID, 'ready', samples.length);
 
     await persistLibraryRoots();
     await persistSamples();
 
-    if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(FACTORY_SEED_FLAG_KEY, String(Date.now()));
+    markFactoryLibrarySeeded();
+}
+
+/**
+ * Make the factory library playable for this session. The flag records that
+ * the library was seeded once: without it, seed it; with it, re-render the
+ * buffers of the restored root, or leave a root the user disconnected gone.
+ */
+export async function seedFactoryLibrary(ctx: AudioContext): Promise<void> {
+    if (!hasSeededFactoryLibrary()) {
+        await seedFactoryRecords(ctx);
+        return;
     }
+    if (!findFactoryRoot()) {
+        return;
+    }
+    await reloadFactoryLibraryBuffers(ctx);
 }

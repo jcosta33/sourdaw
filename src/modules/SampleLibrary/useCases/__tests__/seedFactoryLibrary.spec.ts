@@ -36,14 +36,32 @@ function createLruCacheFixture() {
 
 const lru = createLruCacheFixture();
 
-const mocks = vi.hoisted(() => ({
-    libraryStoreValue: { value: { roots: [], samples: [] } },
-    addLibraryRoot: vi.fn(),
-    addSamples: vi.fn(),
-    persistLibraryRoots: vi.fn(async () => {}),
-    persistSamples: vi.fn(async () => {}),
-    buildFolderTree: vi.fn(),
-}));
+type TestRoot = { id: string; status?: string; fileCount?: number };
+
+const mocks = vi.hoisted(() => {
+    const libraryStoreValue: { value: { roots: TestRoot[]; samples: unknown[]; activeRootId?: string } } = {
+        value: { roots: [], samples: [] },
+    };
+    return {
+        libraryStoreValue,
+        addLibraryRoot: vi.fn(),
+        addSamples: vi.fn(),
+        // Stateful like the real writer, so a case reads the root's status
+        // from the store rather than from the order of spy calls.
+        updateLibraryRootStatus: vi.fn((rootId: string, status: string, fileCount?: number) => {
+            const state = libraryStoreValue.value;
+            libraryStoreValue.value = {
+                ...state,
+                roots: state.roots.map((root) =>
+                    root.id === rootId ? { ...root, status, fileCount: fileCount ?? root.fileCount } : root
+                ),
+            };
+        }),
+        persistLibraryRoots: vi.fn(async () => {}),
+        persistSamples: vi.fn(async () => {}),
+        buildFolderTree: vi.fn(),
+    };
+});
 
 vi.mock('../../stores/libraryStore', () => ({
     libraryStore: {
@@ -53,6 +71,7 @@ vi.mock('../../stores/libraryStore', () => ({
     },
     addLibraryRoot: mocks.addLibraryRoot,
     addSamples: mocks.addSamples,
+    updateLibraryRootStatus: mocks.updateLibraryRootStatus,
 }));
 
 vi.mock('../../repositories/libraryPersistence/persistLibraryRoots', () => ({
@@ -90,6 +109,7 @@ vi.mock('#/modules/FactorySynthesis/useCases', async (importOriginal) => ({
 import { cacheAudioBuffer } from '#/modules/AudioEngine/useCases';
 import { FACTORY_SEED_FLAG_KEY, renderFactorySamples } from '#/modules/FactorySynthesis/useCases';
 
+import { reloadFactoryLibraryBuffers } from '../factoryLibrary/reloadFactoryLibraryBuffers';
 import { seedFactoryLibrary } from '../seedFactoryLibrary';
 
 type RenderedSample = Awaited<ReturnType<typeof renderFactorySamples>>[number];
@@ -191,11 +211,7 @@ describe('seedFactoryLibrary', () => {
         });
 
         localStorage.removeItem(FACTORY_SEED_FLAG_KEY);
-        mocks.libraryStoreValue.value = {
-            roots: [],
-            samples: [],
-            activeRootId: 'restored-root',
-        } as unknown as typeof mocks.libraryStoreValue.value;
+        mocks.libraryStoreValue.value = { roots: [], samples: [], activeRootId: 'restored-root' };
         await seedFactoryLibrary(ctx);
         expect(mocks.addLibraryRoot).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'factory' }), {
             activate: false,
@@ -232,25 +248,116 @@ describe('seedFactoryLibrary', () => {
         expect(cacheAudioBuffer).toHaveBeenCalledTimes(RENDERED_SAMPLE_COUNT);
     });
 
-    it('is idempotent — skips seeding, synthesis included, when the flag is present', async () => {
+    it('does not resurrect a factory root the user disconnected after the first seed', async () => {
+        // The flag says the library was seeded once; the restored store has no
+        // factory root, so the user removed it on purpose.
         localStorage.setItem(FACTORY_SEED_FLAG_KEY, '1');
         await seedFactoryLibrary(ctx);
 
         expect(renderFactorySamples).not.toHaveBeenCalled();
         expect(mocks.addLibraryRoot).not.toHaveBeenCalled();
         expect(mocks.addSamples).not.toHaveBeenCalled();
+        expect(mocks.updateLibraryRootStatus).not.toHaveBeenCalled();
         expect(cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.persistSamples).not.toHaveBeenCalled();
     });
 
     it('does not re-add the factory root if one already exists', async () => {
-        mocks.libraryStoreValue.value = {
-            roots: [{ id: 'factory' }],
-            samples: [],
-        } as unknown as typeof mocks.libraryStoreValue.value;
+        mocks.libraryStoreValue.value = { roots: [{ id: 'factory', status: 'offline', fileCount: 0 }], samples: [] };
 
         await seedFactoryLibrary(ctx);
 
         expect(mocks.addLibraryRoot).not.toHaveBeenCalled();
         expect(mocks.addSamples).toHaveBeenCalledTimes(1);
+        expect(mocks.libraryStoreValue.value.roots[0]).toMatchObject({
+            status: 'ready',
+            fileCount: RENDERED_SAMPLE_COUNT,
+        });
+    });
+
+    describe('on a relaunch, with the factory root restored from storage', () => {
+        beforeEach(() => {
+            // restoreLibrary brings the handle-less factory root back offline,
+            // and no buffer survives the previous session in memory.
+            localStorage.setItem(FACTORY_SEED_FLAG_KEY, '1');
+            mocks.libraryStoreValue.value = {
+                roots: [{ id: 'factory', status: 'offline', fileCount: RENDERED_SAMPLE_COUNT }],
+                samples: rendered.map((sample) => ({ id: sample.id, libraryRootId: 'factory' })),
+            };
+        });
+
+        it('re-renders and re-caches every factory buffer under its sample id, then marks the root ready', async () => {
+            let statusWhileRendering: string | undefined;
+            vi.mocked(renderFactorySamples).mockImplementationOnce(async () => {
+                statusWhileRendering = mocks.libraryStoreValue.value.roots[0]?.status;
+                return rendered;
+            });
+
+            await seedFactoryLibrary(ctx);
+
+            expect(renderFactorySamples).toHaveBeenCalledExactlyOnceWith(ctx);
+            expect(statusWhileRendering).toBe('scanning');
+            const cached = vi.mocked(cacheAudioBuffer).mock.calls.map(([call]) => call);
+            expect(cached).toEqual(rendered.map((sample) => ({ buffer: sample.buffer, bufferId: sample.id })));
+            expect(mocks.libraryStoreValue.value.roots[0]).toMatchObject({
+                status: 'ready',
+                fileCount: RENDERED_SAMPLE_COUNT,
+            });
+        });
+
+        it('keeps the persisted root and records as they are', async () => {
+            await seedFactoryLibrary(ctx);
+
+            expect(mocks.addLibraryRoot).not.toHaveBeenCalled();
+            expect(mocks.addSamples).not.toHaveBeenCalled();
+            expect(mocks.buildFolderTree).not.toHaveBeenCalled();
+            expect(mocks.persistLibraryRoots).not.toHaveBeenCalled();
+            expect(mocks.persistSamples).not.toHaveBeenCalled();
+        });
+
+        it('lists a factory sample the stored library lacks, such as one a later release added', async () => {
+            const added = rendered.at(-1)!;
+            mocks.libraryStoreValue.value = {
+                ...mocks.libraryStoreValue.value,
+                samples: rendered.slice(0, -1).map((sample) => ({ id: sample.id, libraryRootId: 'factory' })),
+            };
+
+            await seedFactoryLibrary(ctx);
+
+            const records: { id: string }[] = mocks.addSamples.mock.calls[0]![0];
+            expect(records.map((record) => record.id)).toEqual([added.id]);
+            expect(mocks.buildFolderTree).toHaveBeenCalledWith('factory');
+        });
+
+        it('leaves the root offline, not scanning, when the render fails', async () => {
+            const renderError = new Error('Factory sample synthesis failed in its worker (render-timed-out)');
+            vi.mocked(renderFactorySamples).mockRejectedValueOnce(renderError);
+
+            await expect(seedFactoryLibrary(ctx)).rejects.toBe(renderError);
+
+            expect(mocks.libraryStoreValue.value.roots[0]?.status).toBe('offline');
+            expect(cacheAudioBuffer).not.toHaveBeenCalled();
+            expect(localStorage.getItem(FACTORY_SEED_FLAG_KEY)).toBe('1');
+        });
+
+        it('caches nothing when the user disconnects the root while it renders', async () => {
+            vi.mocked(renderFactorySamples).mockImplementationOnce(async () => {
+                mocks.libraryStoreValue.value = { roots: [], samples: [] };
+                return rendered;
+            });
+
+            await seedFactoryLibrary(ctx);
+
+            expect(cacheAudioBuffer).not.toHaveBeenCalled();
+            expect(mocks.addSamples).not.toHaveBeenCalled();
+            expect(mocks.libraryStoreValue.value.roots).toEqual([]);
+        });
+
+        it('shares one render between overlapping loads', async () => {
+            await Promise.all([seedFactoryLibrary(ctx), reloadFactoryLibraryBuffers(ctx)]);
+
+            expect(renderFactorySamples).toHaveBeenCalledTimes(1);
+            expect(cacheAudioBuffer).toHaveBeenCalledTimes(RENDERED_SAMPLE_COUNT);
+        });
     });
 });
