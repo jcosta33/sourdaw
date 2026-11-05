@@ -1,0 +1,122 @@
+src/modules/Command/models/__tests__/UndoUnit.spec.ts
+  s_fec7059b7a251c::t_9b1a6c8267d465 1-2,5-78
+  s_3bb122e91d89a5::t_e793a38195bbcc 3-4,79-103
+src/modules/Command/stores/__tests__/undoStepStore.spec.ts
+  s_fec7059b7a251c::t_db4bb87abf3f62 2,7,9,13-15,32-48,75-82,95-108,109,111-117,119,121-123,162-168,170-175,190-195,197-198,200-206,225-244
+  s_fec7059b7a251c::t_7d85ce905d4de0 6,8,10-11,49-74,83-94,110,118,120,148-161,169,176-189,196,199,207-222
+  s_e55e77499e6fbf::t_274d305587a8fc 223-224
+  s_e55e77499e6fbf::t_abfa130f049230 1,3-5,12,16-31,245-285
+  s_fec7059b7a251c::t_35cf4d14c96a19 132
+  s_fec7059b7a251c::t_15c7472d1d41e6 124-131,133-147
+src/modules/WorkspaceShell/presentations/hooks/__tests__/useUndoState.spec.ts
+  s_fec7059b7a251c::t_b8b8d2d208bb30 1-2,4,6,8-15,19,31-33,39,43-47,51-52,55-57,59-63,68
+src/modules/Command/stores/undoStepStore.ts
+  s_fec7059b7a251c::t_0b7bc79d44b3c1 1-3,5-8,10-13,16-27,35-36,39,44-45,48,52-60,70-92
+  s_fec7059b7a251c::t_095ebc81ad1bf5 9
+  s_f5b7135506ff1e::t_19bb36a7cfb659 61-67,69
+  s_ba80576e6f5cb5::t_05c4822a1acd0c 14-15,37-38,40-41,43,46-47,68
+  s_fec7059b7a251c::t_07a4aa37b20e01 4
+  s_fec7059b7a251c::t_d7c87a34966270 28-34,42,48-52
+src/modules/Command/stores/index.ts
+  s_fec7059b7a251c::t_7410f50f3475b2 10-13
+src/modules/Command/models/UndoUnit.ts
+  s_fec7059b7a251c::t_d1800f02254b14 1-58,73-76
+  s_0314bb17e5dee3::t_6e4a52f1b790d8 59-72
+  s_fec7059b7a251c::t_e89c5a4da50d06 77-84,86-89
+  s_fec7059b7a251c::t_358609cf093c1c 85
+src/modules/WorkspaceShell/presentations/hooks/useUndoState.ts
+  s_fec7059b7a251c::t_3dc905d9bc6d12 2-3,6,8,11,14-17
+src/modules/Command/presentations/views/UndoHistoryPanel.tsx
+  s_fec7059b7a251c::t_e4554f9d2923c1 17,20,25,50,60,66-70,72-73,84,90-105,107-108
+  s_ba80576e6f5cb5::t_e1f3e8eafbad43 18,33-34,71,106
+src/modules/Command/presentations/views/__tests__/UndoHistoryPanel.spec.tsx
+  s_fec7059b7a251c::t_88788c72a7ed2d 4-5,33-34,36-42,43,48-58,63,71,83,95,107,119,127-147,149-163,165-166,187
+  s_f5b7135506ff1e::t_0a2d3e3148d437 35,44-47
+  s_0314bb17e5dee3::t_37c808dd4ecafa 26-27,32,148,164,167-186
+src/modules/Command/useCases/redo.ts
+  s_fec7059b7a251c::t_74e36c7c71ad66 6,231-232,235,321,360,386
+  s_fec7059b7a251c::t_ae073d69842a07 328,362-365,391-394,420-434
+src/modules/Command/useCases/undo.ts
+  s_fec7059b7a251c::t_1275f865fb83f5 126-127,130
+  s_ba80576e6f5cb5::t_a2f4ec730f7ab7 5,357
+  s_ba80576e6f5cb5::t_abf662c7433e88 391-392
+src/modules/Command/useCases/moveHistoryToStep.ts
+  s_fec7059b7a251c::t_743fdc563ea389 1-45,47-53,56,62-83
+  s_e55e77499e6fbf::t_5ee08251ff49f5 46,54-55,57-61
+src/modules/Command/useCases/__tests__/moveHistoryToStep.integration.spec.ts
+  s_fec7059b7a251c::t_8a1eeb81d155bc 5
+  s_55244eb93b97d1::t_32c9c1d91fab26 4,11-15,86,100,127-128,144-145,162,171,177-178,190-192,207-209,214-226
+src/modules/Command/useCases/__tests__/moveHistoryToStep.spec.ts
+  s_ba80576e6f5cb5::t_ff62632c80a416 3,92,105,111,117,130,144,155,161,169-170,177,193,210,215-247
+  s_55244eb93b97d1::t_84b335bd0066a1 15,147-148,248-291
+src/modules/Command/useCases/__tests__/moveHistoryToStepStepping.spec.ts
+  s_ba80576e6f5cb5::t_ba09b9635b4a4c 7,13-14,17,100,129,149
+src/modules/Command/useCases/undoRedo.ts
+  s_ba80576e6f5cb5::t_5be1143c9a9529 9
+src/modules/Command/useCases/__tests__/undoRedoReplayConflicts.spec.ts
+  s_fec7059b7a251c::t_51ef8ca279ef00 823-888
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "edd556236c6fab8f34dbf497afc22bcd6754e0a2",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_e55e77499e6fbf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fd7dd5e0-857f-4467-a958-f9009df751e8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_f5b7135506ff1e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f206df02-3793-452b-be4f-eaed5840e469",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
