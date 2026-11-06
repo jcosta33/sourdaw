@@ -1,0 +1,24 @@
+src/modules/AudioEngine/models/TransientShaperControl.ts
+  s_fec7059b7a251c::t_dc98e3915af4bd 113-120
+src/modules/AudioEngine/worklets/__tests__/transientShaperProcessor.spec.ts
+  s_fec7059b7a251c::t_2f83c5dbd27364 211-225
+  s_fec7059b7a251c::t_bfbbafec31dfb4 11
+src/modules/AudioEngine/models/__tests__/TransientShaperControl.spec.ts
+  s_fec7059b7a251c::t_8d0ffe50d01d42 1-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "059980429220d72d90c97165c5e5fd85e60c77e6",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
