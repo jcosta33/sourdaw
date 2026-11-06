@@ -24,7 +24,7 @@ const SYNTH_FAMILY_GUIDANCE_VERSION_BUMPS: Readonly<Record<string, string>> = {
 // The display name is part of the descriptor fingerprint, so giving the Faust
 // De-esser, LUFS meter and widener names distinct from their builtins' bumps these.
 const FAUST_RENAME_VERSION_BUMPS: Readonly<Record<string, string>> = {
-    'faust-lufs-meter': 'descriptor-v1:ff0fd6db',
+    'faust-lufs-meter': 'descriptor-v1:6b8d7980',
     'faust-stereo-widener': 'descriptor-v1:1af04a73',
     'faust-de-esser': 'descriptor-v1:d2abdc9c',
 };

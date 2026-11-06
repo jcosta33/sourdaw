@@ -194,7 +194,7 @@ const FAUST_EFFECT_DESCRIPTOR_DATA: PluginDescriptor[] = [
     },
     {
         id: 'faust-lufs-meter',
-        name: 'Short-Term LUFS Meter',
+        name: 'Live LUFS Meter',
         vendor: 'Sourdaw',
         format: 'builtin',
         category: 'analyzer',
