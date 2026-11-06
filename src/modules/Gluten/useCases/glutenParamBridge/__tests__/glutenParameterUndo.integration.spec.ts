@@ -40,6 +40,7 @@ import { setGlutenParamWithAudio } from '../setGlutenParamWithAudio';
 const engineWrites: { trackId: string; deviceId: string; paramId: string; value: number }[] = [];
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: vi.fn() },
     rearmCommittedTrackInputMonitoring: vi.fn(async () => undefined),
     reconcileAutoInputMonitoring: vi.fn(),
     stopTrackInputMonitoring: vi.fn(),

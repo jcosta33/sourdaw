@@ -1,9 +1,7 @@
-import { cvGateStore } from '#/modules/CvGate/stores';
-import { addCvOutput } from '#/modules/CvGate/useCases';
 import { createHandler } from '#/utils/createHandler';
 
-// AudioEngine-local shape (AGENTS.md §95 — model isolation).
-type CvOutputType = 'cv-pitch' | 'cv-velocity' | 'cv-modulation' | 'gate' | 'trigger' | 'clock';
+import { cvGateStore, type CvOutputChannel } from '../../stores/cvGate';
+import { addCvOutput } from '../../useCases/cvOutputOperations/addCvOutput';
 
 /**
  * #4615 — `executeAppAction` calls `describe()` BEFORE `execute()` to capture
@@ -36,7 +34,7 @@ export const handleAddCvOutput = createHandler<'addCvOutput'>({
         const preWriteChannelOccupied = cvGateStore.value?.outputs.some(
             (output) => output.outputChannel === alpha.payload.channel
         );
-        addCvOutput(alpha.payload.name, alpha.payload.channel, alpha.payload.type as CvOutputType);
+        addCvOutput(alpha.payload.name, alpha.payload.channel, alpha.payload.type as CvOutputChannel['type']);
         // The use case enforces one output per channel, so the output now on this
         // channel is the added one iff the channel was free before and is taken
         // now. Otherwise (invalid type, duplicate channel, or no store) the use

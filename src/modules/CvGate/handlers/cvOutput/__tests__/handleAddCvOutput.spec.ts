@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { type CvGateState } from '#/modules/CvGate/stores';
-import { addCvOutput } from '#/modules/CvGate/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { type CvGateState } from '../../../stores/cvGate';
+import { addCvOutput } from '../../../useCases/cvOutputOperations/addCvOutput';
 import { handleAddCvOutput } from '../handleAddCvOutput';
 
 const mocks = vi.hoisted(() => ({
@@ -12,8 +12,8 @@ const mocks = vi.hoisted(() => ({
     },
 }));
 
-vi.mock('#/modules/CvGate/stores', () => ({ cvGateStore: mocks.cvGateStore }));
-vi.mock('#/modules/CvGate/useCases', () => ({ addCvOutput: vi.fn() }));
+vi.mock('../../../stores/cvGate', () => ({ cvGateStore: mocks.cvGateStore }));
+vi.mock('../../../useCases/cvOutputOperations/addCvOutput', () => ({ addCvOutput: vi.fn() }));
 
 function storeWithOutputs(outputs: CvGateState['outputs']): void {
     mocks.cvGateStore.value.outputs = outputs;

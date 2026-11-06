@@ -117,6 +117,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     countSettledTakes: () => mocks.takes.settled,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: vi.fn() },
     exportCachedAudioBuffers: vi.fn(() => {
         throw new Error('Unexpected exportCachedAudioBuffers in this fixture');
     }),

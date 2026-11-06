@@ -12,11 +12,13 @@ import {
     registerCrdtStorageRuntime,
     removeCrdtDoc,
 } from '#/modules/CrdtDocument/useCases';
+import { cvGateStore } from '#/modules/CvGate/stores';
 
 import { createDefaultProductionBrief } from '../../../models/ProductionBrief';
 import { isCanonicalProjectId } from '../../../models/ProjectData';
 import { projectStore } from '../../../stores/projectStore';
 import { buildProjectData } from '../fileIO/buildProjectData';
+import { cvGateProjection } from '../fileIO/cvGateProjection';
 import { midiLearnProjection } from '../fileIO/midiLearnProjection';
 import { migrateActiveProjectIdentity } from '../migrateActiveProjectIdentity';
 
@@ -71,9 +73,11 @@ function documentProjectId(): unknown {
     return (getCrdtDoc<Record<string, Record<string, unknown>>>('root')?.projectMeta ?? {}).projectId;
 }
 
-// The composition root's MIDI learn projection over the live store: the
-// registrar itself cannot load while whole module barrels are mocked.
+// The composition root's MIDI learn and CV/gate projections over the live
+// stores: the registrar itself cannot load while whole module barrels are
+// mocked.
 midiLearnProjection.configure({ readMidiLearn: () => midiLearnStore.value });
+cvGateProjection.configure({ readCvGate: () => cvGateStore.value });
 
 describe('migrateActiveProjectIdentity against a live legacy Automerge document', () => {
     beforeEach(() => {

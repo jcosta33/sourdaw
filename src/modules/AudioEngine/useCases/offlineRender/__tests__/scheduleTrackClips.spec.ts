@@ -12,6 +12,7 @@ import {
     projectClipControllerEvents,
     shouldPlayMidiEvent,
 } from '#/modules/MIDI/useCases';
+import * as synthVoices from '#/modules/Synth/useCases';
 import {
     beatAtSecondsFromAnchor,
     projectPpqEndpoints as projectTransportEndpoints,
@@ -29,6 +30,7 @@ import { type OfflineMidiProbabilitySelector } from '../../../repositories/offli
 import { type OfflineYeastMidiProcessor } from '../../../repositories/offlineScheduler/offlineYeastMidiProcessorState';
 import { type DeviceNodeEntry } from '../../buildDeviceChain';
 import { configureOfflineDeviceParameterLaw } from '../../configureOfflineDeviceParameterLaw';
+import { builtinSynthVoice } from '../../scheduling/builtinSynthVoice';
 import { acquireRenderLock } from '../acquireRenderLock';
 import { cancelExport } from '../exportCancellation';
 import { exportCancellationState } from '../exportCancellationState';
@@ -36,6 +38,9 @@ import { isCancelRequested } from '../isCancelRequested';
 import { schedulePendingSuspends } from '../schedulePendingSuspends';
 import { scheduleTrackClips } from '../scheduleTrackClips';
 import { type PendingControlWorkletEvent, type PendingNoteWorkletEvent, type PendingWorkletEvent } from '../types';
+
+// The voices this spec's notes sound through, as the composition root registers them.
+builtinSynthVoice.configure(synthVoices);
 
 function isPendingNoteWorkletEvent(event: PendingWorkletEvent): event is PendingNoteWorkletEvent {
     return event.type === 'on' || event.type === 'off';

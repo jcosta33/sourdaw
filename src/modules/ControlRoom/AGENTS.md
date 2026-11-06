@@ -14,6 +14,7 @@ Public surface: `useCases/index.ts`, `stores/index.ts`. The module exports no ev
 
 - **`stores/controlRoom.ts`**: Reactive state machine holding monitor speaker configurations, active monitor ID, monitoring volume (dB), dim attenuation level/active flag, mono monitoring status, reference audition toggle, cue mix definitions, and talkback level.
 - **`useCases/controlRoom/`**: State manipulation use cases and effective volume computation (`getEffectiveVolume = monitorVolume + (dimActive ? dimLevel : 0) + activeMonitor.gainDb + activeMonitor.calibrationDb`).
+- **`useCases/controlRoom/syncControlRoomMonitoring.ts`**: The only writer of the engine's monitoring insert. It applies the store's mono and dim to the listening path through AudioEngine's `setControlRoomMonitoring` on setup and on every store change; the dim level is folded to a linear gain here, so the engine never reads monitoring state. The shell's boot sequence subscribes it.
 - **`handlers/`**: Production command handlers translating UI/agent commands to control room state modifications.
 
 ## Invariants & Traps

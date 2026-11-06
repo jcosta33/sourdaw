@@ -18,6 +18,7 @@ const { cancelPreparedBuffers, prepareCachedAudioBuffersFromIdb, publishPrepared
 // switchArrangement imports getAudioContext and prepareCachedAudioBuffersFromIdb;
 // runProjectLoadTransaction.activate imports cancelPendingAudioBufferImport.
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: vi.fn() },
     createNativeRecordingCaptureClock: vi.fn(() => ({
         admission: null,
         last: null,

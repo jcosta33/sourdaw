@@ -2,11 +2,16 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import { type Track } from '#/modules/Arrangement/stores';
 import { type MidiStoreState } from '#/modules/MIDI/stores';
+import * as synthVoices from '#/modules/Synth/useCases';
 
 import { getDrumKitByIndex } from '../../../models/FactoryDrumKits';
 import { type DeviceNodeEntry } from '../../buildDeviceChain';
+import { builtinSynthVoice } from '../../scheduling/builtinSynthVoice';
 import { scheduleTrackClips } from '../scheduleTrackClips';
 import { type PendingWorkletEvent } from '../types';
+
+// The voices this spec's notes sound through, as the composition root registers them.
+builtinSynthVoice.configure(synthVoices);
 
 // Only the two kit-note schedulers Synth's barrel exports are observed. The
 // device resolution, the drum-kit definitions and the factory kit table above

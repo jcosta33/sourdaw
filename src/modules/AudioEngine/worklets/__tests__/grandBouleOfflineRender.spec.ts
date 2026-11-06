@@ -1,12 +1,17 @@
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 
 import { type Track } from '#/modules/Arrangement/stores';
+import * as synthVoices from '#/modules/Synth/useCases';
 
 import {
     createOfflineWorkletRenderHarness,
     harnessRmsBetween,
 } from '../../../../helpers/__tests__/offlineWorkletRenderHarness';
 import { renderTrackSubgraphOffline } from '../../useCases/offlineRender/renderTrackSubgraphOffline';
+import { builtinSynthVoice } from '../../useCases/scheduling/builtinSynthVoice';
+
+// The voices this spec's notes sound through, as the composition root registers them.
+builtinSynthVoice.configure(synthVoices);
 
 /**
  * Released offline rendering must construct Grand Boule, voice scheduled notes,

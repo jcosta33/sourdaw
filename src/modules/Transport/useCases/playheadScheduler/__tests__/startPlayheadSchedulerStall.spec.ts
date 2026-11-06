@@ -165,6 +165,7 @@ const recordedSourceStarts = vi.hoisted(() => [] as RecordedSourceStart[]);
 const bufferClipIds = vi.hoisted(() => new Map<unknown, string>());
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    builtinSynthVoice: { read: () => synthVoices },
     ensureCachedAudioBuffersDurable: vi.fn(),
     createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
     analyzePitchForClip: vi.fn(),
@@ -232,7 +233,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     sendNativeLiveMidiControl: () => Promise.resolve(true),
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
-vi.mock('#/modules/Synth/useCases', () => ({
+// The built-in synth voice this spec's notes sound through, read through the AudioEngine port.
+const synthVoices = vi.hoisted(() => ({
     getDrumKitDefByIndex: () => null,
     scheduleDrumKitNote: vi.fn(),
     scheduleKitNote: vi.fn(),
