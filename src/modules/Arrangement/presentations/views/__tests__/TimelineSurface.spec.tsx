@@ -1180,6 +1180,79 @@ describe('TimelineSurface — stopped locate scrolls the playhead into view', ()
         expect(setScrollX).not.toHaveBeenCalled();
     });
 
+    it('leaves the view alone when a roll started after mount stops with follow off and the playhead off-screen', async () => {
+        zoomHandlers.timelineViewStoreRef.current?.set({
+            scrollX: 0,
+            scrollY: 0,
+            pixelsPerBeat: 10,
+            autoScrollEnabled: true,
+        });
+        zoomHandlers.transportStoreRef.current?.set({ isPlaying: false });
+        playheadPositionRef.current = 10;
+        renderWithTooltip(<TimelineSurface />);
+        await act(async () => {
+            await new Promise((resolve) => {
+                setTimeout(resolve, 0);
+            });
+        });
+        act(() => {
+            scheduler.loop!();
+        });
+
+        // A playing frame inside the view, follow on.
+        playheadPositionRef.current = 20;
+        act(() => {
+            zoomHandlers.transportStoreRef.current?.set({ isPlaying: true });
+        });
+        act(() => {
+            scheduler.loop!();
+        });
+
+        // The user scrolls away, which turns follow off and leaves the playhead off-screen.
+        act(() => {
+            zoomHandlers.timelineViewStoreRef.current?.set({
+                scrollX: 5000,
+                scrollY: 0,
+                pixelsPerBeat: 10,
+                autoScrollEnabled: false,
+            });
+        });
+        vi.mocked(setScrollX).mockClear();
+
+        playheadPositionRef.current = 21;
+        act(() => {
+            zoomHandlers.transportStoreRef.current?.set({ isPlaying: false, playheadPosition: 21 });
+        });
+        act(() => {
+            scheduler.loop!();
+        });
+
+        expect(setScrollX).not.toHaveBeenCalled();
+    });
+
+    it('does not treat the first frame of a stopped mount as a stop transition', async () => {
+        zoomHandlers.timelineViewStoreRef.current?.set({
+            scrollX: 0,
+            scrollY: 0,
+            pixelsPerBeat: 10,
+            autoScrollEnabled: true,
+        });
+        zoomHandlers.transportStoreRef.current?.set({ isPlaying: false });
+        // Beat 1000 is pixel 10000, far outside the 800 px view.
+        playheadPositionRef.current = 1000;
+        renderWithTooltip(<TimelineSurface />);
+        await act(async () => {
+            await new Promise((resolve) => {
+                setTimeout(resolve, 0);
+            });
+        });
+        act(() => {
+            scheduler.loop!();
+        });
+
+        expect(setScrollX).not.toHaveBeenCalled();
+    });
+
     it('does not move the view when only scrollX changes and the playhead stays still', async () => {
         await mountStoppedFarRight();
 
