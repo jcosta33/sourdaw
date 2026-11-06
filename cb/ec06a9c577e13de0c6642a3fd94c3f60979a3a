@@ -1,0 +1,21 @@
+evidence/agent-campaign/manifest.json
+  s_96443d70774ece::t_8ffdbb6db361f1 190
+release/open-source-inventory.json
+  s_96443d70774ece::t_99608f0bc1340a 1217
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cbec06a9c577e13de0c6642a3fd94c3f60979a3a",
+  "prompts": {},
+  "sessions": {
+    "s_96443d70774ece": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_96443d70774ece",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
