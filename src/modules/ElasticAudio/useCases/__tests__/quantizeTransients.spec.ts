@@ -804,7 +804,9 @@ describe('quantizeTransients (AC-002: separate and conform an audio clip to the 
             seedProject(loopClip({ locked: true }));
             const notifications: NotifyPayload[] = [];
             const bus = createEventBus<NotificationEvents>();
-            bus.on('ui.notify', (payload) => notifications.push(payload));
+            bus.on('ui.notify', (payload) => {
+                notifications.push(payload);
+            });
             setNotificationEventBus(bus);
 
             await quantizeTransients(CLIP_ID, 1);

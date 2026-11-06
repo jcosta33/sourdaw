@@ -299,12 +299,14 @@ function compileSlices(
     }
     const firstMoved = moved[0];
     const cutsRangeStart = rangeStart !== null && (!firstMoved || firstMoved.toBeat > rangeStart + MIN_SLICE_BEATS);
-    const slices: Slice[] = [
-        head,
-        ...(cutsRangeStart ? [unmovedCut(rangeStart, sourceClock)] : []),
-        ...moved,
-        ...(rangeEnd === null ? [] : [unmovedCut(rangeEnd, sourceClock)]),
-    ];
+    const slices: Slice[] = [head];
+    if (cutsRangeStart) {
+        slices.push(unmovedCut(rangeStart, sourceClock));
+    }
+    slices.push(...moved);
+    if (rangeEnd !== null) {
+        slices.push(unmovedCut(rangeEnd, sourceClock));
+    }
     return { slices, skipped };
 }
 
