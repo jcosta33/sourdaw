@@ -1,7 +1,14 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { externalPluginParameterStore, defaultExternalPluginParameterState } from '#/modules/PluginHost/stores';
+import {
+    defaultExternalPluginActivationState,
+    defaultExternalPluginParameterState,
+    defaultPluginScanState,
+    externalPluginActivationStore,
+    externalPluginParameterStore,
+    pluginScanStore,
+} from '#/modules/PluginHost/stores';
 
 import { DeviceInspector } from '../DeviceInspector';
 
@@ -94,8 +101,11 @@ const makeDevice = (overrides: Partial<Device> = {}): Device => ({
     ...overrides,
 });
 
-const EXTERNAL_HINT =
+const EXTERNAL_OPENABLE =
     "Edit this plugin's parameters in its own window: use Open editor on its device in the track's device list.";
+const EXTERNAL_NO_EDITOR = 'This plugin has no editor window of its own, and its parameters are not listed here.';
+const EXTERNAL_NOT_LOADED =
+    "Its editor can be opened from its device in the track's device list once the plugin is loaded.";
 
 describe('DeviceInspector', () => {
     const mockOnBack = vi.fn();
@@ -363,30 +373,40 @@ describe('DeviceInspector', () => {
             />
         );
         expect(screen.queryByTestId('generic-layout')).not.toBeInTheDocument();
-        expect(screen.getByText(EXTERNAL_HINT)).toBeInTheDocument();
+        expect(screen.getByText(EXTERNAL_NOT_LOADED)).toBeInTheDocument();
     });
 });
 
+type ScannedPlugin = (typeof defaultPluginScanState)['scannedPlugins'][number];
+
 describe('DeviceInspector external plugin', () => {
     const mockOnBack = vi.fn();
-    // Shaped as addExternalDevice creates it: the scanned plugin name, an empty parameter record, and an instance id.
+    const REVERB_ID = 'reverb-plugin';
+    const INSTANCE_ID = 'plugin-reverb-instance';
+    // Shaped as addExternalDevice creates it: the scanned plugin name, an empty parameter record, and ids.
     const addedPluginDevice = (): Device =>
         makeDevice({
             id: 'device-ext',
             name: 'Reverb',
             type: 'external-plugin',
             parameterValues: {},
-            externalInstanceId: 'plugin-reverb-instance',
+            externalPluginId: REVERB_ID,
+            externalInstanceId: INSTANCE_ID,
         });
-    const publishedParameter = (id: number, name: string, value: number) => ({
-        id,
-        name,
-        value,
-        defaultValue: 0.5,
-        minValue: 0,
-        maxValue: 1,
-        unit: '',
-        isAutomatable: true,
+    const scannedReverb = (overrides: Partial<ScannedPlugin>): ScannedPlugin => ({
+        id: REVERB_ID,
+        name: 'Reverb',
+        vendor: 'Vendor',
+        format: 'clap',
+        category: 'effect',
+        path: '/plugins/reverb.clap',
+        version: '1.0',
+        descriptor_id: 'com.vendor.reverb',
+        num_inputs: 2,
+        num_outputs: 2,
+        num_parameters: 0,
+        has_custom_ui: true,
+        ...overrides,
     });
     const builtinReverb = {
         id: 'builtin-reverb',
@@ -397,6 +417,12 @@ describe('DeviceInspector external plugin', () => {
             { id: 'mix', name: 'Mix', automatable: true },
         ],
     };
+    const seedPlugin = (plugin: ScannedPlugin, status: 'loading' | 'active' | 'error' | undefined): void => {
+        pluginScanStore.set({ ...defaultPluginScanState, scannedPlugins: [plugin] });
+        externalPluginActivationStore.set({
+            byInstanceId: status === undefined ? {} : { [INSTANCE_ID]: { status } },
+        });
+    };
 
     beforeEach(() => {
         mockGetBuiltinPlugins.mockReturnValue([builtinReverb]);
@@ -404,30 +430,55 @@ describe('DeviceInspector external plugin', () => {
     });
 
     afterEach(() => {
+        pluginScanStore.set(defaultPluginScanState);
+        externalPluginActivationStore.set(defaultExternalPluginActivationState);
         externalPluginParameterStore.set(defaultExternalPluginParameterState);
     });
 
-    it('shows the editor hint, not the builtin Reverb controls or the published parameters, when attached', () => {
+    it('points at the Open editor control, and shows no published parameter, when the plugin has an editor and is active', () => {
+        seedPlugin(scannedReverb({ has_custom_ui: true }), 'active');
         externalPluginParameterStore.set({
             byInstanceId: {
-                'plugin-reverb-instance': {
+                [INSTANCE_ID]: {
                     engineAttached: true,
-                    parameters: [publishedParameter(7, 'Pre Gain', 0.25), publishedParameter(9, 'Tone', 0.8)],
+                    parameters: [
+                        {
+                            id: 7,
+                            name: 'Pre Gain',
+                            value: 0.25,
+                            defaultValue: 0.5,
+                            minValue: 0,
+                            maxValue: 1,
+                            unit: '',
+                            isAutomatable: true,
+                        },
+                    ],
                 },
             },
         });
         render(<DeviceInspector device={addedPluginDevice()} trackId="track-1" onBack={mockOnBack} />);
-        expect(screen.getByText(EXTERNAL_HINT)).toBeInTheDocument();
+        expect(screen.getByText(EXTERNAL_OPENABLE)).toBeInTheDocument();
         expect(screen.queryByTestId('generic-layout')).not.toBeInTheDocument();
         expect(screen.queryByText('Pre Gain')).not.toBeInTheDocument();
-        expect(screen.queryByText('Tone')).not.toBeInTheDocument();
     });
 
-    it('shows the same editor hint when no snapshot is published', () => {
+    it('says the plugin has no editor window, not that Open editor exists, when the scan reports none', () => {
+        seedPlugin(scannedReverb({ has_custom_ui: false }), 'active');
         render(<DeviceInspector device={addedPluginDevice()} trackId="track-1" onBack={mockOnBack} />);
-        expect(screen.getByText(EXTERNAL_HINT)).toBeInTheDocument();
+        expect(screen.getByText(EXTERNAL_NO_EDITOR)).toBeInTheDocument();
+        expect(screen.queryByText(EXTERNAL_OPENABLE)).not.toBeInTheDocument();
         expect(screen.queryByTestId('generic-layout')).not.toBeInTheDocument();
     });
+
+    it.each(['loading', 'error'] as const)(
+        'says the editor opens once the plugin is loaded, while it is %s',
+        (status) => {
+            seedPlugin(scannedReverb({ has_custom_ui: true }), status);
+            render(<DeviceInspector device={addedPluginDevice()} trackId="track-1" onBack={mockOnBack} />);
+            expect(screen.getByText(EXTERNAL_NOT_LOADED)).toBeInTheDocument();
+            expect(screen.queryByText(EXTERNAL_OPENABLE)).not.toBeInTheDocument();
+        }
+    );
 
     it('still shows a builtin Reverb its own controls', () => {
         render(

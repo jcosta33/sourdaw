@@ -6,8 +6,8 @@ type NamedPlugin = { id: string; name: string };
  * The builtin descriptor a stored device opens with, or undefined when it has none.
  *
  * A third-party plugin device (`external-plugin`) never resolves: its parameters belong to the
- * plugin, so the caller derives them from the device instead. Its stored name is the scanned plugin
- * name and can equal a builtin's display name, so the name fallback must never see it.
+ * plugin, so the inspector shows where the plugin's own editor is instead. Its stored name is the
+ * scanned plugin name and can equal a builtin's display name, so the name fallback must never see it.
  *
  * Otherwise the device's type decides first: its exact id, then the `builtin-` id older projects
  * stored without the prefix. Only a device whose type names no descriptor falls back to the type read
