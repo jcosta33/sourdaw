@@ -638,6 +638,12 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // evaluator's AU-1 delegation note (#747). The transformer computes
         // curve values only, holds no device writes.
         // 'src/modules/Arrangement/transformers/automationTransformers.ts': removed (0),
+        // Count provenance: new file entry, measured 2 — the declaration and the
+        // one call of `compileSlices`, the pure planner that turns detected
+        // onsets into slice positions for a transient quantize. It returns plain
+        // data; the plan is applied through `restoreStripSilenceState` as a clip
+        // replacement and touches no device, parameter or engine state.
+        'src/modules/Arrangement/useCases/prepareTransientQuantize.ts': 2,
         // Count provenance: 0 in code, was 1 lexical — a doc-comment
         // cross-reference to `compileAutomationEvents` in the live evaluator's
         // AU-1 delegation note (#747) — not a sink.
