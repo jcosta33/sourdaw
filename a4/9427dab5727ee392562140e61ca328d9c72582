@@ -1,0 +1,40 @@
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/LufsMeterLayout.spec.tsx
+  s_fec7059b7a251c::t_099d7441dc00b4 27
+src/modules/Arrangement/models/PluginDescriptors/FaustEffectDescriptors.ts
+  s_fec7059b7a251c::t_f00b044fd6db4a 223
+  s_fec7059b7a251c::t_e374894b0799b0 197,206
+src/modules/Arrangement/models/PluginDescriptors/__tests__/catalogDisplayNames.spec.ts
+  s_fec7059b7a251c::t_4cd3991e263713 1-19
+src/modules/AiRuntime/models/PresetActions/Presets/Device.ts
+  s_fec7059b7a251c::t_6af03582ceefff 11-12
+src/modules/AiRuntime/models/PresetActions/Presets/__tests__/Device.spec.ts
+  s_fec7059b7a251c::t_ddd22d3e7cf60c 28-29
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineFileDrop.spec.tsx
+  s_fec7059b7a251c::t_6f0ce00fcabd3b 210-211,219
+src/modules/Arrangement/presentations/hooks/useTimelineFileDrop.ts
+  s_fec7059b7a251c::t_c31a7133781a2b 498-500
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  s_fec7059b7a251c::t_22a4f1868248a9 24-31,36
+src/modules/Arrangement/useCases/device/__tests__/addDevice.spec.ts
+  s_fec7059b7a251c::t_ae0399e4ddc7e5 263-266,269,272-275
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/effectsTabHelpers.spec.tsx
+  s_fec7059b7a251c::t_2af293b16c2d03 89-92
+src/modules/ContentBrowser/presentations/views/Sidebar/effectsTabHelpers.tsx
+  s_fec7059b7a251c::t_36559f9f29ba77 199-202
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a49427dab5727ee392562140e61ca328d9c72582",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
