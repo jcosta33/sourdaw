@@ -105,7 +105,8 @@ function externalPluginParameters(device: Device, state: ExternalPluginParameter
     if (instanceId === undefined || !state.byInstanceId[instanceId]?.engineAttached) {
         return undefined;
     }
-    return getAutomationDeviceDescriptor(device.type ?? '', instanceId)?.parameters;
+    const descriptor = getAutomationDeviceDescriptor(device.type ?? '', instanceId);
+    return descriptor ? [...descriptor.parameters] : undefined;
 }
 
 export const DeviceInspector = ({ device, trackId, onBack }: DeviceInspectorProps): ReactElement => {
