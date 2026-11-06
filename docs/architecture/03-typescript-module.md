@@ -1128,9 +1128,16 @@ import { ArrangementView } from '#/modules/Arrangement/presentations/views';
 
 `.dependency-cruiser.module-tiers.cjs` is the single source for module placement. It lists the tiers in order, each with the tiers it may depend on, and gives every module under `src/modules/` a tier with a reason. A module's tier follows its role — its subdomain kind ([ADR 0011](../../.agents/decisions/0011-ddd-module-boundary-redraw.md)), its `AGENTS.md`, and the aggregate it owns — never its current imports.
 
-`pnpm deps:validate` enforces it. Every non-presentation cross-module edge must be allowed by the tier rules (same-tier edges always are), and every module-level cycle is reported. Both kinds of violation sit in an exact baseline: a new row fails, and so does a stale one, so the baseline only ratchets down. A module without a tier, or a tier entry without a module, fails outright.
+`pnpm deps:validate` enforces it. Every non-presentation cross-module edge must be allowed by the tier rules (same-tier edges always are), and every module-level cycle is reported. A module without a tier, or a tier entry without a module, fails outright.
 
-A new cross-tier edge is a change to the manifest, argued in review. Never admit one by rewriting the baseline.
+The gate has no baseline file. The only rows it accepts are the manifest's allowances:
+
+- An **allowed cycle** (`allowedCycles`) names one strongly connected component by its exact members, with a `reason` that says why the modules depend on each other and a `retiredBy` that names the decision that would break the cycle.
+- An **accepted tier edge** (`acceptedTierEdges`) names one upward module pair, `from` and `to`, with a `reason` read from the imports that produce it: what the edge reads and why it stays.
+
+Allowances match exactly, and drift in either direction fails. A cycle that gains a member, loses a member, or appears beside an allowed one is a new row; an upward edge no entry accepts is a new row; an allowance the code no longer produces is stale. An allowance with an empty or missing reason, or a cycle without a retiring decision, fails manifest validation. Because a cycle that loses a member no longer matches, the allowance only ratchets down.
+
+An allowance is a reviewed manifest change, never a regenerated file: `--write-baseline` refuses this gate. A new cross-tier edge or cycle is argued in review as a manifest entry with its reason. When the code stops producing an allowance, shrink or delete the entry in the same change; the gate's stale failure says which.
 
 ---
 
