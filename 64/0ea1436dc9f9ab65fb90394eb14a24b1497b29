@@ -1,0 +1,29 @@
+src/modules/Gluten/presentations/views/GlutenPanel.tsx
+  s_2cd8190f26088f::t_a985d125953e5d 629-635,701-706,938-942
+src/modules/Gluten/presentations/views/__tests__/GlutenPanel.spec.tsx
+  s_2cd8190f26088f::t_ad482da61d0e6b 72-84
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceInspector.tsx
+  s_2cd8190f26088f::t_0a9a3b8fe2c82d 110-126
+src/modules/TimelineEditor/presentations/views/Inspector/GenericDeviceLayout.tsx
+  s_2cd8190f26088f::t_ce7ef684034497 167,177
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceInspector.spec.tsx
+  s_2cd8190f26088f::t_b3bd8dbe7a81fd 108-116
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/GenericDeviceLayout.spec.tsx
+  s_2cd8190f26088f::t_9312c20be6dd58 201-212
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "640ea1436dc9f9ab65fb90394eb14a24b1497b29",
+  "prompts": {},
+  "sessions": {
+    "s_2cd8190f26088f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1b286-ad65-7a12-9510-2d3604006235",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
