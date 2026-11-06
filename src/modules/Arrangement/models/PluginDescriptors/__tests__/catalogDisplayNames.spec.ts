@@ -3,11 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { BUILTIN_PLUGINS } from '../../DeviceParameter';
 
 function findDuplicatedNames(plugins: readonly { id: string; name: string }[]): string[] {
-    const idsByName = new Map<string, string[]>();
-    for (const plugin of plugins) {
-        idsByName.set(plugin.name, [...(idsByName.get(plugin.name) ?? []), plugin.id]);
+    const duplicates: string[] = [];
+    for (const [name, group] of Map.groupBy(plugins, (plugin) => plugin.name)) {
+        if (group.length > 1) {
+            duplicates.push(`${name}: ${group.map((plugin) => plugin.id).join(', ')}`);
+        }
     }
-    return [...idsByName].filter(([, ids]) => ids.length > 1).map(([name, ids]) => `${name}: ${ids.join(', ')}`);
+    return duplicates;
 }
 
 describe('device catalog display names', () => {

@@ -49,13 +49,12 @@ describe('Factory Presets', () => {
     });
 
     it('gives every factory preset its own name, since the browsers list them side by side', () => {
-        const idsByName = new Map<string, string[]>();
-        for (const preset of FACTORY_PRESETS) {
-            idsByName.set(preset.name, [...(idsByName.get(preset.name) ?? []), preset.id]);
+        const duplicates: string[] = [];
+        for (const [name, presets] of Map.groupBy(FACTORY_PRESETS, (preset) => preset.name)) {
+            if (presets.length > 1) {
+                duplicates.push(`${name}: ${presets.map((preset) => preset.id).join(', ')}`);
+            }
         }
-        const duplicates = [...idsByName]
-            .filter(([, ids]) => ids.length > 1)
-            .map(([name, ids]) => `${name}: ${ids.join(', ')}`);
         expect(duplicates).toEqual([]);
     });
 
