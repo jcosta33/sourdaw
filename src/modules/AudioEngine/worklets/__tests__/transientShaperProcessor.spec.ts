@@ -8,6 +8,7 @@ import { getPluginById } from '#/modules/Arrangement/useCases';
 import {
     createTransientShaperControl,
     NO_IMMEDIATE_FRAME,
+    TRANSIENT_SHAPER_CONTROL_BYTES,
     writeTransientShaperImmediateGain,
     writeTransientShaperResetEpoch,
 } from '../../models/TransientShaperControl';
@@ -206,5 +207,20 @@ describe('shipping Transient Shaper processor with the actual compiled WASM', ()
             message: 'TypeError: Transient Shaper requires a shared control block',
         });
         expect(render(uncontrolled, 17).running).toBe(false);
+    });
+    it.each([
+        ['a block shorter than its fields', new SharedArrayBuffer(TRANSIENT_SHAPER_CONTROL_BYTES - 8)],
+        ['an unshared buffer', new ArrayBuffer(TRANSIENT_SHAPER_CONTROL_BYTES)],
+        ['a typed view instead of its buffer', createTransientShaperControl(0).control.fields],
+    ])('refuses %s as its control block', async (_case, control) => {
+        const { Constructor } = await processor(false);
+        const refused = new Constructor({ processorOptions: { wasmModule: module, control } });
+        refused.port.onmessage?.({ data: { type: 'init' } });
+        expect(refused.port.postMessage).toHaveBeenCalledExactlyOnceWith({
+            type: 'error',
+            message: 'TypeError: Transient Shaper requires a shared control block',
+        });
+        expect(render(refused, 17).running).toBe(false);
+        expect(render(refused, 17).output[0]).toEqual(new Float32Array(17));
     });
 });

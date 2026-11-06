@@ -110,7 +110,14 @@ export function readTransientShaperControl(
     const attackFrame = fields[GAIN_FIELDS.attackGain.frame];
     const sustainValue = fields[GAIN_FIELDS.sustainGain.value];
     const sustainFrame = fields[GAIN_FIELDS.sustainGain.frame];
-    if (Atomics.load(control.sequence, 0) !== before) {
+    if (
+        resetEpoch === undefined ||
+        attackValue === undefined ||
+        attackFrame === undefined ||
+        sustainValue === undefined ||
+        sustainFrame === undefined ||
+        Atomics.load(control.sequence, 0) !== before
+    ) {
         return false;
     }
     into.resetEpoch = resetEpoch;
