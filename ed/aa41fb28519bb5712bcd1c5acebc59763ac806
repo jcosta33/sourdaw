@@ -1,0 +1,27 @@
+src/modules/Arrangement/presentations/views/TimelineMinimap.tsx
+  s_e4490baba90b64::t_d3bf268845e6c8 13,100-101
+src/modules/Transport/models/MusicalPositionFormat.ts
+  s_e4490baba90b64::t_966afc126455df 18
+src/modules/Transport/useCases/index.ts
+  s_e4490baba90b64::t_2d51cb048e23a2 91
+src/modules/Transport/useCases/transportQueries/__tests__/getBarNumberAtBeat.spec.ts
+  s_e4490baba90b64::t_1f4fab0792970e 1-26
+src/modules/Transport/useCases/transportQueries/getBarNumberAtBeat.ts
+  s_e4490baba90b64::t_b61015debfcb51 1-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "edaa41fb28519bb5712bcd1c5acebc59763ac806",
+  "prompts": {},
+  "sessions": {
+    "s_e4490baba90b64": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_e4490baba90b64",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
