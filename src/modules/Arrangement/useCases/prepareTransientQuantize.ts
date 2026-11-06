@@ -15,15 +15,17 @@ import { detectTransients } from '#/utils/transientOnsetDetection';
 import { type TempoTimeline } from '../models/TempoTimeline';
 import { type Clip, type Track } from '../models/Track';
 import { type WarpState } from '../models/WarpMarker';
-import { getTrackState } from '../repositories/track/getTrackState';
+import { getTrackState, type TrackState } from '../repositories/track/getTrackState';
 import { readClipSatelliteEntry, type ClipSatelliteEntry } from '../stores/clipSatelliteState';
 import { type ClipGainEnvelope } from '../stores/gainEnvelopeStore';
 import { resolveEligibleClipWriteTarget } from '../stores/resolveEligibleClipWriteTarget';
 import { takeLaneStore } from '../stores/takeLaneStore';
 
+import { keyMigratedAutomationLanes } from './clip/keyMigratedAutomationLanes';
 import { readClipScopedAutomationLanes, type AutomationLaneValue } from './clip/readClipScopedAutomationLanes';
 import { captureLiveTempoSourceClock } from './clipEditing/captureLiveTempoSourceClock';
 import { consumedStretchFactor } from './clipEditing/consumedStretchFactor';
+import { getClipIdCensus } from './clipEditing/getClipIdCensus';
 import { prepareAudioClipCutFields } from './clipEditing/prepareAudioClipCutFields';
 
 type PrepareTransientQuantizeInput = {
@@ -35,6 +37,10 @@ type PrepareTransientQuantizeInput = {
     minConfidence?: number;
     startBeat?: number;
     endBeat?: number;
+    /** The new slices' clip ids a carried plan recorded, in timeline order; drawn fresh when absent. */
+    sliceClipIds?: readonly string[];
+    /** The migrated lanes' ids a carried plan recorded, in creation order; drawn fresh when absent. */
+    automationLaneIds?: readonly string[];
 };
 
 type TransientQuantizePreparation =
@@ -53,6 +59,7 @@ const MIN_SLICE_BEATS = 1 / 32;
 const EDGE_FADE_BEATS = 1 / 256;
 const MIN_GRID_BEATS = 1 / 32;
 const MAX_GRID_BEATS = 4;
+const RECORDED_IDS_REASON = 'The recorded slice or lane ids do not fit this project';
 
 type Onset = { onsetIndex: number; sourceSeconds: number; beat: number; confidence: number };
 
@@ -235,11 +242,17 @@ function readOnsets(
     return onsets;
 }
 
+/** An unmoved cut at `beat`: the audio from there plays where it did. */
+function unmovedCut(beat: number, sourceClock: SourceClock): Slice {
+    return { onset: null, sourceSeconds: sourceClock.sourceAtBeat(beat), fromBeat: beat, toBeat: beat };
+}
+
 /**
  * Walk the onsets in order and keep a cut only where its grid point advances past the slice before
  * it by a minimum slice length and leaves room before the clip end (or the range end); any other
- * onset stays inside the slice before it rather than overlapping it. A range that ends inside the
- * clip gets an unmoved cut there, so the audio after it stays where it was.
+ * onset stays inside the slice before it rather than overlapping it. A range that starts or ends
+ * inside the clip gets an unmoved cut at each such end, so no hit moves before the range start and
+ * the audio outside the range stays where it was.
  */
 function compileSlices(
     clip: Clip,
@@ -255,6 +268,9 @@ function compileSlices(
             toBeat: clip.startBeat,
         },
     ];
+    if (input.startBeat !== undefined && input.startBeat > clip.startBeat + MIN_SLICE_BEATS) {
+        slices.push(unmovedCut(input.startBeat, sourceClock));
+    }
     const rangeEnd =
         input.endBeat !== undefined && input.endBeat < clip.endBeat - MIN_SLICE_BEATS ? input.endBeat : null;
     const lastCutBeat = rangeEnd ?? clip.endBeat;
@@ -278,12 +294,7 @@ function compileSlices(
         slices.push({ onset, sourceSeconds: onset.sourceSeconds, fromBeat: onset.beat, toBeat });
     }
     if (rangeEnd !== null) {
-        slices.push({
-            onset: null,
-            sourceSeconds: sourceClock.sourceAtBeat(rangeEnd),
-            fromBeat: rangeEnd,
-            toBeat: rangeEnd,
-        });
+        slices.push(unmovedCut(rangeEnd, sourceClock));
     }
     return { slices, skipped };
 }
@@ -298,15 +309,42 @@ function naturalSliceEnd(clip: Clip, slice: Slice, next: Slice | undefined, sour
 }
 
 /**
+ * One clip id per new slice, in timeline order: drawn fresh, or the ones a carried plan recorded,
+ * which must match the slice count, be distinct, and name no clip the project already places.
+ */
+function resolveSliceClipIds(
+    sliceCount: number,
+    sliceClipIds: readonly string[] | undefined,
+    state: TrackState
+): readonly string[] | null {
+    if (sliceClipIds === undefined) {
+        return Array.from({ length: sliceCount }, () => `clip-slice-${crypto.randomUUID()}`);
+    }
+    if (sliceClipIds.length !== sliceCount || new Set(sliceClipIds).size !== sliceClipIds.length) {
+        return null;
+    }
+    const census = getClipIdCensus({ clipIds: sliceClipIds, state });
+    if (sliceClipIds.some((sliceClipId) => sliceClipId.length === 0 || census.get(sliceClipId)!.length > 0)) {
+        return null;
+    }
+    return sliceClipIds;
+}
+
+/**
  * A slice ends where its own source runs out at its new position, cut short by the next slice's
  * start so slices never overlap; a gap a later slice leaves stays silent. The last slice never
- * plays past the original clip end.
+ * plays past the original clip end. The head slice keeps the clip's own id.
  */
-function placeSlices(clip: Clip, slices: readonly Slice[], sourceClock: SourceClock): PlacedSlice[] {
+function placeSlices(
+    clip: Clip,
+    slices: readonly Slice[],
+    sliceClipIds: readonly string[],
+    sourceClock: SourceClock
+): PlacedSlice[] {
     return slices.map((slice, index) => {
         const next = slices[index + 1];
         const endBeat = Math.min(naturalSliceEnd(clip, slice, next, sourceClock), next?.toBeat ?? clip.endBeat);
-        const id = index === 0 ? clip.id : `clip-slice-${crypto.randomUUID()}`;
+        const id = index === 0 ? clip.id : sliceClipIds[index - 1]!;
         return { ...slice, id, endBeat };
     });
 }
@@ -438,9 +476,19 @@ function migrateAutomationLanes(
     return migrated;
 }
 
-function buildSnapshots(track: Track, clip: Clip, sliceClips: readonly Clip[], slices: readonly PlacedSlice[]) {
+function buildSnapshots(
+    track: Track,
+    clip: Clip,
+    sliceClips: readonly Clip[],
+    slices: readonly PlacedSlice[],
+    automationLaneIds: readonly string[] | undefined
+) {
     const satellite = readClipSatelliteEntry(clip.id);
     const lanes = readClipScopedAutomationLanes([clip.id]);
+    const migratedLanes = keyMigratedAutomationLanes(migrateAutomationLanes(lanes, slices), automationLaneIds);
+    if (!migratedLanes) {
+        return null;
+    }
     const newIds = slices.slice(1).map((slice) => slice.id);
     const empty = (clipId: string): ClipSatelliteEntry => ({ clipId, gainEnvelope: null, warpState: null });
     const previous: StripSilenceActionSnapshot = {
@@ -461,7 +509,7 @@ function buildSnapshots(track: Track, clip: Clip, sliceClips: readonly Clip[], s
             gainEnvelope: rebaseGainEnvelope(satellite.gainEnvelope, slice.id, slice.fromBeat - clip.startBeat),
             warpState: copyWarpState(satellite.warpState),
         })),
-        clipAutomationLanes: migrateAutomationLanes(lanes, slices),
+        clipAutomationLanes: migratedLanes,
     };
     return { previous, next };
 }
@@ -470,8 +518,9 @@ function buildSnapshots(track: Track, clip: Clip, sliceClips: readonly Clip[], s
  * Plan one Beat Detective style separate-and-conform of an audio clip: detect onsets in its whole
  * source, cut the clip at each onset it plays and move each slice so its onset lands on the
  * quantised grid point. The plan is a clip replacement in `restoreStripSilenceState`'s shape, bound
- * to the decoded source and the tempo clock it was read against, so applying it later never detects
- * again. Gaps a slice leaves stay silent; edges the cut opens get a short declick fade.
+ * to the decoded source and the tempo clock it was read against. Given the slice and lane ids a
+ * carried plan recorded, the same project yields that plan exactly, which is how a carried plan is
+ * verified. Gaps a slice leaves stay silent; edges the cut opens get a short declick fade.
  */
 export function prepareTransientQuantize(input: PrepareTransientQuantizeInput): TransientQuantizePreparation {
     const inputRefusal = refusalForInput(input);
@@ -514,7 +563,11 @@ export function prepareTransientQuantize(input: PrepareTransientQuantizeInput): 
         return refused('Every transient merged into the slice before it');
     }
 
-    const placed = placeSlices(clip, slices, sourceClock);
+    const sliceClipIds = resolveSliceClipIds(slices.length - 1, input.sliceClipIds, state);
+    if (!sliceClipIds) {
+        return refused(RECORDED_IDS_REASON);
+    }
+    const placed = placeSlices(clip, slices, sliceClipIds, sourceClock);
     const sliceClips: Clip[] = [];
     for (const [index, slice] of placed.entries()) {
         const sliceClip = buildSliceClip(clip, slice, index === 0, index === placed.length - 1, timeline);
@@ -524,7 +577,11 @@ export function prepareTransientQuantize(input: PrepareTransientQuantizeInput): 
         sliceClips.push(sliceClip);
     }
 
-    const { previous, next } = buildSnapshots(track, clip, sliceClips, placed);
+    const snapshots = buildSnapshots(track, clip, sliceClips, placed, input.automationLaneIds);
+    if (!snapshots) {
+        return refused(RECORDED_IDS_REASON);
+    }
+    const { previous, next } = snapshots;
     const moves: TransientQuantizeMoveSnapshot[] = [];
     for (const { onset, id, sourceSeconds, fromBeat, toBeat } of placed) {
         if (onset) {

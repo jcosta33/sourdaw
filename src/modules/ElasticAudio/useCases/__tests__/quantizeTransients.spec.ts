@@ -80,9 +80,9 @@ const DETECTION_FRAME_SECONDS = 2048 / SAMPLE_RATE;
 
 let stopProjectionBridge: () => void = () => undefined;
 
-function drumLoopChannel(): Float32Array<ArrayBuffer> {
+function drumLoopChannel(attacks: readonly number[] = ATTACK_SECONDS): Float32Array<ArrayBuffer> {
     const samples = new Float32Array(SAMPLE_RATE * SOURCE_SECONDS);
-    for (const attack of ATTACK_SECONDS) {
+    for (const attack of attacks) {
         const start = Math.round(attack * SAMPLE_RATE);
         for (let index = 0; index < 400; index++) {
             samples[start + index] = Math.cos(index * 1.723) * Math.exp(-index / 60);
@@ -378,6 +378,54 @@ describe('quantizeTransients (AC-002: separate and conform an audio clip to the 
         expect(sliceOf(committedMoves().moves[1]!.sliceClipId).endBeat).toBe(4);
     });
 
+    it('never moves a hit before a range that starts inside the clip', async () => {
+        // The attack at 2.06 s is heard at beat ~4.07, inside a range starting at 4.05; its grid point 4 is not.
+        seedProject(loopClip(), drumLoopChannel([2.06, 3.15]));
+
+        await executeAppAction({
+            type: 'quantizeTransients',
+            payload: { clipId: CLIP_ID, gridSize: 1, strength: 1, startBeat: 4.05 },
+        });
+
+        const outcome = committedMoves();
+        expect(outcome.skipped).toEqual([{ onsetIndex: 0, reason: 'merged' }]);
+        expect(outcome.moves.map((move) => [move.onsetIndex, move.toBeat])).toEqual([[1, 6]]);
+        const [head, rangeStart] = trackClips();
+        // Everything before the range start plays as it did: the head runs to 4.05, the cut there is unmoved.
+        expect(head).toMatchObject({ id: CLIP_ID, startBeat: 0, endBeat: 4.05, audioOffsetSeconds: 0 });
+        expect(rangeStart).toMatchObject({ startBeat: 4.05, audioOffsetSeconds: (4.05 * 60) / 120 });
+    });
+
+    it('cuts a stretched clip where its range ends at the source second that beat plays', async () => {
+        // Half-speed stretch: beat 7 is 3.5 song seconds in, which plays 1.75 seconds of source.
+        seedProject(loopClip({ endBeat: 16, stretchMode: 'timestretch', stretchRatio: 0.5 }));
+
+        await executeAppAction({
+            type: 'quantizeTransients',
+            payload: { clipId: CLIP_ID, gridSize: 2, endBeat: 7 },
+        });
+
+        expectSlicesPlayFromOnsetsOnTheirGrid([2, 6]);
+        const tail = trackClips().at(-1)!;
+        expect(tail).toMatchObject({ startBeat: 7, endBeat: 16 });
+        expect(tail.audioOffsetSeconds).toBe(1.75);
+    });
+
+    it('cuts a clip entered mid-file where its range ends at the source second that beat plays', async () => {
+        // The clip enters the file at 1 s on beat 2, so beat 5.5 plays 1 + 3.5 beats (1.75 s) = 2.75 s of source.
+        seedProject(loopClip({ startBeat: 2, endBeat: 8, audioOffsetSeconds: 1 }));
+
+        await executeAppAction({
+            type: 'quantizeTransients',
+            payload: { clipId: CLIP_ID, gridSize: 1, endBeat: 5.5 },
+        });
+
+        expectSlicesPlayFromOnsetsOnTheirGrid([3, 5]);
+        const tail = trackClips().at(-1)!;
+        expect(tail).toMatchObject({ startBeat: 5.5, endBeat: 8 });
+        expect(tail.audioOffsetSeconds).toBe(2.75);
+    });
+
     it('trims a slice the next one overlaps and leaves the gap a slice leaves silent', async () => {
         seedProject(loopClip());
 
@@ -604,6 +652,125 @@ describe('quantizeTransients (AC-002: separate and conform an audio clip to the 
                 fakeBuffer(drumLoopChannel(), SAMPLE_RATE * SOURCE_SECONDS - 1)
             );
             await expect(executeAppAction(structuredClone(recorded))).rejects.toThrow('no longer matches');
+        });
+
+        it('applies a carried plan that is exactly what the project yields for its recorded ids', async () => {
+            seedProject(loopClip());
+            await quantizeTransients(CLIP_ID, 1);
+            const recorded = committedQuantize();
+            const after = trackClips();
+            await undo();
+
+            await executeAppAction(structuredClone(recorded));
+
+            expect(trackClips()).toEqual(after);
+            expect(committedQuantize().payload.plan).toEqual(recorded.payload.plan);
+        });
+
+        it('refuses a carried plan whose replacement is not the quantize it names, and writes nothing', async () => {
+            seedProject(loopClip());
+            await quantizeTransients(CLIP_ID, 1);
+            const recorded = committedQuantize();
+            await undo();
+            const before = trackClips();
+            const plan = recorded.payload.plan;
+            if (!plan) {
+                throw new Error('Expected a recorded plan');
+            }
+            const forged: QuantizeAction = {
+                ...recorded,
+                payload: {
+                    ...recorded.payload,
+                    plan: {
+                        ...plan,
+                        replacement: {
+                            trackId: TRACK_ID,
+                            clips: [{ ...loopClip(), gain: 8 }],
+                            clipOrder: [CLIP_ID],
+                            clipSatellites: [{ clipId: CLIP_ID, gainEnvelope: null, warpState: null }],
+                            clipAutomationLanes: [],
+                        },
+                        moves: [],
+                        skipped: [],
+                    },
+                },
+            };
+            const handler = getExecutableCommandRegistrations().find(
+                (registration) => registration.actionType === 'quantizeTransients'
+            )?.handler;
+            const context = { actions: [forged], actionIndex: 0 };
+            expect(handler?.validationRefusalReason?.(structuredClone(forged), context)).toContain('no longer matches');
+
+            await expect(executeAppAction(structuredClone(forged))).rejects.toThrow('no longer matches');
+
+            expect(trackClips()).toEqual(before);
+            expect(undoStore.value?.past ?? []).toHaveLength(0);
+        });
+
+        function seedTakeLane(): void {
+            trackStore.set({
+                ...trackStore.value!,
+                tracks: trackStore.value!.tracks.map((track) => ({
+                    ...track,
+                    clips: [...track.clips, loopClip({ id: 'clip-take', name: 'Take' })],
+                })),
+            });
+            takeLaneStore.set({
+                lanes: [
+                    {
+                        id: 'lane-1',
+                        trackId: TRACK_ID,
+                        activeCompRegions: [],
+                        takes: [
+                            {
+                                id: 'take-1',
+                                clipId: 'clip-take',
+                                name: 'Take 1',
+                                selected: false,
+                                startBeat: 0,
+                                endBeat: 8,
+                            },
+                        ],
+                    },
+                ],
+            });
+            flushAutomergeStorageWrites();
+        }
+
+        const compOverClip: AppAction = {
+            type: 'setCompRegion',
+            payload: { trackId: TRACK_ID, startBeat: 2, endBeat: 4, takeId: 'take-1' },
+        };
+
+        it('refuses to cut a clip a comp region earlier in the same batch covers, and writes nothing', async () => {
+            seedProject(loopClip());
+            seedTakeLane();
+            const before = trackClips();
+            const lanesBefore = structuredClone(takeLaneStore.value);
+
+            const result = await executeAppActionBatch([
+                compOverClip,
+                { type: 'quantizeTransients', payload: { clipId: CLIP_ID, gridSize: 1 } },
+            ]);
+
+            expect(result.status).toBe('conflicted');
+            expect(trackClips()).toEqual(before);
+            expect(takeLaneStore.value).toEqual(lanesBefore);
+        });
+
+        it('refuses a carried plan once a comp region covers its clip, and writes nothing', async () => {
+            seedProject(loopClip());
+            seedTakeLane();
+            await quantizeTransients(CLIP_ID, 1);
+            const recorded = committedQuantize();
+            await undo();
+
+            await executeAppAction(structuredClone(compOverClip));
+            const comped = trackClips();
+            expect(takeLaneStore.value?.lanes[0]?.activeCompRegions).toHaveLength(1);
+
+            await expect(executeAppAction(structuredClone(recorded))).rejects.toThrow('no longer matches');
+            expect(trackClips()).toEqual(comped);
         });
 
         it('reports a refusal to the musician instead of rejecting the dispatch', async () => {

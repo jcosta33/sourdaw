@@ -4,10 +4,10 @@ import {
     type HandlerValidationContext,
     type TransientQuantizePlanSnapshot,
 } from '#/utils/handlerContract';
+import { jsonValuesEqual } from '#/utils/jsonSemanticEquality';
 
 import { prepareTransientQuantize } from '../../useCases/prepareTransientQuantize';
 import { restoreStripSilenceState } from '../../useCases/restoreStripSilenceState';
-import { transientQuantizePlanIsCurrent } from '../../useCases/transientQuantizePlanIsCurrent';
 
 import {
     isMaterializedQuantizeTransientsPayload,
@@ -36,26 +36,39 @@ const TEMPO_MAP_WRITERS: ReadonlySet<AppAction['type']> = new Set([
     'restoreTimeOperationState',
 ]);
 
+function plannerInput(payload: QuantizeTransientsAction['payload']) {
+    const { clipId, gridSize, strength, swing, sensitivity, minConfidence, startBeat, endBeat } = payload;
+    return { clipId, gridSize, strength, swing, sensitivity, minConfidence, startBeat, endBeat };
+}
+
 /**
- * A carried plan (a compiled command, or one this handler already planned) is kept as it is: planning
- * again would detect again and draw fresh slice ids, so the committed slices would not be the ones the
- * command's digest and receipt name. A missing plan is planned once and recorded in the payload.
+ * A carried plan (a compiled command, or one this handler already planned) keeps its recorded slice
+ * and lane ids: planning with fresh ones would commit slices the command's digest and receipt do not
+ * name. It is kept only while planning again with those ids yields it exactly, which re-detects and
+ * re-reads every refusal against the live project; a stale, partial or altered plan is refused and
+ * never applied.
  */
+function verifyCarriedPlan(
+    payload: QuantizeTransientsAction['payload'],
+    plan: TransientQuantizePlanSnapshot
+): PlanResolution {
+    const replanned = prepareTransientQuantize({
+        ...plannerInput(payload),
+        sliceClipIds: plan.replacement.clips.slice(1).map((clip) => clip.id),
+        automationLaneIds: plan.replacement.clipAutomationLanes.map((lane) => lane.id),
+    });
+    if (replanned.status !== 'planned' || !jsonValuesEqual(replanned.plan, plan)) {
+        return { status: 'refused', reason: STALE_PLAN_REASON };
+    }
+    return { status: 'planned', plan };
+}
+
+/** A missing plan is planned once and recorded in the payload. */
 function prepareAction(action: QuantizeTransientsAction): PlanResolution {
     if (action.payload.plan !== undefined) {
-        return { status: 'planned', plan: action.payload.plan };
+        return verifyCarriedPlan(action.payload, action.payload.plan);
     }
-    const { clipId, gridSize, strength, swing, sensitivity, minConfidence, startBeat, endBeat } = action.payload;
-    const preparation = prepareTransientQuantize({
-        clipId,
-        gridSize,
-        strength,
-        swing,
-        sensitivity,
-        minConfidence,
-        startBeat,
-        endBeat,
-    });
+    const preparation = prepareTransientQuantize(plannerInput(action.payload));
     if (preparation.status === 'planned') {
         action.payload.plan = preparation.plan;
     }
@@ -82,10 +95,7 @@ function refusalReason(action: QuantizeTransientsAction, context: HandlerValidat
         return PREFIX_REASON;
     }
     const resolution = prepareAction(action);
-    if (resolution.status === 'refused') {
-        return resolution.reason;
-    }
-    return transientQuantizePlanIsCurrent(action.payload.clipId, resolution.plan) ? null : STALE_PLAN_REASON;
+    return resolution.status === 'refused' ? resolution.reason : null;
 }
 
 export const handleQuantizeTransients = createHandler<'quantizeTransients'>({
@@ -102,9 +112,6 @@ export const handleQuantizeTransients = createHandler<'quantizeTransients'>({
             return { status: 'conflict', reason: resolution.reason };
         }
         const { plan } = resolution;
-        if (!transientQuantizePlanIsCurrent(action.payload.clipId, plan)) {
-            return { status: 'conflict', reason: STALE_PLAN_REASON };
-        }
         if (!restoreStripSilenceState({ expected: plan.expected, replacement: plan.replacement })) {
             return { status: 'conflict', reason: STALE_PLAN_REASON };
         }
