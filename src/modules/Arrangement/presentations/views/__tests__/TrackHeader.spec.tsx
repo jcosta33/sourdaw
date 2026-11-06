@@ -57,9 +57,15 @@ vi.mock('../TrackHeader/InlineTrackName', () => ({
     InlineTrackName: ({ track }: { track: { name: string } }) => <span>{track.name}</span>,
 }));
 
-vi.mock('../TrackHeader/ResizeHandle', () => ({
-    ResizeHandle: () => <div data-testid="resize-handle" />,
-}));
+const resizeHandle = vi.hoisted(() => ({ renderReal: false }));
+
+vi.mock('../TrackHeader/ResizeHandle', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../TrackHeader/ResizeHandle')>();
+    return {
+        ResizeHandle: (props: Parameters<typeof actual.ResizeHandle>[0]) =>
+            resizeHandle.renderReal ? <actual.ResizeHandle {...props} /> : <div data-testid="resize-handle" />,
+    };
+});
 
 vi.mock('../TrackHeader/InputSelector', () => ({
     InputSelector: () => <div data-testid="input-selector" />,
@@ -372,6 +378,24 @@ describe('TrackHeader', () => {
         expect(screen.getByRole('button', { name: 'Input monitoring for Test Track: Auto' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Input monitoring for Second Track: Auto' })).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Toggle variation lanes' })).toBeNull();
+    });
+
+    it('names each track height separator after its own track', () => {
+        const otherTrack = { ...mockTrack, id: 'track2', name: 'Second Track' };
+        resizeHandle.renderReal = true;
+        try {
+            renderWithTooltip(
+                <>
+                    <TrackHeader track={mockTrack} isSelected={false} />
+                    <TrackHeader track={otherTrack} isSelected={false} />
+                </>
+            );
+            const first = screen.getByRole('separator', { name: 'Resize Test Track height' });
+            const second = screen.getByRole('separator', { name: 'Resize Second Track height' });
+            expect(first).not.toBe(second);
+        } finally {
+            resizeHandle.renderReal = false;
+        }
     });
 
     it('renders a drum-machine folder with the drum icon and toaster device', () => {
